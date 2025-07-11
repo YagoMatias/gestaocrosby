@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    @apply bg-gray-100 flex items-center justify-center h-screen;
+}
+
+h1 {
+    @apply text-2xl font-bold mb-4;
+}
+
+form {
+    @apply bg-white p-6 rounded shadow-md;
+}
+
+input {
+    @apply border border-gray-300 p-2 mb-4 w-full rounded;
+}
