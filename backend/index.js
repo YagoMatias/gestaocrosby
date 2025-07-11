@@ -95,7 +95,7 @@ app.get('/extrato', async (req, res) => {
     const { cd_empresa, nr_ctapes, dt_movim_ini, dt_movim_fim } = req.query;
     const limit = parseInt(req.query.limit, 10) || 50;
     const offset = parseInt(req.query.offset, 10) || 0;
-    let baseQuery = ` from {extratbco fe where 1=1`;
+    let baseQuery = ` from fcc_extratbco fe where 1=1`;
     const params = [];
     let idx = 1;
     if (cd_empresa) {
@@ -103,8 +103,14 @@ app.get('/extrato', async (req, res) => {
       params.push(cd_empresa);
     }
     if (nr_ctapes) {
-      baseQuery += ` and fe.nr_ctapes = $${idx++}`;
-      params.push(nr_ctapes);
+      if (Array.isArray(nr_ctapes) && nr_ctapes.length > 0) {
+        const nr_ctapes_num = nr_ctapes.map(Number);
+        baseQuery += ` and fe.nr_ctapes IN (${nr_ctapes_num.map(() => `$${idx++}`).join(',')})`;
+        params.push(...nr_ctapes_num);
+      } else {
+        baseQuery += ` and fe.nr_ctapes = $${idx++}`;
+        params.push(Number(nr_ctapes));
+      }
     }
     if (dt_movim_ini && dt_movim_fim) {
       baseQuery += ` and fe.dt_lancto between $${idx++} and $${idx++}`;
@@ -166,7 +172,59 @@ app.get('/empresas', async (req, res) => {
   }
 });
 
+// Rota para buscar dados da tabela fcc_mov (extratototvs)
+app.get('/extratototvs', async (req, res) => {
+  try {
+    const { cd_empresa, nr_ctapes, dt_movim_ini, dt_movim_fim, ds_doc, dt_liq, limit, offset } = req.query;
+    let baseQuery = 'FROM fcc_mov fm WHERE 1=1';
+    const params = [];
+    let idx = 1;
+    if (cd_empresa) {
+      baseQuery += ` AND fm.cd_empresa = $${idx++}`;
+      params.push(cd_empresa);
+    }
+    if (nr_ctapes) {
+      baseQuery += ` AND fm.nr_ctapes = $${idx++}`;
+      params.push(nr_ctapes);
+    }
+    if (dt_movim_ini && dt_movim_fim) {
+      baseQuery += ` AND fm.dt_movim BETWEEN $${idx++} AND $${idx++}`;
+      params.push(dt_movim_ini, dt_movim_fim);
+    }
+    if (ds_doc) {
+      baseQuery += ` AND fm.ds_doc ILIKE $${idx++}`;
+      params.push(`%${ds_doc}%`);
+    }
+    if (dt_liq) {
+      baseQuery += ` AND fm.dt_liq = $${idx++}`;
+      params.push(dt_liq);
+    }
+    const selectFields = 'fm.cd_empresa, fm.nr_ctapes, fm.dt_movim, fm.ds_doc, fm.dt_liq, fm.in_estorno, fm.tp_operacao, fm.ds_aux, fm.vl_lancto';
+    let dataQuery = `SELECT ${selectFields} ${baseQuery} ORDER BY fm.dt_movim DESC`;
+    let dataParams = [...params];
+    if (limit && offset) {
+      dataQuery += ` LIMIT $${idx++} OFFSET $${idx++}`;
+      dataParams.push(parseInt(limit, 10), parseInt(offset, 10));
+    }
+    // Debug: logar query e parâmetros
+    console.log('extratototvs SQL:', dataQuery);
+    console.log('extratototvs params:', dataParams);
+    const { rows } = await pool.query(dataQuery, dataParams);
+    if (limit && offset) {
+      const totalQuery = `SELECT count(*) as total ${baseQuery}`;
+      const totalResult = await pool.query(totalQuery, params);
+      const total = parseInt(totalResult.rows[0].total, 10);
+      res.json({ total, rows });
+    } else {
+      res.json(rows);
+    }
+  } catch (error) {
+    console.error('Erro ao buscar dados do extratototvs:', error);
+    res.status(500).json({ message: 'Erro ao buscar dados do extratototvs.' });
+  }
+});
+
 const PORT = 4000;
 app.listen(PORT, () => {
-  console.log(`Backend rodando em http://localhost:${PORT}`);
+  console.log(`Backend rodando em ${PORT}`);
 }); 

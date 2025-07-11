@@ -12,6 +12,7 @@ const navItems = [
 
 const financeiroSubItems = [
   { label: 'Extrato Financeiro', icon: <Bank size={18} />, to: '/extrato-financeiro' },
+  { label: 'Extrato TOTVS', icon: <Bank size={18} />, to: '/extrato-totvs' },
   { label: 'Contas a Pagar', icon: <CreditCard size={18} />, to: '#' },
   { label: 'Contas a Receber', icon: <Receipt size={18} />, to: '#' },
   { label: 'DRE', icon: <FileText size={18} />, to: '#' },
