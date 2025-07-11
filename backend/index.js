@@ -95,7 +95,7 @@ app.get('/extrato', async (req, res) => {
     const { cd_empresa, nr_ctapes, dt_movim_ini, dt_movim_fim } = req.query;
     const limit = parseInt(req.query.limit, 10) || 50;
     const offset = parseInt(req.query.offset, 10) || 0;
-    let baseQuery = ` from fcc_extratbco fe where 1=1`;
+    let baseQuery = ` from {extratbco fe where 1=1`;
     const params = [];
     let idx = 1;
     if (cd_empresa) {
