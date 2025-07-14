@@ -1,5 +1,7 @@
 import React, { useState, useRef } from 'react';
 import Layout from '../components/Layout';
+import DropdownContas from '../components/DropdownContas';
+import { contas } from "../utils/contas";
 
 const PAGE_SIZE = 5000;
 
@@ -15,61 +17,9 @@ const ExtratoFinanceiro = () => {
     dt_movim_fim: '',
   });
   const [page, setPage] = useState(1);
-  const dropdownRef = useRef(null);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-
-  // Fecha o dropdown ao clicar fora
-  React.useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setDropdownOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Lista de contas para o dropdown
-  const contas = [
-    { numero: '10001', nome: 'Itau Crosby' },
-    { numero: '10002', nome: 'Sant Matriz Crosby' },
-    { numero: '10003', nome: 'Sant Vinculada Crosby' },
-    { numero: '10004', nome: 'Caixa Matriz Crosby' },
-    { numero: '10005', nome: 'Bb Matriz Crosby' },
-    { numero: '10006', nome: 'Sicred Matriz Crosby' },
-    { numero: '10007', nome: 'Bnb 1 Crosby' },
-    { numero: '10008', nome: 'Bnb 2 Crosby' },
-    { numero: '10009', nome: 'Unicred Matriz Crosby' },
-    { numero: '10010', nome: 'Bradesco Matriz Crosby' },
-    { numero: '10011', nome: 'Sant Pb Crosby' },
-    { numero: '10012', nome: 'Itau Pb Crosby' },
-    { numero: '10013', nome: 'Itau Pe Crosby' },
-    { numero: '20001', nome: 'Itaú Matriz Fabio' },
-    { numero: '20002', nome: 'Itaú Vinculada Fabio' },
-    { numero: '20003', nome: 'Itaú Midway Fabio' },
-    { numero: '20007', nome: 'Sant Matriz Fabio' },
-    { numero: '20008', nome: 'Caixa Matriz Fabio' },
-    { numero: '20009', nome: 'Bb Matriz Fabio' },
-    { numero: '20010', nome: 'Sicredi Matriz Fabio' },
-    { numero: '20011', nome: 'Bnb 1 Fabio' },
-    { numero: '20012', nome: 'Bnb 2 Fabio' },
-    { numero: '20013', nome: 'Unicred Matriz Fabio' },
-    { numero: '20014', nome: 'Bradesco Matriz Fabio' },
-    { numero: '20015', nome: 'Itaú Canguaretama Fabio' },
-    { numero: '20016', nome: 'Itaú Brejinho Fabio' },
-    { numero: '20017', nome: 'Itaú Lv Fabio' },
-    { numero: '20018', nome: 'Itaú Ce Fabio' },
-    { numero: '20019', nome: 'Itaú Ba Fabio' },
-    { numero: '20020', nome: 'Itaú Irmãos Cr' },
-    { numero: '30001', nome: 'Sicredi Irmãos Cr' },
-    { numero: '30002', nome: 'Bnb 1 Irmãos Cr' },
-    { numero: '30003', nome: 'Bnb 2 Irmãos Cr' },
-    { numero: '30005', nome: 'Bb Irmãos Cr' },
-    { numero: '30006', nome: 'Santander Irmãos Cr' },
-    { numero: '30007', nome: 'Caixa Irmãos Cr' },
-    { numero: '30008', nome: 'Bradesco Irmãos Cr' },
-    { numero: '40001', nome: 'Itaú Flavio' },
-  ];
+  // Remover a lista de contas daqui
 
   // Função para buscar dados
   const fetchDados = async (filtrosParam = filtros, pageParam = page) => {
@@ -79,7 +29,7 @@ const ExtratoFinanceiro = () => {
       const params = new URLSearchParams();
       if (filtrosParam.cd_empresa) params.append('cd_empresa', filtrosParam.cd_empresa);
       if (filtrosParam.nr_ctapes && filtrosParam.nr_ctapes.length > 0) {
-        filtrosParam.nr_ctapes.forEach((nr) => params.append('nr_ctapes', nr));
+        filtrosParam.nr_ctapes.forEach((nr) => params.append('nr_ctapes', Number(nr)));
       }
       if (filtrosParam.dt_movim_ini) params.append('dt_movim_ini', filtrosParam.dt_movim_ini);
       if (filtrosParam.dt_movim_fim) params.append('dt_movim_fim', filtrosParam.dt_movim_fim);
@@ -136,53 +86,84 @@ const ExtratoFinanceiro = () => {
     return d.toLocaleDateString('pt-BR');
   }
 
+  // Função para exportar CSV
+  function exportarCSV() {
+    if (!dados || dados.length === 0) return;
+    const header = [
+      'Conta',
+      'Data Lançamento',
+      'Histórico',
+      'Operação',
+      'Valor',
+      'Data Conciliação'
+    ];
+    const rows = dados.map(row => [
+      row.nr_ctapes,
+      formatarDataBR(row.dt_lancto),
+      row.ds_histbco,
+      row.tp_operbco,
+      row.vl_lancto !== null && row.vl_lancto !== undefined ? Number(row.vl_lancto).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-',
+      formatarDataBR(row.dt_conciliacao)
+    ]);
+    const csvContent = [header, ...rows]
+      .map(e => e.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'extrato_financeiro.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  // Função para cor da fonte da conta
+  function corConta(nome) {
+    if (!nome) return '';
+    if (nome.includes('CROSBY')) return 'text-blue-500';
+    if (nome.includes('FABIO')) return 'text-yellow-600';
+    if (nome.includes('IRMÃOS CR')) return 'text-orange-500';
+    if (nome.includes('FLAVIO')) return 'text-green-500';
+    return '';
+  }
+
   return (
     <Layout>
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
         <h1 className="text-3xl font-bold mb-6 text-center">Extrato Financeiro</h1>
         <div className="mb-8">
-          <form onSubmit={handleFiltrar} className="flex flex-wrap gap-4 items-end justify-center bg-white p-4 rounded-lg shadow">
-            <div className="flex flex-col">
-              <label className="block text-sm font-medium mb-1">Empresa</label>
-              <input name="cd_empresa" value={filtros.cd_empresa} onChange={handleChange} className="border rounded px-3 py-2 w-40" placeholder="Empresa" />
-            </div>
-            <div className="flex flex-col min-w-[320px] max-w-[400px]">
-              <label className="block text-sm font-medium mb-1">Conta</label>
-              <div className="relative">
-                <button
-                  type="button"
-                  className="border rounded px-3 py-2 w-full text-left bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  onClick={() => setDropdownOpen((open) => !open)}
-                >
-                  {filtros.nr_ctapes.length === 0
-                    ? 'Selecione as contas'
-                    : `${filtros.nr_ctapes.length} conta(s) selecionada(s)`}
-                </button>
-                {dropdownOpen && (
-                  <div className="absolute z-10 bg-white border rounded shadow w-full max-w-[400px] min-w-[320px] max-h-64 overflow-y-auto mt-1">
-                    {contas.map((conta) => (
-                      <label key={conta.numero} className="flex flex-row items-center justify-between gap-2 w-full px-3 py-2 cursor-pointer hover:bg-gray-100 whitespace-nowrap overflow-hidden">
-                        <span className="truncate">{conta.numero} - {conta.nome}</span>
-                        <input
-                          type="checkbox"
-                          checked={filtros.nr_ctapes.includes(conta.numero)}
-                          onChange={() => handleContaCheckbox(conta.numero)}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                )}
+          <form onSubmit={handleFiltrar} className="flex flex-col items-center bg-white p-4 rounded-lg shadow">
+            <div className="flex flex-row w-full justify-center gap-2 flex-wrap">
+              <div className="flex flex-col">
+                <label className="block text-sm font-medium mb-1">Empresa</label>
+                <input name="cd_empresa" value={filtros.cd_empresa} onChange={handleChange} className="border rounded px-3 py-2 w-40" placeholder="Empresa" />
+              </div>
+              <DropdownContas
+                contas={contas}
+                contasSelecionadas={Array.isArray(filtros.nr_ctapes) ? filtros.nr_ctapes : []}
+                setContasSelecionadas={fn =>
+                  setFiltros(prev => ({
+                    ...prev,
+                    nr_ctapes: typeof fn === 'function' ? fn(Array.isArray(prev.nr_ctapes) ? prev.nr_ctapes : []) : fn
+                  }))
+                }
+                minWidth={400}
+                maxWidth={800}
+              />
+              <div className="flex flex-col">
+                <label className="block text-sm font-medium mb-1">Data Inicial</label>
+                <input type="date" name="dt_movim_ini" value={filtros.dt_movim_ini} onChange={handleChange} className="border rounded px-3 py-2 w-40" />
+              </div>
+              <div className="flex flex-col">
+                <label className="block text-sm font-medium mb-1">Data Final</label>
+                <input type="date" name="dt_movim_fim" value={filtros.dt_movim_fim} onChange={handleChange} className="border rounded px-3 py-2 w-40" />
               </div>
             </div>
-            <div className="flex flex-col">
-              <label className="block text-sm font-medium mb-1">Data Inicial</label>
-              <input type="date" name="dt_movim_ini" value={filtros.dt_movim_ini} onChange={handleChange} className="border rounded px-3 py-2 w-40" />
+            <div className="flex justify-center w-full mt-2">
+              <button type="submit" className="bg-gray-800 text-white px-6 py-2 rounded hover:bg-gray-900 transition h-10">Filtrar</button>
             </div>
-            <div className="flex flex-col">
-              <label className="block text-sm font-medium mb-1">Data Final</label>
-              <input type="date" name="dt_movim_fim" value={filtros.dt_movim_fim} onChange={handleChange} className="border rounded px-3 py-2 w-40" />
-            </div>
-            <button type="submit" className="bg-gray-800 text-white px-6 py-2 rounded hover:bg-gray-900 transition h-10 mt-5">Filtrar</button>
           </form>
           {erro && <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{erro}</div>}
         </div>
@@ -213,6 +194,16 @@ const ExtratoFinanceiro = () => {
             <span className="text-sm text-gray-500">Soma dos valores</span>
           </div>
         </div>
+        {/* Botão de exportação CSV */}
+        <div className="flex justify-start mb-2">
+          <button
+            onClick={exportarCSV}
+            className="bg-gray-800 hover:bg-gray-900 text-white px-6 py-2 rounded transition h-10 text-sm font-semibold"
+            disabled={dados.length === 0}
+          >
+            Baixar CSV
+          </button>
+        </div>
         <div className=" rounded-lg shadow bg-white">
           <div className="overflow-y-auto max-h-[500px]">
             <table className="min-w-full text-sm">
@@ -234,7 +225,15 @@ const ExtratoFinanceiro = () => {
                 ) : (
                   dados.map((row, i) => (
                     <tr key={i} className=" border-b hover:bg-gray-50">
-                      <td className="px-4 py-2 text-center">{row.nr_ctapes}</td>
+                      <td className={`px-4 py-2 text-center text-xs ${(() => {
+                        const conta = contas.find(c => c.numero === String(row.nr_ctapes));
+                        return conta ? corConta(conta.nome) : '';
+                      })()}`}>{
+                        (() => {
+                          const conta = contas.find(c => c.numero === String(row.nr_ctapes));
+                          return conta ? `${conta.numero} - ${conta.nome}` : row.nr_ctapes;
+                        })()
+                      }</td>
                       <td className="px-4 py-2 text-center">{formatarDataBR(row.dt_lancto)}</td>
                       <td className="px-4 py-2">{row.ds_histbco}</td>
                       <td className="px-4 py-2 text-center">{row.tp_operbco}</td>

@@ -4,22 +4,27 @@ import { Link } from 'react-router-dom';
 
 const navItems = [
   { label: 'Dashboard', icon: <House size={20} weight="duotone" />, to: '/home' },
-  { label: 'Transações', icon: <CurrencyDollar size={20} weight="duotone" />, to: '/transacoes' },
+  // { label: 'Transações', icon: <CurrencyDollar size={20} weight="duotone" />, to: '/transacoes' },
   // Financeiro será tratado separadamente como dropdown
-  { label: 'Trainings', icon: <GraduationCap size={20} weight="duotone" /> },
-  { label: 'Competitions', icon: <Trophy size={20} weight="duotone" /> },
+  // { label: 'Trainings', icon: <GraduationCap size={20} weight="duotone" /> },
+  // { label: 'Competitions', icon: <Trophy size={20} weight="duotone" /> },
 ];
 
 const financeiroSubItems = [
   { label: 'Extrato Financeiro', icon: <Bank size={18} />, to: '/extrato-financeiro' },
   { label: 'Extrato TOTVS', icon: <Bank size={18} />, to: '/extrato-totvs' },
-  { label: 'Contas a Pagar', icon: <CreditCard size={18} />, to: '#' },
-  { label: 'Contas a Receber', icon: <Receipt size={18} />, to: '#' },
-  { label: 'DRE', icon: <FileText size={18} />, to: '#' },
+];
+
+const faturamentoSubItems = [
+  { label: 'Varejo', icon: <Receipt size={18} />, to: '/faturamento/varejo' },
+  { label: 'Franquias', icon: <Receipt size={18} />, to: '/faturamento/franquias' },
+  { label: 'Multimarcas', icon: <Receipt size={18} />, to: '/faturamento/multimarcas' },
+  { label: 'Revenda', icon: <Receipt size={18} />, to: '/faturamento/revenda' },
 ];
 
 const Sidebar = ({ open = false, onClose }) => {
   const [financeiroOpen, setFinanceiroOpen] = useState(false);
+  const [faturamentoOpen, setFaturamentoOpen] = useState(false);
 
   return (
     <aside
@@ -79,6 +84,43 @@ const Sidebar = ({ open = false, onClose }) => {
               {financeiroOpen && (
                 <ul className="ml-7 mt-1 space-y-1">
                   {financeiroSubItems.map((sub) => (
+                    <li key={sub.label}>
+                      {sub.to && sub.to !== '#' ? (
+                        <Link
+                          to={sub.to}
+                          className="flex items-center gap-2 px-2 py-1 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-black text-sm font-normal"
+                        >
+                          {sub.icon}
+                          <span>{sub.label}</span>
+                        </Link>
+                      ) : (
+                        <a
+                          href={sub.to}
+                          className="flex items-center gap-2 px-2 py-1 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-black text-sm font-normal"
+                        >
+                          {sub.icon}
+                          <span>{sub.label}</span>
+                        </a>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+            {/* Dropdown Faturamento */}
+            <li>
+              <button
+                type="button"
+                className="flex items-center w-full gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-black focus:outline-none"
+                onClick={() => setFaturamentoOpen((open) => !open)}
+              >
+                <Receipt size={20} weight="duotone" />
+                <span>Faturamento</span>
+                {faturamentoOpen ? <CaretUp size={16} /> : <CaretDown size={16} />}
+              </button>
+              {faturamentoOpen && (
+                <ul className="ml-7 mt-1 space-y-1">
+                  {faturamentoSubItems.map((sub) => (
                     <li key={sub.label}>
                       {sub.to && sub.to !== '#' ? (
                         <Link

@@ -175,52 +175,81 @@ app.get('/empresas', async (req, res) => {
 // Rota para buscar dados da tabela fcc_mov (extratototvs)
 app.get('/extratototvs', async (req, res) => {
   try {
-    const { cd_empresa, nr_ctapes, dt_movim_ini, dt_movim_fim, ds_doc, dt_liq, limit, offset } = req.query;
-    let baseQuery = 'FROM fcc_mov fm WHERE 1=1';
+    const { nr_ctapes, dt_movim_ini, dt_movim_fim } = req.query;
+    const limit = parseInt(req.query.limit, 10) || 5000;
+    const offset = parseInt(req.query.offset, 10) || 0;
+    let baseQuery = ' from fcc_mov fm where 1=1';
     const params = [];
     let idx = 1;
-    if (cd_empresa) {
-      baseQuery += ` AND fm.cd_empresa = $${idx++}`;
-      params.push(cd_empresa);
-    }
     if (nr_ctapes) {
-      baseQuery += ` AND fm.nr_ctapes = $${idx++}`;
-      params.push(nr_ctapes);
+      let contas = nr_ctapes;
+      if (!Array.isArray(contas)) {
+        // Se vier como string separada por vírgula
+        contas = typeof contas === 'string' && contas.includes(',') ? contas.split(',') : [contas];
+      }
+      if (contas.length > 1) {
+        baseQuery += ` and fm.nr_ctapes IN (${contas.map(() => `$${idx++}`).join(',')})`;
+        params.push(...contas);
+      } else {
+        baseQuery += ` and fm.nr_ctapes = $${idx++}`;
+        params.push(contas[0]);
+      }
     }
     if (dt_movim_ini && dt_movim_fim) {
-      baseQuery += ` AND fm.dt_movim BETWEEN $${idx++} AND $${idx++}`;
+      baseQuery += ` and fm.dt_movim between $${idx++} and $${idx++}`;
       params.push(dt_movim_ini, dt_movim_fim);
     }
-    if (ds_doc) {
-      baseQuery += ` AND fm.ds_doc ILIKE $${idx++}`;
-      params.push(`%${ds_doc}%`);
-    }
-    if (dt_liq) {
-      baseQuery += ` AND fm.dt_liq = $${idx++}`;
-      params.push(dt_liq);
-    }
-    const selectFields = 'fm.cd_empresa, fm.nr_ctapes, fm.dt_movim, fm.ds_doc, fm.dt_liq, fm.in_estorno, fm.tp_operacao, fm.ds_aux, fm.vl_lancto';
-    let dataQuery = `SELECT ${selectFields} ${baseQuery} ORDER BY fm.dt_movim DESC`;
-    let dataParams = [...params];
-    if (limit && offset) {
-      dataQuery += ` LIMIT $${idx++} OFFSET $${idx++}`;
-      dataParams.push(parseInt(limit, 10), parseInt(offset, 10));
-    }
-    // Debug: logar query e parâmetros
-    console.log('extratototvs SQL:', dataQuery);
-    console.log('extratototvs params:', dataParams);
+    const dataQuery = `
+      select fm.cd_empresa, fm.nr_ctapes, fm.dt_movim, fm.ds_doc, fm.dt_liq, fm.in_estorno, fm.tp_operacao, fm.ds_aux, fm.vl_lancto
+      ${baseQuery}
+      order by fm.dt_movim desc
+      limit $${idx++} offset $${idx++}
+    `;
+    const dataParams = [...params, limit, offset];
     const { rows } = await pool.query(dataQuery, dataParams);
-    if (limit && offset) {
-      const totalQuery = `SELECT count(*) as total ${baseQuery}`;
-      const totalResult = await pool.query(totalQuery, params);
-      const total = parseInt(totalResult.rows[0].total, 10);
-      res.json({ total, rows });
-    } else {
-      res.json(rows);
-    }
+    res.json(rows);
   } catch (error) {
     console.error('Erro ao buscar dados do extratototvs:', error);
     res.status(500).json({ message: 'Erro ao buscar dados do extratototvs.' });
+  }
+});
+
+// Rota para buscar dados de faturamento
+app.get('/faturamento', async (req, res) => {
+  try {
+    const { dt_inicio, dt_fim, cd_grupoempresa } = req.query;
+
+    const dataInicio = dt_inicio || '2025-07-01';
+    const dataFim = dt_fim || '2025-07-05';
+    const grupoEmpresa = cd_grupoempresa || 95;
+    
+    const query = `
+      select
+        vfn.cd_grupoempresa,
+        vfn.nm_grupoempresa,
+        vfn.cd_operacao,
+        vfn.cd_nivel,
+        vfn.ds_nivel,
+        vfn.dt_transacao,
+        vfn.tp_situacao,
+        vfn.vl_unitliquido,
+        vfn.tp_operacao,
+        vfn.nr_transacao,
+        vfn.qt_faturado
+      from
+        vr_fis_nfitemprod vfn
+      where
+        vfn.dt_transacao between $1 and $2
+        and vfn.cd_grupoempresa = $3
+        and vfn.cd_operacao not in (1152, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711,7111,2009,5152,6029,530,5152,5930,650,5010,600,620,40,1557,8600)
+        and vfn.tp_situacao not in ('C', 'X')
+    `;
+    
+    const { rows } = await pool.query(query, [dataInicio, dataFim, grupoEmpresa]);
+    res.json(rows);
+  } catch (error) {
+    console.error('Erro ao buscar dados de faturamento:', error);
+    res.status(500).json({ message: 'Erro ao buscar dados de faturamento.' });
   }
 });
 
