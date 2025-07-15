@@ -241,7 +241,8 @@ app.get('/faturamento', async (req, res) => {
       where
         vfn.dt_transacao between $1 and $2
         and vfn.cd_grupoempresa = $3
-        and vfn.cd_operacao not in (1152, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711,7111,2009,5152,6029,530,5152,5930,650,5010,600,620,40,1557,8600)
+        and vfn.cd_operacao not in (1152, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711,7111,2009,5152
+        ,6029,530,5152,5930,650,5010,600,620,40,1557,8600,5910,3336,9003,9052,662,5909,5153)
         and vfn.tp_situacao not in ('C', 'X')
     `;
     
@@ -250,6 +251,114 @@ app.get('/faturamento', async (req, res) => {
   } catch (error) {
     console.error('Erro ao buscar dados de faturamento:', error);
     res.status(500).json({ message: 'Erro ao buscar dados de faturamento.' });
+  }
+});
+
+// Rota para buscar dados do fundo de propaganda
+app.get('/fundopropaganda', async (req, res) => {
+  try {
+    let { cd_empresa, cd_cliente, dt_inicio, dt_fim, nm_fantasia } = req.query;
+    
+    let whereConditions = [];
+    let params = [];
+    let paramIndex = 1;
+    
+    // Filtro múltiplo para nome fantasia
+    if (nm_fantasia) {
+      let nomes = nm_fantasia;
+      if (!Array.isArray(nomes)) nomes = [nomes];
+      whereConditions.push(`pp.nm_fantasia IN (${nomes.map(() => `$${paramIndex++}`).join(',')})`);
+      params.push(...nomes);
+    } else {
+      whereConditions.push("pp.nm_fantasia like 'F%CROSBY%'");
+    }
+    
+    // Filtro por empresa
+    if (cd_empresa) {
+      whereConditions.push(`vff.cd_empresa = $${paramIndex++}`);
+      params.push(cd_empresa);
+    }
+    
+    // Filtro por cliente
+    if (cd_cliente) {
+      whereConditions.push(`vff.cd_cliente = $${paramIndex++}`);
+      params.push(cd_cliente);
+    }
+    
+    // Filtro por data
+    if (dt_inicio && dt_fim) {
+      whereConditions.push(`vff.dt_emissao between $${paramIndex++} and $${paramIndex++}`);
+      params.push(dt_inicio, dt_fim);
+    } else {
+      // Data padrão se não fornecida
+      whereConditions.push(`vff.dt_emissao between $${paramIndex++} and $${paramIndex++}`);
+      params.push('2025-05-01', '2025-05-12');
+    }
+    
+    const whereClause = whereConditions.join(' and ');
+    
+    const query = `
+      select
+        vff.cd_empresa,
+        vff.cd_cliente,
+        vff.nm_cliente,
+        pp.nm_fantasia,
+        vff.nr_fat,
+        vff.dt_emissao,
+        vff.tp_documento,
+        vff.tp_faturamento,
+        vff.tp_situacao,
+        vff.vl_fatura,
+        vff.vl_pago
+      from
+        vr_fcr_faturai vff
+      left join pes_pesjuridica pp on
+        pp.cd_pessoa = vff.cd_cliente
+      where
+        ${whereClause}
+      group by
+        vff.cd_empresa,
+        vff.cd_cliente,
+        vff.nm_cliente,
+        pp.nm_fantasia,
+        vff.nr_fat,
+        vff.nr_parcela,
+        vff.nr_documento,
+        vff.dt_emissao,
+        vff.tp_documento,
+        vff.tp_faturamento,
+        vff.tp_situacao,
+        vff.vl_fatura,
+        vff.vl_pago
+    `;
+    
+    const { rows } = await pool.query(query, params);
+    res.json(rows);
+  } catch (error) {
+    console.error('Erro ao buscar dados do fundo de propaganda:', error);
+    res.status(500).json({ message: 'Erro ao buscar dados do fundo de propaganda.' });
+  }
+});
+
+// Autocomplete para nome fantasia
+app.get('/autocomplete/nm_fantasia', async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || q.length < 1) {
+      return res.json([]);
+    }
+    const query = `
+      select distinct nm_fantasia
+      from pes_pesjuridica
+      where nm_fantasia ILIKE 'F%CROSBY%' and nm_fantasia ILIKE $1
+      order by nm_fantasia asc
+      limit 100
+    `;
+    const { rows } = await pool.query(query, ['%'+q+'%']);
+    res.json(rows.map(r => r.nm_fantasia));
+  } catch (error) {
+    console.error('Erro no autocomplete de nm_fantasia:', error);
+    res.status(500).json({ message: 'Erro ao buscar nomes fantasia.' });
   }
 });
 
