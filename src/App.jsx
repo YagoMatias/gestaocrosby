@@ -8,6 +8,7 @@ import Varejo from './pages/Varejo';
 import Franquias from './pages/Franquias';
 import Multimarcas from './pages/Multimarcas';
 import Revenda from './pages/Revenda';
+import ConsultaFatura from './pages/ConsultaFatura';
 import FundoPropaganda from './pages/FundoPropaganda';
 import React from 'react';
 
@@ -24,6 +25,7 @@ function App() {
         <Route path="/faturamento/franquias" element={<Franquias />} />
         <Route path="/faturamento/multimarcas" element={<Multimarcas />} />
         <Route path="/faturamento/revenda" element={<Revenda />} />
+        <Route path="/financeiro/consulta-fatura" element={<ConsultaFatura />} />
         <Route path="/financeiro/fundo-propaganda" element={<FundoPropaganda />} />
       </Routes>
     </Router>

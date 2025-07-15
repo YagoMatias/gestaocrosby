@@ -241,8 +241,8 @@ app.get('/faturamento', async (req, res) => {
       where
         vfn.dt_transacao between $1 and $2
         and vfn.cd_grupoempresa = $3
-        and vfn.cd_operacao not in (1152, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711,7111,2009,5152
-        ,6029,530,5152,5930,650,5010,600,620,40,1557,8600,5910,3336,9003,9052,662,5909,5153)
+        and vfn.cd_operacao not in (1152, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711, 7111, 2009, 5152, 6029, 530, 5152, 5930, 650, 
+      5010, 600, 620, 40, 1557, 8600, 5910, 3336, 9003, 9052, 662, 5909,5153,5910,3336,9003,530,36,536,1552,51,1556)
         and vfn.tp_situacao not in ('C', 'X')
     `;
     
@@ -359,6 +359,114 @@ app.get('/autocomplete/nm_fantasia', async (req, res) => {
   } catch (error) {
     console.error('Erro no autocomplete de nm_fantasia:', error);
     res.status(500).json({ message: 'Erro ao buscar nomes fantasia.' });
+  }
+});
+
+// Rota para faturamento franquia
+app.get('/faturamentofranquia', async (req, res) => {
+  try {
+    let { cd_empresa, dt_inicio, dt_fim, nm_fantasia } = req.query;
+    let whereConditions = [];
+    let params = [];
+    let paramIndex = 1;
+
+    // Filtro múltiplo para nome fantasia
+    if (nm_fantasia) {
+      let nomes = nm_fantasia;
+      if (!Array.isArray(nomes)) nomes = [nomes];
+      whereConditions.push(`p.nm_fantasia IN (${nomes.map(() => `$${paramIndex++}`).join(',')})`);
+      params.push(...nomes);
+    } else {
+      whereConditions.push("p.nm_fantasia like 'F%CROSBY%'");
+    }
+
+    // Filtro por empresa
+    if (cd_empresa) {
+      whereConditions.push(`vfn.cd_empresa = $${paramIndex++}`);
+      params.push(cd_empresa);
+    }
+
+    // Filtro por data
+    if (dt_inicio && dt_fim) {
+      whereConditions.push(`vfn.dt_transacao between $${paramIndex++} and $${paramIndex++}`);
+      params.push(dt_inicio, dt_fim);
+    } else {
+      whereConditions.push(`vfn.dt_transacao between '2025-07-01' and '2025-07-15'`);
+    }
+
+    // Filtros fixos
+    whereConditions.push(`vfn.cd_operacao not in (1152, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711, 7111, 2009, 5152, 6029, 530, 5152, 5930, 650, 
+      5010, 600, 620, 40, 1557, 8600, 5910, 3336, 9003, 9052, 662, 5909,5153,5910,3336,9003,530,36,536,1552,51,1556)`);
+    whereConditions.push(`vfn.tp_situacao = 4`);
+    whereConditions.push(`vfn.cd_grupoempresa < 5999`);
+    whereConditions.push(`(f.tp_documento IS NULL OR f.tp_documento <> 20)`);
+    whereConditions.push(`vfn.tp_operacao = 'S'`);
+
+    const whereClause = whereConditions.join(' and ');
+
+    const query = `
+      select
+        vfn.cd_empresa,
+        f.cd_cliente,
+        p.nm_fantasia,
+        vfn.cd_operacao,
+        vfn.dt_transacao,
+        vfn.tp_situacao,
+        vfn.tp_operacao,
+        vfn.nr_transacao,
+        vfn.vl_total
+      from
+        tra_transacao vfn
+      left join pes_pesjuridica p on
+        p.cd_pessoa = vfn.cd_pessoa
+      left join fcr_faturai f on
+        f.cd_cliente = vfn.cd_pessoa
+      where
+        ${whereClause}
+      group by
+        vfn.cd_empresa,
+        f.cd_cliente,
+        p.nm_fantasia,
+        vfn.cd_operacao,
+        vfn.dt_transacao,
+        vfn.tp_situacao,
+        vfn.tp_operacao,
+        vfn.nr_transacao,
+        vfn.vl_total
+      order by
+        nm_fantasia
+    `;
+    const { rows } = await pool.query(query, params);
+    res.json(rows);
+  } catch (error) {
+    console.error('Erro ao buscar dados de faturamento franquia:', error);
+    res.status(500).json({ message: 'Erro ao buscar dados de faturamento franquia.' });
+  }
+});
+
+// Rota para franquias credev
+app.get('/franquiascredev', async (req, res) => {
+  try {
+    const query = `
+      select
+        f.cd_cliente,
+        p.nm_fantasia,
+        f.vl_pago,
+        f.tp_documento
+      from
+        fcr_faturai f
+      left join pes_pesjuridica p on
+        p.cd_pessoa = f.cd_cliente
+      where
+        f.dt_emissao between '2025-06-10' and '2025-06-10'
+        and p.nm_fantasia like 'F%CROSBY%'
+        and f.tp_documento = 20
+    `;
+    const { rows } = await pool.query(query);
+    res.json(rows);
+  } catch (error) {
+    console.error('Erro ao buscar dados de franquias credev:', error);
+    res.status(500).json({ message: 'Erro ao buscar dados de franquias credev.' });
   }
 });
 
