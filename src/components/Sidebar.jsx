@@ -13,6 +13,7 @@ const navItems = [
 const financeiroSubItems = [
   { label: 'Extrato Financeiro', icon: <Bank size={18} />, to: '/extrato-financeiro' },
   { label: 'Extrato TOTVS', icon: <Bank size={18} />, to: '/extrato-totvs' },
+  { label: 'Fundo de Propaganda', icon: <FileText size={18} />, to: '/financeiro/fundo-propaganda' },
 ];
 
 const faturamentoSubItems = [
