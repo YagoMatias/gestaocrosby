@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Layout from '../components/Layout';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
+import { CaretDown, CaretRight, ArrowsClockwise, Receipt, CurrencyDollar, Money, User } from '@phosphor-icons/react';
 
 const ConsultaFatura = () => {
   const [dados, setDados] = useState([]);
@@ -17,6 +18,8 @@ const ConsultaFatura = () => {
   const [sugestoes, setSugestoes] = useState([]);
   const [showSugestoes, setShowSugestoes] = useState(false);
   const [nmFantasiaSelecionados, setNmFantasiaSelecionados] = useState([]);
+  // Estados para expandir/minimizar a tabela
+  const [expandTabela, setExpandTabela] = useState(true);
 
   const fetchSugestoes = async (texto) => {
     if (!texto || texto.length < 1) {
@@ -130,52 +133,56 @@ const ConsultaFatura = () => {
             
             {/* Filtros */}
             <div className="mb-8">
-              <form onSubmit={handleFiltrar} className="flex flex-col items-center bg-white p-4 rounded-lg shadow">
-                <div className="flex flex-row w-full justify-center gap-2 flex-wrap">
+              <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-3xl mx-auto border border-[#000638]/10">
+                <div className="mb-6">
+                  <span className="text-lg font-bold text-[#000638] flex items-center gap-2"><Receipt size={22} weight="bold" />Filtros</span>
+                  <span className="text-sm text-gray-500 mt-1">Selecione o período, empresa ou cliente para análise</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-x-6 gap-y-4 w-full mb-6">
                   <div className="flex flex-col">
-                    <label className="block text-sm font-medium mb-1">Empresa</label>
+                    <label className="block text-xs font-semibold mb-1 text-[#000638]">Empresa</label>
                     <input 
                       type="text" 
                       name="cd_empresa" 
                       value={filtros.cd_empresa} 
                       onChange={handleChange} 
-                      className="border rounded px-3 py-2 w-40" 
+                      className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" 
                       placeholder="Código da empresa" 
                     />
                   </div>
                   <div className="flex flex-col">
-                    <label className="block text-sm font-medium mb-1">Cliente</label>
+                    <label className="block text-xs font-semibold mb-1 text-[#000638]">Cliente</label>
                     <input 
                       type="text" 
                       name="cd_cliente" 
                       value={filtros.cd_cliente} 
                       onChange={handleChange} 
-                      className="border rounded px-3 py-2 w-40" 
+                      className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" 
                       placeholder="Código do cliente" 
                     />
                   </div>
                   <div className="flex flex-col">
-                    <label className="block text-sm font-medium mb-1">Data Inicial</label>
+                    <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Início</label>
                     <input 
                       type="date" 
                       name="dt_inicio" 
                       value={filtros.dt_inicio} 
                       onChange={handleChange} 
-                      className="border rounded px-3 py-2 w-40" 
+                      className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" 
                     />
                   </div>
                   <div className="flex flex-col">
-                    <label className="block text-sm font-medium mb-1">Data Final</label>
+                    <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Fim</label>
                     <input 
                       type="date" 
                       name="dt_fim" 
                       value={filtros.dt_fim} 
                       onChange={handleChange} 
-                      className="border rounded px-3 py-2 w-40" 
+                      className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" 
                     />
                   </div>
                   <div className="flex flex-col">
-                    <label className="block text-sm font-medium mb-1">Nome Fantasia</label>
+                    <label className="block text-xs font-semibold mb-1 text-[#000638]">Nome Fantasia</label>
                     <input
                       type="text"
                       name="nm_fantasia"
@@ -184,7 +191,7 @@ const ConsultaFatura = () => {
                       onChange={handleChange}
                       onFocus={() => fetchSugestoes(filtros.nm_fantasia)}
                       onBlur={handleBlur}
-                      className="border rounded px-3 py-2 w-60"
+                      className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                       placeholder="Digite o nome fantasia"
                     />
                   </div>
@@ -204,7 +211,7 @@ const ConsultaFatura = () => {
                           type="checkbox"
                           checked={nmFantasiaSelecionados.includes(s)}
                           readOnly
-                          className="accent-blue-600 ml-2 pointer-events-none"
+                          className="accent-[#000638] ml-2 pointer-events-none"
                           id={`sugestao-${i}`}
                         />
                       </li>
@@ -215,17 +222,19 @@ const ConsultaFatura = () => {
                 {nmFantasiaSelecionados.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-2 w-full max-w-4xl mx-auto">
                     {nmFantasiaSelecionados.map((nm, idx) => (
-                      <span key={idx} className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full flex items-center gap-1 text-sm">
+                      <span key={idx} className="bg-[#000638] text-white px-3 py-1 rounded-full flex items-center gap-1 text-sm">
                         {nm}
-                        <button type="button" className="ml-1 text-blue-700 hover:text-red-600" onClick={() => handleRemoveSelecionado(nm)} title="Remover">
+                        <button type="button" className="ml-1 text-white hover:text-[#fe0000]" onClick={() => handleRemoveSelecionado(nm)} title="Remover">
                           ×
                         </button>
                       </span>
                     ))}
                   </div>
                 )}
-                <div className="flex justify-center w-full mt-2">
-                  <button type="submit" className="bg-gray-800 text-white px-6 py-2 rounded hover:bg-gray-900 transition h-10">Filtrar</button>
+                <div className="flex justify-end w-full mt-8">
+                  <button type="submit" className="flex items-center gap-2 bg-[#000638] text-white px-8 py-3 rounded-xl hover:bg-[#fe0000] transition h-12 text-base font-bold shadow-md tracking-wide uppercase">
+                    <ArrowsClockwise size={22} weight="bold" /> Atualizar
+                  </button>
                 </div>
               </form>
               {erro && <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{erro}</div>}
@@ -234,70 +243,82 @@ const ConsultaFatura = () => {
             {/* Cards de Resumo */}
             <div className="flex flex-wrap gap-6 justify-center mb-8">
               {/* Card Total de Faturas */}
-              <div className="bg-white shadow rounded-lg p-6 flex flex-col items-center w-64 border-l-4 border-blue-500">
-                <span className="text-lg font-semibold text-blue-700 mb-2">Total de Faturas</span>
-                <span className="text-2xl font-bold text-blue-600 mb-1">
-                  {dados.length}
-                </span>
-                <span className="text-sm text-gray-500">Quantidade</span>
+              <div className="bg-white shadow-lg rounded-2xl p-6 flex flex-row items-center w-full max-w-xs border-l-8 border-[#000638]">
+                <span className="mr-4"><Receipt size={32} color="#000638" weight="duotone" /></span>
+                <div className="flex flex-col items-start">
+                  <span className="text-base font-bold text-[#000638] mb-1 tracking-wide">TOTAL DE FATURAS</span>
+                  <span className="text-2xl font-extrabold text-[#000638] mb-1">
+                    {dados.length}
+                  </span>
+                  <span className="text-xs text-gray-500">Quantidade</span>
+                </div>
               </div>
-              
               {/* Card Valor Total Faturado */}
-              <div className="bg-white shadow rounded-lg p-6 flex flex-col items-center w-64 border-l-4 border-green-500">
-                <span className="text-lg font-semibold text-green-700 mb-2">Valor Total Faturado</span>
-                <span className="text-2xl font-bold text-green-600 mb-1">
-                  {dados.reduce((acc, row) => acc + (Number(row.vl_fatura) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                </span>
-                <span className="text-sm text-gray-500">Soma dos valores</span>
+              <div className="bg-white shadow-lg rounded-2xl p-6 flex flex-row items-center w-full max-w-xs border-l-8 border-[#fe0000]">
+                <span className="mr-4"><CurrencyDollar size={32} color="#fe0000" weight="duotone" /></span>
+                <div className="flex flex-col items-start">
+                  <span className="text-base font-bold text-[#fe0000] mb-1 tracking-wide">VALOR FATURADO</span>
+                  <span className="text-2xl font-extrabold text-[#fe0000] mb-1">
+                    {dados.reduce((acc, row) => acc + (Number(row.vl_fatura) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                  <span className="text-xs text-gray-500">Soma dos valores</span>
+                </div>
               </div>
-              
               {/* Card Valor Total Pago */}
-              <div className="bg-white shadow rounded-lg p-6 flex flex-col items-center w-64 border-l-4 border-orange-500">
-                <span className="text-lg font-semibold text-orange-700 mb-2">Valor Total Pago</span>
-                <span className="text-2xl font-bold text-orange-600 mb-1">
-                  {dados.reduce((acc, row) => acc + (Number(row.vl_pago) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                </span>
-                <span className="text-sm text-gray-500">Soma dos valores</span>
+              <div className="bg-white shadow-lg rounded-2xl p-6 flex flex-row items-center w-full max-w-xs border-l-8 border-[#000000]">
+                <span className="mr-4"><Money size={32} color="#000000" weight="duotone" /></span>
+                <div className="flex flex-col items-start">
+                  <span className="text-base font-bold text-[#000000] mb-1 tracking-wide">VALOR PAGO</span>
+                  <span className="text-2xl font-extrabold text-[#000000] mb-1">
+                    {dados.reduce((acc, row) => acc + (Number(row.vl_pago) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                  <span className="text-xs text-gray-500">Soma dos valores</span>
+                </div>
               </div>
             </div>
 
-            {/* Tabela de Dados */}
-            <div className="rounded-lg shadow bg-white">
-              <div className="p-4 border-b">
-                <h2 className="text-xl font-semibold text-gray-800">Dados da Consulta de Fatura</h2>
+            {/* Tabela de Dados (dropdown) */}
+            <div className="rounded-2xl shadow-lg bg-white mt-8 border border-[#000638]/10">
+              <div className="p-4 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandTabela(e => !e)}>
+                <h2 className="text-xl font-bold text-[#000638]">Dados da Consulta de Fatura</h2>
+                <span className="flex items-center">
+                  {expandTabela ? <CaretDown size={20} color="#9ca3af" /> : <CaretRight size={20} color="#9ca3af" />}
+                </span>
               </div>
-              <div className="overflow-y-auto max-h-[500px]">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-100 text-gray-700">
-                      <th className="px-4 py-2">Empresa</th>
-                      <th className="px-4 py-2">Cliente</th>
-                      <th className="px-4 py-2">Nome Cliente</th>
-                      <th className="px-4 py-2">Nome Fantasia</th>
-                      <th className="px-4 py-2">Valor Faturado</th>
-                    </tr>
-                  </thead>
-                  <tbody className="overflow-y-auto">
-                    {loading ? (
-                      <tr><td colSpan={5} className="text-center py-8">Carregando...</td></tr>
-                    ) : agruparDadosPorClienteFantasiaCliente(dados).length === 0 ? (
-                      <tr><td colSpan={5} className="text-center py-8">Nenhum dado encontrado.</td></tr>
-                    ) : (
-                      agruparDadosPorClienteFantasiaCliente(dados).map((row, i) => (
-                        <tr key={i} className="border-b hover:bg-gray-50">
-                          <td className="px-4 py-2 text-center">{row.cd_empresa}</td>
-                          <td className="px-4 py-2 text-center">{row.cd_cliente}</td>
-                          <td className="px-4 py-2">{row.nm_cliente}</td>
-                          <td className="px-4 py-2">{row.nm_fantasia}</td>
-                          <td className="px-4 py-2 text-right font-bold text-green-600">
-                            {(Number(row.vl_fatura) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              {expandTabela && (
+                <div className="overflow-y-auto max-h-[500px]">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="bg-[#000638] text-white">
+                        <th className="px-4 py-2 font-semibold">Empresa</th>
+                        <th className="px-4 py-2 font-semibold">Cliente</th>
+                        <th className="px-4 py-2 font-semibold">Nome Cliente</th>
+                        <th className="px-4 py-2 font-semibold">Nome Fantasia</th>
+                        <th className="px-4 py-2 font-semibold">Valor Faturado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="overflow-y-auto">
+                      {loading ? (
+                        <tr><td colSpan={5} className="text-center py-8">Carregando...</td></tr>
+                      ) : agruparDadosPorClienteFantasiaCliente(dados).length === 0 ? (
+                        <tr><td colSpan={5} className="text-center py-8">Nenhum dado encontrado.</td></tr>
+                      ) : (
+                        agruparDadosPorClienteFantasiaCliente(dados).map((row, i) => (
+                          <tr key={i} className="border-b hover:bg-[#f8f9fb]">
+                            <td className="px-4 py-2 text-center text-[#000638]">{row.cd_empresa}</td>
+                            <td className="px-4 py-2 text-center text-[#000638]">{row.cd_cliente}</td>
+                            <td className="px-4 py-2 text-[#000000]">{row.nm_cliente}</td>
+                            <td className="px-4 py-2 text-[#000000]">{row.nm_fantasia}</td>
+                            <td className="px-4 py-2 text-right font-bold text-[#fe0000]">
+                              {(Number(row.vl_fatura) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         </div>

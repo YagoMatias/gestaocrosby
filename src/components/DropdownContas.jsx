@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { ArrowsClockwise } from '@phosphor-icons/react';
 
 const DropdownContas = ({
   contas = [],
@@ -58,12 +59,12 @@ const DropdownContas = ({
   };
 
   return (
-    <div className={`flex flex-col min-w-[${minWidth}px] max-w-[${maxWidth}px]`}>
-      <label className="block text-sm font-medium mb-1">{label}</label>
+    <div className={`flex flex-col min-w-[${minWidth}px] max-w-[${maxWidth}px] `}>
+      <label className="block text-sm font-medium  text-[#000638]"></label>
       <div className="relative" ref={dropdownRef}>
         <button
           type="button"
-          className="border rounded px-3 py-2 w-full text-left bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="!bg-[#f8f9fb] !text-[#000638] !placeholder:text-gray-400 !px-3 !py-2 !w-full !rounded-lg !border !border-[#000638]/30 focus:!outline-none focus:!ring-2 focus:!ring-[#000638] !h-[42px] !text-base"
           onClick={() => setDropdownOpen((open) => !open)}
         >
           {contasSelecionadas.length === 0

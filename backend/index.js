@@ -410,10 +410,8 @@ app.get('/faturamentofranquia', async (req, res) => {
         f.cd_cliente,
         p.nm_fantasia,
         vfn.cd_operacao,
-        vfn.dt_transacao,
         vfn.tp_situacao,
         vfn.tp_operacao,
-        vfn.nr_transacao,
         vfn.vl_total
       from
         tra_transacao vfn
@@ -431,7 +429,6 @@ app.get('/faturamentofranquia', async (req, res) => {
         vfn.dt_transacao,
         vfn.tp_situacao,
         vfn.tp_operacao,
-        vfn.nr_transacao,
         vfn.vl_total
       order by
         nm_fantasia
@@ -447,22 +444,37 @@ app.get('/faturamentofranquia', async (req, res) => {
 // Rota para franquias credev
 app.get('/franquiascredev', async (req, res) => {
   try {
+    const { dt_inicio, dt_fim } = req.query;
+    let where = [];
+    let params = [];
+    let idx = 1;
+
+    if (dt_inicio && dt_fim) {
+      where.push(`f.dt_emissao between $${idx++} and $${idx++}`);
+      params.push(dt_inicio, dt_fim);
+    } else {
+      // Intervalo padrão se não informado
+      where.push(`f.dt_emissao between '2025-06-10' and '2025-06-10'`);
+    }
+
+    where.push(`p.nm_fantasia like 'F%CROSBY%'`);
+    where.push(`f.tp_documento = 20`);
+
     const query = `
       select
         f.cd_cliente,
         p.nm_fantasia,
         f.vl_pago,
+        f.dt_emissao as dt_fatura,
         f.tp_documento
       from
         fcr_faturai f
       left join pes_pesjuridica p on
         p.cd_pessoa = f.cd_cliente
       where
-        f.dt_emissao between '2025-06-10' and '2025-06-10'
-        and p.nm_fantasia like 'F%CROSBY%'
-        and f.tp_documento = 20
+        ${where.join(' and ')}
     `;
-    const { rows } = await pool.query(query);
+    const { rows } = await pool.query(query, params);
     res.json(rows);
   } catch (error) {
     console.error('Erro ao buscar dados de franquias credev:', error);
