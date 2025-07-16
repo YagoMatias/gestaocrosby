@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Layout from '../components/Layout';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
+import LoadingCircle from '../components/LoadingCircle';
 import { ArrowsClockwise, CaretDown, CaretRight, ArrowCircleDown, ArrowCircleUp, CurrencyDollar, ShoppingCart, Package } from '@phosphor-icons/react';
 
 const Varejo = () => {
@@ -112,7 +113,7 @@ const Varejo = () => {
                 <div className="flex flex-col items-start">
                   <span className="text-base font-bold text-[#000638] mb-1 tracking-wide">FATURAMENTO TOTAL</span>
                   <span className="text-2xl font-extrabold text-[#000638] mb-1">
-                    {(() => {
+                    {loading ? <LoadingCircle size={32} /> : (() => {
                       const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
                       const somaEntradas = dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
                       const faturamentoTotal = somaSaidas - somaEntradas;
@@ -128,7 +129,7 @@ const Varejo = () => {
                 <div className="flex flex-col items-start">
                   <span className="text-base font-bold text-green-600 mb-1 tracking-wide">PRODUTOS SAÍRAM (S)</span>
                   <span className="text-2xl font-extrabold text-green-600 mb-1">
-                    {dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
+                    {loading ? <LoadingCircle size={32} /> : dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
                   </span>
                   <span className="text-xs text-gray-500">Quantidade</span>
                 </div>
@@ -139,7 +140,7 @@ const Varejo = () => {
                 <div className="flex flex-col items-start">
                   <span className="text-base font-bold text-[#fe0000] mb-1 tracking-wide">PRODUTOS ENTRARAM (E)</span>
                   <span className="text-2xl font-extrabold text-[#fe0000] mb-1">
-                    {dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
+                    {loading ? <LoadingCircle size={32} /> : dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
                   </span>
                   <span className="text-xs text-gray-500">Quantidade</span>
                 </div>
@@ -170,7 +171,7 @@ const Varejo = () => {
                     </thead>
                     <tbody className="overflow-y-auto">
                       {loading ? (
-                        <tr><td colSpan={8} className="text-center py-8">Carregando...</td></tr>
+                        <tr><td colSpan={8} className="text-center py-8"><LoadingCircle size={32} /></td></tr>
                       ) : dados.length === 0 ? (
                         <tr><td colSpan={8} className="text-center py-8">Nenhum dado encontrado.</td></tr>
                       ) : (
@@ -242,6 +243,9 @@ const Varejo = () => {
                           // Converte para array e ordena por valor total (decrescente)
                           const rankArray = Object.values(rankProdutos)
                             .sort((a, b) => b.valorTotal - a.valorTotal);
+                          if (loading) {
+                            return <tr><td colSpan={4} className="text-center py-8"><LoadingCircle size={32} /></td></tr>;
+                          }
                           return rankArray.length === 0 ? (
                             <tr><td colSpan={4} className="text-center py-8 text-gray-500">Nenhum produto encontrado.</td></tr>
                           ) : (

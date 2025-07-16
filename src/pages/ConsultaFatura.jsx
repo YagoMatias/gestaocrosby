@@ -49,7 +49,7 @@ const ConsultaFatura = () => {
       if (nmFantasiaSelecionados.length > 0) {
         nmFantasiaSelecionados.forEach(nm => params.append('nm_fantasia', nm));
       }
-      const res = await fetch(`http://localhost:4000/fundopropaganda?${params.toString()}`);
+      const res = await fetch(`http://localhost:4000/consultafatura?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
       const json = await res.json();
       setDados(json);

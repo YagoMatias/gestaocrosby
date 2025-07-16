@@ -254,8 +254,59 @@ app.get('/faturamento', async (req, res) => {
   }
 });
 
+// Rota para buscar dados de faturamento franquia (com SQL customizado)
+app.get('/faturamentofranquia', async (req, res) => {
+  try {
+    const { dt_inicio, dt_fim, cd_grupoempresa, cd_empresa, nm_fantasia } = req.query;
+    const dataInicio = dt_inicio || '2025-07-01';
+    const dataFim = dt_fim || '2025-07-15';
+    const empresaFiltro = cd_empresa ? cd_empresa : '75';
+    let fantasiaFiltro = `F%CROSBY%`;
+    let fantasiaParam = false;
+    let fantasiaWhere = '';
+    if (nm_fantasia) {
+      fantasiaWhere = 'and p.nm_fantasia = $4';
+      fantasiaParam = true;
+    } else {
+      fantasiaWhere = `and p.nm_fantasia like '${fantasiaFiltro}'`;
+    }
+    const query = `
+      select
+        vfn.cd_empresa,
+        vfn.nm_grupoempresa,
+        p.nm_fantasia,
+        vfn.cd_operacao,
+        vfn.cd_nivel,
+        vfn.ds_nivel,
+        vfn.dt_transacao,
+        vfn.tp_situacao,
+        vfn.vl_unitliquido,
+        vfn.tp_operacao,
+        vfn.nr_transacao,
+        vfn.qt_faturado
+      from
+        vr_fis_nfitemprod vfn
+      left join pes_pesjuridica p on p.cd_pessoa = vfn.cd_pessoa   
+      where
+        vfn.dt_transacao between $1 and $2
+        and vfn.cd_empresa = $3
+        and vfn.cd_operacao not in (1152, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711, 7111, 2009, 5152, 6029, 530, 5152, 5930, 650, 
+      5010, 600, 620, 40, 1557, 8600, 5910, 3336, 9003, 9052, 662, 5909,5153,5910,3336,9003,530,36,536,1552,51,1556)
+        and vfn.tp_situacao not in ('C', 'X')
+        ${fantasiaWhere}
+    `;
+    const params = [dataInicio, dataFim, empresaFiltro];
+    if (fantasiaParam) params.push(nm_fantasia);
+    const { rows } = await pool.query(query, params);
+    res.json(rows);
+  } catch (error) {
+    console.error('Erro ao buscar dados de faturamento franquia:', error);
+    res.status(500).json({ message: 'Erro ao buscar dados de faturamento franquia.' });
+  }
+});
+
 // Rota para buscar dados do fundo de propaganda
-app.get('/fundopropaganda', async (req, res) => {
+app.get('/consultafatura', async (req, res) => {
   try {
     let { cd_empresa, cd_cliente, dt_inicio, dt_fim, nm_fantasia } = req.query;
     
@@ -363,7 +414,7 @@ app.get('/autocomplete/nm_fantasia', async (req, res) => {
 });
 
 // Rota para faturamento franquia
-app.get('/faturamentofranquia', async (req, res) => {
+app.get('/fundopropaganda', async (req, res) => {
   try {
     let { cd_empresa, dt_inicio, dt_fim, nm_fantasia } = req.query;
     let whereConditions = [];
@@ -412,7 +463,8 @@ app.get('/faturamentofranquia', async (req, res) => {
         vfn.cd_operacao,
         vfn.tp_situacao,
         vfn.tp_operacao,
-        vfn.vl_total
+        vfn.vl_total,
+        vfn.nr_transacao
       from
         tra_transacao vfn
       left join pes_pesjuridica p on
@@ -429,7 +481,8 @@ app.get('/faturamentofranquia', async (req, res) => {
         vfn.dt_transacao,
         vfn.tp_situacao,
         vfn.tp_operacao,
-        vfn.vl_total
+        vfn.vl_total,
+        vfn.nr_transacao
       order by
         nm_fantasia
     `;
@@ -479,6 +532,55 @@ app.get('/franquiascredev', async (req, res) => {
   } catch (error) {
     console.error('Erro ao buscar dados de franquias credev:', error);
     res.status(500).json({ message: 'Erro ao buscar dados de franquias credev.' });
+  }
+});
+
+// Rota para buscar dados de faturamento MTM
+app.get('/faturamentomtm', async (req, res) => {
+  try {
+    const { dt_inicio, dt_fim, cd_empresa } = req.query;
+    const dataInicio = dt_inicio || '2025-06-01';
+    const dataFim = dt_fim || '2025-07-15';
+    let where = [
+      'vfn.dt_transacao between $1 and $2',
+      'vfn.cd_operacao not in (1152, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711, 7111, 2009, 5152, 6029, 530, 5152, 5930, 650, 5010, 600, 620, 40, 1557, 8600, 5910, 3336, 9003, 9052, 662, 5909,5153,5910,3336,9003,530,36,536,1552,51,1556)',
+      "vfn.tp_situacao not in ('C', 'X')",
+      'pc.cd_tipoclas in (5)'
+    ];
+    let params = [dataInicio, dataFim];
+    let idx = 3;
+    if (cd_empresa) {
+      where.push(`vfn.cd_empresa = $${idx}`);
+      params.push(cd_empresa);
+      idx++;
+    }
+    const query = `
+      select
+        vfn.cd_empresa,
+        vfn.nm_grupoempresa,
+        p.cd_pessoa,
+        p.nm_pessoa,
+        pc.cd_classificacao,
+        vfn.cd_operacao,
+        vfn.tp_operacao,
+        vfn.cd_nivel,
+        vfn.ds_nivel,
+        vfn.dt_transacao,
+        vfn.vl_unitliquido,
+        vfn.nr_transacao,
+        vfn.qt_faturado
+      from
+        vr_fis_nfitemprod vfn
+      left join pes_pessoa p on p.cd_pessoa = vfn.cd_pessoa
+      left join public.vr_pes_pessoaclas pc on vfn.cd_pessoa = pc.cd_pessoa
+      where
+        ${where.join(' and ')}
+    `;
+    const { rows } = await pool.query(query, params);
+    res.json(rows);
+  } catch (error) {
+    console.error('Erro ao buscar dados de faturamento MTM:', error);
+    res.status(500).json({ message: 'Erro ao buscar dados de faturamento MTM.' });
   }
 });
 

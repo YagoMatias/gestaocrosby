@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Layout from '../components/Layout';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
+import LoadingCircle from '../components/LoadingCircle';
 import { CaretDown, CaretRight, ArrowsClockwise, Receipt, CurrencyDollar, Money } from '@phosphor-icons/react';
 
 export default function FundoPropaganda() {
@@ -83,7 +84,7 @@ export default function FundoPropaganda() {
       if (filtros.dt_inicio) params.append('dt_inicio', filtros.dt_inicio);
       if (filtros.dt_fim) params.append('dt_fim', filtros.dt_fim);
       // Busca dados da tabela principal
-      const res = await fetch(`http://localhost:4000/faturamentofranquia?${params.toString()}`);
+      const res = await fetch(`http://localhost:4000/fundopropaganda?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
       const json = await res.json();
       setDados(json);
@@ -169,6 +170,120 @@ export default function FundoPropaganda() {
         valor_final: Number(row.vl_total) - valor_pago
       };
     });
+  }
+
+  // Funções de exportação CSV
+  function exportarCSVFaturamento() {
+    const dadosExport = agruparPorEmpresaENome(dados);
+    if (!dadosExport || dadosExport.length === 0) return;
+    const header = [
+      'Empresa',
+      'Nome Fantasia',
+      'Data Transação',
+      'Valor Total'
+    ];
+    const rows = dadosExport.map(row => [
+      row.cd_empresa,
+      row.nm_fantasia,
+      formatarDataBR(row.dt_transacao),
+      Number(row.vl_total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    ]);
+    const csvContent = [header, ...rows]
+      .map(e => e.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'faturamento_bruto.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function exportarCSVCredev() {
+    const dadosExport = dadosCredev
+      .filter(row => nmFantasiaSelecionados.length === 0 || nmFantasiaSelecionados.includes(row.nm_fantasia))
+      .reduce((acc, row) => {
+        const chave = `${row.cd_cliente}||${row.nm_fantasia}`;
+        if (!acc.map.has(chave)) {
+          acc.map.set(chave, { ...row, vl_pago: Number(row.vl_pago) });
+          acc.arr.push(acc.map.get(chave));
+        } else {
+          acc.map.get(chave).vl_pago += Number(row.vl_pago);
+        }
+        return acc;
+      }, { map: new Map(), arr: [] }).arr;
+    if (!dadosExport || dadosExport.length === 0) return;
+    const header = [
+      'Cliente',
+      'Nome Fantasia',
+      'Valor Pago',
+      'Tipo Documento'
+    ];
+    const rows = dadosExport.map(row => [
+      row.cd_cliente,
+      row.nm_fantasia,
+      Number(row.vl_pago).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+      row.tp_documento
+    ]);
+    const csvContent = [header, ...rows]
+      .map(e => e.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'credev.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function exportarCSVResumoFinal() {
+    const dadosFaturamento = agruparPorEmpresaENome(dados).filter(row => Number(row.cd_empresa) < 99);
+    const dadosCredevExport = dadosCredev
+      .filter(row => nmFantasiaSelecionados.length === 0 || nmFantasiaSelecionados.includes(row.nm_fantasia))
+      .reduce((acc, row) => {
+        const chave = `${row.cd_cliente}||${row.nm_fantasia}`;
+        if (!acc.map.has(chave)) {
+          acc.map.set(chave, { ...row, vl_pago: Number(row.vl_pago) });
+          acc.arr.push(acc.map.get(chave));
+        } else {
+          acc.map.get(chave).vl_pago += Number(row.vl_pago);
+        }
+        return acc;
+      }, { map: new Map(), arr: [] }).arr;
+    const dadosExport = juntarResumoFinalPorNomeFantasia(dadosFaturamento, dadosCredevExport);
+    if (!dadosExport || dadosExport.length === 0) return;
+    const header = [
+      'Empresa',
+      'Nome Fantasia',
+      'Valor Total',
+      'Valor Pago',
+      'Valor Final'
+    ];
+    const rows = dadosExport.map(row => [
+      row.empresa,
+      row.nm_fantasia,
+      Number(row.valor_total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+      Number(row.valor_pago).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+      Number(row.valor_final).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    ]);
+    const csvContent = [header, ...rows]
+      .map(e => e.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'resumo_final.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   }
 
   // Cálculo dos totais para os cards
@@ -290,7 +405,7 @@ export default function FundoPropaganda() {
                 <div className="flex flex-col items-start">
                   <span className="text-base font-bold text-[#000638] mb-1 tracking-wide">FATURAMENTO</span>
                   <span className="text-2xl font-extrabold text-green-600 mb-1">
-                    {totalFaturamento.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    {loading ? <LoadingCircle size={32} /> : totalFaturamento.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                   </span>
                 </div>
               </div>
@@ -300,7 +415,7 @@ export default function FundoPropaganda() {
                 <div className="flex flex-col items-start">
                   <span className="text-base font-bold text-[#fe0000] mb-1 tracking-wide">CREDEV</span>
                   <span className="text-2xl font-extrabold text-[#fe0000] mb-1">
-                    {totalCredev.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    {loadingCredev ? <LoadingCircle size={32} /> : totalCredev.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                   </span>
                 </div>
               </div>
@@ -310,13 +425,23 @@ export default function FundoPropaganda() {
                 <div className="flex flex-col items-start">
                   <span className="text-base font-bold text-[#000000] mb-1 tracking-wide">LIQUIDO</span>
                   <span className="text-2xl font-extrabold text-[#000000] mb-1">
-                    {totalFinal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    {(loading || loadingCredev) ? <LoadingCircle size={32} /> : totalFinal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                   </span>
                 </div>
               </div>
             </div>
+            {/* Botão CSV Faturamento Bruto */}
+            <div className="flex justify-end mb-2 mt-4">
+              <button
+                onClick={exportarCSVFaturamento}
+                className="flex items-center gap-2 bg-[#000638] hover:bg-[#fe0000] text-white px-6 py-2 rounded-xl transition h-12 text-base font-bold shadow-md tracking-wide uppercase"
+                disabled={agruparPorEmpresaENome(dados).length === 0}
+              >
+                <ArrowsClockwise size={18} weight="bold" /> BAIXAR CSV
+              </button>
+            </div>
             {/* Tabela FATURAMENTO BRUTO (dropdown) */}
-            <div className="rounded-2xl shadow-lg bg-white mt-8 border border-[#000638]/10">
+            <div className="rounded-2xl shadow-lg bg-white mt-2 border border-[#000638]/10">
               <div className="p-4 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandFaturamento(e => !e)}>
                 <h2 className="text-xl font-bold text-[#000638]">Faturamento Bruto</h2>
                 <span className="flex items-center">
@@ -330,13 +455,14 @@ export default function FundoPropaganda() {
                       <tr className="bg-[#000638] text-white">
                         <th className="px-4 py-2 font-semibold">Empresa</th>
                         <th className="px-4 py-2 font-semibold">Nome Fantasia</th>
+                        <th className="px-4 py-2 font-semibold">Nº Transação</th>
                         <th className="px-4 py-2 font-semibold">Data Transação</th>
                         <th className="px-4 py-2 font-semibold">Valor Total</th>
                       </tr>
                     </thead>
                     <tbody>
                       {loading ? (
-                        <tr><td colSpan={4} className="text-center py-8">Carregando...</td></tr>
+                        <tr><td colSpan={4} className="text-center py-8"><LoadingCircle size={32} /></td></tr>
                       ) : dados.length === 0 ? (
                         <tr><td colSpan={4} className="text-center py-8">Nenhum dado encontrado.</td></tr>
                       ) : (
@@ -344,6 +470,7 @@ export default function FundoPropaganda() {
                           <tr key={i} className="border-b hover:bg-[#f8f9fb]">
                             <td className="px-4 py-2 text-center text-[#000638]">{row.cd_empresa}</td>
                             <td className="px-4 py-2 text-[#000000]">{row.nm_fantasia}</td>
+                            <td className="px-4 py-2 text-center text-[#000638]">{row.nr_transacao}</td>
                             <td className="px-4 py-2 text-center text-[#000000]">{formatarDataBR(row.dt_transacao)}</td>
                             <td className="px-4 py-2 text-right font-bold text-green-600">{Number(row.vl_total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                           </tr>
@@ -354,8 +481,18 @@ export default function FundoPropaganda() {
                 </div>
               )}
             </div>
+            {/* Botão CSV CREDEV */}
+            <div className="flex justify-end mb-2 mt-4">
+              <button
+                onClick={exportarCSVCredev}
+                className="flex items-center gap-2 bg-[#000638] hover:bg-[#fe0000] text-white px-6 py-2 rounded-xl transition h-12 text-base font-bold shadow-md tracking-wide uppercase"
+                disabled={dadosCredev.length === 0}
+              >
+                <ArrowsClockwise size={18} weight="bold" /> BAIXAR CSV
+              </button>
+            </div>
             {/* Tabela CREDEV (dropdown) */}
-            <div className="rounded-2xl shadow-lg bg-white mt-8 border border-[#fe0000]/10">
+            <div className="rounded-2xl shadow-lg bg-white mt-2 border border-[#fe0000]/10">
               <div className="p-4 border-b border-[#fe0000]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandCredev(e => !e)}>
                 <h2 className="text-xl font-bold text-[#fe0000]">CREDEV</h2>
                 <span className="flex items-center">
@@ -375,7 +512,7 @@ export default function FundoPropaganda() {
                     </thead>
                     <tbody>
                       {loadingCredev ? (
-                        <tr><td colSpan={4} className="text-center py-8">Carregando...</td></tr>
+                        <tr><td colSpan={4} className="text-center py-8"><LoadingCircle size={32} /></td></tr>
                       ) : (
                         (dadosCredev
                           .filter(row => nmFantasiaSelecionados.length === 0 || nmFantasiaSelecionados.includes(row.nm_fantasia))
@@ -419,8 +556,18 @@ export default function FundoPropaganda() {
                 </div>
               )}
             </div>
+            {/* Botão CSV Resumo Final */}
+            <div className="flex justify-end mb-2 mt-4">
+              <button
+                onClick={exportarCSVResumoFinal}
+                className="flex items-center gap-2 bg-[#000638] hover:bg-[#fe0000] text-white px-6 py-2 rounded-xl transition h-12 text-base font-bold shadow-md tracking-wide uppercase"
+                disabled={agruparPorEmpresaENome(dados).filter(row => Number(row.cd_empresa) < 99).length === 0}
+              >
+                <ArrowsClockwise size={18} weight="bold" /> BAIXAR CSV
+              </button>
+            </div>
             {/* Tabela RESUMO FINAL (dropdown) */}
-            <div className="rounded-2xl shadow-lg bg-white mt-8 border border-[#000000]/10">
+            <div className="rounded-2xl shadow-lg bg-white mt-2 border border-[#000000]/10">
               <div className="p-4 border-b border-[#000000]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandResumo(e => !e)}>
                 <h2 className="text-xl font-bold text-[#000000]">Resumo Final</h2>
                 <span className="flex items-center">
@@ -441,7 +588,7 @@ export default function FundoPropaganda() {
                     </thead>
                     <tbody>
                       {loading || loadingCredev ? (
-                        <tr><td colSpan={5} className="text-center py-8">Carregando...</td></tr>
+                        <tr><td colSpan={5} className="text-center py-8"><LoadingCircle size={32} /></td></tr>
                       ) : (
                         juntarResumoFinalPorNomeFantasia(
                           agruparPorEmpresaENome(dados).filter(row => Number(row.cd_empresa) < 99),
