@@ -4,6 +4,10 @@ import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
 import LoadingCircle from '../components/LoadingCircle';
 import { ArrowsClockwise, CaretDown, CaretRight, ArrowCircleDown, ArrowCircleUp, CurrencyDollar } from '@phosphor-icons/react';
+import FiltroEmpresa from '../components/FiltroEmpresa';
+import custoProdutos from '../../backend/custoprodutos.json';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 
 const Multimarcas = () => {
   const [dados, setDados] = useState([]);
@@ -16,15 +20,22 @@ const Multimarcas = () => {
   });
   const [expandTabela, setExpandTabela] = useState(true);
   const [expandRankProdutos, setExpandRankProdutos] = useState(true);
+  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
 
-  const fetchDados = async () => {
+  const handleSelectEmpresas = (empresas) => {
+    setEmpresasSelecionadas(empresas);
+  };
+
+  const fetchDados = async (empresasParam = empresasSelecionadas) => {
     setLoading(true);
     setErro('');
     try {
       const params = new URLSearchParams();
       if (filtros.dt_inicio) params.append('dt_inicio', filtros.dt_inicio);
       if (filtros.dt_fim) params.append('dt_fim', filtros.dt_fim);
-      if (filtros.cd_empresa) params.append('cd_empresa', filtros.cd_empresa);
+      empresasParam.forEach(emp => {
+        params.append('cd_empresa', emp.cd_empresa);
+      });
       const res = await fetch(`http://localhost:4000/faturamentomtm?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
       const json = await res.json();
@@ -39,7 +50,11 @@ const Multimarcas = () => {
 
   const handleFiltrar = (e) => {
     e.preventDefault();
-    fetchDados();
+    if (empresasSelecionadas.length === 0) {
+      alert('Selecione pelo menos uma loja para consultar!');
+      return;
+    }
+    fetchDados(empresasSelecionadas);
   };
 
   function formatarDataBR(data) {
@@ -48,6 +63,71 @@ const Multimarcas = () => {
     if (isNaN(d)) return '-';
     return d.toLocaleDateString('pt-BR');
   }
+
+  // Cria um Map para lookup rápido do custo pelo código
+  const custoMap = React.useMemo(() => {
+    const map = {};
+    custoProdutos.forEach(item => {
+      if (item.Codigo && item.Custo !== undefined) {
+        map[item.Codigo.trim()] = item.Custo;
+      }
+    });
+    return map;
+  }, []);
+
+  // Função para exportar o ranking para Excel
+  const exportarRankParaExcel = () => {
+    const rankProdutos = dados.reduce((acc, row) => {
+      const nivel = row.cd_nivel;
+      if (!acc[nivel]) {
+        acc[nivel] = {
+          cd_nivel: nivel,
+          modelo: row.ds_nivel,
+          valorTotal: 0,
+          quantidade: 0
+        };
+      }
+      const qtFaturado = Number(row.qt_faturado) || 1;
+      const valor = (Number(row.vl_unitliquido) || 0) * qtFaturado;
+      if (row.tp_operacao === 'S') {
+        acc[nivel].valorTotal += valor;
+        acc[nivel].quantidade += qtFaturado;
+      } else if (row.tp_operacao === 'E') {
+        acc[nivel].valorTotal -= valor;
+        acc[nivel].quantidade -= qtFaturado;
+      }
+      return acc;
+    }, {});
+    const custoMap = {};
+    custoProdutos.forEach(item => {
+      if (item.Codigo && item.Custo !== undefined) {
+        custoMap[item.Codigo.trim()] = item.Custo;
+      }
+    });
+    const rankArray = Object.values(rankProdutos)
+      .sort((a, b) => b.valorTotal - a.valorTotal)
+      .map(produto => {
+        const custoUnit = custoMap[produto.cd_nivel?.trim()];
+        const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
+        const markup = custoTotal && custoTotal !== 0 ? produto.valorTotal / custoTotal : undefined;
+        const margem = (produto.valorTotal && custoTotal !== undefined && produto.valorTotal !== 0)
+          ? ((produto.valorTotal - custoTotal) / produto.valorTotal) * 100 : undefined;
+        return {
+          'Código Modelo': produto.cd_nivel,
+          'Modelo': produto.modelo,
+          'Quantidade': produto.quantidade,
+          'Valor': produto.valorTotal,
+          'Custo': custoTotal,
+          'Markup': markup,
+          'Margem %': margem
+        };
+      });
+    const ws = XLSX.utils.json_to_sheet(rankArray);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'RankProdutos');
+    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    saveAs(new Blob([excelBuffer], { type: 'application/octet-stream' }), 'rank_produtos_multimarcas.xlsx');
+  };
 
   return (
     <Layout>
@@ -65,16 +145,10 @@ const Multimarcas = () => {
                   <span className="text-sm text-gray-500 mt-1">Selecione o período, grupo empresa ou data para análise</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4 w-full mb-6">
-                  <div className="flex flex-col">
-                    <label className="block text-xs font-semibold mb-1 text-[#000638]">Empresa</label>
-                    <input 
-                      name="cd_empresa" 
-                      value={filtros.cd_empresa} 
-                      onChange={e => setFiltros({ ...filtros, cd_empresa: e.target.value })} 
-                      className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" 
-                      placeholder="95" 
-                    />
-                  </div>
+                  <FiltroEmpresa
+                    empresasSelecionadas={empresasSelecionadas}
+                    onSelectEmpresas={handleSelectEmpresas}
+                  />
                   <div className="flex flex-col">
                     <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Inicial</label>
                     <input 
@@ -196,71 +270,106 @@ const Multimarcas = () => {
             </div>
             {/* Card Rank Produtos */}
             <div className="mt-8 rounded-2xl shadow-lg bg-white border border-[#000638]/10">
-              <div className="p-4 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandRankProdutos(e => !e)}>
+              <div className="flex items-center justify-between p-4 border-b border-[#000638]/10">
                 <h2 className="text-xl font-bold text-[#000638]">Rank Produtos</h2>
-                <span className="flex items-center">
-                  {expandRankProdutos ? <CaretDown size={20} color="#9ca3af" /> : <CaretRight size={20} color="#9ca3af" />}
-                </span>
+                <button
+                  className="ml-4 px-4 py-2 bg-[#000638] text-white rounded-lg text-sm font-semibold hover:bg-[#001060] transition shadow"
+                  onClick={exportarRankParaExcel}
+                  type="button"
+                >
+                  Baixar Excel
+                </button>
               </div>
-              {expandRankProdutos && (
-                <div className="p-4">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="bg-[#000638] text-white">
-                          <th className="px-4 py-2 text-left font-semibold">Rank</th>
-                          <th className="px-4 py-2 text-left font-semibold">Modelo</th>
-                          <th className="px-4 py-2 text-center font-semibold">Quantidade</th>
-                          <th className="px-4 py-2 text-right font-semibold">Valor</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(() => {
-                          // Agrupa por cd_nivel e soma os valores
-                          const rankProdutos = dados.reduce((acc, row) => {
-                            const nivel = row.cd_nivel;
-                            if (!acc[nivel]) {
-                              acc[nivel] = {
-                                modelo: row.ds_nivel,
-                                valorTotal: 0,
-                                quantidade: 0
-                              };
-                            }
-                            const qtFaturado = Number(row.qt_faturado) || 1;
-                            const valor = (Number(row.vl_unitliquido) || 0) * qtFaturado;
-                            if (row.tp_operacao === 'S') {
-                              acc[nivel].valorTotal += valor;
-                              acc[nivel].quantidade += qtFaturado;
-                            } else if (row.tp_operacao === 'E') {
-                              acc[nivel].valorTotal -= valor;
-                              acc[nivel].quantidade -= qtFaturado;
-                            }
-                            return acc;
-                          }, {});
-                          // Converte para array e ordena por valor total (decrescente)
-                          const rankArray = Object.values(rankProdutos)
-                            .sort((a, b) => b.valorTotal - a.valorTotal);
-                          if (loading) {
-                            return <tr><td colSpan={4} className="text-center py-8"><LoadingCircle size={32} /></td></tr>;
+              <div className="p-4">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="bg-[#000638] text-white">
+                        <th className="px-4 py-2 text-left font-semibold">Rank</th>
+                        <th className="px-4 py-2 text-left font-semibold">Código Modelo</th>
+                        <th className="px-4 py-2 text-left font-semibold">Modelo</th>
+                        <th className="px-4 py-2 text-center font-semibold">Quantidade</th>
+                        <th className="px-4 py-2 text-right font-semibold">Valor</th>
+                        <th className="px-4 py-2 text-right font-semibold">Custo</th>
+                        <th className="px-4 py-2 text-right font-semibold">Markup</th>
+                        <th className="px-4 py-2 text-right font-semibold">Margem %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        // Agrupa por cd_nivel e soma os valores
+                        const rankProdutos = dados.reduce((acc, row) => {
+                          const nivel = row.cd_nivel;
+                          if (!acc[nivel]) {
+                            acc[nivel] = {
+                              cd_nivel: nivel,
+                              modelo: row.ds_nivel,
+                              valorTotal: 0,
+                              quantidade: 0
+                            };
                           }
-                          return rankArray.length === 0 ? (
-                            <tr><td colSpan={4} className="text-center py-8 text-gray-500">Nenhum produto encontrado.</td></tr>
-                          ) : (
-                            rankArray.map((produto, index) => (
-                              <tr key={index} className="bg-[#f8f9fb] border-b">
-                                <td className="px-4 py-2 text-blue-600 font-bold">#{index + 1}</td>
-                                <td className="px-4 py-2">{produto.modelo}</td>
-                                <td className="px-4 py-2 text-center">{produto.quantidade}</td>
-                                <td className="px-4 py-2 text-right">{produto.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                              </tr>
-                            ))
-                          );
-                        })()}
-                      </tbody>
-                    </table>
-                  </div>
+                          const qtFaturado = Number(row.qt_faturado) || 1;
+                          const valor = (Number(row.vl_unitliquido) || 0) * qtFaturado;
+                          if (row.tp_operacao === 'S') {
+                            acc[nivel].valorTotal += valor;
+                            acc[nivel].quantidade += qtFaturado;
+                          } else if (row.tp_operacao === 'E') {
+                            acc[nivel].valorTotal -= valor;
+                            acc[nivel].quantidade -= qtFaturado;
+                          }
+                          return acc;
+                        }, {});
+                        // Converte para array e ordena por valor total (decrescente)
+                        const rankArray = Object.values(rankProdutos)
+                          .sort((a, b) => b.valorTotal - a.valorTotal);
+                        if (loading) {
+                          return <tr><td colSpan={4} className="text-center py-8"><LoadingCircle size={32} /></td></tr>;
+                        }
+                        return rankArray.length === 0 ? (
+                          <tr><td colSpan={4} className="text-center py-8 text-gray-500">Nenhum produto encontrado.</td></tr>
+                        ) : (
+                          rankArray.map((produto, index) => (
+                            <tr key={index} className="bg-[#f8f9fb] border-b">
+                              <td className="px-4 py-2 text-blue-600 font-bold">#{index + 1}</td>
+                              <td className="px-4 py-2">{produto.cd_nivel}</td>
+                              <td className="px-4 py-2">{produto.modelo}</td>
+                              <td className="px-4 py-2 text-center">{produto.quantidade}</td>
+                              <td className="px-4 py-2 text-right">{produto.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                              <td className="px-4 py-2 text-right">
+                                {custoMap[produto.cd_nivel?.trim()] !== undefined
+                                  ? (produto.quantidade * custoMap[produto.cd_nivel.trim()]).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                                  : '-'}
+                              </td>
+                              <td className="px-4 py-2 text-right">
+                                {(() => {
+                                  const custoUnit = custoMap[produto.cd_nivel?.trim()];
+                                  const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
+                                  if (produto.valorTotal && custoTotal !== undefined && produto.valorTotal !== 0) {
+                                    const markup = produto.valorTotal / custoTotal;
+                                    return markup.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                  }
+                                  return '-';
+                                })()}
+                              </td>
+                              <td className="px-4 py-2 text-right">
+                                {(() => {
+                                  const custoUnit = custoMap[produto.cd_nivel?.trim()];
+                                  const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
+                                  if (produto.valorTotal && custoTotal !== undefined && produto.valorTotal !== 0) {
+                                    const margem = ((produto.valorTotal - custoTotal) / produto.valorTotal) * 100;
+                                    return margem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+                                  }
+                                  return '-';
+                                })()}
+                              </td>
+                            </tr>
+                          ))
+                        );
+                      })()}
+                    </tbody>
+                  </table>
                 </div>
-              )}
+              </div>
             </div>
           </div>
         </div>

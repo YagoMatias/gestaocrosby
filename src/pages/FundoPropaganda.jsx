@@ -339,12 +339,12 @@ export default function FundoPropaganda() {
                       className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                     />
                   </div>
+                  {/* FiltroEmpresa 1 */}
                   <div className="flex flex-col">
                     <label className="block text-xs font-semibold mb-1 text-[#000638]">Nome Fantasia</label>
                     <input
                       type="text"
                       name="nm_fantasia"
-                      autoComplete="off"
                       value={filtros.nm_fantasia}
                       onChange={handleChange}
                       onFocus={() => fetchSugestoes(filtros.nm_fantasia)}
@@ -352,43 +352,88 @@ export default function FundoPropaganda() {
                       className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                       placeholder="Digite o nome fantasia"
                     />
+                    {showSugestoes && sugestoes.length > 0 && (
+                      <ul className="z-10 bg-white border rounded shadow w-full max-w-4xl mx-auto max-h-40 overflow-y-auto mt-2 flex flex-col">
+                        {sugestoes.map((s, i) => (
+                          <li
+                            key={i}
+                            className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center justify-between gap-2 select-none"
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={() => handleSugestaoToggle(s)}
+                          >
+                            <span className="text-left w-full">{s}</span>
+                            <input
+                              type="checkbox"
+                              checked={nmFantasiaSelecionados.includes(s)}
+                              readOnly
+                              className="accent-[#000638] ml-2 pointer-events-none"
+                              id={`sugestao-${i}`}
+                            />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {nmFantasiaSelecionados.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2 w-full max-w-4xl mx-auto">
+                        {nmFantasiaSelecionados.map((nm, idx) => (
+                          <span key={idx} className="bg-[#000638] text-white px-3 py-1 rounded-full flex items-center gap-1 text-sm">
+                            {nm}
+                            <button type="button" className="ml-1 text-white hover:text-[#fe0000]" onClick={() => handleRemoveSelecionado(nm)} title="Remover">
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {/* FiltroEmpresa 2 (duplicado) */}
+                  <div className="flex flex-col">
+                    <label className="block text-xs font-semibold mb-1 text-[#000638]">Nome Fantasia</label>
+                    <input
+                      type="text"
+                      name="nm_fantasia"
+                      value={filtros.nm_fantasia}
+                      onChange={handleChange}
+                      onFocus={() => fetchSugestoes(filtros.nm_fantasia)}
+                      onBlur={handleBlur}
+                      className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                      placeholder="Digite o nome fantasia"
+                    />
+                    {showSugestoes && sugestoes.length > 0 && (
+                      <ul className="z-10 bg-white border rounded shadow w-full max-w-4xl mx-auto max-h-40 overflow-y-auto mt-2 flex flex-col">
+                        {sugestoes.map((s, i) => (
+                          <li
+                            key={i}
+                            className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center justify-between gap-2 select-none"
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={() => handleSugestaoToggle(s)}
+                          >
+                            <span className="text-left w-full">{s}</span>
+                            <input
+                              type="checkbox"
+                              checked={nmFantasiaSelecionados.includes(s)}
+                              readOnly
+                              className="accent-[#000638] ml-2 pointer-events-none"
+                              id={`sugestao-${i}`}
+                            />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {nmFantasiaSelecionados.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2 w-full max-w-4xl mx-auto">
+                        {nmFantasiaSelecionados.map((nm, idx) => (
+                          <span key={idx} className="bg-[#000638] text-white px-3 py-1 rounded-full flex items-center gap-1 text-sm">
+                            {nm}
+                            <button type="button" className="ml-1 text-white hover:text-[#fe0000]" onClick={() => handleRemoveSelecionado(nm)} title="Remover">
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
-                {/* Sugestões abaixo dos filtros */}
-                {showSugestoes && sugestoes.length > 0 && (
-                  <ul className="z-10 bg-white border rounded shadow w-full max-w-4xl mx-auto max-h-40 overflow-y-auto mt-2 flex flex-col">
-                    {sugestoes.map((s, i) => (
-                      <li
-                        key={i}
-                        className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center justify-between gap-2 select-none"
-                        onMouseDown={e => e.preventDefault()}
-                        onClick={() => handleSugestaoToggle(s)}
-                      >
-                        <span className="text-left w-full">{s}</span>
-                        <input
-                          type="checkbox"
-                          checked={nmFantasiaSelecionados.includes(s)}
-                          readOnly
-                          className="accent-[#000638] ml-2 pointer-events-none"
-                          id={`sugestao-${i}`}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {/* Nomes selecionados */}
-                {nmFantasiaSelecionados.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-2 w-full max-w-4xl mx-auto">
-                    {nmFantasiaSelecionados.map((nm, idx) => (
-                      <span key={idx} className="bg-[#000638] text-white px-3 py-1 rounded-full flex items-center gap-1 text-sm">
-                        {nm}
-                        <button type="button" className="ml-1 text-white hover:text-[#fe0000]" onClick={() => handleRemoveSelecionado(nm)} title="Remover">
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
                 <div className="flex justify-end w-full mt-8">
                   <button type="submit" className="flex items-center gap-2 bg-[#000638] text-white px-10 py-3 rounded-xl hover:bg-[#fe0000] transition h-12 text-base font-bold shadow-md tracking-wide uppercase">
                     <ArrowsClockwise size={22} weight="bold" /> Filtrar
