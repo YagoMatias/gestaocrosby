@@ -5,7 +5,7 @@ import Header from '../components/Header';
 import LoadingCircle from '../components/LoadingCircle';
 import { ArrowsClockwise, CaretDown, CaretRight, ArrowCircleDown, ArrowCircleUp, CurrencyDollar } from '@phosphor-icons/react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
-import custoProdutos from '../../backend/custoprodutos.json';
+import custoProdutos from '../custoprodutos.json';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 

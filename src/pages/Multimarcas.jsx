@@ -5,7 +5,7 @@ import Header from '../components/Header';
 import LoadingCircle from '../components/LoadingCircle';
 import { ArrowsClockwise, CaretDown, CaretRight, ArrowCircleDown, ArrowCircleUp, CurrencyDollar } from '@phosphor-icons/react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
-import custoProdutos from '../../backend/custoprodutos.json';
+import custoProdutos from '../custoprodutos.json';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
@@ -36,7 +36,7 @@ const Multimarcas = () => {
       empresasParam.forEach(emp => {
         params.append('cd_empresa', emp.cd_empresa);
       });
-      const res = await fetch(`http://localhost:4000/faturamentomtm?${params.toString()}`);
+      const res = await fetch(`https://manualtotvs.vercel.app/faturamentomtm?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
       const json = await res.json();
       setDados(json);

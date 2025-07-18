@@ -5,6 +5,9 @@ import Header from '../components/Header';
 import LoadingCircle from '../components/LoadingCircle';
 import { ArrowsClockwise, CaretDown, CaretRight, ArrowCircleDown, ArrowCircleUp, CurrencyDollar } from '@phosphor-icons/react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
+import custoProdutos from '../custoprodutos.json';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 
 const Revenda = () => {
   const [dados, setDados] = useState([]);
@@ -18,6 +21,71 @@ const Revenda = () => {
   const [expandTabela, setExpandTabela] = useState(true);
   const [expandRankProdutos, setExpandRankProdutos] = useState(true);
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
+
+  // Cria um Map para lookup rápido do custo pelo código
+  const custoMap = React.useMemo(() => {
+    const map = {};
+    custoProdutos.forEach(item => {
+      if (item.Codigo && item.Custo !== undefined) {
+        map[item.Codigo.trim()] = item.Custo;
+      }
+    });
+    return map;
+  }, []);
+
+  // Função para exportar o ranking para Excel
+  const exportarRankParaExcel = () => {
+    const rankProdutos = dados.reduce((acc, row) => {
+      const nivel = row.cd_nivel;
+      if (!acc[nivel]) {
+        acc[nivel] = {
+          cd_nivel: nivel,
+          modelo: row.ds_nivel,
+          valorTotal: 0,
+          quantidade: 0
+        };
+      }
+      const qtFaturado = Number(row.qt_faturado) || 1;
+      const valor = (Number(row.vl_unitliquido) || 0) * qtFaturado;
+      if (row.tp_operacao === 'S') {
+        acc[nivel].valorTotal += valor;
+        acc[nivel].quantidade += qtFaturado;
+      } else if (row.tp_operacao === 'E') {
+        acc[nivel].valorTotal -= valor;
+        acc[nivel].quantidade -= qtFaturado;
+      }
+      return acc;
+    }, {});
+    const custoMap = {};
+    custoProdutos.forEach(item => {
+      if (item.Codigo && item.Custo !== undefined) {
+        custoMap[item.Codigo.trim()] = item.Custo;
+      }
+    });
+    const rankArray = Object.values(rankProdutos)
+      .sort((a, b) => b.valorTotal - a.valorTotal)
+      .map(produto => {
+        const custoUnit = custoMap[produto.cd_nivel?.trim()];
+        const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
+        const markup = custoTotal && custoTotal !== 0 ? produto.valorTotal / custoTotal : undefined;
+        const margem = (produto.valorTotal && custoTotal !== undefined && produto.valorTotal !== 0)
+          ? ((produto.valorTotal - custoTotal) / produto.valorTotal) * 100 : undefined;
+        return {
+          'Código Modelo': produto.cd_nivel,
+          'Modelo': produto.modelo,
+          'Quantidade': produto.quantidade,
+          'Valor': produto.valorTotal,
+          'Custo': custoTotal,
+          'Markup': markup,
+          'Margem %': margem
+        };
+      });
+    const ws = XLSX.utils.json_to_sheet(rankArray);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'RankProdutos');
+    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    saveAs(new Blob([excelBuffer], { type: 'application/octet-stream' }), 'rank_produtos_revenda.xlsx');
+  };
 
   const handleSelectEmpresas = (empresas) => {
     setEmpresasSelecionadas(empresas);
@@ -33,7 +101,7 @@ const Revenda = () => {
       empresasParam.forEach(emp => {
         params.append('cd_empresa', emp.cd_empresa);
       });
-      const res = await fetch(`http://localhost:4000/faturamentorevenda?${params.toString()}`);
+      const res = await fetch(`https://manualtotvs.vercel.app/faturamentorevenda?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
       const json = await res.json();
       setDados(json);
@@ -150,6 +218,16 @@ const Revenda = () => {
                   <span className="text-xs text-gray-500">Quantidade</span>
                 </div>
               </div>
+            </div>
+            {/* Botão de exportação do ranking para Excel */}
+            <div className="flex justify-end mb-2">
+              <button
+                onClick={exportarRankParaExcel}
+                className="flex items-center gap-2 bg-[#000638] hover:bg-[#fe0000] text-white px-6 py-2 rounded-xl transition h-12 text-sm font-semibold shadow-md tracking-wide uppercase"
+                disabled={dados.length === 0}
+              >
+                <ArrowsClockwise size={18} weight="bold" /> Baixar Ranking Excel
+              </button>
             </div>
             {/* Tabela de Transações */}
             <div className="rounded-2xl shadow-lg bg-white mt-8 border border-[#000638]/10">
