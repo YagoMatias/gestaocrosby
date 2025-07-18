@@ -27,7 +27,7 @@ const ConsultaFatura = () => {
       return;
     }
     try {
-      const res = await fetch(`http://localhost:4000/autocomplete/nm_fantasia?q=${encodeURIComponent(texto)}`);
+      const res = await fetch(`https://crosby-pd5x7.ondigitalocean.app/autocomplete/nm_fantasia?q=${encodeURIComponent(texto)}`);
       if (!res.ok) return;
       const json = await res.json();
       setSugestoes(json);
@@ -49,7 +49,7 @@ const ConsultaFatura = () => {
       if (nmFantasiaSelecionados.length > 0) {
         nmFantasiaSelecionados.forEach(nm => params.append('nm_fantasia', nm));
       }
-      const res = await fetch(`http://localhost:4000/consultafatura?${params.toString()}`);
+      const res = await fetch(`https://crosby-pd5x7.ondigitalocean.app/consultafatura?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
       const json = await res.json();
       setDados(json);

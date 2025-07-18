@@ -36,7 +36,7 @@ const Multimarcas = () => {
       empresasParam.forEach(emp => {
         params.append('cd_empresa', emp.cd_empresa);
       });
-      const res = await fetch(`https://manualtotvs.vercel.app/faturamentomtm?${params.toString()}`);
+      const res = await fetch(`https://crosby-pd5x7.ondigitalocean.app/faturamentomtm?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
       const json = await res.json();
       setDados(json);

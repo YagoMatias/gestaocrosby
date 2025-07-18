@@ -101,7 +101,7 @@ const Revenda = () => {
       empresasParam.forEach(emp => {
         params.append('cd_empresa', emp.cd_empresa);
       });
-      const res = await fetch(`https://manualtotvs.vercel.app/faturamentorevenda?${params.toString()}`);
+      const res = await fetch(`https://crosby-pd5x7.ondigitalocean.app/faturamentorevenda?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
       const json = await res.json();
       setDados(json);
@@ -244,6 +244,7 @@ const Revenda = () => {
                       <tr className="bg-[#000638] text-white">
                         <th className="px-4 py-2 font-semibold">Transação</th>
                         <th className="px-4 py-2 font-semibold">Empresa</th>
+                        <th className="px-4 py-2 font-semibold">Grupo Empresa</th>
                         <th className="px-4 py-2 font-semibold">Nome Cliente</th>
                         <th className="px-4 py-2 font-semibold">Classificação</th>
                         <th className="px-4 py-2 font-semibold">Data Transação</th>
@@ -253,9 +254,9 @@ const Revenda = () => {
                     </thead>
                     <tbody className="overflow-y-auto">
                       {loading ? (
-                        <tr><td colSpan={7} className="text-center py-8"><LoadingCircle size={32} /></td></tr>
+                        <tr><td colSpan={8} className="text-center py-8"><LoadingCircle size={32} /></td></tr>
                       ) : dados.length === 0 ? (
-                        <tr><td colSpan={7} className="text-center py-8">Nenhum dado encontrado.</td></tr>
+                        <tr><td colSpan={8} className="text-center py-8">Nenhum dado encontrado.</td></tr>
                       ) : (
                         dados.map((row, i) => {
                           const qtFaturado = Number(row.qt_faturado) || 1;
@@ -264,6 +265,7 @@ const Revenda = () => {
                             <tr key={i} className="border-b hover:bg-[#f8f9fb]">
                               <td className="px-4 py-2">{row.nr_transacao}</td>
                               <td className="px-4 py-2">{row.cd_empresa}</td>
+                              <td className="px-4 py-2">{row.nm_grupoempresa}</td>
                               <td className="px-4 py-2">{row.nm_pessoa}</td>
                               <td className="px-4 py-2">{row.cd_classificacao}</td>
                               <td className="px-4 py-2 text-center text-[#000638]">{formatarDataBR(row.dt_transacao)}</td>
