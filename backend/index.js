@@ -663,7 +663,7 @@ app.get('/faturamentorevenda', async (req, res) => {
       5010, 600, 620, 40, 1557, 8600, 5910, 3336, 9003, 9052, 662, 5909,5153,5910,3336,9003,530,36,536,1552,51,1556)
         and vfn.tp_situacao not in ('C', 'X')
         and p.nm_fantasia NOT LIKE 'F%CROSBY%'
-        and pc.cd_tipoclas not in(2,4,5)`;
+        and pc.cd_tipoclas in(2,4,5)`;
     const { rows } = await pool.query(query, params);
     res.json(rows);
   } catch (error) {
