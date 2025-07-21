@@ -21,12 +21,12 @@ function App() {
         <Route path="/transacoes" element={<Transacoes />} />
         <Route path="/extrato-financeiro" element={<ExtratoFinanceiro />} />
         <Route path="/extrato-totvs" element={<ExtratoTOTVS />} />
-        <Route path="/faturamento/varejo" element={<Varejo />} />
-        <Route path="/faturamento/franquias" element={<Franquias />} />
-        <Route path="/faturamento/multimarcas" element={<Multimarcas />} />
-        <Route path="/faturamento/revenda" element={<Revenda />} />
-        <Route path="/financeiro/consulta-fatura" element={<ConsultaFatura />} />
-        <Route path="/financeiro/fundo-propaganda" element={<FundoPropaganda />} />
+        <Route path="/varejo" element={<Varejo />} />
+        <Route path="/franquias" element={<Franquias />} />
+        <Route path="/multimarcas" element={<Multimarcas />} />
+        <Route path="/revenda" element={<Revenda />} />
+        <Route path="/consulta-fatura" element={<ConsultaFatura />} />
+        <Route path="/fundo-propaganda" element={<FundoPropaganda />} />
       </Routes>
     </Router>
   );

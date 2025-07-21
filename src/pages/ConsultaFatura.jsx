@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import Layout from '../components/Layout';
-import Sidebar from '../components/Sidebar';
-import Header from '../components/Header';
-import { CaretDown, CaretRight, ArrowsClockwise, Receipt, CurrencyDollar, Money, User } from '@phosphor-icons/react';
+import { CaretDown, CaretRight, ArrowsClockwise, Receipt, CurrencyDollar, Money, User, TrendUp } from '@phosphor-icons/react';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
 
 const ConsultaFatura = () => {
   const [dados, setDados] = useState([]);
@@ -27,7 +26,7 @@ const ConsultaFatura = () => {
       return;
     }
     try {
-      const res = await fetch(`https://crosby-pd5x7.ondigitalocean.app/autocomplete/nm_fantasia?q=${encodeURIComponent(texto)}`);
+      const res = await fetch(`https://apigestaocrosby.onrender.com/autocomplete/nm_fantasia?q=${encodeURIComponent(texto)}`);
       if (!res.ok) return;
       const json = await res.json();
       setSugestoes(json);
@@ -49,7 +48,7 @@ const ConsultaFatura = () => {
       if (nmFantasiaSelecionados.length > 0) {
         nmFantasiaSelecionados.forEach(nm => params.append('nm_fantasia', nm));
       }
-      const res = await fetch(`https://crosby-pd5x7.ondigitalocean.app/consultafatura?${params.toString()}`);
+      const res = await fetch(`https://apigestaocrosby.onrender.com/consultafatura?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
       const json = await res.json();
       setDados(json);
@@ -122,14 +121,21 @@ const ConsultaFatura = () => {
     return Array.from(mapa.values());
   }
 
+  // Exemplo de cálculo para Ticket Médio e PA (ajuste conforme sua lógica real)
+  const faturamentoTotal = dados.reduce((acc, row) => acc + (Number(row.vl_fatura) || 0), 0);
+  const totalTransacoes = dados.length;
+  const ticketMedio = totalTransacoes > 0 ? faturamentoTotal / totalTransacoes : 0;
+  // Exemplo: PA = peças por atendimento (ajuste conforme sua lógica real)
+  const pa = totalTransacoes > 0 ? (faturamentoTotal / totalTransacoes / 122) : 0; // 122 é só exemplo
+
+  const totalFaturas = dados.length;
+  const valorFaturado = dados.reduce((acc, row) => acc + (Number(row.vl_fatura) || 0), 0);
+  const valorPago = dados.reduce((acc, row) => acc + (Number(row.vl_pago) || 0), 0);
+
   return (
     <Layout>
-      <div className="flex min-h-screen">
-        <Sidebar />
-        <div className="flex-1 flex flex-col">
-          <Header />
-          <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
-            <h1 className="text-3xl font-bold mb-6 text-center">Consulta de Fatura</h1>
+      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4 pb-8">
+        <h1 className="text-3xl font-bold mb-6 text-center">Consulta de Fatura</h1>
             
             {/* Filtros */}
             <div className="mb-8">
@@ -240,41 +246,44 @@ const ConsultaFatura = () => {
               {erro && <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{erro}</div>}
             </div>
 
-            {/* Cards de Resumo */}
-            <div className="flex flex-wrap gap-6 justify-center mb-8">
-              {/* Card Total de Faturas */}
-              <div className="bg-white shadow-lg rounded-2xl p-6 flex flex-row items-center w-full max-w-xs border-l-8 border-[#000638]">
-                <span className="mr-4"><Receipt size={32} color="#000638" weight="duotone" /></span>
-                <div className="flex flex-col items-start">
-                  <span className="text-base font-bold text-[#000638] mb-1 tracking-wide">TOTAL DE FATURAS</span>
-                  <span className="text-2xl font-extrabold text-[#000638] mb-1">
-                    {dados.length}
-                  </span>
-                  <span className="text-xs text-gray-500">Quantidade</span>
-                </div>
-              </div>
-              {/* Card Valor Total Faturado */}
-              <div className="bg-white shadow-lg rounded-2xl p-6 flex flex-row items-center w-full max-w-xs border-l-8 border-[#fe0000]">
-                <span className="mr-4"><CurrencyDollar size={32} color="#fe0000" weight="duotone" /></span>
-                <div className="flex flex-col items-start">
-                  <span className="text-base font-bold text-[#fe0000] mb-1 tracking-wide">VALOR FATURADO</span>
-                  <span className="text-2xl font-extrabold text-[#fe0000] mb-1">
-                    {dados.reduce((acc, row) => acc + (Number(row.vl_fatura) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                  </span>
-                  <span className="text-xs text-gray-500">Soma dos valores</span>
-                </div>
-              </div>
-              {/* Card Valor Total Pago */}
-              <div className="bg-white shadow-lg rounded-2xl p-6 flex flex-row items-center w-full max-w-xs border-l-8 border-[#000000]">
-                <span className="mr-4"><Money size={32} color="#000000" weight="duotone" /></span>
-                <div className="flex flex-col items-start">
-                  <span className="text-base font-bold text-[#000000] mb-1 tracking-wide">VALOR PAGO</span>
-                  <span className="text-2xl font-extrabold text-[#000000] mb-1">
-                    {dados.reduce((acc, row) => acc + (Number(row.vl_pago) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                  </span>
-                  <span className="text-xs text-gray-500">Soma dos valores</span>
-                </div>
-              </div>
+            {/* Cards de Resumo responsivos */}
+            <div className="flex flex-col gap-6 mb-8 lg:flex-row lg:gap-8 lg:justify-center">
+              <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/3 bg-white cursor-pointer">
+                <CardHeader className="pb-0">
+                  <div className="flex flex-row items-center gap-2">
+                    <Receipt size={20} className="text-gray-700" />
+                    <CardTitle className="text-base font-bold text-gray-900">Total de Faturas</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-2 pl-12">
+                  <div className="text-3xl font-extrabold text-green-600 mb-1">{totalFaturas}</div>
+                  <CardDescription className="text-gray-500">Quantidade</CardDescription>
+                </CardContent>
+              </Card>
+              <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/3 bg-white cursor-pointer">
+                <CardHeader className="pb-0">
+                  <div className="flex flex-row items-center gap-2">
+                    <CurrencyDollar size={20} className="text-gray-700" />
+                    <CardTitle className="text-base font-bold text-gray-900">Valor Faturado</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-2 pl-12">
+                  <div className="text-3xl font-extrabold text-blue-600 mb-1">{valorFaturado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                  <CardDescription className="text-gray-500">Soma dos valores</CardDescription>
+                </CardContent>
+              </Card>
+              <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/3 bg-white cursor-pointer">
+                <CardHeader className="pb-0">
+                  <div className="flex flex-row items-center gap-2">
+                    <Money size={20} className="text-gray-700" />
+                    <CardTitle className="text-base font-bold text-gray-900">Valor Pago</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-2 pl-12">
+                  <div className="text-3xl font-extrabold text-purple-600 mb-1">{valorPago.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                  <CardDescription className="text-gray-500">Soma dos valores</CardDescription>
+                </CardContent>
+              </Card>
             </div>
 
             {/* Tabela de Dados (dropdown) */}
@@ -321,9 +330,7 @@ const ConsultaFatura = () => {
               )}
             </div>
           </div>
-        </div>
-      </div>
-    </Layout>
+        </Layout>
   );
 };
 

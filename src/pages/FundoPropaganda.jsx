@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import Layout from '../components/Layout';
-import Sidebar from '../components/Sidebar';
-import Header from '../components/Header';
 import LoadingCircle from '../components/LoadingCircle';
 import { CaretDown, CaretRight, ArrowsClockwise, Receipt, CurrencyDollar, Money } from '@phosphor-icons/react';
 
@@ -33,7 +31,7 @@ export default function FundoPropaganda() {
       return;
     }
     try {
-      const res = await fetch(`https://manualtotvs.vercel.app/autocomplete/nm_fantasia?q=${encodeURIComponent(texto)}`);
+      const res = await fetch(`https://apigestaocrosby.onrender.com/autocomplete/nm_fantasia?q=${encodeURIComponent(texto)}`);
       if (!res.ok) return;
       const json = await res.json();
       setSugestoes(json);
@@ -84,7 +82,7 @@ export default function FundoPropaganda() {
       if (filtros.dt_inicio) params.append('dt_inicio', filtros.dt_inicio);
       if (filtros.dt_fim) params.append('dt_fim', filtros.dt_fim);
       // Busca dados da tabela principal
-      const res = await fetch(`https://manualtotvs.vercel.app/fundopropaganda?${params.toString()}`);
+      const res = await fetch(`https://apigestaocrosby.onrender.com/fundopropaganda?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
       const json = await res.json();
       setDados(json);
@@ -92,7 +90,7 @@ export default function FundoPropaganda() {
       const paramsCredev = new URLSearchParams();
       if (filtros.dt_inicio) paramsCredev.append('dt_inicio', filtros.dt_inicio);
       if (filtros.dt_fim) paramsCredev.append('dt_fim', filtros.dt_fim);
-      const resCredev = await fetch(`https://manualtotvs.vercel.app/franquiascredev?${paramsCredev.toString()}`);
+      const resCredev = await fetch(`https://apigestaocrosby.onrender.com/franquiascredev?${paramsCredev.toString()}`);
       if (!resCredev.ok) throw new Error('Erro ao buscar dados credev');
       const jsonCredev = await resCredev.json();
       setDadosCredev(jsonCredev);
@@ -296,9 +294,7 @@ export default function FundoPropaganda() {
   return (
     <Layout>
       <div className="flex min-h-screen">
-        <Sidebar />
         <div className="flex-1 flex flex-col">
-          <Header />
           <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
             <h1 className="text-3xl font-bold mb-6 text-center">Fundo de Propaganda</h1>
             <div className="mb-8">

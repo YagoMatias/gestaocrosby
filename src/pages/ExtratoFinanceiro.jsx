@@ -37,7 +37,7 @@ const ExtratoFinanceiro = () => {
       if (filtrosParam.dt_movim_fim) params.append('dt_movim_fim', filtrosParam.dt_movim_fim);
       params.append('limit', PAGE_SIZE);
       params.append('offset', (pageParam - 1) * PAGE_SIZE);
-      const res = await fetch(`https://crosby-pd5x7.ondigitalocean.app/extrato?${params.toString()}`);
+      const res = await fetch(`https://apigestaocrosby.onrender.com/extrato?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
       const json = await res.json();
       setDados(json.rows || []);
