@@ -14,7 +14,7 @@ const FiltroEmpresa = ({ empresasSelecionadas = [], onSelectEmpresas }) => {
       return;
     }
     try {
-      const res = await fetch(`https://crosby-pd5x7.ondigitalocean.app/autocomplete/nm_grupoempresa?q=${encodeURIComponent(texto)}`);
+      const res = await fetch(`https://apigestaocrosby.onrender.com/autocomplete/nm_grupoempresa?q=${encodeURIComponent(texto)}`);
       if (!res.ok) return;
       const json = await res.json();
       setSugestoes(json.map(e => ({
