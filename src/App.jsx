@@ -10,6 +10,7 @@ import Multimarcas from './pages/Multimarcas';
 import Revenda from './pages/Revenda';
 import ConsultaFatura from './pages/ConsultaFatura';
 import FundoPropaganda from './pages/FundoPropaganda';
+import RankingFaturamento from './pages/RankingFaturamento';
 import React from 'react';
 
 function App() {
@@ -27,6 +28,7 @@ function App() {
         <Route path="/revenda" element={<Revenda />} />
         <Route path="/consulta-fatura" element={<ConsultaFatura />} />
         <Route path="/fundo-propaganda" element={<FundoPropaganda />} />
+        <Route path="/ranking-faturamento" element={<RankingFaturamento />} />
       </Routes>
     </Router>
   );

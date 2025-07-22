@@ -31,6 +31,9 @@ const Revenda = () => {
     return map;
   }, []);
 
+  // Filtrar apenas dados com cd_classificacao == 3
+  const dadosFiltrados = dados.filter(row => row.cd_classificacao == 3);
+
   // Função para exportar o ranking para Excel
   const exportarRankParaExcel = () => {
     const rankProdutos = dados.reduce((acc, row) => {
@@ -181,8 +184,8 @@ const Revenda = () => {
               <span className="text-base font-bold text-[#000638] mb-1 tracking-wide">FATURAMENTO TOTAL</span>
               <span className="text-2xl font-extrabold text-[#000638] mb-1">
                 {loading ? <LoadingCircle size={32} /> : (() => {
-                  const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  const somaEntradas = dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
+                  const somaSaidas = dadosFiltrados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
+                  const somaEntradas = dadosFiltrados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
                   const faturamentoTotal = somaSaidas - somaEntradas;
                   return faturamentoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                 })()}
@@ -196,7 +199,7 @@ const Revenda = () => {
             <div className="flex flex-col items-start">
               <span className="text-base font-bold text-green-600 mb-1 tracking-wide">PRODUTOS SAÍRAM (S)</span>
               <span className="text-2xl font-extrabold text-green-600 mb-1">
-                {loading ? <LoadingCircle size={32} /> : dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
+                {loading ? <LoadingCircle size={32} /> : dadosFiltrados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
               </span>
               <span className="text-xs text-gray-500">Quantidade</span>
             </div>
@@ -207,7 +210,7 @@ const Revenda = () => {
             <div className="flex flex-col items-start">
               <span className="text-base font-bold text-[#fe0000] mb-1 tracking-wide">PRODUTOS ENTRARAM (E)</span>
               <span className="text-2xl font-extrabold text-[#fe0000] mb-1">
-                {loading ? <LoadingCircle size={32} /> : dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
+                {loading ? <LoadingCircle size={32} /> : dadosFiltrados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
               </span>
               <span className="text-xs text-gray-500">Quantidade</span>
             </div>
@@ -252,7 +255,7 @@ const Revenda = () => {
                   ) : dados.length === 0 ? (
                     <tr><td colSpan={8} className="text-center py-8">Nenhum dado encontrado.</td></tr>
                   ) : (
-                    dados.map((row, i) => {
+                    dadosFiltrados.map((row, i) => {
                       const qtFaturado = Number(row.qt_faturado) || 1;
                       const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
                       return (
@@ -261,7 +264,7 @@ const Revenda = () => {
                           <td className="px-4 py-2">{row.cd_empresa}</td>
                           <td className="px-4 py-2">{row.nm_grupoempresa}</td>
                           <td className="px-4 py-2">{row.nm_pessoa}</td>
-                          <td className="px-4 py-2">{row.cd_classificacao}</td>
+                          <td className="px-4 py-2">{row.cd_classificacao || ''}</td>
                           <td className="px-4 py-2 text-center text-[#000638]">{formatarDataBR(row.dt_transacao)}</td>
                           <td className="px-4 py-2">{row.ds_nivel}</td>
                           <td className={`px-4 py-2 text-right font-bold ${row.tp_operacao === 'E' ? 'text-[#fe0000]' : row.tp_operacao === 'S' ? 'text-green-600' : ''}`}>{valorTotal !== null && valorTotal !== undefined ? valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>

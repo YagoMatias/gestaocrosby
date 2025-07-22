@@ -302,4 +302,4 @@ const ExtratoTOTVS = () => {
   );
 };
 
-export default ExtratoTOTVS; 
+export default ExtratoTOTVS;

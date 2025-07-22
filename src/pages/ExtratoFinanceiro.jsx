@@ -3,6 +3,7 @@ import Layout from '../components/Layout';
 import DropdownContas from '../components/DropdownContas';
 import { contas } from "../utils/contas";
 import { ArrowsClockwise, CaretDown, CaretRight, ArrowCircleDown, ArrowCircleUp, Receipt } from '@phosphor-icons/react';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
 
 const PAGE_SIZE = 5000;
 
@@ -131,6 +132,12 @@ const ExtratoFinanceiro = () => {
     return '';
   }
 
+  // Cálculos dos cards
+  const qtdDebitos = dados.filter(row => row.tp_operbco === 'D').length;
+  const valorDebitos = dados.filter(row => row.tp_operbco === 'D').reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+  const qtdCreditos = dados.filter(row => row.tp_operbco === 'C').length;
+  const valorCreditos = dados.filter(row => row.tp_operbco === 'C').reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+
   return (
     <Layout>
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
@@ -181,38 +188,36 @@ const ExtratoFinanceiro = () => {
           </form>
           {erro && <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{erro}</div>}
         </div>
-        {/* Cards de resumo de Débito e Crédito */}
-        <div className="flex flex-wrap gap-6 justify-center mb-8">
-          {/* Card Débito */}
-          <div className="bg-white shadow-lg rounded-2xl p-6 flex flex-row items-center w-full max-w-xs border-l-8 border-[#fe0000]">
-            <span className="mr-4"><ArrowCircleDown size={32} color="#fe0000" weight="duotone" /></span>
-            <div className="flex flex-col items-start">
-              <span className="text-base font-bold text-[#fe0000] mb-1 tracking-wide">DÉBITOS (D)</span>
-              <span className="text-2xl font-extrabold text-[#fe0000] mb-1">
-                {dados.filter(row => row.tp_operbco === 'D').length}
-              </span>
-              <span className="text-xs text-gray-500">Quantidade</span>
-              <span className="text-xl font-bold text-[#fe0000] mt-2">
-                {dados.filter(row => row.tp_operbco === 'D').reduce((acc, row) => acc + (row.vl_lancto || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              </span>
-              <span className="text-xs text-gray-500">Soma dos valores</span>
-            </div>
-          </div>
-          {/* Card Crédito */}
-          <div className="bg-white shadow-lg rounded-2xl p-6 flex flex-row items-center w-full max-w-xs border-l-8 border-green-600">
-            <span className="mr-4"><ArrowCircleUp size={32} color="#16a34a" weight="duotone" /></span>
-            <div className="flex flex-col items-start">
-              <span className="text-base font-bold text-green-600 mb-1 tracking-wide">CRÉDITOS (C)</span>
-              <span className="text-2xl font-extrabold text-green-600 mb-1">
-                {dados.filter(row => row.tp_operbco === 'C').length}
-              </span>
-              <span className="text-xs text-gray-500">Quantidade</span>
-              <span className="text-xl font-bold text-green-600 mt-2">
-                {dados.filter(row => row.tp_operbco === 'C').reduce((acc, row) => acc + (row.vl_lancto || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              </span>
-              <span className="text-xs text-gray-500">Soma dos valores</span>
-            </div>
-          </div>
+        {/* Cards de resumo de Débito e Crédito no novo padrão */}
+        <div className="flex flex-col gap-6 mb-8 lg:flex-row lg:gap-8 lg:justify-center">
+          <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/3 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex flex-row items-center gap-2">
+                <ArrowCircleDown size={20} className="text-[#fe0000]" />
+                <CardTitle className="text-base font-bold text-[#fe0000]">Débitos (D)</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-2 pl-12">
+              <div className="text-3xl font-extrabold text-[#fe0000] mb-1">{qtdDebitos}</div>
+              <CardDescription className="text-gray-500">Quantidade</CardDescription>
+              <div className="text-xl font-bold text-[#fe0000] mt-2">{valorDebitos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+              <CardDescription className="text-gray-500">Soma dos valores</CardDescription>
+            </CardContent>
+          </Card>
+          <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/3 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex flex-row items-center gap-2">
+                <ArrowCircleUp size={20} className="text-green-600" />
+                <CardTitle className="text-base font-bold text-green-600">Créditos (C)</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-2 pl-12">
+              <div className="text-3xl font-extrabold text-green-600 mb-1">{qtdCreditos}</div>
+              <CardDescription className="text-gray-500">Quantidade</CardDescription>
+              <div className="text-xl font-bold text-green-600 mt-2">{valorCreditos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+              <CardDescription className="text-gray-500">Soma dos valores</CardDescription>
+            </CardContent>
+          </Card>
         </div>
         {/* Botão de exportação CSV */}
         <div className="flex justify-end mb-2">
