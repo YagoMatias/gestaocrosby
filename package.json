@@ -10,6 +10,7 @@
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-hover-card": "^1.1.14",
+    "@radix-ui/react-tooltip": "^1.2.7",
     "file-saver": "^2.0.5",
     "jspdf": "^3.0.1",
     "jspdf-autotable": "^5.0.2",
@@ -19,6 +20,8 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
     "autoprefixer": "^10.0.0",
     "postcss": "^8.0.0",

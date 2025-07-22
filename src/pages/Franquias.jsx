@@ -21,7 +21,13 @@ const Franquias = () => {
   const [expandRankProdutos, setExpandRankProdutos] = useState(true);
   const [nmGrupoEmpresaSelecionados, setNmGrupoEmpresaSelecionados] = useState([]);
   const [nm_grupoempresa, setNmGrupoEmpresa] = useState('');
-  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
+  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([
+    { cd_empresa: '2' },
+    { cd_empresa: '75' },
+    { cd_empresa: '31' },
+    { cd_empresa: '6' },
+    { cd_empresa: '11' },
+  ]);
 
   // Cria um Map para lookup rápido do custo pelo código
   const custoMap = React.useMemo(() => {

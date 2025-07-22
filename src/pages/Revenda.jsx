@@ -18,7 +18,14 @@ const Revenda = () => {
   });
   const [expandTabela, setExpandTabela] = useState(true);
   const [expandRankProdutos, setExpandRankProdutos] = useState(true);
-  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
+  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([
+    { cd_empresa: '2' },
+    { cd_empresa: '200' },
+    { cd_empresa: '75' },
+    { cd_empresa: '31' },
+    { cd_empresa: '6' },
+    { cd_empresa: '11' },
+  ]);
 
   // Cria um Map para lookup rápido do custo pelo código
   const custoMap = React.useMemo(() => {
@@ -279,22 +286,30 @@ const Revenda = () => {
         </div>
         {/* Card Rank Produtos */}
         <div className="mt-8 rounded-2xl shadow-lg bg-white border border-[#000638]/10">
-          <div className="p-4 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandRankProdutos(e => !e)}>
+          <div className="flex items-center justify-between p-4 border-b border-[#000638]/10">
             <h2 className="text-xl font-bold text-[#000638]">Rank Produtos</h2>
-            <span className="flex items-center">
-              {expandRankProdutos ? <CaretDown size={20} color="#9ca3af" /> : <CaretRight size={20} color="#9ca3af" />}
-            </span>
+            <button
+              className="ml-4 px-4 py-2 bg-[#000638] text-white rounded-lg text-sm font-semibold hover:bg-[#001060] transition shadow"
+              onClick={exportarRankParaExcel}
+              type="button"
+            >
+              Baixar Excel
+            </button>
           </div>
           {expandRankProdutos && (
             <div className="p-4">
               <div className="overflow-x-auto">
-                <table className="min-w-[1200px] w-full border border-gray-200 rounded-lg">
+                <table className="min-w-full text-sm">
                   <thead>
                     <tr className="bg-[#000638] text-white">
                       <th className="px-4 py-2 text-left font-semibold">Rank</th>
+                      <th className="px-4 py-2 font-semibold">Código Modelo</th>
                       <th className="px-4 py-2 text-left font-semibold">Modelo</th>
                       <th className="px-4 py-2 text-center font-semibold">Quantidade</th>
                       <th className="px-4 py-2 text-right font-semibold">Valor</th>
+                      <th className="px-4 py-2 text-right font-semibold">Custo</th>
+                      <th className="px-4 py-2 text-right font-semibold">Markup</th>
+                      <th className="px-4 py-2 text-right font-semibold">Margem %</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -304,6 +319,7 @@ const Revenda = () => {
                         const nivel = row.cd_nivel;
                         if (!acc[nivel]) {
                           acc[nivel] = {
+                            cd_nivel: nivel,
                             modelo: row.ds_nivel,
                             valorTotal: 0,
                             quantidade: 0
@@ -324,19 +340,30 @@ const Revenda = () => {
                       const rankArray = Object.values(rankProdutos)
                         .sort((a, b) => b.valorTotal - a.valorTotal);
                       if (loading) {
-                        return <tr><td colSpan={4} className="text-center py-8"><LoadingCircle size={32} /></td></tr>;
+                        return <tr><td colSpan={8} className="text-center py-8"><LoadingCircle size={32} /></td></tr>;
                       }
                       return rankArray.length === 0 ? (
-                        <tr><td colSpan={4} className="text-center py-8 text-gray-500">Nenhum produto encontrado.</td></tr>
+                        <tr><td colSpan={8} className="text-center py-8 text-gray-500">Nenhum produto encontrado.</td></tr>
                       ) : (
-                        rankArray.map((produto, index) => (
-                          <tr key={index} className="bg-[#f8f9fb] border-b">
-                            <td className="px-4 py-2 text-blue-600 font-bold">#{index + 1}</td>
-                            <td className="px-4 py-2">{produto.modelo}</td>
-                            <td className="px-4 py-2 text-center">{produto.quantidade}</td>
-                            <td className="px-4 py-2 text-right">{produto.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                          </tr>
-                        ))
+                        rankArray.map((produto, index) => {
+                          const custoUnit = custoMap[produto.cd_nivel?.trim()];
+                          const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
+                          const markup = custoTotal && custoTotal !== 0 ? produto.valorTotal / custoTotal : undefined;
+                          const margem = (produto.valorTotal && custoTotal !== undefined && produto.valorTotal !== 0)
+                            ? ((produto.valorTotal - custoTotal) / produto.valorTotal) * 100 : undefined;
+                          return (
+                            <tr key={index} className="bg-[#f8f9fb] border-b">
+                              <td className="px-4 py-2 text-blue-600 font-bold">#{index + 1}</td>
+                              <td className="px-4 py-2">{produto.cd_nivel}</td>
+                              <td className="px-4 py-2">{produto.modelo}</td>
+                              <td className="px-4 py-2 text-center">{produto.quantidade}</td>
+                              <td className="px-4 py-2 text-right">{produto.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                              <td className="px-4 py-2 text-right">{custoTotal !== undefined ? custoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
+                              <td className="px-4 py-2 text-right">{markup && markup !== Infinity ? markup.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</td>
+                              <td className="px-4 py-2 text-right">{margem !== undefined ? margem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '-'}</td>
+                            </tr>
+                          );
+                        })
                       );
                     })()}
                   </tbody>
