@@ -18,7 +18,33 @@ const Varejo = () => {
   });
   const [expandTabela, setExpandTabela] = useState(true);
   const [expandRankProdutos, setExpandRankProdutos] = useState(true);
-  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
+  // Seleção inicial igual à página de Franquias
+  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([
+    { cd_empresa: '2' },
+    { cd_empresa: '5' },
+    { cd_empresa: '500' },
+    { cd_empresa: '55' },
+    { cd_empresa: '550' },
+    { cd_empresa: '65' },
+    { cd_empresa: '650' },
+    { cd_empresa: '93' },
+    { cd_empresa: '930' },
+    { cd_empresa: '94' },
+    { cd_empresa: '940' },
+    { cd_empresa: '95' },
+    { cd_empresa: '950' },
+    { cd_empresa: '96' },
+    { cd_empresa: '960' },
+    { cd_empresa: '97' },
+    { cd_empresa: '970' }
+  ]);
+  // Buscar dados automaticamente ao montar, se houver empresas selecionadas
+  React.useEffect(() => {
+    if (empresasSelecionadas.length > 0) {
+      fetchDados(empresasSelecionadas);
+    }
+    // eslint-disable-next-line
+  }, []);
 
   const handleSelectEmpresas = (empresas) => {
     setEmpresasSelecionadas(empresas);

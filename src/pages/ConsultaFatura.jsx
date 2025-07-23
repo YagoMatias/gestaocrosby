@@ -295,7 +295,7 @@ const ConsultaFatura = () => {
                 </span>
               </div>
               {expandTabela && (
-                <div className="overflow-y-auto max-h-[500px]">
+                <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="bg-[#000638] text-white">
@@ -306,7 +306,7 @@ const ConsultaFatura = () => {
                         <th className="px-4 py-2 font-semibold">Valor Faturado</th>
                       </tr>
                     </thead>
-                    <tbody className="overflow-y-auto">
+                    <tbody>
                       {loading ? (
                         <tr><td colSpan={5} className="text-center py-8">Carregando...</td></tr>
                       ) : agruparDadosPorClienteFantasiaCliente(dados).length === 0 ? (
@@ -314,8 +314,8 @@ const ConsultaFatura = () => {
                       ) : (
                         agruparDadosPorClienteFantasiaCliente(dados).map((row, i) => (
                           <tr key={i} className="border-b hover:bg-[#f8f9fb]">
-                            <td className="px-4 py-2 text-center text-[#000638]">{row.cd_empresa}</td>
-                            <td className="px-4 py-2 text-center text-[#000638]">{row.cd_cliente}</td>
+                            <td className="px-4 py-2 text-[#000638]">{row.cd_empresa}</td>
+                            <td className="px-4 py-2 text-[#000638]">{row.cd_cliente}</td>
                             <td className="px-4 py-2 text-[#000000]">{row.nm_cliente}</td>
                             <td className="px-4 py-2 text-[#000000]">{row.nm_fantasia}</td>
                             <td className="px-4 py-2 text-right font-bold text-[#fe0000]">
