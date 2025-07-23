@@ -2,16 +2,23 @@ import React, { useState, useRef } from 'react';
 import Layout from '../components/Layout';
 import DropdownContas from '../components/DropdownContas';
 import { contas } from "../utils/contas";
-import { ArrowsClockwise, CaretDown, CaretRight, ArrowCircleDown, ArrowCircleUp, Receipt } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretDown, CaretRight, ArrowCircleDown, ArrowCircleUp, Receipt, CheckCircle, XCircle } from '@phosphor-icons/react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
+import LoadingCircle from '../components/LoadingCircle';
+import ExtratoTotvsTable from '../components/ExtratoTotvsTable';
 
-const PAGE_SIZE = 5000;
+const PAGE_SIZE = 100000;
 
 const ExtratoFinanceiro = () => {
   const [dados, setDados] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
+  const [dadosTotvs, setDadosTotvs] = useState([]);
+  const [totalTotvs, setTotalTotvs] = useState(0);
+  const [loadingTotvs, setLoadingTotvs] = useState(false);
+  const [erroTotvs, setErroTotvs] = useState('');
+  const [expandTabelaTotvs, setExpandTabelaTotvs] = useState(true);
   const [filtros, setFiltros] = useState({
     cd_empresa: '',
     nr_ctapes: [], // agora é array
@@ -49,6 +56,31 @@ const ExtratoFinanceiro = () => {
       setTotal(0);
     } finally {
       setLoading(false);
+    }
+    // Buscar também dados do TOTVS
+    setLoadingTotvs(true);
+    setErroTotvs('');
+    try {
+      const params = new URLSearchParams();
+      if (filtrosParam.cd_empresa) params.append('cd_empresa', filtrosParam.cd_empresa);
+      if (filtrosParam.nr_ctapes && filtrosParam.nr_ctapes.length > 0) {
+        filtrosParam.nr_ctapes.forEach((nr) => params.append('nr_ctapes', Number(nr)));
+      }
+      if (filtrosParam.dt_movim_ini) params.append('dt_movim_ini', filtrosParam.dt_movim_ini);
+      if (filtrosParam.dt_movim_fim) params.append('dt_movim_fim', filtrosParam.dt_movim_fim);
+      params.append('limit', PAGE_SIZE);
+      params.append('offset', (pageParam - 1) * PAGE_SIZE);
+      const resTotvs = await fetch(`https://apigestaocrosby.onrender.com/extratototvs?${params.toString()}`);
+      if (!resTotvs.ok) throw new Error('Erro ao buscar dados do servidor TOTVS');
+      const jsonTotvs = await resTotvs.json();
+      setDadosTotvs(jsonTotvs.rows || jsonTotvs || []);
+      setTotalTotvs(jsonTotvs.total || (jsonTotvs.length ?? 0));
+    } catch (err) {
+      setErroTotvs('Erro ao buscar dados do servidor TOTVS.');
+      setDadosTotvs([]);
+      setTotalTotvs(0);
+    } finally {
+      setLoadingTotvs(false);
     }
   };
 
@@ -138,6 +170,42 @@ const ExtratoFinanceiro = () => {
   const qtdCreditos = dados.filter(row => row.tp_operbco === 'C').length;
   const valorCreditos = dados.filter(row => row.tp_operbco === 'C').reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
 
+  // Cards TOTVs
+  const qtdDebitosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'D').length;
+  const valorDebitosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'D').reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+  const qtdCreditosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'C').length;
+  const valorCreditosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'C').reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+
+  // Novos cards: conciliação
+  const qtdConciliadas = dados.filter(row => !!row.dt_conciliacao).length;
+  const qtdDesconciliadas = dados.filter(row => !row.dt_conciliacao).length;
+  const valorConciliadas = dados.filter(row => !!row.dt_conciliacao).reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+  const valorDesconciliadas = dados.filter(row => !row.dt_conciliacao).reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+
+  // Verifica contas selecionadas
+  const [expandBancos, setExpandBancos] = useState(false);
+  const contasSelecionadas = contas.filter(c => filtros.nr_ctapes.includes(c.numero));
+
+  // Calcula data da transação desconciliada mais antiga por banco
+  let ultimasDesconciliadas = [];
+  if (contasSelecionadas.length > 0) {
+    ultimasDesconciliadas = contasSelecionadas.map(conta => {
+      const transacoesDesconciliadas = dados.filter(row => String(row.nr_ctapes) === conta.numero && !row.dt_conciliacao);
+      let dataMaisAntiga = null;
+      if (transacoesDesconciliadas.length > 0) {
+        dataMaisAntiga = transacoesDesconciliadas.reduce((min, row) => {
+          const data = new Date(row.dt_lancto);
+          return (!min || data < new Date(min)) ? row.dt_lancto : min;
+        }, null);
+      }
+      return {
+        numero: conta.numero,
+        nome: conta.nome,
+        maisAntigaDesconciliada: dataMaisAntiga
+      };
+    });
+  }
+
   return (
     <Layout>
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
@@ -188,34 +256,130 @@ const ExtratoFinanceiro = () => {
           </form>
           {erro && <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{erro}</div>}
         </div>
-        {/* Cards de resumo de Débito e Crédito no novo padrão */}
-        <div className="flex flex-col gap-6 mb-8 lg:flex-row lg:gap-8 lg:justify-center">
-          <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/3 bg-white cursor-pointer">
-            <CardHeader className="pb-0">
-              <div className="flex flex-row items-center gap-2">
-                <ArrowCircleDown size={20} className="text-[#fe0000]" />
-                <CardTitle className="text-base font-bold text-[#fe0000]">Débitos (D)</CardTitle>
+        {/* Cards de bancos: última transação desconciliada em dropdown */}
+        {contasSelecionadas.length > 0 && (
+           <div className="rounded-2xl shadow-lg bg-white mb-4 border border-[#000638]/10 max-w-5xl mx-auto">
+             <div className="p-3 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandBancos(e => !e)}>
+               <span className="text-base font-bold text-[#000638]">Transação desconciliada mais antiga por banco</span>
+               <span className="flex items-center">
+                 {expandBancos ? <CaretDown size={20} color="#9ca3af" /> : <CaretRight size={20} color="#9ca3af" />}
+               </span>
+             </div>
+             {expandBancos && (
+               <div className="flex flex-row gap-2 p-3 flex-wrap justify-center items-stretch">
+                 {ultimasDesconciliadas.map(banco => (
+                   <Card key={banco.numero} className="min-w-[140px] max-w-[180px] shadow-md rounded-lg bg-white cursor-pointer p-1 border border-gray-200">
+                     <CardHeader className="pb-0 px-1 pt-1">
+                       <div className="flex flex-row items-center gap-1">
+                         <CardTitle className="text-xs font-bold text-blue-900 truncate">{banco.nome}</CardTitle>
+                       </div>
+                     </CardHeader>
+                     <CardContent className="pt-1 pl-2">
+                       <div className="text-[10px] text-gray-500">Data mais antiga desconciliada</div>
+                       <div className="text-xs font-bold text-gray-700 mt-0.5">
+                         {loading ? <LoadingCircle size={18} /> : (
+                           banco.maisAntigaDesconciliada
+                             ? <span className="text-[#fe0000] font-bold">{new Date(banco.maisAntigaDesconciliada).toLocaleDateString('pt-BR')}</span>
+                             : <span className="text-green-600 font-bold">Conciliações realizadas no período</span>
+                         )}
+                       </div>
+                     </CardContent>
+                   </Card>
+                 ))}
+               </div>
+             )}
+           </div>
+         )}
+        {/* Cards em linha, ainda menores */}
+        <div className="flex flex-row gap-2 mb-8 max-w-full justify-center items-stretch flex-wrap">
+          {/* Card Débitos Financeiro */}
+          <Card className="min-w-[140px] max-w-[160px] shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-1 rounded-lg bg-white cursor-pointer p-1">
+            <CardHeader className="pb-0 px-1 pt-1">
+              <div className="flex flex-row items-center gap-1">
+                <ArrowCircleDown size={15} className="text-[#fe0000]" />
+                <CardTitle className="text-xs font-bold text-[#fe0000]">Déb. Fin. (D)</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-2 pl-12">
-              <div className="text-3xl font-extrabold text-[#fe0000] mb-1">{qtdDebitos}</div>
-              <CardDescription className="text-gray-500">Quantidade</CardDescription>
-              <div className="text-xl font-bold text-[#fe0000] mt-2">{valorDebitos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
-              <CardDescription className="text-gray-500">Soma dos valores</CardDescription>
+            <CardContent className="pt-1 pl-2">
+              <div className="text-lg font-extrabold text-[#fe0000] mb-0.5">{qtdDebitos}</div>
+              <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
+              <div className="text-xs font-bold text-[#fe0000] mt-0.5">{valorDebitos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+              <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
             </CardContent>
           </Card>
-          <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/3 bg-white cursor-pointer">
-            <CardHeader className="pb-0">
-              <div className="flex flex-row items-center gap-2">
-                <ArrowCircleUp size={20} className="text-green-600" />
-                <CardTitle className="text-base font-bold text-green-600">Créditos (C)</CardTitle>
+          {/* Card Créditos Financeiro */}
+          <Card className="min-w-[140px] max-w-[160px] shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-1 rounded-lg bg-white cursor-pointer p-1">
+            <CardHeader className="pb-0 px-1 pt-1">
+              <div className="flex flex-row items-center gap-1">
+                <ArrowCircleUp size={15} className="text-green-600" />
+                <CardTitle className="text-xs font-bold text-green-600">Créd. Fin. (C)</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-2 pl-12">
-              <div className="text-3xl font-extrabold text-green-600 mb-1">{qtdCreditos}</div>
-              <CardDescription className="text-gray-500">Quantidade</CardDescription>
-              <div className="text-xl font-bold text-green-600 mt-2">{valorCreditos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
-              <CardDescription className="text-gray-500">Soma dos valores</CardDescription>
+            <CardContent className="pt-1 pl-2">
+              <div className="text-lg font-extrabold text-green-600 mb-0.5">{qtdCreditos}</div>
+              <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
+              <div className="text-xs font-bold text-green-600 mt-0.5">{valorCreditos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+              <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+            </CardContent>
+          </Card>
+          {/* Card Conciliadas */}
+          <Card className="min-w-[140px] max-w-[160px] shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-1 rounded-lg bg-white cursor-pointer p-1">
+            <CardHeader className="pb-0 px-1 pt-1">
+              <div className="flex flex-row items-center gap-1">
+                <CheckCircle size={15} className="text-green-600" />
+                <CardTitle className="text-xs font-bold text-green-600">Conciliadas</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-1 pl-2">
+              <div className="text-lg font-extrabold text-green-600 mb-0.5">{qtdConciliadas}</div>
+              <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
+              <div className="text-xs font-bold text-green-600 mt-0.5">{valorConciliadas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+              <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+            </CardContent>
+          </Card>
+          {/* Card Desconciliadas */}
+          <Card className="min-w-[140px] max-w-[160px] shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-1 rounded-lg bg-white cursor-pointer p-1">
+            <CardHeader className="pb-0 px-1 pt-1">
+              <div className="flex flex-row items-center gap-1">
+                <XCircle size={15} className="text-[#fe0000]" />
+                <CardTitle className="text-xs font-bold text-[#fe0000]">Desconciliadas</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-1 pl-2">
+              <div className="text-lg font-extrabold text-[#fe0000] mb-0.5">{qtdDesconciliadas}</div>
+              <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
+              <div className="text-xs font-bold text-[#fe0000] mt-0.5">{valorDesconciliadas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+              <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+            </CardContent>
+          </Card>
+          {/* Card Débitos TOTVs */}
+          <Card className="min-w-[140px] max-w-[160px] shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-1 rounded-lg bg-blue-100 cursor-pointer p-1">
+            <CardHeader className="pb-0 px-1 pt-1">
+              <div className="flex flex-row items-center gap-1">
+                <ArrowCircleDown size={15} className="text-[#fe0000]" />
+                <CardTitle className="text-xs font-bold text-[#fe0000]">Déb. TOTVs (D)</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-1 pl-2">
+              <div className="text-lg font-extrabold text-[#fe0000] mb-0.5">{qtdDebitosTotvs}</div>
+              <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
+              <div className="text-xs font-bold text-[#fe0000] mt-0.5">{valorDebitosTotvs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+              <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+            </CardContent>
+          </Card>
+          {/* Card Créditos TOTVs */}
+          <Card className="min-w-[140px] max-w-[160px] shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-1 rounded-lg bg-blue-100 cursor-pointer p-1">
+            <CardHeader className="pb-0 px-1 pt-1">
+              <div className="flex flex-row items-center gap-1">
+                <ArrowCircleUp size={15} className="text-green-600" />
+                <CardTitle className="text-xs font-bold text-green-600">Créd. TOTVs (C)</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-1 pl-2">
+              <div className="text-lg font-extrabold text-green-600 mb-0.5">{qtdCreditosTotvs}</div>
+              <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
+              <div className="text-xs font-bold text-green-600 mt-0.5">{valorCreditosTotvs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+              <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
             </CardContent>
           </Card>
         </div>
@@ -239,47 +403,59 @@ const ExtratoFinanceiro = () => {
           </div>
           {expandTabela && (
             <div className="overflow-y-auto max-h-[500px]">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="bg-[#000638] text-white">
-                    <th className="px-4 py-2 font-semibold">Conta</th>
-                    <th className="px-4 py-2 font-semibold">Data Lançamento</th>
-                    <th className="px-4 py-2 font-semibold">Histórico</th>
-                    <th className="px-4 py-2 font-semibold">Operação</th>
-                    <th className="px-4 py-2 font-semibold">Valor</th>
-                    <th className="px-4 py-2 font-semibold">Data Conciliação</th>
-                  </tr>
-                </thead>
-                <tbody className="overflow-y-auto">
-                  {loading ? (
-                    <tr><td colSpan={6} className="text-center py-8">Carregando...</td></tr>
-                  ) : dados.length === 0 ? (
-                    <tr><td colSpan={6} className="text-center py-8">Nenhum dado encontrado.</td></tr>
-                  ) : (
-                    dados.map((row, i) => (
-                      <tr key={i} className="border-b hover:bg-[#f8f9fb]">
-                        <td className={`px-4 py-2 text-center text-xs ${(() => {
-                          const conta = contas.find(c => c.numero === String(row.nr_ctapes));
-                          return conta ? corConta(conta.nome) : '';
-                        })()}`}>{
-                          (() => {
+              {loading ? (
+                <div className="flex justify-center items-center py-8"><LoadingCircle size={32} /></div>
+              ) : (
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="bg-[#000638] text-white">
+                      <th className="px-4 py-2 font-semibold">Conta</th>
+                      <th className="px-4 py-2 font-semibold">Data Lançamento</th>
+                      <th className="px-4 py-2 font-semibold">Histórico</th>
+                      <th className="px-4 py-2 font-semibold">Operação</th>
+                      <th className="px-4 py-2 font-semibold">Valor</th>
+                      <th className="px-4 py-2 font-semibold">Data Conciliação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="overflow-y-auto">
+                    {dados.length === 0 ? (
+                      <tr><td colSpan={6} className="text-center py-8">Nenhum dado encontrado.</td></tr>
+                    ) : (
+                      dados.map((row, i) => (
+                        <tr key={i} className="border-b hover:bg-[#f8f9fb]">
+                          <td className={`px-4 py-2 text-center text-xs ${(() => {
                             const conta = contas.find(c => c.numero === String(row.nr_ctapes));
-                            return conta ? `${conta.numero} - ${conta.nome}` : row.nr_ctapes;
-                          })()
-                        }</td>
-                        <td className="px-4 py-2 text-center text-[#000638]">{formatarDataBR(row.dt_lancto)}</td>
-                        <td className="px-4 py-2 text-[#000000]">{row.ds_histbco}</td>
-                        <td className="px-4 py-2 text-center text-[#000000]">{row.tp_operbco}</td>
-                        <td className={`px-4 py-2 text-right font-bold ${row.tp_operbco === 'D' ? 'text-[#fe0000]' : row.tp_operbco === 'C' ? 'text-green-600' : ''}`}>{row.vl_lancto?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                        <td className="px-4 py-2 text-center text-[#000638]">{formatarDataBR(row.dt_conciliacao)}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                            return conta ? corConta(conta.nome) : '';
+                          })()}`}>{
+                            (() => {
+                              const conta = contas.find(c => c.numero === String(row.nr_ctapes));
+                              return conta ? `${conta.numero} - ${conta.nome}` : row.nr_ctapes;
+                            })()
+                          }</td>
+                          <td className="px-4 py-2 text-center text-[#000638]">{formatarDataBR(row.dt_lancto)}</td>
+                          <td className="px-4 py-2 text-[#000000]">{row.ds_histbco}</td>
+                          <td className="px-4 py-2 text-center text-[#000000]">{row.tp_operbco}</td>
+                          <td className={`px-4 py-2 text-right font-bold ${row.tp_operbco === 'D' ? 'text-[#fe0000]' : row.tp_operbco === 'C' ? 'text-green-600' : ''}`}>{row.vl_lancto?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                          <td className="px-4 py-2 text-center text-[#000638]">{formatarDataBR(row.dt_conciliacao)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              )}
             </div>
           )}
         </div>
+        {/* Tabela Extrato TOTVS */}
+        <ExtratoTotvsTable
+          dados={dadosTotvs}
+          loading={loadingTotvs}
+          erro={erroTotvs}
+          expandTabela={expandTabelaTotvs}
+          setExpandTabela={setExpandTabelaTotvs}
+          contas={contas}
+          corConta={corConta}
+        />
         {/* Paginação */}
         {totalPages > 1 && (
           <div className="flex justify-center items-center gap-2 mt-6">
