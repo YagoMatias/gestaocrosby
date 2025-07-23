@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Lock, Eye, EyeSlash } from '@phosphor-icons/react';
 import logo from '../../public/crosbyazul.png';
+import { useAuth } from './AuthContext';
 
 const Logo = () => (
   <div className="flex justify-center mb-6">
@@ -16,6 +17,7 @@ const LoginForm = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { setUser } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -33,6 +35,8 @@ const LoginForm = () => {
         setLoading(false);
         return;
       }
+      const userData = await response.json();
+      setUser(userData);
       setLoading(false);
       navigate('/home');
     } catch (err) {

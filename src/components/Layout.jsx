@@ -9,7 +9,7 @@ const Layout = ({ children }) => {
   const handleCloseSidebar = () => setSidebarOpen(false);
 
   return (
-    <div className="h-screen w-full flex">
+    <div className="h-screen flex">
       {/* Sidebar: overlay em telas pequenas, fixo em grandes */}
       <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} />
       <div className=" flex-1 flex flex-col">

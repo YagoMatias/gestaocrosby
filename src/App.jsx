@@ -12,23 +12,24 @@ import ConsultaFatura from './pages/ConsultaFatura';
 import FundoPropaganda from './pages/FundoPropaganda';
 import RankingFaturamento from './pages/RankingFaturamento';
 import React from 'react';
+import PrivateRoute from './components/PrivateRoute';
 
 function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<LoginForm />} />
-        <Route path="/home" element={<Home />} />
-        <Route path="/transacoes" element={<Transacoes />} />
-        <Route path="/extrato-financeiro" element={<ExtratoFinanceiro />} />
-        <Route path="/extrato-totvs" element={<ExtratoTOTVS />} />
-        <Route path="/varejo" element={<Varejo />} />
-        <Route path="/franquias" element={<Franquias />} />
-        <Route path="/multimarcas" element={<Multimarcas />} />
-        <Route path="/revenda" element={<Revenda />} />
-        <Route path="/consulta-fatura" element={<ConsultaFatura />} />
-        <Route path="/fundo-propaganda" element={<FundoPropaganda />} />
-        <Route path="/ranking-faturamento" element={<RankingFaturamento />} />
+        <Route path="/home" element={<PrivateRoute><Home /></PrivateRoute>} />
+        <Route path="/transacoes" element={<PrivateRoute><Transacoes /></PrivateRoute>} />
+        <Route path="/extrato-financeiro" element={<PrivateRoute><ExtratoFinanceiro /></PrivateRoute>} />
+        <Route path="/extrato-totvs" element={<PrivateRoute><ExtratoTOTVS /></PrivateRoute>} />
+        <Route path="/varejo" element={<PrivateRoute><Varejo /></PrivateRoute>} />
+        <Route path="/franquias" element={<PrivateRoute><Franquias /></PrivateRoute>} />
+        <Route path="/multimarcas" element={<PrivateRoute><Multimarcas /></PrivateRoute>} />
+        <Route path="/revenda" element={<PrivateRoute><Revenda /></PrivateRoute>} />
+        <Route path="/consulta-fatura" element={<PrivateRoute><ConsultaFatura /></PrivateRoute>} />
+        <Route path="/fundo-propaganda" element={<PrivateRoute><FundoPropaganda /></PrivateRoute>} />
+        <Route path="/ranking-faturamento" element={<PrivateRoute><RankingFaturamento /></PrivateRoute>} />
       </Routes>
     </Router>
   );

@@ -210,13 +210,13 @@ const ExtratoFinanceiro = () => {
     <Layout>
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
         <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Extrato Financeiro</h1>
-        <div className="mb-8">
+        <div className="mb-4">
           <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
             <div className="mb-6">
               <span className="text-lg font-bold text-[#000638] flex items-center gap-2"><Receipt size={22} weight="bold" />Filtros</span>
               <span className="text-sm text-gray-500 mt-1">Selecione o período, empresa, conta ou data para análise</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-4 w-full mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-x-3 gap-y-2 w-full mb-4">
               <div className="flex flex-col">
                 <label className="block text-xs font-semibold mb-1 text-[#000638]">Empresa</label>
                 <input name="cd_empresa" value={filtros.cd_empresa} onChange={handleChange} className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" placeholder="Empresa" />
@@ -248,9 +248,9 @@ const ExtratoFinanceiro = () => {
                 <input type="date" name="dt_movim_fim" value={filtros.dt_movim_fim} onChange={handleChange} className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" />
               </div>
             </div>
-            <div className="flex justify-end w-full mt-8">
-              <button type="submit" className="flex items-center gap-2 bg-[#000638] text-white px-10 py-3 rounded-xl hover:bg-[#fe0000] transition h-12 text-base font-bold shadow-md tracking-wide uppercase">
-                <ArrowsClockwise size={22} weight="bold" /> Filtrar
+            <div className="flex justify-end w-full mt-1">
+              <button type="submit" className="flex items-center gap-1 bg-[#000638] text-white px-5 py-2 rounded-lg hover:bg-[#fe0000] transition h-9 text-sm font-bold shadow tracking-wide uppercase min-w-[90px]">
+                <ArrowsClockwise size={18} weight="bold" /> Filtrar
               </button>
             </div>
           </form>
@@ -387,14 +387,14 @@ const ExtratoFinanceiro = () => {
         <div className="flex justify-end mb-2">
           <button
             onClick={exportarCSV}
-            className="flex items-center gap-2 bg-[#000638] hover:bg-[#fe0000] text-white px-6 py-2 rounded-xl transition h-12 text-sm font-semibold shadow-md tracking-wide uppercase"
+            className="flex items-center gap-1 bg-[#000638] text-white px-5 py-2 rounded-lg hover:bg-[#fe0000] transition h-9 text-sm font-bold shadow tracking-wide uppercase min-w-[90px]"
             disabled={dados.length === 0}
           >
             <ArrowsClockwise size={18} weight="bold" /> Baixar CSV
           </button>
         </div>
         {/* Tabela de dados (dropdown) */}
-        <div className="rounded-2xl shadow-lg bg-white mt-8 border border-[#000638]/10">
+        <div className="rounded-2xl shadow-lg bg-white mt-2 border border-[#000638]/10">
           <div className="p-4 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandTabela(e => !e)}>
             <h2 className="text-xl font-bold text-[#000638]">Extrato Financeiro</h2>
             <span className="flex items-center">
