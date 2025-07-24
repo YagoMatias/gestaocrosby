@@ -22,7 +22,7 @@ const faturamento = [
   { name: 'Franquias', href: '/franquias', icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' },
   { name: 'Multimarcas', href: '/multimarcas', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' },
   { name: 'Revenda', href: '/revenda', icon: 'M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z' },
-  { name: 'Ranking Faturamento', href: '/ranking-faturamento', icon: 'M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2M16 11V7a4 4 0 00-8 0v4M12 17v.01' },
+  { name: 'Consolidado', href: '/consolidado', icon: 'M3 12h18M3 6h18M3 18h18' },
 ];
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -89,12 +89,13 @@ const Sidebar = ({ isOpen, onClose }) => {
             })}
           </div>
         )}
+        {/* Botão do grupo CMV (faturamento) */}
         <button
           className="mt-6 mb-2 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold text-gray-700 hover:bg-gray-100 focus:outline-none"
           onClick={() => setFaturamentoOpen((open) => !open)}
         >
           <FolderIcon />
-          <span className="flex-1 text-left">Faturamento</span>
+          <span className="flex-1 text-left">CMV</span>
           <ChevronIcon open={faturamentoOpen} />
         </button>
         {faturamentoOpen && (
@@ -132,6 +133,16 @@ const Sidebar = ({ isOpen, onClose }) => {
             })}
           </div>
         )}
+        {/* Ranking Faturamento fora do grupo */}
+        <button
+          className={`mt-6 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold ${location.pathname === '/ranking-faturamento' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+          onClick={() => handleNavigation('/ranking-faturamento')}
+        >
+          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2M16 11V7a4 4 0 00-8 0v4M12 17v.01" />
+          </svg>
+          <span className="text-xs font-medium">Ranking Faturamento</span>
+        </button>
       </nav>
     </div>
   );

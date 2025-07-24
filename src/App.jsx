@@ -11,6 +11,7 @@ import Revenda from './pages/Revenda';
 import ConsultaFatura from './pages/ConsultaFatura';
 import FundoPropaganda from './pages/FundoPropaganda';
 import RankingFaturamento from './pages/RankingFaturamento';
+import Consolidado from './pages/Consolidado';
 import React from 'react';
 import PrivateRoute from './components/PrivateRoute';
 
@@ -30,6 +31,7 @@ function App() {
         <Route path="/consulta-fatura" element={<PrivateRoute><ConsultaFatura /></PrivateRoute>} />
         <Route path="/fundo-propaganda" element={<PrivateRoute><FundoPropaganda /></PrivateRoute>} />
         <Route path="/ranking-faturamento" element={<PrivateRoute><RankingFaturamento /></PrivateRoute>} />
+        <Route path="/consolidado" element={<PrivateRoute><Consolidado /></PrivateRoute>} />
       </Routes>
     </Router>
   );
