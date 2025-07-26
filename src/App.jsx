@@ -14,6 +14,7 @@ import RankingFaturamento from './pages/RankingFaturamento';
 import Consolidado from './pages/Consolidado';
 import React from 'react';
 import PrivateRoute from './components/PrivateRoute';
+import ComprasFranquias from './pages/ComprasFranquias';
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
         <Route path="/fundo-propaganda" element={<PrivateRoute><FundoPropaganda /></PrivateRoute>} />
         <Route path="/ranking-faturamento" element={<PrivateRoute><RankingFaturamento /></PrivateRoute>} />
         <Route path="/consolidado" element={<PrivateRoute><Consolidado /></PrivateRoute>} />
+        <Route path="/compras-franquias" element={<PrivateRoute><ComprasFranquias /></PrivateRoute>} />
       </Routes>
     </Router>
   );

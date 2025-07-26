@@ -25,11 +25,16 @@ const faturamento = [
   { name: 'Consolidado', href: '/consolidado', icon: 'M3 12h18M3 6h18M3 18h18' },
 ];
 
+const franquias = [
+  { name: 'Compras Franquias', href: '/compras-franquias', icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' },
+];
+
 const Sidebar = ({ isOpen, onClose }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [financeiroOpen, setFinanceiroOpen] = useState(false);
   const [faturamentoOpen, setFaturamentoOpen] = useState(false);
+  const [franquiasOpen, setFranquiasOpen] = useState(false);
 
   const handleNavigation = (href) => {
     onClose();
@@ -101,6 +106,50 @@ const Sidebar = ({ isOpen, onClose }) => {
         {faturamentoOpen && (
           <div className="mb-2">
             {faturamento.map((item) => {
+              const isActive = location.pathname === item.href;
+              return (
+                <button
+                  key={item.name}
+                  className={`w-full flex items-center px-3 py-2 mb-1 rounded-lg transition-colors text-xs ${
+                    isActive 
+                      ? 'bg-blue-100 text-blue-700' 
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                  onClick={() => handleNavigation(item.href)}
+                >
+                  <svg 
+                    className="w-4 h-4 mr-2" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      strokeWidth={2} 
+                      d={item.icon} 
+                    />
+                  </svg>
+                  <span className="text-xs font-medium">
+                    {item.name}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {/* Botão do grupo Franquias */}
+        <button
+          className="mt-6 mb-2 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold text-gray-700 hover:bg-gray-100 focus:outline-none"
+          onClick={() => setFranquiasOpen((open) => !open)}
+        >
+          <FolderIcon />
+          <span className="flex-1 text-left">Franquias</span>
+          <ChevronIcon open={franquiasOpen} />
+        </button>
+        {franquiasOpen && (
+          <div className="mb-2">
+            {franquias.map((item) => {
               const isActive = location.pathname === item.href;
               return (
                 <button
