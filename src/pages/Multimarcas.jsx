@@ -134,6 +134,21 @@ const Multimarcas = () => {
     saveAs(new Blob([excelBuffer], { type: 'application/octet-stream' }), 'rank_produtos_multimarcas.xlsx');
   };
 
+  // Função para calcular CMV (%)
+  function calcularCMV(faturamento, custo) {
+    if (faturamento > 0 && custo > 0) {
+      return (custo / faturamento) * 100;
+    }
+    return null;
+  }
+  // Função para calcular Markup
+  function calcularMarkup(faturamento, custo) {
+    if (custo > 0) {
+      return faturamento / custo;
+    }
+    return null;
+  }
+
   return (
     <Layout>
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
@@ -252,10 +267,13 @@ const Multimarcas = () => {
                     if (custoUnit !== undefined) {
                       custoTotal += qtFaturado * custoUnit;
                     }
-                    valorTotalVenda += (Number(row.vl_unitliquido) || 0) * qtFaturado;
+                    const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
+                  const somaEntradas = dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
+                  valorTotalVenda = somaSaidas - somaEntradas;
+                  valorTotalVenda;
                   }
                 });
-                const markup = custoTotal > 0 ? (valorTotalVenda / custoTotal) : null;
+                const markup = calcularMarkup(valorTotalVenda, custoTotal);
                 return (
                   <div className="flex flex-col gap-1 items-start">
                     <span className="text-4xl font-extrabold text-blue-700">{markup ? markup.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</span>
@@ -284,17 +302,48 @@ const Multimarcas = () => {
                     if (custoUnit !== undefined) {
                       custoTotal += qtFaturado * custoUnit;
                     }
-                    valorTotalVenda += (Number(row.vl_unitliquido) || 0) * qtFaturado;
+                    const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
+                  const somaEntradas = dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
+                  valorTotalVenda = somaSaidas - somaEntradas;
+                  valorTotalVenda;
                   }
                 });
-                const cmv = valorTotalVenda > 0 ? (custoTotal / valorTotalVenda) : null;
+                // Cálculo do CMV padronizado
+                const cmv = (valorTotalVenda > 0 && custoTotal > 0) ? (custoTotal / valorTotalVenda) * 100 : null;
                 return (
                   <div className="flex flex-col gap-1 items-start">
-                    <span className="text-4xl font-extrabold text-orange-700">{cmv !== null ? (cmv * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '-'}</span>
+                    <span className="text-4xl font-extrabold text-orange-700">{cmv !== null ? cmv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '-'}</span>
                     <span className="text-sm text-gray-500">CMV Total (Custo / Venda)</span>
                   </div>
                 );
               })()}
+            </CardContent>
+          </Card>
+          {/* Card Custo Total */}
+          <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <CardHeader className="pb-0">
+              <div className="flex flex-row items-center gap-2">
+                <CurrencyDollar size={20} className="text-red-700" />
+                <CardTitle className="text-sm font-bold text-red-700">Custo Total</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-2 pl-12">
+              <div className="text-2xl font-extrabold text-red-700 mb-1">
+                {loading ? <LoadingCircle size={32} /> : (() => {
+                  let custoTotal = 0;
+                  dados.forEach(row => {
+                    if (row.tp_operacao === 'S') {
+                      const qtFaturado = Number(row.qt_faturado) || 1;
+                      const custoUnit = custoMap[row.cd_nivel?.trim()];
+                      if (custoUnit !== undefined) {
+                        custoTotal += qtFaturado * custoUnit;
+                      }
+                    }
+                  });
+                  return custoTotal !== undefined ? custoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-';
+                })()}
+              </div>
+              <span className="text-sm text-gray-500">Custo Total do Período</span>
             </CardContent>
           </Card>
         </div>

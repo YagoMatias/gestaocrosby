@@ -219,41 +219,24 @@ const Consolidado = () => {
   };
 
   // Cálculo do CMV total ponderado
-  const cmvRevenda = calcularCMV(dadosRevenda);
-  const cmvVarejo = calcularCMV(dadosVarejo);
-  const cmvFranquia = calcularCMV(dadosFranquia);
-  const cmvMultimarcas = calcularCMV(dadosMultimarcas);
-  const somaFaturamentos = faturamento.revenda + faturamento.varejo + faturamento.franquia + faturamento.multimarcas;
-  let cmvTotal = null;
-  if (somaFaturamentos > 0) {
-    let somaCMV = 0;
-    if (cmvRevenda !== null) somaCMV += (faturamento.revenda * cmvRevenda / 100);
-    if (cmvVarejo !== null) somaCMV += (faturamento.varejo * cmvVarejo / 100);
-    if (cmvFranquia !== null) somaCMV += (faturamento.franquia * cmvFranquia / 100);
-    if (cmvMultimarcas !== null) somaCMV += (faturamento.multimarcas * cmvMultimarcas / 100);
-    cmvTotal = (somaCMV / somaFaturamentos) * 100;
-  }
-  // Cálculo do Markup total ponderado
-  const markupRevenda = calcularMarkup(dadosRevenda);
-  const markupVarejo = calcularMarkup(dadosVarejo);
-  const markupFranquia = calcularMarkup(dadosFranquia);
-  const markupMultimarcas = calcularMarkup(dadosMultimarcas);
-  let markupTotal = null;
-  if (somaFaturamentos > 0) {
-    let somaMarkup = 0;
-    if (markupRevenda !== null) somaMarkup += (faturamento.revenda * markupRevenda);
-    if (markupVarejo !== null) somaMarkup += (faturamento.varejo * markupVarejo);
-    if (markupFranquia !== null) somaMarkup += (faturamento.franquia * markupFranquia);
-    if (markupMultimarcas !== null) somaMarkup += (faturamento.multimarcas * markupMultimarcas);
-    markupTotal = somaMarkup / somaFaturamentos;
-  }
-
-  // Cálculo do custo total bruto de todos os canais
   const custoBrutoRevenda = calcularCustoBruto(dadosRevenda);
   const custoBrutoVarejo = calcularCustoBruto(dadosVarejo);
   const custoBrutoFranquia = calcularCustoBruto(dadosFranquia);
   const custoBrutoMultimarcas = calcularCustoBruto(dadosMultimarcas);
   const custoTotalBruto = custoBrutoRevenda + custoBrutoVarejo + custoBrutoFranquia + custoBrutoMultimarcas;
+
+  const cmvRevenda = calcularCMV(dadosRevenda);
+  const cmvVarejo = calcularCMV(dadosVarejo);
+  const cmvFranquia = calcularCMV(dadosFranquia);
+  const cmvMultimarcas = calcularCMV(dadosMultimarcas);
+  const somaFaturamentos = faturamento.revenda + faturamento.varejo + faturamento.franquia + faturamento.multimarcas;
+  const cmvTotal = (somaFaturamentos > 0 && custoTotalBruto > 0) ? (custoTotalBruto / somaFaturamentos) * 100 : null;
+
+  // Cálculo do Markup total ponderado
+  let markupTotal = null;
+  if (custoTotalBruto > 0) {
+    markupTotal = somaFaturamentos / custoTotalBruto;
+  }
 
   // Cálculo da margem por canal
   const margemRevenda = calcularMargemCanal(faturamento.revenda, custoBrutoRevenda);
@@ -314,8 +297,13 @@ const Consolidado = () => {
     labels: ['Revenda', 'Varejo', 'Franquia', 'Multimarcas'],
     datasets: [
       {
-        label: 'Markup (%)',
-        data: [markupRevenda, markupVarejo, markupFranquia, markupMultimarcas],
+        label: 'Markup',
+        data: [
+          custoBrutoRevenda > 0 ? faturamento.revenda / custoBrutoRevenda : 0,
+          custoBrutoVarejo > 0 ? faturamento.varejo / custoBrutoVarejo : 0,
+          custoBrutoFranquia > 0 ? faturamento.franquia / custoBrutoFranquia : 0,
+          custoBrutoMultimarcas > 0 ? faturamento.multimarcas / custoBrutoMultimarcas : 0
+        ],
         backgroundColor: [
           'rgba(59,130,246,0.8)', // Revenda - Azul
           'rgba(34,197,94,0.8)',  // Varejo - Verde
@@ -501,7 +489,7 @@ const Consolidado = () => {
                   ? <LoadingCircle size={32} color="#ea580c" />
                   : (cmvTotal !== null ? cmvTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--')}
               </div>
-              <CardDescription className="text-gray-500">Média ponderada dos canais</CardDescription>
+              <CardDescription className="text-gray-500">Custo Total / Faturamento Total</CardDescription>
             </CardContent>
           </Card>
           {/* Margem Total */}
@@ -570,7 +558,7 @@ const Consolidado = () => {
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
                   <CurrencyDollar size={20} className="text-red-700" />
-                  <CardTitle className="text-sm font-bold text-red-700">Custo Revenda</CardTitle>
+                  <CardTitle className="text-sm font-bold text-red-700">CMV Revenda</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-1 pl-6">
@@ -590,10 +578,11 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-2 pl-12">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingRevenda ? <LoadingCircle size={28} color="#ea580c" /> : (() => {
-                    const cmv = calcularCMV(dadosRevenda);
-                    return cmv !== null ? cmv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
-                  })()}
+                  {loadingRevenda ? <LoadingCircle size={28} color="#ea580c" /> : (
+                    faturamento.revenda > 0 && custoBrutoRevenda > 0
+                      ? ((custoBrutoRevenda / faturamento.revenda) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
+                      : '--'
+                  )}
                 </div>
                 <CardDescription className="text-gray-500">CMV Revenda (%)</CardDescription>
               </CardContent>
@@ -623,10 +612,11 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-2 pl-12">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingRevenda ? <LoadingCircle size={28} color="#2563eb" /> : (() => {
-                    const markup = calcularMarkup(dadosRevenda);
-                    return markup !== null ? markup.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--';
-                  })()}
+                  {loadingRevenda ? <LoadingCircle size={28} color="#2563eb" /> : (
+                    custoBrutoRevenda > 0
+                      ? (faturamento.revenda / custoBrutoRevenda).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                      : '--'
+                  )}
                 </div>
                 <CardDescription className="text-gray-500">Markup Revenda</CardDescription>
               </CardContent>
@@ -660,7 +650,7 @@ const Consolidado = () => {
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
                   <CurrencyDollar size={20} className="text-red-700" />
-                  <CardTitle className="text-sm font-bold text-red-700">Custo Varejo</CardTitle>
+                  <CardTitle className="text-sm font-bold text-red-700">CMV Varejo</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-1 pl-6">
@@ -680,10 +670,11 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-2 pl-12">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingVarejo ? <LoadingCircle size={28} color="#ea580c" /> : (() => {
-                    const cmv = calcularCMV(dadosVarejo);
-                    return cmv !== null ? cmv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
-                  })()}
+                  {loadingVarejo ? <LoadingCircle size={28} color="#ea580c" /> : (
+                    faturamento.varejo > 0 && custoBrutoVarejo > 0
+                      ? ((custoBrutoVarejo / faturamento.varejo) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
+                      : '--'
+                  )}
                 </div>
                 <CardDescription className="text-gray-500">CMV Varejo (%)</CardDescription>
               </CardContent>
@@ -713,10 +704,11 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-2 pl-12">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingVarejo ? <LoadingCircle size={28} color="#2563eb" /> : (() => {
-                    const markup = calcularMarkup(dadosVarejo);
-                    return markup !== null ? markup.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--';
-                  })()}
+                  {loadingVarejo ? <LoadingCircle size={28} color="#2563eb" /> : (
+                    custoBrutoVarejo > 0
+                      ? (faturamento.varejo / custoBrutoVarejo).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                      : '--'
+                  )}
                 </div>
                 <CardDescription className="text-gray-500">Markup Varejo</CardDescription>
               </CardContent>
@@ -751,7 +743,7 @@ const Consolidado = () => {
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
                   <CurrencyDollar size={20} className="text-red-700" />
-                  <CardTitle className="text-sm font-bold text-red-700">Custo Franquia</CardTitle>
+                  <CardTitle className="text-sm font-bold text-red-700">CMV Franquia</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-1 pl-6">
@@ -771,10 +763,11 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-2 pl-12">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingFranquia ? <LoadingCircle size={28} color="#ea580c" /> : (() => {
-                    const cmv = calcularCMV(dadosFranquia);
-                    return cmv !== null ? cmv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
-                  })()}
+                  {loadingFranquia ? <LoadingCircle size={28} color="#ea580c" /> : (
+                    faturamento.franquia > 0 && custoBrutoFranquia > 0
+                      ? ((custoBrutoFranquia / faturamento.franquia) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
+                      : '--'
+                  )}
                 </div>
                 <CardDescription className="text-gray-500">CMV Franquia (%)</CardDescription>
               </CardContent>
@@ -804,10 +797,11 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-2 pl-12">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingFranquia ? <LoadingCircle size={28} color="#2563eb" /> : (() => {
-                    const markup = calcularMarkup(dadosFranquia);
-                    return markup !== null ? markup.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--';
-                  })()}
+                  {loadingFranquia ? <LoadingCircle size={28} color="#2563eb" /> : (
+                    custoBrutoFranquia > 0
+                      ? (faturamento.franquia / custoBrutoFranquia).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                      : '--'
+                  )}
                 </div>
                 <CardDescription className="text-gray-500">Markup Franquia</CardDescription>
               </CardContent>
@@ -842,7 +836,7 @@ const Consolidado = () => {
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
                   <CurrencyDollar size={20} className="text-red-700" />
-                  <CardTitle className="text-sm font-bold text-red-700">Custo Multimarcas</CardTitle>
+                  <CardTitle className="text-sm font-bold text-red-700">CMV Multimarcas</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-1 pl-6">
@@ -862,10 +856,11 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-2 pl-12">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingMultimarcas ? <LoadingCircle size={28} color="#ea580c" /> : (() => {
-                    const cmv = calcularCMV(dadosMultimarcas);
-                    return cmv !== null ? cmv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
-                  })()}
+                  {loadingMultimarcas ? <LoadingCircle size={28} color="#ea580c" /> : (
+                    faturamento.multimarcas > 0 && custoBrutoMultimarcas > 0
+                      ? ((custoBrutoMultimarcas / faturamento.multimarcas) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
+                      : '--'
+                  )}
                 </div>
                 <CardDescription className="text-gray-500">CMV Multimarcas (%)</CardDescription>
               </CardContent>
@@ -895,10 +890,11 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-2 pl-12">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingMultimarcas ? <LoadingCircle size={28} color="#2563eb" /> : (() => {
-                    const markup = calcularMarkup(dadosMultimarcas);
-                    return markup !== null ? markup.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--';
-                  })()}
+                  {loadingMultimarcas ? <LoadingCircle size={28} color="#2563eb" /> : (
+                    custoBrutoMultimarcas > 0
+                      ? (faturamento.multimarcas / custoBrutoMultimarcas).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                      : '--'
+                  )}
                 </div>
                 <CardDescription className="text-gray-500">Markup Multimarcas</CardDescription>
               </CardContent>
