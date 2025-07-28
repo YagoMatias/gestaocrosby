@@ -440,92 +440,158 @@ const Consolidado = () => {
           </form>
         </div>
         {/* Cards Totais no topo */}
-        <div className="flex flex-col gap-6 mb-8 lg:flex-row lg:gap-8 lg:justify-center">
+        <div className="flex flex-wrap gap-4 mb-8 justify-center">
           {/* Faturamento Total */}
-          <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/5 bg-white cursor-pointer text-sm">
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex flex-row items-center gap-2">
-                <CurrencyDollar size={22} className="text-green-700" />
+                <CurrencyDollar size={18} className="text-green-700" />
                 <CardTitle className="text-sm font-bold text-green-700">Faturamento Total</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-1 pl-6">
+            <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-green-700 mb-1">
                 {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
-                  ? <LoadingCircle size={32} color="#16a34a" />
+                  ? <LoadingCircle size={24} color="#16a34a" />
                   : totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
-              <CardDescription className="text-gray-500">Soma dos canais</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Soma dos canais</CardDescription>
             </CardContent>
           </Card>
-          {/* Custo Total */}
-          <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/5 bg-white cursor-pointer text-sm">
+          {/* CMV */}
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex flex-row items-center gap-2">
-                <CurrencyDollar size={22} className="text-red-700" />
-                <CardTitle className="text-base font-bold text-red-700">Custo Total</CardTitle>
+                <CurrencyDollar size={18} className="text-red-700" />
+                <CardTitle className="text-sm font-bold text-red-700">CMV</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-2 pl-12">
+            <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-red-700 mb-1">
                 {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
-                  ? <LoadingCircle size={32} color="#dc2626" />
+                  ? <LoadingCircle size={24} color="#dc2626" />
                   : custoTotalBruto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
-              <CardDescription className="text-gray-500">Soma dos custos dos canais</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Soma dos custos dos canais</CardDescription>
             </CardContent>
           </Card>
           {/* CMV Total */}
-          <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/5 bg-white cursor-pointer text-sm">
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex flex-row items-center gap-2">
-                <Percent size={22} className="text-orange-700" />
-                <CardTitle className="text-base font-bold text-orange-700">CMV Total</CardTitle>
+                <Percent size={18} className="text-orange-700" />
+                <CardTitle className="text-sm font-bold text-orange-700">CMV Total</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-2 pl-12">
+            <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-orange-700 mb-1">
                 {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
-                  ? <LoadingCircle size={32} color="#ea580c" />
+                  ? <LoadingCircle size={24} color="#ea580c" />
                   : (cmvTotal !== null ? cmvTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--')}
               </div>
-              <CardDescription className="text-gray-500">Custo Total / Faturamento Total</CardDescription>
+              <CardDescription className="text-xs text-gray-500">CMV / Faturamento Total</CardDescription>
             </CardContent>
           </Card>
           {/* Margem Total */}
-          <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/5 bg-white cursor-pointer text-sm">
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex flex-row items-center gap-2">
-                <Percent size={22} className="text-yellow-700" />
-                <CardTitle className="text-base font-bold text-yellow-700">Margem</CardTitle>
+                <Percent size={18} className="text-yellow-700" />
+                <CardTitle className="text-sm font-bold text-yellow-700">Margem</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-2 pl-12">
+            <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-yellow-700 mb-1">
                 {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
-                  ? <LoadingCircle size={32} color="#a16207" />
+                  ? <LoadingCircle size={24} color="#a16207" />
                   : (totalGeral > 0 && custoTotalBruto > 0 
                       ? (((totalGeral - custoTotalBruto) / totalGeral) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
                       : '--')}
               </div>
-              <CardDescription className="text-gray-500">Faturamento - Custo Total</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Faturamento - CMV</CardDescription>
             </CardContent>
           </Card>
           {/* Markup Total */}
-          <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/5 bg-white cursor-pointer text-sm">
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex flex-row items-center gap-2">
-                <TrendUp size={22} className="text-blue-700" />
-                <CardTitle className="text-base font-bold text-blue-700">Markup Total</CardTitle>
+                <TrendUp size={18} className="text-blue-700" />
+                <CardTitle className="text-sm font-bold text-blue-700">Markup Total</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-2 pl-12">
+            <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-blue-700 mb-1">
                 {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
-                  ? <LoadingCircle size={32} color="#2563eb" />
+                  ? <LoadingCircle size={24} color="#2563eb" />
                   : (markupTotal !== null ? markupTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--')}
               </div>
-              <CardDescription className="text-gray-500">Média ponderada dos canais</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Média ponderada dos canais</CardDescription>
+            </CardContent>
+          </Card>
+          {/* Valor Bruto Total */}
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex flex-row items-center gap-2">
+                <CurrencyDollar size={18} className="text-purple-700" />
+                <CardTitle className="text-sm font-bold text-purple-700">Valor Bruto Total</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-purple-700 mb-1">
+                {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
+                  ? <LoadingCircle size={24} color="#7c3aed" />
+                  : (() => {
+                      let valorBrutoTotal = 0;
+                      [dadosRevenda, dadosVarejo, dadosFranquia, dadosMultimarcas].forEach(dados => {
+                        dados.forEach(row => {
+                          const qtFaturado = Number(row.qt_faturado) || 1;
+                          const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
+                          
+                          if (row.tp_operacao === 'S') {
+                            valorBrutoTotal += valorBruto;
+                          } else if (row.tp_operacao === 'E') {
+                            valorBrutoTotal -= valorBruto;
+                          }
+                        });
+                      });
+                      return valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                    })()}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Valor Bruto Total dos Canais</CardDescription>
+            </CardContent>
+          </Card>
+          {/* Desconto Total */}
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex flex-row items-center gap-2">
+                <CurrencyDollar size={18} className="text-orange-600" />
+                <CardTitle className="text-sm font-bold text-orange-600">Desconto Total</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-orange-600 mb-1">
+                {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
+                  ? <LoadingCircle size={24} color="#ea580c" />
+                  : (() => {
+                      let descontoTotal = 0;
+                      [dadosRevenda, dadosVarejo, dadosFranquia, dadosMultimarcas].forEach(dados => {
+                        dados.forEach(row => {
+                          const qtFaturado = Number(row.qt_faturado) || 1;
+                          const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
+                          const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
+                          const desconto = valorBrutoTotal - valorTotal;
+                          
+                          if (row.tp_operacao === 'S') {
+                            descontoTotal += desconto;
+                          } else if (row.tp_operacao === 'E') {
+                            descontoTotal -= desconto;
+                          }
+                        });
+                      });
+                      return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                    })()}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Desconto Total dos Canais</CardDescription>
             </CardContent>
           </Card>
         </div>
@@ -537,88 +603,161 @@ const Consolidado = () => {
           {/* Seção Revenda */}
           <div>
             <h3 className="text-2xl font-bold text-gray-800 mb-4 text-left ml-10">Revenda</h3>
-            <div className="flex flex-row gap-4 lg:gap-6 justify-center items-stretch">
+            <div className="flex flex-wrap gap-4 justify-start">
             {/* Faturamento Revenda */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <CurrencyDollar size={20} className="text-gray-700" />
+                  <CurrencyDollar size={18} className="text-gray-700" />
                   <CardTitle className="text-sm font-bold text-gray-900">Faturamento Revenda</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-1 pl-6">
-                <div className="text-xl font-extrabold text-green-600 mb-1">
-                  {loadingRevenda ? <LoadingCircle size={28} color="#16a34a" /> : faturamento.revenda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-green-600 mb-1">
+                  {loadingRevenda ? <LoadingCircle size={24} color="#16a34a" /> : faturamento.revenda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
-                <CardDescription className="text-gray-500">Total Revenda</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Total Revenda</CardDescription>
               </CardContent>
             </Card>
             {/* Custo Revenda */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <CurrencyDollar size={20} className="text-red-700" />
+                  <CurrencyDollar size={18} className="text-red-700" />
                   <CardTitle className="text-sm font-bold text-red-700">CMV Revenda</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-1 pl-6">
-                <div className="text-xl font-extrabold text-red-700 mb-1">
-                  {loadingRevenda ? <LoadingCircle size={28} color="#dc2626" /> : custoBrutoRevenda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-red-700 mb-1">
+                  {loadingRevenda ? <LoadingCircle size={24} color="#dc2626" /> : custoBrutoRevenda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
-                <CardDescription className="text-gray-500">Custo total da Revenda</CardDescription>
+                <CardDescription className="text-xs text-gray-500">CMV da Revenda</CardDescription>
               </CardContent>
             </Card>
             {/* CMV Revenda */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <Percent size={20} className="text-orange-600" />
-                  <CardTitle className="text-base font-bold text-orange-600">CMV Revenda</CardTitle>
+                  <Percent size={18} className="text-orange-600" />
+                  <CardTitle className="text-sm font-bold text-orange-600">CMV Revenda</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-2 pl-12">
+              <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingRevenda ? <LoadingCircle size={28} color="#ea580c" /> : (
+                  {loadingRevenda ? <LoadingCircle size={24} color="#ea580c" /> : (
                     faturamento.revenda > 0 && custoBrutoRevenda > 0
                       ? ((custoBrutoRevenda / faturamento.revenda) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
                       : '--'
                   )}
                 </div>
-                <CardDescription className="text-gray-500">CMV Revenda (%)</CardDescription>
+                <CardDescription className="text-xs text-gray-500">CMV Revenda (%)</CardDescription>
               </CardContent>
             </Card>
             {/* Margem Revenda */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <Percent size={20} className="text-yellow-700" />
+                  <Percent size={18} className="text-yellow-700" />
                   <CardTitle className="text-sm font-bold text-yellow-700">Margem Revenda</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-1 pl-6">
-                <div className="text-xl font-extrabold text-yellow-700 mb-1">
-                  {loadingRevenda ? <LoadingCircle size={28} color="#a16207" /> : (margemRevenda !== null ? margemRevenda.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--')}
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-yellow-700 mb-1">
+                  {loadingRevenda ? <LoadingCircle size={24} color="#a16207" /> : (margemRevenda !== null ? margemRevenda.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--')}
                 </div>
-                <CardDescription className="text-gray-500">Margem da Revenda</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Margem da Revenda</CardDescription>
               </CardContent>
             </Card>
             {/* Markup Revenda */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <TrendUp size={20} className="text-blue-600" />
-                  <CardTitle className="text-base font-bold text-blue-600">Markup Revenda</CardTitle>
+                  <TrendUp size={18} className="text-blue-600" />
+                  <CardTitle className="text-sm font-bold text-blue-600">Markup Revenda</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-2 pl-12">
+              <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingRevenda ? <LoadingCircle size={28} color="#2563eb" /> : (
+                  {loadingRevenda ? <LoadingCircle size={24} color="#2563eb" /> : (
                     custoBrutoRevenda > 0
                       ? (faturamento.revenda / custoBrutoRevenda).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                       : '--'
                   )}
                 </div>
-                <CardDescription className="text-gray-500">Markup Revenda</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Markup Revenda</CardDescription>
+              </CardContent>
+            </Card>
+            {/* Valor Bruto Revenda */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex flex-row items-center gap-2">
+                  <CurrencyDollar size={18} className="text-purple-600" />
+                  <CardTitle className="text-sm font-bold text-purple-600">Valor Bruto Revenda</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-purple-600 mb-1">
+                  {loadingRevenda ? <LoadingCircle size={24} color="#7c3aed" /> : (() => {
+                    let valorBrutoTotal = 0;
+                    dadosRevenda.forEach(row => {
+                      const qtFaturado = Number(row.qt_faturado) || 1;
+                      const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
+                      
+                      if (row.tp_operacao === 'S') {
+                        valorBrutoTotal += valorBruto;
+                      } else if (row.tp_operacao === 'E') {
+                        valorBrutoTotal -= valorBruto;
+                      }
+                    });
+                    return valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                  })()}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Valor Bruto da Revenda</CardDescription>
+              </CardContent>
+            </Card>
+            {/* Desconto Revenda */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex flex-row items-center gap-2">
+                  <CurrencyDollar size={18} className="text-orange-600" />
+                  <CardTitle className="text-sm font-bold text-orange-600">Desconto Revenda</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-orange-600 mb-1">
+                  {loadingRevenda ? <LoadingCircle size={24} color="#ea580c" /> : (() => {
+                    let descontoTotal = 0;
+                    dadosRevenda.forEach(row => {
+                      const qtFaturado = Number(row.qt_faturado) || 1;
+                      const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
+                      const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
+                      const desconto = valorBrutoTotal - valorTotal;
+                      
+                      if (row.tp_operacao === 'S') {
+                        descontoTotal += desconto;
+                      } else if (row.tp_operacao === 'E') {
+                        descontoTotal -= desconto;
+                      }
+                    });
+                    return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                  })()}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Desconto da Revenda</CardDescription>
+              </CardContent>
+            </Card>
+            {/* Representatividade Revenda */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex flex-row items-center gap-2">
+                  <Percent size={18} className="text-indigo-600" />
+                  <CardTitle className="text-sm font-bold text-indigo-600">Representatividade Revenda</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-indigo-600 mb-1">
+                  {loadingRevenda ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.revenda)}
+                </div>
+                <CardDescription className="text-xs text-gray-500">% do faturamento total da rede</CardDescription>
               </CardContent>
             </Card>
           </div>
@@ -629,88 +768,161 @@ const Consolidado = () => {
         {/* Seção Varejo */}
         <div>
           <h3 className="text-2xl font-bold text-gray-800 mb-4 text-left ml-10">Varejo</h3>
-          <div className="flex flex-row gap-4 lg:gap-6 justify-center items-stretch">
+          <div className="flex flex-wrap gap-4 justify-start">
             {/* Faturamento Varejo */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <CurrencyDollar size={20} className="text-gray-700" />
+                  <CurrencyDollar size={18} className="text-gray-700" />
                   <CardTitle className="text-sm font-bold text-gray-900">Faturamento Varejo</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-1 pl-6">
-                <div className="text-xl font-extrabold text-green-600 mb-1">
-                  {loadingVarejo ? <LoadingCircle size={28} color="#16a34a" /> : faturamento.varejo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-green-600 mb-1">
+                  {loadingVarejo ? <LoadingCircle size={24} color="#16a34a" /> : faturamento.varejo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
-                <CardDescription className="text-gray-500">Total Varejo</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Total Varejo</CardDescription>
               </CardContent>
             </Card>
             {/* Custo Varejo */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <CurrencyDollar size={20} className="text-red-700" />
+                  <CurrencyDollar size={18} className="text-red-700" />
                   <CardTitle className="text-sm font-bold text-red-700">CMV Varejo</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-1 pl-6">
-                <div className="text-xl font-extrabold text-red-700 mb-1">
-                  {loadingVarejo ? <LoadingCircle size={28} color="#dc2626" /> : custoBrutoVarejo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-red-700 mb-1">
+                  {loadingVarejo ? <LoadingCircle size={24} color="#dc2626" /> : custoBrutoVarejo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
-                <CardDescription className="text-gray-500">Custo total do Varejo</CardDescription>
+                <CardDescription className="text-xs text-gray-500">CMV do Varejo</CardDescription>
               </CardContent>
             </Card>
             {/* CMV Varejo */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <Percent size={20} className="text-orange-600" />
-                  <CardTitle className="text-base font-bold text-orange-600">CMV Varejo</CardTitle>
+                  <Percent size={18} className="text-orange-600" />
+                  <CardTitle className="text-sm font-bold text-orange-600">CMV Varejo</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-2 pl-12">
+              <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingVarejo ? <LoadingCircle size={28} color="#ea580c" /> : (
+                  {loadingVarejo ? <LoadingCircle size={24} color="#ea580c" /> : (
                     faturamento.varejo > 0 && custoBrutoVarejo > 0
                       ? ((custoBrutoVarejo / faturamento.varejo) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
                       : '--'
                   )}
                 </div>
-                <CardDescription className="text-gray-500">CMV Varejo (%)</CardDescription>
+                <CardDescription className="text-xs text-gray-500">CMV Varejo (%)</CardDescription>
               </CardContent>
             </Card>
             {/* Margem Varejo */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <Percent size={20} className="text-yellow-700" />
+                  <Percent size={18} className="text-yellow-700" />
                   <CardTitle className="text-sm font-bold text-yellow-700">Margem Varejo</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-1 pl-6">
-                <div className="text-xl font-extrabold text-yellow-700 mb-1">
-                  {loadingVarejo ? <LoadingCircle size={28} color="#a16207" /> : (margemVarejo !== null ? margemVarejo.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--')}
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-yellow-700 mb-1">
+                  {loadingVarejo ? <LoadingCircle size={24} color="#a16207" /> : (margemVarejo !== null ? margemVarejo.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--')}
                 </div>
-                <CardDescription className="text-gray-500">Margem do Varejo</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Margem do Varejo</CardDescription>
               </CardContent>
             </Card>
             {/* Markup Varejo */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <TrendUp size={20} className="text-blue-600" />
-                  <CardTitle className="text-base font-bold text-blue-600">Markup Varejo</CardTitle>
+                  <TrendUp size={18} className="text-blue-600" />
+                  <CardTitle className="text-sm font-bold text-blue-600">Markup Varejo</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-2 pl-12">
+              <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingVarejo ? <LoadingCircle size={28} color="#2563eb" /> : (
+                  {loadingVarejo ? <LoadingCircle size={24} color="#2563eb" /> : (
                     custoBrutoVarejo > 0
                       ? (faturamento.varejo / custoBrutoVarejo).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                       : '--'
                   )}
                 </div>
-                <CardDescription className="text-gray-500">Markup Varejo</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Markup Varejo</CardDescription>
+              </CardContent>
+            </Card>
+            {/* Valor Bruto Varejo */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex flex-row items-center gap-2">
+                  <CurrencyDollar size={18} className="text-purple-600" />
+                  <CardTitle className="text-sm font-bold text-purple-600">Valor Bruto Varejo</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-purple-600 mb-1">
+                  {loadingVarejo ? <LoadingCircle size={24} color="#7c3aed" /> : (() => {
+                    let valorBrutoTotal = 0;
+                    dadosVarejo.forEach(row => {
+                      const qtFaturado = Number(row.qt_faturado) || 1;
+                      const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
+                      
+                      if (row.tp_operacao === 'S') {
+                        valorBrutoTotal += valorBruto;
+                      } else if (row.tp_operacao === 'E') {
+                        valorBrutoTotal -= valorBruto;
+                      }
+                    });
+                    return valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                  })()}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Valor Bruto do Varejo</CardDescription>
+              </CardContent>
+            </Card>
+            {/* Desconto Varejo */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex flex-row items-center gap-2">
+                  <CurrencyDollar size={18} className="text-orange-600" />
+                  <CardTitle className="text-sm font-bold text-orange-600">Desconto Varejo</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-orange-600 mb-1">
+                  {loadingVarejo ? <LoadingCircle size={24} color="#ea580c" /> : (() => {
+                    let descontoTotal = 0;
+                    dadosVarejo.forEach(row => {
+                      const qtFaturado = Number(row.qt_faturado) || 1;
+                      const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
+                      const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
+                      const desconto = valorBrutoTotal - valorTotal;
+                      
+                      if (row.tp_operacao === 'S') {
+                        descontoTotal += desconto;
+                      } else if (row.tp_operacao === 'E') {
+                        descontoTotal -= desconto;
+                      }
+                    });
+                    return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                  })()}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Desconto do Varejo</CardDescription>
+              </CardContent>
+            </Card>
+            {/* Representatividade Varejo */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex flex-row items-center gap-2">
+                  <Percent size={18} className="text-indigo-600" />
+                  <CardTitle className="text-sm font-bold text-indigo-600">Representatividade Varejo</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-indigo-600 mb-1">
+                  {loadingVarejo ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.varejo)}
+                </div>
+                <CardDescription className="text-xs text-gray-500">% do faturamento total da rede</CardDescription>
               </CardContent>
             </Card>
           </div>
@@ -722,88 +934,161 @@ const Consolidado = () => {
         {/* Seção Franquia */}
         <div>
           <h3 className="text-2xl font-bold text-gray-800 mb-4 text-left ml-10">Franquia</h3>
-          <div className="flex flex-row gap-4 lg:gap-6 justify-center items-stretch">
+          <div className="flex flex-wrap gap-4 justify-start">
             {/* Faturamento Franquia */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <CurrencyDollar size={20} className="text-gray-700" />
+                  <CurrencyDollar size={18} className="text-gray-700" />
                   <CardTitle className="text-sm font-bold text-gray-900">Faturamento Franquia</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-1 pl-6">
-                <div className="text-xl font-extrabold text-green-600 mb-1">
-                  {loadingFranquia ? <LoadingCircle size={28} color="#16a34a" /> : faturamento.franquia.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-green-600 mb-1">
+                  {loadingFranquia ? <LoadingCircle size={24} color="#16a34a" /> : faturamento.franquia.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
-                <CardDescription className="text-gray-500">Total Franquia</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Total Franquia</CardDescription>
               </CardContent>
             </Card>
             {/* Custo Franquia */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <CurrencyDollar size={20} className="text-red-700" />
+                  <CurrencyDollar size={18} className="text-red-700" />
                   <CardTitle className="text-sm font-bold text-red-700">CMV Franquia</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-1 pl-6">
-                <div className="text-xl font-extrabold text-red-700 mb-1">
-                  {loadingFranquia ? <LoadingCircle size={28} color="#dc2626" /> : custoBrutoFranquia.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-red-700 mb-1">
+                  {loadingFranquia ? <LoadingCircle size={24} color="#dc2626" /> : custoBrutoFranquia.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
-                <CardDescription className="text-gray-500">Custo total da Franquia</CardDescription>
+                <CardDescription className="text-xs text-gray-500">CMV da Franquia</CardDescription>
               </CardContent>
             </Card>
             {/* CMV Franquia */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <Percent size={20} className="text-orange-600" />
-                  <CardTitle className="text-base font-bold text-orange-600">CMV Franquia</CardTitle>
+                  <Percent size={18} className="text-orange-600" />
+                  <CardTitle className="text-sm font-bold text-orange-600">CMV Franquia</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-2 pl-12">
+              <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingFranquia ? <LoadingCircle size={28} color="#ea580c" /> : (
+                  {loadingFranquia ? <LoadingCircle size={24} color="#ea580c" /> : (
                     faturamento.franquia > 0 && custoBrutoFranquia > 0
                       ? ((custoBrutoFranquia / faturamento.franquia) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
                       : '--'
                   )}
                 </div>
-                <CardDescription className="text-gray-500">CMV Franquia (%)</CardDescription>
+                <CardDescription className="text-xs text-gray-500">CMV Franquia (%)</CardDescription>
               </CardContent>
             </Card>
             {/* Margem Franquia */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <Percent size={20} className="text-yellow-700" />
+                  <Percent size={18} className="text-yellow-700" />
                   <CardTitle className="text-sm font-bold text-yellow-700">Margem Franquia</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-1 pl-6">
-                <div className="text-xl font-extrabold text-yellow-700 mb-1">
-                  {loadingFranquia ? <LoadingCircle size={28} color="#a16207" /> : (margemFranquia !== null ? margemFranquia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--')}
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-yellow-700 mb-1">
+                  {loadingFranquia ? <LoadingCircle size={24} color="#a16207" /> : (margemFranquia !== null ? margemFranquia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--')}
                 </div>
-                <CardDescription className="text-gray-500">Margem da Franquia</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Margem da Franquia</CardDescription>
               </CardContent>
             </Card>
             {/* Markup Franquia */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <TrendUp size={20} className="text-blue-600" />
-                  <CardTitle className="text-base font-bold text-blue-600">Markup Franquia</CardTitle>
+                  <TrendUp size={18} className="text-blue-600" />
+                  <CardTitle className="text-sm font-bold text-blue-600">Markup Franquia</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-2 pl-12">
+              <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingFranquia ? <LoadingCircle size={28} color="#2563eb" /> : (
+                  {loadingFranquia ? <LoadingCircle size={24} color="#2563eb" /> : (
                     custoBrutoFranquia > 0
                       ? (faturamento.franquia / custoBrutoFranquia).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                       : '--'
                   )}
                 </div>
-                <CardDescription className="text-gray-500">Markup Franquia</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Markup Franquia</CardDescription>
+              </CardContent>
+            </Card>
+            {/* Valor Bruto Franquia */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex flex-row items-center gap-2">
+                  <CurrencyDollar size={18} className="text-purple-600" />
+                  <CardTitle className="text-sm font-bold text-purple-600">Valor Bruto Franquia</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-purple-600 mb-1">
+                  {loadingFranquia ? <LoadingCircle size={24} color="#7c3aed" /> : (() => {
+                    let valorBrutoTotal = 0;
+                    dadosFranquia.forEach(row => {
+                      const qtFaturado = Number(row.qt_faturado) || 1;
+                      const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
+                      
+                      if (row.tp_operacao === 'S') {
+                        valorBrutoTotal += valorBruto;
+                      } else if (row.tp_operacao === 'E') {
+                        valorBrutoTotal -= valorBruto;
+                      }
+                    });
+                    return valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                  })()}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Valor Bruto da Franquia</CardDescription>
+              </CardContent>
+            </Card>
+            {/* Desconto Franquia */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex flex-row items-center gap-2">
+                  <CurrencyDollar size={18} className="text-orange-600" />
+                  <CardTitle className="text-sm font-bold text-orange-600">Desconto Franquia</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-orange-600 mb-1">
+                  {loadingFranquia ? <LoadingCircle size={24} color="#ea580c" /> : (() => {
+                    let descontoTotal = 0;
+                    dadosFranquia.forEach(row => {
+                      const qtFaturado = Number(row.qt_faturado) || 1;
+                      const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
+                      const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
+                      const desconto = valorBrutoTotal - valorTotal;
+                      
+                      if (row.tp_operacao === 'S') {
+                        descontoTotal += desconto;
+                      } else if (row.tp_operacao === 'E') {
+                        descontoTotal -= desconto;
+                      }
+                    });
+                    return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                  })()}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Desconto da Franquia</CardDescription>
+              </CardContent>
+            </Card>
+            {/* Representatividade Franquia */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex flex-row items-center gap-2">
+                  <Percent size={18} className="text-indigo-600" />
+                  <CardTitle className="text-sm font-bold text-indigo-600">Representatividade Franquia</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-indigo-600 mb-1">
+                  {loadingFranquia ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.franquia)}
+                </div>
+                <CardDescription className="text-xs text-gray-500">% do faturamento total da rede</CardDescription>
               </CardContent>
             </Card>
           </div>
@@ -815,88 +1100,161 @@ const Consolidado = () => {
         {/* Seção Multimarcas */}
         <div>
           <h3 className="text-2xl font-bold text-gray-800 mb-4 text-left ml-10">Multimarcas</h3>
-          <div className="flex flex-row gap-4 lg:gap-6 justify-center items-stretch">
+          <div className="flex flex-wrap gap-4 justify-start">
             {/* Faturamento Multimarcas */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <CurrencyDollar size={20} className="text-gray-700" />
+                  <CurrencyDollar size={18} className="text-gray-700" />
                   <CardTitle className="text-sm font-bold text-gray-900">Faturamento Multimarcas</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-1 pl-6">
-                <div className="text-xl font-extrabold text-green-600 mb-1">
-                  {loadingMultimarcas ? <LoadingCircle size={28} color="#16a34a" /> : faturamento.multimarcas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-green-600 mb-1">
+                  {loadingMultimarcas ? <LoadingCircle size={24} color="#16a34a" /> : faturamento.multimarcas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
-                <CardDescription className="text-gray-500">Total Multimarcas</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Total Multimarcas</CardDescription>
               </CardContent>
             </Card>
             {/* Custo Multimarcas */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <CurrencyDollar size={20} className="text-red-700" />
+                  <CurrencyDollar size={18} className="text-red-700" />
                   <CardTitle className="text-sm font-bold text-red-700">CMV Multimarcas</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-1 pl-6">
-                <div className="text-xl font-extrabold text-red-700 mb-1">
-                  {loadingMultimarcas ? <LoadingCircle size={28} color="#dc2626" /> : custoBrutoMultimarcas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-red-700 mb-1">
+                  {loadingMultimarcas ? <LoadingCircle size={24} color="#dc2626" /> : custoBrutoMultimarcas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
-                <CardDescription className="text-gray-500">Custo total da Multimarcas</CardDescription>
+                <CardDescription className="text-xs text-gray-500">CMV da Multimarcas</CardDescription>
               </CardContent>
             </Card>
             {/* CMV Multimarcas */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <Percent size={20} className="text-orange-600" />
-                  <CardTitle className="text-base font-bold text-orange-600">CMV Multimarcas</CardTitle>
+                  <Percent size={18} className="text-orange-600" />
+                  <CardTitle className="text-sm font-bold text-orange-600">CMV Multimarcas</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-2 pl-12">
+              <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingMultimarcas ? <LoadingCircle size={28} color="#ea580c" /> : (
+                  {loadingMultimarcas ? <LoadingCircle size={24} color="#ea580c" /> : (
                     faturamento.multimarcas > 0 && custoBrutoMultimarcas > 0
                       ? ((custoBrutoMultimarcas / faturamento.multimarcas) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
                       : '--'
                   )}
                 </div>
-                <CardDescription className="text-gray-500">CMV Multimarcas (%)</CardDescription>
+                <CardDescription className="text-xs text-gray-500">CMV Multimarcas (%)</CardDescription>
               </CardContent>
             </Card>
             {/* Margem Multimarcas */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <Percent size={20} className="text-yellow-700" />
+                  <Percent size={18} className="text-yellow-700" />
                   <CardTitle className="text-sm font-bold text-yellow-700">Margem Multimarcas</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-1 pl-6">
-                <div className="text-xl font-extrabold text-yellow-700 mb-1">
-                  {loadingMultimarcas ? <LoadingCircle size={28} color="#a16207" /> : (margemMultimarcas !== null ? margemMultimarcas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--')}
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-yellow-700 mb-1">
+                  {loadingMultimarcas ? <LoadingCircle size={24} color="#a16207" /> : (margemMultimarcas !== null ? margemMultimarcas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--')}
                 </div>
-                <CardDescription className="text-gray-500">Margem da Multimarcas</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Margem da Multimarcas</CardDescription>
               </CardContent>
             </Card>
             {/* Markup Multimarcas */}
-            <Card className="shadow-2xl transition-all duration-200 hover:shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] hover:-translate-y-1 rounded-2xl w-full lg:w-1/6 bg-white cursor-pointer text-sm">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <TrendUp size={20} className="text-blue-600" />
-                  <CardTitle className="text-base font-bold text-blue-600">Markup Multimarcas</CardTitle>
+                  <TrendUp size={18} className="text-blue-600" />
+                  <CardTitle className="text-sm font-bold text-blue-600">Markup Multimarcas</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-2 pl-12">
+              <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingMultimarcas ? <LoadingCircle size={28} color="#2563eb" /> : (
+                  {loadingMultimarcas ? <LoadingCircle size={24} color="#2563eb" /> : (
                     custoBrutoMultimarcas > 0
                       ? (faturamento.multimarcas / custoBrutoMultimarcas).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                       : '--'
                   )}
                 </div>
-                <CardDescription className="text-gray-500">Markup Multimarcas</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Markup Multimarcas</CardDescription>
+              </CardContent>
+            </Card>
+            {/* Valor Bruto Multimarcas */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex flex-row items-center gap-2">
+                  <CurrencyDollar size={18} className="text-purple-600" />
+                  <CardTitle className="text-sm font-bold text-purple-600">Valor Bruto Multimarcas</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-purple-600 mb-1">
+                  {loadingMultimarcas ? <LoadingCircle size={24} color="#7c3aed" /> : (() => {
+                    let valorBrutoTotal = 0;
+                    dadosMultimarcas.forEach(row => {
+                      const qtFaturado = Number(row.qt_faturado) || 1;
+                      const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
+                      
+                      if (row.tp_operacao === 'S') {
+                        valorBrutoTotal += valorBruto;
+                      } else if (row.tp_operacao === 'E') {
+                        valorBrutoTotal -= valorBruto;
+                      }
+                    });
+                    return valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                  })()}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Valor Bruto da Multimarcas</CardDescription>
+              </CardContent>
+            </Card>
+            {/* Desconto Multimarcas */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex flex-row items-center gap-2">
+                  <CurrencyDollar size={18} className="text-orange-600" />
+                  <CardTitle className="text-sm font-bold text-orange-600">Desconto Multimarcas</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-orange-600 mb-1">
+                  {loadingMultimarcas ? <LoadingCircle size={24} color="#ea580c" /> : (() => {
+                    let descontoTotal = 0;
+                    dadosMultimarcas.forEach(row => {
+                      const qtFaturado = Number(row.qt_faturado) || 1;
+                      const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
+                      const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
+                      const desconto = valorBrutoTotal - valorTotal;
+                      
+                      if (row.tp_operacao === 'S') {
+                        descontoTotal += desconto;
+                      } else if (row.tp_operacao === 'E') {
+                        descontoTotal -= desconto;
+                      }
+                    });
+                    return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                  })()}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Desconto da Multimarcas</CardDescription>
+              </CardContent>
+            </Card>
+            {/* Representatividade Multimarcas */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex flex-row items-center gap-2">
+                  <Percent size={18} className="text-indigo-600" />
+                  <CardTitle className="text-sm font-bold text-indigo-600">Representatividade Multimarcas</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-indigo-600 mb-1">
+                  {loadingMultimarcas ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.multimarcas)}
+                </div>
+                <CardDescription className="text-xs text-gray-500">% do faturamento total da rede</CardDescription>
               </CardContent>
             </Card>
           </div>
