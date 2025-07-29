@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from './AuthContext';
+import { UserGear } from '@phosphor-icons/react';
 
 // SVGs para os grupos
 const FolderIcon = () => (
@@ -35,166 +37,144 @@ const Sidebar = ({ isOpen, onClose }) => {
   const [financeiroOpen, setFinanceiroOpen] = useState(false);
   const [faturamentoOpen, setFaturamentoOpen] = useState(false);
   const [franquiasOpen, setFranquiasOpen] = useState(false);
+  const { user } = useAuth();
 
   const handleNavigation = (href) => {
     onClose();
     navigate(href);
   };
 
-  const SidebarContent = () => (
-    <div className="w-64 h-full bg-white shadow-lg">
-      <div className="h-16 px-6 border-b border-gray-200 flex justify-center items-center">
-        <img
-          src="/crosbyazul.png"
-          alt="Logo Crosby"
-          className="h-8 w-auto"
-        />
-      </div>
-      <nav className="mt-6 px-3">
-        <button
-          className="mb-2 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold text-gray-700 hover:bg-gray-100 focus:outline-none"
-          onClick={() => setFinanceiroOpen((open) => !open)}
-        >
-          <FolderIcon />
-          <span className="flex-1 text-left">Financeiro</span>
-          <ChevronIcon open={financeiroOpen} />
-        </button>
-        {financeiroOpen && (
-          <div className="mb-2">
-            {financeiro.map((item) => {
-              const isActive = location.pathname === item.href;
-              return (
-                <button
-                  key={item.name}
-                  className={`w-full flex items-center px-3 py-2 mb-1 rounded-lg transition-colors text-xs ${
-                    isActive 
-                      ? 'bg-blue-100 text-blue-700' 
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                  onClick={() => handleNavigation(item.href)}
-                >
-                  <svg 
-                    className="w-4 h-4 mr-2" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24"
-                  >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      strokeWidth={2} 
-                      d={item.icon} 
-                    />
-                  </svg>
-                  <span className="text-xs font-medium">
-                    {item.name}
-                  </span>
-                </button>
-              );
-            })}
+  const SidebarContent = () => {
+    if (!user) return null;
+    // ADM e DIRETOR: tudo
+    if (user.role === 'ADM' || user.role === 'DIRETOR') {
+      return (
+        <div className="w-64 h-full bg-white shadow-lg">
+          <div className="h-16 px-6 border-b border-gray-200 flex justify-center items-center">
+            <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
           </div>
-        )}
-        {/* Botão do grupo CMV (faturamento) */}
-        <button
-          className="mt-6 mb-2 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold text-gray-700 hover:bg-gray-100 focus:outline-none"
-          onClick={() => setFaturamentoOpen((open) => !open)}
-        >
-          <FolderIcon />
-          <span className="flex-1 text-left">CMV</span>
-          <ChevronIcon open={faturamentoOpen} />
-        </button>
-        {faturamentoOpen && (
-          <div className="mb-2">
-            {faturamento.map((item) => {
-              const isActive = location.pathname === item.href;
-              return (
-                <button
-                  key={item.name}
-                  className={`w-full flex items-center px-3 py-2 mb-1 rounded-lg transition-colors text-xs ${
-                    isActive 
-                      ? 'bg-blue-100 text-blue-700' 
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                  onClick={() => handleNavigation(item.href)}
-                >
-                  <svg 
-                    className="w-4 h-4 mr-2" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24"
-                  >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      strokeWidth={2} 
-                      d={item.icon} 
-                    />
-                  </svg>
-                  <span className="text-xs font-medium">
-                    {item.name}
-                  </span>
-                </button>
-              );
-            })}
+          {user.role === 'ADM' && (
+            <button className={`mb-4 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold ${location.pathname === '/painel-admin' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`} onClick={() => handleNavigation('/painel-admin')}>
+              <UserGear size={18} className="mr-2" />
+              <span>Painel Admin</span>
+            </button>
+          )}
+          <nav className="mt-6 px-3">
+            {/* Menus financeiros */}
+            <button className="mb-2 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold text-gray-700 hover:bg-gray-100 focus:outline-none" onClick={() => setFinanceiroOpen((open) => !open)}>
+              <FolderIcon />
+              <span className="flex-1 text-left">Financeiro</span>
+              <ChevronIcon open={financeiroOpen} />
+            </button>
+            {financeiroOpen && (
+              <div className="mb-2">
+                {financeiro.map((item) => {
+                  const isActive = location.pathname === item.href;
+                  return (
+                    <button key={item.name} className={`w-full flex items-center px-3 py-2 mb-1 rounded-lg transition-colors text-xs ${isActive ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}`} onClick={() => handleNavigation(item.href)}>
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} /></svg>
+                      <span className="text-xs font-medium">{item.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {/* Menus CMV (faturamento) */}
+            <button className="mt-6 mb-2 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold text-gray-700 hover:bg-gray-100 focus:outline-none" onClick={() => setFaturamentoOpen((open) => !open)}>
+              <FolderIcon />
+              <span className="flex-1 text-left">CMV</span>
+              <ChevronIcon open={faturamentoOpen} />
+            </button>
+            {faturamentoOpen && (
+              <div className="mb-2">
+                {faturamento.map((item) => {
+                  const isActive = location.pathname === item.href;
+                  return (
+                    <button key={item.name} className={`w-full flex items-center px-3 py-2 mb-1 rounded-lg transition-colors text-xs ${isActive ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}`} onClick={() => handleNavigation(item.href)}>
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} /></svg>
+                      <span className="text-xs font-medium">{item.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {/* Menus Franquias */}
+            <button className="mt-6 mb-2 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold text-gray-700 hover:bg-gray-100 focus:outline-none" onClick={() => setFranquiasOpen((open) => !open)}>
+              <FolderIcon />
+              <span className="flex-1 text-left">Franquias</span>
+              <ChevronIcon open={franquiasOpen} />
+            </button>
+            {franquiasOpen && (
+              <div className="mb-2">
+                {franquias.map((item) => {
+                  const isActive = location.pathname === item.href;
+                  return (
+                    <button key={item.name} className={`w-full flex items-center px-3 py-2 mb-1 rounded-lg transition-colors text-xs ${isActive ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}`} onClick={() => handleNavigation(item.href)}>
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} /></svg>
+                      <span className="text-xs font-medium">{item.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {/* Ranking Faturamento */}
+            <button className={`mt-6 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold ${location.pathname === '/ranking-faturamento' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`} onClick={() => handleNavigation('/ranking-faturamento')}>
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2M16 11V7a4 4 0 00-8 0v4M12 17v.01" /></svg>
+              <span className="text-xs font-medium">Ranking Faturamento</span>
+            </button>
+          </nav>
+        </div>
+      );
+    }
+    // FINANCEIRO: só menus financeiros
+    if (user.role === 'FINANCEIRO') {
+      return (
+        <div className="w-64 h-full bg-white shadow-lg">
+          <div className="h-16 px-6 border-b border-gray-200 flex justify-center items-center">
+            <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
           </div>
-        )}
-        {/* Botão do grupo Franquias */}
-        <button
-          className="mt-6 mb-2 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold text-gray-700 hover:bg-gray-100 focus:outline-none"
-          onClick={() => setFranquiasOpen((open) => !open)}
-        >
-          <FolderIcon />
-          <span className="flex-1 text-left">Franquias</span>
-          <ChevronIcon open={franquiasOpen} />
-        </button>
-        {franquiasOpen && (
-          <div className="mb-2">
-            {franquias.map((item) => {
-              const isActive = location.pathname === item.href;
-              return (
-                <button
-                  key={item.name}
-                  className={`w-full flex items-center px-3 py-2 mb-1 rounded-lg transition-colors text-xs ${
-                    isActive 
-                      ? 'bg-blue-100 text-blue-700' 
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                  onClick={() => handleNavigation(item.href)}
-                >
-                  <svg 
-                    className="w-4 h-4 mr-2" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24"
-                  >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      strokeWidth={2} 
-                      d={item.icon} 
-                    />
-                  </svg>
-                  <span className="text-xs font-medium">
-                    {item.name}
-                  </span>
-                </button>
-              );
-            })}
+          <nav className="mt-6 px-3">
+            <button className="mb-2 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold text-gray-700 hover:bg-gray-100 focus:outline-none" onClick={() => setFinanceiroOpen((open) => !open)}>
+              <FolderIcon />
+              <span className="flex-1 text-left">Financeiro</span>
+              <ChevronIcon open={financeiroOpen} />
+            </button>
+            {financeiroOpen && (
+              <div className="mb-2">
+                {financeiro.map((item) => {
+                  const isActive = location.pathname === item.href;
+                  return (
+                    <button key={item.name} className={`w-full flex items-center px-3 py-2 mb-1 rounded-lg transition-colors text-xs ${isActive ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}`} onClick={() => handleNavigation(item.href)}>
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} /></svg>
+                      <span className="text-xs font-medium">{item.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </nav>
+        </div>
+      );
+    }
+    // FRANQUIA: só ranking de faturamento
+    if (user.role === 'FRANQUIA') {
+      return (
+        <div className="w-64 h-full bg-white shadow-lg">
+          <div className="h-16 px-6 border-b border-gray-200 flex justify-center items-center">
+            <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
           </div>
-        )}
-        {/* Ranking Faturamento fora do grupo */}
-        <button
-          className={`mt-6 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold ${location.pathname === '/ranking-faturamento' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
-          onClick={() => handleNavigation('/ranking-faturamento')}
-        >
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2M16 11V7a4 4 0 00-8 0v4M12 17v.01" />
-          </svg>
-          <span className="text-xs font-medium">Ranking Faturamento</span>
-        </button>
-      </nav>
-    </div>
-  );
+          <nav className="mt-6 px-3">
+            <button className={`mt-6 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold ${location.pathname === '/ranking-faturamento' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`} onClick={() => handleNavigation('/ranking-faturamento')}>
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2M16 11V7a4 4 0 00-8 0v4M12 17v.01" /></svg>
+              <span className="text-xs font-medium">Ranking Faturamento</span>
+            </button>
+          </nav>
+        </div>
+      );
+    }
+    // Caso não reconhecido
+    return null;
+  };
 
   return (
     <>

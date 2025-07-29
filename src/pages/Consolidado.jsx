@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Layout from '../components/Layout';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
-import { CurrencyDollar, ChartBar, Percent, TrendUp } from '@phosphor-icons/react';
+import { CurrencyDollar, ChartBar, Percent, TrendUp, Question } from '@phosphor-icons/react';
 import custoProdutos from '../custoprodutos.json';
 import LoadingCircle from '../components/LoadingCircle';
 import { Bar } from 'react-chartjs-2';
@@ -38,6 +38,8 @@ const Consolidado = () => {
   const [loadingVarejo, setLoadingVarejo] = useState(false);
   const [loadingFranquia, setLoadingFranquia] = useState(false);
   const [loadingMultimarcas, setLoadingMultimarcas] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [modalContent, setModalContent] = useState({ title: '', description: '', calculation: '' });
 
   // Empresas fixas para Revenda e Franquia
   const empresasFixas = ['2', '200', '75', '31', '6', '85', '11'];
@@ -153,8 +155,7 @@ const Consolidado = () => {
       const jsonRevenda = await resRevenda.json();
       const filtradosRevenda = jsonRevenda.filter(row => row.cd_classificacao == 3);
       const somaSaidasRevenda = filtradosRevenda.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-      const somaEntradasRevenda = filtradosRevenda.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-      const totalRevenda = somaSaidasRevenda - somaEntradasRevenda;
+      const totalRevenda = somaSaidasRevenda;
       setFaturamento(fat => ({ ...fat, revenda: totalRevenda }));
       setDadosRevenda(filtradosRevenda);
       setLoadingRevenda(false);
@@ -165,8 +166,7 @@ const Consolidado = () => {
       if (!resVarejo.ok) throw new Error('Erro ao buscar faturamento de varejo');
       const jsonVarejo = await resVarejo.json();
       const somaSaidasVarejo = jsonVarejo.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-      const somaEntradasVarejo = jsonVarejo.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-      const totalVarejo = somaSaidasVarejo - somaEntradasVarejo;
+      const totalVarejo = somaSaidasVarejo;
       setFaturamento(fat => ({ ...fat, varejo: totalVarejo }));
       setDadosVarejo(jsonVarejo);
       setLoadingVarejo(false);
@@ -177,8 +177,7 @@ const Consolidado = () => {
       if (!resFranquia.ok) throw new Error('Erro ao buscar faturamento de franquia');
       const jsonFranquia = await resFranquia.json();
       const somaSaidasFranquia = jsonFranquia.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-      const somaEntradasFranquia = jsonFranquia.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-      const totalFranquia = somaSaidasFranquia - somaEntradasFranquia;
+      const totalFranquia = somaSaidasFranquia;
       setFaturamento(fat => ({ ...fat, franquia: totalFranquia }));
       setDadosFranquia(jsonFranquia);
       setLoadingFranquia(false);
@@ -189,8 +188,7 @@ const Consolidado = () => {
       if (!resMultimarcas.ok) throw new Error('Erro ao buscar faturamento de multimarcas');
       const jsonMultimarcas = await resMultimarcas.json();
       const somaSaidasMultimarcas = jsonMultimarcas.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-      const somaEntradasMultimarcas = jsonMultimarcas.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-      const totalMultimarcas = somaSaidasMultimarcas - somaEntradasMultimarcas;
+      const totalMultimarcas = somaSaidasMultimarcas;
       setFaturamento(fat => ({ ...fat, multimarcas: totalMultimarcas }));
       setDadosMultimarcas(jsonMultimarcas);
       setLoadingMultimarcas(false);
@@ -216,6 +214,15 @@ const Consolidado = () => {
       return Math.min(percent, 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
     }
     return '-';
+  };
+
+  const showHelpModal = (title, description, calculation) => {
+    setModalContent({ title, description, calculation });
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
   };
 
   // Cálculo do CMV total ponderado
@@ -446,7 +453,7 @@ const Consolidado = () => {
             <CardHeader className="pb-0">
               <div className="flex flex-row items-center gap-2">
                 <CurrencyDollar size={18} className="text-green-700" />
-                <CardTitle className="text-sm font-bold text-green-700">Faturamento Total</CardTitle>
+                <CardTitle className="text-sm font-bold text-green-700">Vendas após Desconto</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
@@ -455,7 +462,19 @@ const Consolidado = () => {
                   ? <LoadingCircle size={24} color="#16a34a" />
                   : totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
-              <CardDescription className="text-xs text-gray-500">Soma dos canais</CardDescription>
+              <div className="flex justify-between items-center">
+                <CardDescription className="text-xs text-gray-500">Soma dos canais</CardDescription>
+                <button
+                  onClick={() => showHelpModal(
+                    'Vendas após Desconto',
+                    'O valor das vendas menos o desconto aplicado. Representa o faturamento líquido total.',
+                    'Exemplo: R$1000,00 (Venda) - R$100,00 (Desconto) = R$900,00 (Resultado)'
+                  )}
+                  className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={12} className="text-gray-600" />
+                </button>
+              </div>
             </CardContent>
           </Card>
           {/* CMV */}
@@ -472,7 +491,19 @@ const Consolidado = () => {
                   ? <LoadingCircle size={24} color="#dc2626" />
                   : custoTotalBruto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
-              <CardDescription className="text-xs text-gray-500">Soma dos custos dos canais</CardDescription>
+              <div className="flex justify-between items-center">
+                <CardDescription className="text-xs text-gray-500">Soma dos custos dos canais</CardDescription>
+                <button
+                  onClick={() => showHelpModal(
+                    'CMV (Custo da Mercadoria Vendida)',
+                    'Soma dos custos de produção dos produtos, de todos os canais.',
+                    'CMV Total = CMV Revenda + CMV Varejo + CMV Franquia + CMV Multimarcas'
+                  )}
+                  className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={12} className="text-gray-600" />
+                </button>
+              </div>
             </CardContent>
           </Card>
           {/* CMV Total */}
@@ -489,7 +520,19 @@ const Consolidado = () => {
                   ? <LoadingCircle size={24} color="#ea580c" />
                   : (cmvTotal !== null ? cmvTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--')}
               </div>
-              <CardDescription className="text-xs text-gray-500">CMV / Faturamento Total</CardDescription>
+              <div className="flex justify-between items-center">
+                <CardDescription className="text-xs text-gray-500">CMV / Faturamento Liquido Total</CardDescription>
+                <button
+                  onClick={() => showHelpModal(
+                    'CMV Total (%)',
+                    'Percentual do CMV em relação ao faturamento total. Indica a proporção do custo sobre as vendas.',
+                    'CMV Total % = (CMV Total / Faturamento Total) × 100'
+                  )}
+                  className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={12} className="text-gray-600" />
+                </button>
+              </div>
             </CardContent>
           </Card>
           {/* Margem Total */}
@@ -508,7 +551,19 @@ const Consolidado = () => {
                       ? (((totalGeral - custoTotalBruto) / totalGeral) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
                       : '--')}
               </div>
-              <CardDescription className="text-xs text-gray-500">Faturamento - CMV</CardDescription>
+              <div className="flex justify-between items-center">
+                <CardDescription className="text-xs text-gray-500">Faturamento - CMV</CardDescription>
+                <button
+                  onClick={() => showHelpModal(
+                    'Margem Total (%)',
+                    'Percentual de lucro bruto em relação ao faturamento total. Representa a rentabilidade geral.',
+                    'Margem % = ((Faturamento Total - CMV Total) / Faturamento Total) × 100'
+                  )}
+                  className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={12} className="text-gray-600" />
+                </button>
+              </div>
             </CardContent>
           </Card>
           {/* Markup Total */}
@@ -525,7 +580,19 @@ const Consolidado = () => {
                   ? <LoadingCircle size={24} color="#2563eb" />
                   : (markupTotal !== null ? markupTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--')}
               </div>
-              <CardDescription className="text-xs text-gray-500">Média ponderada dos canais</CardDescription>
+              <div className="flex justify-between items-center">
+                <CardDescription className="text-xs text-gray-500">Média ponderada dos canais</CardDescription>
+                <button
+                  onClick={() => showHelpModal(
+                    'Markup Total',
+                    'Média ponderada do markup de todos os canais. Indica quantas vezes o preço de venda é maior que o custo.',
+                    'Markup Total = Faturamento Total / CMV Total'
+                  )}
+                  className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={12} className="text-gray-600" />
+                </button>
+              </div>
             </CardContent>
           </Card>
           {/* Valor Bruto Total */}
@@ -557,7 +624,19 @@ const Consolidado = () => {
                       return valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                     })()}
               </div>
-              <CardDescription className="text-xs text-gray-500">Valor Bruto Total dos Canais</CardDescription>
+              <div className="flex justify-between items-center">
+                <CardDescription className="text-xs text-gray-500">Valor Bruto Total dos Canais</CardDescription>
+                <button
+                  onClick={() => showHelpModal(
+                    'Valor Bruto Total',
+                    'Soma dos valores brutos (sem desconto) de todos os canais de venda. Representa o faturamento antes dos descontos.',
+                    'Valor Bruto Total = Valor Bruto Revenda + Varejo + Franquia + Multimarcas'
+                  )}
+                  className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={12} className="text-gray-600" />
+                </button>
+              </div>
             </CardContent>
           </Card>
           {/* Desconto Total */}
@@ -591,7 +670,19 @@ const Consolidado = () => {
                       return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                     })()}
               </div>
-              <CardDescription className="text-xs text-gray-500">Desconto Total dos Canais</CardDescription>
+              <div className="flex justify-between items-center">
+                <CardDescription className="text-xs text-gray-500">Desconto Total dos Canais</CardDescription>
+                <button
+                  onClick={() => showHelpModal(
+                    'Desconto Total',
+                    'Soma dos descontos aplicados em todos os canais de venda. Representa a diferença entre valor bruto e valor líquido.',
+                    'Desconto Total = (Valor Bruto - Valor Líquido) de todos os canais'
+                  )}
+                  className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={12} className="text-gray-600" />
+                </button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -757,7 +848,7 @@ const Consolidado = () => {
                 <div className="text-2xl font-extrabold text-indigo-600 mb-1">
                   {loadingRevenda ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.revenda)}
                 </div>
-                <CardDescription className="text-xs text-gray-500">% do faturamento total da rede</CardDescription>
+                <CardDescription className="text-xs text-gray-500">% do faturamento liquido total da rede</CardDescription>
               </CardContent>
             </Card>
           </div>
@@ -922,7 +1013,7 @@ const Consolidado = () => {
                 <div className="text-2xl font-extrabold text-indigo-600 mb-1">
                   {loadingVarejo ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.varejo)}
                 </div>
-                <CardDescription className="text-xs text-gray-500">% do faturamento total da rede</CardDescription>
+                <CardDescription className="text-xs text-gray-500">% do faturamento liquido total da rede</CardDescription>
               </CardContent>
             </Card>
           </div>
@@ -1088,7 +1179,7 @@ const Consolidado = () => {
                 <div className="text-2xl font-extrabold text-indigo-600 mb-1">
                   {loadingFranquia ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.franquia)}
                 </div>
-                <CardDescription className="text-xs text-gray-500">% do faturamento total da rede</CardDescription>
+                <CardDescription className="text-xs text-gray-500">% do faturamento liquido total da rede</CardDescription>
               </CardContent>
             </Card>
           </div>
@@ -1254,7 +1345,7 @@ const Consolidado = () => {
                 <div className="text-2xl font-extrabold text-indigo-600 mb-1">
                   {loadingMultimarcas ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.multimarcas)}
                 </div>
-                <CardDescription className="text-xs text-gray-500">% do faturamento total da rede</CardDescription>
+                <CardDescription className="text-xs text-gray-500">% do faturamento liquido total da rede</CardDescription>
               </CardContent>
             </Card>
           </div>
@@ -1292,7 +1383,36 @@ const Consolidado = () => {
         </div>
       </div>
     </div>
-    </div>    
+    </div>
+
+    {/* Modal de Ajuda */}
+    {showModal && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-gray-800">{modalContent.title}</h3>
+            <button
+              onClick={closeModal}
+              className="text-gray-500 hover:text-gray-700 text-xl font-bold"
+            >
+              ×
+            </button>
+          </div>
+          <div className="mb-4">
+            <p className="text-sm text-gray-600 mb-2">{modalContent.description}</p>
+            <div className="bg-gray-100 p-3 rounded">
+              <p className="text-xs text-gray-700 font-mono">{modalContent.calculation}</p>
+            </div>
+          </div>
+          <button
+            onClick={closeModal}
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition-colors text-sm font-medium"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    )}
   </Layout>
   );
 };

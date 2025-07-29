@@ -455,12 +455,11 @@ const Franquias = () => {
                     const qtFaturado = Number(row.qt_faturado) || 1;
                     const custoUnit = custoMap[row.cd_nivel?.trim()];
                     if (custoUnit !== undefined) {
-                      custoTotal += Number(qtFaturado * custoUnit);
+                      custoTotal += qtFaturado * custoUnit;
                     }
                     const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  const somaEntradas = dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  valorTotalVenda = somaSaidas - somaEntradas;
-                  valorTotalVenda;
+                  const faturamentoTotal = somaSaidas;
+                  valorTotalVenda = faturamentoTotal;
                   }
                 });
                 const cmv = valorTotalVenda > 0 ? (custoTotal / valorTotalVenda) : null;

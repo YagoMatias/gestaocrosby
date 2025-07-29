@@ -457,9 +457,8 @@ const Varejo = () => {
                       custoTotal += qtFaturado * custoUnit;
                     }
                     const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  const somaEntradas = dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  valorTotalVenda = somaSaidas - somaEntradas;
-                  valorTotalVenda;
+                  const faturamentoTotal = somaSaidas;
+                  valorTotalVenda = faturamentoTotal;
                   }
                 });
                 // Cálculo do CMV padronizado

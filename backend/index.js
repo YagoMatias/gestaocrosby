@@ -5,7 +5,7 @@ import pkg from 'pg';
 const { Pool } = pkg;
 
 const app = express();
-app.use(cors({ origin: 'http://localhost:3000' }));
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 // Mini banco de dados em memória
@@ -20,10 +20,26 @@ const users = [
   },
   {
     id: 2,
-    name: 'Usuário Exemplo',
-    email: 'user',
-    password: 'user123',
-    role: 'USER',
+    name: 'Diretor Exemplo',
+    email: 'diretor',
+    password: 'diretor123',
+    role: 'DIRETOR',
+    active: true,
+  },
+  {
+    id: 3,
+    name: 'Financeiro Exemplo',
+    email: 'financeiro',
+    password: 'fin123',
+    role: 'FINANCEIRO',
+    active: true,
+  },
+  {
+    id: 4,
+    name: 'Franquia Exemplo',
+    email: 'franquia',
+    password: 'fran123',
+    role: 'FRANQUIA',
     active: true,
   },
 ];
@@ -64,6 +80,10 @@ app.post('/users', (req, res) => {
   if (requesterRole !== 'ADM') {
     return res.status(403).json({ message: 'Apenas o ADM pode criar usuários.' });
   }
+  const validRoles = ['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA'];
+  if (!validRoles.includes(role)) {
+    return res.status(400).json({ message: 'Perfil de usuário inválido. Perfis permitidos: ADM, DIRETOR, FINANCEIRO, FRANQUIA.' });
+  }
   if (users.find(u => u.email === email)) {
     return res.status(400).json({ message: 'E-mail já cadastrado.' });
   }
@@ -72,11 +92,58 @@ app.post('/users', (req, res) => {
     name,
     email,
     password,
-    role: role || 'USER',
+    role,
     active: active !== undefined ? active : true,
   };
   users.push(newUser);
   res.status(201).json(newUser);
+});
+
+// Editar usuário (apenas ADM)
+app.put('/users/:id', (req, res) => {
+  const { requesterRole } = req.body;
+  if (requesterRole !== 'ADM') {
+    return res.status(403).json({ message: 'Apenas o ADM pode editar usuários.' });
+  }
+  const id = parseInt(req.params.id, 10);
+  const user = users.find(u => u.id === id);
+  if (!user) {
+    return res.status(404).json({ message: 'Usuário não encontrado.' });
+  }
+  // Não permitir que o ADM edite a si mesmo para não se auto-excluir
+  if (user.role === 'ADM' && user.email === 'admin') {
+    return res.status(403).json({ message: 'Não é permitido editar o usuário ADM principal.' });
+  }
+  const { name, email, password, role, active } = req.body;
+  const validRoles = ['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA'];
+  if (role && !validRoles.includes(role)) {
+    return res.status(400).json({ message: 'Perfil de usuário inválido. Perfis permitidos: ADM, DIRETOR, FINANCEIRO, FRANQUIA.' });
+  }
+  if (name !== undefined) user.name = name;
+  if (email !== undefined) user.email = email;
+  if (password !== undefined) user.password = password;
+  if (role !== undefined) user.role = role;
+  if (active !== undefined) user.active = active;
+  res.json(user);
+});
+
+// Excluir usuário (apenas ADM)
+app.delete('/users/:id', (req, res) => {
+  const { requesterRole } = req.body;
+  if (requesterRole !== 'ADM') {
+    return res.status(403).json({ message: 'Apenas o ADM pode excluir usuários.' });
+  }
+  const id = parseInt(req.params.id, 10);
+  const userIndex = users.findIndex(u => u.id === id);
+  if (userIndex === -1) {
+    return res.status(404).json({ message: 'Usuário não encontrado.' });
+  }
+  // Não permitir que o ADM exclua a si mesmo
+  if (users[userIndex].role === 'ADM' && users[userIndex].email === 'admin') {
+    return res.status(403).json({ message: 'Não é permitido excluir o usuário ADM principal.' });
+  }
+  users.splice(userIndex, 1);
+  res.status(204).send();
 });
 
 // Exemplo de uso do axios para consumir uma API externa (mock)
@@ -151,8 +218,10 @@ app.get('/expedicao', async (req, res) => {
 // Rota para buscar dados da view vw_detalhe_pedido_completo para PCP
 app.get('/pcp', async (req, res) => {
   try {
-    const query = `SELECT * FROM vw_detalhe_pedido_completo WHERE cd_empresa = 111`;
-    const { rows } = await pool.query(query);
+    const limit = parseInt(req.query.limit, 10) || 50;
+    const offset = parseInt(req.query.offset, 10) || 0;
+    const query = `SELECT * FROM vw_detalhe_pedido_completo WHERE cd_empresa = 111 LIMIT $1 OFFSET $2`;
+    const { rows } = await pool.query(query, [limit, offset]);
     res.json(rows);
   } catch (error) {
     console.error('Erro ao buscar dados de PCP:', error);
@@ -211,6 +280,8 @@ app.get('/extratototvs', async (req, res) => {
       baseQuery += ` and fm.dt_movim between $${idx++} and $${idx++}`;
       params.push(dt_movim_ini, dt_movim_fim);
     }
+    // Adiciona filtro para in_estorno = 'T'
+    baseQuery += ` and fm.in_estorno = 'F'`;
     const dataQuery = `
       select fm.cd_empresa, fm.nr_ctapes, fm.dt_movim, fm.ds_doc, fm.dt_liq, fm.in_estorno, fm.tp_operacao, fm.ds_aux, fm.vl_lancto
       ${baseQuery}
@@ -259,8 +330,9 @@ app.get('/faturamento', async (req, res) => {
       where
         vfn.dt_transacao between $1 and $2
         and vfn.cd_empresa IN (${grupoPlaceholders})
-        and vfn.cd_operacao not in (1152, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711, 7111, 2009, 5152, 6029, 530, 5152, 5930, 650, 
-      5010, 600, 620, 40, 1557, 8600, 5910, 3336, 9003, 9052, 662, 5909,5153,5910,3336,9003,530,36,536,1552,51,1556,200,300,512,1402,1405,1409,5102,5110,200,300,512,5102,5110,5113,17,21,401,1201,1202,1204,1206,1950,1999,2203,17,21,1201,1202,1204,1950,1999,2203	
+        and vfn.cd_operacao not in (5914,1407,5102,520,300,200,1152, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711, 7111, 2009, 5152, 6029, 530, 5152, 5930, 650, 
+      5010, 600, 620, 40, 1557, 8600, 5910, 3336, 9003, 9052, 662, 5909,5153,5910,3336,9003,530,36,536,1552,51,1556,200,300,512,1402,1405,1409,5102,5110,200,300,
+      512,5102,5110,5113,17,21,401,1201,1202,1204,1206,1950,1999,2203,17,21,1201,1202,1204,1950,1999,2203	
 )
         and vfn.tp_situacao not in ('C', 'X')
     `;
@@ -648,6 +720,7 @@ app.get('/faturamentorevenda', async (req, res) => {
         p.cd_pessoa,
         p.nm_pessoa,
         pc.cd_tipoclas,
+        pc.cd_classificacao,
         vfn.cd_operacao,
         vfn.cd_nivel,
         vfn.ds_nivel,
@@ -667,10 +740,10 @@ app.get('/faturamentorevenda', async (req, res) => {
       where
         vfn.dt_transacao between $1 and $2
         and vfn.cd_empresa IN (${empresaPlaceholders})
-        and vfn.cd_operacao in (520,5102,1409,1407,1202,1950)
-        and pc.cd_tipoclas = 7
-	and vfn.tp_situacao not in ('C', 'X') 
-	and pc.cd_tipoclas = 7`;
+      	and vfn.cd_operacao not in (522, 9001, 9009, 9027, 9017, 002, 001, 548, 555, 521, 599, 1152, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711, 7111, 2009, 5152, 6029, 530, 5152, 5930, 650, 
+        5010, 600, 620, 40, 1557, 8600, 5910, 3336, 9003, 9052, 662, 5909, 5153, 5910, 3336, 9003, 530, 36, 536, 1552, 51, 1556)
+	      and pc.cd_tipoclas = 20
+	      and vfn.tp_situacao not in ('C', 'X')`;
     const { rows } = await pool.query(query, params);
     res.json(rows);
   } catch (error) {
@@ -679,7 +752,90 @@ app.get('/faturamentorevenda', async (req, res) => {
   }
 });
 
-const PORT = 4000;
+app.get('/faturamentolojas', async (req, res) => {
+  try {
+    // Aceita tanto dt_inicio/dt_fim quanto inicio/fim
+    let { cd_grupoempresa_ini, cd_grupoempresa_fim, dt_inicio, dt_fim, inicio, fim } = req.query;
+    dt_inicio = dt_inicio || inicio;
+    dt_fim = dt_fim || fim;
+    if (!cd_grupoempresa_ini || !cd_grupoempresa_fim || !dt_inicio || !dt_fim) {
+      return res.status(400).json({ message: 'Parâmetros obrigatórios: cd_grupoempresa_ini, cd_grupoempresa_fim, dt_inicio (ou inicio), dt_fim (ou fim).' });
+    }
+    const params = [cd_grupoempresa_ini, cd_grupoempresa_fim, dt_inicio, dt_fim];
+    const query = `
+      SELECT
+          A.CD_GRUPOEMPRESA,
+          A.CD_PESSOA AS PESSOA_EMPRESA,
+          B.CD_PESSOA AS PESSOA_JURIDICA,
+          B.NM_FANTASIA AS NOME_FANTASIA,
+          SUM(
+            CASE
+              WHEN T.TP_OPERACAO = 'E' AND T.TP_SITUACAO = 4 THEN T.QT_SOLICITADA
+              ELSE 0
+            END
+          ) AS PAENTRADA,
+          SUM(
+            CASE
+              WHEN T.TP_OPERACAO = 'S' AND T.TP_SITUACAO = 4 THEN T.QT_SOLICITADA
+              ELSE 0
+            END
+          ) AS PASAIDA,
+          COUNT(*) FILTER(WHERE T.TP_SITUACAO = 4 AND T.TP_OPERACAO = 'S') AS TRASAIDA,
+          COUNT(*) FILTER(WHERE T.TP_SITUACAO = 4 AND T.TP_OPERACAO = 'E') AS TRAENTRADA,
+          (
+            SUM(
+              CASE
+                WHEN T.TP_SITUACAO = 4 AND T.TP_OPERACAO = 'S' THEN T.VL_TOTAL
+                WHEN T.TP_SITUACAO = 4 AND T.TP_OPERACAO = 'E' THEN -T.VL_TOTAL
+                ELSE 0
+              END
+            )
+            -
+            SUM(
+              CASE
+                WHEN T.TP_SITUACAO = 4 AND T.TP_OPERACAO IN ('S', 'E') THEN COALESCE(T.VL_FRETE, 0)
+                ELSE 0
+              END
+            )
+          ) AS FATURAMENTO
+      FROM
+          GER_EMPRESA A
+      JOIN
+          PES_PESJURIDICA B ON A.CD_PESSOA = B.CD_PESSOA
+      LEFT JOIN
+          TRA_TRANSACAO T ON T.CD_GRUPOEMPRESA = A.CD_GRUPOEMPRESA
+      WHERE 
+          B.CD_PESSOA NOT IN (69994,70596,110000001,73469,61000007,61000008,61000009,61000010,45832)
+          AND B.CD_PESSOA < 110000100
+          AND T.VL_TOTAL > 1
+          AND (
+              T.TP_SITUACAO IS NULL OR (
+                  T.TP_SITUACAO = 4
+                  AND T.TP_OPERACAO IN ('S', 'E')
+                  AND T.CD_OPERACAO IN (1,2,510,511,1511,521,1521,522,960,9001,9009,9027,8750,9017,9400,9401,9402,9403,9404,9005,545,546,555,548,1210,9405,1205)
+                  AND T.CD_GRUPOEMPRESA BETWEEN $1 AND $2
+                  AND T.DT_TRANSACAO BETWEEN $3::timestamp AND $4::timestamp
+              )
+          )
+      GROUP BY
+          A.CD_GRUPOEMPRESA,
+          A.CD_PESSOA,
+          B.CD_PESSOA,
+          B.NM_FANTASIA
+      ORDER BY
+          FATURAMENTO DESC,
+          B.NM_FANTASIA
+    `;
+    const { rows } = await pool.query(query, params);
+    res.json(rows);
+  } catch (error) {
+    console.error('Erro ao buscar dados de faturamento lojas:', error);
+    res.status(500).json({ message: 'Erro ao buscar dados de faturamento lojas.' });
+  }
+});
+
+
+const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`Backend rodando em ${PORT}`);
 }); 

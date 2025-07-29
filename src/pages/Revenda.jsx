@@ -327,8 +327,7 @@ const Revenda = () => {
               <div className="text-2xl font-extrabold text-green-600 mb-1">
                 {loading ? <LoadingCircle size={24} /> : (() => {
                   const somaSaidas = dadosFiltrados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  const somaEntradas = dadosFiltrados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  const faturamentoTotal = somaSaidas - somaEntradas;
+                  const faturamentoTotal = somaSaidas
                   return faturamentoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                 })()}
               </div>
@@ -350,13 +349,8 @@ const Revenda = () => {
                   let valorBrutoTotal = 0;
                   dadosFiltrados.forEach(row => {
                     const qtFaturado = Number(row.qt_faturado) || 1;
-                    const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-                    
-                    if (row.tp_operacao === 'S') {
-                      valorBrutoTotal += valorBruto;
-                    } else if (row.tp_operacao === 'E') {
-                      valorBrutoTotal -= valorBruto;
-                    }
+                    const valorBruto = dadosFiltrados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitbruto) || 0) * (Number(row.qt_faturado) || 1)), 0);
+                    valorBrutoTotal = valorBruto;
                   });
                   return valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                 })()}
@@ -443,10 +437,10 @@ const Revenda = () => {
                     if (custoUnit !== undefined) {
                       custoTotal += qtFaturado * custoUnit;
                     }
-                    const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  const somaEntradas = dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  valorTotalVenda = somaSaidas - somaEntradas;
-                  valorTotalVenda;
+                    const somaSaidas = dadosFiltrados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
+                  const faturamentoTotal = somaSaidas;
+                  valorTotalVenda = faturamentoTotal;
+
                   }
                 });
                 const cmv = (valorTotalVenda > 0 && custoTotal > 0) ? (custoTotal / valorTotalVenda) * 100 : null;
