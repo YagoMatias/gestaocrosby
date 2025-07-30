@@ -207,11 +207,25 @@ const Consolidado = () => {
 
   // Cálculo do total geral e porcentagens
   const totalGeral = faturamento.revenda + faturamento.varejo + faturamento.franquia + faturamento.multimarcas;
-  const getPercent = (valor) => {
+  // Função para calcular representatividade garantindo soma = 100%
+  const getPercent = (valor, canalIndex = 0) => {
     if (totalGeral > 0) {
-      // Corrige para nunca passar de 100% e arredonda corretamente
       const percent = (valor / totalGeral) * 100;
-      return Math.min(percent, 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+      
+      // Se for o último canal (Multimarcas), ajusta para garantir soma = 100%
+      if (canalIndex === 3) {
+        const percentRevenda = (faturamento.revenda / totalGeral) * 100;
+        const percentVarejo = (faturamento.varejo / totalGeral) * 100;
+        const percentFranquia = (faturamento.franquia / totalGeral) * 100;
+        
+        // Calcula o que falta para 100%
+        const somaAnterior = percentRevenda + percentVarejo + percentFranquia;
+        const percentAjustado = 100 - somaAnterior;
+        
+        return percentAjustado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+      }
+      
+      return percent.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
     }
     return '-';
   };
@@ -225,7 +239,7 @@ const Consolidado = () => {
     setShowModal(false);
   };
 
-  // Cálculo do CMV total ponderado
+  // Cálculo do CMV percentual ponderado
   const custoBrutoRevenda = calcularCustoBruto(dadosRevenda);
   const custoBrutoVarejo = calcularCustoBruto(dadosVarejo);
   const custoBrutoFranquia = calcularCustoBruto(dadosFranquia);
@@ -251,12 +265,12 @@ const Consolidado = () => {
   const margemFranquia = calcularMargemCanal(faturamento.franquia, custoBrutoFranquia);
   const margemMultimarcas = calcularMargemCanal(faturamento.multimarcas, custoBrutoMultimarcas);
 
-  // Dados para gráfico de Faturamento
+  // Dados para gráfico de Vendas após Desconto
   const dataGraficoFaturamento = {
     labels: ['Revenda', 'Varejo', 'Franquia', 'Multimarcas'],
     datasets: [
       {
-        label: 'Faturamento',
+        label: 'Vendas após Desconto',
         data: [faturamento.revenda, faturamento.varejo, faturamento.franquia, faturamento.multimarcas],
         backgroundColor: [
           'rgba(59,130,246,0.8)', // Revenda - Azul
@@ -448,7 +462,7 @@ const Consolidado = () => {
         </div>
         {/* Cards Totais no topo */}
         <div className="flex flex-wrap gap-4 mb-8 justify-center">
-          {/* Faturamento Total */}
+          {/* Vendas após Desconto */}
           <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex flex-row items-center gap-2">
@@ -467,7 +481,7 @@ const Consolidado = () => {
                 <button
                   onClick={() => showHelpModal(
                     'Vendas após Desconto',
-                    'O valor das vendas menos o desconto aplicado. Representa o faturamento líquido total.',
+                    'O valor das vendas menos o desconto aplicado. Representa as vendas após desconto total.',
                     'Exemplo: R$1000,00 (Venda) - R$100,00 (Desconto) = R$900,00 (Resultado)'
                   )}
                   className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
@@ -497,7 +511,7 @@ const Consolidado = () => {
                   onClick={() => showHelpModal(
                     'CMV (Custo da Mercadoria Vendida)',
                     'Soma dos custos de produção dos produtos, de todos os canais.',
-                    'CMV Total = CMV Revenda + CMV Varejo + CMV Franquia + CMV Multimarcas'
+                    'CMV Percentual = CMV Revenda + CMV Varejo + CMV Franquia + CMV Multimarcas'
                   )}
                   className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
                 >
@@ -506,12 +520,12 @@ const Consolidado = () => {
               </div>
             </CardContent>
           </Card>
-          {/* CMV Total */}
+          {/* CMV Percentual */}
           <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex flex-row items-center gap-2">
                 <Percent size={18} className="text-orange-700" />
-                <CardTitle className="text-sm font-bold text-orange-700">CMV Total</CardTitle>
+                <CardTitle className="text-sm font-bold text-orange-700">CMV Percentual</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
@@ -521,12 +535,12 @@ const Consolidado = () => {
                   : (cmvTotal !== null ? cmvTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--')}
               </div>
               <div className="flex justify-between items-center">
-                <CardDescription className="text-xs text-gray-500">CMV / Faturamento Liquido Total</CardDescription>
+                <CardDescription className="text-xs text-gray-500">CMV / Vendas após Desconto</CardDescription>
                 <button
                   onClick={() => showHelpModal(
-                    'CMV Total (%)',
-                    'Percentual do CMV em relação ao faturamento total. Indica a proporção do custo sobre as vendas.',
-                    'CMV Total % = (CMV Total / Faturamento Total) × 100'
+                    'CMV Percentual (%)',
+                    'Percentual do CMV em relação às vendas após desconto. Indica a proporção do custo sobre as vendas.',
+                    'CMV Percentual % = (CMV Percentual / Vendas após Desconto) × 100'
                   )}
                   className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
                 >
@@ -552,12 +566,12 @@ const Consolidado = () => {
                       : '--')}
               </div>
               <div className="flex justify-between items-center">
-                <CardDescription className="text-xs text-gray-500">Faturamento - CMV</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Vendas após Desconto - CMV</CardDescription>
                 <button
                   onClick={() => showHelpModal(
                     'Margem Total (%)',
-                    'Percentual de lucro bruto em relação ao faturamento total. Representa a rentabilidade geral.',
-                    'Margem % = ((Faturamento Total - CMV Total) / Faturamento Total) × 100'
+                    'Percentual de lucro bruto em relação às vendas após desconto. Representa a rentabilidade geral.',
+                    'Margem % = ((Vendas após Desconto - CMV Percentual) / Vendas após Desconto) × 100'
                   )}
                   className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
                 >
@@ -586,7 +600,7 @@ const Consolidado = () => {
                   onClick={() => showHelpModal(
                     'Markup Total',
                     'Média ponderada do markup de todos os canais. Indica quantas vezes o preço de venda é maior que o custo.',
-                    'Markup Total = Faturamento Total / CMV Total'
+                    'Markup Total = Vendas após Desconto / CMV Percentual'
                   )}
                   className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
                 >
@@ -595,12 +609,12 @@ const Consolidado = () => {
               </div>
             </CardContent>
           </Card>
-          {/* Valor Bruto Total */}
+          {/* Preço Total de Tabela */}
           <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex flex-row items-center gap-2">
                 <CurrencyDollar size={18} className="text-purple-700" />
-                <CardTitle className="text-sm font-bold text-purple-700">Valor Bruto Total</CardTitle>
+                <CardTitle className="text-sm font-bold text-purple-700">Preço Total de Tabela</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
@@ -613,11 +627,8 @@ const Consolidado = () => {
                         dados.forEach(row => {
                           const qtFaturado = Number(row.qt_faturado) || 1;
                           const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-                          
                           if (row.tp_operacao === 'S') {
                             valorBrutoTotal += valorBruto;
-                          } else if (row.tp_operacao === 'E') {
-                            valorBrutoTotal -= valorBruto;
                           }
                         });
                       });
@@ -625,12 +636,12 @@ const Consolidado = () => {
                     })()}
               </div>
               <div className="flex justify-between items-center">
-                <CardDescription className="text-xs text-gray-500">Valor Bruto Total dos Canais</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Preço Total de Tabela dos Canais</CardDescription>
                 <button
                   onClick={() => showHelpModal(
-                    'Valor Bruto Total',
-                    'Soma dos valores brutos (sem desconto) de todos os canais de venda. Representa o faturamento antes dos descontos.',
-                    'Valor Bruto Total = Valor Bruto Revenda + Varejo + Franquia + Multimarcas'
+                    'Preço Total de Tabela',
+                    'Soma dos valores tabelados (sem desconto) de todos os canais de venda. Representa as vendas antes dos descontos.',
+                    'Preço Total de Tabela = Preço de Tabela Revenda + Varejo + Franquia + Multimarcas'
                   )}
                   className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
                 >
@@ -659,11 +670,8 @@ const Consolidado = () => {
                           const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
                           const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
                           const desconto = valorBrutoTotal - valorTotal;
-                          
                           if (row.tp_operacao === 'S') {
                             descontoTotal += desconto;
-                          } else if (row.tp_operacao === 'E') {
-                            descontoTotal -= desconto;
                           }
                         });
                       });
@@ -675,8 +683,8 @@ const Consolidado = () => {
                 <button
                   onClick={() => showHelpModal(
                     'Desconto Total',
-                    'Soma dos descontos aplicados em todos os canais de venda. Representa a diferença entre valor bruto e valor líquido.',
-                    'Desconto Total = (Valor Bruto - Valor Líquido) de todos os canais'
+                    'Soma dos descontos aplicados em todos os canais de venda. Representa a diferença entre preço de tabela e valor líquido.',
+                    'Desconto Total = (Preço de Tabela - Valor Líquido) de todos os canais'
                   )}
                   className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
                 >
@@ -695,12 +703,12 @@ const Consolidado = () => {
           <div>
             <h3 className="text-2xl font-bold text-gray-800 mb-4 text-left ml-10">Revenda</h3>
             <div className="flex flex-wrap gap-4 justify-start">
-            {/* Faturamento Revenda */}
+            {/* Vendas após Desconto Revenda */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <CurrencyDollar size={18} className="text-gray-700" />
-                  <CardTitle className="text-sm font-bold text-gray-900">Faturamento Revenda</CardTitle>
+                  <CurrencyDollar size={18} className="text-green-700" />
+                  <CardTitle className="text-sm font-bold text-green-700">Vendas após Desconto Revenda</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
@@ -778,12 +786,12 @@ const Consolidado = () => {
                 <CardDescription className="text-xs text-gray-500">Markup Revenda</CardDescription>
               </CardContent>
             </Card>
-            {/* Valor Bruto Revenda */}
+            {/* Preço de Tabela Revenda */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
                   <CurrencyDollar size={18} className="text-purple-600" />
-                  <CardTitle className="text-sm font-bold text-purple-600">Valor Bruto Revenda</CardTitle>
+                  <CardTitle className="text-sm font-bold text-purple-600">Preço de Tabela Revenda</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
@@ -793,17 +801,14 @@ const Consolidado = () => {
                     dadosRevenda.forEach(row => {
                       const qtFaturado = Number(row.qt_faturado) || 1;
                       const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-                      
-                      if (row.tp_operacao === 'S') {
+                       if (row.tp_operacao === 'S') {
                         valorBrutoTotal += valorBruto;
-                      } else if (row.tp_operacao === 'E') {
-                        valorBrutoTotal -= valorBruto;
                       }
                     });
                     return valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                   })()}
                 </div>
-                <CardDescription className="text-xs text-gray-500">Valor Bruto da Revenda</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Preço de Tabela da Revenda</CardDescription>
               </CardContent>
             </Card>
             {/* Desconto Revenda */}
@@ -823,11 +828,8 @@ const Consolidado = () => {
                       const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
                       const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
                       const desconto = valorBrutoTotal - valorTotal;
-                      
                       if (row.tp_operacao === 'S') {
                         descontoTotal += desconto;
-                      } else if (row.tp_operacao === 'E') {
-                        descontoTotal -= desconto;
                       }
                     });
                     return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -846,9 +848,9 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-indigo-600 mb-1">
-                  {loadingRevenda ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.revenda)}
+                  {loadingRevenda ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.revenda, 0)}
                 </div>
-                <CardDescription className="text-xs text-gray-500">% do faturamento liquido total da rede</CardDescription>
+                <CardDescription className="text-xs text-gray-500">% das vendas após desconto total da rede</CardDescription>
               </CardContent>
             </Card>
           </div>
@@ -860,12 +862,12 @@ const Consolidado = () => {
         <div>
           <h3 className="text-2xl font-bold text-gray-800 mb-4 text-left ml-10">Varejo</h3>
           <div className="flex flex-wrap gap-4 justify-start">
-            {/* Faturamento Varejo */}
+            {/* Vendas após Desconto Varejo */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <CurrencyDollar size={18} className="text-gray-700" />
-                  <CardTitle className="text-sm font-bold text-gray-900">Faturamento Varejo</CardTitle>
+                  <CurrencyDollar size={18} className="text-green-700" />
+                  <CardTitle className="text-sm font-bold text-green-700">Vendas após Desconto Varejo</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
@@ -943,12 +945,12 @@ const Consolidado = () => {
                 <CardDescription className="text-xs text-gray-500">Markup Varejo</CardDescription>
               </CardContent>
             </Card>
-            {/* Valor Bruto Varejo */}
+            {/* Preço de Tabela Varejo */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
                   <CurrencyDollar size={18} className="text-purple-600" />
-                  <CardTitle className="text-sm font-bold text-purple-600">Valor Bruto Varejo</CardTitle>
+                  <CardTitle className="text-sm font-bold text-purple-600">Preço de Tabela Varejo</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
@@ -961,14 +963,12 @@ const Consolidado = () => {
                       
                       if (row.tp_operacao === 'S') {
                         valorBrutoTotal += valorBruto;
-                      } else if (row.tp_operacao === 'E') {
-                        valorBrutoTotal -= valorBruto;
                       }
                     });
                     return valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                   })()}
                 </div>
-                <CardDescription className="text-xs text-gray-500">Valor Bruto do Varejo</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Preço de Tabela do Varejo</CardDescription>
               </CardContent>
             </Card>
             {/* Desconto Varejo */}
@@ -988,11 +988,8 @@ const Consolidado = () => {
                       const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
                       const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
                       const desconto = valorBrutoTotal - valorTotal;
-                      
                       if (row.tp_operacao === 'S') {
                         descontoTotal += desconto;
-                      } else if (row.tp_operacao === 'E') {
-                        descontoTotal -= desconto;
                       }
                     });
                     return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -1011,9 +1008,9 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-indigo-600 mb-1">
-                  {loadingVarejo ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.varejo)}
+                  {loadingVarejo ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.varejo, 1)}
                 </div>
-                <CardDescription className="text-xs text-gray-500">% do faturamento liquido total da rede</CardDescription>
+                <CardDescription className="text-xs text-gray-500">% das vendas após desconto total da rede</CardDescription>
               </CardContent>
             </Card>
           </div>
@@ -1026,12 +1023,12 @@ const Consolidado = () => {
         <div>
           <h3 className="text-2xl font-bold text-gray-800 mb-4 text-left ml-10">Franquia</h3>
           <div className="flex flex-wrap gap-4 justify-start">
-            {/* Faturamento Franquia */}
+            {/* Vendas após Desconto Franquia */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <CurrencyDollar size={18} className="text-gray-700" />
-                  <CardTitle className="text-sm font-bold text-gray-900">Faturamento Franquia</CardTitle>
+                  <CurrencyDollar size={18} className="text-green-700" />
+                  <CardTitle className="text-sm font-bold text-green-700">Vendas após Desconto Franquia</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
@@ -1109,12 +1106,12 @@ const Consolidado = () => {
                 <CardDescription className="text-xs text-gray-500">Markup Franquia</CardDescription>
               </CardContent>
             </Card>
-            {/* Valor Bruto Franquia */}
+            {/* Preço de Tabela Franquia */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
                   <CurrencyDollar size={18} className="text-purple-600" />
-                  <CardTitle className="text-sm font-bold text-purple-600">Valor Bruto Franquia</CardTitle>
+                  <CardTitle className="text-sm font-bold text-purple-600">Preço de Tabela Franquia</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
@@ -1127,14 +1124,12 @@ const Consolidado = () => {
                       
                       if (row.tp_operacao === 'S') {
                         valorBrutoTotal += valorBruto;
-                      } else if (row.tp_operacao === 'E') {
-                        valorBrutoTotal -= valorBruto;
                       }
                     });
                     return valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                   })()}
                 </div>
-                <CardDescription className="text-xs text-gray-500">Valor Bruto da Franquia</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Preço de Tabela da Franquia</CardDescription>
               </CardContent>
             </Card>
             {/* Desconto Franquia */}
@@ -1154,11 +1149,8 @@ const Consolidado = () => {
                       const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
                       const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
                       const desconto = valorBrutoTotal - valorTotal;
-                      
                       if (row.tp_operacao === 'S') {
                         descontoTotal += desconto;
-                      } else if (row.tp_operacao === 'E') {
-                        descontoTotal -= desconto;
                       }
                     });
                     return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -1177,9 +1169,9 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-indigo-600 mb-1">
-                  {loadingFranquia ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.franquia)}
+                  {loadingFranquia ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.franquia, 2)}
                 </div>
-                <CardDescription className="text-xs text-gray-500">% do faturamento liquido total da rede</CardDescription>
+                <CardDescription className="text-xs text-gray-500">% das vendas após desconto total da rede</CardDescription>
               </CardContent>
             </Card>
           </div>
@@ -1192,12 +1184,12 @@ const Consolidado = () => {
         <div>
           <h3 className="text-2xl font-bold text-gray-800 mb-4 text-left ml-10">Multimarcas</h3>
           <div className="flex flex-wrap gap-4 justify-start">
-            {/* Faturamento Multimarcas */}
+            {/* Vendas após Desconto Multimarcas */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
-                  <CurrencyDollar size={18} className="text-gray-700" />
-                  <CardTitle className="text-sm font-bold text-gray-900">Faturamento Multimarcas</CardTitle>
+                  <CurrencyDollar size={18} className="text-green-700" />
+                  <CardTitle className="text-sm font-bold text-green-700">Vendas após Desconto Multimarcas</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
@@ -1275,12 +1267,12 @@ const Consolidado = () => {
                 <CardDescription className="text-xs text-gray-500">Markup Multimarcas</CardDescription>
               </CardContent>
             </Card>
-            {/* Valor Bruto Multimarcas */}
+            {/* Preço de Tabela Multimarcas */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
                 <div className="flex flex-row items-center gap-2">
                   <CurrencyDollar size={18} className="text-purple-600" />
-                  <CardTitle className="text-sm font-bold text-purple-600">Valor Bruto Multimarcas</CardTitle>
+                  <CardTitle className="text-sm font-bold text-purple-600">Preço de Tabela Multimarcas</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
@@ -1289,18 +1281,15 @@ const Consolidado = () => {
                     let valorBrutoTotal = 0;
                     dadosMultimarcas.forEach(row => {
                       const qtFaturado = Number(row.qt_faturado) || 1;
-                      const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-                      
+                      const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado; 
                       if (row.tp_operacao === 'S') {
                         valorBrutoTotal += valorBruto;
-                      } else if (row.tp_operacao === 'E') {
-                        valorBrutoTotal -= valorBruto;
                       }
                     });
                     return valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                   })()}
                 </div>
-                <CardDescription className="text-xs text-gray-500">Valor Bruto da Multimarcas</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Preço de Tabela da Multimarcas</CardDescription>
               </CardContent>
             </Card>
             {/* Desconto Multimarcas */}
@@ -1320,11 +1309,8 @@ const Consolidado = () => {
                       const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
                       const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
                       const desconto = valorBrutoTotal - valorTotal;
-                      
                       if (row.tp_operacao === 'S') {
                         descontoTotal += desconto;
-                      } else if (row.tp_operacao === 'E') {
-                        descontoTotal -= desconto;
                       }
                     });
                     return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -1343,9 +1329,9 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-indigo-600 mb-1">
-                  {loadingMultimarcas ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.multimarcas)}
+                  {loadingMultimarcas ? <LoadingCircle size={24} color="#4f46e5" /> : getPercent(faturamento.multimarcas, 3)}
                 </div>
-                <CardDescription className="text-xs text-gray-500">% do faturamento liquido total da rede</CardDescription>
+                <CardDescription className="text-xs text-gray-500">% das vendas após desconto total da rede</CardDescription>
               </CardContent>
             </Card>
           </div>
@@ -1357,10 +1343,10 @@ const Consolidado = () => {
         
         {/* Grid de gráficos */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Gráfico de Faturamento */}
+          {/* Gráfico de Vendas após Desconto */}
           <div className="bg-white rounded-2xl shadow-2xl p-6">
-            <h3 className="text-xl font-bold text-center mb-4 text-[#000638]">Faturamento por Canal</h3>
-            <Bar data={dataGraficoFaturamento} options={{...optionsGraficoMonetario, plugins: {...optionsGraficoMonetario.plugins, title: {...optionsGraficoMonetario.plugins.title, text: 'Faturamento por Canal'}}}} />
+            <h3 className="text-xl font-bold text-center mb-4 text-[#000638]">Vendas após Desconto por Canal</h3>
+            <Bar data={dataGraficoFaturamento} options={{...optionsGraficoMonetario, plugins: {...optionsGraficoMonetario.plugins, title: {...optionsGraficoMonetario.plugins.title, text: 'Vendas após Desconto por Canal'}}}} />
           </div>
 
           {/* Gráfico de CMV */}

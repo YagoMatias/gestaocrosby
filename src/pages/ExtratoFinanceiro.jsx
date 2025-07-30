@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import Layout from '../components/Layout';
 import DropdownContas from '../components/DropdownContas';
 import { contas } from "../utils/contas";
-import { ArrowsClockwise, CaretDown, CaretRight, ArrowCircleDown, ArrowCircleUp, Receipt, CheckCircle, XCircle } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretDown, CaretRight, ArrowCircleDown, ArrowCircleUp, Receipt, CheckCircle, XCircle, Question } from '@phosphor-icons/react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
 import LoadingCircle from '../components/LoadingCircle';
 import ExtratoTotvsTable from '../components/ExtratoTotvsTable';
@@ -27,6 +27,8 @@ const ExtratoFinanceiro = () => {
   });
   const [page, setPage] = useState(1);
   const [expandTabela, setExpandTabela] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [modalContent, setModalContent] = useState({ title: '', description: '', calculation: '' });
 
   // Lista de contas para o dropdown
   // Remover a lista de contas daqui
@@ -112,6 +114,16 @@ const ExtratoFinanceiro = () => {
   };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  // Funções para o modal de ajuda
+  const showHelpModal = (title, description, calculation) => {
+    setModalContent({ title, description, calculation });
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+  };
 
   // Função para formatar datas no padrão brasileiro
   function formatarDataBR(data) {
@@ -304,7 +316,19 @@ const ExtratoFinanceiro = () => {
               <div className="text-lg font-extrabold text-[#fe0000] mb-0.5">{qtdDebitos}</div>
               <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
               <div className="text-xs font-bold text-[#fe0000] mt-0.5">{valorDebitos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
-              <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+              <div className="flex justify-between items-center mt-1">
+                <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+                <button
+                  onClick={() => showHelpModal(
+                    'Débitos Financeiros',
+                    'Mostra a quantidade e valor total de todas as movimentações de débito (D) no extrato financeiro.',
+                    'Dados referentes ao componente FCCFP023'
+                  )}
+                  className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={10} className="text-gray-600" />
+                </button>
+              </div>
             </CardContent>
           </Card>
           {/* Card Créditos Financeiro */}
@@ -319,7 +343,19 @@ const ExtratoFinanceiro = () => {
               <div className="text-lg font-extrabold text-green-600 mb-0.5">{qtdCreditos}</div>
               <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
               <div className="text-xs font-bold text-green-600 mt-0.5">{valorCreditos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
-              <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+              <div className="flex justify-between items-center mt-1">
+                <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+                <button
+                  onClick={() => showHelpModal(
+                    'Créditos Financeiros',
+                    'Mostra a quantidade e valor total de todas as movimentações de crédito (C) no extrato financeiro.',
+                    'Dados referentes ao componente FCCFP023'
+                  )}
+                  className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={10} className="text-gray-600" />
+                </button>
+              </div>
             </CardContent>
           </Card>
           {/* Card Conciliadas */}
@@ -334,7 +370,19 @@ const ExtratoFinanceiro = () => {
               <div className="text-lg font-extrabold text-green-600 mb-0.5">{qtdConciliadas}</div>
               <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
               <div className="text-xs font-bold text-green-600 mt-0.5">{valorConciliadas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
-              <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+              <div className="flex justify-between items-center mt-1">
+                <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+                <button
+                  onClick={() => showHelpModal(
+                    'Transações Conciliadas',
+                    'Mostra a quantidade e valor total de todas as movimentações que já foram conciliadas com o sistema TOTVS.',
+                    'Dados referentes ao componente FCCFP023'
+                  )}
+                  className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={10} className="text-gray-600" />
+                </button>
+              </div>
             </CardContent>
           </Card>
           {/* Card Desconciliadas */}
@@ -349,7 +397,19 @@ const ExtratoFinanceiro = () => {
               <div className="text-lg font-extrabold text-[#fe0000] mb-0.5">{qtdDesconciliadas}</div>
               <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
               <div className="text-xs font-bold text-[#fe0000] mt-0.5">{valorDesconciliadas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
-              <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+              <div className="flex justify-between items-center mt-1">
+                <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+                <button
+                  onClick={() => showHelpModal(
+                    'Transações Desconciliadas',
+                    'Mostra a quantidade e valor total de todas as movimentações que estão pendentes de conciliação com o sistema TOTVS.',
+                    'Dados referentes ao componente FCCFP023'
+                  )}
+                  className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={10} className="text-gray-600" />
+                </button>
+              </div>
             </CardContent>
           </Card>
           {/* Card Débitos TOTVs */}
@@ -364,7 +424,19 @@ const ExtratoFinanceiro = () => {
               <div className="text-lg font-extrabold text-[#fe0000] mb-0.5">{qtdDebitosTotvs}</div>
               <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
               <div className="text-xs font-bold text-[#fe0000] mt-0.5">{valorDebitosTotvs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
-              <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+              <div className="flex justify-between items-center mt-1">
+                <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+                <button
+                  onClick={() => showHelpModal(
+                    'Débitos TOTVS',
+                    'Mostra a quantidade e valor total de todas as movimentações de débito (D) no sistema TOTVS.',
+                    'Dados referentes ao componente FCCFL004'
+                  )}
+                  className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={10} className="text-gray-600" />
+                </button>
+              </div>
             </CardContent>
           </Card>
           {/* Card Créditos TOTVs */}
@@ -379,7 +451,19 @@ const ExtratoFinanceiro = () => {
               <div className="text-lg font-extrabold text-green-600 mb-0.5">{qtdCreditosTotvs}</div>
               <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
               <div className="text-xs font-bold text-green-600 mt-0.5">{valorCreditosTotvs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
-              <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+              <div className="flex justify-between items-center mt-1">
+                <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+                <button
+                  onClick={() => showHelpModal(
+                    'Créditos TOTVS',
+                    'Mostra a quantidade e valor total de todas as movimentações de crédito (C) no sistema TOTVS.',
+                    'Dados referentes ao componente FCCFL004'
+                  )}
+                  className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={10} className="text-gray-600" />
+                </button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -477,6 +561,35 @@ const ExtratoFinanceiro = () => {
           </div>
         )}
       </div>
+
+      {/* Modal de Ajuda */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-800">{modalContent.title}</h3>
+              <button
+                onClick={closeModal}
+                className="text-gray-500 hover:text-gray-700 text-xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">{modalContent.description}</p>
+              <div className="bg-gray-100 p-3 rounded">
+                <p className="text-xs text-gray-700 font-mono">{modalContent.calculation}</p>
+              </div>
+            </div>
+            <button
+              onClick={closeModal}
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };
