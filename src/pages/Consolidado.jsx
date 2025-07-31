@@ -44,7 +44,7 @@ const Consolidado = () => {
   // Empresas fixas para Revenda e Franquia
   const empresasFixas = ['2', '200', '75', '31', '6', '85', '11'];
   // Empresas fixas para Varejo
-  const empresasVarejoFixas = ['2','5','55','65','95','92','93','94','95','96','97','200','500','550','650','950','920','930','940','950','960','970'];
+  const empresasVarejoFixas = ['2', '5', '500', '55', '550', '65', '650', '93', '930', '94', '940', '95', '950', '96', '960', '97', '970'];
 
   // Estados para armazenar os dados brutos de cada segmento para cálculo do CMV
   const [dadosRevenda, setDadosRevenda] = useState([]);
@@ -166,7 +166,9 @@ const Consolidado = () => {
       if (!resVarejo.ok) throw new Error('Erro ao buscar faturamento de varejo');
       const jsonVarejo = await resVarejo.json();
       const somaSaidasVarejo = jsonVarejo.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-      const totalVarejo = somaSaidasVarejo;
+      const somaEntradasVarejo = jsonVarejo.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
+      const totalVarejo = somaSaidasVarejo - somaEntradasVarejo;
+      console.log(totalVarejo);
       setFaturamento(fat => ({ ...fat, varejo: totalVarejo }));
       setDadosVarejo(jsonVarejo);
       setLoadingVarejo(false);
@@ -210,22 +212,84 @@ const Consolidado = () => {
   // Função para calcular representatividade garantindo soma = 100%
   const getPercent = (valor, canalIndex = 0) => {
     if (totalGeral > 0) {
-      const percent = (valor / totalGeral) * 100;
+      // Calcula todos os percentuais primeiro
+      const percentRevenda = (faturamento.revenda / totalGeral) * 100;
+      const percentVarejo = (faturamento.varejo / totalGeral) * 100;
+      const percentFranquia = (faturamento.franquia / totalGeral) * 100;
+      const percentMultimarcas = (faturamento.multimarcas / totalGeral) * 100;
       
-      // Se for o último canal (Multimarcas), ajusta para garantir soma = 100%
-      if (canalIndex === 3) {
-        const percentRevenda = (faturamento.revenda / totalGeral) * 100;
-        const percentVarejo = (faturamento.varejo / totalGeral) * 100;
-        const percentFranquia = (faturamento.franquia / totalGeral) * 100;
+      // Arredonda para 2 casas decimais
+      const percentRevendaRounded = Math.round(percentRevenda * 100) / 100;
+      const percentVarejoRounded = Math.round(percentVarejo * 100) / 100;
+      const percentFranquiaRounded = Math.round(percentFranquia * 100) / 100;
+      const percentMultimarcasRounded = Math.round(percentMultimarcas * 100) / 100;
+      
+      // Calcula a soma total arredondada
+      const somaTotal = percentRevendaRounded + percentVarejoRounded + percentFranquiaRounded + percentMultimarcasRounded;
+      
+      // Se a soma for maior que 100%, ajusta o maior valor
+      if (somaTotal > 100) {
+        const excesso = somaTotal - 100;
         
-        // Calcula o que falta para 100%
-        const somaAnterior = percentRevenda + percentVarejo + percentFranquia;
-        const percentAjustado = 100 - somaAnterior;
+        // Encontra o maior valor para reduzir
+        const valores = [
+          { valor: percentRevendaRounded, index: 0 },
+          { valor: percentVarejoRounded, index: 1 },
+          { valor: percentFranquiaRounded, index: 2 },
+          { valor: percentMultimarcasRounded, index: 3 }
+        ];
         
-        return percentAjustado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+        const maiorValor = valores.reduce((max, atual) => atual.valor > max.valor ? atual : max);
+        
+        // Retorna o valor ajustado baseado no canal
+        if (canalIndex === maiorValor.index) {
+          const valorAjustado = maiorValor.valor - excesso;
+          return valorAjustado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+        } else {
+          // Retorna o valor normal para os outros canais
+          const valoresAjustados = [
+            canalIndex === 0 ? percentRevendaRounded : (maiorValor.index === 0 ? percentRevendaRounded - excesso : percentRevendaRounded),
+            canalIndex === 1 ? percentVarejoRounded : (maiorValor.index === 1 ? percentVarejoRounded - excesso : percentVarejoRounded),
+            canalIndex === 2 ? percentFranquiaRounded : (maiorValor.index === 2 ? percentFranquiaRounded - excesso : percentFranquiaRounded),
+            canalIndex === 3 ? percentMultimarcasRounded : (maiorValor.index === 3 ? percentMultimarcasRounded - excesso : percentMultimarcasRounded)
+          ];
+          return valoresAjustados[canalIndex].toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+        }
       }
       
-      return percent.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+      // Se a soma for menor que 100%, ajusta o menor valor
+      if (somaTotal < 100) {
+        const deficit = 100 - somaTotal;
+        
+        // Encontra o menor valor para aumentar
+        const valores = [
+          { valor: percentRevendaRounded, index: 0 },
+          { valor: percentVarejoRounded, index: 1 },
+          { valor: percentFranquiaRounded, index: 2 },
+          { valor: percentMultimarcasRounded, index: 3 }
+        ];
+        
+        const menorValor = valores.reduce((min, atual) => atual.valor < min.valor ? atual : min);
+        
+        // Retorna o valor ajustado baseado no canal
+        if (canalIndex === menorValor.index) {
+          const valorAjustado = menorValor.valor + deficit;
+          return valorAjustado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+        } else {
+          // Retorna o valor normal para os outros canais
+          const valoresAjustados = [
+            canalIndex === 0 ? percentRevendaRounded : (menorValor.index === 0 ? percentRevendaRounded + deficit : percentRevendaRounded),
+            canalIndex === 1 ? percentVarejoRounded : (menorValor.index === 1 ? percentVarejoRounded + deficit : percentVarejoRounded),
+            canalIndex === 2 ? percentFranquiaRounded : (menorValor.index === 2 ? percentFranquiaRounded + deficit : percentFranquiaRounded),
+            canalIndex === 3 ? percentMultimarcasRounded : (menorValor.index === 3 ? percentMultimarcasRounded + deficit : percentMultimarcasRounded)
+          ];
+          return valoresAjustados[canalIndex].toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+        }
+      }
+      
+      // Se a soma for exatamente 100%, retorna o valor normal
+      const valores = [percentRevendaRounded, percentVarejoRounded, percentFranquiaRounded, percentMultimarcasRounded];
+      return valores[canalIndex].toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
     }
     return '-';
   };
@@ -663,18 +727,20 @@ const Consolidado = () => {
                 {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
                   ? <LoadingCircle size={24} color="#ea580c" />
                   : (() => {
-                      let descontoTotal = 0;
+                      // Calcula o preço total de tabela
+                      let precoTabelaTotal = 0;
                       [dadosRevenda, dadosVarejo, dadosFranquia, dadosMultimarcas].forEach(dados => {
                         dados.forEach(row => {
                           const qtFaturado = Number(row.qt_faturado) || 1;
-                          const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
-                          const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-                          const desconto = valorBrutoTotal - valorTotal;
+                          const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
                           if (row.tp_operacao === 'S') {
-                            descontoTotal += desconto;
+                            precoTabelaTotal += valorBruto;
                           }
                         });
                       });
+                      
+                      // Desconto total = Preço Total de Tabela - Vendas após Desconto
+                      const descontoTotal = precoTabelaTotal - totalGeral;
                       return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                     })()}
               </div>
@@ -683,8 +749,8 @@ const Consolidado = () => {
                 <button
                   onClick={() => showHelpModal(
                     'Desconto Total',
-                    'Soma dos descontos aplicados em todos os canais de venda. Representa a diferença entre preço de tabela e valor líquido.',
-                    'Desconto Total = (Preço de Tabela - Valor Líquido) de todos os canais'
+                    'Diferença entre o preço total de tabela e as vendas após desconto. Representa o total de descontos aplicados em todos os canais.',
+                    'Desconto Total = Preço Total de Tabela - Vendas após Desconto'
                   )}
                   className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
                 >
@@ -822,17 +888,19 @@ const Consolidado = () => {
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-600 mb-1">
                   {loadingRevenda ? <LoadingCircle size={24} color="#ea580c" /> : (() => {
-                    let descontoTotal = 0;
+                    // Calcula o preço de tabela da revenda
+                    let precoTabelaRevenda = 0;
                     dadosRevenda.forEach(row => {
                       const qtFaturado = Number(row.qt_faturado) || 1;
-                      const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
-                      const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-                      const desconto = valorBrutoTotal - valorTotal;
+                      const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
                       if (row.tp_operacao === 'S') {
-                        descontoTotal += desconto;
+                        precoTabelaRevenda += valorBruto;
                       }
                     });
-                    return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                    
+                    // Desconto revenda = Preço de Tabela Revenda - Vendas após Desconto Revenda
+                    const descontoRevenda = precoTabelaRevenda - faturamento.revenda;
+                    return descontoRevenda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                   })()}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Desconto da Revenda</CardDescription>
@@ -963,6 +1031,8 @@ const Consolidado = () => {
                       
                       if (row.tp_operacao === 'S') {
                         valorBrutoTotal += valorBruto;
+                      } else if (row.tp_operacao === 'E') {
+                        valorBrutoTotal -= valorBruto;
                       }
                     });
                     return valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -982,17 +1052,22 @@ const Consolidado = () => {
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-600 mb-1">
                   {loadingVarejo ? <LoadingCircle size={24} color="#ea580c" /> : (() => {
-                    let descontoTotal = 0;
+                    // Calcula o preço de tabela do varejo
+                    let precoTabelaVarejo = 0;
                     dadosVarejo.forEach(row => {
                       const qtFaturado = Number(row.qt_faturado) || 1;
-                      const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
-                      const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-                      const desconto = valorBrutoTotal - valorTotal;
+                      const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
+                      
                       if (row.tp_operacao === 'S') {
-                        descontoTotal += desconto;
+                        precoTabelaVarejo += valorBruto;
+                      } else if (row.tp_operacao === 'E') {
+                        precoTabelaVarejo -= valorBruto;
                       }
                     });
-                    return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                    
+                    // Desconto varejo = Preço de Tabela Varejo - Vendas após Desconto Varejo
+                    const descontoVarejo = precoTabelaVarejo - faturamento.varejo;
+                    return descontoVarejo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                   })()}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Desconto do Varejo</CardDescription>
@@ -1143,17 +1218,19 @@ const Consolidado = () => {
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-600 mb-1">
                   {loadingFranquia ? <LoadingCircle size={24} color="#ea580c" /> : (() => {
-                    let descontoTotal = 0;
+                    // Calcula o preço de tabela da franquia
+                    let precoTabelaFranquia = 0;
                     dadosFranquia.forEach(row => {
                       const qtFaturado = Number(row.qt_faturado) || 1;
-                      const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
-                      const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-                      const desconto = valorBrutoTotal - valorTotal;
+                      const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
                       if (row.tp_operacao === 'S') {
-                        descontoTotal += desconto;
+                        precoTabelaFranquia += valorBruto;
                       }
                     });
-                    return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                    
+                    // Desconto franquia = Preço de Tabela Franquia - Vendas após Desconto Franquia
+                    const descontoFranquia = precoTabelaFranquia - faturamento.franquia;
+                    return descontoFranquia.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                   })()}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Desconto da Franquia</CardDescription>
@@ -1303,17 +1380,19 @@ const Consolidado = () => {
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-600 mb-1">
                   {loadingMultimarcas ? <LoadingCircle size={24} color="#ea580c" /> : (() => {
-                    let descontoTotal = 0;
+                    // Calcula o preço de tabela da multimarcas
+                    let precoTabelaMultimarcas = 0;
                     dadosMultimarcas.forEach(row => {
                       const qtFaturado = Number(row.qt_faturado) || 1;
-                      const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
-                      const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-                      const desconto = valorBrutoTotal - valorTotal;
+                      const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
                       if (row.tp_operacao === 'S') {
-                        descontoTotal += desconto;
+                        precoTabelaMultimarcas += valorBruto;
                       }
                     });
-                    return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                    
+                    // Desconto multimarcas = Preço de Tabela Multimarcas - Vendas após Desconto Multimarcas
+                    const descontoMultimarcas = precoTabelaMultimarcas - faturamento.multimarcas;
+                    return descontoMultimarcas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                   })()}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Desconto da Multimarcas</CardDescription>

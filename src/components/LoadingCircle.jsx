@@ -1,20 +1,20 @@
 import React from 'react';
 
-export default function LoadingCircle({ size = 32, color = '#000638', className = '' }) {
+const LoadingCircle = ({ size = 'large', text = 'Carregando...' }) => {
+  const sizeClasses = {
+    small: 'h-8 w-8',
+    medium: 'h-16 w-16', 
+    large: 'h-32 w-32'
+  };
+
   return (
-    <div className={`flex items-center justify-center ${className}`} role="status" aria-label="Carregando">
-      <span
-        className="inline-block animate-spin rounded-full border-4 border-solid border-gray-200 border-t-[color:var(--spinner-color)]"
-        style={{
-          width: size,
-          height: size,
-          borderTopColor: color,
-          borderRightColor: 'transparent',
-          borderBottomColor: 'transparent',
-          borderLeftColor: 'transparent',
-        }}
-      />
-      <span className="sr-only">Carregando...</span>
+    <div className="flex items-center justify-center min-h-screen bg-white">
+      <div className="text-center">
+        <div className={`animate-spin rounded-full ${sizeClasses[size]} border-b-2 border-gray-900 mx-auto mb-4`}></div>
+        <p className="text-gray-600">{text}</p>
+      </div>
     </div>
   );
-} 
+};
+
+export default LoadingCircle; 
