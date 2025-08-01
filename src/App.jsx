@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import LoginForm from './components/LoginForm';
 import Home from './pages/Home';
-import Transacoes from './pages/Transacoes';
+import ContasAPagar from './pages/ContasAPagar';
 import ExtratoFinanceiro from './pages/ExtratoFinanceiro';
 import ExtratoTOTVS from './pages/ExtratoTOTVS';
 import Varejo from './pages/Varejo';
@@ -11,6 +11,7 @@ import Revenda from './pages/Revenda';
 import ConsultaFatura from './pages/ConsultaFatura';
 import FundoPropaganda from './pages/FundoPropaganda';
 import RankingFaturamento from './pages/RankingFaturamento';
+import RankingVendedores from './pages/RankingVendedores';
 import Consolidado from './pages/Consolidado';
 import React, { memo } from 'react';
 import PrivateRoute from './components/PrivateRoute';
@@ -24,7 +25,7 @@ const AppRoutes = memo(() => {
     <Routes>
       <Route path="/" element={<LoginForm />} />
       <Route path="/home" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA']}><Home /></PrivateRoute>} />
-      <Route path="/transacoes" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><Transacoes /></PrivateRoute>} />
+      <Route path="/contas-a-pagar" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><ContasAPagar /></PrivateRoute>} />
       <Route path="/extrato-financeiro" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><ExtratoFinanceiro /></PrivateRoute>} />
       <Route path="/extrato-totvs" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><ExtratoTOTVS /></PrivateRoute>} />
       <Route path="/varejo" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR']}><Varejo /></PrivateRoute>} />
@@ -34,6 +35,7 @@ const AppRoutes = memo(() => {
       <Route path="/consulta-fatura" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><ConsultaFatura /></PrivateRoute>} />
       <Route path="/fundo-propaganda" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><FundoPropaganda /></PrivateRoute>} />
       <Route path="/ranking-faturamento" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FRANQUIA']}><RankingFaturamento /></PrivateRoute>} />
+      <Route path="/ranking-vendedores" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA']}><RankingVendedores /></PrivateRoute>} />
       <Route path="/consolidado" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR']}><Consolidado /></PrivateRoute>} />
       <Route path="/compras-franquias" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR']}><ComprasFranquias /></PrivateRoute>} />
       <Route path="/painel-admin" element={<PrivateRoute allowedRoles={['ADM']}><PainelAdmin /></PrivateRoute>} />
