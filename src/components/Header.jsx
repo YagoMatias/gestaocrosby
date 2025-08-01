@@ -1,12 +1,15 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { useIsMobile } from './use-mobile';
+import { User, SignOut, Gear } from '@phosphor-icons/react';
 
 const Header = ({ onMenuClick, sidebarOpen = false }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef(null);
 
   // Mostra o menu apenas no mobile OU quando o sidebar está fechado no desktop
   const shouldShowMenu = isMobile || !sidebarOpen;
@@ -16,6 +19,25 @@ const Header = ({ onMenuClick, sidebarOpen = false }) => {
   const handleLogout = () => {
     logout();
     navigate('/');
+  };
+
+  // Fechar dropdown quando clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const handleUserPanelClick = () => {
+    setShowDropdown(false);
+    navigate('/user-panel');
   };
 
   return (
@@ -54,42 +76,47 @@ const Header = ({ onMenuClick, sidebarOpen = false }) => {
         </div>
 
         <div className="flex items-center">
-          <div className="flex items-center mr-4">
-            <svg 
-              className="w-6 h-6 text-gray-500 mr-2" 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
+          {/* Dropdown do usuário */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+              onClick={() => setShowDropdown(!showDropdown)}
             >
-              <path 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                strokeWidth={2} 
-                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" 
-              />
-            </svg>
-            <span className="text-sm font-medium text-gray-700">
-              {user?.name || 'Usuário'}
-            </span>
+              <User size={20} className="text-gray-500" />
+              <span className="text-sm font-medium text-gray-700">
+                {user?.name || 'Usuário'}
+              </span>
+              <svg 
+                className={`w-4 h-4 text-gray-500 transition-transform ${showDropdown ? 'rotate-180' : ''}`}
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {/* Dropdown menu */}
+            {showDropdown && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                <button
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                  onClick={handleUserPanelClick}
+                >
+                  <Gear size={16} className="text-gray-500" />
+                  Painel do Usuário
+                </button>
+                <div className="border-t border-gray-200 my-1"></div>
+                <button
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                  onClick={handleLogout}
+                >
+                  <SignOut size={16} className="text-red-500" />
+                  Sair
+                </button>
+              </div>
+            )}
           </div>
-          <button
-            className="p-2 text-gray-500 hover:text-gray-700 transition-colors"
-            onClick={handleLogout}
-          >
-            <svg 
-              className="w-6 h-6" 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                strokeWidth={2} 
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" 
-              />
-            </svg>
-          </button>
         </div>
       </div>
     </header>

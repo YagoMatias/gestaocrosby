@@ -222,24 +222,7 @@ export const changePassword = async (userId, currentPassword, newPassword) => {
   }
 };
 
-// Verificar se é o primeiro login (senha padrão)
-export const isFirstLogin = (user) => {
-  // Lista de senhas padrão comuns
-  const defaultPasswords = [
-    '123456',
-    'password',
-    'admin',
-    'user',
-    'senha',
-    '123123',
-    'qwerty',
-    'abc123',
-    '123456789',
-    'password123'
-  ];
-  
-  return defaultPasswords.includes(user?.password);
-}; 
+ 
 
 // Função para testar criação de usuário
 export const testCreateUser = async () => {
@@ -248,7 +231,7 @@ export const testCreateUser = async () => {
       id: null, // Simula o problema que estava ocorrendo
       name: 'Teste Usuário',
       email: 'teste@exemplo.com',
-      password: '123456', // Senha padrão que será detectada como primeiro login
+      password: 'senha123', // Senha normal
       role: 'FRANQUIA', // Testando com o valor correto
       active: true
     };

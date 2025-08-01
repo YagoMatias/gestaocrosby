@@ -16,6 +16,7 @@ import React, { memo } from 'react';
 import PrivateRoute from './components/PrivateRoute';
 import ComprasFranquias from './pages/ComprasFranquias';
 import PainelAdmin from './pages/PainelAdmin';
+import UserPanel from './pages/UserPanel';
 
 // Componente memoizado para evitar re-renderizações desnecessárias
 const AppRoutes = memo(() => {
@@ -36,6 +37,7 @@ const AppRoutes = memo(() => {
       <Route path="/consolidado" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR']}><Consolidado /></PrivateRoute>} />
       <Route path="/compras-franquias" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR']}><ComprasFranquias /></PrivateRoute>} />
       <Route path="/painel-admin" element={<PrivateRoute allowedRoles={['ADM']}><PainelAdmin /></PrivateRoute>} />
+      <Route path="/user-panel" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA']}><UserPanel /></PrivateRoute>} />
     </Routes>
   );
 });

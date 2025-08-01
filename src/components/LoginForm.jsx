@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Lock, Eye, EyeSlash } from '@phosphor-icons/react';
 import { useAuth } from './AuthContext';
-import { authenticateUser, testSupabaseConnection, testCreateUser, getValidRoles, isFirstLogin } from '../lib/userProfiles';
+import { authenticateUser, testSupabaseConnection, testCreateUser, getValidRoles } from '../lib/userProfiles';
 import { checkSupabaseConfig } from '../lib/supabase';
 
 const Logo = () => (
@@ -53,20 +53,11 @@ const LoginForm = () => {
     try {
       const userData = await authenticateUser(username, password);
       
-      // Verificar se é o primeiro login
-      if (isFirstLogin(userData)) {
-        // Se for primeiro login, salvar usuário com senha para o modal
-        setUser(userData);
-        setLoading(false);
-        // O modal será mostrado automaticamente pelo AuthContext
-        navigate('/home');
-      } else {
-        // Se não for primeiro login, salvar usuário sem senha
-        const { password: _, ...userWithoutPassword } = userData;
-        setUser(userWithoutPassword);
-        setLoading(false);
-        navigate('/home');
-      }
+      // Salvar usuário sem senha
+      const { password: _, ...userWithoutPassword } = userData;
+      setUser(userWithoutPassword);
+      setLoading(false);
+      navigate('/home');
     } catch (err) {
       setError(err.message || 'Erro ao autenticar.');
       setLoading(false);
