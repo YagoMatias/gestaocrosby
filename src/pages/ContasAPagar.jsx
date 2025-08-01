@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
+import FiltroEmpresa from '../components/FiltroEmpresa';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 import { 
   Receipt, 
@@ -11,7 +12,11 @@ import {
   Warning,
   CheckCircle,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  CaretLeft,
+  CaretRight,
+  CaretUp,
+  CaretDown
 } from '@phosphor-icons/react';
 
 const ContasAPagar = () => {
@@ -21,44 +26,153 @@ const ContasAPagar = () => {
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
   const [status, setStatus] = useState('Todos');
+  const [situacao, setSituacao] = useState('NORMAIS');
   const [fornecedor, setFornecedor] = useState('');
-  const [cdEmpresa, setCdEmpresa] = useState('1'); // Valor padrão
+  const [duplicata, setDuplicata] = useState('');
+  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
+  
+  // Estados para paginação
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const [itensPorPagina] = useState(30);
 
+  // Estados para ordenação
+  const [sortConfig, setSortConfig] = useState({
+    key: 'dt_vencimento',
+    direction: 'asc'
+  });
 
   const BaseURL = 'https://apigestaocrosby.onrender.com/';
 
+  // Função para ordenar os dados
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  // Função para obter o ícone de ordenação
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) {
+      return <CaretDown size={12} className="ml-1 opacity-50" />;
+    }
+    return sortConfig.direction === 'asc' 
+      ? <CaretUp size={12} className="ml-1" />
+      : <CaretDown size={12} className="ml-1" />;
+  };
+
+  // Função para ordenar os dados agrupados
+  const sortDadosAgrupados = (dados) => {
+    if (!dados || dados.length === 0) return dados;
+
+    return [...dados].sort((a, b) => {
+      let aValue, bValue;
+
+      switch (sortConfig.key) {
+        case 'cd_empresa':
+          aValue = a.item.cd_empresa || '';
+          bValue = b.item.cd_empresa || '';
+          break;
+        case 'cd_fornecedor':
+          aValue = a.item.cd_fornecedor || '';
+          bValue = b.item.cd_fornecedor || '';
+          break;
+        case 'nr_duplicata':
+          aValue = a.item.nr_duplicata || '';
+          bValue = b.item.nr_duplicata || '';
+          break;
+        case 'nr_portador':
+          aValue = a.item.nr_portador || '';
+          bValue = b.item.nr_portador || '';
+          break;
+        case 'dt_emissao':
+          aValue = a.item.dt_emissao ? new Date(a.item.dt_emissao) : new Date(0);
+          bValue = b.item.dt_emissao ? new Date(b.item.dt_emissao) : new Date(0);
+          break;
+        case 'dt_vencimento':
+          aValue = a.item.dt_vencimento ? new Date(a.item.dt_vencimento) : new Date(0);
+          bValue = b.item.dt_vencimento ? new Date(b.item.dt_vencimento) : new Date(0);
+          break;
+        case 'dt_entrada':
+          aValue = a.item.dt_entrada ? new Date(a.item.dt_entrada) : new Date(0);
+          bValue = b.item.dt_entrada ? new Date(b.item.dt_entrada) : new Date(0);
+          break;
+        case 'dt_liq':
+          aValue = a.item.dt_liq ? new Date(a.item.dt_liq) : new Date(0);
+          bValue = b.item.dt_liq ? new Date(b.item.dt_liq) : new Date(0);
+          break;
+        case 'tp_situacao':
+          aValue = a.item.tp_situacao || '';
+          bValue = b.item.tp_situacao || '';
+          break;
+        case 'tp_estagio':
+          aValue = a.item.tp_estagio || '';
+          bValue = b.item.tp_estagio || '';
+          break;
+        case 'vl_duplicata':
+          aValue = parseFloat(a.item.vl_duplicata) || 0;
+          bValue = parseFloat(b.item.vl_duplicata) || 0;
+          break;
+        case 'vl_juros':
+          aValue = parseFloat(a.item.vl_juros) || 0;
+          bValue = parseFloat(b.item.vl_juros) || 0;
+          break;
+        case 'vl_acrescimo':
+          aValue = parseFloat(a.item.vl_acrescimo) || 0;
+          bValue = parseFloat(b.item.vl_acrescimo) || 0;
+          break;
+        case 'vl_desconto':
+          aValue = parseFloat(a.item.vl_desconto) || 0;
+          bValue = parseFloat(b.item.vl_desconto) || 0;
+          break;
+        case 'vl_pago':
+          aValue = parseFloat(a.item.vl_pago) || 0;
+          bValue = parseFloat(b.item.vl_pago) || 0;
+          break;
+        case 'in_aceite':
+          aValue = a.item.in_aceite || '';
+          bValue = b.item.in_aceite || '';
+          break;
+        case 'nr_parcela':
+          aValue = parseInt(a.item.nr_parcela) || 0;
+          bValue = parseInt(b.item.nr_parcela) || 0;
+          break;
+        default:
+          aValue = a.item[sortConfig.key] || '';
+          bValue = b.item[sortConfig.key] || '';
+      }
+
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        aValue = aValue.toLowerCase();
+        bValue = bValue.toLowerCase();
+      }
+
+      if (sortConfig.direction === 'asc') {
+        return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
+      } else {
+        return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
+      }
+    });
+  };
+
   const buscarDados = async (inicio = dataInicio, fim = dataFim) => {
-    if (!inicio || !fim) {
-      console.error('Datas de início e fim são obrigatórias');
-      return;
-    }
-    
-    // Validar formato da data (YYYY-MM-DD)
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(inicio) || !dateRegex.test(fim)) {
-      console.error('Formato de data inválido. Use YYYY-MM-DD');
-      return;
-    }
+    if (!inicio || !fim) return;
     
     setLoading(true);
+    setPaginaAtual(1); // Reset para primeira página ao buscar novos dados
     try {
-      console.log('Parâmetros da requisição:', { dt_inicio: inicio, dt_fim: fim, cd_empresa: cdEmpresa });
-      const res = await fetch(`${BaseURL}contasapagar?dt_inicio=${inicio}&dt_fim=${fim}&cd_empresa=${cdEmpresa}`);
+      // Se empresas foram selecionadas, usar a primeira para a API
+      const empresaParaAPI = empresasSelecionadas.length > 0 ? empresasSelecionadas[0].cd_empresa : '1';
+      
+      const res = await fetch(`${BaseURL}contasapagar?dt_inicio=${inicio}&dt_fim=${fim}&cd_empresa=${empresaParaAPI}`);
       
       if (!res.ok) {
-        const errorText = await res.text();
-        console.error('Erro da API:', errorText);
-        throw new Error(`HTTP error! status: ${res.status} - ${errorText}`);
+        throw new Error(`HTTP error! status: ${res.status}`);
       }
       
       const data = await res.json();
-      console.log('Resposta da API Contas a Pagar:', data);
-      
-      // Log detalhado da estrutura dos dados
-      if (data && data.dados && data.dados.length > 0) {
-        console.log('Primeiro item da API:', data.dados[0]);
-        console.log('Campos disponíveis:', Object.keys(data.dados[0]));
-      }
+      console.log('Resposta da API:', data);
       
       // Verificar se data é um array
       let dadosArray = [];
@@ -169,9 +283,9 @@ const ContasAPagar = () => {
       case 'vencendo':
         return <Clock size={16} className="text-yellow-600" />;
       case 'pendente':
-        return <Clock size={16} className="text-blue-600" />;
+        return <ArrowUp size={16} className="text-blue-600" />;
       default:
-        return <Clock size={16} className="text-gray-600" />;
+        return <ArrowDown size={16} className="text-gray-600" />;
     }
   };
 
@@ -185,14 +299,23 @@ const ContasAPagar = () => {
     setDataFim(ultimoDia.toISOString().split('T')[0]);
   }, []);
 
-
-
-  // Filtros aplicados
+  // Filtros aplicados (todos os dados)
   const dadosFiltrados = dados.filter((item) => {
     // Filtro por status
     if (status !== 'Todos') {
       const itemStatus = getStatusFromData(item);
       if (itemStatus.toLowerCase() !== status.toLowerCase()) {
+        return false;
+      }
+    }
+    
+    // Filtro por situação (N = NORMAIS, C = CANCELADAS)
+    if (situacao !== 'TODAS') {
+      const itemSituacao = item.tp_situacao || '';
+      
+      if (situacao === 'NORMAIS' && itemSituacao !== 'N') {
+        return false;
+      } else if (situacao === 'CANCELADAS' && itemSituacao !== 'C') {
         return false;
       }
     }
@@ -205,136 +328,208 @@ const ContasAPagar = () => {
       }
     }
     
+    // Filtro por duplicata
+    if (duplicata) {
+      const nrDuplicata = item.nr_duplicata || '';
+      if (!nrDuplicata.toString().toLowerCase().includes(duplicata.toLowerCase())) {
+        return false;
+      }
+    }
+    
     return true;
   });
 
-  // Cálculos dos totais
-  const totalContas = dadosFiltrados.length;
-  const totalValor = dadosFiltrados.reduce((acc, item) => acc + (parseFloat(item.vl_duplicata) || 0), 0);
-  const contasVencidas = dadosFiltrados.filter(item => {
-    const status = getStatusFromData(item);
+  // Função para agrupar dados idênticos
+  const agruparDadosIdenticos = (dados) => {
+    const grupos = new Map();
+    
+    dados.forEach((item) => {
+      // Criar chave única baseada em todos os campos exceto observação E situação
+      // Removendo tp_situacao da chave para permitir agrupamento correto
+      const chave = `${item.cd_empresa || ''}|${item.cd_fornecedor || ''}|${item.nr_duplicata || ''}|${item.nr_portador || ''}|${item.dt_emissao || ''}|${item.dt_vencimento || ''}|${item.dt_entrada || ''}|${item.dt_liq || ''}|${item.tp_estagio || ''}|${item.vl_duplicata || ''}|${item.vl_juros || ''}|${item.vl_acrescimo || ''}|${item.vl_desconto || ''}|${item.vl_pago || ''}|${item.in_aceite || ''}|${item.nr_parcela || ''}`;
+      
+      if (!grupos.has(chave)) {
+        grupos.set(chave, {
+          item: item,
+          observacoes: [],
+          situacoes: [],
+          quantidade: 0
+        });
+      }
+      
+      const grupo = grupos.get(chave);
+      grupo.quantidade += 1;
+      
+      // Adicionar observação se existir e for diferente
+      if (item.ds_observacao && !grupo.observacoes.includes(item.ds_observacao)) {
+        grupo.observacoes.push(item.ds_observacao);
+      }
+      
+      // Adicionar situação se existir e for diferente
+      if (item.tp_situacao && !grupo.situacoes.includes(item.tp_situacao)) {
+        grupo.situacoes.push(item.tp_situacao);
+      }
+    });
+    
+    // Processar os grupos para determinar a situação final
+    return Array.from(grupos.values()).map(grupo => {
+      // Se há múltiplas situações, priorizar CANCELADAS (C) sobre NORMAIS (N)
+      let situacaoFinal = grupo.item.tp_situacao;
+      
+      if (grupo.situacoes.length > 1) {
+        // Se há 'C' entre as situações, usar 'C' (cancelada tem prioridade)
+        if (grupo.situacoes.includes('C')) {
+          situacaoFinal = 'C';
+        } else if (grupo.situacoes.includes('N')) {
+          situacaoFinal = 'N';
+        }
+        // Se não há nem 'C' nem 'N', manter a primeira situação
+      }
+      
+      return {
+        ...grupo,
+        item: {
+          ...grupo.item,
+          tp_situacao: situacaoFinal
+        }
+      };
+    });
+  };
+
+  // Agrupar dados filtrados
+  const dadosAgrupados = agruparDadosIdenticos(dadosFiltrados);
+
+  // Aplicar ordenação aos dados agrupados
+  const dadosOrdenados = sortDadosAgrupados(dadosAgrupados);
+
+  // Cálculos dos totais (baseados em dados agrupados - apenas uma linha por grupo)
+  const totalContas = dadosOrdenados.length;
+  const totalValor = dadosOrdenados.reduce((acc, grupo) => acc + (parseFloat(grupo.item.vl_duplicata) || 0), 0);
+  const contasVencidas = dadosOrdenados.filter(grupo => {
+    const status = getStatusFromData(grupo.item);
     return status.toLowerCase().includes('vencido');
   }).length;
-  const contasAVencer = dadosFiltrados.filter(item => {
-    const status = getStatusFromData(item);
+  const contasAVencer = dadosOrdenados.filter(grupo => {
+    const status = getStatusFromData(grupo.item);
     return status.toLowerCase().includes('vencer');
   }).length;
 
+  // Cálculos para paginação (usando dados ordenados)
+  const totalPaginas = Math.ceil(dadosOrdenados.length / itensPorPagina);
+  const indiceInicial = (paginaAtual - 1) * itensPorPagina;
+  const indiceFinal = indiceInicial + itensPorPagina;
+  const dadosPaginaAtual = dadosOrdenados.slice(indiceInicial, indiceFinal);
+
+  // Funções para navegação
+  const irParaPagina = (pagina) => {
+    setPaginaAtual(pagina);
+  };
+
+  const paginaAnterior = () => {
+    if (paginaAtual > 1) {
+      setPaginaAtual(paginaAtual - 1);
+    }
+  };
+
+  const proximaPagina = () => {
+    if (paginaAtual < totalPaginas) {
+      setPaginaAtual(paginaAtual + 1);
+    }
+  };
+
+  // Gerar array de páginas para exibição
+  const gerarPaginas = () => {
+    const paginas = [];
+    const maxPaginasVisiveis = 5;
+    
+    if (totalPaginas <= maxPaginasVisiveis) {
+      // Mostrar todas as páginas se houver 5 ou menos
+      for (let i = 1; i <= totalPaginas; i++) {
+        paginas.push(i);
+      }
+    } else {
+      // Lógica para mostrar páginas com elipses
+      if (paginaAtual <= 3) {
+        // Páginas iniciais
+        for (let i = 1; i <= 4; i++) {
+          paginas.push(i);
+        }
+        paginas.push('...');
+        paginas.push(totalPaginas);
+      } else if (paginaAtual >= totalPaginas - 2) {
+        // Páginas finais
+        paginas.push(1);
+        paginas.push('...');
+        for (let i = totalPaginas - 3; i <= totalPaginas; i++) {
+          paginas.push(i);
+        }
+      } else {
+        // Páginas do meio
+        paginas.push(1);
+        paginas.push('...');
+        for (let i = paginaAtual - 1; i <= paginaAtual + 1; i++) {
+          paginas.push(i);
+        }
+        paginas.push('...');
+        paginas.push(totalPaginas);
+      }
+    }
+    
+    return paginas;
+  };
+
+  const handleFiltrar = (e) => {
+    e.preventDefault();
+    buscarDados();
+  };
+
   return (
     <Layout>
-      <div className="w-full max-w-7xl mx-auto p-6 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-[#000638]">Contas a Pagar</h1>
-            <p className="text-gray-600 mt-2">Gestão e controle de contas a pagar</p>
-          </div>
-        </div>
-
-        {/* Cards de Resumo */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <Card className="bg-white shadow-lg">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Receipt size={24} className="text-blue-600" />
-                <CardTitle className="text-lg text-gray-800">Total de Contas</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-blue-600">{totalContas}</div>
-              <p className="text-sm text-gray-500 mt-1">Contas no período</p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white shadow-lg">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <CurrencyDollar size={24} className="text-green-600" />
-                <CardTitle className="text-lg text-gray-800">Valor Total</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600 break-words">
-                {totalValor.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                })}
-              </div>
-              <p className="text-sm text-gray-500 mt-1">Valor total a pagar</p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white shadow-lg">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Warning size={24} className="text-red-600" />
-                <CardTitle className="text-lg text-gray-800">Contas Vencidas</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-red-600">{contasVencidas}</div>
-              <p className="text-sm text-gray-500 mt-1">Contas em atraso</p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white shadow-lg">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Clock size={24} className="text-yellow-600" />
-                <CardTitle className="text-lg text-gray-800">A Vencer</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-yellow-600">{contasAVencer}</div>
-              <p className="text-sm text-gray-500 mt-1">Contas próximas do vencimento</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Filtros e Tabela */}
-        <Card className="bg-white shadow-lg">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Funnel size={24} className="text-[#000638]" />
-              <CardTitle className="text-xl text-[#000638]">Filtros de Consulta</CardTitle>
+      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
+        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Contas a Pagar</h1>
+        
+        {/* Filtros */}
+        <div className="mb-8">
+          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
+            <div className="mb-6">
+              <span className="text-lg font-bold text-[#000638] flex items-center gap-2">
+                <Funnel size={22} weight="bold" />
+                Filtros
+              </span>
+              <span className="text-sm text-gray-500 mt-1">Selecione o período e empresa para análise</span>
             </div>
-            <CardDescription>Selecione o período e filtros para análise</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+              <div className="lg:col-span-2">
+                <FiltroEmpresa
+                  empresasSelecionadas={empresasSelecionadas}
+                  onSelectEmpresas={setEmpresasSelecionadas}
+                />
+              </div>
               <div>
-                <label htmlFor="data-inicio" className="block text-sm font-medium text-gray-700 mb-1">
-                  Data Início
-                </label>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Início</label>
                 <input
                   type="date"
-                  id="data-inicio"
                   value={dataInicio}
                   onChange={(e) => setDataInicio(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
               </div>
               <div>
-                <label htmlFor="data-fim" className="block text-sm font-medium text-gray-700 mb-1">
-                  Data Fim
-                </label>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Fim</label>
                 <input
                   type="date"
-                  id="data-fim"
                   value={dataFim}
                   onChange={(e) => setDataFim(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
               </div>
               <div>
-                <label htmlFor="status" className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Status</label>
                 <select
-                  id="status"
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
                 >
                   <option value="Todos">TODOS</option>
                   <option value="Pago">PAGO</option>
@@ -342,59 +537,137 @@ const ContasAPagar = () => {
                   <option value="A Vencer">A VENCER</option>
                 </select>
               </div>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <div>
-                <label htmlFor="fornecedor" className="block text-sm font-medium text-gray-700 mb-1">
-                  Fornecedor
-                </label>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Situação</label>
+                <select
+                  value={situacao}
+                  onChange={(e) => setSituacao(e.target.value)}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                >
+                  <option value="NORMAIS">NORMAIS</option>
+                  <option value="CANCELADAS">CANCELADAS</option>
+                  <option value="TODAS">TODAS</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Fornecedor</label>
                 <input
                   type="text"
-                  id="fornecedor"
                   value={fornecedor}
                   onChange={(e) => setFornecedor(e.target.value)}
                   placeholder="Buscar fornecedor..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
               </div>
               <div>
-                <label htmlFor="cd-empresa" className="block text-sm font-medium text-gray-700 mb-1">
-                  Empresa
-                </label>
-                <select
-                  id="cd-empresa"
-                  value={cdEmpresa}
-                  onChange={(e) => setCdEmpresa(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="1">Empresa 1</option>
-                  <option value="2">Empresa 2</option>
-                  <option value="3">Empresa 3</option>
-                  <option value="4">Empresa 4</option>
-                  <option value="5">Empresa 5</option>
-                </select>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Duplicata</label>
+                <input
+                  type="text"
+                  value={duplicata}
+                  onChange={(e) => setDuplicata(e.target.value)}
+                  placeholder="Buscar duplicata..."
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                />
               </div>
-              <div className="flex items-end">
+              <div className="flex items-center">
                 <button 
-                  className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors flex items-center justify-center gap-2"
-                  onClick={() => buscarDados()}
+                  type="submit"
+                  className="flex items-center gap-2 bg-[#000638] text-white px-6 py-2 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-10 text-sm font-bold shadow-md tracking-wide uppercase"
                   disabled={loading || !dataInicio || !dataFim}
                 >
                   {loading ? (
                     <>
-                      <Spinner size={20} className="animate-spin" />
-                      <span className="hidden sm:inline">Buscando...</span>
-                      <span className="sm:hidden">...</span>
+                      <Spinner size={18} className="animate-spin" />
+                      <span>Buscando...</span>
                     </>
                   ) : (
                     <>
-                      <Calendar size={20} />
-                      <span className="hidden sm:inline">Buscar Dados</span>
-                      <span className="sm:hidden">Buscar</span>
+                      <Calendar size={18} />
+                      <span>Buscar Dados</span>
                     </>
                   )}
                 </button>
               </div>
             </div>
+          </form>
+        </div>
 
+        {/* Cards de Resumo */}
+        <div className="flex flex-wrap gap-4 mb-8 justify-center">
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <Receipt size={18} className="text-blue-600" />
+                <CardTitle className="text-sm font-bold text-blue-700">Total de Contas</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-blue-600 mb-1">
+                {loading ? <Spinner size={24} className="animate-spin text-blue-600" /> : totalContas}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Contas no período</CardDescription>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-green-600" />
+                <CardTitle className="text-sm font-bold text-green-700">Valor Total</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-green-600 mb-1 break-words">
+                {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : totalValor.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Valor total a pagar</CardDescription>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <Warning size={18} className="text-red-600" />
+                <CardTitle className="text-sm font-bold text-red-700">Contas Vencidas</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-red-600 mb-1">
+                {loading ? <Spinner size={24} className="animate-spin text-red-600" /> : contasVencidas}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Contas em atraso</CardDescription>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <Clock size={18} className="text-yellow-600" />
+                <CardTitle className="text-sm font-bold text-yellow-700">A Vencer</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-yellow-600 mb-1">
+                {loading ? <Spinner size={24} className="animate-spin text-yellow-600" /> : contasAVencer}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Contas futuras</CardDescription>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Tabela */}
+        <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full">
+          <div className="p-6 border-b border-[#000638]/10">
+            <h2 className="text-xl font-bold text-[#000638]">Detalhamento de Contas</h2>
+          </div>
+          
+          <div className="p-6">
             {loading ? (
               <div className="flex justify-center items-center py-20">
                 <div className="flex items-center gap-3">
@@ -417,137 +690,330 @@ const ContasAPagar = () => {
                 </div>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <div className="min-w-[1200px]">
+              <>
+                <div className="overflow-x-auto max-w-6xl mx-auto">
                   <table className="w-full border-collapse rounded-lg overflow-hidden shadow-lg">
                     <thead className="bg-[#000638] text-white text-xs uppercase tracking-wider">
                       <tr>
-                        <th className="px-1 py-1 text-center text-[8px]">Empresa</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Fornecedor</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Duplicata</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Portador</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Emissão</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Vencimento</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Entrada</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Liquidação</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Situação</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Estágio</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Valor</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Juros</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Acréscimo</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Desconto</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Pago</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Aceite</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Parcela</th>
-                        <th className="px-1 py-1 text-center text-[8px]">Observação</th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('cd_empresa')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Empresa
+                            {getSortIcon('cd_empresa')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('cd_fornecedor')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Fornecedor
+                            {getSortIcon('cd_fornecedor')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('nr_duplicata')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Duplicata
+                            {getSortIcon('nr_duplicata')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('nr_portador')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Portador
+                            {getSortIcon('nr_portador')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('dt_emissao')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Emissão
+                            {getSortIcon('dt_emissao')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('dt_vencimento')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Vencimento
+                            {getSortIcon('dt_vencimento')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('dt_entrada')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Entrada
+                            {getSortIcon('dt_entrada')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('dt_liq')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Liquidação
+                            {getSortIcon('dt_liq')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('tp_situacao')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Situação
+                            {getSortIcon('tp_situacao')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('tp_estagio')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Estágio
+                            {getSortIcon('tp_estagio')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('vl_duplicata')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Valor
+                            {getSortIcon('vl_duplicata')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('vl_juros')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Juros
+                            {getSortIcon('vl_juros')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('vl_acrescimo')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Acréscimo
+                            {getSortIcon('vl_acrescimo')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('vl_desconto')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Desconto
+                            {getSortIcon('vl_desconto')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('vl_pago')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Pago
+                            {getSortIcon('vl_pago')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('in_aceite')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Aceite
+                            {getSortIcon('in_aceite')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('nr_parcela')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Parcela
+                            {getSortIcon('nr_parcela')}
+                          </div>
+                        </th>
+                        <th className="px-1 py-1 text-center text-[10px]">
+                          Observação
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {dadosFiltrados.map((item, index) => (
+                      {dadosPaginaAtual.map((grupo, index) => (
                         <tr
                           key={index}
-                          className="odd:bg-white even:bg-gray-50 hover:bg-gray-100 text-[8px] border-b transition-colors"
+                          className="odd:bg-white even:bg-gray-50 hover:bg-gray-100 text-[10px] border-b transition-colors"
                         >
-                          <td className="px-1 py-1 text-center">
-                            {item.cd_empresa || 'N/A'}
+                          <td className="px-0.5 py-0.5 text-center">
+                            {grupo.item.cd_empresa || 'N/A'}
                           </td>
-                          <td className="px-1 py-1 text-center">
-                            {item.cd_fornecedor || 'N/A'}
+                          <td className="px-0.5 py-0.5 text-center">
+                            {grupo.item.cd_fornecedor || 'N/A'}
                           </td>
-                          <td className="px-1 py-1 text-center">
-                            {item.nr_duplicata || 'N/A'}
+                          <td className="px-0.5 py-0.5 text-center">
+                            {grupo.item.nr_duplicata || 'N/A'}
                           </td>
-                          <td className="px-1 py-1 text-center">
-                            {item.nr_portador || 'N/A'}
+                          <td className="px-0.5 py-0.5 text-center">
+                            {grupo.item.nr_portador || 'N/A'}
                           </td>
-                          <td className="px-1 py-1 text-center">
-                            {item.dt_emissao ? 
-                              new Date(item.dt_emissao).toLocaleDateString('pt-BR') 
+                          <td className="px-0.5 py-0.5 text-center">
+                            {grupo.item.dt_emissao ? 
+                              new Date(grupo.item.dt_emissao).toLocaleDateString('pt-BR') 
                               : 'N/A'
                             }
                           </td>
-                          <td className="px-1 py-1 text-center">
-                            {item.dt_vencimento ? 
-                              new Date(item.dt_vencimento).toLocaleDateString('pt-BR') 
+                          <td className="px-0.5 py-0.5 text-center">
+                            {grupo.item.dt_vencimento ? 
+                              new Date(grupo.item.dt_vencimento).toLocaleDateString('pt-BR') 
                               : 'N/A'
                             }
                           </td>
-                          <td className="px-1 py-1 text-center">
-                            {item.dt_entrada ? 
-                              new Date(item.dt_entrada).toLocaleDateString('pt-BR') 
+                          <td className="px-0.5 py-0.5 text-center">
+                            {grupo.item.dt_entrada ? 
+                              new Date(grupo.item.dt_entrada).toLocaleDateString('pt-BR') 
                               : 'N/A'
                             }
                           </td>
-                          <td className="px-1 py-1 text-center">
-                            {item.dt_liq ? 
-                              new Date(item.dt_liq).toLocaleDateString('pt-BR') 
+                          <td className="px-0.5 py-0.5 text-center">
+                            {grupo.item.dt_liq ? 
+                              new Date(grupo.item.dt_liq).toLocaleDateString('pt-BR') 
                               : 'N/A'
                             }
                           </td>
-                          <td className="px-1 py-1 text-center">
-                            {item.tp_situacao || 'N/A'}
+                          <td className="px-0.5 py-0.5 text-center">
+                            {grupo.item.tp_situacao || 'N/A'}
                           </td>
-                          <td className="px-1 py-1 text-center">
-                            {item.tp_estagio || 'N/A'}
+                          <td className="px-0.5 py-0.5 text-center">
+                            {grupo.item.tp_estagio || 'N/A'}
                           </td>
-                          <td className="px-1 py-1 text-center font-semibold text-green-600">
-                            {(parseFloat(item.vl_duplicata) || 0).toLocaleString('pt-BR', {
+                          <td className="px-0.5 py-0.5 text-center font-semibold text-green-600">
+                            {(parseFloat(grupo.item.vl_duplicata) || 0).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
                             })}
                           </td>
-                          <td className="px-1 py-1 text-center">
-                            {(parseFloat(item.vl_juros) || 0).toLocaleString('pt-BR', {
+                          <td className="px-0.5 py-0.5 text-center">
+                            {(parseFloat(grupo.item.vl_juros) || 0).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
                             })}
                           </td>
-                          <td className="px-1 py-1 text-center">
-                            {(parseFloat(item.vl_acrescimo) || 0).toLocaleString('pt-BR', {
+                          <td className="px-0.5 py-0.5 text-center">
+                            {(parseFloat(grupo.item.vl_acrescimo) || 0).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
                             })}
                           </td>
-                          <td className="px-1 py-1 text-center">
-                            {(parseFloat(item.vl_desconto) || 0).toLocaleString('pt-BR', {
+                          <td className="px-0.5 py-0.5 text-center">
+                            {(parseFloat(grupo.item.vl_desconto) || 0).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
                             })}
                           </td>
-                          <td className="px-1 py-1 text-center font-semibold text-blue-600">
-                            {(parseFloat(item.vl_pago) || 0).toLocaleString('pt-BR', {
+                          <td className="px-0.5 py-0.5 text-center font-semibold text-blue-600">
+                            {(parseFloat(grupo.item.vl_pago) || 0).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
                             })}
                           </td>
-                          <td className="px-1 py-1 text-center">
-                            {item.in_aceite || 'N/A'}
+                          <td className="px-0.5 py-0.5 text-center">
+                            {grupo.item.in_aceite || 'N/A'}
                           </td>
-                          <td className="px-1 py-1 text-center">
-                            {item.nr_parcela || '1'}
+                          <td className="px-0.5 py-0.5 text-center">
+                            {grupo.item.nr_parcela || '1'}
                           </td>
-                          <td className="px-1 py-1 text-center max-w-[150px] truncate" title={item.ds_observacao || 'N/A'}>
-                            {item.ds_observacao || 'N/A'}
+                          <td className="px-0.5 py-0.5 text-center max-w-[100px] truncate" title={grupo.observacoes.join(', ') || 'N/A'}>
+                            {grupo.observacoes.length > 1 ? (
+                              <span className="text-blue-600 font-semibold">
+                                {grupo.observacoes.length} obs.
+                              </span>
+                            ) : (
+                              grupo.observacoes.join(', ') || 'N/A'
+                            )}
                           </td>
                         </tr>
                       ))}
-                      {dadosFiltrados.length === 0 && !loading && (
+                      {dadosPaginaAtual.length === 0 && !loading && (
                         <tr>
-                                                  <td colSpan="18" className="text-center py-8 text-gray-500 text-sm">
-                          Nenhuma conta encontrada para os filtros selecionados
-                        </td>
+                          <td colSpan="18" className="text-center py-8 text-gray-500 text-sm">
+                            Nenhuma conta encontrada para os filtros selecionados
+                          </td>
                         </tr>
                       )}
                     </tbody>
                   </table>
                 </div>
-              </div>
+
+                {/* Paginação */}
+                {totalPaginas > 1 && (
+                  <div className="flex flex-col sm:flex-row justify-between items-center mt-6 pt-6 border-t border-gray-200">
+                    <div className="text-sm text-gray-600 mb-4 sm:mb-0">
+                      Mostrando {indiceInicial + 1} a {Math.min(indiceFinal, dadosOrdenados.length)} de {dadosOrdenados.length} registros únicos
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      {/* Botão Anterior */}
+                      <button
+                        onClick={paginaAnterior}
+                        disabled={paginaAtual === 1}
+                        className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <CaretLeft size={16} />
+                        Anterior
+                      </button>
+
+                      {/* Números das páginas */}
+                      <div className="flex items-center gap-1">
+                        {gerarPaginas().map((pagina, index) => (
+                          <button
+                            key={index}
+                            onClick={() => typeof pagina === 'number' && irParaPagina(pagina)}
+                            disabled={typeof pagina !== 'number'}
+                            className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                              pagina === paginaAtual
+                                ? 'bg-[#000638] text-white'
+                                : typeof pagina === 'number'
+                                ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                : 'text-gray-400 cursor-default'
+                            }`}
+                          >
+                            {pagina}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Botão Próximo */}
+                      <button
+                        onClick={proximaPagina}
+                        disabled={paginaAtual === totalPaginas}
+                        className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Próximo
+                        <CaretRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
-
-
     </Layout>
   );
 };
