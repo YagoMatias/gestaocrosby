@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { 
   Plus, 
   User, 
@@ -15,6 +17,22 @@ import {
   Star,
   ChartLine
 } from '@phosphor-icons/react';
+
+// Função utilitária para carregar imagem como base64
+function getBase64Image(imgUrl, callback) {
+  const img = new window.Image();
+  img.crossOrigin = 'Anonymous';
+  img.onload = function () {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const dataURL = canvas.toDataURL('image/png');
+    callback(dataURL);
+  };
+  img.src = imgUrl;
+}
 
 const RankingVendedores = () => {
   const [dados, setDados] = useState([]);
@@ -72,10 +90,14 @@ const RankingVendedores = () => {
         return;
       }
       
-      // Filtrar apenas itens com faturamento válido
+      // Filtrar apenas itens com faturamento válido e excluir vendedor "GERAL"
       const dadosValidos = dadosArray.filter(item => 
         item && typeof item === 'object' && 
-        (item.faturamento || item.faturamento === 0)
+        (item.faturamento || item.faturamento === 0) &&
+        // Excluir vendedor "GERAL"
+        !(item.nome_vendedor && item.nome_vendedor.toString().toUpperCase().includes('GERAL')) &&
+        !(item.nome && item.nome.toString().toUpperCase().includes('GERAL')) &&
+        !(item.vendedor && item.vendedor.toString().toUpperCase().includes('GERAL'))
       );
       
       const ordenado = [...dadosValidos].sort((a, b) => (b.faturamento || 0) - (a.faturamento || 0));
@@ -100,6 +122,60 @@ const RankingVendedores = () => {
     return 'regular';
   };
 
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(value);
+  };
+
+  const exportarPDF = () => {
+    getBase64Image('/crosbyazul.png', (imgData) => {
+      const doc = new jsPDF();
+      // Adiciona a imagem no topo (ajuste largura/altura conforme necessário)
+      doc.addImage(imgData, 'PNG', 14, 8, 40, 16);
+      doc.text('Ranking de Vendedores', 80, 32);
+      
+      const tableColumn = ['#', 'Vendedor', 'Faturamento', 'PA', 'Ticket Médio'];
+      const tableRows = dados
+        .filter(item => {
+          // Excluir vendedor "GERAL" do PDF também
+          const nomeVendedor = item.nome_vendedor || item.nome || item.vendedor || '';
+          return !nomeVendedor.toString().toUpperCase().includes('GERAL');
+        })
+        .map(item => {
+          // Normalizar campos para diferentes possíveis nomes
+          const nomeVendedor = item.nome_vendedor || item.nome || item.vendedor || '-';
+          const faturamento = item.faturamento || item.valor || 0;
+          const trasaida = item.trasaida || item.transacoes || 0;
+          const pasaida = item.pasaida || item.pa_saida || 0;
+          const paentrada = item.paentrada || item.pa_entrada || 0;
+          
+          const pa = trasaida > 0 ? (Number(pasaida) - Number(paentrada)) / Number(trasaida) : 0;
+          const ticketMedio = trasaida > 0 ? Number(faturamento) / Number(trasaida) : 0;
+          
+          return [
+            item.rank,
+            nomeVendedor,
+            formatCurrency(faturamento),
+            pa.toFixed(2),
+            formatCurrency(ticketMedio)
+          ];
+        });
+      
+      autoTable(doc, {
+        head: [tableColumn],
+        body: tableRows,
+        startY: 38,
+        styles: { fontSize: 10, textColor: [0, 0, 0] },
+        headStyles: { fillColor: [0, 6, 56], textColor: 255 },
+        alternateRowStyles: { fillColor: [240, 240, 240] },
+        rowStyles: { fillColor: [255, 255, 255] },
+      });
+      doc.save('ranking_vendedores.pdf');
+    });
+  };
+
   useEffect(() => {
     const hoje = new Date();
     hoje.setUTCHours(hoje.getUTCHours() - 3);
@@ -117,6 +193,11 @@ const RankingVendedores = () => {
     // Normalizar nomes de campos
     const nomeVendedor = item.nome_vendedor || item.nome || item.vendedor || '';
     const faturamento = item.faturamento || item.valor || 0;
+    
+    // Excluir vendedor "GERAL"
+    if (nomeVendedor.toString().toUpperCase().includes('GERAL')) {
+      return false;
+    }
     
     if (tipoLoja === 'Franquias')
       return nomeVendedor.includes('VND') || nomeVendedor.includes('ADM');
@@ -145,6 +226,14 @@ const RankingVendedores = () => {
             <h1 className="text-3xl font-bold text-[#000638]">Ranking Vendedores</h1>
             <p className="text-gray-600 mt-2">Gestão da equipe de vendas e performance individual</p>
           </div>
+          <button 
+            onClick={exportarPDF} 
+            disabled={dados.length === 0}
+            className="flex items-center gap-2 bg-[#000638] text-white px-4 py-2 rounded-xl hover:bg-[#fe0000] transition text-sm font-semibold shadow-md tracking-wide uppercase disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download size={20} />
+            Baixar PDF
+          </button>
         </div>
 
         {/* Cards de Resumo */}

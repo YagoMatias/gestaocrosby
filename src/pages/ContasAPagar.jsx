@@ -448,85 +448,85 @@ const ContasAPagar = () => {
                           key={index}
                           className="odd:bg-white even:bg-gray-50 hover:bg-gray-100 text-[8px] border-b transition-colors"
                         >
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {item.cd_empresa || 'N/A'}
                           </td>
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {item.cd_fornecedor || 'N/A'}
                           </td>
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {item.nr_duplicata || 'N/A'}
                           </td>
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {item.nr_portador || 'N/A'}
                           </td>
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {item.dt_emissao ? 
                               new Date(item.dt_emissao).toLocaleDateString('pt-BR') 
                               : 'N/A'
                             }
                           </td>
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {item.dt_vencimento ? 
                               new Date(item.dt_vencimento).toLocaleDateString('pt-BR') 
                               : 'N/A'
                             }
                           </td>
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {item.dt_entrada ? 
                               new Date(item.dt_entrada).toLocaleDateString('pt-BR') 
                               : 'N/A'
                             }
                           </td>
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {item.dt_liq ? 
                               new Date(item.dt_liq).toLocaleDateString('pt-BR') 
                               : 'N/A'
                             }
                           </td>
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {item.tp_situacao || 'N/A'}
                           </td>
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {item.tp_estagio || 'N/A'}
                           </td>
-                          <td className="px-0.5 py-0.5 text-center font-semibold text-green-600">
+                          <td className="px-1 py-1 text-center font-semibold text-green-600">
                             {(parseFloat(item.vl_duplicata) || 0).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
                             })}
                           </td>
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {(parseFloat(item.vl_juros) || 0).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
                             })}
                           </td>
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {(parseFloat(item.vl_acrescimo) || 0).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
                             })}
                           </td>
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {(parseFloat(item.vl_desconto) || 0).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
                             })}
                           </td>
-                          <td className="px-0.5 py-0.5 text-center font-semibold text-blue-600">
+                          <td className="px-1 py-1 text-center font-semibold text-blue-600">
                             {(parseFloat(item.vl_pago) || 0).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
                             })}
                           </td>
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {item.in_aceite || 'N/A'}
                           </td>
-                          <td className="px-0.5 py-0.5 text-center">
+                          <td className="px-1 py-1 text-center">
                             {item.nr_parcela || '1'}
                           </td>
-                          <td className="px-0.5 py-0.5 text-center max-w-[100px] truncate" title={item.ds_observacao || 'N/A'}>
+                          <td className="px-1 py-1 text-center max-w-[150px] truncate" title={item.ds_observacao || 'N/A'}>
                             {item.ds_observacao || 'N/A'}
                           </td>
                         </tr>
