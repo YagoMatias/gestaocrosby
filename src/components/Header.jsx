@@ -1,20 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-import { useIsMobile } from './use-mobile';
-import { User, SignOut, Gear } from '@phosphor-icons/react';
+import { User, SignOut, Gear, List } from '@phosphor-icons/react';
 
-const Header = ({ onMenuClick, sidebarOpen = false }) => {
+const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef(null);
-
-  // Mostra o menu apenas no mobile OU quando o sidebar está fechado no desktop
-  const shouldShowMenu = isMobile || !sidebarOpen;
-  // Mostra o logo apenas no mobile quando o sidebar está fechado
-  const shouldShowLogo = isMobile && !sidebarOpen;
 
   const handleLogout = () => {
     logout();
@@ -44,35 +37,13 @@ const Header = ({ onMenuClick, sidebarOpen = false }) => {
     <header className="w-screen bg-white shadow-sm border-b border-gray-200">
       <div className="flex items-center justify-between px-6 py-4">
         <div className="flex items-center">
-          {shouldShowMenu && (
-            <button
-              className="p-2 mr-4 text-gray-500 hover:text-gray-700 transition-colors"
-              onClick={onMenuClick}
-            >
-              <svg 
-                className="w-7 h-7" 
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24"
-              >
-                <path 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  strokeWidth={2} 
-                  d="M4 6h16M4 12h16M4 18h16" 
-                />
-              </svg>
-            </button>
-          )}
-          {shouldShowLogo && (
-            <div className="ml-0">
-              <img
-                src="/cr.png"
-                alt="Logo Crosby"
-                className="h-8 w-auto"
-              />
-            </div>
-          )}
+          {/* Botão de menu hambúrguer */}
+          <button
+            onClick={onToggleSidebar}
+            className="p-2 mr-4 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <List size={24} />
+          </button>
         </div>
 
         <div className="flex items-center">

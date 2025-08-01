@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-import { UserGear } from '@phosphor-icons/react';
+import { UserGear, X } from '@phosphor-icons/react';
 
 // SVGs para os grupos
 const FolderIcon = () => (
@@ -36,7 +36,7 @@ const franquias = [
   { name: 'Compras Franquias', href: '/compras-franquias', icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' },
 ];
 
-const Sidebar = ({ isOpen, onClose }) => {
+const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [financeiroOpen, setFinanceiroOpen] = useState(false);
@@ -52,12 +52,19 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   const SidebarContent = () => {
     if (!user) return null;
+    
     // ADM e DIRETOR: tudo
     if (user.role === 'ADM' || user.role === 'DIRETOR') {
       return (
         <div className="w-64 h-full bg-white shadow-lg">
-          <div className="h-16 px-6 border-b border-gray-200 flex justify-center items-center">
+          <div className="h-16 px-6 border-b border-gray-200 flex justify-between items-center">
             <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X size={20} />
+            </button>
           </div>
           <nav className="mt-6 px-3">
             {/* Menus financeiros */}
@@ -153,12 +160,19 @@ const Sidebar = ({ isOpen, onClose }) => {
         </div>
       );
     }
+    
     // FINANCEIRO: só menus financeiros
     if (user.role === 'FINANCEIRO') {
       return (
         <div className="w-64 h-full bg-white shadow-lg">
-          <div className="h-16 px-6 border-b border-gray-200 flex justify-center items-center">
+          <div className="h-16 px-6 border-b border-gray-200 flex justify-between items-center">
             <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors lg:hidden"
+            >
+              <X size={20} />
+            </button>
           </div>
           <nav className="mt-6 px-3">
             <button className="mb-2 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold text-gray-700 hover:bg-gray-100 focus:outline-none" onClick={() => setFinanceiroOpen((open) => !open)}>
@@ -189,12 +203,19 @@ const Sidebar = ({ isOpen, onClose }) => {
         </div>
       );
     }
+    
     // FRANQUIA: só ranking de faturamento
     if (user.role === 'FRANQUIA') {
       return (
         <div className="w-64 h-full bg-white shadow-lg">
-          <div className="h-16 px-6 border-b border-gray-200 flex justify-center items-center">
+          <div className="h-16 px-6 border-b border-gray-200 flex justify-between items-center">
             <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors lg:hidden"
+            >
+              <X size={20} />
+            </button>
           </div>
           <nav className="mt-6 px-3">
             <button className={`mt-6 flex items-center w-full px-3 py-2 rounded-lg transition-colors text-xs font-bold ${location.pathname === '/ranking-faturamento' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`} onClick={() => handleNavigation('/ranking-faturamento')}>
@@ -211,6 +232,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         </div>
       );
     }
+    
     // Caso não reconhecido
     return null;
   };
@@ -224,13 +246,16 @@ const Sidebar = ({ isOpen, onClose }) => {
             className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
             onClick={onClose}
           />
-          <div className="fixed inset-y-0 left-0 z-50">
+          <div className="fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out">
             <SidebarContent />
           </div>
         </div>
       )}
-      {/* Desktop sidebar - sempre visível em telas grandes */}
-      <div className="hidden lg:block lg:fixed lg:inset-y-0 lg:left-0 lg:z-30">
+
+      {/* Desktop sidebar - responsivo */}
+      <div className={`hidden lg:block lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 transform transition-transform duration-300 ease-in-out ${
+        isOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}>
         <SidebarContent />
       </div>
     </>
