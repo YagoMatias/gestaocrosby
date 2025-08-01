@@ -168,7 +168,7 @@ const Consolidado = () => {
       const somaSaidasVarejo = jsonVarejo.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
       const somaEntradasVarejo = jsonVarejo.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
       const totalVarejo = somaSaidasVarejo - somaEntradasVarejo;
-      console.log(totalVarejo);
+  
       setFaturamento(fat => ({ ...fat, varejo: totalVarejo }));
       setDadosVarejo(jsonVarejo);
       setLoadingVarejo(false);

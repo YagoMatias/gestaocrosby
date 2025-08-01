@@ -5,9 +5,12 @@ export const supabaseCrud = {
   // CREATE - Inserir dados
   async create(table, data) {
     try {
+      // Remove o campo id se estiver presente (para evitar erro de NOT NULL)
+      const { id, ...dataWithoutId } = data;
+      
       const { data: result, error } = await supabase
         .from(table)
-        .insert(data)
+        .insert(dataWithoutId)
         .select()
       
       if (error) throw error
@@ -72,9 +75,12 @@ export const supabaseCrud = {
   // UPDATE - Atualizar dados
   async update(table, id, updates) {
     try {
+      // Remove o campo id dos dados de atualização (não deve ser atualizado)
+      const { id: _, ...updatesWithoutId } = updates;
+      
       const { data, error } = await supabase
         .from(table)
-        .update(updates)
+        .update(updatesWithoutId)
         .eq('id', id)
         .select()
       

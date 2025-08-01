@@ -121,7 +121,7 @@ const ComprasFranquias = () => {
     const nomes = new Set([
       ...dadosCompras.map(row => row.nm_fantasia)
     ]);
-    console.log(dadosVendas);
+
 
     return Array.from(nomes).map(nm_fantasia => {
       // Compras

@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Lock, Eye, EyeSlash } from '@phosphor-icons/react';
-import logo from '../../public/crosbyazul.png';
 import { useAuth } from './AuthContext';
+import { authenticateUser, testSupabaseConnection, testCreateUser, getValidRoles, isFirstLogin } from '../lib/userProfiles';
+import { checkSupabaseConfig } from '../lib/supabase';
 
 const Logo = () => (
   <div className="flex justify-center mb-6">
-    <img src={logo} alt="Logo" />
+    <img src="/crosbyazul.png" alt="Logo" />
   </div>
 );
 
@@ -16,31 +17,58 @@ const LoginForm = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState(null);
   const navigate = useNavigate();
   const { setUser } = useAuth();
+
+  // Testar conectividade ao carregar o componente
+  useEffect(() => {
+    const testConnection = async () => {
+      // Verificar configuração primeiro
+      const config = checkSupabaseConfig();
+      console.log('Configuração do Supabase:', config);
+      
+      // Mostrar roles válidos
+      const validRoles = getValidRoles();
+      console.log('Roles válidos:', validRoles);
+      
+      const result = await testSupabaseConnection();
+      setConnectionStatus(result);
+      if (!result.success) {
+        console.error('Problema de conectividade com Supabase:', result.error);
+      } else {
+        // Se a conexão estiver OK, testar criação de usuário
+        console.log('Testando criação de usuário...');
+        const createTest = await testCreateUser();
+        console.log('Resultado do teste de criação:', createTest);
+      }
+    };
+    testConnection();
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const response = await fetch('https://apigestaocrosby.onrender.com/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: username, password }),
-      });
-      if (!response.ok) {
-        const data = await response.json();
-        setError(data.message || 'Erro ao autenticar.');
+      const userData = await authenticateUser(username, password);
+      
+      // Verificar se é o primeiro login
+      if (isFirstLogin(userData)) {
+        // Se for primeiro login, salvar usuário com senha para o modal
+        setUser(userData);
         setLoading(false);
-        return;
+        // O modal será mostrado automaticamente pelo AuthContext
+        navigate('/home');
+      } else {
+        // Se não for primeiro login, salvar usuário sem senha
+        const { password: _, ...userWithoutPassword } = userData;
+        setUser(userWithoutPassword);
+        setLoading(false);
+        navigate('/home');
       }
-      const userData = await response.json();
-      setUser(userData);
-      setLoading(false);
-      navigate('/home');
     } catch (err) {
-      setError('Erro de conexão com o servidor.');
+      setError(err.message || 'Erro ao autenticar.');
       setLoading(false);
     }
   };
@@ -51,7 +79,21 @@ const LoginForm = () => {
         <Logo />
         <h2 className="text-center text-2xl font-light tracking-wide text-gray-700 mb-2">GESTÃO CROSBY</h2>
         <div className="text-center text-cyan-600 text-xl font-medium mb-6">Boas-vindas</div>
+        
+        {/* Status da conexão */}
+        {connectionStatus && !connectionStatus.success && (
+          <div className="mb-4 bg-yellow-100 border border-yellow-300 text-yellow-700 px-4 py-2 rounded text-center text-sm">
+            ⚠️ Problema de conectividade: {connectionStatus.error}
+            {connectionStatus.suggestion && (
+              <div className="mt-2 text-xs">
+                💡 {connectionStatus.suggestion}
+              </div>
+            )}
+          </div>
+        )}
+        
         {error && <div className="mb-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{error}</div>}
+        
         <div className="mb-4 relative flex items-center">
           <span className="absolute left-3 mt-1.5 -translate-y-1/2 text-gray-400 flex items-center justify-center">
             <User size={20} />

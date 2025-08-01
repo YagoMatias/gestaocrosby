@@ -1,25 +1,36 @@
 import React, { useEffect, useState } from 'react';
 import { Gear, UserGear } from '@phosphor-icons/react';
 import { useAuth } from '../components/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
+import { fetchUsers, createUser, updateUser, deleteUser, checkEmailExists } from '../lib/userProfiles';
+import LoadingSpinner from '../components/LoadingSpinner';
+import Notification from '../components/Notification';
+import Layout from '../components/Layout';
+import { USER_ROLES, USER_ROLE_LABELS, USER_ROLE_COLORS } from '../config/constants';
 
-const perfis = [
-  { value: 'ADM', label: 'Administrador' },
-  { value: 'DIRETOR', label: 'Diretor' },
-  { value: 'FINANCEIRO', label: 'Financeiro' },
-  { value: 'FRANQUIA', label: 'Franquia' },
-];
+const perfis = Object.entries(USER_ROLE_LABELS).map(([value, label]) => ({ value, label }));
 
 export default function PainelAdmin() {
   const { user } = useAuth();
+  const { canAccessAdmin } = usePermissions();
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
+  const [success, setSuccess] = useState('');
   const [form, setForm] = useState({ id: null, name: '', email: '', password: '', role: 'DIRETOR', active: true });
   const [editando, setEditando] = useState(false);
 
   // Só ADM pode acessar
-  if (!user || user.role !== 'ADM') {
-    return <div className="p-8 text-red-600 font-bold">Acesso restrito ao Administrador.</div>;
+  if (!user || !canAccessAdmin()) {
+    return (
+      <Layout>
+        <div className="p-8 text-red-600 font-bold text-center">
+          <UserGear size={48} className="mx-auto mb-4 text-red-500" />
+          <p>Acesso restrito ao Administrador.</p>
+          <p className="text-sm text-gray-600 mt-2">Você não tem permissão para acessar esta página.</p>
+        </div>
+      </Layout>
+    );
   }
 
   // Buscar usuários
@@ -27,9 +38,7 @@ export default function PainelAdmin() {
     setLoading(true);
     setErro('');
     try {
-      const res = await fetch('/users?role=ADM');
-      if (!res.ok) throw new Error('Erro ao buscar usuários');
-      const data = await res.json();
+      const data = await fetchUsers();
       setUsuarios(data);
     } catch (e) {
       setErro(e.message);
@@ -51,19 +60,32 @@ export default function PainelAdmin() {
     e.preventDefault();
     setErro('');
     try {
-      const method = editando ? 'PUT' : 'POST';
-      const url = editando ? `/users/${form.id}` : '/users';
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, requesterRole: 'ADM' }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || 'Erro ao salvar usuário');
+      // Verificar se email já existe (exceto se estiver editando o mesmo usuário)
+      const emailExists = await checkEmailExists(form.email, editando ? form.id : null);
+      if (emailExists) {
+        setErro('Este email já está em uso.');
+        return;
       }
+
+      if (editando) {
+        // Atualizar usuário
+        const updateData = { ...form };
+        if (!updateData.password) {
+          delete updateData.password; // Não atualizar senha se estiver vazia
+        }
+        await updateUser(form.id, updateData);
+      } else {
+        // Criar novo usuário
+        if (!form.password) {
+          setErro('Senha é obrigatória para novos usuários.');
+          return;
+        }
+        await createUser(form);
+      }
+      
       setForm({ id: null, name: '', email: '', password: '', role: 'DIRETOR', active: true });
       setEditando(false);
+      setSuccess(editando ? 'Usuário atualizado com sucesso!' : 'Usuário criado com sucesso!');
       fetchUsuarios();
     } catch (e) {
       setErro(e.message);
@@ -79,15 +101,8 @@ export default function PainelAdmin() {
     if (!window.confirm('Tem certeza que deseja excluir este usuário?')) return;
     setErro('');
     try {
-      const res = await fetch(`/users/${id}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requesterRole: 'ADM' }),
-      });
-      if (!res.ok && res.status !== 204) {
-        const data = await res.json();
-        throw new Error(data.message || 'Erro ao excluir usuário');
-      }
+      await deleteUser(id);
+      setSuccess('Usuário excluído com sucesso!');
       fetchUsuarios();
     } catch (e) {
       setErro(e.message);
@@ -95,12 +110,15 @@ export default function PainelAdmin() {
   };
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <div className="flex items-center mb-6 gap-2">
-        <UserGear size={32} className="text-blue-700" />
-        <h1 className="text-2xl font-bold">Painel Admin</h1>
-      </div>
-      {erro && <div className="mb-4 text-red-600">{erro}</div>}
+    <Layout>
+      <div className="p-8 max-w-4xl mx-auto">
+        {erro && <Notification message={erro} type="error" onClose={() => setErro('')} />}
+        {success && <Notification message={success} type="success" onClose={() => setSuccess('')} />}
+        
+        <div className="flex items-center mb-6 gap-2">
+          <UserGear size={32} className="text-blue-700" />
+          <h1 className="text-2xl font-bold">Painel Admin</h1>
+        </div>
       <form onSubmit={handleSubmit} className="mb-8 bg-gray-50 p-4 rounded-lg shadow">
         <div className="flex gap-4 mb-2">
           <input name="name" value={form.name} onChange={handleChange} placeholder="Nome" className="border p-2 rounded w-full" required />
@@ -119,7 +137,7 @@ export default function PainelAdmin() {
         {editando && <button type="button" className="ml-4 text-gray-600 underline" onClick={() => { setEditando(false); setForm({ id: null, name: '', email: '', password: '', role: 'DIRETOR', active: true }); }}>Cancelar</button>}
       </form>
       <h2 className="text-lg font-bold mb-2">Usuários cadastrados</h2>
-      {loading ? <div>Carregando...</div> : (
+      {loading ? <LoadingSpinner text="Carregando usuários..." /> : (
         <table className="w-full border bg-white rounded shadow text-sm">
           <thead>
             <tr className="bg-gray-100">
@@ -135,8 +153,16 @@ export default function PainelAdmin() {
               <tr key={u.id} className="border-t">
                 <td className="p-2">{u.name}</td>
                 <td className="p-2">{u.email}</td>
-                <td className="p-2">{u.role}</td>
-                <td className="p-2">{u.active ? 'Sim' : 'Não'}</td>
+                <td className="p-2">
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${USER_ROLE_COLORS[u.role] || 'bg-gray-100 text-gray-800'}`}>
+                    {USER_ROLE_LABELS[u.role] || u.role}
+                  </span>
+                </td>
+                <td className="p-2">
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${u.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                    {u.active ? 'Ativo' : 'Inativo'}
+                  </span>
+                </td>
                 <td className="p-2 flex gap-2">
                   <button className="text-blue-700 underline" onClick={() => handleEdit(u)}>Editar</button>
                   <button className="text-red-600 underline" onClick={() => handleDelete(u.id)}>Excluir</button>
@@ -146,6 +172,7 @@ export default function PainelAdmin() {
           </tbody>
         </table>
       )}
-    </div>
+      </div>
+    </Layout>
   );
 }
