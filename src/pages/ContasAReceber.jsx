@@ -19,7 +19,7 @@ import {
   CaretDown
 } from '@phosphor-icons/react';
 
-const ContasAPagar = () => {
+const ContasAReceber = () => {
   const [dados, setDados] = useState([]);
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
@@ -27,7 +27,7 @@ const ContasAPagar = () => {
   const [dadosCarregados, setDadosCarregados] = useState(false);
   const [status, setStatus] = useState('Todos');
   const [situacao, setSituacao] = useState('NORMAIS');
-  const [fornecedor, setFornecedor] = useState('');
+  const [cliente, setCliente] = useState('');
   const [duplicata, setDuplicata] = useState('');
   // Empresas pré-selecionadas (serão carregadas do banco de dados)
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
@@ -79,13 +79,13 @@ const ContasAPagar = () => {
           aValue = a.item.cd_empresa || '';
           bValue = b.item.cd_empresa || '';
           break;
-        case 'cd_fornecedor':
-          aValue = a.item.cd_fornecedor || '';
-          bValue = b.item.cd_fornecedor || '';
+        case 'cd_cliente':
+          aValue = a.item.cd_cliente || '';
+          bValue = b.item.cd_cliente || '';
           break;
-        case 'nr_duplicata':
-          aValue = a.item.nr_duplicata || '';
-          bValue = b.item.nr_duplicata || '';
+        case 'nr_fatura':
+          aValue = a.item.nr_fatura || '';
+          bValue = b.item.nr_fatura || '';
           break;
         case 'nr_portador':
           aValue = a.item.nr_portador || '';
@@ -175,7 +175,7 @@ const ContasAPagar = () => {
       // Buscar dados das empresas selecionadas
       const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
         try {
-          const res = await fetch(`${BaseURL}contasapagar?dt_inicio=${inicio}&dt_fim=${fim}&cd_empresa=${empresa.cd_empresa}`);
+          const res = await fetch(`${BaseURL}contasareceber?dt_inicio=${inicio}&dt_fim=${fim}&cd_empresa=${empresa.cd_empresa}`);
           
           if (!res.ok) {
             console.warn(`Erro ao buscar empresa ${empresa.cd_empresa}: HTTP ${res.status}`);
@@ -338,18 +338,18 @@ const ContasAPagar = () => {
       }
     }
     
-    // Filtro por fornecedor
-    if (fornecedor) {
-      const cdFornecedor = item.cd_fornecedor || '';
-      if (!cdFornecedor.toString().toLowerCase().includes(fornecedor.toLowerCase())) {
+    // Filtro por cliente
+    if (cliente) {
+      const cdCliente = item.cd_cliente || '';
+      if (!cdCliente.toString().toLowerCase().includes(cliente.toLowerCase())) {
         return false;
       }
     }
     
-    // Filtro por duplicata
+    // Filtro por fatura
     if (duplicata) {
-      const nrDuplicata = item.nr_duplicata || '';
-      if (!nrDuplicata.toString().toLowerCase().includes(duplicata.toLowerCase())) {
+      const nrFatura = item.nr_fatura || '';
+      if (!nrFatura.toString().toLowerCase().includes(duplicata.toLowerCase())) {
         return false;
       }
     }
@@ -362,11 +362,11 @@ const ContasAPagar = () => {
     const grupos = new Map();
     
     dados.forEach((item) => {
-      // Criar chave única baseada APENAS em FORNECEDOR e DUPLICATA
-      // Se FORNECEDOR e DUPLICATA são iguais = AGRUPA
-      // Se FORNECEDOR igual mas DUPLICATA diferente = NÃO AGRUPA
-      // Se FORNECEDOR diferente mas DUPLICATA igual = NÃO AGRUPA
-      const chave = `${item.cd_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
+          // Criar chave única baseada APENAS em CLIENTE e FATURA
+    // Se CLIENTE e FATURA são iguais = AGRUPA
+    // Se CLIENTE igual mas FATURA diferente = NÃO AGRUPA
+    // Se CLIENTE diferente mas FATURA igual = NÃO AGRUPA
+    const chave = `${item.cd_cliente}|${item.nr_fatura}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.vl_fatura}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
       
       if (!grupos.has(chave)) {
         grupos.set(chave, {
@@ -582,11 +582,11 @@ const ContasAPagar = () => {
   // Função para abrir modal com detalhes das observações
   const abrirModalObservacoes = (grupo) => {
     setDadosModal({
-      cd_fornecedor: grupo.item.cd_fornecedor,
-      nm_fornecedor: grupo.item.nm_fornecedor,
-      nr_duplicata: grupo.item.nr_duplicata,
+      cd_cliente: grupo.item.cd_cliente,
+      nm_cliente: grupo.item.nm_cliente,
+      nr_fatura: grupo.item.nr_fatura,
       nr_parcela: grupo.item.nr_parcela,
-      valor_duplicata: grupo.item.vl_duplicata,
+      valor_fatura: grupo.item.vl_fatura,
       valor_juros: grupo.item.vl_juros,
       valor_acrescimo: grupo.item.vl_acrescimo,
       valor_desconto: grupo.item.vl_desconto,
@@ -613,19 +613,24 @@ const ContasAPagar = () => {
     // Preparar dados para exportação
     const dadosParaExportar = dados.map(item => ({
       'Empresa': item.cd_empresa,
-      'Fornecedor': item.nm_fornecedor || item.cd_fornecedor,
-      'Duplicata': item.nr_duplicata,
+      'Cliente': item.cd_cliente,
+      'Nome Cliente': item.nm_cliente,
+      'Fatura': item.nr_fatura,
       'Parcela': item.nr_parcela,
       'Portador': item.nr_portador,
       'Emissão': item.dt_emissao,
       'Vencimento': item.dt_vencimento,
-      'Entrada': item.dt_entrada,
+      'Cancelamento': item.dt_cancelamento,
       'Liquidação': item.dt_liq,
-      'Valor Duplicata': item.vl_duplicata,
-      'Juros': item.vl_juros,
-      'Acréscimo': item.vl_acrescimo,
-      'Desconto': item.vl_desconto,
+      'Valor Fatura': item.vl_fatura,
+      'Valor Original': item.vl_original,
+      'Abatimento': item.vl_abatimento,
       'Valor Pago': item.vl_pago,
+      'Desconto': item.vl_desconto,
+      'Valor Líquido': item.vl_liquido,
+      'Acréscimo': item.vl_acrescimo,
+      'Multa': item.vl_multa,
+      'Juros': item.vl_juros,
       'Status': getStatusFromData(item),
       'Observações': item.observacoes ? item.observacoes.join(', ') : ''
     }));
@@ -651,7 +656,7 @@ const ContasAPagar = () => {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `contas_a_pagar_${dataInicio}_${dataFim}.csv`);
+    link.setAttribute('download', `contas_a_receber_${dataInicio}_${dataFim}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -666,7 +671,7 @@ const ContasAPagar = () => {
   return (
     <Layout>
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
-        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Contas a Pagar</h1>
+        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Contas a Receber</h1>
         
         {/* Filtros */}
         <div className="mb-8">
@@ -733,22 +738,22 @@ const ContasAPagar = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Fornecedor</label>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Cliente</label>
                 <input
                   type="text"
-                  value={fornecedor}
-                  onChange={(e) => setFornecedor(e.target.value)}
-                  placeholder="Buscar fornecedor..."
+                  value={cliente}
+                  onChange={(e) => setCliente(e.target.value)}
+                  placeholder="Buscar cliente..."
                   className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Duplicata</label>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Fatura</label>
                 <input
                   type="text"
                   value={duplicata}
                   onChange={(e) => setDuplicata(e.target.value)}
-                  placeholder="Buscar duplicata..."
+                  placeholder="Buscar fatura..."
                   className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
               </div>
@@ -904,7 +909,7 @@ const ContasAPagar = () => {
         {/* Tabela */}
         <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full">
           <div className="p-6 border-b border-[#000638]/10 flex justify-between items-center">
-            <h2 className="text-xl font-bold text-[#000638]">Detalhamento de Contas</h2>
+            <h2 className="text-xl font-bold text-[#000638]">Detalhamento de Contas a Receber</h2>
             <button
               onClick={() => baixarExcel()}
               disabled={!dadosCarregados || dados.length === 0}
@@ -956,20 +961,20 @@ const ContasAPagar = () => {
                         </th>
                         <th 
                           className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort('cd_fornecedor')}
+                          onClick={() => handleSort('cd_cliente')}
                         >
                           <div className="flex items-center justify-center">
-                            Fornecedor
-                            {getSortIcon('cd_fornecedor')}
+                            Cliente
+                            {getSortIcon('cd_cliente')}
                           </div>
                         </th>
                         <th 
                           className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort('nr_duplicata')}
+                          onClick={() => handleSort('nr_fatura')}
                         >
                           <div className="flex items-center justify-center">
-                            Duplicata
-                            {getSortIcon('nr_duplicata')}
+                            Fatura
+                            {getSortIcon('nr_fatura')}
                           </div>
                         </th>
                         <th 
@@ -1114,10 +1119,10 @@ const ContasAPagar = () => {
                             {grupo.item.cd_empresa || 'N/A'}
                           </td>
                           <td className="px-0.5 py-0.5 text-center">
-                            {grupo.item.cd_fornecedor || 'N/A'}
+                            {grupo.item.cd_cliente || 'N/A'}
                           </td>
                           <td className="px-0.5 py-0.5 text-center">
-                            {grupo.item.nr_duplicata || 'N/A'}
+                            {grupo.item.nr_fatura || 'N/A'}
                           </td>
                           <td className="px-0.5 py-0.5 text-center">
                             {grupo.item.nr_portador || 'N/A'}
@@ -1290,23 +1295,21 @@ const ContasAPagar = () => {
               {/* Informações do Registro */}
               <div className="grid grid-cols-2 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-600 mb-1">Fornecedor:</label>
-                  <span className="text-lg font-bold text-[#000638]">
-                    {dadosModal.nm_fornecedor || dadosModal.cd_fornecedor}
-                  </span>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Cliente:</label>
+                  <span className="text-lg font-bold text-[#000638]">{dadosModal.cd_cliente} - {dadosModal.nm_cliente}</span>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-600 mb-1">Duplicata:</label>
-                  <span className="text-lg font-bold text-[#000638]">{dadosModal.nr_duplicata}</span>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Fatura:</label>
+                  <span className="text-lg font-bold text-[#000638]">{dadosModal.nr_fatura}</span>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-600 mb-1">Parcela:</label>
                   <span className="text-lg font-bold text-[#000638]">{dadosModal.nr_parcela}</span>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-600 mb-1">Valor Duplicata:</label>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Valor Fatura:</label>
                   <span className="text-lg font-bold text-blue-600">
-                    {(parseFloat(dadosModal.valor_duplicata) || 0).toLocaleString('pt-BR', {
+                    {(parseFloat(dadosModal.valor_fatura) || 0).toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
                     })}
@@ -1434,4 +1437,4 @@ const ContasAPagar = () => {
   );
 };
 
-export default ContasAPagar; 
+export default ContasAReceber; 

@@ -818,15 +818,12 @@ app.get('/faturamentolojas', async (req, res) => {
           B.CD_PESSOA NOT IN (69994,70596,110000001,73469,61000007,61000008,61000009,61000010,45832)
           AND B.CD_PESSOA < 110000100
           AND T.VL_TOTAL > 1
+          AND T.CD_GRUPOEMPRESA NOT IN(1,3,4,6,7,8,9,10,31,50,51,45,75,85,99)
           AND (
               T.TP_SITUACAO IS NULL OR (
                   T.TP_SITUACAO = 4
                   AND T.TP_OPERACAO IN ('S', 'E')
-                                     AND T.CD_OPERACAO not in (5914,1407,5102,520,300,200,1152, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711, 7111, 2009, 5152, 6029, 530, 5152, 5930, 650, 
-       5010, 600, 620, 40, 1557, 8600, 5910, 3336, 9003, 9052, 662, 5909,5153,5910,3336,9003,530,36,536,1552,51,1556,200,300,512,1402,1405,1409,5102,5110,200,300,
-       512,5102,5110,5113,17,21,401,1201,1202,1204,1206,1950,1999,2203,17,21,1201,1202,1204,1950,1999,2203,590,5153,660,
-       2500,1126,1127,8160,1122,1102,9986,1128,1553,1556,9200,8002,2551,1557,8160,2004,
-       5912,1410)
+                  AND T.CD_OPERACAO IN (1,2,510,511,1511,521,1521,522,960,9001,9009,9027,8750,9017,9400,9401,9402,9403,9404,9005,545,546,555,548,1210,9405,1205)
                   AND T.CD_GRUPOEMPRESA BETWEEN $1 AND $2
                   AND T.DT_TRANSACAO BETWEEN $3::timestamp AND $4::timestamp
               )
@@ -908,11 +905,8 @@ app.get('/rankingvendedor', async (req, res) => {
       JOIN TRA_TRANSACAO B ON A.CD_VENDEDOR = B.CD_COMPVEND
       WHERE B.TP_SITUACAO = 4
         AND B.TP_OPERACAO IN ('S', 'E')
-                 AND B.CD_OPERACAO not in (5914,1407,5102,520,300,200,1152, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711, 7111, 2009, 5152, 6029, 530, 5152, 5930, 650, 
-       5010, 600, 620, 40, 1557, 8600, 5910, 3336, 9003, 9052, 662, 5909,5153,5910,3336,9003,530,36,536,1552,51,1556,200,300,512,1402,1405,1409,5102,5110,200,300,
-       512,5102,5110,5113,17,21,401,1201,1202,1204,1206,1950,1999,2203,17,21,1201,1202,1204,1950,1999,2203,590,5153,660,
-       2500,1126,1127,8160,1122,1102,9986,1128,1553,1556,9200,8002,2551,1557,8160,2004,
-       5912,1410)
+        AND B.CD_GRUPOEMPRESA NOT IN(1,3,4,6,7,8,9,10,31,50,51,45,75,85,99)
+        AND B.CD_OPERACAO IN (1,2,510,511,1511,521,1521,522,960,9001,9009,9027,8750,9017,9400,9401,9402,9403,9404,9005,545,546,555,548,1210,9405,1205)
         AND B.DT_TRANSACAO BETWEEN $1::timestamp AND $2::timestamp
       GROUP BY A.CD_VENDEDOR, A.NM_VENDEDOR, B.CD_COMPVEND
       ORDER BY FATURAMENTO DESC
@@ -926,11 +920,8 @@ app.get('/rankingvendedor', async (req, res) => {
       JOIN TRA_TRANSACAO B ON A.CD_VENDEDOR = B.CD_COMPVEND
       WHERE B.TP_SITUACAO = 4
         AND B.TP_OPERACAO IN ('S', 'E')
-                 AND B.CD_OPERACAO not in (5914,1407,5102,520,300,200,1152, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711, 7111, 2009, 5152, 6029, 530, 5152, 5930, 650, 
-       5010, 600, 620, 40, 1557, 8600, 5910, 3336, 9003, 9052, 662, 5909,5153,5910,3336,9003,530,36,536,1552,51,1556,200,300,512,1402,1405,1409,5102,5110,200,300,
-       512,5102,5110,5113,17,21,401,1201,1202,1204,1206,1950,1999,2203,17,21,1201,1202,1204,1950,1999,2203,590,5153,660,
-       2500,1126,1127,8160,1122,1102,9986,1128,1553,1556,9200,8002,2551,1557,8160,2004,
-       5912,1410)
+        AND B.CD_GRUPOEMPRESA NOT IN(1,3,4,6,7,8,9,10,31,50,51,45,75,85,99)
+        AND B.CD_OPERACAO IN (1,2,510,511,1511,521,1521,522,960,9001,9009,9027,8750,9017,9400,9401,9402,9403,9404,9005,545,546,555,548,1210,9405,1205)
         AND B.DT_TRANSACAO BETWEEN $1::timestamp AND $2::timestamp
     `;
 
@@ -986,6 +977,7 @@ app.get('/contasapagar', async (req, res) => {
                       select
                   fd.cd_empresa,
                   fd.cd_fornecedor,
+                  COALESCE(vpf.nm_fornecedor, 'Fornecedor ' || fd.cd_fornecedor) as nm_fornecedor,
                   fd.nr_duplicata,
                   fd.nr_portador,
                   fd.dt_emissao,
@@ -1005,12 +997,15 @@ app.get('/contasapagar', async (req, res) => {
         fcp_duplicatai fd
       left join obs_dupi od on
         fd.nr_duplicata = od.nr_duplicata
+      left join vpf_fornecedor vpf on
+        fd.cd_fornecedor = vpf.cd_fornecedor
       where
         fd.dt_emissao between $1 and $2
         and fd.cd_empresa = $3
                       group by
                   fd.cd_empresa,
                   fd.cd_fornecedor,
+                  vpf.nm_fornecedor,
                   fd.nr_duplicata,
                   fd.nr_portador,
                   fd.dt_emissao,
@@ -1069,6 +1064,104 @@ app.get('/contasapagar', async (req, res) => {
     console.error('Erro ao buscar contas a pagar:', error);
     res.status(500).json({ 
       message: 'Erro interno do servidor ao buscar contas a pagar.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Rota para buscar contas a receber
+app.get('/contasareceber', async (req, res) => {
+  try {
+    const { dt_inicio, dt_fim, cd_empresa, limit, offset } = req.query;
+    
+    // Validação dos parâmetros obrigatórios
+    if (!dt_inicio || !dt_fim || !cd_empresa) {
+      return res.status(400).json({ 
+        message: 'Parâmetros obrigatórios: dt_inicio, dt_fim (formato: YYYY-MM-DD) e cd_empresa' 
+      });
+    }
+
+    // Configuração de paginação
+    const limitValue = parseInt(limit, 10) || 50;
+    const offsetValue = parseInt(offset, 10) || 0;
+
+    // Query principal com paginação
+    const query = `
+      select
+        vff.cd_empresa,
+        vff.cd_cliente,
+        vff.nm_cliente,
+        vff.nr_parcela,
+        vff.dt_emissao,
+        vff.dt_vencimento,
+        vff.dt_cancelamento,
+        vff.dt_liq,
+        vff.tp_cobranca,
+        vff.tp_documento,
+        vff.tp_faturamento,
+        vff.tp_inclusao,
+        vff.tp_baixa,
+        vff.tp_situacao,
+        vff.vl_fatura,
+        vff.vl_original,
+        vff.vl_abatimento,
+        vff.vl_pago,
+        vff.vl_desconto,
+        vff.vl_liquido,
+        vff.vl_acrescimo,
+        vff.vl_multa,
+        vff.nr_portador,
+        vff.vl_renegociacao,
+        vff.vl_corrigido,
+        vff.vl_juros,
+        vff.pr_juromes,
+        vff.pr_multa
+      from
+        vr_fcr_faturai vff
+      where
+        vff.dt_emissao between $1 and $2
+        and vff.cd_empresa = $3
+      order by vff.dt_emissao desc
+      limit $4 offset $5
+    `;
+
+    // Query para contar total de registros
+    const countQuery = `
+      select count(*) as total
+      from
+        vr_fcr_faturai vff
+      where
+        vff.dt_emissao between $1 and $2
+        and vff.cd_empresa = $3
+    `;
+
+    // Executar queries em paralelo
+    const [resultado, totalResult] = await Promise.all([
+      pool.query(query, [dt_inicio, dt_fim, cd_empresa, limitValue, offsetValue]),
+      pool.query(countQuery, [dt_inicio, dt_fim, cd_empresa])
+    ]);
+
+    const total = parseInt(totalResult.rows[0].total, 10);
+
+    // Resposta estruturada
+    res.json({
+      total,
+      limit: limitValue,
+      offset: offsetValue,
+      filtros: {
+        dt_inicio,
+        dt_fim,
+        cd_empresa
+      },
+      dados: resultado.rows
+    });
+
+    console.log(`Contas a receber: ${resultado.rows.length} registros retornados de ${total} total`);
+
+  } catch (error) {
+    console.error('Erro ao buscar contas a receber:', error);
+    res.status(500).json({ 
+      message: 'Erro interno do servidor ao buscar contas a receber.',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }

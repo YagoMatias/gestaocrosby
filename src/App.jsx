@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import LoginForm from './components/LoginForm';
 import Home from './pages/Home';
 import ContasAPagar from './pages/ContasAPagar';
+import ContasAReceber from './pages/ContasAReceber';
 import ExtratoFinanceiro from './pages/ExtratoFinanceiro';
 import ExtratoTOTVS from './pages/ExtratoTOTVS';
 import Varejo from './pages/Varejo';
@@ -26,6 +27,7 @@ const AppRoutes = memo(() => {
       <Route path="/" element={<LoginForm />} />
       <Route path="/home" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA']}><Home /></PrivateRoute>} />
       <Route path="/contas-a-pagar" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><ContasAPagar /></PrivateRoute>} />
+      <Route path="/contas-a-receber" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><ContasAReceber /></PrivateRoute>} />
       <Route path="/extrato-financeiro" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><ExtratoFinanceiro /></PrivateRoute>} />
       <Route path="/extrato-totvs" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><ExtratoTOTVS /></PrivateRoute>} />
       <Route path="/varejo" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR']}><Varejo /></PrivateRoute>} />
