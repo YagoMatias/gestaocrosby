@@ -992,7 +992,9 @@ app.get('/contasapagar', async (req, res) => {
                   fd.vl_desconto,
                   fd.vl_pago,
                   fd.in_aceite,
-                  od.ds_observacao
+                  od.ds_observacao,
+                  COALESCE(fd.ds_despesaitem, '') as ds_despesaitem,
+                  fd.cd_ccusto
       from
         fcp_duplicatai fd
       left join obs_dupi od on
@@ -1020,7 +1022,8 @@ app.get('/contasapagar', async (req, res) => {
                   fd.vl_desconto,
                   fd.vl_pago,
                   fd.in_aceite,
-                  od.ds_observacao
+                  od.ds_observacao,
+                  fd.cd_ccusto
       order by fd.dt_emissao desc
       limit $4 offset $5
     `;

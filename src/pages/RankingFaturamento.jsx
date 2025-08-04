@@ -580,7 +580,7 @@ const RankingFaturamento = () => {
               >
                 <Users size={20} className="mr-2" />
                 <span className="font-semibold">Vendedores</span>
-              </button>
+            </button>
             </div>
           </div>
         </div>
@@ -778,14 +778,14 @@ const RankingFaturamento = () => {
                             Nenhum {rankingTipo === 'lojas' ? 'loja' : 'vendedor'} encontrado para o período selecionado
                           </td>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                  )}
+                </tbody>
+              </table>
+            </div>
               </div>
             </div>
           </>
-        )}
+          )}
       </div>
     </Layout>
   );

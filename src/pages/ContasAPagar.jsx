@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { 
   Receipt, 
   Calendar, 
@@ -20,14 +21,69 @@ import {
 } from '@phosphor-icons/react';
 
 const ContasAPagar = () => {
+
+
   const [dados, setDados] = useState([]);
+
+
   const [dataInicio, setDataInicio] = useState('');
+
+  // Injetar CSS customizado para a tabela
+  useEffect(() => {
+    const styleElement = document.createElement('style');
+    styleElement.textContent = `
+      .contas-table th,
+      .contas-table td {
+        padding: 6px 8px !important;
+        border-right: 1px solid #f3f4f6;
+        word-wrap: break-word;
+        white-space: normal;
+        font-size: 11px;
+        line-height: 1.3;
+      }
+      
+
+      
+      .contas-table th:last-child,
+      .contas-table td:last-child {
+        border-right: none;
+      }
+      
+      .contas-table th {
+        background-color: #000638;
+        color: white;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 10px;
+        letter-spacing: 0.05em;
+      }
+      
+      .contas-table tbody tr:nth-child(odd) {
+        background-color: white;
+      }
+      
+      .contas-table tbody tr:nth-child(even) {
+        background-color: #fafafa;
+      }
+      
+      .contas-table tbody tr:hover {
+        background-color: #f0f9ff;
+        transition: background-color 0.2s ease;
+      }
+    `;
+    document.head.appendChild(styleElement);
+
+    return () => {
+      document.head.removeChild(styleElement);
+    };
+  }, []);
   const [dataFim, setDataFim] = useState('');
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
   const [status, setStatus] = useState('Todos');
   const [situacao, setSituacao] = useState('NORMAIS');
   const [fornecedor, setFornecedor] = useState('');
+  const [despesa, setDespesa] = useState('');
   const [duplicata, setDuplicata] = useState('');
   // Empresas pré-selecionadas (serão carregadas do banco de dados)
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
@@ -82,6 +138,18 @@ const ContasAPagar = () => {
         case 'cd_fornecedor':
           aValue = a.item.cd_fornecedor || '';
           bValue = b.item.cd_fornecedor || '';
+          break;
+        case 'nm_fornecedor':
+          aValue = a.item.nm_fornecedor || '';
+          bValue = b.item.nm_fornecedor || '';
+          break;
+        case 'ds_despesaitem':
+          aValue = a.item.ds_despesaitem || '';
+          bValue = b.item.ds_despesaitem || '';
+          break;
+        case 'cd_ccusto':
+          aValue = a.item.cd_ccusto || '';
+          bValue = b.item.cd_ccusto || '';
           break;
         case 'nr_duplicata':
           aValue = a.item.nr_duplicata || '';
@@ -341,7 +409,21 @@ const ContasAPagar = () => {
     // Filtro por fornecedor
     if (fornecedor) {
       const cdFornecedor = item.cd_fornecedor || '';
-      if (!cdFornecedor.toString().toLowerCase().includes(fornecedor.toLowerCase())) {
+      const nmFornecedor = item.nm_fornecedor || '';
+      const buscaFornecedor = fornecedor.toLowerCase();
+      
+      if (!cdFornecedor.toString().toLowerCase().includes(buscaFornecedor) && 
+          !nmFornecedor.toLowerCase().includes(buscaFornecedor)) {
+        return false;
+      }
+    }
+
+    // Filtro por despesa
+    if (despesa) {
+      const dsDespesa = item.ds_despesaitem || '';
+      const buscaDespesa = despesa.toLowerCase();
+      
+      if (!dsDespesa.toLowerCase().includes(buscaDespesa)) {
         return false;
       }
     }
@@ -366,7 +448,7 @@ const ContasAPagar = () => {
       // Se FORNECEDOR e DUPLICATA são iguais = AGRUPA
       // Se FORNECEDOR igual mas DUPLICATA diferente = NÃO AGRUPA
       // Se FORNECEDOR diferente mas DUPLICATA igual = NÃO AGRUPA
-      const chave = `${item.cd_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
+      const chave = `${item.cd_fornecedor}|${item.nm_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
       
       if (!grupos.has(chave)) {
         grupos.set(chave, {
@@ -460,6 +542,8 @@ const ContasAPagar = () => {
 
   // Aplicar ordenação aos dados agrupados
   const dadosOrdenados = sortDadosAgrupados(dadosAgrupados);
+
+
 
   // Cálculos dos totais (baseados em dados agrupados - apenas uma linha por grupo)
   const totalContas = dadosOrdenados.length;
@@ -627,7 +711,8 @@ const ContasAPagar = () => {
       'Desconto': item.vl_desconto,
       'Valor Pago': item.vl_pago,
       'Status': getStatusFromData(item),
-      'Observações': item.observacoes ? item.observacoes.join(', ') : ''
+      'Observações': item.observacoes ? item.observacoes.join(', ') : '',
+      'Centro de Custo': item.cd_ccusto || 'N/A'
     }));
 
     // Converter para CSV
@@ -738,7 +823,17 @@ const ContasAPagar = () => {
                   type="text"
                   value={fornecedor}
                   onChange={(e) => setFornecedor(e.target.value)}
-                  placeholder="Buscar fornecedor..."
+                  placeholder="Buscar por código ou nome do fornecedor..."
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Despesa</label>
+                <input
+                  type="text"
+                  value={despesa}
+                  onChange={(e) => setDespesa(e.target.value)}
+                  placeholder="Buscar por descrição da despesa..."
                   className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
               </div>
@@ -941,8 +1036,10 @@ const ContasAPagar = () => {
               </div>
             ) : (
               <>
-                <div className="overflow-x-auto max-w-6xl mx-auto">
-                  <table className="w-full border-collapse rounded-lg overflow-hidden shadow-lg">
+                  <div className="overflow-x-auto max-w-8xl mx-auto">
+                    <table 
+                      className="border-collapse rounded-lg overflow-hidden shadow-lg contas-table"
+                    >
                     <thead className="bg-[#000638] text-white text-xs uppercase tracking-wider">
                       <tr>
                         <th 
@@ -964,12 +1061,39 @@ const ContasAPagar = () => {
                           </div>
                         </th>
                         <th 
+                          className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('nm_fornecedor')}
+                        >
+                          <div className="flex items-center justify-center">
+                            NM Fornecedor
+                            {getSortIcon('nm_fornecedor')}
+                          </div>
+                        </th>
+                        <th 
                           className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                           onClick={() => handleSort('nr_duplicata')}
                         >
                           <div className="flex items-center justify-center">
                             Duplicata
                             {getSortIcon('nr_duplicata')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('ds_despesaitem')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Despesa
+                            {getSortIcon('ds_despesaitem')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('cd_ccusto')}
+                        >
+                          <div className="flex items-center justify-center">
+                            C_CUSTO
+                            {getSortIcon('cd_ccusto')}
                           </div>
                         </th>
                         <th 
@@ -1116,8 +1240,65 @@ const ContasAPagar = () => {
                           <td className="px-0.5 py-0.5 text-center">
                             {grupo.item.cd_fornecedor || 'N/A'}
                           </td>
+                          <td className="px-2 py-0.5 text-center">
+                            <span className="block whitespace-normal">
+                              {grupo.item.nm_fornecedor || 'N/A'}
+                            </span>
+                          </td>
                           <td className="px-0.5 py-0.5 text-center">
                             {grupo.item.nr_duplicata || 'N/A'}
+                          </td>
+                          <td className="px-0.5 py-0.5 text-center">
+                            {(() => {
+                              const despesas = grupo.item.ds_despesaitem || '';
+                              if (!despesas || despesas.trim() === '') return 'N/A';
+                              
+                              // Se tem múltiplas despesas (separadas por vírgula, ponto e vírgula, quebra de linha, etc.)
+                              const despesasArray = despesas.split(/[,;\n\r]/).filter(d => d.trim());
+                              
+                              if (despesasArray.length > 1) {
+                                return (
+                                  <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded-full">
+                                    {despesasArray.length} despesas
+                                  </span>
+                                );
+                              }
+                              
+                              // Para uma única despesa, mostrar completa
+                              const despesaUnica = despesasArray[0] || despesas;
+                              return (
+                                <span className="block whitespace-normal">
+                                  {despesaUnica}
+                                </span>
+                              );
+                            })()}
+                          </td>
+                          <td className="px-0.5 py-0.5 text-center">
+                            {(() => {
+                              const centrosCusto = grupo.item.cd_ccusto || '';
+                              if (!centrosCusto || centrosCusto.trim() === '') return 'N/A';
+                              
+                              // Se tem múltiplos centros de custo (separados por vírgula, ponto e vírgula, quebra de linha, etc.)
+                              const centrosCustoArray = centrosCusto.split(/[,;\n\r]/).filter(c => c.trim());
+                              
+                              if (centrosCustoArray.length > 1) {
+                                // Mostrar múltiplos centros separados por "|"
+                                const centrosFormatados = centrosCustoArray.join(' | ');
+                                return (
+                                  <span className="block whitespace-normal text-xs">
+                                    {centrosFormatados}
+                                  </span>
+                                );
+                              }
+                              
+                              // Para um único centro de custo, mostrar completo
+                              const centroCustoUnico = centrosCustoArray[0] || centrosCusto;
+                              return (
+                                <span className="block whitespace-normal">
+                                  {centroCustoUnico}
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td className="px-0.5 py-0.5 text-center">
                             {grupo.item.nr_portador || 'N/A'}
@@ -1383,6 +1564,8 @@ const ContasAPagar = () => {
                   </div>
                 )}
               </div>
+
+
 
               {/* Lista de Observações */}
               <div className="mt-6">
