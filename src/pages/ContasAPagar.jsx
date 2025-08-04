@@ -590,7 +590,8 @@ const ContasAPagar = () => {
       valor_acrescimo: grupo.item.vl_acrescimo,
       valor_desconto: grupo.item.vl_desconto,
       valor_pago: grupo.item.vl_pago,
-      observacoes: grupo.observacoes
+      observacoes: grupo.observacoes,
+      ds_despesaitem: grupo.item.ds_despesaitem
     });
     setModalAberto(true);
   };
@@ -599,6 +600,61 @@ const ContasAPagar = () => {
   const fecharModal = () => {
     setModalAberto(false);
     setDadosModal(null);
+  };
+
+  // Função para baixar dados em Excel
+  const baixarExcel = () => {
+    if (!dadosCarregados || dados.length === 0) {
+      alert('Não há dados para exportar');
+      return;
+    }
+
+    // Preparar dados para exportação
+    const dadosParaExportar = dados.map(item => ({
+      'Empresa': item.cd_empresa,
+      'Fornecedor': item.cd_fornecedor,
+      'Duplicata': item.nr_duplicata,
+      'Parcela': item.nr_parcela,
+      'Portador': item.nr_portador,
+      'Emissão': item.dt_emissao,
+      'Vencimento': item.dt_vencimento,
+      'Entrada': item.dt_entrada,
+      'Liquidação': item.dt_liq,
+      'Valor Duplicata': item.vl_duplicata,
+      'Juros': item.vl_juros,
+      'Acréscimo': item.vl_acrescimo,
+      'Desconto': item.vl_desconto,
+      'Valor Pago': item.vl_pago,
+      'Status': getStatusFromData(item),
+      'Observações': item.observacoes ? item.observacoes.join(', ') : ''
+    }));
+
+    // Converter para CSV
+    const headers = Object.keys(dadosParaExportar[0]);
+    const csvContent = [
+      headers.join(','),
+      ...dadosParaExportar.map(row => 
+        headers.map(header => {
+          const value = row[header];
+          // Escapar vírgulas e aspas no valor
+          if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value;
+        }).join(',')
+      )
+    ].join('\n');
+
+    // Criar e baixar arquivo
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `contas_a_pagar_${dataInicio}_${dataFim}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Função para lidar com seleção de empresas
@@ -846,8 +902,18 @@ const ContasAPagar = () => {
 
         {/* Tabela */}
         <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full">
-          <div className="p-6 border-b border-[#000638]/10">
+          <div className="p-6 border-b border-[#000638]/10 flex justify-between items-center">
             <h2 className="text-xl font-bold text-[#000638]">Detalhamento de Contas</h2>
+            <button
+              onClick={() => baixarExcel()}
+              disabled={!dadosCarregados || dados.length === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Baixar Excel
+            </button>
           </div>
           
           <div className="p-6">
@@ -1285,8 +1351,38 @@ const ContasAPagar = () => {
                 </div>
               </div>
 
-              {/* Lista de Observações */}
+              {/* Seção de Despesas */}
               <div>
+                <h4 className="text-lg font-bold text-[#000638] mb-4 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  Despesas
+                </h4>
+                
+                {dadosModal.ds_despesaitem ? (
+                  <div className="p-4 bg-purple-50 border-l-4 border-purple-500 rounded-r-lg">
+                    <div className="flex items-start gap-3">
+                      <span className="bg-purple-500 text-white text-xs font-bold px-2 py-1 rounded-full min-w-[24px] text-center">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                      </span>
+                      <p className="text-gray-800 leading-relaxed font-medium">{dadosModal.ds_despesaitem}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-gray-500">
+                    <svg className="w-8 h-8 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                    <p className="text-sm">Nenhuma despesa cadastrada</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Lista de Observações */}
+              <div className="mt-6">
                 <h4 className="text-lg font-bold text-[#000638] mb-4 flex items-center gap-2">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
