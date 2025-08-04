@@ -85,6 +85,36 @@ const ContasAPagar = () => {
   const [fornecedor, setFornecedor] = useState('');
   const [despesa, setDespesa] = useState('');
   const [duplicata, setDuplicata] = useState('');
+  const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
+  
+  // Funções para seleção de linhas
+  const toggleLinhaSelecionada = (index) => {
+    setLinhasSelecionadas(prev => {
+      const novoSet = new Set(prev);
+      if (novoSet.has(index)) {
+        novoSet.delete(index);
+      } else {
+        novoSet.add(index);
+      }
+      return novoSet;
+    });
+  };
+
+  const selecionarTodasLinhas = () => {
+    const dadosPagina = dadosOrdenados.slice(indiceInicial, indiceFinal);
+    const todasLinhas = new Set(dadosPagina.map((_, index) => indiceInicial + index));
+    setLinhasSelecionadas(todasLinhas);
+  };
+
+  const deselecionarTodasLinhas = () => {
+    setLinhasSelecionadas(new Set());
+  };
+
+  // Limpar seleção quando os dados mudarem
+  useEffect(() => {
+    setLinhasSelecionadas(new Set());
+  }, [dados]);
+
   // Empresas pré-selecionadas (serão carregadas do banco de dados)
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
   
@@ -600,6 +630,13 @@ const ContasAPagar = () => {
   const indiceFinal = indiceInicial + itensPorPagina;
   const dadosPaginaAtual = dadosOrdenados.slice(indiceInicial, indiceFinal);
 
+  // Calcular total das linhas selecionadas
+  const totalLinhasSelecionadas = linhasSelecionadas.size;
+  const valorTotalSelecionado = Array.from(linhasSelecionadas).reduce((total, index) => {
+    const linha = dadosPaginaAtual[index - indiceInicial];
+    return total + (parseFloat(linha?.item?.vl_duplicata) || 0);
+  }, 0);
+
   // Funções para navegação
   const irParaPagina = (pagina) => {
     setPaginaAtual(pagina);
@@ -1042,6 +1079,20 @@ const ContasAPagar = () => {
                     >
                     <thead className="bg-[#000638] text-white text-xs uppercase tracking-wider">
                       <tr>
+                        <th className="px-2 py-1 text-center text-[10px]">
+                          <input
+                            type="checkbox"
+                            checked={totalLinhasSelecionadas === dadosPaginaAtual.length && dadosPaginaAtual.length > 0}
+                            onChange={() => {
+                              if (totalLinhasSelecionadas === dadosPaginaAtual.length) {
+                                deselecionarTodasLinhas();
+                              } else {
+                                selecionarTodasLinhas();
+                              }
+                            }}
+                            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                        </th>
                         <th 
                           className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                           onClick={() => handleSort('cd_empresa')}
@@ -1231,9 +1282,23 @@ const ContasAPagar = () => {
                       {dadosPaginaAtual.map((grupo, index) => (
                         <tr
                           key={index}
-                          className="odd:bg-white even:bg-gray-50 hover:bg-gray-100 text-[10px] border-b transition-colors cursor-pointer"
+                          className={`text-[10px] border-b transition-colors cursor-pointer ${
+                            linhasSelecionadas.has(indiceInicial + index)
+                              ? 'bg-blue-100 hover:bg-blue-200'
+                              : index % 2 === 0
+                              ? 'bg-white hover:bg-gray-100'
+                              : 'bg-gray-50 hover:bg-gray-100'
+                          }`}
                           onClick={() => abrirModalObservacoes(grupo)}
                         >
+                          <td className="px-2 py-1 text-center" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={linhasSelecionadas.has(indiceInicial + index)}
+                              onChange={() => toggleLinhaSelecionada(indiceInicial + index)}
+                              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                          </td>
                           <td className="px-0.5 py-0.5 text-center">
                             {grupo.item.cd_empresa || 'N/A'}
                           </td>
@@ -1390,6 +1455,41 @@ const ContasAPagar = () => {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Resumo das Linhas Selecionadas */}
+                {totalLinhasSelecionadas > 0 && (
+                  <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="text-sm font-medium text-blue-800">
+                            {totalLinhasSelecionadas} linha{totalLinhasSelecionadas > 1 ? 's' : ''} selecionada{totalLinhasSelecionadas > 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                          </svg>
+                          <span className="text-sm font-medium text-green-800">
+                            Total: {valorTotalSelecionado.toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL',
+                            })}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={deselecionarTodasLinhas}
+                        className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        Limpar seleção
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Paginação */}
                 {totalPaginas > 1 && (
