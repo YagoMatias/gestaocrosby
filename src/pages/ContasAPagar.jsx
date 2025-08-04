@@ -29,51 +29,8 @@ const ContasAPagar = () => {
   const [situacao, setSituacao] = useState('NORMAIS');
   const [fornecedor, setFornecedor] = useState('');
   const [duplicata, setDuplicata] = useState('');
-  // Empresas pré-selecionadas com todas as empresas fixas
-  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([
-    { cd_empresa: '1' },
-    { cd_empresa: '2' },
-    { cd_empresa: '6' },
-    { cd_empresa: '90' },
-    { cd_empresa: '91' },
-    { cd_empresa: '96' },
-    { cd_empresa: '97' },
-    { cd_empresa: '94' },
-    { cd_empresa: '93' },
-    { cd_empresa: '99' },
-    { cd_empresa: '11' },
-    { cd_empresa: '31' },
-    { cd_empresa: '7' },
-    { cd_empresa: '95' },
-    { cd_empresa: '65' },
-    { cd_empresa: '75' },
-    { cd_empresa: '85' },
-    { cd_empresa: '92' },
-    { cd_empresa: '98' },
-    { cd_empresa: '5' },
-    { cd_empresa: '55' },
-    { cd_empresa: '100' },
-    { cd_empresa: '200' },
-    { cd_empresa: '600' },
-    { cd_empresa: '990' },
-    { cd_empresa: '910' },
-    { cd_empresa: '960' },
-    { cd_empresa: '970' },
-    { cd_empresa: '940' },
-    { cd_empresa: '930' },
-    { cd_empresa: '990' },
-    { cd_empresa: '111' },
-    { cd_empresa: '310' },
-    { cd_empresa: '700' },
-    { cd_empresa: '950' },
-    { cd_empresa: '650' },
-    { cd_empresa: '750' },
-    { cd_empresa: '850' },
-    { cd_empresa: '920' },
-    { cd_empresa: '980' },
-    { cd_empresa: '500' },
-    { cd_empresa: '550' }
-  ]);
+  // Empresas pré-selecionadas (serão carregadas do banco de dados)
+  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
   
   // Estados para o modal de observações
   const [modalAberto, setModalAberto] = useState(false);
@@ -646,7 +603,7 @@ const ContasAPagar = () => {
 
   // Função para lidar com seleção de empresas
   const handleSelectEmpresas = (empresas) => {
-    setEmpresasSelecionadas(empresas);
+    setEmpresasSelecionadas([...empresas]); // Garantir que é um novo array
   };
 
   return (
