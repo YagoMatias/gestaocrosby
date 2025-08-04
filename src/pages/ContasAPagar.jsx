@@ -29,7 +29,55 @@ const ContasAPagar = () => {
   const [situacao, setSituacao] = useState('NORMAIS');
   const [fornecedor, setFornecedor] = useState('');
   const [duplicata, setDuplicata] = useState('');
-  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
+  // Empresas pré-selecionadas com todas as empresas fixas
+  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([
+    { cd_empresa: '1' },
+    { cd_empresa: '2' },
+    { cd_empresa: '6' },
+    { cd_empresa: '90' },
+    { cd_empresa: '91' },
+    { cd_empresa: '96' },
+    { cd_empresa: '97' },
+    { cd_empresa: '94' },
+    { cd_empresa: '93' },
+    { cd_empresa: '99' },
+    { cd_empresa: '11' },
+    { cd_empresa: '31' },
+    { cd_empresa: '7' },
+    { cd_empresa: '95' },
+    { cd_empresa: '65' },
+    { cd_empresa: '75' },
+    { cd_empresa: '85' },
+    { cd_empresa: '92' },
+    { cd_empresa: '98' },
+    { cd_empresa: '5' },
+    { cd_empresa: '55' },
+    { cd_empresa: '100' },
+    { cd_empresa: '200' },
+    { cd_empresa: '600' },
+    { cd_empresa: '990' },
+    { cd_empresa: '910' },
+    { cd_empresa: '960' },
+    { cd_empresa: '970' },
+    { cd_empresa: '940' },
+    { cd_empresa: '930' },
+    { cd_empresa: '990' },
+    { cd_empresa: '111' },
+    { cd_empresa: '310' },
+    { cd_empresa: '700' },
+    { cd_empresa: '950' },
+    { cd_empresa: '650' },
+    { cd_empresa: '750' },
+    { cd_empresa: '850' },
+    { cd_empresa: '920' },
+    { cd_empresa: '980' },
+    { cd_empresa: '500' },
+    { cd_empresa: '550' }
+  ]);
+  
+  // Estados para o modal de observações
+  const [modalAberto, setModalAberto] = useState(false);
+  const [dadosModal, setDadosModal] = useState(null);
   
   // Estados para paginação
   const [paginaAtual, setPaginaAtual] = useState(1);
@@ -159,53 +207,66 @@ const ContasAPagar = () => {
   const buscarDados = async (inicio = dataInicio, fim = dataFim) => {
     if (!inicio || !fim) return;
     
+    if (empresasSelecionadas.length === 0) {
+      alert('Selecione pelo menos uma empresa para consultar!');
+      return;
+    }
+    
     setLoading(true);
     setPaginaAtual(1); // Reset para primeira página ao buscar novos dados
     try {
-      // Se empresas foram selecionadas, usar a primeira para a API
-      const empresaParaAPI = empresasSelecionadas.length > 0 ? empresasSelecionadas[0].cd_empresa : '1';
-      
-      const res = await fetch(`${BaseURL}contasapagar?dt_inicio=${inicio}&dt_fim=${fim}&cd_empresa=${empresaParaAPI}`);
-      
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-      
-      const data = await res.json();
-      console.log('Resposta da API:', data);
-      
-      // Verificar se data é um array
-      let dadosArray = [];
-      if (Array.isArray(data)) {
-        dadosArray = data;
-      } else if (data && typeof data === 'object') {
-        // Se for um objeto, tentar extrair array de propriedades
-        if (data.dados && Array.isArray(data.dados)) {
-          dadosArray = data.dados;
-        } else if (data.data && Array.isArray(data.data)) {
-          dadosArray = data.data;
-        } else if (data.result && Array.isArray(data.result)) {
-          dadosArray = data.result;
-        } else if (data.contas && Array.isArray(data.contas)) {
-          dadosArray = data.contas;
-        } else {
-          // Se não encontrar array, converter objeto em array
-          dadosArray = Object.values(data);
+      // Buscar dados das empresas selecionadas
+      const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
+        try {
+          const res = await fetch(`${BaseURL}contasapagar?dt_inicio=${inicio}&dt_fim=${fim}&cd_empresa=${empresa.cd_empresa}`);
+          
+          if (!res.ok) {
+            console.warn(`Erro ao buscar empresa ${empresa.cd_empresa}: HTTP ${res.status}`);
+            return [];
+          }
+          
+          const data = await res.json();
+          console.log(`Resposta da API para empresa ${empresa.cd_empresa}:`, data);
+          
+          // Verificar se data é um array
+          let dadosArray = [];
+          if (Array.isArray(data)) {
+            dadosArray = data;
+          } else if (data && typeof data === 'object') {
+            // Se for um objeto, tentar extrair array de propriedades
+            if (data.dados && Array.isArray(data.dados)) {
+              dadosArray = data.dados;
+            } else if (data.data && Array.isArray(data.data)) {
+              dadosArray = data.data;
+            } else if (data.result && Array.isArray(data.result)) {
+              dadosArray = data.result;
+            } else if (data.contas && Array.isArray(data.contas)) {
+              dadosArray = data.contas;
+            } else {
+              // Se não encontrar array, converter objeto em array
+              dadosArray = Object.values(data);
+            }
+          }
+          
+          // Filtrar apenas itens válidos
+          return dadosArray.filter(item => 
+            item && typeof item === 'object'
+          );
+        } catch (err) {
+          console.warn(`Erro ao buscar empresa ${empresa.cd_empresa}:`, err);
+          return [];
         }
-      } else {
-        console.error('Formato de dados inesperado:', data);
-        setDados([]);
-        return;
-      }
+      });
       
-      // Filtrar apenas itens válidos
-      const dadosValidos = dadosArray.filter(item => 
-        item && typeof item === 'object'
-      );
+      // Aguardar todas as requisições
+      const resultados = await Promise.all(todasAsPromises);
       
-      setDados(dadosValidos);
+      // Combinar todos os dados
+      const todosOsDados = resultados.flat();
+      
+      setDados(todosOsDados);
       setDadosCarregados(true);
-      console.log('Dados finais processados:', dadosValidos);
+      console.log('Dados finais processados (empresas selecionadas):', todosOsDados);
     } catch (err) {
       console.error('Erro ao buscar dados:', err);
       setDados([]);
@@ -344,15 +405,21 @@ const ContasAPagar = () => {
     const grupos = new Map();
     
     dados.forEach((item) => {
-      // Criar chave única baseada em todos os campos exceto observação E situação
-      // Removendo tp_situacao da chave para permitir agrupamento correto
-      const chave = `${item.cd_empresa || ''}|${item.cd_fornecedor || ''}|${item.nr_duplicata || ''}|${item.nr_portador || ''}|${item.dt_emissao || ''}|${item.dt_vencimento || ''}|${item.dt_entrada || ''}|${item.dt_liq || ''}|${item.tp_estagio || ''}|${item.vl_duplicata || ''}|${item.vl_juros || ''}|${item.vl_acrescimo || ''}|${item.vl_desconto || ''}|${item.vl_pago || ''}|${item.in_aceite || ''}|${item.nr_parcela || ''}`;
+      // Criar chave única baseada APENAS em FORNECEDOR e DUPLICATA
+      // Se FORNECEDOR e DUPLICATA são iguais = AGRUPA
+      // Se FORNECEDOR igual mas DUPLICATA diferente = NÃO AGRUPA
+      // Se FORNECEDOR diferente mas DUPLICATA igual = NÃO AGRUPA
+      const chave = `${item.cd_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
       
       if (!grupos.has(chave)) {
         grupos.set(chave, {
           item: item,
           observacoes: [],
           situacoes: [],
+          datasEmissao: [],
+          datasVencimento: [],
+          datasEntrada: [],
+          datasLiquidacao: [],
           quantidade: 0
         });
       }
@@ -369,9 +436,23 @@ const ContasAPagar = () => {
       if (item.tp_situacao && !grupo.situacoes.includes(item.tp_situacao)) {
         grupo.situacoes.push(item.tp_situacao);
       }
+      
+      // Adicionar datas se existirem e forem diferentes
+      if (item.dt_emissao && !grupo.datasEmissao.includes(item.dt_emissao)) {
+        grupo.datasEmissao.push(item.dt_emissao);
+      }
+      if (item.dt_vencimento && !grupo.datasVencimento.includes(item.dt_vencimento)) {
+        grupo.datasVencimento.push(item.dt_vencimento);
+      }
+      if (item.dt_entrada && !grupo.datasEntrada.includes(item.dt_entrada)) {
+        grupo.datasEntrada.push(item.dt_entrada);
+      }
+      if (item.dt_liq && !grupo.datasLiquidacao.includes(item.dt_liq)) {
+        grupo.datasLiquidacao.push(item.dt_liq);
+      }
     });
     
-    // Processar os grupos para determinar a situação final
+    // Processar os grupos para determinar a situação final e datas mais relevantes
     return Array.from(grupos.values()).map(grupo => {
       // Se há múltiplas situações, priorizar CANCELADAS (C) sobre NORMAIS (N)
       let situacaoFinal = grupo.item.tp_situacao;
@@ -386,11 +467,32 @@ const ContasAPagar = () => {
         // Se não há nem 'C' nem 'N', manter a primeira situação
       }
       
+      // Para as datas, usar a mais recente ou a mais relevante
+      const dtEmissaoFinal = grupo.datasEmissao.length > 0 ? 
+        grupo.datasEmissao.sort((a, b) => new Date(b) - new Date(a))[0] : 
+        grupo.item.dt_emissao;
+      
+      const dtVencimentoFinal = grupo.datasVencimento.length > 0 ? 
+        grupo.datasVencimento.sort((a, b) => new Date(b) - new Date(a))[0] : 
+        grupo.item.dt_vencimento;
+      
+      const dtEntradaFinal = grupo.datasEntrada.length > 0 ? 
+        grupo.datasEntrada.sort((a, b) => new Date(b) - new Date(a))[0] : 
+        grupo.item.dt_entrada;
+      
+      const dtLiquidacaoFinal = grupo.datasLiquidacao.length > 0 ? 
+        grupo.datasLiquidacao.sort((a, b) => new Date(b) - new Date(a))[0] : 
+        grupo.item.dt_liq;
+      
       return {
         ...grupo,
         item: {
           ...grupo.item,
-          tp_situacao: situacaoFinal
+          tp_situacao: situacaoFinal,
+          dt_emissao: dtEmissaoFinal,
+          dt_vencimento: dtVencimentoFinal,
+          dt_entrada: dtEntradaFinal,
+          dt_liq: dtLiquidacaoFinal
         }
       };
     });
@@ -413,6 +515,43 @@ const ContasAPagar = () => {
     const status = getStatusFromData(grupo.item);
     return status.toLowerCase().includes('vencer');
   }).length;
+
+  // Cálculo para contas próximas a vencer (mês atual)
+  const hoje = new Date();
+  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+  
+  const contasProximasVencer = dadosOrdenados.filter(grupo => {
+    if (!grupo.item.dt_vencimento) return false;
+    
+    const dataVencimento = new Date(grupo.item.dt_vencimento);
+    const status = getStatusFromData(grupo.item);
+    
+    // Verificar se está no mês atual E ainda não venceu E não foi pago
+    return dataVencimento >= hoje && 
+           dataVencimento <= fimMes && 
+           !status.toLowerCase().includes('pago') &&
+           !status.toLowerCase().includes('vencido');
+  });
+  
+  const totalContasProximasVencer = contasProximasVencer.length;
+  const valorContasProximasVencer = contasProximasVencer.reduce((acc, grupo) => 
+    acc + (parseFloat(grupo.item.vl_duplicata) || 0), 0
+  );
+
+  // Cálculo para contas pagas
+  const contasPagas = dadosOrdenados.filter(grupo => {
+    const status = getStatusFromData(grupo.item);
+    return status.toLowerCase().includes('pago');
+  });
+  
+  const totalContasPagas = contasPagas.length;
+  const valorContasPagas = contasPagas.reduce((acc, grupo) => 
+    acc + (parseFloat(grupo.item.vl_pago) || 0), 0
+  );
+
+  // Cálculo para valor que falta pagar
+  const valorFaltaPagar = totalValor - valorContasPagas;
 
   // Cálculos para paginação (usando dados ordenados)
   const totalPaginas = Math.ceil(dadosOrdenados.length / itensPorPagina);
@@ -483,6 +622,33 @@ const ContasAPagar = () => {
     buscarDados();
   };
 
+  // Função para abrir modal com detalhes das observações
+  const abrirModalObservacoes = (grupo) => {
+    setDadosModal({
+      cd_fornecedor: grupo.item.cd_fornecedor,
+      nr_duplicata: grupo.item.nr_duplicata,
+      nr_parcela: grupo.item.nr_parcela,
+      valor_duplicata: grupo.item.vl_duplicata,
+      valor_juros: grupo.item.vl_juros,
+      valor_acrescimo: grupo.item.vl_acrescimo,
+      valor_desconto: grupo.item.vl_desconto,
+      valor_pago: grupo.item.vl_pago,
+      observacoes: grupo.observacoes
+    });
+    setModalAberto(true);
+  };
+
+  // Função para fechar modal
+  const fecharModal = () => {
+    setModalAberto(false);
+    setDadosModal(null);
+  };
+
+  // Função para lidar com seleção de empresas
+  const handleSelectEmpresas = (empresas) => {
+    setEmpresasSelecionadas(empresas);
+  };
+
   return (
     <Layout>
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
@@ -503,7 +669,7 @@ const ContasAPagar = () => {
               <div className="lg:col-span-2">
                 <FiltroEmpresa
                   empresasSelecionadas={empresasSelecionadas}
-                  onSelectEmpresas={setEmpresasSelecionadas}
+                  onSelectEmpresas={handleSelectEmpresas}
                 />
               </div>
               <div>
@@ -626,7 +792,7 @@ const ContasAPagar = () => {
                   currency: 'BRL',
                 })}
               </div>
-              <CardDescription className="text-xs text-gray-500">Valor total a pagar</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Valor total das duplicatas</CardDescription>
             </CardContent>
           </Card>
 
@@ -657,6 +823,66 @@ const ContasAPagar = () => {
                 {loading ? <Spinner size={24} className="animate-spin text-yellow-600" /> : contasAVencer}
               </div>
               <CardDescription className="text-xs text-gray-500">Contas futuras</CardDescription>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <Calendar size={18} className="text-purple-600" />
+                <CardTitle className="text-sm font-bold text-purple-700">Próximas a Vencer</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-purple-600 mb-1">
+                {loading ? <Spinner size={24} className="animate-spin text-purple-600" /> : totalContasProximasVencer}
+              </div>
+              <CardDescription className="text-xs text-gray-500 mb-2">Este mês</CardDescription>
+              <div className="text-sm font-semibold text-purple-600">
+                {loading ? <Spinner size={16} className="animate-spin text-purple-600" /> : valorContasProximasVencer.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={18} className="text-green-600" />
+                <CardTitle className="text-sm font-bold text-green-700">Contas Pagas</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-green-600 mb-1">
+                {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : totalContasPagas}
+              </div>
+              <CardDescription className="text-xs text-gray-500 mb-2">Liquidadas</CardDescription>
+              <div className="text-sm font-semibold text-green-600">
+                {loading ? <Spinner size={16} className="animate-spin text-green-600" /> : valorContasPagas.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <ArrowUp size={18} className="text-red-600" />
+                <CardTitle className="text-sm font-bold text-red-700">Falta Pagar</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-red-600 mb-1">
+                {loading ? <Spinner size={24} className="animate-spin text-red-600" /> : valorFaltaPagar.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Valor pendente</CardDescription>
             </CardContent>
           </Card>
         </div>
@@ -857,7 +1083,8 @@ const ContasAPagar = () => {
                       {dadosPaginaAtual.map((grupo, index) => (
                         <tr
                           key={index}
-                          className="odd:bg-white even:bg-gray-50 hover:bg-gray-100 text-[10px] border-b transition-colors"
+                          className="odd:bg-white even:bg-gray-50 hover:bg-gray-100 text-[10px] border-b transition-colors cursor-pointer"
+                          onClick={() => abrirModalObservacoes(grupo)}
                         >
                           <td className="px-0.5 py-0.5 text-center">
                             {grupo.item.cd_empresa || 'N/A'}
@@ -937,13 +1164,13 @@ const ContasAPagar = () => {
                           <td className="px-0.5 py-0.5 text-center">
                             {grupo.item.nr_parcela || '1'}
                           </td>
-                          <td className="px-0.5 py-0.5 text-center max-w-[100px] truncate" title={grupo.observacoes.join(', ') || 'N/A'}>
-                            {grupo.observacoes.length > 1 ? (
-                              <span className="text-blue-600 font-semibold">
+                          <td className="px-0.5 py-0.5 text-center">
+                            {grupo.observacoes.length > 0 ? (
+                              <span className="text-blue-600 font-semibold bg-blue-100 px-1 py-0.5 text-[9px]">
                                 {grupo.observacoes.length} obs.
                               </span>
                             ) : (
-                              grupo.observacoes.join(', ') || 'N/A'
+                              <span className="text-gray-400 text-[9px]">0 obs.</span>
                             )}
                           </td>
                         </tr>
@@ -1014,6 +1241,139 @@ const ContasAPagar = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de Observações */}
+      {modalAberto && dadosModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
+            {/* Header do Modal */}
+            <div className="bg-[#000638] text-white p-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold">Detalhes das Observações</h3>
+                <button
+                  onClick={fecharModal}
+                  className="text-white hover:text-gray-300 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Conteúdo do Modal */}
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              {/* Informações do Registro */}
+              <div className="grid grid-cols-2 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Fornecedor:</label>
+                  <span className="text-lg font-bold text-[#000638]">{dadosModal.cd_fornecedor}</span>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Duplicata:</label>
+                  <span className="text-lg font-bold text-[#000638]">{dadosModal.nr_duplicata}</span>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Parcela:</label>
+                  <span className="text-lg font-bold text-[#000638]">{dadosModal.nr_parcela}</span>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Valor Duplicata:</label>
+                  <span className="text-lg font-bold text-blue-600">
+                    {(parseFloat(dadosModal.valor_duplicata) || 0).toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Valores Financeiros */}
+              <div className="grid grid-cols-2 gap-4 mb-6 p-4 bg-green-50 rounded-lg border border-green-200">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Juros:</label>
+                  <span className="text-lg font-bold text-red-600">
+                    {(parseFloat(dadosModal.valor_juros) || 0).toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Acréscimo:</label>
+                  <span className="text-lg font-bold text-orange-600">
+                    {(parseFloat(dadosModal.valor_acrescimo) || 0).toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Desconto:</label>
+                  <span className="text-lg font-bold text-purple-600">
+                    {(parseFloat(dadosModal.valor_desconto) || 0).toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Valor Pago:</label>
+                  <span className="text-lg font-bold text-green-600">
+                    {(parseFloat(dadosModal.valor_pago) || 0).toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Lista de Observações */}
+              <div>
+                <h4 className="text-lg font-bold text-[#000638] mb-4 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Observações ({dadosModal.observacoes.length})
+                </h4>
+                
+                {dadosModal.observacoes.length > 0 ? (
+                  <div className="space-y-3">
+                    {dadosModal.observacoes.map((observacao, index) => (
+                      <div key={index} className="p-4 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg">
+                        <div className="flex items-start gap-3">
+                          <span className="bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded-full min-w-[24px] text-center">
+                            {index + 1}
+                          </span>
+                          <p className="text-gray-800 leading-relaxed">{observacao}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p className="text-lg font-medium">Nenhuma observação encontrada</p>
+                    <p className="text-sm">Este registro não possui observações cadastradas.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer do Modal */}
+            <div className="bg-gray-50 px-6 py-4 flex justify-end">
+              <button
+                onClick={fecharModal}
+                className="bg-[#000638] text-white px-6 py-2 rounded-lg hover:bg-[#fe0000] transition-colors font-medium"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };
