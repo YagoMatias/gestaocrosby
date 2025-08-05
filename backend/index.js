@@ -436,11 +436,11 @@ app.get('/consultafatura', async (req, res) => {
     
     // Filtro por data
     if (dt_inicio && dt_fim) {
-      whereConditions.push(`vff.dt_emissao between $${paramIndex++} and $${paramIndex++}`);
+      whereConditions.push(`vff.dt_vencimento between $${paramIndex++} and $${paramIndex++}`);
       params.push(dt_inicio, dt_fim);
     } else {
       // Data padrão se não fornecida
-      whereConditions.push(`vff.dt_emissao between $${paramIndex++} and $${paramIndex++}`);
+      whereConditions.push(`vff.dt_vencimento between $${paramIndex++} and $${paramIndex++}`);
       params.push('2025-05-01', '2025-05-12');
     }
     
@@ -625,11 +625,11 @@ app.get('/franquiascredev', async (req, res) => {
     let idx = 1;
 
     if (dt_inicio && dt_fim) {
-      where.push(`f.dt_emissao between $${idx++} and $${idx++}`);
+      where.push(`f.dt_vencimento between $${idx++} and $${idx++}`);
       params.push(dt_inicio, dt_fim);
     } else {
       // Intervalo padrão se não informado
-      where.push(`f.dt_emissao between '2025-06-10' and '2025-06-10'`);
+      where.push(`f.dt_vencimento between '2025-06-10' and '2025-06-10'`);
     }
 
     where.push(`p.nm_fantasia like 'F%CROSBY%'`);
@@ -1002,7 +1002,7 @@ app.get('/contasapagar', async (req, res) => {
       left join vpf_fornecedor vpf on
         fd.cd_fornecedor = vpf.cd_fornecedor
       where
-        fd.dt_emissao between $1 and $2
+        fd.dt_vencimento between $1 and $2
         and fd.cd_empresa = $3
                       group by
                   fd.cd_empresa,
@@ -1024,7 +1024,7 @@ app.get('/contasapagar', async (req, res) => {
                   fd.in_aceite,
                   od.ds_observacao,
                   fd.cd_ccusto
-      order by fd.dt_emissao desc
+      order by fd.dt_vencimento desc
       limit $4 offset $5
     `;
 
@@ -1036,7 +1036,7 @@ app.get('/contasapagar', async (req, res) => {
       left join obs_dupi od on
         fd.nr_duplicata = od.nr_duplicata
       where
-        fd.dt_emissao between $1 and $2
+        fd.dt_vencimento between $1 and $2
         and fd.cd_empresa = $3
     `;
 
@@ -1122,9 +1122,9 @@ app.get('/contasareceber', async (req, res) => {
       from
         vr_fcr_faturai vff
       where
-        vff.dt_emissao between $1 and $2
+        vff.dt_vencimento between $1 and $2
         and vff.cd_empresa = $3
-      order by vff.dt_emissao desc
+      order by vff.dt_vencimento desc
       limit $4 offset $5
     `;
 
@@ -1134,7 +1134,7 @@ app.get('/contasareceber', async (req, res) => {
       from
         vr_fcr_faturai vff
       where
-        vff.dt_emissao between $1 and $2
+        vff.dt_vencimento between $1 and $2
         and vff.cd_empresa = $3
     `;
 

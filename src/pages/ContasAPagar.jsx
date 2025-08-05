@@ -32,6 +32,21 @@ const ContasAPagar = () => {
   useEffect(() => {
     const styleElement = document.createElement('style');
     styleElement.textContent = `
+      .table-container {
+        overflow-x: auto;
+        position: relative;
+        max-width: 100%;
+      }
+      
+      .table-container table {
+        position: relative;
+      }
+      
+      .contas-table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      
       .contas-table th,
       .contas-table td {
         padding: 6px 8px !important;
@@ -41,8 +56,6 @@ const ContasAPagar = () => {
         font-size: 11px;
         line-height: 1.3;
       }
-      
-
       
       .contas-table th:last-child,
       .contas-table td:last-child {
@@ -69,6 +82,50 @@ const ContasAPagar = () => {
       .contas-table tbody tr:hover {
         background-color: #f0f9ff;
         transition: background-color 0.2s ease;
+      }
+      
+      /* CSS para coluna fixa */
+      .contas-table thead th:first-child,
+      .contas-table tbody td:first-child {
+        position: sticky !important;
+        left: 0 !important;
+        z-index: 10 !important;
+        border-right: 2px solid #e5e7eb !important;
+        box-shadow: 2px 0 4px rgba(0,0,0,0.1) !important;
+      }
+      
+      .contas-table thead th:first-child {
+        background: #000638 !important;
+        z-index: 20 !important;
+        border-right: 2px solid #374151 !important;
+      }
+      
+      .contas-table tbody tr:nth-child(even) td:first-child {
+        background: #fafafa !important;
+      }
+      
+      .contas-table tbody tr:nth-child(odd) td:first-child {
+        background: #ffffff !important;
+      }
+      
+      .contas-table tbody tr:hover td:first-child {
+        background: #f0f9ff !important;
+      }
+      
+      .contas-table tbody tr.bg-blue-100 td:first-child {
+        background: #dbeafe !important;
+      }
+      
+      .contas-table tbody tr.bg-blue-100:hover td:first-child {
+        background: #bfdbfe !important;
+      }
+      
+      .contas-table th:first-child input[type="checkbox"] {
+        transform: scale(1.1);
+      }
+      
+      .contas-table td:first-child input[type="checkbox"] {
+        transform: scale(1.1);
       }
     `;
     document.head.appendChild(styleElement);
@@ -114,6 +171,8 @@ const ContasAPagar = () => {
   useEffect(() => {
     setLinhasSelecionadas(new Set());
   }, [dados]);
+
+
 
   // Empresas pré-selecionadas (serão carregadas do banco de dados)
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
@@ -733,23 +792,26 @@ const ContasAPagar = () => {
 
     // Preparar dados para exportação
     const dadosParaExportar = dados.map(item => ({
-      'Empresa': item.cd_empresa,
+      'Vencimento': item.dt_vencimento,
+      'Valor Duplicata': item.vl_duplicata,
       'Fornecedor': item.nm_fornecedor || item.cd_fornecedor,
+      'Despesa': item.ds_despesaitem || 'N/A',
+      'Centro de Custo': item.cd_ccusto || 'N/A',
+      'Empresa': item.cd_empresa,
       'Duplicata': item.nr_duplicata,
       'Parcela': item.nr_parcela,
       'Portador': item.nr_portador,
       'Emissão': item.dt_emissao,
-      'Vencimento': item.dt_vencimento,
       'Entrada': item.dt_entrada,
       'Liquidação': item.dt_liq,
-      'Valor Duplicata': item.vl_duplicata,
+      'Situação': item.tp_situacao,
+      'Estágio': item.tp_estagio,
       'Juros': item.vl_juros,
       'Acréscimo': item.vl_acrescimo,
       'Desconto': item.vl_desconto,
       'Valor Pago': item.vl_pago,
-      'Status': getStatusFromData(item),
-      'Observações': item.observacoes ? item.observacoes.join(', ') : '',
-      'Centro de Custo': item.cd_ccusto || 'N/A'
+      'Aceite': item.in_aceite,
+      'Observações': item.observacoes ? item.observacoes.join(', ') : ''
     }));
 
     // Converter para CSV
@@ -1073,13 +1135,14 @@ const ContasAPagar = () => {
               </div>
             ) : (
               <>
-                  <div className="overflow-x-auto max-w-8xl mx-auto">
+                  <div className="table-container max-w-8xl mx-auto">
                     <table 
                       className="border-collapse rounded-lg overflow-hidden shadow-lg contas-table"
+                      style={{ minWidth: '1800px' }}
                     >
                     <thead className="bg-[#000638] text-white text-xs uppercase tracking-wider">
                       <tr>
-                        <th className="px-2 py-1 text-center text-[10px]">
+                        <th className="px-2 py-1 text-center text-[10px]" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 20, backgroundColor: '#000638' }}>
                           <input
                             type="checkbox"
                             checked={totalLinhasSelecionadas === dadosPaginaAtual.length && dadosPaginaAtual.length > 0}
@@ -1095,11 +1158,20 @@ const ContasAPagar = () => {
                         </th>
                         <th 
                           className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort('cd_empresa')}
+                          onClick={() => handleSort('dt_vencimento')}
                         >
                           <div className="flex items-center justify-center">
-                            Empresa
-                            {getSortIcon('cd_empresa')}
+                            Vencimento
+                            {getSortIcon('dt_vencimento')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('vl_duplicata')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Valor
+                            {getSortIcon('vl_duplicata')}
                           </div>
                         </th>
                         <th 
@@ -1122,15 +1194,6 @@ const ContasAPagar = () => {
                         </th>
                         <th 
                           className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort('nr_duplicata')}
-                        >
-                          <div className="flex items-center justify-center">
-                            Duplicata
-                            {getSortIcon('nr_duplicata')}
-                          </div>
-                        </th>
-                        <th 
-                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                           onClick={() => handleSort('ds_despesaitem')}
                         >
                           <div className="flex items-center justify-center">
@@ -1149,6 +1212,24 @@ const ContasAPagar = () => {
                         </th>
                         <th 
                           className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('cd_empresa')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Empresa
+                            {getSortIcon('cd_empresa')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort('nr_duplicata')}
+                        >
+                          <div className="flex items-center justify-center">
+                            Duplicata
+                            {getSortIcon('nr_duplicata')}
+                          </div>
+                        </th>
+                        <th 
+                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                           onClick={() => handleSort('nr_portador')}
                         >
                           <div className="flex items-center justify-center">
@@ -1163,15 +1244,6 @@ const ContasAPagar = () => {
                           <div className="flex items-center justify-center">
                             Emissão
                             {getSortIcon('dt_emissao')}
-                          </div>
-                        </th>
-                        <th 
-                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort('dt_vencimento')}
-                        >
-                          <div className="flex items-center justify-center">
-                            Vencimento
-                            {getSortIcon('dt_vencimento')}
                           </div>
                         </th>
                         <th 
@@ -1208,15 +1280,6 @@ const ContasAPagar = () => {
                           <div className="flex items-center justify-center">
                             Estágio
                             {getSortIcon('tp_estagio')}
-                          </div>
-                        </th>
-                        <th 
-                          className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort('vl_duplicata')}
-                        >
-                          <div className="flex items-center justify-center">
-                            Valor
-                            {getSortIcon('vl_duplicata')}
                           </div>
                         </th>
                         <th 
@@ -1291,7 +1354,7 @@ const ContasAPagar = () => {
                           }`}
                           onClick={() => abrirModalObservacoes(grupo)}
                         >
-                          <td className="px-2 py-1 text-center" onClick={(e) => e.stopPropagation()}>
+                          <td className="px-2 py-1 text-center" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10 }} onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
                               checked={linhasSelecionadas.has(indiceInicial + index)}
@@ -1300,7 +1363,16 @@ const ContasAPagar = () => {
                             />
                           </td>
                           <td className="px-0.5 py-0.5 text-center">
-                            {grupo.item.cd_empresa || 'N/A'}
+                            {grupo.item.dt_vencimento ? 
+                              new Date(grupo.item.dt_vencimento).toLocaleDateString('pt-BR') 
+                              : 'N/A'
+                            }
+                          </td>
+                          <td className="px-0.5 py-0.5 text-center font-semibold text-green-600">
+                            {(parseFloat(grupo.item.vl_duplicata) || 0).toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL',
+                            })}
                           </td>
                           <td className="px-0.5 py-0.5 text-center">
                             {grupo.item.cd_fornecedor || 'N/A'}
@@ -1309,9 +1381,6 @@ const ContasAPagar = () => {
                             <span className="block whitespace-normal">
                               {grupo.item.nm_fornecedor || 'N/A'}
                             </span>
-                          </td>
-                          <td className="px-0.5 py-0.5 text-center">
-                            {grupo.item.nr_duplicata || 'N/A'}
                           </td>
                           <td className="px-0.5 py-0.5 text-center">
                             {(() => {
@@ -1366,17 +1435,17 @@ const ContasAPagar = () => {
                             })()}
                           </td>
                           <td className="px-0.5 py-0.5 text-center">
+                            {grupo.item.cd_empresa || 'N/A'}
+                          </td>
+                          <td className="px-0.5 py-0.5 text-center">
+                            {grupo.item.nr_duplicata || 'N/A'}
+                          </td>
+                          <td className="px-0.5 py-0.5 text-center">
                             {grupo.item.nr_portador || 'N/A'}
                           </td>
                           <td className="px-0.5 py-0.5 text-center">
                             {grupo.item.dt_emissao ? 
                               new Date(grupo.item.dt_emissao).toLocaleDateString('pt-BR') 
-                              : 'N/A'
-                            }
-                          </td>
-                          <td className="px-0.5 py-0.5 text-center">
-                            {grupo.item.dt_vencimento ? 
-                              new Date(grupo.item.dt_vencimento).toLocaleDateString('pt-BR') 
                               : 'N/A'
                             }
                           </td>
@@ -1397,12 +1466,6 @@ const ContasAPagar = () => {
                           </td>
                           <td className="px-0.5 py-0.5 text-center">
                             {grupo.item.tp_estagio || 'N/A'}
-                          </td>
-                          <td className="px-0.5 py-0.5 text-center font-semibold text-green-600">
-                            {(parseFloat(grupo.item.vl_duplicata) || 0).toLocaleString('pt-BR', {
-                              style: 'currency',
-                              currency: 'BRL',
-                            })}
                           </td>
                           <td className="px-0.5 py-0.5 text-center">
                             {(parseFloat(grupo.item.vl_juros) || 0).toLocaleString('pt-BR', {
@@ -1447,7 +1510,7 @@ const ContasAPagar = () => {
                       ))}
                       {dadosPaginaAtual.length === 0 && !loading && (
                         <tr>
-                          <td colSpan="18" className="text-center py-8 text-gray-500 text-sm">
+                          <td colSpan="22" className="text-center py-8 text-gray-500 text-sm">
                             Nenhuma conta encontrada para os filtros selecionados
                           </td>
                         </tr>
