@@ -47,7 +47,7 @@ const ExtratoFinanceiro = () => {
   const [expandTabela, setExpandTabela] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({ title: '', description: '', calculation: '' });
-  
+
   // Estados para ordenação
   const [ordenacao, setOrdenacao] = useState({ campo: null, direcao: 'asc' });
   
@@ -418,10 +418,10 @@ const ExtratoFinanceiro = () => {
 
   // Cards TOTVs
   const estatisticasTotvs = useMemo(() => {
-    const qtdDebitosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'D').length;
-    const valorDebitosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'D').reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
-    const qtdCreditosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'C').length;
-    const valorCreditosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'C').reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+  const qtdDebitosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'D').length;
+  const valorDebitosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'D').reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+  const qtdCreditosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'C').length;
+  const valorCreditosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'C').reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
 
     return {
       qtdDebitosTotvs,
@@ -462,8 +462,8 @@ const ExtratoFinanceiro = () => {
         console.error('ExtratoFinanceiro Error:', error, errorInfo); 
       }}
     >
-      <Layout>
-        <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
+    <Layout>
+      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
         <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Extrato Financeiro</h1>
         <div className="mb-4">
           <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
@@ -851,8 +851,8 @@ const ExtratoFinanceiro = () => {
                               {getSortIcon('dt_conciliacao')}
                             </div>
                           </th>
-                        </tr>
-                      </thead>
+                    </tr>
+                  </thead>
                       
                       <tbody>
                         {dadosProcessados.length === 0 ? (
@@ -894,12 +894,12 @@ const ExtratoFinanceiro = () => {
                               
                               {/* Conta */}
                               <td className={`px-2 py-1 text-center text-xs ${(() => {
-                                const conta = contas.find(c => c.numero === String(row.nr_ctapes));
-                                return conta ? corConta(conta.nome) : '';
+                            const conta = contas.find(c => c.numero === String(row.nr_ctapes));
+                            return conta ? corConta(conta.nome) : '';
                               })()}`}>
                                 {(() => {
-                                  const conta = contas.find(c => c.numero === String(row.nr_ctapes));
-                                  return conta ? `${conta.numero} - ${conta.nome}` : row.nr_ctapes;
+                              const conta = contas.find(c => c.numero === String(row.nr_ctapes));
+                              return conta ? `${conta.numero} - ${conta.nome}` : row.nr_ctapes;
                                 })()}
                               </td>
                               
@@ -951,11 +951,11 @@ const ExtratoFinanceiro = () => {
                                   </span>
                                 )}
                               </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
                   </div>
 
                   {/* Resumo das linhas selecionadas */}
@@ -1025,37 +1025,37 @@ const ExtratoFinanceiro = () => {
             </button>
           </div>
         )}
-        </div>
+      </div>
 
-        {/* Modal de Ajuda */}
-        {showModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-gray-800">{modalContent.title}</h3>
-                <button
-                  onClick={closeModal}
-                  className="text-gray-500 hover:text-gray-700 text-xl font-bold"
-                >
-                  ×
-                </button>
-              </div>
-              <div className="mb-4">
-                <p className="text-sm text-gray-600 mb-2">{modalContent.description}</p>
-                <div className="bg-gray-100 p-3 rounded">
-                  <p className="text-xs text-gray-700 font-mono">{modalContent.calculation}</p>
-                </div>
-              </div>
+      {/* Modal de Ajuda */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-800">{modalContent.title}</h3>
               <button
                 onClick={closeModal}
-                className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition-colors text-sm font-medium"
+                className="text-gray-500 hover:text-gray-700 text-xl font-bold"
               >
-                Fechar
+                ×
               </button>
             </div>
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">{modalContent.description}</p>
+              <div className="bg-gray-100 p-3 rounded">
+                <p className="text-xs text-gray-700 font-mono">{modalContent.calculation}</p>
+              </div>
+            </div>
+            <button
+              onClick={closeModal}
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
+              Fechar
+            </button>
           </div>
-        )}
-      </Layout>
+        </div>
+      )}
+    </Layout>
     </ErrorBoundary>
   );
 };

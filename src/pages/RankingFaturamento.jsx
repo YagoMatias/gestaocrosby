@@ -63,7 +63,7 @@ const RankingFaturamento = () => {
           faturamento: parseFloat(item.faturamento || 0)
         }));
         
-        setDados(comRank);
+      setDados(comRank);
       } else {
         throw new Error(result.message || 'Erro ao buscar dados de faturamento');
       }

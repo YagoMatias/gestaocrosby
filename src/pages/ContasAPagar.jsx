@@ -143,6 +143,7 @@ const ContasAPagar = () => {
   const [fornecedor, setFornecedor] = useState('');
   const [despesa, setDespesa] = useState('');
   const [duplicata, setDuplicata] = useState('');
+  const [centroCusto, setCentroCusto] = useState('');
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
   
   // Funções para seleção de linhas
@@ -235,9 +236,9 @@ const ContasAPagar = () => {
           aValue = a.item.ds_despesaitem || '';
           bValue = b.item.ds_despesaitem || '';
           break;
-        case 'cd_ccusto':
-          aValue = a.item.cd_ccusto || '';
-          bValue = b.item.cd_ccusto || '';
+        case 'ds_ccusto':
+          aValue = a.item.ds_ccusto || '';
+          bValue = b.item.ds_ccusto || '';
           break;
         case 'nr_duplicata':
           aValue = a.item.nr_duplicata || '';
@@ -522,6 +523,16 @@ const ContasAPagar = () => {
         return false;
       }
     }
+
+    // Filtro por centro de custo
+    if (centroCusto) {
+      const dsCentroCusto = item.ds_ccusto || '';
+      const buscaCentroCusto = centroCusto.toLowerCase();
+      
+      if (!dsCentroCusto.toLowerCase().includes(buscaCentroCusto)) {
+        return false;
+      }
+    }
     
     return true;
   });
@@ -628,7 +639,7 @@ const ContasAPagar = () => {
   console.log('🔍 Debug ContasAPagar:', {
     dadosOriginais: dados.length,
     dadosFiltrados: dadosFiltrados.length,
-    filtrosAtivos: { status, situacao, fornecedor, despesa, duplicata },
+          filtrosAtivos: { status, situacao, fornecedor, despesa, duplicata, centroCusto },
     amostraDados: dados.slice(0, 2)
   });
 
@@ -809,7 +820,7 @@ const ContasAPagar = () => {
       'Valor Duplicata': item.vl_duplicata,
       'Fornecedor': item.nm_fornecedor || item.cd_fornecedor,
       'Despesa': item.ds_despesaitem || 'N/A',
-      'Centro de Custo': item.cd_ccusto || 'N/A',
+              'Centro de Custo': item.ds_ccusto || 'N/A',
       'Empresa': item.cd_empresa,
       'Duplicata': item.nr_duplicata,
       'Parcela': item.nr_parcela,
@@ -956,6 +967,16 @@ const ContasAPagar = () => {
                   value={duplicata}
                   onChange={(e) => setDuplicata(e.target.value)}
                   placeholder="Buscar duplicata..."
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Centro de Custo</label>
+                <input
+                  type="text"
+                  value={centroCusto}
+                  onChange={(e) => setCentroCusto(e.target.value)}
+                  placeholder="Buscar por nome do centro de custo..."
                   className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
               </div>
@@ -1216,11 +1237,11 @@ const ContasAPagar = () => {
                         </th>
                         <th 
                           className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort('cd_ccusto')}
+                          onClick={() => handleSort('ds_ccusto')}
                         >
                           <div className="flex items-center justify-center">
-                            C_CUSTO
-                            {getSortIcon('cd_ccusto')}
+                            NM CUSTO
+                            {getSortIcon('ds_ccusto')}
                           </div>
                         </th>
                         <th 
@@ -1422,7 +1443,7 @@ const ContasAPagar = () => {
                           </td>
                           <td className="px-0.5 py-0.5 text-center">
                             {(() => {
-                              const centrosCusto = grupo.item.cd_ccusto || '';
+                              const centrosCusto = grupo.item.ds_ccusto || '';
                               if (!centrosCusto || centrosCusto.trim() === '') return 'N/A';
                               
                               // Se tem múltiplos centros de custo (separados por vírgula, ponto e vírgula, quebra de linha, etc.)

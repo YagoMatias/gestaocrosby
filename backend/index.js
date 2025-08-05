@@ -64,7 +64,7 @@ app.use(compression());
 // Logging de requisições
 if (process.env.NODE_ENV === 'production') {
   app.use(morgan('combined'));
-} else {
+      } else {
   app.use(morgan('dev'));
 }
 
@@ -210,7 +210,7 @@ const gracefulShutdown = (signal) => {
       await closePool();
       logger.info('Pool de conexões do banco fechado.');
       process.exit(0);
-    } catch (error) {
+  } catch (error) {
       logger.error('Erro ao fechar pool de conexões:', error);
       process.exit(1);
     }
@@ -233,7 +233,7 @@ const server = app.listen(PORT, async () => {
   const dbConnected = await testConnection();
   if (dbConnected) {
     logger.info('🗄️  Banco de dados conectado com sucesso - SEM TIMEOUTS');
-  } else {
+    } else {
     logger.error('❌ Falha na conexão com banco de dados');
   }
 });
