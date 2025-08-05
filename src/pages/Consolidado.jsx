@@ -150,7 +150,7 @@ const Consolidado = () => {
       // Revenda (apenas empresas fixas)
       const paramsRevenda = new URLSearchParams(paramsBase.toString());
       empresasFixas.forEach(cd => paramsRevenda.append('cd_empresa', cd));
-      const resRevenda = await fetch(`https://apigestaocrosby.onrender.com/faturamentorevenda?${paramsRevenda.toString()}`);
+              const resRevenda = await fetch(`https://apigestaocrosby-bw2v.onrender.com/api/sales/faturamento-revenda?${paramsRevenda.toString()}`);
       if (!resRevenda.ok) throw new Error('Erro ao buscar faturamento de revenda');
       const jsonRevenda = await resRevenda.json();
       const filtradosRevenda = jsonRevenda.filter(row => row.cd_classificacao == 3);
@@ -162,7 +162,7 @@ const Consolidado = () => {
       // Varejo (apenas empresas fixas para Varejo)
       const paramsVarejo = new URLSearchParams(paramsBase.toString());
       empresasVarejoFixas.forEach(cd => paramsVarejo.append('cd_empresa', cd));
-      const resVarejo = await fetch(`https://apigestaocrosby.onrender.com/faturamento?${paramsVarejo.toString()}`);
+              const resVarejo = await fetch(`https://apigestaocrosby-bw2v.onrender.com/api/sales/faturamento?${paramsVarejo.toString()}`);
       if (!resVarejo.ok) throw new Error('Erro ao buscar faturamento de varejo');
       const jsonVarejo = await resVarejo.json();
       const somaSaidasVarejo = jsonVarejo.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
@@ -175,7 +175,7 @@ const Consolidado = () => {
       // Franquia (apenas empresas fixas)
       const paramsFranquia = new URLSearchParams(paramsBase.toString());
       empresasFixas.forEach(cd => paramsFranquia.append('cd_empresa', cd));
-      const resFranquia = await fetch(`https://apigestaocrosby.onrender.com/faturamentofranquia?${paramsFranquia.toString()}`);
+              const resFranquia = await fetch(`https://apigestaocrosby-bw2v.onrender.com/api/sales/faturamento-franquia?${paramsFranquia.toString()}`);
       if (!resFranquia.ok) throw new Error('Erro ao buscar faturamento de franquia');
       const jsonFranquia = await resFranquia.json();
       const somaSaidasFranquia = jsonFranquia.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
@@ -186,7 +186,7 @@ const Consolidado = () => {
       // Multimarcas (apenas empresas fixas)
       const paramsMultimarcas = new URLSearchParams(paramsBase.toString());
       empresasFixas.forEach(cd => paramsMultimarcas.append('cd_empresa', cd));
-      const resMultimarcas = await fetch(`https://apigestaocrosby.onrender.com/faturamentomtm?${paramsMultimarcas.toString()}`);
+              const resMultimarcas = await fetch(`https://apigestaocrosby-bw2v.onrender.com/api/sales/faturamento-mtm?${paramsMultimarcas.toString()}`);
       if (!resMultimarcas.ok) throw new Error('Erro ao buscar faturamento de multimarcas');
       const jsonMultimarcas = await resMultimarcas.json();
       const somaSaidasMultimarcas = jsonMultimarcas.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);

@@ -17,9 +17,9 @@ const FiltroEmpresa = ({ empresasSelecionadas = [], onSelectEmpresas }) => {
        try {
          // Tentar diferentes rotas para buscar empresas
          const rotas = [
-           'https://apigestaocrosby.onrender.com/empresas',
-           'https://apigestaocrosby.onrender.com/autocomplete/nm_grupoempresa?q=',
-           'https://apigestaocrosby.onrender.com/grupoempresa'
+                   'https://apigestaocrosby-bw2v.onrender.com/api/company/empresas',
+        'https://apigestaocrosby-bw2v.onrender.com/api/utils/autocomplete/nm_grupoempresa?q=',
+        'https://apigestaocrosby-bw2v.onrender.com/api/company/grupo-empresas'
          ];
          
          let todasEmpresasAPI = null;

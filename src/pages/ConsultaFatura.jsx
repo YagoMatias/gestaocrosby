@@ -26,7 +26,7 @@ const ConsultaFatura = () => {
       return;
     }
     try {
-      const res = await fetch(`https://apigestaocrosby.onrender.com/autocomplete/nm_fantasia?q=${encodeURIComponent(texto)}`);
+      const res = await fetch(`https://apigestaocrosby-bw2v.onrender.com/api/utils/autocomplete/nm_fantasia?q=${encodeURIComponent(texto)}`);
       if (!res.ok) return;
       const json = await res.json();
       setSugestoes(json);
@@ -48,7 +48,7 @@ const ConsultaFatura = () => {
       if (nmFantasiaSelecionados.length > 0) {
         nmFantasiaSelecionados.forEach(nm => params.append('nm_fantasia', nm));
       }
-      const res = await fetch(`https://apigestaocrosby.onrender.com/consultafatura?${params.toString()}`);
+      const res = await fetch(`https://apigestaocrosby-bw2v.onrender.com/api/franchise/consulta-fatura?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
       const json = await res.json();
       setDados(json);

@@ -41,14 +41,14 @@ const RankingVendedores = () => {
   const [loading, setLoading] = useState(true);
   const [tipoLoja, setTipoLoja] = useState('Todos');
 
-  const BaseURL = 'https://apigestaocrosby.onrender.com/';
+  const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/sales/';
 
   const buscarDados = async (inicio = dataInicio, fim = dataFim) => {
     if (!inicio || !fim) return;
     
     setLoading(true);
     try {
-      const res = await fetch(`${BaseURL}rankingvendedor?inicio=${inicio}&fim=${fim}`);
+      const res = await fetch(`${BaseURL}ranking-vendedores?inicio=${inicio}&fim=${fim}`);
       
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);

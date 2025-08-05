@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import FiltroEmpresa from '../components/FiltroEmpresa';
+import useApiClient from '../hooks/useApiClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { 
@@ -21,7 +22,7 @@ import {
 } from '@phosphor-icons/react';
 
 const ContasAPagar = () => {
-
+  const apiClient = useApiClient();
 
   const [dados, setDados] = useState([]);
 
@@ -191,8 +192,6 @@ const ContasAPagar = () => {
     direction: 'asc'
   });
 
-  const BaseURL = 'https://apigestaocrosby.onrender.com/';
-
   // Função para ordenar os dados
   const handleSort = (key) => {
     let direction = 'asc';
@@ -329,45 +328,39 @@ const ContasAPagar = () => {
     setLoading(true);
     setPaginaAtual(1); // Reset para primeira página ao buscar novos dados
     try {
-      // Buscar dados das empresas selecionadas
+      console.log('🔍 Iniciando busca de contas a pagar...');
+      console.log('📅 Período:', { inicio, fim });
+      console.log('🏢 Empresas selecionadas:', empresasSelecionadas);
+      
+      // Buscar dados das empresas selecionadas usando o novo hook
       const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
         try {
-          const res = await fetch(`${BaseURL}contasapagar?dt_inicio=${inicio}&dt_fim=${fim}&cd_empresa=${empresa.cd_empresa}`);
+          console.log(`📡 Buscando dados para empresa ${empresa.cd_empresa}...`);
           
-          if (!res.ok) {
-            console.warn(`Erro ao buscar empresa ${empresa.cd_empresa}: HTTP ${res.status}`);
+          const params = {
+            dt_inicio: inicio,
+            dt_fim: fim,
+            cd_empresa: empresa.cd_empresa
+          };
+          
+          const result = await apiClient.financial.contasPagar(params);
+          
+          if (result.success) {
+            const dadosArray = Array.isArray(result.data) ? result.data : [];
+            console.log(`✅ Sucesso para empresa ${empresa.cd_empresa}:`, {
+              total: dadosArray.length,
+              amostra: dadosArray.slice(0, 2),
+              tipoDado: typeof result.data,
+              éArray: Array.isArray(result.data),
+              dadoCompleto: result
+            });
+            return dadosArray;
+          } else {
+            console.warn(`⚠️ Falha para empresa ${empresa.cd_empresa}:`, result.message);
             return [];
           }
-          
-          const data = await res.json();
-          console.log(`Resposta da API para empresa ${empresa.cd_empresa}:`, data);
-          
-          // Verificar se data é um array
-          let dadosArray = [];
-          if (Array.isArray(data)) {
-            dadosArray = data;
-          } else if (data && typeof data === 'object') {
-            // Se for um objeto, tentar extrair array de propriedades
-            if (data.dados && Array.isArray(data.dados)) {
-              dadosArray = data.dados;
-            } else if (data.data && Array.isArray(data.data)) {
-              dadosArray = data.data;
-            } else if (data.result && Array.isArray(data.result)) {
-              dadosArray = data.result;
-            } else if (data.contas && Array.isArray(data.contas)) {
-              dadosArray = data.contas;
-            } else {
-              // Se não encontrar array, converter objeto em array
-              dadosArray = Object.values(data);
-            }
-          }
-          
-          // Filtrar apenas itens válidos
-          return dadosArray.filter(item => 
-            item && typeof item === 'object'
-          );
         } catch (err) {
-          console.warn(`Erro ao buscar empresa ${empresa.cd_empresa}:`, err);
+          console.error(`❌ Erro para empresa ${empresa.cd_empresa}:`, err);
           return [];
         }
       });
@@ -378,11 +371,16 @@ const ContasAPagar = () => {
       // Combinar todos os dados
       const todosOsDados = resultados.flat();
       
+      console.log('📊 Resultado final:', {
+        totalRegistros: todosOsDados.length,
+        empresasComDados: resultados.filter(r => r.length > 0).length,
+        primeirosRegistros: todosOsDados.slice(0, 3)
+      });
+      
       setDados(todosOsDados);
       setDadosCarregados(true);
-      console.log('Dados finais processados (empresas selecionadas):', todosOsDados);
     } catch (err) {
-      console.error('Erro ao buscar dados:', err);
+      console.error('❌ Erro geral ao buscar dados:', err);
       setDados([]);
       setDadosCarregados(false);
     } finally {
@@ -626,11 +624,26 @@ const ContasAPagar = () => {
     });
   };
 
+  // Logs de debug para monitorar dados
+  console.log('🔍 Debug ContasAPagar:', {
+    dadosOriginais: dados.length,
+    dadosFiltrados: dadosFiltrados.length,
+    filtrosAtivos: { status, situacao, fornecedor, despesa, duplicata },
+    amostraDados: dados.slice(0, 2)
+  });
+
   // Agrupar dados filtrados
   const dadosAgrupados = agruparDadosIdenticos(dadosFiltrados);
 
   // Aplicar ordenação aos dados agrupados
   const dadosOrdenados = sortDadosAgrupados(dadosAgrupados);
+
+  console.log('📊 Dados processados:', {
+    dadosAgrupados: dadosAgrupados.length,
+    dadosOrdenados: dadosOrdenados.length,
+    paginaAtual,
+    itensPorPagina
+  });
 
 
 

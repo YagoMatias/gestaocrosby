@@ -62,7 +62,7 @@ const Varejo = () => {
         .forEach(emp => {
           params.append('cd_empresa', emp.cd_empresa);
         });
-      const res = await fetch(`https://apigestaocrosby.onrender.com/faturamento?${params.toString()}`);
+      const res = await fetch(`https://apigestaocrosby-bw2v.onrender.com/api/sales/faturamento?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
       const json = await res.json();
       setDados(json);

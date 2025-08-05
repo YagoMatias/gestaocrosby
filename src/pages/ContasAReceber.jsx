@@ -46,7 +46,7 @@ const ContasAReceber = () => {
     direction: 'asc'
   });
 
-  const BaseURL = 'https://apigestaocrosby.onrender.com/';
+  const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
 
   // Função para ordenar os dados
   const handleSort = (key) => {
@@ -175,7 +175,7 @@ const ContasAReceber = () => {
       // Buscar dados das empresas selecionadas
       const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
         try {
-          const res = await fetch(`${BaseURL}contasareceber?dt_inicio=${inicio}&dt_fim=${fim}&cd_empresa=${empresa.cd_empresa}`);
+          const res = await fetch(`${BaseURL}contas-receber?dt_inicio=${inicio}&dt_fim=${fim}&cd_empresa=${empresa.cd_empresa}`);
           
           if (!res.ok) {
             console.warn(`Erro ao buscar empresa ${empresa.cd_empresa}: HTTP ${res.status}`);

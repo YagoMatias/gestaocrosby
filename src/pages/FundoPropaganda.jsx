@@ -31,7 +31,7 @@ export default function FundoPropaganda() {
       return;
     }
     try {
-      const res = await fetch(`https://apigestaocrosby.onrender.com/autocomplete/nm_fantasia?q=${encodeURIComponent(texto)}`);
+      const res = await fetch(`https://apigestaocrosby-bw2v.onrender.com/api/utils/autocomplete/nm_fantasia?q=${encodeURIComponent(texto)}`);
       if (!res.ok) return;
       const json = await res.json();
       setSugestoes(json);
@@ -82,7 +82,7 @@ export default function FundoPropaganda() {
       if (filtros.dt_inicio) params.append('dt_inicio', filtros.dt_inicio);
       if (filtros.dt_fim) params.append('dt_fim', filtros.dt_fim);
       // Busca dados da tabela principal
-      const res = await fetch(`https://apigestaocrosby.onrender.com/fundopropaganda?${params.toString()}`);
+      const res = await fetch(`https://apigestaocrosby-bw2v.onrender.com/api/franchise/fundo-propaganda?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
       const json = await res.json();
       setDados(json);
@@ -90,7 +90,7 @@ export default function FundoPropaganda() {
       const paramsCredev = new URLSearchParams();
       if (filtros.dt_inicio) paramsCredev.append('dt_inicio', filtros.dt_inicio);
       if (filtros.dt_fim) paramsCredev.append('dt_fim', filtros.dt_fim);
-      const resCredev = await fetch(`https://apigestaocrosby.onrender.com/franquiascredev?${paramsCredev.toString()}`);
+      const resCredev = await fetch(`https://apigestaocrosby-bw2v.onrender.com/api/franchise/franquias-credev?${paramsCredev.toString()}`);
       if (!resCredev.ok) throw new Error('Erro ao buscar dados credev');
       const jsonCredev = await resCredev.json();
       setDadosCredev(jsonCredev);

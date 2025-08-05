@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
+import useApiClient from '../hooks/useApiClient';
 import { 
   Calendar, 
   Funnel, 
@@ -20,6 +21,7 @@ import {
 } from '@phosphor-icons/react';
 
 const RankingFaturamento = () => {
+  const apiClient = useApiClient();
   const [dados, setDados] = useState([]);
   const [dadosVendedores, setDadosVendedores] = useState([]);
   const [dataInicio, setDataInicio] = useState('');
@@ -28,32 +30,47 @@ const RankingFaturamento = () => {
   const [loadingVendedores, setLoadingVendedores] = useState(false);
   const [tipoLoja, setTipoLoja] = useState('Todos');
   const [rankingTipo, setRankingTipo] = useState('lojas');
-  const BaseURL = 'https://apigestaocrosby.onrender.com/';
 
   console.log('RankingFaturamento: Componente renderizado');
 
   const buscarDados = async (inicio, fim) => {
     if (!inicio || !fim) return;
 
+    console.log('🔍 Iniciando busca de faturamento por lojas:', { inicio, fim });
     setLoading(true);
     try {
-      const res = await fetch(`${BaseURL}faturamentolojas?inicio=${inicio}&fim=${fim}&cd_grupoempresa_ini=1&cd_grupoempresa_fim=9999`);
-      const data = await res.json();
+      const params = {
+        dt_inicio: inicio,
+        dt_fim: fim,
+        cd_grupoempresa_ini: 1,
+        cd_grupoempresa_fim: 9999
+      };
 
-      // Os dados já vêm como array direto
-      const dadosArray = data;
+      const result = await apiClient.company.faturamentoLojas(params);
       
-      const ordenado = [...dadosArray].sort((a, b) => b.faturamento - a.faturamento);
-      const comRank = ordenado.map((item, index) => ({
-        ...item,
-        rank: index + 1,
-      }));
-      console.log('Dados de lojas recebidos:', comRank);
-      console.log('Primeiro item:', comRank[0]);
-      setDados(comRank);
+      if (result.success) {
+        const dadosArray = result.data || [];
+        console.log('✅ Dados de lojas recebidos:', {
+          total: dadosArray.length,
+          estatisticas: result.metadata?.estatisticas,
+          amostra: dadosArray.slice(0, 2)
+        });
+
+        const ordenado = [...dadosArray].sort((a, b) => parseFloat(b.faturamento || 0) - parseFloat(a.faturamento || 0));
+        const comRank = ordenado.map((item, index) => ({
+          ...item,
+          rank: index + 1,
+          faturamento: parseFloat(item.faturamento || 0)
+        }));
+        
+        setDados(comRank);
+      } else {
+        throw new Error(result.message || 'Erro ao buscar dados de faturamento');
+      }
     } catch (err) {
-      console.error('Erro:', err);
+      console.error('❌ Erro ao buscar dados de lojas:', err);
       alert('Erro ao carregar dados. Tente novamente.');
+      setDados([]);
     } finally {
       setLoading(false);
     }
@@ -62,23 +79,38 @@ const RankingFaturamento = () => {
   const buscarDadosVendedores = async (inicio, fim) => {
     if (!inicio || !fim) return;
 
+    console.log('🔍 Iniciando busca de ranking de vendedores:', { inicio, fim });
     setLoadingVendedores(true);
     try {
-      const res = await fetch(`${BaseURL}rankingvendedor?inicio=${inicio}&fim=${fim}`);
-      const data = await res.json();
+      const params = {
+        inicio: inicio,
+        fim: fim
+      };
 
-      // Extrair dados da resposta estruturada
-      const dadosArray = data.dados || data;
+      const result = await apiClient.sales.rankingVendedores(params);
       
-      const ordenado = [...dadosArray].sort((a, b) => b.faturamento - a.faturamento);
-      const comRank = ordenado.map((item, index) => ({
-        ...item,
-        rank: index + 1,
-      }));
-      setDadosVendedores(comRank);
+      if (result.success) {
+        const dadosArray = result.data || [];
+        console.log('✅ Dados de vendedores recebidos:', {
+          total: dadosArray.length,
+          amostra: dadosArray.slice(0, 2)
+        });
+
+        const ordenado = [...dadosArray].sort((a, b) => parseFloat(b.faturamento || 0) - parseFloat(a.faturamento || 0));
+        const comRank = ordenado.map((item, index) => ({
+          ...item,
+          rank: index + 1,
+          faturamento: parseFloat(item.faturamento || 0)
+        }));
+        
+        setDadosVendedores(comRank);
+      } else {
+        throw new Error(result.message || 'Erro ao buscar dados de vendedores');
+      }
     } catch (err) {
-      console.error('Erro ao carregar dados de vendedores:', err);
+      console.error('❌ Erro ao buscar dados de vendedores:', err);
       alert('Erro ao carregar dados de vendedores. Tente novamente.');
+      setDadosVendedores([]);
     } finally {
       setLoadingVendedores(false);
     }
@@ -171,9 +203,9 @@ const RankingFaturamento = () => {
       doc.setTextColor(255, 255, 255);
       doc.text('#', 17, headerY);
       doc.text('Loja', 35, headerY);
-      doc.text('Faturamento', 110, headerY);
-      doc.text('PA', 150, headerY);
-      doc.text('Ticket Médio', 180, headerY);
+      doc.text('Faturamento', 125, headerY);
+      doc.text('PA', 165, headerY);
+      doc.text('TM', 185, headerY);
       console.log('Cabeçalho da tabela adicionado');
       
       // Dados da tabela com listagem zebrada
@@ -201,14 +233,21 @@ const RankingFaturamento = () => {
           }
           
           // Calcular ticket médio
-          const ticketMedio = item.trasaida > 0 ? (item.faturamento / item.trasaida) : 0;
+          const transacoesSaida = Number(item.transacoes_saida) || 0;
+          const ticketMedio = transacoesSaida > 0 ? (item.faturamento / transacoesSaida) : 0;
           
           doc.setTextColor(0, 0, 0);
+          // Calcular PA
+          const transacoesSaidaPDF = Number(item.transacoes_saida) || 0;
+          const paSaidaPDF = Number(item.pa_saida) || 0;
+          const paEntradaPDF = Number(item.pa_entrada) || 0;
+          const paCalculado = transacoesSaidaPDF > 0 ? ((paSaidaPDF - paEntradaPDF) / transacoesSaidaPDF) : 0;
+          
           doc.text(String(item.rank || ''), 17, yPosition);
           doc.text(String(item.nome_fantasia || 'N/A'), 35, yPosition);
-          doc.text(formatCurrency(item.faturamento || 0), 110, yPosition);
-          doc.text(String(item.paentrada || 0), 150, yPosition);
-          doc.text(formatCurrency(ticketMedio), 180, yPosition);
+          doc.text(formatCurrency(item.faturamento || 0), 125, yPosition);
+          doc.text(String(paCalculado.toFixed(2)), 165, yPosition);
+          doc.text(formatCurrency(ticketMedio), 185, yPosition);
           
           yPosition += 10;
           itemCount++;
@@ -291,9 +330,9 @@ const RankingFaturamento = () => {
       doc.setTextColor(255, 255, 255);
       doc.text('#', 17, headerY);
       doc.text('Vendedor', 35, headerY);
-      doc.text('Faturamento', 110, headerY);
-      doc.text('PA', 150, headerY);
-      doc.text('Ticket Médio', 180, headerY);
+      doc.text('Faturamento', 125, headerY);
+      doc.text('PA', 165, headerY);
+      doc.text('TM', 185, headerY);
       console.log('Cabeçalho da tabela adicionado');
       
       // Dados da tabela com listagem zebrada
@@ -321,14 +360,21 @@ const RankingFaturamento = () => {
           }
           
           // Calcular ticket médio
-          const ticketMedio = item.trasaida > 0 ? (item.faturamento / item.trasaida) : 0;
+          const transacoesSaida = Number(item.transacoes_saida) || 0;
+          const ticketMedio = transacoesSaida > 0 ? (item.faturamento / transacoesSaida) : 0;
+          
+          // Calcular PA
+          const transacoesSaidaPDF = Number(item.transacoes_saida) || 0;
+          const paSaidaPDF = Number(item.pa_saida) || 0;
+          const paEntradaPDF = Number(item.pa_entrada) || 0;
+          const paCalculado = transacoesSaidaPDF > 0 ? ((paSaidaPDF - paEntradaPDF) / transacoesSaidaPDF) : 0;
           
           doc.setTextColor(0, 0, 0);
           doc.text(String(item.rank || ''), 17, yPosition);
           doc.text(String(item.nome_vendedor || 'N/A'), 35, yPosition);
-          doc.text(formatCurrency(item.faturamento || 0), 110, yPosition);
-          doc.text(String(item.paentrada || 0), 150, yPosition);
-          doc.text(formatCurrency(ticketMedio), 180, yPosition);
+          doc.text(formatCurrency(item.faturamento || 0), 125, yPosition);
+          doc.text(String(paCalculado.toFixed(2)), 165, yPosition);
+          doc.text(formatCurrency(ticketMedio), 185, yPosition);
           
           yPosition += 10;
           itemCount++;
@@ -417,25 +463,39 @@ const RankingFaturamento = () => {
 
   // Cálculos para lojas
   const ticketMedioLojas = dadosLojasFiltrados.length > 0 
-    ? dadosLojasFiltrados.reduce((acc, item) => acc + (item.faturamento / item.trasaida), 0) / dadosLojasFiltrados.length
+    ? dadosLojasFiltrados.reduce((acc, item) => {
+        const transacoesSaida = Number(item.transacoes_saida) || 0;
+        const ticketItem = transacoesSaida > 0 ? item.faturamento / transacoesSaida : 0;
+        return acc + ticketItem;
+      }, 0) / dadosLojasFiltrados.length
     : 0;
 
   const paLojas = dadosLojasFiltrados.length > 0 
     ? dadosLojasFiltrados.reduce((acc, item) => {
-        const pa = item.trasaida > 0 ? (Number(item.pasaida) - Number(item.paentrada)) / Number(item.trasaida) : 0;
-        return acc + pa;
+        const transacoesSaida = Number(item.transacoes_saida) || 0;
+        const paSaida = Number(item.pa_saida) || 0;
+        const paEntrada = Number(item.pa_entrada) || 0;
+        const paItem = transacoesSaida > 0 ? (paSaida - paEntrada) / transacoesSaida : 0;
+        return acc + paItem;
       }, 0) / dadosLojasFiltrados.length
     : 0;
 
   // Cálculos para vendedores
   const ticketMedioVendedores = dadosVendedoresFiltrados.length > 0 
-    ? dadosVendedoresFiltrados.reduce((acc, item) => acc + (item.faturamento / item.trasaida), 0) / dadosVendedoresFiltrados.length
+    ? dadosVendedoresFiltrados.reduce((acc, item) => {
+        const transacoesSaida = Number(item.transacoes_saida) || 0;
+        const ticketItem = transacoesSaida > 0 ? item.faturamento / transacoesSaida : 0;
+        return acc + ticketItem;
+      }, 0) / dadosVendedoresFiltrados.length
     : 0;
 
   const paVendedores = dadosVendedoresFiltrados.length > 0 
     ? dadosVendedoresFiltrados.reduce((acc, item) => {
-        const pa = item.trasaida > 0 ? (Number(item.pasaida) - Number(item.paentrada)) / Number(item.trasaida) : 0;
-        return acc + pa;
+        const transacoesSaida = Number(item.transacoes_saida) || 0;
+        const paSaida = Number(item.pa_saida) || 0;
+        const paEntrada = Number(item.pa_entrada) || 0;
+        const paItem = transacoesSaida > 0 ? (paSaida - paEntrada) / transacoesSaida : 0;
+        return acc + paItem;
       }, 0) / dadosVendedoresFiltrados.length
     : 0;
 
@@ -602,7 +662,7 @@ const RankingFaturamento = () => {
                 <CardHeader className="pb-0">
                   <div className="flex items-center gap-2">
                     <CurrencyDollar size={18} className="text-blue-600" />
-                    <CardTitle className="text-sm font-bold text-blue-700">Ticket Médio</CardTitle>
+                    <CardTitle className="text-sm font-bold text-blue-700">TM</CardTitle>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0 px-4 pb-4">
@@ -745,7 +805,7 @@ const RankingFaturamento = () => {
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-40">Faturamento</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-24">PA</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-40">Ticket Médio</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-40">TM</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -764,10 +824,18 @@ const RankingFaturamento = () => {
                             {formatCurrency(Number(item.faturamento))}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-900">
-                            {item.trasaida > 0 ? ((Number(item.pasaida) - Number(item.paentrada)) / Number(item.trasaida)).toFixed(2) : '0.00'}
+                            {(() => {
+                              const transacoesSaida = Number(item.transacoes_saida) || 0;
+                              const paSaida = Number(item.pa_saida) || 0;
+                              const paEntrada = Number(item.pa_entrada) || 0;
+                              return transacoesSaida > 0 ? ((paSaida - paEntrada) / transacoesSaida).toFixed(2) : '0.00';
+                            })()}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-900">
-                            {item.trasaida > 0 ? formatCurrency(item.faturamento / item.trasaida) : 'R$ 0,00'}
+                            {(() => {
+                              const transacoesSaida = Number(item.transacoes_saida) || 0;
+                              return transacoesSaida > 0 ? formatCurrency(item.faturamento / transacoesSaida) : 'R$ 0,00';
+                            })()}
                           </td>
                         </tr>
                       ))}

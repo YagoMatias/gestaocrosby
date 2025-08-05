@@ -1,48 +1,126 @@
+import React, { memo, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import LoginForm from './components/LoginForm';
-import Home from './pages/Home';
-import ContasAPagar from './pages/ContasAPagar';
-import ContasAReceber from './pages/ContasAReceber';
-import ExtratoFinanceiro from './pages/ExtratoFinanceiro';
-import ExtratoTOTVS from './pages/ExtratoTOTVS';
-import Varejo from './pages/Varejo';
-import Franquias from './pages/Franquias';
-import Multimarcas from './pages/Multimarcas';
-import Revenda from './pages/Revenda';
-import ConsultaFatura from './pages/ConsultaFatura';
-import FundoPropaganda from './pages/FundoPropaganda';
-import RankingFaturamento from './pages/RankingFaturamento';
-import RankingVendedores from './pages/RankingVendedores';
-import Consolidado from './pages/Consolidado';
-import React, { memo } from 'react';
 import PrivateRoute from './components/PrivateRoute';
-import ComprasFranquias from './pages/ComprasFranquias';
-import PainelAdmin from './pages/PainelAdmin';
-import UserPanel from './pages/UserPanel';
+import LoadingSpinner from './components/LoadingSpinner';
+import ErrorBoundary from './components/ui/ErrorBoundary';
+
+// Lazy loading de todas as páginas para otimizar bundle
+const Home = lazy(() => import('./pages/Home'));
+const ContasAPagar = lazy(() => import('./pages/ContasAPagar'));
+const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
+const ExtratoFinanceiro = lazy(() => import('./pages/ExtratoFinanceiro'));
+const ExtratoTOTVS = lazy(() => import('./pages/ExtratoTOTVS'));
+const Varejo = lazy(() => import('./pages/Varejo'));
+const Franquias = lazy(() => import('./pages/Franquias'));
+const Multimarcas = lazy(() => import('./pages/Multimarcas'));
+const Revenda = lazy(() => import('./pages/Revenda'));
+const ConsultaFatura = lazy(() => import('./pages/ConsultaFatura'));
+const FundoPropaganda = lazy(() => import('./pages/FundoPropaganda'));
+const RankingFaturamento = lazy(() => import('./pages/RankingFaturamento'));
+const RankingVendedores = lazy(() => import('./pages/RankingVendedores'));
+const Consolidado = lazy(() => import('./pages/Consolidado'));
+const ComprasFranquias = lazy(() => import('./pages/ComprasFranquias'));
+const PainelAdmin = lazy(() => import('./pages/PainelAdmin'));
+const UserPanel = lazy(() => import('./pages/UserPanel'));
+
+// Componente de fallback para loading
+const PageLoadingFallback = memo(() => (
+  <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <LoadingSpinner size="lg" text="Carregando página..." />
+  </div>
+));
+
+PageLoadingFallback.displayName = 'PageLoadingFallback';
+
+// Helper para criar rotas privadas com Suspense
+const createPrivateRoute = (Component, allowedRoles) => (
+  <PrivateRoute allowedRoles={allowedRoles}>
+    <Suspense fallback={<PageLoadingFallback />}>
+      <Component />
+    </Suspense>
+  </PrivateRoute>
+);
 
 // Componente memoizado para evitar re-renderizações desnecessárias
 const AppRoutes = memo(() => {
   return (
-    <Routes>
-      <Route path="/" element={<LoginForm />} />
-      <Route path="/home" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA']}><Home /></PrivateRoute>} />
-      <Route path="/contas-a-pagar" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><ContasAPagar /></PrivateRoute>} />
-      <Route path="/contas-a-receber" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><ContasAReceber /></PrivateRoute>} />
-      <Route path="/extrato-financeiro" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><ExtratoFinanceiro /></PrivateRoute>} />
-      <Route path="/extrato-totvs" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><ExtratoTOTVS /></PrivateRoute>} />
-      <Route path="/varejo" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR']}><Varejo /></PrivateRoute>} />
-      <Route path="/franquias" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR']}><Franquias /></PrivateRoute>} />
-      <Route path="/multimarcas" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR']}><Multimarcas /></PrivateRoute>} />
-      <Route path="/revenda" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR']}><Revenda /></PrivateRoute>} />
-      <Route path="/consulta-fatura" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><ConsultaFatura /></PrivateRoute>} />
-      <Route path="/fundo-propaganda" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO']}><FundoPropaganda /></PrivateRoute>} />
-      <Route path="/ranking-faturamento" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FRANQUIA']}><RankingFaturamento /></PrivateRoute>} />
-      <Route path="/ranking-vendedores" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA']}><RankingVendedores /></PrivateRoute>} />
-      <Route path="/consolidado" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR']}><Consolidado /></PrivateRoute>} />
-      <Route path="/compras-franquias" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR']}><ComprasFranquias /></PrivateRoute>} />
-      <Route path="/painel-admin" element={<PrivateRoute allowedRoles={['ADM']}><PainelAdmin /></PrivateRoute>} />
-      <Route path="/user-panel" element={<PrivateRoute allowedRoles={['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA']}><UserPanel /></PrivateRoute>} />
-    </Routes>
+    <ErrorBoundary>
+      <Routes>
+        {/* Rota de login - sem lazy loading pois é primeira página */}
+        <Route path="/" element={<LoginForm />} />
+        
+        {/* Rotas protegidas com lazy loading */}
+        <Route 
+          path="/home" 
+          element={createPrivateRoute(Home, ['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA'])} 
+        />
+        <Route 
+          path="/contas-a-pagar" 
+          element={createPrivateRoute(ContasAPagar, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
+        />
+        <Route 
+          path="/contas-a-receber" 
+          element={createPrivateRoute(ContasAReceber, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
+        />
+        <Route 
+          path="/extrato-financeiro" 
+          element={createPrivateRoute(ExtratoFinanceiro, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
+        />
+        <Route 
+          path="/extrato-totvs" 
+          element={createPrivateRoute(ExtratoTOTVS, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
+        />
+        <Route 
+          path="/varejo" 
+          element={createPrivateRoute(Varejo, ['ADM', 'DIRETOR'])} 
+        />
+        <Route 
+          path="/franquias" 
+          element={createPrivateRoute(Franquias, ['ADM', 'DIRETOR'])} 
+        />
+        <Route 
+          path="/multimarcas" 
+          element={createPrivateRoute(Multimarcas, ['ADM', 'DIRETOR'])} 
+        />
+        <Route 
+          path="/revenda" 
+          element={createPrivateRoute(Revenda, ['ADM', 'DIRETOR'])} 
+        />
+        <Route 
+          path="/consulta-fatura" 
+          element={createPrivateRoute(ConsultaFatura, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
+        />
+        <Route 
+          path="/fundo-propaganda" 
+          element={createPrivateRoute(FundoPropaganda, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
+        />
+        <Route 
+          path="/ranking-faturamento" 
+          element={createPrivateRoute(RankingFaturamento, ['ADM', 'DIRETOR', 'FRANQUIA'])} 
+        />
+        <Route 
+          path="/ranking-vendedores" 
+          element={createPrivateRoute(RankingVendedores, ['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA'])} 
+        />
+        <Route 
+          path="/consolidado" 
+          element={createPrivateRoute(Consolidado, ['ADM', 'DIRETOR'])} 
+        />
+        <Route 
+          path="/compras-franquias" 
+          element={createPrivateRoute(ComprasFranquias, ['ADM', 'DIRETOR'])} 
+        />
+        <Route 
+          path="/painel-admin" 
+          element={createPrivateRoute(PainelAdmin, ['ADM'])} 
+        />
+        <Route 
+          path="/user-panel" 
+          element={createPrivateRoute(UserPanel, ['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA'])} 
+        />
+      </Routes>
+    </ErrorBoundary>
   );
 });
 
