@@ -9,6 +9,7 @@ import ErrorBoundary from './components/ui/ErrorBoundary';
 const Home = lazy(() => import('./pages/Home'));
 const ContasAPagar = lazy(() => import('./pages/ContasAPagar'));
 const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
+const FluxoCaixa = lazy(() => import('./pages/FluxoCaixa'));
 const ExtratoFinanceiro = lazy(() => import('./pages/ExtratoFinanceiro'));
 const ExtratoTOTVS = lazy(() => import('./pages/ExtratoTOTVS'));
 const Varejo = lazy(() => import('./pages/Varejo'));
@@ -23,6 +24,8 @@ const Consolidado = lazy(() => import('./pages/Consolidado'));
 const ComprasFranquias = lazy(() => import('./pages/ComprasFranquias'));
 const PainelAdmin = lazy(() => import('./pages/PainelAdmin'));
 const UserPanel = lazy(() => import('./pages/UserPanel'));
+const DreDemo = lazy(() => import('./pages/DreDemo'));
+const ManifestacaoNF = lazy(() => import('./pages/ManifestacaoNF'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -64,6 +67,10 @@ const AppRoutes = memo(() => {
           element={createPrivateRoute(ContasAReceber, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
         />
         <Route 
+          path="/fluxo-caixa" 
+          element={createPrivateRoute(FluxoCaixa, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
+        />
+        <Route 
           path="/extrato-financeiro" 
           element={createPrivateRoute(ExtratoFinanceiro, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
         />
@@ -94,6 +101,14 @@ const AppRoutes = memo(() => {
         <Route 
           path="/fundo-propaganda" 
           element={createPrivateRoute(FundoPropaganda, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
+        />
+        <Route 
+          path="/dre-demo" 
+          element={createPrivateRoute(DreDemo, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
+        />
+        <Route 
+          path="/manifestacao-nf" 
+          element={createPrivateRoute(ManifestacaoNF, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
         />
         <Route 
           path="/ranking-faturamento" 

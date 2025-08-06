@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import Layout from '../components/Layout';
-import LoadingCircle from '../components/LoadingCircle';
 import FiltroEmpresa from '../components/FiltroEmpresa';
+import useApiClient from '../hooks/useApiClient';
 import custoProdutos from '../custoprodutos.json';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, ArrowCircleDown, ArrowCircleUp, CurrencyDollar, Package } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, ArrowCircleDown, ArrowCircleUp, CurrencyDollar, Package, Spinner } from '@phosphor-icons/react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
 
 const Franquias = () => {
+  const apiClient = useApiClient();
   const [dados, setDados] = useState([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
@@ -18,10 +19,108 @@ const Franquias = () => {
     cd_empresa: '', // agora será preenchido pelo filtro
     nm_grupoempresa: ''
   });
+
+  // Injetar CSS customizado para as tabelas
+  React.useEffect(() => {
+    const styleElement = document.createElement('style');
+    styleElement.textContent = `
+      .franquias-table-container {
+        overflow-x: auto;
+        position: relative;
+        max-width: 100%;
+      }
+      
+      .franquias-table-container table {
+        position: relative;
+      }
+      
+      .franquias-table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      
+      .franquias-table th,
+      .franquias-table td {
+        padding: 6px 8px !important;
+        border-right: 1px solid #f3f4f6;
+        word-wrap: break-word;
+        white-space: normal;
+        font-size: 11px;
+        line-height: 1.3;
+      }
+      
+      .franquias-table th:last-child,
+      .franquias-table td:last-child {
+        border-right: none;
+      }
+      
+      .franquias-table th {
+        background-color: #000638;
+        color: white;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 10px;
+        letter-spacing: 0.05em;
+      }
+      
+      .franquias-table tbody tr:nth-child(odd) {
+        background-color: white;
+      }
+      
+      .franquias-table tbody tr:nth-child(even) {
+        background-color: #fafafa;
+      }
+      
+      .franquias-table tbody tr:hover {
+        background-color: #f0f9ff;
+        transition: background-color 0.2s ease;
+      }
+      
+      /* CSS para coluna fixa */
+      .franquias-table thead th:first-child,
+      .franquias-table tbody td:first-child {
+        position: sticky !important;
+        left: 0 !important;
+        z-index: 10 !important;
+        border-right: 2px solid #e5e7eb !important;
+        box-shadow: 2px 0 4px rgba(0,0,0,0.1) !important;
+      }
+      
+      .franquias-table thead th:first-child {
+        background: #000638 !important;
+        z-index: 20 !important;
+      }
+      
+      .franquias-table tbody td:first-child {
+        background: inherit !important;
+      }
+      
+      .franquias-table tbody tr:nth-child(odd) td:first-child {
+        background: white !important;
+      }
+      
+      .franquias-table tbody tr:nth-child(even) td:first-child {
+        background: #fafafa !important;
+      }
+      
+      .franquias-table tbody tr:hover td:first-child {
+        background: #f0f9ff !important;
+      }
+    `;
+    document.head.appendChild(styleElement);
+
+    return () => {
+      document.head.removeChild(styleElement);
+    };
+  }, []);
   const [expandTabela, setExpandTabela] = useState(true);
   const [expandRankProdutos, setExpandRankProdutos] = useState(true);
   const [sortConfig, setSortConfig] = useState({
     key: 'valorTotal',
+    direction: 'desc'
+  });
+  const [sortConfigTransacoes, setSortConfigTransacoes] = useState({
+    key: 'dt_transacao',
     direction: 'desc'
   });
   const [nmGrupoEmpresaSelecionados, setNmGrupoEmpresaSelecionados] = useState([]);
@@ -79,17 +178,49 @@ const Franquias = () => {
     setLoading(true);
     setErro('');
     try {
-      const params = new URLSearchParams();
-      if (filtros.dt_inicio) params.append('dt_inicio', filtros.dt_inicio);
-      if (filtros.dt_fim) params.append('dt_fim', filtros.dt_fim);
-      empresasParam.forEach(emp => {
-        params.append('cd_empresa', emp.cd_empresa);
+      console.log('🔍 Iniciando busca de faturamento franquias:', { 
+        dt_inicio: filtros.dt_inicio, 
+        dt_fim: filtros.dt_fim, 
+        empresas: empresasParam.length 
       });
-      const res = await fetch(`https://apigestaocrosby-bw2v.onrender.com/api/sales/faturamento-franquia?${params.toString()}`);
-      if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
-      const json = await res.json();
-      setDados(json);
+
+      const empresasFiltradas = empresasParam
+        .filter(emp => emp.cd_empresa !== undefined && emp.cd_empresa !== null && emp.cd_empresa !== '')
+        .map(emp => emp.cd_empresa);
+
+      if (empresasFiltradas.length === 0) {
+        throw new Error('Nenhuma empresa válida selecionada');
+      }
+
+      const params = {
+        dt_inicio: filtros.dt_inicio || '2025-07-01',
+        dt_fim: filtros.dt_fim || '2025-07-15',
+        cd_empresa: empresasFiltradas
+      };
+
+      const result = await apiClient.sales.faturamentoFranquia(params);
+      
+      if (result.success) {
+        console.log('✅ Dados de franquias recebidos:', {
+          total: result.data.length,
+          estatisticas: result.metadata?.totals,
+          periodo: result.metadata?.periodo,
+          amostra: result.data.slice(0, 2),
+          estrutura: result.metadata
+        });
+        
+        // Verificar se temos dados válidos
+        if (result.data && Array.isArray(result.data) && result.data.length > 0) {
+          setDados(result.data);
+        } else {
+          console.warn('⚠️ Nenhum dado de transação encontrado');
+          setDados([]);
+        }
+      } else {
+        throw new Error(result.message || 'Erro ao buscar dados de faturamento');
+      }
     } catch (err) {
+      console.error('❌ Erro ao buscar dados de franquias:', err);
       setErro('Erro ao buscar dados do servidor.');
       setDados([]);
     } finally {
@@ -207,6 +338,97 @@ const Franquias = () => {
     return sortConfig.direction === 'asc' 
       ? <CaretUp size={16} className="ml-1" />
       : <CaretDown size={16} className="ml-1" />;
+  };
+
+  // Função para obter o ícone de ordenação da tabela de transações
+  const getSortIconTransacoes = (key) => {
+    if (sortConfigTransacoes.key !== key) {
+      return <CaretDown size={12} className="ml-1 opacity-50" />;
+    }
+    return sortConfigTransacoes.direction === 'asc' 
+      ? <CaretUp size={12} className="ml-1" />
+      : <CaretDown size={12} className="ml-1" />;
+  };
+
+  // Função para ordenar dados da tabela de transações
+  const handleSortTransacoes = (key) => {
+    let direction = 'asc';
+    if (sortConfigTransacoes.key === key && sortConfigTransacoes.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfigTransacoes({ key, direction });
+  };
+
+  // Função para ordenar os dados de transações
+  const sortDadosTransacoes = (dados) => {
+    if (!dados || dados.length === 0) return dados;
+
+    return [...dados].sort((a, b) => {
+      let aValue, bValue;
+
+      switch (sortConfigTransacoes.key) {
+        case 'nr_transacao':
+          aValue = a.nr_transacao || '';
+          bValue = b.nr_transacao || '';
+          break;
+        case 'nm_grupoempresa':
+          aValue = a.nm_grupoempresa || '';
+          bValue = b.nm_grupoempresa || '';
+          break;
+        case 'dt_transacao':
+          aValue = a.dt_transacao ? new Date(a.dt_transacao) : new Date(0);
+          bValue = b.dt_transacao ? new Date(b.dt_transacao) : new Date(0);
+          break;
+        case 'tp_situacao':
+          aValue = a.tp_situacao || '';
+          bValue = b.tp_situacao || '';
+          break;
+        case 'tp_operacao':
+          aValue = a.tp_operacao || '';
+          bValue = b.tp_operacao || '';
+          break;
+        case 'ds_nivel':
+          aValue = a.ds_nivel || '';
+          bValue = b.ds_nivel || '';
+          break;
+        case 'qt_faturado':
+          aValue = parseFloat(a.qt_faturado) || 0;
+          bValue = parseFloat(b.qt_faturado) || 0;
+          break;
+        case 'vl_unitliquido':
+          aValue = parseFloat(a.vl_unitliquido) || 0;
+          bValue = parseFloat(b.vl_unitliquido) || 0;
+          break;
+        case 'vl_unitbruto':
+          aValue = parseFloat(a.vl_unitbruto) || 0;
+          bValue = parseFloat(b.vl_unitbruto) || 0;
+          break;
+        case 'desconto':
+          const aQtFaturado = parseFloat(a.qt_faturado) || 1;
+          const bQtFaturado = parseFloat(b.qt_faturado) || 1;
+          const aValorTotal = (parseFloat(a.vl_unitliquido) || 0) * aQtFaturado;
+          const bValorTotal = (parseFloat(b.vl_unitliquido) || 0) * bQtFaturado;
+          const aValorBrutoTotal = (parseFloat(a.vl_unitbruto) || 0) * aQtFaturado;
+          const bValorBrutoTotal = (parseFloat(b.vl_unitbruto) || 0) * bQtFaturado;
+          aValue = aValorBrutoTotal - aValorTotal;
+          bValue = bValorBrutoTotal - bValorTotal;
+          break;
+        default:
+          aValue = a[sortConfigTransacoes.key] || '';
+          bValue = b[sortConfigTransacoes.key] || '';
+      }
+
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        aValue = aValue.toLowerCase();
+        bValue = bValue.toLowerCase();
+      }
+
+      if (sortConfigTransacoes.direction === 'asc') {
+        return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
+      } else {
+        return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
+      }
+    });
   };
 
   // Função para ordenar os dados do ranking
@@ -351,7 +573,7 @@ const Franquias = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-green-600 mb-1">
-                {loading ? <LoadingCircle size={24} /> : (() => {
+                {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : (() => {
                   const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
                   const somaEntradas = dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
                   const faturamentoTotal = somaSaidas - somaEntradas;
@@ -372,7 +594,7 @@ const Franquias = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-purple-600 mb-1">
-                {loading ? <LoadingCircle size={24} /> : (() => {
+                {loading ? <Spinner size={24} className="animate-spin text-purple-600" /> : (() => {
                   let valorBrutoTotal = 0;
                   dados.forEach(row => {
                     const qtFaturado = Number(row.qt_faturado) || 1;
@@ -401,7 +623,7 @@ const Franquias = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-orange-600 mb-1">
-                {loading ? <LoadingCircle size={24} /> : (() => {
+                {loading ? <Spinner size={24} className="animate-spin text-orange-600" /> : (() => {
                   let descontoTotal = 0;
                   dados.forEach(row => {
                     const qtFaturado = Number(row.qt_faturado) || 1;
@@ -432,7 +654,7 @@ const Franquias = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-red-700 mb-1">
-                {loading ? <LoadingCircle size={24} /> : custoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {loading ? <Spinner size={24} className="animate-spin text-red-700" /> : custoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <span className="text-xs text-gray-500">CMV $ do Período</span>
             </CardContent>
@@ -447,7 +669,7 @@ const Franquias = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              {loading ? <LoadingCircle size={24} /> : (() => {
+              {loading ? <Spinner size={24} className="animate-spin text-orange-600" /> : (() => {
                 let custoTotal = 0;
                 let valorTotalVenda = 0;
                 dados.forEach(row => {
@@ -483,7 +705,7 @@ const Franquias = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-green-600 mb-1">
-                {loading ? <LoadingCircle size={24} /> : dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
+                {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
               </div>
               <CardDescription className="text-xs text-gray-500">Quantidade</CardDescription>
             </CardContent>
@@ -499,7 +721,7 @@ const Franquias = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-[#fe0000] mb-1">
-                {loading ? <LoadingCircle size={24} /> : dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
+                {loading ? <Spinner size={24} className="animate-spin text-[#fe0000]" /> : dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
               </div>
               <CardDescription className="text-xs text-gray-500">Quantidade</CardDescription>
             </CardContent>
@@ -514,47 +736,135 @@ const Franquias = () => {
             </span>
           </div>
           {expandTabela && (
-            <div className="overflow-y-auto max-h-[500px]">
-              <table className="min-w-full text-sm">
+            <div className="franquias-table-container overflow-y-auto max-h-[500px]">
+              <table className="franquias-table min-w-full text-sm">
                 <thead>
-                  <tr className="bg-[#000638] text-white">
-                    <th className="px-4 py-2 font-semibold">Transação</th>
-                    <th className="px-4 py-2 font-semibold">Empresa</th>
-                    <th className="px-4 py-2 font-semibold">Franquia</th>
-                    <th className="px-4 py-2 font-semibold">Data Transação</th>
-                    <th className="px-4 py-2 font-semibold">Situação</th>
-                    <th className="px-4 py-2 font-semibold">Operação</th>
-                    <th className="px-4 py-2 font-semibold">Modelo</th>
-                    <th className="px-4 py-2 font-semibold">Qt. Faturado</th>
-                    <th className="px-4 py-2 font-semibold">Valor</th>
-                    <th className="px-4 py-2 font-semibold">Valor Bruto</th>
-                    <th className="px-4 py-2 font-semibold">Desconto</th>
+                  <tr>
+                    <th 
+                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSortTransacoes('nr_transacao')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Transação
+                        {getSortIconTransacoes('nr_transacao')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSortTransacoes('cd_empresa')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Empresa
+                        {getSortIconTransacoes('cd_empresa')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSortTransacoes('nm_grupoempresa')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Franquia
+                        {getSortIconTransacoes('nm_grupoempresa')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSortTransacoes('dt_transacao')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Data Transação
+                        {getSortIconTransacoes('dt_transacao')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSortTransacoes('tp_situacao')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Situação
+                        {getSortIconTransacoes('tp_situacao')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSortTransacoes('tp_operacao')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Operação
+                        {getSortIconTransacoes('tp_operacao')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSortTransacoes('ds_nivel')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Modelo
+                        {getSortIconTransacoes('ds_nivel')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSortTransacoes('qt_faturado')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Qt. Faturado
+                        {getSortIconTransacoes('qt_faturado')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSortTransacoes('vl_unitliquido')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Valor
+                        {getSortIconTransacoes('vl_unitliquido')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSortTransacoes('vl_unitbruto')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Valor Bruto
+                        {getSortIconTransacoes('vl_unitbruto')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSortTransacoes('desconto')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Desconto
+                        {getSortIconTransacoes('desconto')}
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="overflow-y-auto">
                   {loading ? (
-                    <tr><td colSpan={10} className="text-center py-8"><LoadingCircle size={32} /></td></tr>
+                    <tr><td colSpan={10} className="text-center py-8"><Spinner size={32} className="animate-spin text-blue-600" /></td></tr>
                   ) : dados.length === 0 ? (
-                    <tr><td colSpan={10} className="text-center py-8">Nenhum dado encontrado.</td></tr>
+                    <tr><td colSpan={11} className="text-center py-8">Nenhum dado encontrado.</td></tr>
                   ) : (
-                    dados.map((row, i) => {
+                    sortDadosTransacoes(dados).map((row, i) => {
                       const qtFaturado = Number(row.qt_faturado) || 1;
                       const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
                       const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
                       const desconto = valorBrutoTotal - valorTotal;
                       return (
                         <tr key={i} className="border-b hover:bg-[#f8f9fb]">
-                          <td className="px-4 py-2">{row.nr_transacao}</td>
-                          <td className="px-4 py-2">{row.cd_empresa}</td>
-                          <td className="px-4 py-2">{row.nm_fantasia}</td>
-                          <td className="px-4 py-2 text-center text-[#000638]">{formatarDataBR(row.dt_transacao)}</td>
-                          <td className="px-4 py-2 text-center text-[#000000]">{row.tp_situacao}</td>
-                          <td className="px-4 py-2 text-center text-[#000000]">{row.tp_operacao}</td>
-                          <td className="px-4 py-2">{row.ds_nivel}</td>
-                          <td className="px-4 py-2 text-center">{qtFaturado}</td>
-                          <td className={`px-4 py-2 text-right font-bold ${row.tp_operacao === 'E' ? 'text-[#fe0000]' : row.tp_operacao === 'S' ? 'text-green-600' : ''}`}>{valorTotal !== null && valorTotal !== undefined ? valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
-                          <td className={`px-4 py-2 text-right font-bold ${row.tp_operacao === 'E' ? 'text-[#fe0000]' : row.tp_operacao === 'S' ? 'text-green-600' : ''}`}>{valorBrutoTotal !== null && valorBrutoTotal !== undefined ? valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
-                          <td className="px-4 py-2 text-right font-bold text-orange-600">{desconto !== null && desconto !== undefined ? desconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
+                          <td className="px-0.5 py-0.5 text-center">{row.nr_transacao || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center">{row.cd_empresa || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center">{row.nm_fantasia || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center">{formatarDataBR(row.dt_transacao)}</td>
+                          <td className="px-0.5 py-0.5 text-center">{row.tp_situacao || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center">{row.tp_operacao || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center">{row.ds_nivel || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center">{qtFaturado.toLocaleString('pt-BR')}</td>
+                          <td className={`px-0.5 py-0.5 text-right font-semibold ${row.tp_operacao === 'E' ? 'text-[#fe0000]' : row.tp_operacao === 'S' ? 'text-green-600' : ''}`}>{valorTotal !== null && valorTotal !== undefined ? valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
+                          <td className={`px-0.5 py-0.5 text-right font-semibold ${row.tp_operacao === 'E' ? 'text-[#fe0000]' : row.tp_operacao === 'S' ? 'text-green-600' : ''}`}>{valorBrutoTotal !== null && valorBrutoTotal !== undefined ? valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
+                          <td className="px-0.5 py-0.5 text-right font-semibold text-orange-600">{desconto !== null && desconto !== undefined ? desconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
                         </tr>
                       );
                     })
@@ -582,100 +892,100 @@ const Franquias = () => {
           </div>
           {expandRankProdutos && (
             <div className="p-6">
-              <div className="overflow-x-auto rounded-lg border border-gray-200">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="bg-[#000638] text-white">
-                      <th 
-                        className="px-3 py-3 text-center font-semibold cursor-pointer hover:bg-[#001060] transition-colors"
-                        onClick={() => handleSort('rank')}
-                      >
-                        <div className="flex items-center justify-center gap-1">
-                          Rank {getSortIcon('rank')}
-                        </div>
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-center font-semibold cursor-pointer hover:bg-[#001060] transition-colors"
-                        onClick={() => handleSort('cd_nivel')}
-                      >
-                        <div className="flex items-center justify-center gap-1">
-                          Código {getSortIcon('cd_nivel')}
-                        </div>
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-left font-semibold cursor-pointer hover:bg-[#001060] transition-colors"
-                        onClick={() => handleSort('modelo')}
-                      >
-                        <div className="flex items-center gap-1">
-                          Modelo {getSortIcon('modelo')}
-                        </div>
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-center font-semibold cursor-pointer hover:bg-[#001060] transition-colors"
-                        onClick={() => handleSort('quantidade')}
-                      >
-                        <div className="flex items-center justify-center gap-1">
-                          Qtd {getSortIcon('quantidade')}
-                        </div>
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-right font-semibold cursor-pointer hover:bg-[#001060] transition-colors"
-                        onClick={() => handleSort('valorTotal')}
-                      >
-                        <div className="flex items-center justify-end gap-1">
-                          Valor {getSortIcon('valorTotal')}
-                        </div>
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-right font-semibold cursor-pointer hover:bg-[#001060] transition-colors"
-                        onClick={() => handleSort('valorBrutoTotal')}
-                      >
-                        <div className="flex items-center justify-end gap-1">
-                          V. Bruto {getSortIcon('valorBrutoTotal')}
-                        </div>
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-right font-semibold cursor-pointer hover:bg-[#001060] transition-colors"
-                        onClick={() => handleSort('desconto')}
-                      >
-                        <div className="flex items-center justify-end gap-1">
-                          Desc. {getSortIcon('desconto')}
-                        </div>
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-right font-semibold cursor-pointer hover:bg-[#001060] transition-colors"
-                        onClick={() => handleSort('custo')}
-                      >
-                        <div className="flex items-center justify-end gap-1">
-                          Custo {getSortIcon('custo')}
-                        </div>
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-right font-semibold cursor-pointer hover:bg-[#001060] transition-colors"
-                        onClick={() => handleSort('cmv')}
-                      >
-                        <div className="flex items-center justify-end gap-1">
-                          CMV % {getSortIcon('cmv')}
-                        </div>
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-right font-semibold cursor-pointer hover:bg-[#001060] transition-colors"
-                        onClick={() => handleSort('markup')}
-                      >
-                        <div className="flex items-center justify-end gap-1">
-                          Markup {getSortIcon('markup')}
-                        </div>
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-right font-semibold cursor-pointer hover:bg-[#001060] transition-colors"
-                        onClick={() => handleSort('margem')}
-                      >
-                        <div className="flex items-center justify-end gap-1">
-                          Margem % {getSortIcon('margem')}
-                        </div>
-                      </th>
-                    </tr>
-                  </thead>
+                          <div className="franquias-table-container overflow-x-auto rounded-lg border border-gray-200">
+              <table className="franquias-table min-w-full text-sm">
+                                  <thead>
+                  <tr>
+                    <th 
+                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('rank')}
+                    >
+                      <div className="flex items-center justify-center gap-1">
+                        Rank {getSortIcon('rank')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('cd_nivel')}
+                    >
+                      <div className="flex items-center justify-center gap-1">
+                        Código {getSortIcon('cd_nivel')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-left text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('modelo')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Modelo {getSortIcon('modelo')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('quantidade')}
+                    >
+                      <div className="flex items-center justify-center gap-1">
+                        Qtd {getSortIcon('quantidade')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-right text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('valorTotal')}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        Valor {getSortIcon('valorTotal')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-right text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('valorBrutoTotal')}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        V. Bruto {getSortIcon('valorBrutoTotal')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-right text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('desconto')}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        Desc. {getSortIcon('desconto')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-right text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('custo')}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        Custo {getSortIcon('custo')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-right text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('cmv')}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        CMV % {getSortIcon('cmv')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-right text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('markup')}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        Markup {getSortIcon('markup')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-1 py-1 text-right text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('margem')}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        Margem % {getSortIcon('margem')}
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
                   <tbody>
                     {(() => {
                       // Agrupa por cd_nivel e soma os valores
@@ -711,7 +1021,7 @@ const Franquias = () => {
                           <tr>
                             <td colSpan={11} className="text-center py-12">
                               <div className="flex flex-col items-center gap-3">
-                                <LoadingCircle size={32} />
+                                <Spinner size={32} className="animate-spin text-blue-600" />
                                 <span className="text-gray-500 text-sm">Carregando produtos...</span>
                               </div>
                             </td>
@@ -730,20 +1040,20 @@ const Franquias = () => {
                         </tr>
                       ) : (
                         rankArray.map((produto, index) => (
-                          <tr key={index} className="bg-[#f8f9fb] border-b hover:bg-gray-50 transition-colors">
-                            <td className="px-3 py-3 text-center text-blue-600 font-bold">#{index + 1}</td>
-                            <td className="px-3 py-3 text-center font-medium">{produto.cd_nivel}</td>
-                            <td className="px-3 py-3 text-left font-medium">{produto.modelo}</td>
-                            <td className="px-3 py-3 text-center font-medium">{produto.quantidade.toLocaleString('pt-BR')}</td>
-                            <td className="px-3 py-3 text-right font-medium">{produto.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="px-3 py-3 text-right font-medium">{produto.valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="px-3 py-3 text-right font-medium text-orange-600">{(produto.valorBrutoTotal - produto.valorTotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="px-3 py-3 text-right font-medium">
+                          <tr key={index} className="border-b hover:bg-gray-50 transition-colors">
+                            <td className="px-0.5 py-0.5 text-center text-blue-600 font-semibold">#{index + 1}</td>
+                            <td className="px-0.5 py-0.5 text-center">{produto.cd_nivel || 'N/A'}</td>
+                            <td className="px-0.5 py-0.5 text-center">{produto.modelo || 'N/A'}</td>
+                            <td className="px-0.5 py-0.5 text-center">{produto.quantidade.toLocaleString('pt-BR')}</td>
+                            <td className="px-0.5 py-0.5 text-right font-semibold">{produto.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            <td className="px-0.5 py-0.5 text-right font-semibold">{produto.valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            <td className="px-0.5 py-0.5 text-right font-semibold text-orange-600">{(produto.valorBrutoTotal - produto.valorTotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            <td className="px-0.5 py-0.5 text-right font-semibold">
                               {custoMap[produto.cd_nivel?.trim()] !== undefined
                                 ? (produto.quantidade * custoMap[produto.cd_nivel.trim()]).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                                 : '-'}
                             </td>
-                            <td className="px-3 py-3 text-right font-medium">
+                            <td className="px-0.5 py-0.5 text-right font-semibold">
                               {(() => {
                                 const custoUnit = custoMap[produto.cd_nivel?.trim()];
                                 const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
@@ -754,7 +1064,7 @@ const Franquias = () => {
                                 return '-';
                               })()}
                             </td>
-                            <td className="px-3 py-3 text-right font-medium">
+                            <td className="px-0.5 py-0.5 text-right font-semibold">
                               {(() => {
                                 const custoUnit = custoMap[produto.cd_nivel?.trim()];
                                 const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
@@ -765,7 +1075,7 @@ const Franquias = () => {
                                 return '-';
                               })()}
                             </td>
-                            <td className="px-3 py-3 text-right font-medium">
+                            <td className="px-0.5 py-0.5 text-right font-semibold">
                               {(() => {
                                 const custoUnit = custoMap[produto.cd_nivel?.trim()];
                                 const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;

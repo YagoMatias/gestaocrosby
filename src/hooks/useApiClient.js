@@ -56,6 +56,16 @@ const useApiClient = () => {
               // Estrutura direta: { data: [...] }
               actualData = result.data;
               console.log('🔍 Detectada estrutura direta (data)');
+            } else if (result.data.groupedData && Array.isArray(result.data.groupedData)) {
+              // Estrutura de franquias: { data: { groupedData: [...] } }
+              // Extrair todas as transações dos grupos
+              actualData = result.data.groupedData.reduce((acc, grupo) => {
+                if (grupo.transactions && Array.isArray(grupo.transactions)) {
+                  return acc.concat(grupo.transactions);
+                }
+                return acc;
+              }, []);
+              console.log('🔍 Detectada estrutura de franquias (data.groupedData)');
             }
           }
           
@@ -136,7 +146,9 @@ const useApiClient = () => {
     extrato: (params) => apiCall('/api/financial/extrato', params),
     extratoTotvs: (params) => apiCall('/api/financial/extrato-totvs', params),
     contasPagar: (params) => apiCall('/api/financial/contas-pagar', params),
-    contasReceber: (params) => apiCall('/api/financial/contas-receber', params)
+    contasReceber: (params) => apiCall('/api/financial/contas-receber', params),
+    fluxoCaixa: (params) => apiCall('/api/financial/fluxo-caixa', params),
+    nfManifestacao: (params) => apiCall('/api/financial/nfmanifestacao', params)
   };
 
   const sales = {
