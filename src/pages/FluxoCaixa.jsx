@@ -4,7 +4,8 @@ import FiltroEmpresa from '../components/FiltroEmpresa';
 import useApiClient from '../hooks/useApiClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
-import FluxoCaixaGraficos from '../components/FluxoCaixaGraficos';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend, Tooltip as RechartsTooltip } from 'recharts';
+
 import { 
   Receipt, 
   Calendar, 
@@ -13,6 +14,7 @@ import {
   CurrencyDollar,
   Clock,
   Warning,
+
   CheckCircle,
   ArrowUp,
   ArrowDown,
@@ -20,6 +22,7 @@ import {
   CaretRight,
   CaretUp,
   CaretDown,
+  ChartPie,
   ChartBar
 } from '@phosphor-icons/react';
 
@@ -56,8 +59,87 @@ const FluxoCaixa = () => {
     direction: 'asc'
   });
 
-  // Estado para controlar exibição dos gráficos
-  const [mostrarGraficos, setMostrarGraficos] = useState(false);
+
+
+  // Estado para controlar exibição da tabela de despesas
+  const [mostrarTabela, setMostrarTabela] = useState(false);
+
+  // Estados para o gráfico de ranking
+  const [tipoGrafico, setTipoGrafico] = useState('pizza'); // 'pizza' ou 'barra'
+  const [moduloGrafico, setModuloGrafico] = useState('topicos'); // 'topicos' ou 'despesas'
+
+  // Injetar CSS customizado para a tabela
+  useEffect(() => {
+    const styleElement = document.createElement('style');
+    styleElement.textContent = `
+      .contas-table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      
+      .contas-table th,
+      .contas-table td {
+        padding: 6px 8px !important;
+        border-right: 1px solid #f3f4f6;
+        word-wrap: break-word;
+        white-space: normal;
+        font-size: 11px;
+        line-height: 1.3;
+      }
+      
+      .contas-table th:last-child,
+      .contas-table td:last-child {
+        border-right: none;
+      }
+      
+      .contas-table tbody tr:hover {
+        background-color: #f8fafc !important;
+      }
+      
+      .contas-table tbody tr:nth-child(even) {
+        background-color: #f8f9fa;
+      }
+      
+      .contas-table tbody tr:nth-child(odd) {
+        background-color: #ffffff;
+      }
+      
+      .contas-table thead th:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 10;
+        min-width: 50px !important;
+        width: 50px !important;
+        background: #000638 !important;
+      }
+      
+      .contas-table tbody td:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 9;
+        min-width: 50px !important;
+        width: 50px !important;
+      }
+      
+      .table-container {
+        overflow-x: auto;
+        position: relative;
+        max-width: 100%;
+      }
+      
+      .table-container table {
+        position: relative;
+      }
+    `;
+    
+    document.head.appendChild(styleElement);
+    
+    return () => {
+      if (styleElement && styleElement.parentNode) {
+        styleElement.parentNode.removeChild(styleElement);
+      }
+    };
+  }, []);
 
   // Funções para seleção de linhas
   const toggleLinhaSelecionada = (index) => {
@@ -121,48 +203,91 @@ const FluxoCaixa = () => {
       console.log('📅 Período (Data Liquidação):', { inicio, fim });
       console.log('🏢 Empresas selecionadas:', empresasSelecionadas);
       
-      // Buscar dados das empresas selecionadas usando a nova API
-      const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
-        try {
-          console.log(`📡 Buscando dados para empresa ${empresa.cd_empresa}...`);
-          
-          const params = {
-            dt_inicio: inicio,
-            dt_fim: fim,
-            cd_empresa: empresa.cd_empresa
-          };
-          
-          const result = await apiClient.financial.fluxoCaixa(params);
-          
-          if (result.success) {
-            const dadosArray = Array.isArray(result.data) ? result.data : [];
-            console.log(`✅ Sucesso para empresa ${empresa.cd_empresa}:`, {
-              total: dadosArray.length,
-              amostra: dadosArray.slice(0, 2),
-              tipoDado: typeof result.data,
-              éArray: Array.isArray(result.data),
-              dadoCompleto: result
-            });
-            return dadosArray;
-          } else {
-            console.warn(`⚠️ Falha para empresa ${empresa.cd_empresa}:`, result.message);
+      // Buscar dados usando uma única requisição com múltiplas empresas
+      const params = {
+        dt_inicio: inicio,
+        dt_fim: fim
+      };
+
+      // Adicionar códigos das empresas selecionadas como array
+      const codigosEmpresas = empresasSelecionadas
+        .filter(empresa => empresa.cd_empresa)
+        .map(empresa => empresa.cd_empresa);
+      
+      if (codigosEmpresas.length > 0) {
+        params.cd_empresa = codigosEmpresas;
+      }
+      
+      console.log('📋 Parâmetros da requisição:', params);
+      console.log('🏢 Códigos das empresas:', codigosEmpresas);
+      
+      const result = await apiClient.financial.fluxoCaixa(params);
+      
+      let todosOsDados = [];
+      
+      if (result.success) {
+        // Nova estrutura de resposta do backend
+        const responseData = result.data || {};
+        const dadosArray = Array.isArray(responseData.data) ? responseData.data : 
+                          Array.isArray(result.data) ? result.data : [];
+        
+        console.log('✅ Dados obtidos com requisição única:', {
+          total: dadosArray.length,
+          amostra: dadosArray.slice(0, 2),
+          empresas: codigosEmpresas,
+          totais: responseData.totals,
+          periodo: responseData.periodo
+        });
+        
+        // Armazenar informações adicionais do backend
+        if (responseData.totals) {
+          console.log('💰 Totais do período:', responseData.totals);
+        }
+        
+        todosOsDados = dadosArray;
+      } else {
+        console.warn('⚠️ Falha com requisição única, tentando requisições individuais...');
+        
+        // Fallback: tentar requisições individuais
+        const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
+          try {
+            console.log(`📡 Fallback: Buscando dados para empresa ${empresa.cd_empresa}...`);
+            
+            const paramsIndividual = {
+              dt_inicio: inicio,
+              dt_fim: fim,
+              cd_empresa: empresa.cd_empresa
+            };
+            
+            const resultIndividual = await apiClient.financial.fluxoCaixa(paramsIndividual);
+            
+            if (resultIndividual.success) {
+              // Compatibilidade com nova estrutura de resposta
+              const responseData = resultIndividual.data || {};
+              const dadosArray = Array.isArray(responseData.data) ? responseData.data : 
+                                Array.isArray(resultIndividual.data) ? resultIndividual.data : [];
+              console.log(`✅ Sucesso fallback para empresa ${empresa.cd_empresa}:`, {
+                total: dadosArray.length
+              });
+              return dadosArray;
+            } else {
+              console.warn(`⚠️ Falha fallback para empresa ${empresa.cd_empresa}:`, resultIndividual.message);
+              return [];
+            }
+          } catch (err) {
+            console.error(`❌ Erro fallback para empresa ${empresa.cd_empresa}:`, err);
             return [];
           }
-        } catch (err) {
-          console.error(`❌ Erro para empresa ${empresa.cd_empresa}:`, err);
-          return [];
-        }
-      });
-      
-      // Aguardar todas as requisições
-      const resultados = await Promise.all(todasAsPromises);
-      
-      // Combinar todos os dados
-      const todosOsDados = resultados.flat();
+        });
+        
+        // Aguardar todas as requisições fallback
+        const resultados = await Promise.all(todasAsPromises);
+        todosOsDados = resultados.flat();
+      }
       
       console.log('📊 Resultado final:', {
         totalRegistros: todosOsDados.length,
-        empresasComDados: resultados.filter(r => r.length > 0).length,
+        empresas: codigosEmpresas.length,
         primeirosRegistros: todosOsDados.slice(0, 3)
       });
       
@@ -845,34 +970,41 @@ const FluxoCaixa = () => {
               <CardDescription className="text-xs text-gray-500">Valor total das duplicatas</CardDescription>
             </CardContent>
           </Card>
-        </div>
+              </div>
 
-        {/* Botão para mostrar/ocultar gráficos */}
-        {dadosCarregados && dados.length > 0 && (
-          <div className="mb-6 flex justify-center">
-            <button
-              onClick={() => setMostrarGraficos(!mostrarGraficos)}
-              className="flex items-center gap-2 bg-[#000638] text-white px-6 py-3 rounded-lg hover:bg-[#fe0000] transition-colors font-medium shadow-md"
-            >
-              <ChartBar size={20} />
-              {mostrarGraficos ? 'Ocultar Gráficos' : 'Mostrar Gráficos'}
-            </button>
+
+
+        {/* Gráfico de Ranking de Despesas */}
+        {dadosCarregados && dadosOrdenados.length > 0 && (
+          <div className="max-w-6xl mx-auto w-full mb-6">
+            <GraficoRankingDespesas 
+              dados={dadosOrdenados}
+              tipoGrafico={tipoGrafico}
+              moduloGrafico={moduloGrafico}
+              onTipoChange={setTipoGrafico}
+              onModuloChange={setModuloGrafico}
+            />
           </div>
         )}
 
-        {/* Gráficos */}
-        {mostrarGraficos && dadosCarregados && dados.length > 0 && (
-          <div className="mb-8">
-            <FluxoCaixaGraficos dadosAgrupados={dadosAgrupados} />
-          </div>
-        )}
-
-        {/* Área para a tabela será adicionada aqui */}
+        {/* Dropdown da Tabela de Despesas */}
         <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full">
-          <div className="p-6 border-b border-[#000638]/10 flex justify-between items-center">
-            <h2 className="text-xl font-bold text-[#000638]">Detalhamento de Fluxo de Caixa</h2>
+          <div 
+            className="p-6 border-b border-[#000638]/10 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors"
+            onClick={() => setMostrarTabela(!mostrarTabela)}
+          >
+            <h2 className="text-xl font-bold text-[#000638]">Detalhamento de Despesas</h2>
+            <div className="flex items-center gap-2">
+
+              {mostrarTabela ? (
+                <CaretUp size={20} className="text-[#000638]" />
+              ) : (
+                <CaretDown size={20} className="text-[#000638]" />
+              )}
+            </div>
           </div>
           
+          {mostrarTabela && (
           <div className="p-6">
             {loading ? (
               <div className="flex justify-center items-center py-20">
@@ -896,19 +1028,679 @@ const FluxoCaixa = () => {
                 </div>
               </div>
             ) : (
-              <div className="text-center py-8">
-                <div className="text-gray-600 text-lg mb-2">
-                  {totalContas} registros encontrados
+                <DespesasPorCategoria 
+                  dados={dadosOrdenados}
+                  totalContas={totalContas}
+                  linhasSelecionadas={linhasSelecionadas}
+                  toggleLinhaSelecionada={toggleLinhaSelecionada}
+                />
+              )}
                 </div>
-                <div className="text-gray-400 text-sm">
-                  Tabela será implementada em breve
+          )}
                 </div>
+              </div>
+    </Layout>
+  );
+};
+
+// Componente para gráfico de ranking de despesas
+const GraficoRankingDespesas = ({ dados, tipoGrafico, moduloGrafico, onTipoChange, onModuloChange }) => {
+  // Cores para os gráficos
+  const CORES = [
+    '#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#8dd1e1', 
+    '#d084d0', '#ffb347', '#87ceeb', '#dda0dd', '#98fb98'
+  ];
+
+  // Função para preparar dados dos tópicos
+  const prepararDadosTopicos = (dados) => {
+    const grupos = {};
+    
+    dados.forEach((grupo) => {
+      const cdDespesa = grupo.item.cd_despesaitem;
+      const codigo = parseInt(cdDespesa) || 0;
+      
+      let categoria;
+      if (codigo >= 1000 && codigo <= 1999) {
+        categoria = 'CUSTO DAS MERCADORIAS VENDIDAS';
+      } else if (codigo >= 2000 && codigo <= 2999) {
+        categoria = 'DESPESAS OPERACIONAIS';
+      } else if (codigo >= 3000 && codigo <= 3999) {
+        categoria = 'DESPESAS COM PESSOAL';
+      } else if (codigo >= 4000 && codigo <= 4999) {
+        categoria = 'ALUGUÉIS E ARRENDAMENTOS';
+      } else if (codigo >= 5000 && codigo <= 5999) {
+        categoria = 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
+      } else if (codigo >= 6000 && codigo <= 6999) {
+        categoria = 'DESPESAS GERAIS';
+      } else if (codigo >= 7000 && codigo <= 7999) {
+        categoria = 'DESPESAS FINANCEIRAS';
+      } else if (codigo >= 8000 && codigo <= 8999) {
+        categoria = 'OUTRAS DESPESAS OPERACIONAIS';
+      } else if (codigo >= 9000 && codigo <= 9999) {
+        categoria = 'DESPESAS C/ VENDAS';
+      } else {
+        categoria = 'SEM CLASSIFICAÇÃO';
+      }
+      
+      if (!grupos[categoria]) {
+        grupos[categoria] = 0;
+      }
+      grupos[categoria] += parseFloat(grupo.item.vl_duplicata || 0);
+    });
+
+    return Object.entries(grupos)
+      .map(([nome, valor]) => ({
+        nome: nome.length > 20 ? nome.substring(0, 20) + '...' : nome,
+        nomeCompleto: nome,
+        valor: valor
+      }))
+      .sort((a, b) => b.valor - a.valor)
+      .slice(0, 8); // Top 8
+  };
+
+  // Função para preparar dados das despesas individuais
+  const prepararDadosDespesas = (dados) => {
+    const grupos = {};
+    
+    dados.forEach((grupo) => {
+      const despesa = grupo.item.ds_despesaitem || 'SEM DESCRIÇÃO';
+      
+      if (!grupos[despesa]) {
+        grupos[despesa] = 0;
+      }
+      grupos[despesa] += parseFloat(grupo.item.vl_duplicata || 0);
+    });
+
+    return Object.entries(grupos)
+      .map(([nome, valor]) => ({
+        nome: nome.length > 25 ? nome.substring(0, 25) + '...' : nome,
+        nomeCompleto: nome,
+        valor: valor
+      }))
+      .sort((a, b) => b.valor - a.valor)
+      .slice(0, 10); // Top 10
+  };
+
+  // Preparar dados baseado no módulo selecionado
+  const dadosGrafico = moduloGrafico === 'topicos' 
+    ? prepararDadosTopicos(dados)
+    : prepararDadosDespesas(dados);
+
+  // Tooltip customizado
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-white p-3 border border-gray-300 rounded shadow-lg">
+          <p className="font-medium text-gray-800">{data.nomeCompleto}</p>
+          <p className="text-sm text-gray-600">
+            Valor: {data.valor.toLocaleString('pt-BR', {
+              style: 'currency',
+              currency: 'BRL',
+            })}
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  if (dadosGrafico.length === 0) {
+    return (
+      <div className="text-center py-8 text-gray-500">
+        Nenhum dado disponível para o gráfico
+      </div>
+    );
+  }
+
+  return (
+    <Card className="w-full bg-white">
+      <CardHeader className="bg-white">
+        <div className="flex justify-between items-center">
+          <div>
+            <CardTitle className="text-lg font-bold text-[#000638]">
+              Ranking de {moduloGrafico === 'topicos' ? 'Tópicos de Despesas' : 'Despesas'}
+            </CardTitle>
+            <CardDescription>
+              {moduloGrafico === 'topicos' ? 'Top 8 categorias' : 'Top 10 despesas'} por valor
+            </CardDescription>
+          </div>
+          
+          {/* Controles */}
+          <div className="flex items-center gap-4">
+            {/* Toggle Módulo */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-600">Módulo:</span>
+              <div className="flex border border-gray-300 rounded-md overflow-hidden">
+                <button
+                  onClick={() => onModuloChange('topicos')}
+                  className={`px-3 py-1 text-xs font-medium transition-colors ${
+                    moduloGrafico === 'topicos'
+                      ? 'bg-[#000638] text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Tópicos
+                </button>
+                <button
+                  onClick={() => onModuloChange('despesas')}
+                  className={`px-3 py-1 text-xs font-medium transition-colors ${
+                    moduloGrafico === 'despesas'
+                      ? 'bg-[#000638] text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Despesas
+                </button>
+              </div>
+            </div>
+
+            {/* Toggle Tipo de Gráfico */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-600">Tipo:</span>
+              <div className="flex border border-gray-300 rounded-md overflow-hidden">
+                <button
+                  onClick={() => onTipoChange('pizza')}
+                  className={`px-3 py-1 text-xs font-medium transition-colors flex items-center gap-1 ${
+                    tipoGrafico === 'pizza'
+                      ? 'bg-[#000638] text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <ChartPie size={14} />
+                  Pizza
+                </button>
+                <button
+                  onClick={() => onTipoChange('barra')}
+                  className={`px-3 py-1 text-xs font-medium transition-colors flex items-center gap-1 ${
+                    tipoGrafico === 'barra'
+                      ? 'bg-[#000638] text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <ChartBar size={14} />
+                  Barra
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </CardHeader>
+      
+      <CardContent className="bg-white">
+        <div className="h-80 bg-white">
+          <ResponsiveContainer width="100%" height="100%">
+            {tipoGrafico === 'pizza' ? (
+              <PieChart>
+                <Pie
+                  data={dadosGrafico}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ nome, percent }) => `${nome} (${(percent * 100).toFixed(1)}%)`}
+                  outerRadius={100}
+                  fill="#8884d8"
+                  dataKey="valor"
+                >
+                  {dadosGrafico.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={CORES[index % CORES.length]} />
+                  ))}
+                </Pie>
+                <RechartsTooltip content={<CustomTooltip />} />
+              </PieChart>
+            ) : (
+              <BarChart
+                data={dadosGrafico}
+                margin={{
+                  top: 5,
+                  right: 30,
+                  left: 20,
+                  bottom: 60,
+                }}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="nome" 
+                  angle={-45}
+                  textAnchor="end"
+                  height={80}
+                  fontSize={11}
+                />
+                <YAxis 
+                  tickFormatter={(value) => 
+                    value.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 0,
+                    })
+                  }
+                  fontSize={11}
+                />
+                <RechartsTooltip content={<CustomTooltip />} />
+                <Bar dataKey="valor">
+                  {dadosGrafico.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={CORES[index % CORES.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// Componente para agrupar despesas por categoria
+const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada }) => {
+  const [categoriasExpandidas, setCategoriasExpandidas] = useState(new Set());
+
+  // Função para classificar despesa por código
+  const classificarDespesa = (cdDespesa) => {
+    const codigo = parseInt(cdDespesa) || 0;
+    
+    if (codigo >= 1000 && codigo <= 1999) {
+      return 'CUSTO DAS MERCADORIAS VENDIDAS';
+    } else if (codigo >= 2000 && codigo <= 2999) {
+      return 'DESPESAS OPERACIONAIS';
+    } else if (codigo >= 3000 && codigo <= 3999) {
+      return 'DESPESAS COM PESSOAL';
+    } else if (codigo >= 4000 && codigo <= 4999) {
+      return 'ALUGUÉIS E ARRENDAMENTOS';
+    } else if (codigo >= 5000 && codigo <= 5999) {
+      return 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
+    } else if (codigo >= 6000 && codigo <= 6999) {
+      return 'DESPESAS GERAIS';
+    } else if (codigo >= 7000 && codigo <= 7999) {
+      return 'DESPESAS FINANCEIRAS';
+    } else if (codigo >= 8000 && codigo <= 8999) {
+      return 'OUTRAS DESPESAS OPERACIONAIS';
+    } else if (codigo >= 9000 && codigo <= 9999) {
+      return 'DESPESAS C/ VENDAS';
+    } else {
+      return 'SEM CLASSIFICAÇÃO';
+    }
+  };
+
+  // Agrupar dados por classificação de despesa, nome da despesa e fornecedor
+  const dadosAgrupados = React.useMemo(() => {
+    const categorias = {};
+    
+    dados.forEach((grupo, index) => {
+      const cdDespesa = grupo.item.cd_despesaitem;
+      const nomeDespesa = grupo.item.ds_despesaitem || 'SEM DESCRIÇÃO';
+      const nomeFornecedor = grupo.item.nm_fornecedor || 'SEM FORNECEDOR';
+      const categoria = classificarDespesa(cdDespesa);
+      
+      // Criar categoria principal se não existir
+      if (!categorias[categoria]) {
+        categorias[categoria] = {
+          nome: categoria,
+          despesas: {},
+          total: 0,
+          quantidade: 0,
+          expandida: false
+        };
+      }
+      
+      // Criar sub-tópico da despesa se não existir
+      if (!categorias[categoria].despesas[nomeDespesa]) {
+        categorias[categoria].despesas[nomeDespesa] = {
+          nome: nomeDespesa,
+          fornecedores: {},
+          total: 0,
+          quantidade: 0,
+          expandida: false
+        };
+      }
+      
+      // Criar sub-tópico do fornecedor se não existir
+      if (!categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor]) {
+        categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor] = {
+          nome: nomeFornecedor,
+          itens: [],
+          total: 0,
+          quantidade: 0,
+          expandida: false
+        };
+      }
+      
+      // Adicionar item ao fornecedor específico
+      categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor].itens.push({ ...grupo, indiceOriginal: index });
+      categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor].total += parseFloat(grupo.item.vl_duplicata || 0);
+      categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor].quantidade += 1;
+      
+      // Atualizar totais da despesa
+      categorias[categoria].despesas[nomeDespesa].total += parseFloat(grupo.item.vl_duplicata || 0);
+      categorias[categoria].despesas[nomeDespesa].quantidade += 1;
+      
+      // Atualizar totais da categoria principal
+      categorias[categoria].total += parseFloat(grupo.item.vl_duplicata || 0);
+      categorias[categoria].quantidade += 1;
+    });
+
+    // Definir ordem específica das categorias
+    const ordemCategorias = [
+      'CUSTO DAS MERCADORIAS VENDIDAS',
+      'DESPESAS OPERACIONAIS',
+      'DESPESAS COM PESSOAL',
+      'ALUGUÉIS E ARRENDAMENTOS',
+      'IMPOSTOS, TAXAS E CONTRIBUIÇÕES',
+      'DESPESAS GERAIS',
+      'DESPESAS FINANCEIRAS',
+      'OUTRAS DESPESAS OPERACIONAIS',
+      'DESPESAS C/ VENDAS',
+      'SEM CLASSIFICAÇÃO'
+    ];
+
+    // Converter para array e ordenar pela ordem definida
+    return ordemCategorias
+      .filter(categoria => categorias[categoria]) // Só incluir categorias que têm dados
+      .map(categoria => {
+        const cat = categorias[categoria];
+        // Converter despesas em array e ordenar por valor (maior primeiro)
+        cat.despesasArray = Object.values(cat.despesas)
+          .map(despesa => {
+            // Converter fornecedores em array e ordenar por valor (maior primeiro)
+            despesa.fornecedoresArray = Object.values(despesa.fornecedores).sort((a, b) => b.total - a.total);
+            return despesa;
+          })
+          .sort((a, b) => b.total - a.total);
+        return cat;
+      });
+  }, [dados]);
+
+  const toggleCategoria = (nomeCategoria) => {
+    setCategoriasExpandidas(prev => {
+      const novoSet = new Set(prev);
+      if (novoSet.has(nomeCategoria)) {
+        novoSet.delete(nomeCategoria);
+      } else {
+        novoSet.add(nomeCategoria);
+      }
+      return novoSet;
+    });
+  };
+
+  const toggleDespesa = (nomeCategoria, nomeDespesa) => {
+    const chave = `${nomeCategoria}|${nomeDespesa}`;
+    setCategoriasExpandidas(prev => {
+      const novoSet = new Set(prev);
+      if (novoSet.has(chave)) {
+        novoSet.delete(chave);
+      } else {
+        novoSet.add(chave);
+      }
+      return novoSet;
+    });
+  };
+
+  const toggleFornecedor = (nomeCategoria, nomeDespesa, nomeFornecedor) => {
+    const chave = `${nomeCategoria}|${nomeDespesa}|${nomeFornecedor}`;
+    setCategoriasExpandidas(prev => {
+      const novoSet = new Set(prev);
+      if (novoSet.has(chave)) {
+        novoSet.delete(chave);
+      } else {
+        novoSet.add(chave);
+      }
+      return novoSet;
+    });
+  };
+
+  const formatarData = (data) => {
+    if (!data) return '';
+    if (data.includes('T')) {
+      return new Date(data).toLocaleDateString('pt-BR');
+    }
+    return data;
+  };
+
+  return (
+    <div className="space-y-2">
+            {dadosAgrupados.map((categoria) => {
+        const isCategoriaExpanded = categoriasExpandidas.has(categoria.nome);
+        
+        return (
+          <div key={categoria.nome} className="border border-gray-200 rounded-lg overflow-hidden">
+            {/* Cabeçalho da categoria principal */}
+            <div
+              className="bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors px-3 py-2 flex items-center justify-between"
+              onClick={() => toggleCategoria(categoria.nome)}
+            >
+              <div className="flex items-center space-x-2">
+                {isCategoriaExpanded ? (
+                  <CaretDown size={16} className="text-gray-600" />
+                ) : (
+                  <CaretRight size={16} className="text-gray-600" />
+                )}
+                <div>
+                  <h3 className="font-medium text-sm text-gray-800">{categoria.nome}</h3>
+                  <div className="flex items-center space-x-3 text-xs text-gray-600">
+                    <span>{categoria.quantidade} conta(s)</span>
+                    <span>{categoria.despesasArray.length} despesa(s)</span>
+                    <span className="font-medium text-red-600">
+                      {categoria.total.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Sub-tópicos de despesas */}
+            {isCategoriaExpanded && (
+              <div className="bg-white border-t border-gray-100">
+                {categoria.despesasArray.map((despesa) => {
+                  const chaveExpansao = `${categoria.nome}|${despesa.nome}`;
+                  const isDespesaExpanded = categoriasExpandidas.has(chaveExpansao);
+                  
+                  return (
+                    <div key={despesa.nome} className="border-b border-gray-100 last:border-b-0">
+                      {/* Cabeçalho da despesa específica */}
+                      <div
+                        className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-6 py-2 flex items-center justify-between"
+                        onClick={() => toggleDespesa(categoria.nome, despesa.nome)}
+                      >
+                        <div className="flex items-center space-x-2">
+                          {isDespesaExpanded ? (
+                            <CaretDown size={14} className="text-gray-500" />
+                          ) : (
+                            <CaretRight size={14} className="text-gray-500" />
+                          )}
+                          <div>
+                            <h4 className="font-medium text-xs text-gray-700">{despesa.nome}</h4>
+                            <div className="flex items-center space-x-3 text-xs text-gray-500">
+                              <span>{despesa.quantidade} conta(s)</span>
+                              <span>{despesa.fornecedoresArray.length} fornecedor(es)</span>
+                              <span className="font-medium text-red-500">
+                                {despesa.total.toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                })}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Sub-tópicos de fornecedores */}
+                      {isDespesaExpanded && (
+                        <div className="bg-white border-t border-gray-50">
+                          {despesa.fornecedoresArray.map((fornecedor) => {
+                            const chaveExpansaoFornecedor = `${categoria.nome}|${despesa.nome}|${fornecedor.nome}`;
+                            const isFornecedorExpanded = categoriasExpandidas.has(chaveExpansaoFornecedor);
+                            
+                            return (
+                              <div key={fornecedor.nome} className="border-b border-gray-50 last:border-b-0">
+                                {/* Cabeçalho do fornecedor */}
+                                <div
+                                  className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-9 py-2 flex items-center justify-between"
+                                  onClick={() => toggleFornecedor(categoria.nome, despesa.nome, fornecedor.nome)}
+                                >
+                                  <div className="flex items-center space-x-2">
+                                    {isFornecedorExpanded ? (
+                                      <CaretDown size={12} className="text-gray-400" />
+                                    ) : (
+                                      <CaretRight size={12} className="text-gray-400" />
+                                    )}
+                                    <div>
+                                      <h5 className="font-medium text-xs text-gray-600">{fornecedor.nome}</h5>
+                                      <div className="flex items-center space-x-3 text-xs text-gray-400">
+                                        <span>{fornecedor.quantidade} conta(s)</span>
+                                        <span className="font-medium text-red-400">
+                                          {fornecedor.total.toLocaleString('pt-BR', {
+                                            style: 'currency',
+                                            currency: 'BRL',
+                                          })}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Tabela de detalhes do fornecedor */}
+                                {isFornecedorExpanded && (
+                                  <div className="bg-white">
+                                    <div className="overflow-x-auto">
+                                      <table className="contas-table w-full border-collapse">
+                                        <thead>
+                                          <tr className="bg-[#000638] text-white text-[10px]">
+                                            <th className="px-2 py-1 text-center text-[10px]" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: '#000638' }}>
+                                              Selecionar
+                                            </th>
+                                            <th className="px-2 py-1 text-center text-[10px]">Vencimento</th>
+                                            <th className="px-2 py-1 text-center text-[10px]">Valor</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Fornecedor</th>
+                                            <th className="px-3 py-1 text-center text-[10px]">NM Fornecedor</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Despesa</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">NM CUSTO</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Empresa</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Duplicata</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Portador</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Emissão</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Entrada</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Liquidação</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Situação</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Estágio</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Juros</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Acréscimo</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Desconto</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Pago</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Aceite</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Parcela</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Observação</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {fornecedor.itens.map((grupo, index) => {
+                                            const indiceReal = grupo.indiceOriginal;
+                                            const isSelected = linhasSelecionadas.has(indiceReal);
+                                            
+                                            return (
+                                              <tr
+                                                key={`${grupo.item.cd_empresa}-${grupo.item.nr_duplicata}-${index}`}
+                                                className={`text-[10px] border-b transition-colors ${
+                                                  isSelected
+                                                    ? 'bg-blue-100 hover:bg-blue-200'
+                                                    : index % 2 === 0
+                                                    ? 'bg-white hover:bg-gray-100'
+                                                    : 'bg-gray-50 hover:bg-gray-100'
+                                                }`}
+                                              >
+                                                <td className="px-2 py-1 text-center" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    onChange={() => toggleLinhaSelecionada(indiceReal)}
+                                                    className="rounded"
+                                                  />
+                                                </td>
+                                                <td className="px-2 py-1 text-center">{formatarData(grupo.item.dt_vencimento)}</td>
+                                                <td className="px-2 py-1 text-right font-medium text-green-600">
+                                                  {parseFloat(grupo.item.vl_duplicata || 0).toLocaleString('pt-BR', {
+                                                    style: 'currency',
+                                                    currency: 'BRL',
+                                                  })}
+                                                </td>
+                                                <td className="px-1 py-1 text-center">{grupo.item.cd_fornecedor || ''}</td>
+                                                <td className="px-3 py-1 text-left max-w-32 truncate" title={grupo.item.nm_fornecedor}>
+                                                  {grupo.item.nm_fornecedor || ''}
+                                                </td>
+                                                <td className="px-1 py-1 text-left max-w-24 truncate" title={grupo.item.ds_despesaitem}>
+                                                  {grupo.item.ds_despesaitem || ''}
+                                                </td>
+                                                <td className="px-1 py-1 text-left max-w-24 truncate" title={grupo.item.ds_ccusto}>
+                                                  {grupo.item.ds_ccusto || ''}
+                                                </td>
+                                                <td className="px-1 py-1 text-center">{grupo.item.cd_empresa || ''}</td>
+                                                <td className="px-1 py-1 text-center">{grupo.item.nr_duplicata || ''}</td>
+                                                <td className="px-1 py-1 text-center">{grupo.item.nr_portador || ''}</td>
+                                                <td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_emissao)}</td>
+                                                <td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_entrada)}</td>
+                                                <td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_liq)}</td>
+                                                <td className="px-1 py-1 text-center">{grupo.item.tp_situacao || ''}</td>
+                                                <td className="px-1 py-1 text-center">{grupo.item.tp_estagio || ''}</td>
+                                                <td className="px-1 py-1 text-right">
+                                                  {parseFloat(grupo.item.vl_juros || 0).toLocaleString('pt-BR', {
+                                                    style: 'currency',
+                                                    currency: 'BRL',
+                                                  })}
+                                                </td>
+                                                <td className="px-1 py-1 text-right">
+                                                  {parseFloat(grupo.item.vl_acrescimo || 0).toLocaleString('pt-BR', {
+                                                    style: 'currency',
+                                                    currency: 'BRL',
+                                                  })}
+                                                </td>
+                                                <td className="px-1 py-1 text-right">
+                                                  {parseFloat(grupo.item.vl_desconto || 0).toLocaleString('pt-BR', {
+                                                    style: 'currency',
+                                                    currency: 'BRL',
+                                                  })}
+                                                </td>
+                                                <td className="px-1 py-1 text-right">
+                                                  {parseFloat(grupo.item.vl_pago || 0).toLocaleString('pt-BR', {
+                                                    style: 'currency',
+                                                    currency: 'BRL',
+                                                  })}
+                                                </td>
+                                                <td className="px-1 py-1 text-center">{grupo.item.in_aceite || ''}</td>
+                                                <td className="px-1 py-1 text-center">{grupo.item.nr_parcela || ''}</td>
+                                                <td className="px-1 py-1 text-left max-w-32 truncate" title={grupo.item.ds_observacao}>
+                                                  {grupo.item.ds_observacao || ''}
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
+        );
+      })}
+
+      {dadosAgrupados.length === 0 && (
+        <div className="text-center py-8 text-gray-500">
+          Nenhuma despesa encontrada para os filtros selecionados
         </div>
-      </div>
-    </Layout>
+      )}
+    </div>
   );
 };
 
