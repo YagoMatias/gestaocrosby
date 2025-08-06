@@ -333,53 +333,41 @@ const ContasAPagar = () => {
       console.log('📅 Período:', { inicio, fim });
       console.log('🏢 Empresas selecionadas:', empresasSelecionadas);
       
-      // Buscar dados das empresas selecionadas usando o novo hook
-      const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
-        try {
-          console.log(`📡 Buscando dados para empresa ${empresa.cd_empresa}...`);
-          
-          const params = {
-            dt_inicio: inicio,
-            dt_fim: fim,
-            cd_empresa: empresa.cd_empresa
-          };
-          
-          const result = await apiClient.financial.contasPagar(params);
-          
-          if (result.success) {
-            const dadosArray = Array.isArray(result.data) ? result.data : [];
-            console.log(`✅ Sucesso para empresa ${empresa.cd_empresa}:`, {
-              total: dadosArray.length,
-              amostra: dadosArray.slice(0, 2),
-              tipoDado: typeof result.data,
-              éArray: Array.isArray(result.data),
-              dadoCompleto: result
-            });
-            return dadosArray;
-          } else {
-            console.warn(`⚠️ Falha para empresa ${empresa.cd_empresa}:`, result.message);
-            return [];
-          }
-        } catch (err) {
-          console.error(`❌ Erro para empresa ${empresa.cd_empresa}:`, err);
-          return [];
-        }
-      });
+      // Buscar dados usando a nova rota que aceita múltiplas empresas
+      const params = {
+        dt_inicio: inicio,
+        dt_fim: fim
+      };
+
+      // Adicionar códigos das empresas selecionadas como array
+      const codigosEmpresas = empresasSelecionadas
+        .filter(empresa => empresa.cd_empresa)
+        .map(empresa => empresa.cd_empresa);
       
-      // Aguardar todas as requisições
-      const resultados = await Promise.all(todasAsPromises);
+      if (codigosEmpresas.length > 0) {
+        params.cd_empresa = codigosEmpresas;
+      }
       
-      // Combinar todos os dados
-      const todosOsDados = resultados.flat();
+      console.log('📋 Parâmetros da requisição:', params);
+      console.log('🏢 Códigos das empresas:', codigosEmpresas);
       
-      console.log('📊 Resultado final:', {
-        totalRegistros: todosOsDados.length,
-        empresasComDados: resultados.filter(r => r.length > 0).length,
-        primeirosRegistros: todosOsDados.slice(0, 3)
-      });
+      const result = await apiClient.financial.contasPagar(params);
       
-      setDados(todosOsDados);
-      setDadosCarregados(true);
+      if (result.success) {
+        const dadosArray = Array.isArray(result.data) ? result.data : [];
+        console.log('✅ Dados obtidos:', {
+          total: dadosArray.length,
+          amostra: dadosArray.slice(0, 2),
+          empresas: codigosEmpresas
+        });
+        
+        setDados(dadosArray);
+        setDadosCarregados(true);
+      } else {
+        console.warn('⚠️ Falha ao buscar dados:', result.message);
+        setDados([]);
+        setDadosCarregados(false);
+      }
     } catch (err) {
       console.error('❌ Erro geral ao buscar dados:', err);
       setDados([]);

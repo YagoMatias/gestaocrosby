@@ -17,9 +17,7 @@ const FiltroEmpresa = ({ empresasSelecionadas = [], onSelectEmpresas }) => {
        try {
          // Tentar diferentes rotas para buscar empresas
          const rotas = [
-                   'https://apigestaocrosby-bw2v.onrender.com/api/company/empresas',
-        'https://apigestaocrosby-bw2v.onrender.com/api/utils/autocomplete/nm_grupoempresa?q=',
-        'https://apigestaocrosby-bw2v.onrender.com/api/company/grupo-empresas'
+           'https://apigestaocrosby-bw2v.onrender.com/api/company/empresas'
          ];
          
          let todasEmpresasAPI = null;
@@ -27,16 +25,20 @@ const FiltroEmpresa = ({ empresasSelecionadas = [], onSelectEmpresas }) => {
          
          for (const rota of rotas) {
            try {
+             console.log('🔍 Tentando rota:', rota);
              const res = await fetch(rota);
              
              if (res.ok) {
                todasEmpresasAPI = await res.json();
                rotaUsada = rota;
-               console.log('Rota funcionou:', rota);
+               console.log('✅ Rota funcionou:', rota);
+               console.log('📊 Dados recebidos:', todasEmpresasAPI);
                break;
+             } else {
+               console.warn(`❌ Rota ${rota} retornou status ${res.status}: ${res.statusText}`);
              }
            } catch (err) {
-             // Silenciar erros de rotas que não funcionam
+             console.warn(`❌ Erro na rota ${rota}:`, err);
            }
          }
          
@@ -47,25 +49,46 @@ const FiltroEmpresa = ({ empresasSelecionadas = [], onSelectEmpresas }) => {
          
          // Verificar se a resposta tem a estrutura esperada
          let dadosEmpresas = todasEmpresasAPI;
+         console.log('🔧 Processando dados. Tipo:', typeof todasEmpresasAPI, 'É array:', Array.isArray(todasEmpresasAPI));
          
          // Se for um objeto com propriedades, tentar extrair o array
          if (todasEmpresasAPI && typeof todasEmpresasAPI === 'object' && !Array.isArray(todasEmpresasAPI)) {
+           console.log('🔍 Propriedades disponíveis:', Object.keys(todasEmpresasAPI));
+           
            if (todasEmpresasAPI.empresas) {
              dadosEmpresas = todasEmpresasAPI.empresas;
+             console.log('✅ Usando propriedade "empresas"');
            } else if (todasEmpresasAPI.data) {
              dadosEmpresas = todasEmpresasAPI.data;
+             console.log('✅ Usando propriedade "data"');
            } else if (todasEmpresasAPI.dados) {
              dadosEmpresas = todasEmpresasAPI.dados;
+             console.log('✅ Usando propriedade "dados"');
            } else {
              // Se não encontrar propriedade específica, usar o objeto como está
              dadosEmpresas = Object.values(todasEmpresasAPI);
+             console.log('⚠️ Usando Object.values() como fallback');
            }
          }
          
+         console.log('📋 Dados para filtrar:', dadosEmpresas);
+         
          // Filtrar apenas as empresas que queremos
-         const empresasFiltradas = dadosEmpresas.filter(empresa => 
-           empresa && empresa.cd_empresa && codigosEmpresas.includes(empresa.cd_empresa)
-         );
+         console.log('🎯 Códigos que estamos procurando:', codigosEmpresas);
+         console.log('📊 Estrutura de empresa de exemplo:', dadosEmpresas[0]);
+         
+         const empresasFiltradas = dadosEmpresas.filter(empresa => {
+           const temEmpresa = empresa && empresa.cd_empresa;
+           const codigoIncluido = temEmpresa && codigosEmpresas.includes(empresa.cd_empresa.toString());
+           
+           if (temEmpresa && !codigoIncluido) {
+             console.log(`⏭️ Empresa ${empresa.cd_empresa} ignorada (não está na lista)`);
+           }
+           
+           return temEmpresa && codigoIncluido;
+         });
+         
+         console.log(`🔍 Empresas filtradas: ${empresasFiltradas.length} de ${dadosEmpresas.length}`);
          
          // Ordenar por código da empresa
          const empresasOrdenadas = empresasFiltradas.sort((a, b) => {
@@ -76,7 +99,11 @@ const FiltroEmpresa = ({ empresasSelecionadas = [], onSelectEmpresas }) => {
          
          // Verificar se encontrou empresas
          if (empresasOrdenadas.length === 0) {
-           console.warn('Nenhuma empresa encontrada com os códigos especificados');
+           console.warn('❌ Nenhuma empresa encontrada com os códigos especificados');
+           console.log('📋 Dados brutos recebidos:', todasEmpresasAPI);
+           console.log('📋 Dados processados:', dadosEmpresas);
+         } else {
+           console.log('✅ Empresas encontradas:', empresasOrdenadas.map(e => `${e.cd_empresa} - ${e.nm_grupoempresa || e.nm_empresa || 'Sem nome'}`));
          }
          
          setTodasEmpresas(empresasOrdenadas);

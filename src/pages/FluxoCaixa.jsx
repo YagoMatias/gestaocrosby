@@ -677,7 +677,7 @@ const FluxoCaixa = () => {
 
   return (
     <Layout>
-      <div className="w-full max-w-xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
+      <div className="w-full w-8xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
         <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Fluxo de Caixa</h1>
         
         {/* Filtros */}
@@ -831,108 +831,18 @@ const FluxoCaixa = () => {
           <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-green-600" />
-                <CardTitle className="text-sm font-bold text-green-700">Valor Total</CardTitle>
+                <CurrencyDollar size={18} className="text-red-600" />
+                <CardTitle className="text-sm font-bold text-red-700">Despesas</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-green-600 mb-1 break-words">
-                {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : totalValor.toLocaleString('pt-BR', {
+              <div className="text-2xl font-extrabold text-red-600 mb-1 break-words">
+                {loading ? <Spinner size={24} className="animate-spin text-red-600" /> : totalValor.toLocaleString('pt-BR', {
                   style: 'currency',
                   currency: 'BRL',
                 })}
               </div>
               <CardDescription className="text-xs text-gray-500">Valor total das duplicatas</CardDescription>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
-            <CardHeader className="pb-0">
-              <div className="flex items-center gap-2">
-                <Warning size={18} className="text-red-600" />
-                <CardTitle className="text-sm font-bold text-red-700">Contas Vencidas</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-red-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-red-600" /> : contasVencidas}
-              </div>
-              <CardDescription className="text-xs text-gray-500">Contas em atraso</CardDescription>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
-            <CardHeader className="pb-0">
-              <div className="flex items-center gap-2">
-                <Clock size={18} className="text-yellow-600" />
-                <CardTitle className="text-sm font-bold text-yellow-700">A Vencer</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-yellow-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-yellow-600" /> : contasAVencer}
-              </div>
-              <CardDescription className="text-xs text-gray-500">Contas futuras</CardDescription>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
-            <CardHeader className="pb-0">
-              <div className="flex items-center gap-2">
-                <Calendar size={18} className="text-purple-600" />
-                <CardTitle className="text-sm font-bold text-purple-700">Próximas a Vencer</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-purple-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-purple-600" /> : totalContasProximasVencer}
-              </div>
-              <CardDescription className="text-xs text-gray-500 mb-2">Este mês</CardDescription>
-              <div className="text-sm font-semibold text-purple-600">
-                {loading ? <Spinner size={16} className="animate-spin text-purple-600" /> : valorContasProximasVencer.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                })}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
-            <CardHeader className="pb-0">
-              <div className="flex items-center gap-2">
-                <CheckCircle size={18} className="text-green-600" />
-                <CardTitle className="text-sm font-bold text-green-700">Contas Pagas</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-green-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : totalContasPagas}
-              </div>
-              <CardDescription className="text-xs text-gray-500 mb-2">Liquidadas</CardDescription>
-              <div className="text-sm font-semibold text-green-600">
-                {loading ? <Spinner size={16} className="animate-spin text-green-600" /> : valorContasPagas.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                })}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
-            <CardHeader className="pb-0">
-              <div className="flex items-center gap-2">
-                <ArrowUp size={18} className="text-red-600" />
-                <CardTitle className="text-sm font-bold text-red-700">Falta Pagar</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-red-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-red-600" /> : valorFaltaPagar.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                })}
-              </div>
-              <CardDescription className="text-xs text-gray-500">Valor pendente</CardDescription>
             </CardContent>
           </Card>
         </div>
