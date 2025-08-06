@@ -215,46 +215,52 @@ const ManifestacaoNF = () => {
       console.log('🔍 Iniciando busca de manifestação de NF...');
       console.log('📅 Período:', { inicio, fim });
       console.log('🏢 Empresas selecionadas:', empresasSelecionadas);
-      console.log('🔍 Estrutura das empresas:', JSON.stringify(empresasSelecionadas, null, 2));
       
-      // Buscar dados usando o endpoint /nfmanifestacao
-      const params = {
-        dt_inicio: inicio,
-        dt_fim: fim
-      };
+      // Buscar dados das empresas selecionadas (uma requisição por empresa)
+      const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
+        try {
+          console.log(`📡 Buscando dados para empresa ${empresa.cd_empresa}...`);
+          
+          const params = {
+            dt_inicio: inicio,
+            dt_fim: fim,
+            cd_empresa: empresa.cd_empresa
+          };
+          
+          const result = await apiClient.financial.nfManifestacao(params);
+          
+          if (result.success) {
+            const dadosArray = Array.isArray(result.data) ? result.data : [];
+            console.log(`✅ Sucesso para empresa ${empresa.cd_empresa}:`, {
+              total: dadosArray.length,
+              amostra: dadosArray.slice(0, 2)
+            });
+            return dadosArray;
+          } else {
+            console.warn(`⚠️ Falha para empresa ${empresa.cd_empresa}:`, result.message);
+            return [];
+          }
+        } catch (err) {
+          console.error(`❌ Erro para empresa ${empresa.cd_empresa}:`, err);
+          return [];
+        }
+      });
 
-      // Adicionar códigos das empresas selecionadas como array
-      const codigosEmpresas = empresasSelecionadas
-        .filter(empresa => empresa.cd_empresa)
-        .map(empresa => empresa.cd_empresa);
-      
-      if (codigosEmpresas.length > 0) {
-        params.cd_empresa = codigosEmpresas;
-      } else {
-        console.error('❌ Nenhum código de empresa válido encontrado!');
-        alert('Erro: Nenhuma empresa válida selecionada. Por favor, selecione empresas com códigos válidos.');
-        setLoading(false);
-        return;
-      }
-      
-      console.log('📋 Parâmetros da requisição:', params);
-      console.log('🏢 Códigos das empresas:', codigosEmpresas);
-      
-      const result = await apiClient.financial.nfManifestacao(params);
-      
-      if (result.success) {
-        const dadosArray = Array.isArray(result.data) ? result.data : [];
-        console.log('✅ Dados de manifestação obtidos:', {
-          total: dadosArray.length,
-          amostra: dadosArray.slice(0, 2)
-        });
-        setDados(dadosArray);
-        setDadosCarregados(true);
-      } else {
-        console.warn('⚠️ Falha ao buscar dados:', result.message);
-        setDados([]);
-        setDadosCarregados(false);
-      }
+      // Aguardar todas as promessas e combinar os resultados
+      const resultadosEmpresas = await Promise.all(todasAsPromises);
+      const todosDados = resultadosEmpresas.flat(); // Combinar arrays
+
+      console.log('✅ Dados de manifestação obtidos de todas as empresas:', {
+        totalEmpresas: empresasSelecionadas.length,
+        totalRegistros: todosDados.length,
+        registrosPorEmpresa: resultadosEmpresas.map((dados, index) => ({
+          empresa: empresasSelecionadas[index].cd_empresa,
+          registros: dados.length
+        }))
+      });
+
+      setDados(todosDados);
+      setDadosCarregados(true);
     } catch (err) {
       console.error('❌ Erro ao buscar dados:', err);
       setDados([]);
@@ -351,10 +357,12 @@ const ManifestacaoNF = () => {
       const dadosExportacao = dadosOrdenados.map(item => ({
         'Empresa': item.cd_empresa || '',
         'Chave de Acesso': item.ds_chaveacesso || '',
-        'Número NF': item.nr_nfe || '',
-        'Série': item.cd_serienfe || '',
+        'Número NF': item.nr_nf || '',
+        'NSU': item.nr_nsu || '',
+        'Série': item.cd_serie || '',
         'Data Emissão': formatarData(item.dt_emissao),
         'Data Cadastro': formatarData(item.dt_cadastro),
+        'CNPJ Emitente': item.nr_cnpjemi || '',
         'CNPJ Fornecedor': item.cd_cgc || '',
         'Razão Social': item.nm_razaosocial || '',
         'Valor Total': parseFloat(item.vl_totalnota || 0).toLocaleString('pt-BR', {
@@ -384,9 +392,11 @@ const ManifestacaoNF = () => {
         { wch: 10 }, // Empresa
         { wch: 50 }, // Chave de Acesso
         { wch: 15 }, // Número NF
+        { wch: 12 }, // NSU
         { wch: 10 }, // Série
         { wch: 12 }, // Data Emissão
         { wch: 12 }, // Data Cadastro
+        { wch: 20 }, // CNPJ Emitente
         { wch: 20 }, // CNPJ Fornecedor
         { wch: 40 }, // Razão Social
         { wch: 15 }, // Valor Total
@@ -560,12 +570,7 @@ const ManifestacaoNF = () => {
     setEmpresasSelecionadas(empresas);
   };
 
-  // Buscar dados quando empresas ou datas mudarem
-  useEffect(() => {
-    if (dataInicio && dataFim && empresasSelecionadas.length > 0) {
-      buscarDados();
-    }
-  }, [dataInicio, dataFim, empresasSelecionadas]);
+  // Dados só são buscados quando o usuário clicar em "Buscar Dados"
 
   return (
     <Layout>

@@ -101,28 +101,22 @@ export const SANITIZATION_PATTERNS = {
 
 // Configurações de usuários e roles
 export const USER_ROLES = {
-  ADMIN: 'ADMIN',
+  ADM: 'ADM',
+  FRANQUIA: 'FRANQUIA',
   DIRETOR: 'DIRETOR',
-  GERENTE: 'GERENTE',
-  VENDEDOR: 'VENDEDOR',
-  CONSULTOR: 'CONSULTOR',
-  VIEWER: 'VIEWER'
+  FINANCEIRO: 'FINANCEIRO'
 };
 
 export const USER_ROLE_LABELS = {
-  [USER_ROLES.ADMIN]: 'Administrador',
+  [USER_ROLES.ADM]: 'Administrador',
+  [USER_ROLES.FRANQUIA]: 'Franquia',
   [USER_ROLES.DIRETOR]: 'Diretor',
-  [USER_ROLES.GERENTE]: 'Gerente',
-  [USER_ROLES.VENDEDOR]: 'Vendedor',
-  [USER_ROLES.CONSULTOR]: 'Consultor',
-  [USER_ROLES.VIEWER]: 'Visualizador'
+  [USER_ROLES.FINANCEIRO]: 'Financeiro'
 };
 
 export const USER_ROLE_COLORS = {
-  [USER_ROLES.ADMIN]: 'bg-red-100 text-red-800',
-  [USER_ROLES.DIRETOR]: 'bg-purple-100 text-purple-800',
-  [USER_ROLES.GERENTE]: 'bg-blue-100 text-blue-800',
-  [USER_ROLES.VENDEDOR]: 'bg-green-100 text-green-800',
-  [USER_ROLES.CONSULTOR]: 'bg-yellow-100 text-yellow-800',
-  [USER_ROLES.VIEWER]: 'bg-gray-100 text-gray-800'
+  [USER_ROLES.ADM]: 'bg-red-100 text-red-800',
+  [USER_ROLES.FRANQUIA]: 'bg-orange-100 text-orange-800',
+  [USER_ROLES.DIRETOR]: 'bg-blue-100 text-blue-800',
+  [USER_ROLES.FINANCEIRO]: 'bg-green-100 text-green-800'
 };
