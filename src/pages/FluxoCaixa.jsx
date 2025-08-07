@@ -68,6 +68,9 @@ const FluxoCaixa = () => {
   const [tipoGrafico, setTipoGrafico] = useState('pizza'); // 'pizza' ou 'barra'
   const [moduloGrafico, setModuloGrafico] = useState('topicos'); // 'topicos' ou 'despesas'
 
+  // Estados para filtro mensal
+  const [filtroMensal, setFiltroMensal] = useState('ANO'); // 'ANO', 'JAN', 'FEV', etc.
+
   // Injetar CSS customizado para a tabela
   useEffect(() => {
     const styleElement = document.createElement('style');
@@ -168,6 +171,11 @@ const FluxoCaixa = () => {
   useEffect(() => {
     setLinhasSelecionadas(new Set());
   }, [dados]);
+
+  // Limpar seleção quando o filtro mensal mudar
+  useEffect(() => {
+    setLinhasSelecionadas(new Set());
+  }, [filtroMensal]);
 
   // Função para ordenar os dados
   const handleSort = (key) => {
@@ -394,6 +402,40 @@ const FluxoCaixa = () => {
   const handleFiltrar = (e) => {
     e.preventDefault();
     buscarDados();
+  };
+
+  // Função para aplicar filtro mensal
+  const aplicarFiltroMensal = (dados, filtro) => {
+    
+    return dados.filter((item) => {
+      // Usar dt_liq como base para o filtro mensal (data de liquidação)
+      const dataLiquidacao = item.dt_liq;
+      if (!dataLiquidacao) return false;
+      
+      const data = new Date(dataLiquidacao);
+      const ano = data.getFullYear();
+      const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
+      
+      if (filtro === 'ANO') {
+        // Mostrar dados do ano atual
+        const anoAtual = new Date().getFullYear();
+        return ano === anoAtual;
+      }
+      
+      // Filtros por mês específico
+      const mesesMap = {
+        'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4,
+        'MAI': 5, 'JUN': 6, 'JUL': 7, 'AGO': 8,
+        'SET': 9, 'OUT': 10, 'NOV': 11, 'DEZ': 12
+      };
+      
+      const mesDoFiltro = mesesMap[filtro];
+      if (mesDoFiltro) {
+        return mes === mesDoFiltro;
+      }
+      
+      return true;
+    });
   };
 
   // Filtros aplicados (todos os dados)
@@ -664,8 +706,11 @@ const FluxoCaixa = () => {
     });
   };
 
-  // Agrupar dados filtrados
-  const dadosAgrupados = agruparDadosIdenticos(dadosFiltrados);
+  // Aplicar filtro mensal aos dados filtrados
+  const dadosComFiltroMensal = aplicarFiltroMensal(dadosFiltrados, filtroMensal);
+
+  // Agrupar dados filtrados (incluindo filtro mensal)
+  const dadosAgrupados = agruparDadosIdenticos(dadosComFiltroMensal);
 
   // Aplicar ordenação aos dados agrupados
   const dadosOrdenados = sortDadosAgrupados(dadosAgrupados);
@@ -674,9 +719,10 @@ const FluxoCaixa = () => {
   console.log('🔍 Debug FluxoCaixa:', {
     dadosOriginais: dados.length,
     dadosFiltrados: dadosFiltrados.length,
+    dadosComFiltroMensal: dadosComFiltroMensal.length,
     dadosAgrupados: dadosAgrupados.length,
     dadosOrdenados: dadosOrdenados.length,
-    filtrosAtivos: { status, situacao, fornecedor, despesa, duplicata, centroCusto },
+    filtrosAtivos: { status, situacao, fornecedor, despesa, duplicata, centroCusto, filtroMensal },
     amostraDados: dados.slice(0, 2)
   });
 
@@ -1033,6 +1079,9 @@ const FluxoCaixa = () => {
                   totalContas={totalContas}
                   linhasSelecionadas={linhasSelecionadas}
                   toggleLinhaSelecionada={toggleLinhaSelecionada}
+                  filtroMensal={filtroMensal}
+                  setFiltroMensal={setFiltroMensal}
+                  dadosOriginais={dadosFiltrados}
                 />
               )}
                 </div>
@@ -1293,7 +1342,7 @@ const GraficoRankingDespesas = ({ dados, tipoGrafico, moduloGrafico, onTipoChang
 };
 
 // Componente para agrupar despesas por categoria
-const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada }) => {
+const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais }) => {
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(new Set());
 
   // Função para classificar despesa por código
@@ -1457,8 +1506,81 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
     return data;
   };
 
+  // Calcular dados mensais para mostrar quantidades nos botões
+  const calcularDadosMensais = () => {
+    const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    const dadosMensais = {};
+    
+    // Calcular ANO ATUAL
+    const anoAtual = new Date().getFullYear();
+    dadosMensais['ANO'] = dadosOriginais.filter(item => {
+      if (!item.dt_liq) return false;
+      const ano = new Date(item.dt_liq).getFullYear();
+      return ano === anoAtual;
+    }).length;
+    
+    // Calcular cada mês
+    meses.forEach((mes, index) => {
+      const numeroMes = index + 1;
+      dadosMensais[mes] = dadosOriginais.filter(item => {
+        if (!item.dt_liq) return false;
+        const data = new Date(item.dt_liq);
+        return data.getMonth() + 1 === numeroMes;
+      }).length;
+    });
+    
+    return dadosMensais;
+  };
+
+  const dadosMensais = calcularDadosMensais();
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-4">
+      {/* Filtros Mensais */}
+      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+        <div className="flex items-center gap-2 mb-3">
+          <Calendar size={18} className="text-[#000638]" />
+          <h3 className="font-bold text-sm text-[#000638]">Filtro por Período (Data Liquidação)</h3>
+        </div>
+        
+        <div className="flex flex-wrap gap-2">
+          {/* Botão ANO */}
+          <button
+            onClick={() => setFiltroMensal('ANO')}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+              filtroMensal === 'ANO'
+                ? 'bg-[#000638] text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+            }`}
+          >
+            ANO
+          </button>
+          
+          {/* Botões dos Meses */}
+          {['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'].map((mes) => (
+            <button
+              key={mes}
+              onClick={() => setFiltroMensal(mes)}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                filtroMensal === mes
+                  ? 'bg-[#000638] text-white'
+                  : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+              }`}
+            >
+              {mes}
+            </button>
+          ))}
+        </div>
+        
+        {/* Informação do filtro ativo */}
+        <div className="mt-3 text-xs text-gray-500">
+          <span className="font-medium">Filtro ativo:</span> {filtroMensal} 
+          <span className="ml-2">({dados.length} registro{dados.length !== 1 ? 's' : ''})</span>
+        </div>
+      </div>
+
+      {/* Categorias de Despesas */}
+      <div className="space-y-2">
             {dadosAgrupados.map((categoria) => {
         const isCategoriaExpanded = categoriasExpandidas.has(categoria.nome);
         
@@ -1700,6 +1822,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
           Nenhuma despesa encontrada para os filtros selecionados
         </div>
       )}
+      </div>
     </div>
   );
 };
