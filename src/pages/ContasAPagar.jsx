@@ -149,7 +149,14 @@ const ContasAPagar = () => {
 
 
   // Estados para filtro mensal
-  const [filtroMensal, setFiltroMensal] = useState('ANO'); // 'ANO', 'JAN', 'FEV', etc.
+  const [filtroMensal, setFiltroMensal] = useState('ANO');
+  const [filtroDia, setFiltroDia] = useState(null);
+
+  // Função para lidar com mudança de filtro mensal
+  const handleFiltroMensalChange = (novoFiltro) => {
+    setFiltroMensal(novoFiltro);
+    setFiltroDia(null); // Limpar filtro de dia quando mudar o mês
+  };
   
   // Funções para seleção de linhas
   const toggleLinhaSelecionada = (index) => {
@@ -172,6 +179,11 @@ const ContasAPagar = () => {
   // Limpar seleção quando o filtro mensal mudar
   useEffect(() => {
     setLinhasSelecionadas(new Set());
+  }, [filtroMensal]);
+
+  // Limpar filtro de dia quando o filtro mensal mudar
+  useEffect(() => {
+    setFiltroDia(null);
   }, [filtroMensal]);
 
   // Empresas pré-selecionadas (serão carregadas do banco de dados)
@@ -206,8 +218,17 @@ const ContasAPagar = () => {
       : <CaretDown size={12} className="ml-1" />;
   };
 
-  // Função para aplicar filtro mensal
-  const aplicarFiltroMensal = (dados, filtro) => {
+  // Função para obter dias do mês
+  const obterDiasDoMes = (mes) => {
+    const meses = {
+      'JAN': 31, 'FEV': 28, 'MAR': 31, 'ABR': 30, 'MAI': 31, 'JUN': 30,
+      'JUL': 31, 'AGO': 31, 'SET': 30, 'OUT': 31, 'NOV': 30, 'DEZ': 31
+    };
+    return meses[mes] || 0;
+  };
+
+  // Função para aplicar filtro mensal e por dia
+  const aplicarFiltroMensal = (dados, filtro, diaFiltro = null) => {
     return dados.filter((item) => {
       // Usar dt_vencimento como base para o filtro mensal (data de vencimento)
       const dataVencimento = item.dt_vencimento;
@@ -216,6 +237,7 @@ const ContasAPagar = () => {
       const data = new Date(dataVencimento);
       const ano = data.getFullYear();
       const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
+      const dia = data.getDate();
       
       if (filtro === 'ANO') {
         // Mostrar dados do ano atual
@@ -232,6 +254,10 @@ const ContasAPagar = () => {
       
       const mesDoFiltro = mesesMap[filtro];
       if (mesDoFiltro) {
+        // Se há filtro por dia, verificar também o dia
+        if (diaFiltro !== null) {
+          return mes === mesDoFiltro && dia === diaFiltro;
+        }
         return mes === mesDoFiltro;
       }
       
@@ -654,7 +680,7 @@ const ContasAPagar = () => {
   });
 
   // Aplicar filtro mensal aos dados filtrados
-  const dadosComFiltroMensal = aplicarFiltroMensal(dadosFiltrados, filtroMensal);
+  const dadosComFiltroMensal = aplicarFiltroMensal(dadosFiltrados, filtroMensal, filtroDia);
 
   // Aplicar ordenação aos dados filtrados (cada registro já é um rateio específico)
   const dadosOrdenadosComFiltroMensal = sortDadosAgrupados(dadosComFiltroMensal);
@@ -1110,28 +1136,15 @@ const ContasAPagar = () => {
                       filtroMensal={filtroMensal}
                       setFiltroMensal={setFiltroMensal}
                       dadosOriginais={dadosFiltrados}
+                      filtroDia={filtroDia}
+                      setFiltroDia={setFiltroDia}
+                      handleFiltroMensalChange={handleFiltroMensalChange}
+                      obterDiasDoMes={obterDiasDoMes}
                     />
                   </div>
                 </div>
 
-                {/* Detalhamento de Despesas */}
-                <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full mb-6">
-                  <div className="p-6 border-b border-[#000638]/10">
-                    <h2 className="text-xl font-bold text-[#000638]">Detalhamento de Despesas</h2>
-                  </div>
-                  
-                  <div className="p-6">
-                    <DespesasPorCategoria 
-                      dados={dadosOrdenadosParaCards}
-                      totalContas={totalContasCards}
-                      linhasSelecionadas={linhasSelecionadas}
-                      toggleLinhaSelecionada={toggleLinhaSelecionada}
-                      filtroMensal={filtroMensal}
-                      setFiltroMensal={setFiltroMensal}
-                      dadosOriginais={dadosFiltrados}
-                    />
-                  </div>
-                </div>
+
               </>
             )}
                           </div>
@@ -1188,7 +1201,7 @@ const ContasAPagar = () => {
 };
 
 // Componente para agrupar despesas por categoria
-const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais }) => {
+const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, filtroDia, setFiltroDia, handleFiltroMensalChange, obterDiasDoMes }) => {
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(new Set());
 
   // Função para classificar despesa por código
@@ -1398,7 +1411,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
         <div className="flex flex-wrap gap-2">
           {/* Botão ANO */}
                       <button
-            onClick={() => setFiltroMensal('ANO')}
+            onClick={() => handleFiltroMensalChange('ANO')}
             className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
               filtroMensal === 'ANO'
                 ? 'bg-[#000638] text-white'
@@ -1412,7 +1425,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
           {['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'].map((mes) => (
                           <button
               key={mes}
-              onClick={() => setFiltroMensal(mes)}
+              onClick={() => handleFiltroMensalChange(mes)}
               className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                 filtroMensal === mes
                                 ? 'bg-[#000638] text-white'
@@ -1427,8 +1440,48 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
         {/* Informação do filtro ativo */}
         <div className="mt-3 text-xs text-gray-500">
           <span className="font-medium">Filtro ativo:</span> {filtroMensal} 
+          {filtroDia && <span className="ml-1">- Dia {filtroDia}</span>}
           <span className="ml-2">({dados.length} registro{dados.length !== 1 ? 's' : ''})</span>
         </div>
+
+        {/* Filtro por Dia - aparece apenas quando um mês está selecionado */}
+        {filtroMensal !== 'ANO' && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <div className="flex items-center gap-2 mb-3">
+              <Calendar size={16} className="text-[#000638]" />
+              <h4 className="font-bold text-sm text-[#000638]">Filtro por Dia - {filtroMensal}</h4>
+            </div>
+            
+            <div className="flex flex-wrap gap-1">
+              {/* Botão "Todos os Dias" */}
+              <button
+                onClick={() => setFiltroDia(null)}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  filtroDia === null
+                    ? 'bg-[#000638] text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                }`}
+              >
+                TODOS
+              </button>
+
+              {/* Botões dos dias */}
+              {Array.from({ length: obterDiasDoMes(filtroMensal) }, (_, i) => i + 1).map((dia) => (
+                <button
+                  key={dia}
+                  onClick={() => setFiltroDia(dia)}
+                  className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                    filtroDia === dia
+                      ? 'bg-[#000638] text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                  }`}
+                >
+                  {dia}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Categorias de Despesas */}
