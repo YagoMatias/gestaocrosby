@@ -14,17 +14,17 @@ import {
   Question,
   CaretUp,
   CaretUpDown,
-  Download 
+  Download,
+  Spinner
 } from '@phosphor-icons/react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
 import LoadingCircle from '../components/LoadingCircle';
 import useApiClient from '../hooks/useApiClient';
 import ExtratoTotvsTable from '../components/ExtratoTotvsTable';
 import { useApi } from '../hooks/useApi';
-import { useDebounce } from '../hooks/useDebounce';
 import ErrorBoundary from '../components/ui/ErrorBoundary';
 
-const PAGE_SIZE = 100000;
+const PAGE_SIZE = 20; // Paginação client-side com 20 itens por página
 
 const ExtratoFinanceiro = () => {
   const apiClient = useApiClient();
@@ -32,6 +32,7 @@ const ExtratoFinanceiro = () => {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
+  const [dadosCarregados, setDadosCarregados] = useState(false);
   const [dadosTotvs, setDadosTotvs] = useState([]);
   const [totalTotvs, setTotalTotvs] = useState(0);
   const [loadingTotvs, setLoadingTotvs] = useState(false);
@@ -43,10 +44,13 @@ const ExtratoFinanceiro = () => {
     dt_movim_ini: '',
     dt_movim_fim: '',
   });
-  const [page, setPage] = useState(1);
   const [expandTabela, setExpandTabela] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({ title: '', description: '', calculation: '' });
+
+  // Estados para paginação client-side
+  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPageTotvs, setCurrentPageTotvs] = useState(1);
 
   // Estados para ordenação
   const [ordenacao, setOrdenacao] = useState({ campo: null, direcao: 'asc' });
@@ -54,8 +58,7 @@ const ExtratoFinanceiro = () => {
   // Estados para seleção de linhas
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
   
-  // Estado para filtros de texto
-  const [filtroTexto, setFiltroTexto] = useState('');
+
 
   // CSS customizado para a tabela
   useEffect(() => {
@@ -144,7 +147,7 @@ const ExtratoFinanceiro = () => {
   }, []);
 
   // Hook para debounce do filtro de texto
-  const filtroTextoDebounced = useDebounce(filtroTexto, 300);
+
 
   // Função para ordenação
   const handleSort = useCallback((campo) => {
@@ -177,31 +180,9 @@ const ExtratoFinanceiro = () => {
     });
   }, []);
 
-  // Função para selecionar todas as linhas
-  const selecionarTodasLinhas = useCallback(() => {
-    const todosIndices = dados.map((_, index) => index);
-    setLinhasSelecionadas(new Set(todosIndices));
-  }, [dados]);
-
-  // Função para deselecionar todas as linhas
-  const deselecionarTodasLinhas = useCallback(() => {
-    setLinhasSelecionadas(new Set());
-  }, []);
-
   // Dados filtrados e ordenados
   const dadosProcessados = useMemo(() => {
     let dadosFiltrados = [...dados];
-
-    // Aplicar filtro de texto
-    if (filtroTextoDebounced) {
-      const filtroLower = filtroTextoDebounced.toLowerCase();
-      dadosFiltrados = dadosFiltrados.filter(row => 
-        row.ds_histbco?.toLowerCase().includes(filtroLower) ||
-        row.tp_operbco?.toLowerCase().includes(filtroLower) ||
-        String(row.nr_ctapes).toLowerCase().includes(filtroLower) ||
-        row.vl_lancto?.toString().includes(filtroLower)
-      );
-    }
 
     // Aplicar ordenação
     if (ordenacao.campo) {
@@ -234,15 +215,46 @@ const ExtratoFinanceiro = () => {
     }
 
     return dadosFiltrados;
-  }, [dados, filtroTextoDebounced, ordenacao]);
+  }, [dados, ordenacao]);
+
+  // Dados paginados para exibição
+  const dadosPaginados = useMemo(() => {
+    const startIndex = (currentPage - 1) * PAGE_SIZE;
+    const endIndex = startIndex + PAGE_SIZE;
+    return dadosProcessados.slice(startIndex, endIndex);
+  }, [dadosProcessados, currentPage]);
+
+  // Total de páginas para paginação client-side
+  const totalPages = Math.ceil(dadosProcessados.length / PAGE_SIZE);
+
+  // Função para selecionar todas as linhas
+  const selecionarTodasLinhas = useCallback(() => {
+    const todosIndices = dadosProcessados.map((_, index) => index);
+    setLinhasSelecionadas(new Set(todosIndices));
+  }, [dadosProcessados]);
+
+  // Função para deselecionar todas as linhas
+  const deselecionarTodasLinhas = useCallback(() => {
+    setLinhasSelecionadas(new Set());
+  }, []);
 
   // Limpar seleção quando dados mudarem
   useEffect(() => {
     setLinhasSelecionadas(new Set());
   }, [dados]);
 
+  // Resetar página quando dados mudarem
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [dados]);
+
+  // Resetar página TOTVS quando dados TOTVS mudarem
+  useEffect(() => {
+    setCurrentPageTotvs(1);
+  }, [dadosTotvs]);
+
   // Função para buscar dados
-  const fetchDados = async (filtrosParam = filtros, pageParam = page) => {
+  const fetchDados = async (filtrosParam = filtros) => {
     setLoading(true);
     setErro('');
     try {
@@ -251,8 +263,8 @@ const ExtratoFinanceiro = () => {
         nr_ctapes: filtrosParam.nr_ctapes,
         dt_movim_ini: filtrosParam.dt_movim_ini,
         dt_movim_fim: filtrosParam.dt_movim_fim,
-        limit: PAGE_SIZE,
-        offset: (pageParam - 1) * PAGE_SIZE
+        limit: 1000000, // Buscar todos os dados de uma vez
+        offset: 0
       };
 
       const result = await apiClient.financial.extrato(params);
@@ -270,6 +282,7 @@ const ExtratoFinanceiro = () => {
       setTotal(0);
     } finally {
       setLoading(false);
+      setDadosCarregados(true);
     }
     
     // Buscar também dados do TOTVS
@@ -281,8 +294,8 @@ const ExtratoFinanceiro = () => {
         nr_ctapes: filtrosParam.nr_ctapes,
         dt_movim_ini: filtrosParam.dt_movim_ini,
         dt_movim_fim: filtrosParam.dt_movim_fim,
-        limit: PAGE_SIZE,
-        offset: (pageParam - 1) * PAGE_SIZE
+        limit: 1000000, // Buscar todos os dados de uma vez
+        offset: 0
       };
 
       const resultTotvs = await apiClient.financial.extratoTotvs(params);
@@ -321,16 +334,17 @@ const ExtratoFinanceiro = () => {
 
   const handleFiltrar = (e) => {
     e.preventDefault();
-    setPage(1);
-    fetchDados({ ...filtros, [e.target.name]: e.target.value }, 1);
+    setCurrentPage(1); // Reset para primeira página ao filtrar
+    fetchDados({ ...filtros, [e.target.name]: e.target.value });
   };
 
   const handlePageChange = (newPage) => {
-    setPage(newPage);
-    fetchDados(filtros, newPage);
+    setCurrentPage(newPage);
   };
 
-  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const handlePageChangeTotvs = (newPage) => {
+    setCurrentPageTotvs(newPage);
+  };
 
   // Funções para o modal de ajuda
   const showHelpModal = (title, description, calculation) => {
@@ -415,6 +429,21 @@ const ExtratoFinanceiro = () => {
       valorDesconciliadas
     };
   }, [dadosProcessados]);
+
+  // Dados processados TOTVS (filtrados e ordenados)
+  const dadosProcessadosTotvs = useMemo(() => {
+    return [...dadosTotvs]; // Por enquanto sem filtros adicionais, apenas os dados originais
+  }, [dadosTotvs]);
+
+  // Dados paginados TOTVS para exibição
+  const dadosPaginadosTotvs = useMemo(() => {
+    const startIndex = (currentPageTotvs - 1) * PAGE_SIZE;
+    const endIndex = startIndex + PAGE_SIZE;
+    return dadosProcessadosTotvs.slice(startIndex, endIndex);
+  }, [dadosProcessadosTotvs, currentPageTotvs]);
+
+  // Total de páginas para paginação TOTVS
+  const totalPagesTotvs = Math.ceil(dadosProcessadosTotvs.length / PAGE_SIZE);
 
   // Cards TOTVs
   const estatisticasTotvs = useMemo(() => {
@@ -504,8 +533,17 @@ const ExtratoFinanceiro = () => {
               </div>
             </div>
             <div className="flex justify-end w-full mt-1">
-              <button type="submit" className="flex items-center gap-1 bg-[#000638] text-white px-5 py-2 rounded-lg hover:bg-[#fe0000] transition h-9 text-sm font-bold shadow tracking-wide uppercase min-w-[90px]">
-                <ArrowsClockwise size={18} weight="bold" /> Filtrar
+              <button 
+                type="submit" 
+                className="flex items-center gap-1 bg-[#000638] text-white px-5 py-2 rounded-lg hover:bg-[#fe0000] transition h-9 text-sm font-bold shadow tracking-wide uppercase min-w-[90px] disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading}
+              >
+                {loading ? (
+                  <Spinner size={18} className="animate-spin" />
+                ) : (
+                  <ArrowsClockwise size={18} weight="bold" />
+                )}
+                {loading ? 'Carregando...' : 'Filtrar'}
               </button>
             </div>
           </form>
@@ -532,7 +570,7 @@ const ExtratoFinanceiro = () => {
                      <CardContent className="pt-1 pl-2">
                        <div className="text-[10px] text-gray-500">Data mais antiga desconciliada</div>
                        <div className="text-xs font-bold text-gray-700 mt-0.5">
-                         {loading ? <LoadingCircle size={18} /> : (
+                         {loading ? <Spinner size={18} className="animate-spin text-blue-600" /> : (
                            banco.maisAntigaDesconciliada
                              ? <span className="text-[#fe0000] font-bold">{new Date(banco.maisAntigaDesconciliada).toLocaleDateString('pt-BR')}</span>
                              : <span className="text-green-600 font-bold">Conciliações realizadas no período</span>
@@ -556,9 +594,13 @@ const ExtratoFinanceiro = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-1 pl-2">
-              <div className="text-lg font-extrabold text-[#fe0000] mb-0.5">{estatisticas.qtdDebitos}</div>
+              <div className="text-lg font-extrabold text-[#fe0000] mb-0.5">
+                {loading ? <Spinner size={18} className="animate-spin text-[#fe0000]" /> : estatisticas.qtdDebitos}
+              </div>
               <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
-              <div className="text-xs font-bold text-[#fe0000] mt-0.5">{estatisticas.valorDebitos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+              <div className="text-xs font-bold text-[#fe0000] mt-0.5">
+                {loading ? '...' : estatisticas.valorDebitos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
               <div className="flex justify-between items-center mt-1">
                 <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
                 <button
@@ -583,9 +625,13 @@ const ExtratoFinanceiro = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-1 pl-2">
-              <div className="text-lg font-extrabold text-green-600 mb-0.5">{estatisticas.qtdCreditos}</div>
+              <div className="text-lg font-extrabold text-green-600 mb-0.5">
+                {loading ? <Spinner size={18} className="animate-spin text-green-600" /> : estatisticas.qtdCreditos}
+              </div>
               <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
-              <div className="text-xs font-bold text-green-600 mt-0.5">{estatisticas.valorCreditos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+              <div className="text-xs font-bold text-green-600 mt-0.5">
+                {loading ? '...' : estatisticas.valorCreditos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
               <div className="flex justify-between items-center mt-1">
                 <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
                 <button
@@ -610,9 +656,13 @@ const ExtratoFinanceiro = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-1 pl-2">
-              <div className="text-lg font-extrabold text-green-600 mb-0.5">{estatisticas.qtdConciliadas}</div>
+              <div className="text-lg font-extrabold text-green-600 mb-0.5">
+                {loading ? <Spinner size={18} className="animate-spin text-green-600" /> : estatisticas.qtdConciliadas}
+              </div>
               <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
-              <div className="text-xs font-bold text-green-600 mt-0.5">{estatisticas.valorConciliadas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+              <div className="text-xs font-bold text-green-600 mt-0.5">
+                {loading ? '...' : estatisticas.valorConciliadas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
               <div className="flex justify-between items-center mt-1">
                 <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
                 <button
@@ -637,9 +687,13 @@ const ExtratoFinanceiro = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-1 pl-2">
-              <div className="text-lg font-extrabold text-[#fe0000] mb-0.5">{estatisticas.qtdDesconciliadas}</div>
+              <div className="text-lg font-extrabold text-[#fe0000] mb-0.5">
+                {loading ? <Spinner size={18} className="animate-spin text-[#fe0000]" /> : estatisticas.qtdDesconciliadas}
+              </div>
               <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
-              <div className="text-xs font-bold text-[#fe0000] mt-0.5">{estatisticas.valorDesconciliadas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+              <div className="text-xs font-bold text-[#fe0000] mt-0.5">
+                {loading ? '...' : estatisticas.valorDesconciliadas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
               <div className="flex justify-between items-center mt-1">
                 <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
                 <button
@@ -710,27 +764,19 @@ const ExtratoFinanceiro = () => {
             </CardContent>
           </Card>
         </div>
-        {/* Barra de filtros e ações */}
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
-          {/* Filtro de texto */}
-          <div className="flex-1 max-w-md">
-            <input
-              type="text"
-              placeholder="Buscar no histórico, conta, operação ou valor..."
-              value={filtroTexto}
-              onChange={(e) => setFiltroTexto(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638] focus:border-transparent"
-            />
-          </div>
-          
-          {/* Botão de exportação */}
+        {/* Botão de exportação */}
+        <div className="flex justify-end mb-4">
           <button
             onClick={exportarCSV}
             className="flex items-center gap-2 bg-[#000638] text-white px-4 py-2 rounded-lg hover:bg-[#fe0000] transition-all duration-200 text-sm font-medium shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={dadosProcessados.length === 0}
+            disabled={loading || dadosProcessados.length === 0}
           >
-            <Download size={18} />
-            Baixar Excel
+            {loading ? (
+              <Spinner size={18} className="animate-spin" />
+            ) : (
+              <Download size={18} />
+            )}
+            {loading ? 'Carregando...' : 'Baixar Excel'}
           </button>
         </div>
         {/* Tabela modernizada */}
@@ -741,7 +787,7 @@ const ExtratoFinanceiro = () => {
               {dadosProcessados.length > 0 && (
                 <p className="text-sm text-gray-500 mt-1">
                   {dadosProcessados.length} movimentação{dadosProcessados.length > 1 ? 'ões' : ''} encontrada{dadosProcessados.length > 1 ? 's' : ''}
-                  {filtroTextoDebounced && ` (filtrado de ${dados.length})`}
+                  {totalPages > 1 && ` - Página ${currentPage} de ${totalPages} (${PAGE_SIZE} por página)`}
                 </p>
               )}
             </div>
@@ -757,10 +803,16 @@ const ExtratoFinanceiro = () => {
             <>
               {loading ? (
                 <div className="flex justify-center items-center py-20">
+                  <div className="flex items-center gap-3">
+                    <Spinner size={32} className="animate-spin text-blue-600" />
+                    <span className="text-gray-600">Carregando dados...</span>
+                  </div>
+                </div>
+              ) : !dadosCarregados ? (
+                <div className="flex justify-center items-center py-20">
                   <div className="text-center">
-                    <LoadingCircle size={32} />
-                    <div className="text-gray-500 text-lg mb-2 mt-4">Carregando dados...</div>
-                    <div className="text-gray-400 text-sm">Aguarde um momento</div>
+                    <div className="text-gray-500 text-lg mb-2">Clique em "Filtrar" para carregar as informações</div>
+                    <div className="text-gray-400 text-sm">Selecione o período e empresa desejados</div>
                   </div>
                 </div>
               ) : (
@@ -855,23 +907,25 @@ const ExtratoFinanceiro = () => {
                   </thead>
                       
                       <tbody>
-                        {dadosProcessados.length === 0 ? (
+                        {dadosPaginados.length === 0 ? (
                           <tr>
                             <td colSpan="7" className="text-center py-20">
                               <div className="text-center">
                                 <div className="text-gray-500 text-lg mb-2">Nenhum dado encontrado</div>
                                 <div className="text-gray-400 text-sm">
-                                  {filtroTextoDebounced ? 'Tente ajustar o filtro de busca' : 'Verifique os filtros selecionados'}
+                                  Verifique os filtros selecionados
                                 </div>
                               </div>
                             </td>
                           </tr>
                         ) : (
-                          dadosProcessados.map((row, index) => (
+                          dadosPaginados.map((row, index) => {
+                            const globalIndex = (currentPage - 1) * PAGE_SIZE + index;
+                            return (
                             <tr
-                              key={index}
+                              key={globalIndex}
                               className={`text-[11px] border-b transition-colors cursor-pointer ${
-                                linhasSelecionadas.has(index)
+                                linhasSelecionadas.has(globalIndex)
                                   ? 'bg-blue-100 hover:bg-blue-200'
                                   : index % 2 === 0
                                   ? 'bg-white hover:bg-gray-100'
@@ -886,8 +940,8 @@ const ExtratoFinanceiro = () => {
                               >
                                 <input
                                   type="checkbox"
-                                  checked={linhasSelecionadas.has(index)}
-                                  onChange={() => toggleLinhaSelecionada(index)}
+                                  checked={linhasSelecionadas.has(globalIndex)}
+                                  onChange={() => toggleLinhaSelecionada(globalIndex)}
                                   className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
                                 />
                               </td>
@@ -951,8 +1005,9 @@ const ExtratoFinanceiro = () => {
                                   </span>
                                 )}
                               </td>
-                        </tr>
-                      ))
+                            </tr>
+                          );
+                        })
                     )}
                   </tbody>
                 </table>
@@ -994,37 +1049,112 @@ const ExtratoFinanceiro = () => {
               )}
             </>
           )}
+
+          {/* Paginação Melhorada */}
+          {totalPages > 1 && (
+            <div className="bg-white border-t border-gray-200 px-6 py-4">
+              <div className="flex items-center justify-between">
+                {/* Informações da página */}
+                <div className="flex items-center gap-4 text-sm text-gray-600">
+                  <span className="font-medium">
+                    Página {currentPage} de {totalPages}
+                  </span>
+                  <span className="text-gray-500">
+                    {dadosProcessados.length} registros • {PAGE_SIZE} por página
+                  </span>
+                </div>
+
+                {/* Controles de navegação */}
+                <div className="flex items-center gap-2">
+                  {/* Botão Primeira Página */}
+                  <button
+                    onClick={() => handlePageChange(1)}
+                    disabled={currentPage === 1 || loading}
+                    className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Primeira
+                  </button>
+
+                  {/* Botão Anterior */}
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1 || loading}
+                    className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Anterior
+                  </button>
+
+                  {/* Números das páginas */}
+                  <div className="flex items-center gap-1">
+                    {(() => {
+                      const pages = [];
+                      const maxVisiblePages = 5;
+                      let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+                      let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+                      
+                      if (endPage - startPage + 1 < maxVisiblePages) {
+                        startPage = Math.max(1, endPage - maxVisiblePages + 1);
+                      }
+
+                      for (let i = startPage; i <= endPage; i++) {
+                        pages.push(
+                          <button
+                            key={i}
+                            onClick={() => handlePageChange(i)}
+                            disabled={loading}
+                            className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                              currentPage === i
+                                ? 'bg-[#000638] text-white border border-[#000638]'
+                                : 'text-gray-500 bg-white border border-gray-300 hover:bg-gray-50 hover:text-gray-700'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            {i}
+                          </button>
+                        );
+                      }
+                      return pages;
+                    })()}
+                  </div>
+
+                  {/* Botão Próxima */}
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages || loading}
+                    className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Próxima
+                  </button>
+
+                  {/* Botão Última Página */}
+                  <button
+                    onClick={() => handlePageChange(totalPages)}
+                    disabled={currentPage === totalPages || loading}
+                    className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Última
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         {/* Tabela Extrato TOTVS */}
         <ExtratoTotvsTable
-          dados={dadosTotvs}
+          dados={dadosPaginadosTotvs}
+          dadosCompletos={dadosTotvs}
           loading={loadingTotvs}
           erro={erroTotvs}
           expandTabela={expandTabelaTotvs}
           setExpandTabela={setExpandTabelaTotvs}
           contas={contas}
           corConta={corConta}
+          currentPage={currentPageTotvs}
+          totalPages={totalPagesTotvs}
+          totalRegistros={dadosProcessadosTotvs.length}
+          onPageChange={handlePageChangeTotvs}
+          pageSize={PAGE_SIZE}
         />
-        {/* Paginação */}
-        {totalPages > 1 && (
-          <div className="flex justify-center items-center gap-2 mt-6">
-            <button
-              className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
-              onClick={() => handlePageChange(page - 1)}
-              disabled={page === 1 || loading}
-            >
-              Anterior
-            </button>
-            <span className="mx-2">Página {page} de {totalPages}</span>
-            <button
-              className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
-              onClick={() => handlePageChange(page + 1)}
-              disabled={page === totalPages || loading}
-            >
-              Próxima
-            </button>
-          </div>
-        )}
+
       </div>
 
       {/* Modal de Ajuda */}

@@ -152,10 +152,91 @@ const ContasAPagar = () => {
   const [filtroMensal, setFiltroMensal] = useState('ANO');
   const [filtroDia, setFiltroDia] = useState(null);
 
+  // Estados para modais dos cards
+  const [modalCardAberto, setModalCardAberto] = useState(false);
+  const [tipoCardSelecionado, setTipoCardSelecionado] = useState('');
+  const [dadosCardModal, setDadosCardModal] = useState([]);
+
   // Função para lidar com mudança de filtro mensal
   const handleFiltroMensalChange = (novoFiltro) => {
     setFiltroMensal(novoFiltro);
     setFiltroDia(null); // Limpar filtro de dia quando mudar o mês
+  };
+
+  // Função para abrir modal do card
+  const abrirModalCard = (tipo) => {
+    let dadosFiltrados = [];
+    
+    switch (tipo) {
+      case 'vencidas':
+        dadosFiltrados = dados.filter(item => {
+          const status = getStatusFromData(item);
+          return status === 'Vencida';
+        });
+        break;
+      case 'aVencer':
+        dadosFiltrados = dados.filter(item => {
+          const status = getStatusFromData(item);
+          return status === 'A Vencer';
+        });
+        break;
+      case 'proximasVencer':
+        dadosFiltrados = dados.filter(item => {
+          const status = getStatusFromData(item);
+          return status === 'Próxima a Vencer';
+        });
+        break;
+      case 'pagas':
+        dadosFiltrados = dados.filter(item => {
+          const status = getStatusFromData(item);
+          return status === 'Paga';
+        });
+        break;
+      case 'faltaPagar':
+        dadosFiltrados = dados.filter(item => {
+          const status = getStatusFromData(item);
+          return status !== 'Paga';
+        });
+        break;
+      case 'descontos':
+        dadosFiltrados = dados.filter(item => {
+          return parseFloat(item.vl_desconto || 0) > 0;
+        });
+        break;
+      default:
+        dadosFiltrados = [];
+    }
+    
+    setDadosCardModal(dadosFiltrados);
+    setTipoCardSelecionado(tipo);
+    setModalCardAberto(true);
+  };
+
+  // Função para fechar modal do card
+  const fecharModalCard = () => {
+    setModalCardAberto(false);
+    setTipoCardSelecionado('');
+    setDadosCardModal([]);
+  };
+
+  // Função para obter título do modal
+  const getTituloModal = (tipo) => {
+    switch (tipo) {
+      case 'vencidas':
+        return 'Contas Vencidas';
+      case 'aVencer':
+        return 'Contas a Vencer';
+      case 'proximasVencer':
+        return 'Próximas a Vencer';
+      case 'pagas':
+        return 'Contas Pagas';
+      case 'faltaPagar':
+        return 'Falta Pagar';
+      case 'descontos':
+        return 'Descontos Ganhos';
+      default:
+        return 'Detalhes';
+    }
   };
   
   // Funções para seleção de linhas
@@ -939,7 +1020,10 @@ const ContasAPagar = () => {
           </Card>
 
           {/* Contas Vencidas */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+          <Card 
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+            onClick={() => abrirModalCard('vencidas')}
+          >
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <Warning size={18} className="text-red-600" />
@@ -965,7 +1049,10 @@ const ContasAPagar = () => {
           </Card>
 
           {/* Contas A Vencer */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+          <Card 
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+            onClick={() => abrirModalCard('aVencer')}
+          >
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <Clock size={18} className="text-yellow-600" />
@@ -991,7 +1078,10 @@ const ContasAPagar = () => {
           </Card>
 
           {/* Próximas a Vencer (próximos 7 dias) */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+          <Card 
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+            onClick={() => abrirModalCard('proximasVencer')}
+          >
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <ArrowUp size={18} className="text-orange-600" />
@@ -1017,7 +1107,10 @@ const ContasAPagar = () => {
           </Card>
 
           {/* Contas Pagas */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+          <Card 
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+            onClick={() => abrirModalCard('pagas')}
+          >
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <CheckCircle size={18} className="text-green-600" />
@@ -1043,7 +1136,10 @@ const ContasAPagar = () => {
           </Card>
 
           {/* Falta Pagar */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+          <Card 
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+            onClick={() => abrirModalCard('faltaPagar')}
+          >
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <ArrowDown size={18} className="text-purple-600" />
@@ -1069,7 +1165,10 @@ const ContasAPagar = () => {
           </Card>
 
           {/* Descontos Ganhos */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+          <Card 
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+            onClick={() => abrirModalCard('descontos')}
+          >
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <TrendDown size={18} className="text-emerald-600" />
@@ -1151,7 +1250,7 @@ const ContasAPagar = () => {
                           </div>
                           </div>
 
-      {/* Modal para exibir observações */}
+            {/* Modal para exibir observações */}
       {modalAberto && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] flex flex-col">
@@ -1161,7 +1260,7 @@ const ContasAPagar = () => {
               <p className="text-sm opacity-90 mt-1">
                 Detalhes das observações para a conta selecionada
               </p>
-                          </div>
+            </div>
 
             {/* Conteúdo do Modal */}
             <div className="flex-1 overflow-y-auto p-6">
@@ -1170,9 +1269,9 @@ const ContasAPagar = () => {
                   {dadosModal.observacoes.map((obs, index) => (
                     <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                       <p className="text-gray-800 text-sm leading-relaxed">{obs}</p>
-                          </div>
+                    </div>
                   ))}
-                          </div>
+                </div>
               ) : (
                 <div className="text-center py-8 text-gray-500">
                   <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1180,9 +1279,9 @@ const ContasAPagar = () => {
                   </svg>
                   <p className="text-lg font-medium">Nenhuma observação encontrada</p>
                   <p className="text-sm">Este registro não possui observações cadastradas.</p>
-                          </div>
+                </div>
               )}
-                          </div>
+            </div>
 
             {/* Footer do Modal */}
             <div className="bg-gray-50 px-6 py-4 flex justify-end">
@@ -1192,9 +1291,103 @@ const ContasAPagar = () => {
               >
                 Fechar
               </button>
-                          </div>
-                          </div>
-                          </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para exibir dados dos cards */}
+      {modalCardAberto && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] flex flex-col">
+            {/* Header do Modal */}
+            <div className="bg-[#000638] text-white p-6 rounded-t-lg">
+              <h2 className="text-xl font-bold">{getTituloModal(tipoCardSelecionado)}</h2>
+              <p className="text-sm opacity-90 mt-1">
+                {dadosCardModal.length} registro{dadosCardModal.length !== 1 ? 's' : ''} encontrado{dadosCardModal.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+
+            {/* Conteúdo do Modal */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {dadosCardModal.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="px-2 py-2 text-left font-medium text-gray-700">Vencimento</th>
+                        <th className="px-2 py-2 text-right font-medium text-gray-700">Valor</th>
+                        <th className="px-2 py-2 text-center font-medium text-gray-700">Fornecedor</th>
+                        <th className="px-2 py-2 text-left font-medium text-gray-700">Despesa</th>
+                        <th className="px-2 py-2 text-center font-medium text-gray-700">Duplicata</th>
+                        <th className="px-2 py-2 text-center font-medium text-gray-700">Status</th>
+                        {tipoCardSelecionado === 'descontos' && (
+                          <th className="px-2 py-2 text-right font-medium text-gray-700">Desconto</th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {dadosCardModal.map((item, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-2 py-2 text-sm text-gray-900">
+                            {formatarData(item.dt_vencimento)}
+                          </td>
+                          <td className="px-2 py-2 text-sm text-right font-medium text-green-600">
+                            {parseFloat(item.vl_duplicata || 0).toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL',
+                            })}
+                          </td>
+                          <td className="px-2 py-2 text-sm text-center text-gray-900">
+                            {item.nm_fornecedor || ''}
+                          </td>
+                          <td className="px-2 py-2 text-sm text-gray-900">
+                            {item.ds_despesaitem || ''}
+                          </td>
+                          <td className="px-2 py-2 text-sm text-center text-gray-900">
+                            {item.nr_duplicata || ''}
+                          </td>
+                          <td className="px-2 py-2 text-center">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(getStatusFromData(item))}`}>
+                              {getStatusIcon(getStatusFromData(item))}
+                              <span className="ml-1">{getStatusFromData(item)}</span>
+                            </span>
+                          </td>
+                          {tipoCardSelecionado === 'descontos' && (
+                            <td className="px-2 py-2 text-sm text-right font-medium text-emerald-600">
+                              {parseFloat(item.vl_desconto || 0).toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-lg font-medium">Nenhum registro encontrado</p>
+                  <p className="text-sm">Não há registros para o filtro selecionado.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer do Modal */}
+            <div className="bg-gray-50 px-6 py-4 flex justify-end">
+              <button
+                onClick={fecharModalCard}
+                className="bg-[#000638] text-white px-6 py-2 rounded-lg hover:bg-[#fe0000] transition-colors font-medium"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </Layout>
   );

@@ -1,6 +1,5 @@
 import React from 'react';
-import { CaretDown, CaretRight } from '@phosphor-icons/react';
-import LoadingCircle from './LoadingCircle';
+import { CaretDown, CaretRight, Spinner } from '@phosphor-icons/react';
 
 function formatarDataBR(data) {
   if (!data) return '-';
@@ -9,10 +8,32 @@ function formatarDataBR(data) {
   return d.toLocaleDateString('pt-BR');
 }
 
-const ExtratoTotvsTable = ({ dados, loading, erro, expandTabela, setExpandTabela, contas, corConta }) => (
+const ExtratoTotvsTable = ({ 
+  dados, 
+  dadosCompletos,
+  loading, 
+  erro, 
+  expandTabela, 
+  setExpandTabela, 
+  contas, 
+  corConta,
+  currentPage,
+  totalPages,
+  totalRegistros,
+  onPageChange,
+  pageSize
+}) => (
   <div className="rounded-2xl shadow-lg bg-white mt-8 border border-[#000638]/10">
     <div className="p-4 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandTabela(e => !e)}>
-      <h2 className="text-xl font-bold text-[#000638]">Extrato TOTVS</h2>
+      <div>
+        <h2 className="text-xl font-bold text-[#000638]">Extrato TOTVS</h2>
+        {totalRegistros > 0 && (
+          <p className="text-sm text-gray-500 mt-1">
+            {totalRegistros} registros encontrados
+            {totalPages > 1 && ` - Página ${currentPage} de ${totalPages} (${pageSize} por página)`}
+          </p>
+        )}
+      </div>
       <span className="flex items-center">
         {expandTabela ? <CaretDown size={20} color="#9ca3af" /> : <CaretRight size={20} color="#9ca3af" />}
       </span>
@@ -21,7 +42,12 @@ const ExtratoTotvsTable = ({ dados, loading, erro, expandTabela, setExpandTabela
     {expandTabela && (
       <div className="overflow-x-auto">
         {loading ? (
-          <div className="flex justify-center items-center py-8"><LoadingCircle size={32} /></div>
+          <div className="flex justify-center items-center py-8">
+            <div className="flex items-center gap-3">
+              <Spinner size={32} className="animate-spin text-blue-600" />
+              <span className="text-gray-600">Carregando dados...</span>
+            </div>
+          </div>
         ) : (
           <table className="w-full border border-gray-200 rounded-lg">
             <thead>
@@ -63,6 +89,94 @@ const ExtratoTotvsTable = ({ dados, loading, erro, expandTabela, setExpandTabela
               )}
             </tbody>
           </table>
+        )}
+
+        {/* Paginação TOTVS */}
+        {totalPages > 1 && (
+          <div className="bg-white border-t border-gray-200 px-6 py-4">
+            <div className="flex items-center justify-between">
+              {/* Informações da página */}
+              <div className="flex items-center gap-4 text-sm text-gray-600">
+                <span className="font-medium">
+                  Página {currentPage} de {totalPages}
+                </span>
+                <span className="text-gray-500">
+                  {totalRegistros} registros • {pageSize} por página
+                </span>
+              </div>
+
+              {/* Controles de navegação */}
+              <div className="flex items-center gap-2">
+                {/* Botão Primeira Página */}
+                <button
+                  onClick={() => onPageChange(1)}
+                  disabled={currentPage === 1 || loading}
+                  className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Primeira
+                </button>
+
+                {/* Botão Anterior */}
+                <button
+                  onClick={() => onPageChange(currentPage - 1)}
+                  disabled={currentPage === 1 || loading}
+                  className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Anterior
+                </button>
+
+                {/* Números das páginas */}
+                <div className="flex items-center gap-1">
+                  {(() => {
+                    const pages = [];
+                    const maxVisiblePages = 5;
+                    let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+                    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+                    
+                    if (endPage - startPage + 1 < maxVisiblePages) {
+                      startPage = Math.max(1, endPage - maxVisiblePages + 1);
+                    }
+
+                    for (let i = startPage; i <= endPage; i++) {
+                      pages.push(
+                        <button
+                          key={i}
+                          onClick={() => onPageChange(i)}
+                          disabled={loading}
+                          className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                            currentPage === i
+                              ? 'bg-[#000638] text-white border border-[#000638]'
+                              : 'text-gray-500 bg-white border border-gray-300 hover:bg-gray-50 hover:text-gray-700'
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        >
+                          {i}
+                        </button>
+                      );
+                    }
+                    return pages;
+                  })()}
+                </div>
+
+                {/* Botão Próxima */}
+                <button
+                  onClick={() => onPageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages || loading}
+                  className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Próxima
+                </button>
+
+                {/* Botão Última Página */}
+                <button
+                  onClick={() => onPageChange(totalPages)}
+                  disabled={currentPage === totalPages || loading}
+                  className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Última
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     )}

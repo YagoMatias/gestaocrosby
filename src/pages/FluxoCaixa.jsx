@@ -406,6 +406,25 @@ const FluxoCaixa = () => {
 
   // Função para aplicar filtro mensal
   const aplicarFiltroMensal = (dados, filtro) => {
+    // Determinar o ano baseado nas datas de liquidação selecionadas
+    let anoFiltro = null;
+    
+    if (dataInicio && dataFim) {
+      // Usar o ano da data de início como referência
+      const dataInicioObj = new Date(dataInicio);
+      anoFiltro = dataInicioObj.getFullYear();
+    } else {
+      // Fallback para ano atual se não houver datas selecionadas
+      anoFiltro = new Date().getFullYear();
+    }
+    
+    console.log('🔍 Filtro Mensal:', {
+      filtro,
+      anoFiltro,
+      dataInicio,
+      dataFim,
+      totalDados: dados.length
+    });
     
     return dados.filter((item) => {
       // Usar dt_liq como base para o filtro mensal (data de liquidação)
@@ -417,12 +436,11 @@ const FluxoCaixa = () => {
       const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
       
       if (filtro === 'ANO') {
-        // Mostrar dados do ano atual
-        const anoAtual = new Date().getFullYear();
-        return ano === anoAtual;
+        // Mostrar dados do ano baseado nas datas de liquidação selecionadas
+        return ano === anoFiltro + 1;
       }
       
-      // Filtros por mês específico
+      // Filtros por mês específico (do ano selecionado)
       const mesesMap = {
         'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4,
         'MAI': 5, 'JUN': 6, 'JUL': 7, 'AGO': 8,
@@ -431,7 +449,8 @@ const FluxoCaixa = () => {
       
       const mesDoFiltro = mesesMap[filtro];
       if (mesDoFiltro) {
-        return mes === mesDoFiltro;
+        // Verificar se é o mês correto E do ano correto
+        return mes === mesDoFiltro && ano === anoFiltro;
       }
       
       return true;
@@ -1069,6 +1088,8 @@ const FluxoCaixa = () => {
                   filtroMensal={filtroMensal}
                   setFiltroMensal={setFiltroMensal}
                   dadosOriginais={dadosFiltrados}
+                  dataInicio={dataInicio}
+                  dataFim={dataFim}
                 />
               )}
                 </div>
@@ -1342,7 +1363,7 @@ const GraficoRankingDespesas = ({ dados, tipoGrafico, moduloGrafico, onTipoChang
 };
 
 // Componente para agrupar despesas por categoria
-const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais }) => {
+const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, dataInicio, dataFim }) => {
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(new Set());
 
   // Função para classificar despesa por código
@@ -1519,21 +1540,32 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
     const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
     const dadosMensais = {};
     
-    // Calcular ANO ATUAL
-    const anoAtual = new Date().getFullYear();
+    // Determinar o ano baseado nas datas de liquidação selecionadas
+    let anoFiltro = null;
+    
+    if (dataInicio && dataFim) {
+      // Usar o ano da data de início como referência
+      const dataInicioObj = new Date(dataInicio);
+      anoFiltro = dataInicioObj.getFullYear();
+    } else {
+      // Fallback para ano atual se não houver datas selecionadas
+      anoFiltro = new Date().getFullYear();
+    }
+    
+    // Calcular ANO (baseado nas datas selecionadas)
     dadosMensais['ANO'] = dadosOriginais.filter(item => {
       if (!item.dt_liq) return false;
       const ano = new Date(item.dt_liq).getFullYear();
-      return ano === anoAtual;
+      return ano === anoFiltro;
     }).length;
     
-    // Calcular cada mês
+    // Calcular cada mês (do ano selecionado)
     meses.forEach((mes, index) => {
       const numeroMes = index + 1;
       dadosMensais[mes] = dadosOriginais.filter(item => {
         if (!item.dt_liq) return false;
         const data = new Date(item.dt_liq);
-        return data.getMonth() + 1 === numeroMes;
+        return data.getMonth() + 1 === numeroMes && data.getFullYear() === anoFiltro;
       }).length;
     });
     
@@ -1583,6 +1615,11 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
         {/* Informação do filtro ativo */}
         <div className="mt-3 text-xs text-gray-500">
           <span className="font-medium">Filtro ativo:</span> {filtroMensal} 
+          {dataInicio && dataFim && (
+            <span className="ml-1 text-blue-600">
+              ({new Date(dataInicio).getFullYear()})
+            </span>
+          )}
           <span className="ml-2">({dados.length} registro{dados.length !== 1 ? 's' : ''})</span>
         </div>
       </div>
