@@ -146,6 +146,12 @@ const ContasAPagar = () => {
   const [centroCusto, setCentroCusto] = useState('');
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
   
+  // Estado para controlar exibição da tabela de despesas
+  const [mostrarTabela, setMostrarTabela] = useState(false);
+
+  // Estados para filtro mensal
+  const [filtroMensal, setFiltroMensal] = useState('ANO'); // 'ANO', 'JAN', 'FEV', etc.
+  
   // Funções para seleção de linhas
   const toggleLinhaSelecionada = (index) => {
     setLinhasSelecionadas(prev => {
@@ -173,6 +179,11 @@ const ContasAPagar = () => {
   useEffect(() => {
     setLinhasSelecionadas(new Set());
   }, [dados]);
+
+  // Limpar seleção quando o filtro mensal mudar
+  useEffect(() => {
+    setLinhasSelecionadas(new Set());
+  }, [filtroMensal]);
 
 
 
@@ -210,6 +221,134 @@ const ContasAPagar = () => {
     return sortConfig.direction === 'asc' 
       ? <CaretUp size={12} className="ml-1" />
       : <CaretDown size={12} className="ml-1" />;
+  };
+
+  // Função para aplicar filtro mensal
+  const aplicarFiltroMensal = (dados, filtro) => {
+    return dados.filter((item) => {
+      // Usar dt_vencimento como base para o filtro mensal (data de vencimento)
+      const dataVencimento = item.dt_vencimento;
+      if (!dataVencimento) return false;
+      
+      const data = new Date(dataVencimento);
+      const ano = data.getFullYear();
+      const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
+      
+      if (filtro === 'ANO') {
+        // Mostrar dados do ano atual
+        const anoAtual = new Date().getFullYear();
+        return ano === anoAtual;
+      }
+      
+      // Filtros por mês específico
+      const mesesMap = {
+        'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4,
+        'MAI': 5, 'JUN': 6, 'JUL': 7, 'AGO': 8,
+        'SET': 9, 'OUT': 10, 'NOV': 11, 'DEZ': 12
+      };
+      
+      const mesDoFiltro = mesesMap[filtro];
+      if (mesDoFiltro) {
+        return mes === mesDoFiltro;
+      }
+      
+      return true;
+    });
+  };
+
+  // Função para agrupar dados idênticos (igual ao FluxoCaixa)
+  const agruparDadosIdenticos = (dados) => {
+    const grupos = new Map();
+    
+    dados.forEach((item) => {
+      // Criar chave única baseada APENAS em FORNECEDOR e DUPLICATA
+      const chave = `${item.cd_fornecedor}|${item.nm_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
+      
+      if (!grupos.has(chave)) {
+        grupos.set(chave, {
+          item: item,
+          observacoes: [],
+          situacoes: [],
+          datasEmissao: [],
+          datasVencimento: [],
+          datasEntrada: [],
+          datasLiquidacao: [],
+          quantidade: 0
+        });
+      }
+      
+      const grupo = grupos.get(chave);
+      grupo.quantidade += 1;
+      
+      // Adicionar observação se existir e for diferente
+      if (item.ds_observacao && !grupo.observacoes.includes(item.ds_observacao)) {
+        grupo.observacoes.push(item.ds_observacao);
+      }
+      
+      // Adicionar situação se existir e for diferente
+      if (item.tp_situacao && !grupo.situacoes.includes(item.tp_situacao)) {
+        grupo.situacoes.push(item.tp_situacao);
+      }
+      
+      // Adicionar datas se existirem e forem diferentes
+      if (item.dt_emissao && !grupo.datasEmissao.includes(item.dt_emissao)) {
+        grupo.datasEmissao.push(item.dt_emissao);
+      }
+      if (item.dt_vencimento && !grupo.datasVencimento.includes(item.dt_vencimento)) {
+        grupo.datasVencimento.push(item.dt_vencimento);
+      }
+      if (item.dt_entrada && !grupo.datasEntrada.includes(item.dt_entrada)) {
+        grupo.datasEntrada.push(item.dt_entrada);
+      }
+      if (item.dt_liq && !grupo.datasLiquidacao.includes(item.dt_liq)) {
+        grupo.datasLiquidacao.push(item.dt_liq);
+      }
+    });
+    
+    // Processar os grupos para determinar a situação final e datas mais relevantes
+    return Array.from(grupos.values()).map(grupo => {
+      // Se há múltiplas situações, priorizar CANCELADAS (C) sobre NORMAIS (N)
+      let situacaoFinal = grupo.item.tp_situacao;
+      
+      if (grupo.situacoes.length > 1) {
+        // Se há 'C' entre as situações, usar 'C' (cancelada tem prioridade)
+        if (grupo.situacoes.includes('C')) {
+          situacaoFinal = 'C';
+        } else if (grupo.situacoes.includes('N')) {
+          situacaoFinal = 'N';
+        }
+        // Se não há nem 'C' nem 'N', manter a primeira situação
+      }
+      
+      // Para as datas, usar a mais recente ou a mais relevante
+      const dtEmissaoFinal = grupo.datasEmissao.length > 0 ? 
+        grupo.datasEmissao.sort((a, b) => new Date(b) - new Date(a))[0] : 
+        grupo.item.dt_emissao;
+      
+      const dtVencimentoFinal = grupo.datasVencimento.length > 0 ? 
+        grupo.datasVencimento.sort((a, b) => new Date(b) - new Date(a))[0] : 
+        grupo.item.dt_vencimento;
+      
+      const dtEntradaFinal = grupo.datasEntrada.length > 0 ? 
+        grupo.datasEntrada.sort((a, b) => new Date(b) - new Date(a))[0] : 
+        grupo.item.dt_entrada;
+      
+      const dtLiquidacaoFinal = grupo.datasLiquidacao.length > 0 ? 
+        grupo.datasLiquidacao.sort((a, b) => new Date(b) - new Date(a))[0] : 
+        grupo.item.dt_liq;
+      
+      return {
+        ...grupo,
+        item: {
+          ...grupo.item,
+          tp_situacao: situacaoFinal,
+          dt_emissao: dtEmissaoFinal,
+          dt_vencimento: dtVencimentoFinal,
+          dt_entrada: dtEntradaFinal,
+          dt_liq: dtLiquidacaoFinal
+        }
+      };
+    });
   };
 
   // Função para ordenar os dados agrupados
@@ -525,8 +664,17 @@ const ContasAPagar = () => {
     return true;
   });
 
-  // Função para agrupar dados idênticos
-  const agruparDadosIdenticos = (dados) => {
+  // Aplicar filtro mensal aos dados filtrados
+  const dadosComFiltroMensal = aplicarFiltroMensal(dadosFiltrados, filtroMensal);
+
+  // Agrupar dados filtrados (incluindo filtro mensal)
+  const dadosAgrupadosComFiltroMensal = agruparDadosIdenticos(dadosComFiltroMensal);
+
+  // Aplicar ordenação aos dados agrupados
+  const dadosOrdenadosComFiltroMensal = sortDadosAgrupados(dadosAgrupadosComFiltroMensal);
+
+  // Função para agrupar dados idênticos (legado)
+  const agruparDadosIdenticosLegado = (dados) => {
     const grupos = new Map();
     
     dados.forEach((item) => {
@@ -631,10 +779,10 @@ const ContasAPagar = () => {
     amostraDados: dados.slice(0, 2)
   });
 
-  // Agrupar dados filtrados
-  const dadosAgrupados = agruparDadosIdenticos(dadosFiltrados);
+  // Agrupar dados filtrados (versão legada para tabela atual)
+  const dadosAgrupados = agruparDadosIdenticosLegado(dadosFiltrados);
 
-  // Aplicar ordenação aos dados agrupados
+  // Aplicar ordenação aos dados agrupados (versão legada para tabela atual)
   const dadosOrdenados = sortDadosAgrupados(dadosAgrupados);
 
   console.log('📊 Dados processados:', {
@@ -1157,6 +1305,37 @@ const ContasAPagar = () => {
               </div>
             ) : (
               <>
+                {/* Dropdown do Detalhamento de Contas */}
+                <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full mb-6">
+                  <div 
+                    className="p-6 border-b border-[#000638]/10 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => setMostrarTabela(!mostrarTabela)}
+                  >
+                    <h2 className="text-xl font-bold text-[#000638]">Detalhamento de Contas</h2>
+                    <div className="flex items-center gap-2">
+                      {mostrarTabela ? (
+                        <CaretUp size={20} className="text-[#000638]" />
+                      ) : (
+                        <CaretDown size={20} className="text-[#000638]" />
+                      )}
+                    </div>
+                  </div>
+                  
+                  {mostrarTabela && (
+                    <div className="p-6">
+                      <DespesasPorCategoria 
+                        dados={dadosOrdenadosComFiltroMensal}
+                        totalContas={dadosOrdenadosComFiltroMensal.length}
+                        linhasSelecionadas={linhasSelecionadas}
+                        toggleLinhaSelecionada={toggleLinhaSelecionada}
+                        filtroMensal={filtroMensal}
+                        setFiltroMensal={setFiltroMensal}
+                        dadosOriginais={dadosFiltrados}
+                      />
+                    </div>
+                  )}
+                </div>
+
                   <div className="table-container max-w-8xl mx-auto">
                     <table 
                       className="border-collapse rounded-lg overflow-hidden shadow-lg contas-table"
@@ -1799,6 +1978,492 @@ const ContasAPagar = () => {
         </div>
       )}
     </Layout>
+  );
+};
+
+// Componente para agrupar despesas por categoria
+const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais }) => {
+  const [categoriasExpandidas, setCategoriasExpandidas] = useState(new Set());
+
+  // Função para classificar despesa por código
+  const classificarDespesa = (cdDespesa) => {
+    const codigo = parseInt(cdDespesa) || 0;
+    
+    if (codigo >= 1000 && codigo <= 1999) {
+      return 'CUSTO DAS MERCADORIAS VENDIDAS';
+    } else if (codigo >= 2000 && codigo <= 2999) {
+      return 'DESPESAS OPERACIONAIS';
+    } else if (codigo >= 3000 && codigo <= 3999) {
+      return 'DESPESAS COM PESSOAL';
+    } else if (codigo >= 4000 && codigo <= 4999) {
+      return 'ALUGUÉIS E ARRENDAMENTOS';
+    } else if (codigo >= 5000 && codigo <= 5999) {
+      return 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
+    } else if (codigo >= 6000 && codigo <= 6999) {
+      return 'DESPESAS GERAIS';
+    } else if (codigo >= 7000 && codigo <= 7999) {
+      return 'DESPESAS FINANCEIRAS';
+    } else if (codigo >= 8000 && codigo <= 8999) {
+      return 'OUTRAS DESPESAS OPERACIONAIS';
+    } else if (codigo >= 9000 && codigo <= 9999) {
+      return 'DESPESAS C/ VENDAS';
+    } else {
+      return 'SEM CLASSIFICAÇÃO';
+    }
+  };
+
+  // Agrupar dados por classificação de despesa, nome da despesa e fornecedor
+  const dadosAgrupados = React.useMemo(() => {
+    const categorias = {};
+    
+    dados.forEach((grupo, index) => {
+      const cdDespesa = grupo.item.cd_despesaitem;
+      const nomeDespesa = grupo.item.ds_despesaitem || 'SEM DESCRIÇÃO';
+      const nomeFornecedor = grupo.item.nm_fornecedor || 'SEM FORNECEDOR';
+      const categoria = classificarDespesa(cdDespesa);
+      
+      // Criar categoria principal se não existir
+      if (!categorias[categoria]) {
+        categorias[categoria] = {
+          nome: categoria,
+          despesas: {},
+          total: 0,
+          quantidade: 0,
+          expandida: false
+        };
+      }
+      
+      // Criar sub-tópico da despesa se não existir
+      if (!categorias[categoria].despesas[nomeDespesa]) {
+        categorias[categoria].despesas[nomeDespesa] = {
+          nome: nomeDespesa,
+          fornecedores: {},
+          total: 0,
+          quantidade: 0,
+          expandida: false
+        };
+      }
+      
+      // Criar sub-tópico do fornecedor se não existir
+      if (!categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor]) {
+        categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor] = {
+          nome: nomeFornecedor,
+          itens: [],
+          total: 0,
+          quantidade: 0,
+          expandida: false
+        };
+      }
+      
+      // Adicionar item ao fornecedor específico
+      categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor].itens.push({ ...grupo, indiceOriginal: index });
+      categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor].total += parseFloat(grupo.item.vl_duplicata || 0);
+      categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor].quantidade += 1;
+      
+      // Atualizar totais da despesa
+      categorias[categoria].despesas[nomeDespesa].total += parseFloat(grupo.item.vl_duplicata || 0);
+      categorias[categoria].despesas[nomeDespesa].quantidade += 1;
+      
+      // Atualizar totais da categoria principal
+      categorias[categoria].total += parseFloat(grupo.item.vl_duplicata || 0);
+      categorias[categoria].quantidade += 1;
+    });
+
+    // Definir ordem específica das categorias
+    const ordemCategorias = [
+      'CUSTO DAS MERCADORIAS VENDIDAS',
+      'DESPESAS OPERACIONAIS',
+      'DESPESAS COM PESSOAL',
+      'ALUGUÉIS E ARRENDAMENTOS',
+      'IMPOSTOS, TAXAS E CONTRIBUIÇÕES',
+      'DESPESAS GERAIS',
+      'DESPESAS FINANCEIRAS',
+      'OUTRAS DESPESAS OPERACIONAIS',
+      'DESPESAS C/ VENDAS',
+      'SEM CLASSIFICAÇÃO'
+    ];
+
+    // Converter para array e ordenar pela ordem definida
+    return ordemCategorias
+      .filter(categoria => categorias[categoria]) // Só incluir categorias que têm dados
+      .map(categoria => {
+        const cat = categorias[categoria];
+        // Converter despesas em array e ordenar por valor (maior primeiro)
+        cat.despesasArray = Object.values(cat.despesas)
+          .map(despesa => {
+            // Converter fornecedores em array e ordenar por valor (maior primeiro)
+            despesa.fornecedoresArray = Object.values(despesa.fornecedores).sort((a, b) => b.total - a.total);
+            return despesa;
+          })
+          .sort((a, b) => b.total - a.total);
+        return cat;
+      });
+  }, [dados]);
+
+  const toggleCategoria = (nomeCategoria) => {
+    setCategoriasExpandidas(prev => {
+      const novoSet = new Set(prev);
+      if (novoSet.has(nomeCategoria)) {
+        novoSet.delete(nomeCategoria);
+      } else {
+        novoSet.add(nomeCategoria);
+      }
+      return novoSet;
+    });
+  };
+
+  const toggleDespesa = (nomeCategoria, nomeDespesa) => {
+    const chave = `${nomeCategoria}|${nomeDespesa}`;
+    setCategoriasExpandidas(prev => {
+      const novoSet = new Set(prev);
+      if (novoSet.has(chave)) {
+        novoSet.delete(chave);
+      } else {
+        novoSet.add(chave);
+      }
+      return novoSet;
+    });
+  };
+
+  const toggleFornecedor = (nomeCategoria, nomeDespesa, nomeFornecedor) => {
+    const chave = `${nomeCategoria}|${nomeDespesa}|${nomeFornecedor}`;
+    setCategoriasExpandidas(prev => {
+      const novoSet = new Set(prev);
+      if (novoSet.has(chave)) {
+        novoSet.delete(chave);
+      } else {
+        novoSet.add(chave);
+      }
+      return novoSet;
+    });
+  };
+
+  const formatarData = (data) => {
+    if (!data) return '';
+    if (data.includes('T')) {
+      return new Date(data).toLocaleDateString('pt-BR');
+    }
+    return data;
+  };
+
+  // Calcular dados mensais para mostrar quantidades nos botões
+  const calcularDadosMensais = () => {
+    const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    const dadosMensais = {};
+    
+    // Calcular ANO ATUAL
+    const anoAtual = new Date().getFullYear();
+    dadosMensais['ANO'] = dadosOriginais.filter(item => {
+      if (!item.dt_vencimento) return false;
+      const ano = new Date(item.dt_vencimento).getFullYear();
+      return ano === anoAtual;
+    }).length;
+    
+    // Calcular cada mês
+    meses.forEach((mes, index) => {
+      const numeroMes = index + 1;
+      dadosMensais[mes] = dadosOriginais.filter(item => {
+        if (!item.dt_vencimento) return false;
+        const data = new Date(item.dt_vencimento);
+        return data.getMonth() + 1 === numeroMes;
+      }).length;
+    });
+    
+    return dadosMensais;
+  };
+
+  const dadosMensais = calcularDadosMensais();
+
+  return (
+    <div className="space-y-4">
+      {/* Filtros Mensais */}
+      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+        <div className="flex items-center gap-2 mb-3">
+          <Calendar size={18} className="text-[#000638]" />
+          <h3 className="font-bold text-sm text-[#000638]">Filtro por Período (Data Vencimento)</h3>
+        </div>
+        
+        <div className="flex flex-wrap gap-2">
+          {/* Botão ANO */}
+          <button
+            onClick={() => setFiltroMensal('ANO')}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+              filtroMensal === 'ANO'
+                ? 'bg-[#000638] text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+            }`}
+          >
+            ANO
+          </button>
+          
+          {/* Botões dos Meses */}
+          {['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'].map((mes) => (
+            <button
+              key={mes}
+              onClick={() => setFiltroMensal(mes)}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                filtroMensal === mes
+                  ? 'bg-[#000638] text-white'
+                  : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+              }`}
+            >
+              {mes}
+            </button>
+          ))}
+        </div>
+        
+        {/* Informação do filtro ativo */}
+        <div className="mt-3 text-xs text-gray-500">
+          <span className="font-medium">Filtro ativo:</span> {filtroMensal} 
+          <span className="ml-2">({dados.length} registro{dados.length !== 1 ? 's' : ''})</span>
+        </div>
+      </div>
+
+      {/* Categorias de Despesas */}
+      <div className="space-y-2">
+        {dadosAgrupados.map((categoria) => {
+          const isCategoriaExpanded = categoriasExpandidas.has(categoria.nome);
+          
+          return (
+            <div key={categoria.nome} className="border border-gray-200 rounded-lg overflow-hidden">
+              {/* Cabeçalho da categoria principal */}
+              <div
+                className="bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors px-3 py-2 flex items-center justify-between"
+                onClick={() => toggleCategoria(categoria.nome)}
+              >
+                <div className="flex items-center space-x-2">
+                  {isCategoriaExpanded ? (
+                    <CaretDown size={16} className="text-gray-600" />
+                  ) : (
+                    <CaretRight size={16} className="text-gray-600" />
+                  )}
+                  <div>
+                    <h3 className="font-medium text-sm text-gray-800">{categoria.nome}</h3>
+                    <div className="flex items-center space-x-3 text-xs text-gray-600">
+                      <span>{categoria.quantidade} conta(s)</span>
+                      <span>{categoria.despesasArray.length} despesa(s)</span>
+                      <span className="font-medium text-red-600">
+                        {categoria.total.toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sub-tópicos de despesas */}
+              {isCategoriaExpanded && (
+                <div className="bg-white border-t border-gray-100">
+                  {categoria.despesasArray.map((despesa) => {
+                    const chaveExpansao = `${categoria.nome}|${despesa.nome}`;
+                    const isDespesaExpanded = categoriasExpandidas.has(chaveExpansao);
+                    
+                    return (
+                      <div key={despesa.nome} className="border-b border-gray-100 last:border-b-0">
+                        {/* Cabeçalho da despesa específica */}
+                        <div
+                          className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-6 py-2 flex items-center justify-between"
+                          onClick={() => toggleDespesa(categoria.nome, despesa.nome)}
+                        >
+                          <div className="flex items-center space-x-2">
+                            {isDespesaExpanded ? (
+                              <CaretDown size={14} className="text-gray-500" />
+                            ) : (
+                              <CaretRight size={14} className="text-gray-500" />
+                            )}
+                            <div>
+                              <h4 className="font-medium text-xs text-gray-700">{despesa.nome}</h4>
+                              <div className="flex items-center space-x-3 text-xs text-gray-500">
+                                <span>{despesa.quantidade} conta(s)</span>
+                                <span>{despesa.fornecedoresArray.length} fornecedor(es)</span>
+                                <span className="font-medium text-red-500">
+                                  {despesa.total.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Sub-tópicos de fornecedores */}
+                        {isDespesaExpanded && (
+                          <div className="bg-white border-t border-gray-50">
+                            {despesa.fornecedoresArray.map((fornecedor) => {
+                              const chaveExpansaoFornecedor = `${categoria.nome}|${despesa.nome}|${fornecedor.nome}`;
+                              const isFornecedorExpanded = categoriasExpandidas.has(chaveExpansaoFornecedor);
+                              
+                              return (
+                                <div key={fornecedor.nome} className="border-b border-gray-50 last:border-b-0">
+                                  {/* Cabeçalho do fornecedor */}
+                                  <div
+                                    className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-9 py-2 flex items-center justify-between"
+                                    onClick={() => toggleFornecedor(categoria.nome, despesa.nome, fornecedor.nome)}
+                                  >
+                                    <div className="flex items-center space-x-2">
+                                      {isFornecedorExpanded ? (
+                                        <CaretDown size={12} className="text-gray-400" />
+                                      ) : (
+                                        <CaretRight size={12} className="text-gray-400" />
+                                      )}
+                                      <div>
+                                        <h5 className="font-medium text-xs text-gray-600">{fornecedor.nome}</h5>
+                                        <div className="flex items-center space-x-3 text-xs text-gray-400">
+                                          <span>{fornecedor.quantidade} conta(s)</span>
+                                          <span className="font-medium text-red-400">
+                                            {fornecedor.total.toLocaleString('pt-BR', {
+                                              style: 'currency',
+                                              currency: 'BRL',
+                                            })}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Tabela de detalhes do fornecedor */}
+                                  {isFornecedorExpanded && (
+                                    <div className="bg-white">
+                                      <div className="overflow-x-auto">
+                                        <table className="contas-table w-full border-collapse">
+                                          <thead>
+                                            <tr className="bg-[#000638] text-white text-[10px]">
+                                              <th className="px-2 py-1 text-center text-[10px]" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: '#000638' }}>
+                                                Selecionar
+                                              </th>
+                                              <th className="px-2 py-1 text-center text-[10px]">Vencimento</th>
+                                              <th className="px-2 py-1 text-center text-[10px]">Valor</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Fornecedor</th>
+                                              <th className="px-3 py-1 text-center text-[10px]">NM Fornecedor</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Despesa</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">NM CUSTO</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Empresa</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Duplicata</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Portador</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Emissão</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Entrada</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Liquidação</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Situação</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Estágio</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Juros</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Acréscimo</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Desconto</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Pago</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Aceite</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Parcela</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Observação</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {fornecedor.itens.map((grupo, index) => {
+                                              const indiceReal = grupo.indiceOriginal;
+                                              const isSelected = linhasSelecionadas.has(indiceReal);
+                                              
+                                              return (
+                                                <tr
+                                                  key={`${grupo.item.cd_empresa}-${grupo.item.nr_duplicata}-${index}`}
+                                                  className={`text-[10px] border-b transition-colors ${
+                                                    isSelected
+                                                      ? 'bg-blue-100 hover:bg-blue-200'
+                                                      : index % 2 === 0
+                                                      ? 'bg-white hover:bg-gray-100'
+                                                      : 'bg-gray-50 hover:bg-gray-100'
+                                                  }`}
+                                                >
+                                                  <td className="px-2 py-1 text-center" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
+                                                    <input
+                                                      type="checkbox"
+                                                      checked={isSelected}
+                                                      onChange={() => toggleLinhaSelecionada(indiceReal)}
+                                                      className="rounded"
+                                                    />
+                                                  </td>
+                                                  <td className="px-2 py-1 text-center">{formatarData(grupo.item.dt_vencimento)}</td>
+                                                  <td className="px-2 py-1 text-right font-medium text-green-600">
+                                                    {parseFloat(grupo.item.vl_duplicata || 0).toLocaleString('pt-BR', {
+                                                      style: 'currency',
+                                                      currency: 'BRL',
+                                                    })}
+                                                  </td>
+                                                  <td className="px-1 py-1 text-center">{grupo.item.cd_fornecedor || ''}</td>
+                                                  <td className="px-3 py-1 text-left max-w-32 truncate" title={grupo.item.nm_fornecedor}>
+                                                    {grupo.item.nm_fornecedor || ''}
+                                                  </td>
+                                                  <td className="px-1 py-1 text-left max-w-24 truncate" title={grupo.item.ds_despesaitem}>
+                                                    {grupo.item.ds_despesaitem || ''}
+                                                  </td>
+                                                  <td className="px-1 py-1 text-left max-w-24 truncate" title={grupo.item.ds_ccusto}>
+                                                    {grupo.item.ds_ccusto || ''}
+                                                  </td>
+                                                  <td className="px-1 py-1 text-center">{grupo.item.cd_empresa || ''}</td>
+                                                  <td className="px-1 py-1 text-center">{grupo.item.nr_duplicata || ''}</td>
+                                                  <td className="px-1 py-1 text-center">{grupo.item.nr_portador || ''}</td>
+                                                  <td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_emissao)}</td>
+                                                  <td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_entrada)}</td>
+                                                  <td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_liq)}</td>
+                                                  <td className="px-1 py-1 text-center">{grupo.item.tp_situacao || ''}</td>
+                                                  <td className="px-1 py-1 text-center">{grupo.item.tp_estagio || ''}</td>
+                                                  <td className="px-1 py-1 text-right">
+                                                    {parseFloat(grupo.item.vl_juros || 0).toLocaleString('pt-BR', {
+                                                      style: 'currency',
+                                                      currency: 'BRL',
+                                                    })}
+                                                  </td>
+                                                  <td className="px-1 py-1 text-right">
+                                                    {parseFloat(grupo.item.vl_acrescimo || 0).toLocaleString('pt-BR', {
+                                                      style: 'currency',
+                                                      currency: 'BRL',
+                                                    })}
+                                                  </td>
+                                                  <td className="px-1 py-1 text-right">
+                                                    {parseFloat(grupo.item.vl_desconto || 0).toLocaleString('pt-BR', {
+                                                      style: 'currency',
+                                                      currency: 'BRL',
+                                                    })}
+                                                  </td>
+                                                  <td className="px-1 py-1 text-right">
+                                                    {parseFloat(grupo.item.vl_pago || 0).toLocaleString('pt-BR', {
+                                                      style: 'currency',
+                                                      currency: 'BRL',
+                                                    })}
+                                                  </td>
+                                                  <td className="px-1 py-1 text-center">{grupo.item.in_aceite || ''}</td>
+                                                  <td className="px-1 py-1 text-center">{grupo.item.nr_parcela || ''}</td>
+                                                  <td className="px-1 py-1 text-left max-w-32 truncate" title={grupo.item.ds_observacao}>
+                                                    {grupo.item.ds_observacao || ''}
+                                                  </td>
+                                                </tr>
+                                              );
+                                            })}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {dadosAgrupados.length === 0 && (
+          <div className="text-center py-8 text-gray-500">
+            Nenhuma despesa encontrada para os filtros selecionados
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 
