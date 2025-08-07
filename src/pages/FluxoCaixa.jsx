@@ -1020,19 +1020,6 @@ const FluxoCaixa = () => {
 
 
 
-        {/* Gráfico de Ranking de Despesas */}
-        {dadosCarregados && dadosOrdenados.length > 0 && (
-          <div className="max-w-6xl mx-auto w-full mb-6">
-            <GraficoRankingDespesas 
-              dados={dadosOrdenados}
-              tipoGrafico={tipoGrafico}
-              moduloGrafico={moduloGrafico}
-              onTipoChange={setTipoGrafico}
-              onModuloChange={setModuloGrafico}
-            />
-          </div>
-        )}
-
         {/* Dropdown da Tabela de Despesas */}
         <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full">
           <div 
@@ -1087,6 +1074,19 @@ const FluxoCaixa = () => {
                 </div>
           )}
                 </div>
+
+        {/* Gráfico de Ranking de Despesas */}
+        {dadosCarregados && dadosOrdenados.length > 0 && (
+          <div className="max-w-6xl mx-auto w-full mt-6">
+            <GraficoRankingDespesas 
+              dados={dadosOrdenados}
+              tipoGrafico={tipoGrafico}
+              moduloGrafico={moduloGrafico}
+              onTipoChange={setTipoGrafico}
+              onModuloChange={setModuloGrafico}
+            />
+          </div>
+        )}
               </div>
     </Layout>
   );
@@ -1380,6 +1380,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
       const cdDespesa = grupo.item.cd_despesaitem;
       const nomeDespesa = grupo.item.ds_despesaitem || 'SEM DESCRIÇÃO';
       const nomeFornecedor = grupo.item.nm_fornecedor || 'SEM FORNECEDOR';
+      const vlRateio = grupo.item.vl_rateio || 0;
       const categoria = classificarDespesa(cdDespesa);
       
       // Criar categoria principal se não existir
@@ -1404,10 +1405,15 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
         };
       }
       
+      // Criar chave única para o fornecedor incluindo duplicata e rateio
+      const chaveFornecedor = `${nomeFornecedor}|${grupo.item.nr_duplicata}|${vlRateio}`;
+      
       // Criar sub-tópico do fornecedor se não existir
-      if (!categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor]) {
-        categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor] = {
+      if (!categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor]) {
+        categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor] = {
           nome: nomeFornecedor,
+          nrDuplicata: grupo.item.nr_duplicata,
+          vlRateio: vlRateio,
           itens: [],
           total: 0,
           quantidade: 0,
@@ -1416,16 +1422,18 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
       }
       
       // Adicionar item ao fornecedor específico
-      categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor].itens.push({ ...grupo, indiceOriginal: index });
-      categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor].total += parseFloat(grupo.item.vl_duplicata || 0);
-      categorias[categoria].despesas[nomeDespesa].fornecedores[nomeFornecedor].quantidade += 1;
+      categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor].itens.push({ ...grupo, indiceOriginal: index });
       
-      // Atualizar totais da despesa
-      categorias[categoria].despesas[nomeDespesa].total += parseFloat(grupo.item.vl_duplicata || 0);
+      // Usar o valor de rateio como total para este item específico
+      categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor].total = parseFloat(vlRateio || 0);
+      categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor].quantidade = 1;
+      
+      // Atualizar totais da despesa usando o rateio
+      categorias[categoria].despesas[nomeDespesa].total += parseFloat(vlRateio || 0);
       categorias[categoria].despesas[nomeDespesa].quantidade += 1;
       
-      // Atualizar totais da categoria principal
-      categorias[categoria].total += parseFloat(grupo.item.vl_duplicata || 0);
+      // Atualizar totais da categoria principal usando o rateio
+      categorias[categoria].total += parseFloat(vlRateio || 0);
       categorias[categoria].quantidade += 1;
     });
 
@@ -1485,8 +1493,8 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
     });
   };
 
-  const toggleFornecedor = (nomeCategoria, nomeDespesa, nomeFornecedor) => {
-    const chave = `${nomeCategoria}|${nomeDespesa}|${nomeFornecedor}`;
+  const toggleFornecedor = (nomeCategoria, nomeDespesa, nomeFornecedor, nrDuplicata, vlRateio) => {
+    const chave = `${nomeCategoria}|${nomeDespesa}|${nomeFornecedor}|${nrDuplicata}|${vlRateio}`;
     setCategoriasExpandidas(prev => {
       const novoSet = new Set(prev);
       if (novoSet.has(chave)) {
@@ -1653,7 +1661,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                       {isDespesaExpanded && (
                         <div className="bg-white border-t border-gray-50">
                           {despesa.fornecedoresArray.map((fornecedor) => {
-                            const chaveExpansaoFornecedor = `${categoria.nome}|${despesa.nome}|${fornecedor.nome}`;
+                                                          const chaveExpansaoFornecedor = `${categoria.nome}|${despesa.nome}|${fornecedor.nome}|${fornecedor.nrDuplicata}|${fornecedor.vlRateio}`;
                             const isFornecedorExpanded = categoriasExpandidas.has(chaveExpansaoFornecedor);
                             
                             return (
@@ -1661,7 +1669,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                 {/* Cabeçalho do fornecedor */}
                                 <div
                                   className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-9 py-2 flex items-center justify-between"
-                                  onClick={() => toggleFornecedor(categoria.nome, despesa.nome, fornecedor.nome)}
+                                                                      onClick={() => toggleFornecedor(categoria.nome, despesa.nome, fornecedor.nome, fornecedor.nrDuplicata, fornecedor.vlRateio)}
                                 >
                                   <div className="flex items-center space-x-2">
                                     {isFornecedorExpanded ? (
@@ -1670,7 +1678,20 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                       <CaretRight size={12} className="text-gray-400" />
                                     )}
                                     <div>
-                                      <h5 className="font-medium text-xs text-gray-600">{fornecedor.nome}</h5>
+                                      <h5 className="font-medium text-xs text-gray-600">
+                                        {fornecedor.nome}
+                                        <span className="ml-1 text-gray-400">
+                                          (Dup: {fornecedor.nrDuplicata})
+                                        </span>
+                                        {fornecedor.vlRateio > 0 && (
+                                          <span className="ml-1 text-gray-400">
+                                            - Rateio: {parseFloat(fornecedor.vlRateio).toLocaleString('pt-BR', {
+                                              style: 'currency',
+                                              currency: 'BRL',
+                                            })}
+                                          </span>
+                                        )}
+                                      </h5>
                                       <div className="flex items-center space-x-3 text-xs text-gray-400">
                                         <span>{fornecedor.quantidade} conta(s)</span>
                                         <span className="font-medium text-red-400">
@@ -1714,6 +1735,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                             <th className="px-1 py-1 text-center text-[10px]">Pago</th>
                                             <th className="px-1 py-1 text-center text-[10px]">Aceite</th>
                                             <th className="px-1 py-1 text-center text-[10px]">Parcela</th>
+                                            <th className="px-1 py-1 text-center text-[10px]">Rateio</th>
                                             <th className="px-1 py-1 text-center text-[10px]">Observação</th>
                                           </tr>
                                         </thead>
@@ -1792,6 +1814,12 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                                 </td>
                                                 <td className="px-1 py-1 text-center">{grupo.item.in_aceite || ''}</td>
                                                 <td className="px-1 py-1 text-center">{grupo.item.nr_parcela || ''}</td>
+                                                <td className="px-1 py-1 text-right">
+                                                  {parseFloat(grupo.item.vl_rateio || 0).toLocaleString('pt-BR', {
+                                                    style: 'currency',
+                                                    currency: 'BRL',
+                                                  })}
+                                                </td>
                                                 <td className="px-1 py-1 text-left max-w-32 truncate" title={grupo.item.ds_observacao}>
                                                   {grupo.item.ds_observacao || ''}
                                                 </td>

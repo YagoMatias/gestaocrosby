@@ -884,7 +884,7 @@ const ContasAPagar = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-                              <div className="text-2xl font-extrabold text-blue-600 mb-1">
+              <div className="text-2xl font-extrabold text-blue-600 mb-1">
                   {loading ? <Spinner size={24} className="animate-spin text-blue-600" /> : totalContasCards}
               </div>
               <CardDescription className="text-xs text-gray-500">Contas no período</CardDescription>
@@ -981,8 +981,8 @@ const ContasAPagar = () => {
               <div className="text-xs font-medium text-orange-500">
                                 {loading ? '...' : 
                                      valorContasProximasVencerCards.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
+                  style: 'currency',
+                  currency: 'BRL',
                     })
                 }
               </div>
@@ -1067,8 +1067,8 @@ const ContasAPagar = () => {
               <CardDescription className="text-xs text-gray-500">Total de descontos obtidos</CardDescription>
             </CardContent>
           </Card>
-        </div>
-
+          </div>
+          
         {/* Conteúdo principal */}
         <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-8xl mx-auto w-full">
           <div className="p-6">
@@ -1111,8 +1111,27 @@ const ContasAPagar = () => {
                       setFiltroMensal={setFiltroMensal}
                       dadosOriginais={dadosFiltrados}
                     />
-                          </div>
-                          </div>
+                  </div>
+                </div>
+
+                {/* Detalhamento de Despesas */}
+                <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full mb-6">
+                  <div className="p-6 border-b border-[#000638]/10">
+                    <h2 className="text-xl font-bold text-[#000638]">Detalhamento de Despesas</h2>
+                  </div>
+                  
+                  <div className="p-6">
+                    <DespesasPorCategoria 
+                      dados={dadosOrdenadosParaCards}
+                      totalContas={totalContasCards}
+                      linhasSelecionadas={linhasSelecionadas}
+                      toggleLinhaSelecionada={toggleLinhaSelecionada}
+                      filtroMensal={filtroMensal}
+                      setFiltroMensal={setFiltroMensal}
+                      dadosOriginais={dadosFiltrados}
+                    />
+                  </div>
+                </div>
               </>
             )}
                           </div>
