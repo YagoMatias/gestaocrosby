@@ -426,6 +426,31 @@ const FluxoCaixa = () => {
       totalDados: dados.length
     });
     
+    // Log adicional para debug dos dados
+    if (dados.length > 0) {
+      const anosPresentes = [...new Set(dados.map(item => {
+        if (item.dt_liq) {
+          return new Date(item.dt_liq).getFullYear();
+        }
+        return null;
+      }).filter(ano => ano !== null))];
+      
+      console.log('📊 Anos presentes nos dados:', anosPresentes.sort());
+      
+      // Log adicional para verificar dados de 2025 especificamente
+      const dados2025 = dados.filter(item => {
+        if (item.dt_liq) {
+          return new Date(item.dt_liq).getFullYear() === 2025;
+        }
+        return false;
+      });
+      
+      console.log('🔍 Dados de 2025 encontrados:', dados2025.length);
+      if (dados2025.length > 0) {
+        console.log('📋 Amostra de dados 2025:', dados2025.slice(0, 2));
+      }
+    }
+    
     return dados.filter((item) => {
       // Usar dt_liq como base para o filtro mensal (data de liquidação)
       const dataLiquidacao = item.dt_liq;
@@ -437,7 +462,7 @@ const FluxoCaixa = () => {
       
       if (filtro === 'ANO') {
         // Mostrar dados do ano baseado nas datas de liquidação selecionadas
-        return ano === anoFiltro + 1;
+        return ano === anoFiltro;
       }
       
       // Filtros por mês específico (do ano selecionado)
@@ -727,6 +752,18 @@ const FluxoCaixa = () => {
 
   // Aplicar filtro mensal aos dados filtrados
   const dadosComFiltroMensal = aplicarFiltroMensal(dadosFiltrados, filtroMensal);
+
+  // Log para verificar dados de 2025 após filtro mensal
+  if (dadosComFiltroMensal.length > 0) {
+    const dados2025AposFiltro = dadosComFiltroMensal.filter(item => {
+      if (item.dt_liq) {
+        return new Date(item.dt_liq).getFullYear() === 2025;
+      }
+      return false;
+    });
+    
+    console.log('🔍 Dados de 2025 após filtro mensal:', dados2025AposFiltro.length);
+  }
 
   // Agrupar dados filtrados (incluindo filtro mensal)
   const dadosAgrupados = agruparDadosIdenticos(dadosComFiltroMensal);
@@ -1125,29 +1162,59 @@ const GraficoRankingDespesas = ({ dados, tipoGrafico, moduloGrafico, onTipoChang
   const prepararDadosTopicos = (dados) => {
     const grupos = {};
     
+    // Códigos específicos para DESPESAS COM PESSOAL
+    const codigosPessoal = [
+      329, 330, 7204, 7205, 7206, 7207, 7208, 7209, 7210, 331, 332, 333, 334, 335, 336, 337, 338, 339, 366, 637, 931, 681, 683, 684, 685, 687, 698, 492, 498
+    ];
+    
+    // Códigos específicos para ALUGUÉIS E ARRENDAMENTOS
+    const codigosAlugueis = [
+      340, 341, 342, 699, 344
+    ];
+    
+    // Códigos específicos para DESPESAS GERAIS
+    const codigosGerais = [
+      7218, 7219, 7220, 7221, 7222, 7223, 7224, 321, 1603, 350, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 365, 943, 706, 707, 708, 709, 710, 711, 712, 713, 714, 715, 716, 717, 718, 720, 721, 722, 723, 724, 725, 726, 728, 729, 730, 731, 733, 734, 737, 738, 748, 749
+    ];
+    
+    // Códigos específicos para DESPESAS FINANCEIRAS
+    const codigosFinanceiras = [
+      369, 370, 371, 422, 372, 7226, 373, 742, 762, 743, 375, 750
+    ];
+    
+    // Códigos específicos para OUTRAS DESPESAS OPERACIONAIS
+    const codigosOutrasOperacionais = [
+      376, 377, 378, 379
+    ];
+    
+    // Códigos específicos para DESPESAS C/ VENDAS
+    const codigosVendas = [
+      1695, 7225, 744, 747, 746, 380
+    ];
+    
     dados.forEach((grupo) => {
       const cdDespesa = grupo.item.cd_despesaitem;
       const codigo = parseInt(cdDespesa) || 0;
       
       let categoria;
       if (codigo >= 1000 && codigo <= 1999) {
-        categoria = 'CUSTO DAS MERCADORIAS VENDIDAS';
+        categoria = 'CUSTO DAS MERCADORIAS VENDIDAS (1000-1999)';
       } else if (codigo >= 2000 && codigo <= 2999) {
         categoria = 'DESPESAS OPERACIONAIS';
-      } else if (codigo >= 3000 && codigo <= 3999) {
-        categoria = 'DESPESAS COM PESSOAL';
-      } else if (codigo >= 4000 && codigo <= 4999) {
-        categoria = 'ALUGUÉIS E ARRENDAMENTOS';
+      } else if ((codigo >= 3000 && codigo <= 3999) || codigosPessoal.includes(codigo)) {
+        categoria = 'DESPESAS COM PESSOAL (3000-3999)';
+      } else if ((codigo >= 4001 && codigo <= 4999) || codigosAlugueis.includes(codigo)) {
+        categoria = 'ALUGUÉIS E ARRENDAMENTOS (4001-4999)';
       } else if (codigo >= 5000 && codigo <= 5999) {
         categoria = 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
-      } else if (codigo >= 6000 && codigo <= 6999) {
-        categoria = 'DESPESAS GERAIS';
-      } else if (codigo >= 7000 && codigo <= 7999) {
-        categoria = 'DESPESAS FINANCEIRAS';
-      } else if (codigo >= 8000 && codigo <= 8999) {
-        categoria = 'OUTRAS DESPESAS OPERACIONAIS';
-      } else if (codigo >= 9000 && codigo <= 9999) {
-        categoria = 'DESPESAS C/ VENDAS';
+      } else if ((codigo >= 6000 && codigo <= 6999) || codigosGerais.includes(codigo)) {
+        categoria = 'DESPESAS GERAIS (6000-6999)';
+      } else if ((codigo >= 7000 && codigo <= 7999) || codigosFinanceiras.includes(codigo)) {
+        categoria = 'DESPESAS FINANCEIRAS (7000-7999)';
+      } else if ((codigo >= 8000 && codigo <= 8999) || codigosOutrasOperacionais.includes(codigo)) {
+        categoria = 'OUTRAS DESPESAS OPERACIONAIS (8000-8999)';
+      } else if ((codigo >= 9000 && codigo <= 9999) || codigosVendas.includes(codigo)) {
+        categoria = 'DESPESAS C/ VENDAS (9000-9999)';
       } else {
         categoria = 'SEM CLASSIFICAÇÃO';
       }
@@ -1370,24 +1437,54 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
   const classificarDespesa = (cdDespesa) => {
     const codigo = parseInt(cdDespesa) || 0;
     
+    // Códigos específicos para DESPESAS COM PESSOAL
+    const codigosPessoal = [
+      329, 330, 7204, 7205, 7206, 7207, 7208, 7209, 7210, 331, 332, 333, 334, 335, 336, 337, 338, 339, 366, 637, 931, 681, 683, 684, 685, 687, 698, 492, 498
+    ];
+    
+    // Códigos específicos para ALUGUÉIS E ARRENDAMENTOS
+    const codigosAlugueis = [
+      340, 341, 342, 699, 344
+    ];
+    
+    // Códigos específicos para DESPESAS GERAIS
+    const codigosGerais = [
+      7218, 7219, 7220, 7221, 7222, 7223, 7224, 321, 1603, 350, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 365, 943, 706, 707, 708, 709, 710, 711, 712, 713, 714, 715, 716, 717, 718, 720, 721, 722, 723, 724, 725, 726, 728, 729, 730, 731, 733, 734, 737, 738, 748, 749
+    ];
+    
+    // Códigos específicos para DESPESAS FINANCEIRAS
+    const codigosFinanceiras = [
+      369, 370, 371, 422, 372, 7226, 373, 742, 762, 743, 375, 750
+    ];
+    
+    // Códigos específicos para OUTRAS DESPESAS OPERACIONAIS
+    const codigosOutrasOperacionais = [
+      376, 377, 378, 379
+    ];
+    
+    // Códigos específicos para DESPESAS C/ VENDAS
+    const codigosVendas = [
+      1695, 7225, 744, 747, 746, 380
+    ];
+    
     if (codigo >= 1000 && codigo <= 1999) {
-      return 'CUSTO DAS MERCADORIAS VENDIDAS';
+      return 'CUSTO DAS MERCADORIAS VENDIDAS (1000-1999)';
     } else if (codigo >= 2000 && codigo <= 2999) {
       return 'DESPESAS OPERACIONAIS';
-    } else if (codigo >= 3000 && codigo <= 3999) {
-      return 'DESPESAS COM PESSOAL';
-    } else if (codigo >= 4000 && codigo <= 4999) {
-      return 'ALUGUÉIS E ARRENDAMENTOS';
+    } else if ((codigo >= 3000 && codigo <= 3999) || codigosPessoal.includes(codigo)) {
+      return 'DESPESAS COM PESSOAL (3000-3999)';
+    } else if ((codigo >= 4001 && codigo <= 4999) || codigosAlugueis.includes(codigo)) {
+      return 'ALUGUÉIS E ARRENDAMENTOS (4001-4999)';
     } else if (codigo >= 5000 && codigo <= 5999) {
       return 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
-    } else if (codigo >= 6000 && codigo <= 6999) {
-      return 'DESPESAS GERAIS';
-    } else if (codigo >= 7000 && codigo <= 7999) {
-      return 'DESPESAS FINANCEIRAS';
-    } else if (codigo >= 8000 && codigo <= 8999) {
-      return 'OUTRAS DESPESAS OPERACIONAIS';
-    } else if (codigo >= 9000 && codigo <= 9999) {
-      return 'DESPESAS C/ VENDAS';
+    } else if ((codigo >= 6000 && codigo <= 6999) || codigosGerais.includes(codigo)) {
+      return 'DESPESAS GERAIS (6000-6999)';
+    } else if ((codigo >= 7000 && codigo <= 7999) || codigosFinanceiras.includes(codigo)) {
+      return 'DESPESAS FINANCEIRAS (7000-7999)';
+    } else if ((codigo >= 8000 && codigo <= 8999) || codigosOutrasOperacionais.includes(codigo)) {
+      return 'OUTRAS DESPESAS OPERACIONAIS (8000-8999)';
+    } else if ((codigo >= 9000 && codigo <= 9999) || codigosVendas.includes(codigo)) {
+      return 'DESPESAS C/ VENDAS (9000-9999)';
     } else {
       return 'SEM CLASSIFICAÇÃO';
     }
@@ -1460,15 +1557,15 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
 
     // Definir ordem específica das categorias
     const ordemCategorias = [
-      'CUSTO DAS MERCADORIAS VENDIDAS',
+      'CUSTO DAS MERCADORIAS VENDIDAS (1000-1999)',
       'DESPESAS OPERACIONAIS',
-      'DESPESAS COM PESSOAL',
-      'ALUGUÉIS E ARRENDAMENTOS',
+      'DESPESAS COM PESSOAL (3000-3999)',
+      'ALUGUÉIS E ARRENDAMENTOS (4001-4999)',
       'IMPOSTOS, TAXAS E CONTRIBUIÇÕES',
-      'DESPESAS GERAIS',
-      'DESPESAS FINANCEIRAS',
-      'OUTRAS DESPESAS OPERACIONAIS',
-      'DESPESAS C/ VENDAS',
+      'DESPESAS GERAIS (6000-6999)',
+      'DESPESAS FINANCEIRAS (7000-7999)',
+      'OUTRAS DESPESAS OPERACIONAIS (8000-8999)',
+      'DESPESAS C/ VENDAS (9000-9999)',
       'SEM CLASSIFICAÇÃO'
     ];
 
@@ -1550,6 +1647,25 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
     } else {
       // Fallback para ano atual se não houver datas selecionadas
       anoFiltro = new Date().getFullYear();
+    }
+    
+    console.log('🔍 DespesasPorCategoria - calcularDadosMensais:', {
+      anoFiltro,
+      dataInicio,
+      dataFim,
+      totalDadosOriginais: dadosOriginais.length
+    });
+    
+    // Log para verificar anos presentes nos dadosOriginais
+    if (dadosOriginais.length > 0) {
+      const anosPresentesOriginais = [...new Set(dadosOriginais.map(item => {
+        if (item.dt_liq) {
+          return new Date(item.dt_liq).getFullYear();
+        }
+        return null;
+      }).filter(ano => ano !== null))];
+      
+      console.log('📊 Anos presentes nos dadosOriginais:', anosPresentesOriginais.sort());
     }
     
     // Calcular ANO (baseado nas datas selecionadas)

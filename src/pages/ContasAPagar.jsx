@@ -1240,8 +1240,8 @@ const ContasAPagar = () => {
                       handleFiltroMensalChange={handleFiltroMensalChange}
                       obterDiasDoMes={obterDiasDoMes}
                     />
-                  </div>
-                </div>
+                          </div>
+                          </div>
 
 
               </>
@@ -1260,7 +1260,7 @@ const ContasAPagar = () => {
               <p className="text-sm opacity-90 mt-1">
                 Detalhes das observações para a conta selecionada
               </p>
-            </div>
+                          </div>
 
             {/* Conteúdo do Modal */}
             <div className="flex-1 overflow-y-auto p-6">
@@ -1269,9 +1269,9 @@ const ContasAPagar = () => {
                   {dadosModal.observacoes.map((obs, index) => (
                     <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                       <p className="text-gray-800 text-sm leading-relaxed">{obs}</p>
-                    </div>
+                          </div>
                   ))}
-                </div>
+                          </div>
               ) : (
                 <div className="text-center py-8 text-gray-500">
                   <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1279,9 +1279,9 @@ const ContasAPagar = () => {
                   </svg>
                   <p className="text-lg font-medium">Nenhuma observação encontrada</p>
                   <p className="text-sm">Este registro não possui observações cadastradas.</p>
-                </div>
+                          </div>
               )}
-            </div>
+                          </div>
 
             {/* Footer do Modal */}
             <div className="bg-gray-50 px-6 py-4 flex justify-end">
@@ -1291,9 +1291,9 @@ const ContasAPagar = () => {
               >
                 Fechar
               </button>
-            </div>
-          </div>
-        </div>
+                          </div>
+                          </div>
+                          </div>
       )}
 
       {/* Modal para exibir dados dos cards */}
@@ -1306,7 +1306,7 @@ const ContasAPagar = () => {
               <p className="text-sm opacity-90 mt-1">
                 {dadosCardModal.length} registro{dadosCardModal.length !== 1 ? 's' : ''} encontrado{dadosCardModal.length !== 1 ? 's' : ''}
               </p>
-            </div>
+                          </div>
 
             {/* Conteúdo do Modal */}
             <div className="flex-1 overflow-y-auto p-6">
@@ -1351,15 +1351,15 @@ const ContasAPagar = () => {
                             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(getStatusFromData(item))}`}>
                               {getStatusIcon(getStatusFromData(item))}
                               <span className="ml-1">{getStatusFromData(item)}</span>
-                            </span>
+                                  </span>
                           </td>
                           {tipoCardSelecionado === 'descontos' && (
                             <td className="px-2 py-2 text-sm text-right font-medium text-emerald-600">
                               {parseFloat(item.vl_desconto || 0).toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL',
-                              })}
-                            </td>
+                              style: 'currency',
+                              currency: 'BRL',
+                            })}
+                          </td>
                           )}
                         </tr>
                       ))}
@@ -1370,25 +1370,25 @@ const ContasAPagar = () => {
                 <div className="text-center py-8 text-gray-500">
                   <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
+                          </svg>
                   <p className="text-lg font-medium">Nenhum registro encontrado</p>
                   <p className="text-sm">Não há registros para o filtro selecionado.</p>
-                </div>
+                        </div>
               )}
-            </div>
+                        </div>
 
             {/* Footer do Modal */}
             <div className="bg-gray-50 px-6 py-4 flex justify-end">
-              <button
+                      <button
                 onClick={fecharModalCard}
                 className="bg-[#000638] text-white px-6 py-2 rounded-lg hover:bg-[#fe0000] transition-colors font-medium"
-              >
+                      >
                 Fechar
-              </button>
+                      </button>
             </div>
-          </div>
-        </div>
-      )}
+                    </div>
+                  </div>
+                )}
     </Layout>
   );
 };
@@ -1647,7 +1647,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
             
             <div className="flex flex-wrap gap-1">
               {/* Botão "Todos os Dias" */}
-              <button
+                      <button
                 onClick={() => setFiltroDia(null)}
                 className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                   filtroDia === null
@@ -1656,7 +1656,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                 }`}
               >
                 TODOS
-              </button>
+                      </button>
 
               {/* Botões dos dias */}
               {Array.from({ length: obterDiasDoMes(filtroMensal) }, (_, i) => i + 1).map((dia) => (
@@ -1672,10 +1672,10 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                   {dia}
                 </button>
               ))}
-            </div>
+              </div>
           </div>
         )}
-      </div>
+            </div>
 
       {/* Categorias de Despesas */}
       <div className="space-y-2">
