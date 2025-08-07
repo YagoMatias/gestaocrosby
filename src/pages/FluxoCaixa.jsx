@@ -1198,23 +1198,23 @@ const GraficoRankingDespesas = ({ dados, tipoGrafico, moduloGrafico, onTipoChang
       
       let categoria;
       if (codigo >= 1000 && codigo <= 1999) {
-        categoria = 'CUSTO DAS MERCADORIAS VENDIDAS (1000-1999)';
+        categoria = 'CUSTO DAS MERCADORIAS VENDIDAS';
       } else if (codigo >= 2000 && codigo <= 2999) {
         categoria = 'DESPESAS OPERACIONAIS';
       } else if ((codigo >= 3000 && codigo <= 3999) || codigosPessoal.includes(codigo)) {
-        categoria = 'DESPESAS COM PESSOAL (3000-3999)';
+        categoria = 'DESPESAS COM PESSOAL';
       } else if ((codigo >= 4001 && codigo <= 4999) || codigosAlugueis.includes(codigo)) {
-        categoria = 'ALUGUÉIS E ARRENDAMENTOS (4001-4999)';
+        categoria = 'ALUGUÉIS E ARRENDAMENTOS';
       } else if (codigo >= 5000 && codigo <= 5999) {
         categoria = 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
       } else if ((codigo >= 6000 && codigo <= 6999) || codigosGerais.includes(codigo)) {
-        categoria = 'DESPESAS GERAIS (6000-6999)';
+        categoria = 'DESPESAS GERAIS';
       } else if ((codigo >= 7000 && codigo <= 7999) || codigosFinanceiras.includes(codigo)) {
-        categoria = 'DESPESAS FINANCEIRAS (7000-7999)';
+        categoria = 'DESPESAS FINANCEIRAS';
       } else if ((codigo >= 8000 && codigo <= 8999) || codigosOutrasOperacionais.includes(codigo)) {
-        categoria = 'OUTRAS DESPESAS OPERACIONAIS (8000-8999)';
+        categoria = 'OUTRAS DESPESAS OPERACIONAIS';
       } else if ((codigo >= 9000 && codigo <= 9999) || codigosVendas.includes(codigo)) {
-        categoria = 'DESPESAS C/ VENDAS (9000-9999)';
+        categoria = 'DESPESAS C/ VENDAS';
       } else {
         categoria = 'SEM CLASSIFICAÇÃO';
       }
@@ -1432,6 +1432,9 @@ const GraficoRankingDespesas = ({ dados, tipoGrafico, moduloGrafico, onTipoChang
 // Componente para agrupar despesas por categoria
 const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, dataInicio, dataFim }) => {
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(new Set());
+  const [despesasExpandidas, setDespesasExpandidas] = useState(new Set());
+  const [fornecedoresExpandidos, setFornecedoresExpandidos] = useState(new Set());
+  const [todosExpandidos, setTodosExpandidos] = useState(false);
 
   // Função para classificar despesa por código
   const classificarDespesa = (cdDespesa) => {
@@ -1468,23 +1471,23 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
     ];
     
     if (codigo >= 1000 && codigo <= 1999) {
-      return 'CUSTO DAS MERCADORIAS VENDIDAS (1000-1999)';
+      return 'CUSTO DAS MERCADORIAS VENDIDAS';
     } else if (codigo >= 2000 && codigo <= 2999) {
       return 'DESPESAS OPERACIONAIS';
     } else if ((codigo >= 3000 && codigo <= 3999) || codigosPessoal.includes(codigo)) {
-      return 'DESPESAS COM PESSOAL (3000-3999)';
+      return 'DESPESAS COM PESSOAL';
     } else if ((codigo >= 4001 && codigo <= 4999) || codigosAlugueis.includes(codigo)) {
-      return 'ALUGUÉIS E ARRENDAMENTOS (4001-4999)';
+      return 'ALUGUÉIS E ARRENDAMENTOS';
     } else if (codigo >= 5000 && codigo <= 5999) {
       return 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
     } else if ((codigo >= 6000 && codigo <= 6999) || codigosGerais.includes(codigo)) {
-      return 'DESPESAS GERAIS (6000-6999)';
+      return 'DESPESAS GERAIS';
     } else if ((codigo >= 7000 && codigo <= 7999) || codigosFinanceiras.includes(codigo)) {
-      return 'DESPESAS FINANCEIRAS (7000-7999)';
+      return 'DESPESAS FINANCEIRAS';
     } else if ((codigo >= 8000 && codigo <= 8999) || codigosOutrasOperacionais.includes(codigo)) {
-      return 'OUTRAS DESPESAS OPERACIONAIS (8000-8999)';
+      return 'OUTRAS DESPESAS OPERACIONAIS';
     } else if ((codigo >= 9000 && codigo <= 9999) || codigosVendas.includes(codigo)) {
-      return 'DESPESAS C/ VENDAS (9000-9999)';
+      return 'DESPESAS C/ VENDAS';
     } else {
       return 'SEM CLASSIFICAÇÃO';
     }
@@ -1557,15 +1560,15 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
 
     // Definir ordem específica das categorias
     const ordemCategorias = [
-      'CUSTO DAS MERCADORIAS VENDIDAS (1000-1999)',
+      'CUSTO DAS MERCADORIAS VENDIDAS',
       'DESPESAS OPERACIONAIS',
-      'DESPESAS COM PESSOAL (3000-3999)',
-      'ALUGUÉIS E ARRENDAMENTOS (4001-4999)',
+      'DESPESAS COM PESSOAL',
+      'ALUGUÉIS E ARRENDAMENTOS',
       'IMPOSTOS, TAXAS E CONTRIBUIÇÕES',
-      'DESPESAS GERAIS (6000-6999)',
-      'DESPESAS FINANCEIRAS (7000-7999)',
-      'OUTRAS DESPESAS OPERACIONAIS (8000-8999)',
-      'DESPESAS C/ VENDAS (9000-9999)',
+      'DESPESAS GERAIS',
+      'DESPESAS FINANCEIRAS',
+      'OUTRAS DESPESAS OPERACIONAIS',
+      'DESPESAS C/ VENDAS',
       'SEM CLASSIFICAÇÃO'
     ];
 
@@ -1622,6 +1625,19 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
       }
       return novoSet;
     });
+  };
+
+  const toggleTodosTopicos = () => {
+    if (todosExpandidos) {
+      // Colapsar todos
+      setCategoriasExpandidas(new Set());
+      setTodosExpandidos(false);
+    } else {
+      // Expandir todos
+      const todasCategorias = new Set(dadosAgrupados.map(categoria => categoria.nome));
+      setCategoriasExpandidas(todasCategorias);
+      setTodosExpandidos(true);
+    }
   };
 
   const formatarData = (data) => {
@@ -1742,7 +1758,30 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
 
       {/* Categorias de Despesas */}
       <div className="space-y-2">
-            {dadosAgrupados.map((categoria) => {
+        {/* Botão discreto para expandir/colapsar todos */}
+        {dadosAgrupados.length > 0 && (
+          <div className="flex justify-end">
+            <button
+              onClick={toggleTodosTopicos}
+              className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded transition-colors flex items-center gap-1"
+              title={todosExpandidos ? "Colapsar todos os tópicos" : "Expandir todos os tópicos"}
+            >
+              {todosExpandidos ? (
+                <>
+                  <span>−</span>
+                  <span>Colapsar tudo</span>
+                </>
+              ) : (
+                <>
+                  <span>+</span>
+                  <span>Expandir tudo</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+        
+        {dadosAgrupados.map((categoria) => {
         const isCategoriaExpanded = categoriasExpandidas.has(categoria.nome);
         
         return (
