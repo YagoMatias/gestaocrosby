@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import Layout from '../components/Layout';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import useApiClient from '../hooks/useApiClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
+import ModalDetalhesConta from '../components/ModalDetalhesConta';
 import { 
   Receipt, 
   Calendar, 
@@ -27,6 +28,7 @@ const ContasAPagar = () => {
 
   const [dados, setDados] = useState([]);
   const [dataInicio, setDataInicio] = useState('');
+  const [modalDetalhes, setModalDetalhes] = useState({ isOpen: false, conta: null });
 
   // Injetar CSS customizado para a tabela
   useEffect(() => {
@@ -844,6 +846,15 @@ const ContasAPagar = () => {
     setDadosModal(null);
   };
 
+  // Funções para modal de detalhes da conta
+  const abrirModalDetalhes = (conta) => {
+    setModalDetalhes({ isOpen: true, conta });
+  };
+
+  const fecharModalDetalhes = () => {
+    setModalDetalhes({ isOpen: false, conta: null });
+  };
+
   return (
     <Layout>
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
@@ -1239,6 +1250,7 @@ const ContasAPagar = () => {
                       setFiltroDia={setFiltroDia}
                       handleFiltroMensalChange={handleFiltroMensalChange}
                       obterDiasDoMes={obterDiasDoMes}
+                      abrirModalDetalhes={abrirModalDetalhes}
                     />
                           </div>
                           </div>
@@ -1389,12 +1401,19 @@ const ContasAPagar = () => {
                     </div>
                   </div>
                 )}
+
+      {/* Modal de Detalhes da Conta */}
+      <ModalDetalhesConta
+        conta={modalDetalhes.conta}
+        isOpen={modalDetalhes.isOpen}
+        onClose={fecharModalDetalhes}
+      />
     </Layout>
   );
 };
 
 // Componente para agrupar despesas por categoria
-const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, filtroDia, setFiltroDia, handleFiltroMensalChange, obterDiasDoMes }) => {
+const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, filtroDia, setFiltroDia, handleFiltroMensalChange, obterDiasDoMes, abrirModalDetalhes }) => {
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(new Set());
   const [todosExpandidos, setTodosExpandidos] = useState(false);
 
@@ -1456,7 +1475,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
   };
 
   // Agrupar dados por classificação de despesa, nome da despesa e fornecedor
-  const dadosAgrupados = React.useMemo(() => {
+  const dadosAgrupados = useMemo(() => {
     const categorias = {};
     
     dados.forEach((item, index) => {
@@ -1746,11 +1765,11 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
           </div>
         )}
         
-        {dadosAgrupados.map((categoria) => {
+        {dadosAgrupados.map((categoria, categoriaIndex) => {
           const isCategoriaExpanded = categoriasExpandidas.has(categoria.nome);
           
           return (
-            <div key={categoria.nome} className="border border-gray-200 rounded-lg overflow-hidden">
+            <div key={`categoria-${categoriaIndex}-${categoria.nome}`} className="border border-gray-200 rounded-lg overflow-hidden">
               {/* Cabeçalho da categoria principal */}
               <div
                 className="bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors px-3 py-2 flex items-center justify-between"
@@ -1781,12 +1800,12 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
               {/* Sub-tópicos de despesas */}
               {isCategoriaExpanded && (
                 <div className="bg-white border-t border-gray-100">
-                  {categoria.despesasArray.map((despesa) => {
+                  {categoria.despesasArray.map((despesa, despesaIndex) => {
                     const chaveExpansao = `${categoria.nome}|${despesa.nome}`;
                     const isDespesaExpanded = categoriasExpandidas.has(chaveExpansao);
                     
                     return (
-                      <div key={despesa.nome} className="border-b border-gray-100 last:border-b-0">
+                      <div key={`despesa-${categoriaIndex}-${despesaIndex}-${despesa.nome}`} className="border-b border-gray-100 last:border-b-0">
                         {/* Cabeçalho da despesa específica */}
                         <div
                           className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-6 py-2 flex items-center justify-between"
@@ -1817,12 +1836,12 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                         {/* Sub-tópicos de fornecedores */}
                         {isDespesaExpanded && (
                           <div className="bg-white border-t border-gray-50">
-                            {despesa.fornecedoresArray.map((fornecedor) => {
-                              const chaveExpansaoFornecedor = `${categoria.nome}|${despesa.nome}|${fornecedor.nome}|${fornecedor.nrDuplicata}|${fornecedor.vlRateio}`;
-                              const isFornecedorExpanded = categoriasExpandidas.has(chaveExpansaoFornecedor);
-                              
-                              return (
-                                <div key={fornecedor.nome} className="border-b border-gray-50 last:border-b-0">
+                                                    {despesa.fornecedoresArray.map((fornecedor, fornecedorIndex) => {
+                          const chaveExpansaoFornecedor = `${categoria.nome}|${despesa.nome}|${fornecedor.nome}|${fornecedor.nrDuplicata}|${fornecedor.vlRateio}`;
+                          const isFornecedorExpanded = categoriasExpandidas.has(chaveExpansaoFornecedor);
+                          
+                          return (
+                            <div key={`fornecedor-${categoriaIndex}-${despesaIndex}-${fornecedorIndex}-${fornecedor.nome}-${fornecedor.nrDuplicata}`} className="border-b border-gray-50 last:border-b-0">
                                   {/* Cabeçalho do fornecedor */}
                                   <div
                                     className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-9 py-2 flex items-center justify-between"
@@ -1904,20 +1923,26 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                               return (
                                                 <tr
                                                   key={`${grupo.item.cd_empresa}-${grupo.item.nr_duplicata}-${index}`}
-                                                  className={`text-[10px] border-b transition-colors ${
+                                                  className={`text-[10px] border-b transition-colors cursor-pointer ${
                                                     isSelected
                                                       ? 'bg-blue-100 hover:bg-blue-200'
                                                       : index % 2 === 0
                                                       ? 'bg-white hover:bg-gray-100'
                                                       : 'bg-gray-50 hover:bg-gray-100'
                                                   }`}
+                                                  onClick={() => abrirModalDetalhes(grupo.item)}
+                                                  title="Clique para ver detalhes da conta"
                                                 >
                                                   <td className="px-2 py-1 text-center" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
                                                     <input
                                                       type="checkbox"
                                                       checked={isSelected}
-                                                      onChange={() => toggleLinhaSelecionada(indiceReal)}
+                                                      onChange={(e) => {
+                                                        e.stopPropagation();
+                                                        toggleLinhaSelecionada(indiceReal);
+                                                      }}
                                                       className="rounded"
+                                                      onClick={(e) => e.stopPropagation()}
                                                     />
                                                   </td>
                                                   <td className="px-2 py-1 text-center">{formatarData(grupo.item.dt_vencimento)}</td>
