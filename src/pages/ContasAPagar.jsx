@@ -159,6 +159,15 @@ const ContasAPagar = () => {
   const [tipoCardSelecionado, setTipoCardSelecionado] = useState('');
   const [dadosCardModal, setDadosCardModal] = useState([]);
 
+  // Função para formatar data
+  const formatarData = (data) => {
+    if (!data) return '';
+    if (data.includes('T')) {
+      return new Date(data).toLocaleDateString('pt-BR');
+    }
+    return data;
+  };
+
   // Função para lidar com mudança de filtro mensal
   const handleFiltroMensalChange = (novoFiltro) => {
     setFiltroMensal(novoFiltro);
@@ -167,47 +176,53 @@ const ContasAPagar = () => {
 
   // Função para abrir modal do card
   const abrirModalCard = (tipo) => {
+    console.log('🔍 Abrindo modal do card:', tipo);
+    console.log('📊 Total de dados disponíveis:', dadosOrdenadosParaCards.length);
+    
     let dadosFiltrados = [];
     
     switch (tipo) {
       case 'vencidas':
-        dadosFiltrados = dados.filter(item => {
-          const status = getStatusFromData(item);
-          return status === 'Vencida';
-        });
+        dadosFiltrados = dadosOrdenadosParaCards.filter(grupo => {
+          const status = getStatusFromData(grupo.item);
+          return status === 'Vencido';
+        }).map(grupo => grupo.item);
         break;
       case 'aVencer':
-        dadosFiltrados = dados.filter(item => {
-          const status = getStatusFromData(item);
+        dadosFiltrados = dadosOrdenadosParaCards.filter(grupo => {
+          const status = getStatusFromData(grupo.item);
           return status === 'A Vencer';
-        });
+        }).map(grupo => grupo.item);
         break;
       case 'proximasVencer':
-        dadosFiltrados = dados.filter(item => {
-          const status = getStatusFromData(item);
+        dadosFiltrados = dadosOrdenadosParaCards.filter(grupo => {
+          const status = getStatusFromData(grupo.item);
           return status === 'Próxima a Vencer';
-        });
+        }).map(grupo => grupo.item);
         break;
       case 'pagas':
-        dadosFiltrados = dados.filter(item => {
-          const status = getStatusFromData(item);
-          return status === 'Paga';
-        });
+        dadosFiltrados = dadosOrdenadosParaCards.filter(grupo => {
+          const status = getStatusFromData(grupo.item);
+          return status === 'Pago';
+        }).map(grupo => grupo.item);
         break;
       case 'faltaPagar':
-        dadosFiltrados = dados.filter(item => {
-          const status = getStatusFromData(item);
-          return status !== 'Paga';
-        });
+        dadosFiltrados = dadosOrdenadosParaCards.filter(grupo => {
+          const status = getStatusFromData(grupo.item);
+          return status !== 'Pago';
+        }).map(grupo => grupo.item);
         break;
       case 'descontos':
-        dadosFiltrados = dados.filter(item => {
-          return parseFloat(item.vl_desconto || 0) > 0;
-        });
+        dadosFiltrados = dadosOrdenadosParaCards.filter(grupo => {
+          return parseFloat(grupo.item.vl_desconto || 0) > 0;
+        }).map(grupo => grupo.item);
         break;
       default:
         dadosFiltrados = [];
     }
+    
+    console.log('✅ Dados filtrados encontrados:', dadosFiltrados.length);
+    console.log('📋 Amostra dos dados filtrados:', dadosFiltrados.slice(0, 2));
     
     setDadosCardModal(dadosFiltrados);
     setTipoCardSelecionado(tipo);
@@ -624,9 +639,12 @@ const ContasAPagar = () => {
     if (item.dt_vencimento) {
       const hoje = new Date();
       const vencimento = new Date(item.dt_vencimento);
+      const diasParaVencer = Math.ceil((vencimento - hoje) / (1000 * 60 * 60 * 24));
       
       if (vencimento < hoje) {
         return 'Vencido';
+      } else if (diasParaVencer >= 0 && diasParaVencer <= 7) {
+        return 'Próxima a Vencer';
       } else {
         return 'A Vencer';
       }
