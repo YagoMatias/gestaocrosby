@@ -5,6 +5,7 @@ import useApiClient from '../hooks/useApiClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend, Tooltip as RechartsTooltip } from 'recharts';
+import ModalDetalhesConta from '../components/ModalDetalhesConta';
 
 import { 
   Receipt, 
@@ -48,6 +49,9 @@ const FluxoCaixa = () => {
   // Estados para o modal de observações
   const [modalAberto, setModalAberto] = useState(false);
   const [dadosModal, setDadosModal] = useState(null);
+  
+  // Estados para o modal de detalhes da conta
+  const [modalDetalhes, setModalDetalhes] = useState({ isOpen: false, conta: null });
   
   // Estados para paginação
   const [paginaAtual, setPaginaAtual] = useState(1);
@@ -155,6 +159,15 @@ const FluxoCaixa = () => {
       }
       return novoSet;
     });
+  };
+
+  // Funções para modal de detalhes da conta
+  const abrirModalDetalhes = (conta) => {
+    setModalDetalhes({ isOpen: true, conta });
+  };
+
+  const fecharModalDetalhes = () => {
+    setModalDetalhes({ isOpen: false, conta: null });
   };
 
   const selecionarTodasLinhas = () => {
@@ -1127,6 +1140,7 @@ const FluxoCaixa = () => {
                   dadosOriginais={dadosFiltrados}
                   dataInicio={dataInicio}
                   dataFim={dataFim}
+                  abrirModalDetalhes={abrirModalDetalhes}
                 />
               )}
                 </div>
@@ -1145,6 +1159,13 @@ const FluxoCaixa = () => {
             />
           </div>
         )}
+
+        {/* Modal de Detalhes da Conta */}
+        <ModalDetalhesConta
+          conta={modalDetalhes.conta}
+          isOpen={modalDetalhes.isOpen}
+          onClose={fecharModalDetalhes}
+        />
               </div>
     </Layout>
   );
@@ -1430,7 +1451,7 @@ const GraficoRankingDespesas = ({ dados, tipoGrafico, moduloGrafico, onTipoChang
 };
 
 // Componente para agrupar despesas por categoria
-const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, dataInicio, dataFim }) => {
+const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, dataInicio, dataFim, abrirModalDetalhes }) => {
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(new Set());
   const [despesasExpandidas, setDespesasExpandidas] = useState(new Set());
   const [fornecedoresExpandidos, setFornecedoresExpandidos] = useState(new Set());
@@ -1939,20 +1960,26 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                             return (
                                               <tr
                                                 key={`${grupo.item.cd_empresa}-${grupo.item.nr_duplicata}-${index}`}
-                                                className={`text-[10px] border-b transition-colors ${
+                                                className={`text-[10px] border-b transition-colors cursor-pointer ${
                                                   isSelected
                                                     ? 'bg-blue-100 hover:bg-blue-200'
                                                     : index % 2 === 0
                                                     ? 'bg-white hover:bg-gray-100'
                                                     : 'bg-gray-50 hover:bg-gray-100'
                                                 }`}
+                                                onClick={() => abrirModalDetalhes(grupo.item)}
+                                                title="Clique para ver detalhes da conta"
                                               >
                                                 <td className="px-2 py-1 text-center" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
                                                   <input
                                                     type="checkbox"
                                                     checked={isSelected}
-                                                    onChange={() => toggleLinhaSelecionada(indiceReal)}
+                                                    onChange={(e) => {
+                                                      e.stopPropagation();
+                                                      toggleLinhaSelecionada(indiceReal);
+                                                    }}
                                                     className="rounded"
+                                                    onClick={(e) => e.stopPropagation()}
                                                   />
                                                 </td>
                                                 <td className="px-2 py-1 text-center">{formatarData(grupo.item.dt_vencimento)}</td>
