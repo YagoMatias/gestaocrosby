@@ -12,6 +12,7 @@ export const usePermissions = () => {
   const canAccessFinancial = () => isAdmin() || isFinancial();
   const canAccessDirector = () => isAdmin() || isDirector();
   const canAccessFranchise = () => isAdmin() || isFranchise();
+  const canAccessComprasFranquias = () => isAdmin() || isDirector() || isFranchise();
 
   const hasRole = (role) => user?.role === role;
   const hasAnyRole = (roles) => roles.includes(user?.role);
@@ -26,6 +27,7 @@ export const usePermissions = () => {
     canAccessFinancial,
     canAccessDirector,
     canAccessFranchise,
+    canAccessComprasFranquias,
     hasRole,
     hasAnyRole
   };

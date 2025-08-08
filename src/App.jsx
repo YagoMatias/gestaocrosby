@@ -124,7 +124,7 @@ const AppRoutes = memo(() => {
         />
         <Route 
           path="/compras-franquias" 
-          element={createPrivateRoute(ComprasFranquias, ['ADM', 'DIRETOR'])} 
+          element={createPrivateRoute(ComprasFranquias, ['ADM', 'DIRETOR', 'FRANQUIA'])} 
         />
         <Route 
           path="/painel-admin" 

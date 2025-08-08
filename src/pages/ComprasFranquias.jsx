@@ -33,8 +33,8 @@ const ComprasFranquias = memo(() => {
 
   // Valores iniciais dos filtros (empresas pré-selecionadas)
   const initialFilterValues = {
-    dt_inicio: '',
-    dt_fim: '',
+    dt_inicio: '2025-01-01',
+    dt_fim: '2025-12-31',
     empresasSelecionadas: [
     { cd_empresa: '2' },
     { cd_empresa: '75' },

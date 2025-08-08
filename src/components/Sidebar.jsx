@@ -285,7 +285,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       );
     }
     
-    // FRANQUIA: só ranking de faturamento
+    // FRANQUIA: ranking de faturamento e compras franquias
     if (user.role === 'FRANQUIA') {
       return (
         <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200">
@@ -308,6 +308,16 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             <MenuItem 
               item={{ name: 'Dashboard', href: '/home', icon: House, color: 'text-blue-600' }}
               isActive={location.pathname === '/home'}
+            />
+
+            {/* Seção Franquias */}
+            <MenuSection 
+              title="Franquias"
+              items={franquias}
+              isOpen={franquiasOpen}
+              onToggle={() => setFranquiasOpen(!franquiasOpen)}
+              icon={Buildings}
+              color="text-purple-600"
             />
 
             {/* Rankings */}
