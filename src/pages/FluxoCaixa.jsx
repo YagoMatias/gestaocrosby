@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend, Tooltip as RechartsTooltip } from 'recharts';
 import ModalDetalhesConta from '../components/ModalDetalhesConta';
+import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
 
 import { 
   Receipt, 
@@ -62,6 +63,28 @@ const FluxoCaixa = () => {
     key: 'dt_liq',
     direction: 'asc'
   });
+
+  // Função para filtrar dados por situação
+  const filtrarDadosPorSituacao = (dadosOriginais) => {
+    if (!dadosOriginais || dadosOriginais.length === 0) return [];
+    
+    switch (situacao) {
+              case 'NORMAIS':
+          // Mostra apenas itens com tp_situacao = 'N' (Normais)
+          return dadosOriginais.filter(item => item.tp_situacao === 'N');
+        case 'CANCELADAS':
+          // Mostra apenas itens com tp_situacao = 'C' (Canceladas)
+          return dadosOriginais.filter(item => item.tp_situacao === 'C');
+      case 'TODAS':
+        // Mostra todos os itens
+        return dadosOriginais;
+      default:
+        return dadosOriginais;
+    }
+  };
+
+  // Dados filtrados por situação
+  const dadosFiltrados = filtrarDadosPorSituacao(dados);
 
 
 
@@ -495,23 +518,12 @@ const FluxoCaixa = () => {
     });
   };
 
-  // Filtros aplicados (todos os dados)
-  const dadosFiltrados = dados.filter((item) => {
+  // Aplicar filtros adicionais aos dados já filtrados por situação
+  const dadosComFiltrosAdicionais = dadosFiltrados.filter((item) => {
     // Filtro por status
     if (status !== 'Todos') {
       const itemStatus = getStatusFromData(item);
       if (itemStatus.toLowerCase() !== status.toLowerCase()) {
-        return false;
-      }
-    }
-    
-    // Filtro por situação (N = NORMAIS, C = CANCELADAS)
-    if (situacao !== 'TODAS') {
-      const itemSituacao = item.tp_situacao || '';
-      
-      if (situacao === 'NORMAIS' && itemSituacao !== 'N') {
-        return false;
-      } else if (situacao === 'CANCELADAS' && itemSituacao !== 'C') {
         return false;
       }
     }
@@ -764,7 +776,7 @@ const FluxoCaixa = () => {
   };
 
   // Aplicar filtro mensal aos dados filtrados
-  const dadosComFiltroMensal = aplicarFiltroMensal(dadosFiltrados, filtroMensal);
+  const dadosComFiltroMensal = aplicarFiltroMensal(dadosComFiltrosAdicionais, filtroMensal);
 
   // Log para verificar dados de 2025 após filtro mensal
   if (dadosComFiltroMensal.length > 0) {
@@ -787,7 +799,7 @@ const FluxoCaixa = () => {
   // Logs de debug para monitorar dados
   console.log('🔍 Debug FluxoCaixa:', {
     dadosOriginais: dados.length,
-    dadosFiltrados: dadosFiltrados.length,
+    dadosFiltrados: dadosComFiltrosAdicionais.length,
     dadosComFiltroMensal: dadosComFiltroMensal.length,
     dadosAgrupados: dadosAgrupados.length,
     dadosOrdenados: dadosOrdenados.length,
@@ -1137,7 +1149,7 @@ const FluxoCaixa = () => {
                   toggleLinhaSelecionada={toggleLinhaSelecionada}
                   filtroMensal={filtroMensal}
                   setFiltroMensal={setFiltroMensal}
-                  dadosOriginais={dadosFiltrados}
+                  dadosOriginais={dadosComFiltrosAdicionais}
                   dataInicio={dataInicio}
                   dataFim={dataFim}
                   abrirModalDetalhes={abrirModalDetalhes}
@@ -1183,60 +1195,35 @@ const GraficoRankingDespesas = ({ dados, tipoGrafico, moduloGrafico, onTipoChang
   const prepararDadosTopicos = (dados) => {
     const grupos = {};
     
-    // Códigos específicos para DESPESAS COM PESSOAL
-    const codigosPessoal = [
-      329, 330, 7204, 7205, 7206, 7207, 7208, 7209, 7210, 331, 332, 333, 334, 335, 336, 337, 338, 339, 366, 637, 931, 681, 683, 684, 685, 687, 698, 492, 498
-    ];
-    
-    // Códigos específicos para ALUGUÉIS E ARRENDAMENTOS
-    const codigosAlugueis = [
-      340, 341, 342, 699, 344
-    ];
-    
-    // Códigos específicos para DESPESAS GERAIS
-    const codigosGerais = [
-      7218, 7219, 7220, 7221, 7222, 7223, 7224, 321, 1603, 350, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 365, 943, 706, 707, 708, 709, 710, 711, 712, 713, 714, 715, 716, 717, 718, 720, 721, 722, 723, 724, 725, 726, 728, 729, 730, 731, 733, 734, 737, 738, 748, 749
-    ];
-    
-    // Códigos específicos para DESPESAS FINANCEIRAS
-    const codigosFinanceiras = [
-      369, 370, 371, 422, 372, 7226, 373, 742, 762, 743, 375, 750
-    ];
-    
-    // Códigos específicos para OUTRAS DESPESAS OPERACIONAIS
-    const codigosOutrasOperacionais = [
-      376, 377, 378, 379
-    ];
-    
-    // Códigos específicos para DESPESAS C/ VENDAS
-    const codigosVendas = [
-      1695, 7225, 744, 747, 746, 380
-    ];
+    // As listas de exceções agora residem em src/config/categoriasDespesas.js
     
     dados.forEach((grupo) => {
       const cdDespesa = grupo.item.cd_despesaitem;
       const codigo = parseInt(cdDespesa) || 0;
       
-      let categoria;
-      if (codigo >= 1000 && codigo <= 1999) {
+      // 1) Primeiro tenta exceções pontuais
+      let categoria = getCategoriaPorCodigo(codigo);
+      
+      // 2) Se não houver exceção, aplica regra por faixa
+      if (!categoria && (codigo >= 1000 && codigo <= 1999)) {
         categoria = 'CUSTO DAS MERCADORIAS VENDIDAS';
-      } else if (codigo >= 2000 && codigo <= 2999) {
+      } else if (!categoria && codigo >= 2000 && codigo <= 2999) {
         categoria = 'DESPESAS OPERACIONAIS';
-      } else if ((codigo >= 3000 && codigo <= 3999) || codigosPessoal.includes(codigo)) {
+      } else if (!categoria && (codigo >= 3000 && codigo <= 3999)) {
         categoria = 'DESPESAS COM PESSOAL';
-      } else if ((codigo >= 4001 && codigo <= 4999) || codigosAlugueis.includes(codigo)) {
+      } else if (!categoria && (codigo >= 4001 && codigo <= 4999)) {
         categoria = 'ALUGUÉIS E ARRENDAMENTOS';
-      } else if (codigo >= 5000 && codigo <= 5999) {
+      } else if (!categoria && (codigo >= 5000 && codigo <= 5999)) {
         categoria = 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
-      } else if ((codigo >= 6000 && codigo <= 6999) || codigosGerais.includes(codigo)) {
+      } else if (!categoria && (codigo >= 6000 && codigo <= 6999)) {
         categoria = 'DESPESAS GERAIS';
-      } else if ((codigo >= 7000 && codigo <= 7999) || codigosFinanceiras.includes(codigo)) {
+      } else if (!categoria && (codigo >= 7000 && codigo <= 7999)) {
         categoria = 'DESPESAS FINANCEIRAS';
-      } else if ((codigo >= 8000 && codigo <= 8999) || codigosOutrasOperacionais.includes(codigo)) {
+      } else if (!categoria && (codigo >= 8000 && codigo <= 8999)) {
         categoria = 'OUTRAS DESPESAS OPERACIONAIS';
-      } else if ((codigo >= 9000 && codigo <= 9999) || codigosVendas.includes(codigo)) {
+      } else if (!categoria && (codigo >= 9000 && codigo <= 9999)) {
         categoria = 'DESPESAS C/ VENDAS';
-      } else {
+      } else if (!categoria) {
         categoria = 'SEM CLASSIFICAÇÃO';
       }
       
@@ -1461,53 +1448,30 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
   const classificarDespesa = (cdDespesa) => {
     const codigo = parseInt(cdDespesa) || 0;
     
-    // Códigos específicos para DESPESAS COM PESSOAL
-    const codigosPessoal = [
-      329, 330, 7204, 7205, 7206, 7207, 7208, 7209, 7210, 331, 332, 333, 334, 335, 336, 337, 338, 339, 366, 637, 931, 681, 683, 684, 685, 687, 698, 492, 498
-    ];
-    
-    // Códigos específicos para ALUGUÉIS E ARRENDAMENTOS
-    const codigosAlugueis = [
-      340, 341, 342, 699, 344
-    ];
-    
-    // Códigos específicos para DESPESAS GERAIS
-    const codigosGerais = [
-      7218, 7219, 7220, 7221, 7222, 7223, 7224, 321, 1603, 350, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 365, 943, 706, 707, 708, 709, 710, 711, 712, 713, 714, 715, 716, 717, 718, 720, 721, 722, 723, 724, 725, 726, 728, 729, 730, 731, 733, 734, 737, 738, 748, 749
-    ];
-    
-    // Códigos específicos para DESPESAS FINANCEIRAS
-    const codigosFinanceiras = [
-      369, 370, 371, 422, 372, 7226, 373, 742, 762, 743, 375, 750
-    ];
-    
-    // Códigos específicos para OUTRAS DESPESAS OPERACIONAIS
-    const codigosOutrasOperacionais = [
-      376, 377, 378, 379
-    ];
-    
-    // Códigos específicos para DESPESAS C/ VENDAS
-    const codigosVendas = [
-      1695, 7225, 744, 747, 746, 380
-    ];
-    
+    // 1) exceções
+    const categoriaExcecao = getCategoriaPorCodigo(codigo);
+    if (categoriaExcecao) {
+      return categoriaExcecao;
+    }
+
+    // 2) faixas
     if (codigo >= 1000 && codigo <= 1999) {
       return 'CUSTO DAS MERCADORIAS VENDIDAS';
     } else if (codigo >= 2000 && codigo <= 2999) {
       return 'DESPESAS OPERACIONAIS';
-    } else if ((codigo >= 3000 && codigo <= 3999) || codigosPessoal.includes(codigo)) {
+    } else if (codigo >= 3000 && codigo <= 3999) {
       return 'DESPESAS COM PESSOAL';
-    } else if ((codigo >= 4001 && codigo <= 4999) || codigosAlugueis.includes(codigo)) {
+    } else if (codigo >= 4001 && codigo <= 4999) {
       return 'ALUGUÉIS E ARRENDAMENTOS';
     } else if (codigo >= 5000 && codigo <= 5999) {
       return 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
-    } else if ((codigo >= 6000 && codigo <= 6999) || codigosGerais.includes(codigo)) {
+    } else if (codigo >= 6000 && codigo <= 6999) {
       return 'DESPESAS GERAIS';
-    } else if ((codigo >= 7000 && codigo <= 7999) || codigosFinanceiras.includes(codigo)) {
+    } else if (codigo >= 7000 && codigo <= 7999) {
       return 'DESPESAS FINANCEIRAS';
-    } else if ((codigo >= 8000 && codigo <= 8999) || codigosOutrasOperacionais.includes(codigo)) {
+    } else if (codigo >= 8000 && codigo <= 8999) {
       return 'OUTRAS DESPESAS OPERACIONAIS';
-    } else if ((codigo >= 9000 && codigo <= 9999) || codigosVendas.includes(codigo)) {
+    } else if (codigo >= 9000 && codigo <= 9999) {
       return 'DESPESAS C/ VENDAS';
     } else {
       return 'SEM CLASSIFICAÇÃO';

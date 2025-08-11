@@ -16,8 +16,12 @@ import {
   CaretLeft,
   CaretRight,
   CaretUp,
-  CaretDown
+  CaretDown,
+  ChartPie,
+  ChartBar,
+  ChartLine
 } from '@phosphor-icons/react';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend, Tooltip as RechartsTooltip, LineChart, Line } from 'recharts';
 
 const ContasAReceber = () => {
   const [dados, setDados] = useState([]);
@@ -31,11 +35,42 @@ const ContasAReceber = () => {
   const [duplicata, setDuplicata] = useState('');
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
   
-  // Estados para paginação
+    // Estados para paginação
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [itensPorPagina] = useState(20);
 
+  // Estados para gráficos
+  const [dadosGraficos, setDadosGraficos] = useState({
+    evolucaoTemporal: [],
+    distribuicaoStatus: [],
+    analiseClientes: [],
+    inadimplencia: [],
+    tiposDocumento: []
+  });
+
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
+
+  // Função para filtrar dados por situação
+  const filtrarDadosPorSituacao = (dadosOriginais) => {
+    if (!dadosOriginais || dadosOriginais.length === 0) return [];
+    
+    switch (situacao) {
+      case 'NORMAIS':
+        // Mostra apenas itens que NÃO têm data de cancelamento
+        return dadosOriginais.filter(item => !item.dt_cancelamento);
+      case 'CANCELADAS':
+        // Mostra apenas itens que TÊM data de cancelamento
+        return dadosOriginais.filter(item => item.dt_cancelamento);
+      case 'TODAS':
+        // Mostra todos os itens
+        return dadosOriginais;
+      default:
+        return dadosOriginais;
+    }
+  };
+
+  // Dados filtrados por situação
+  const dadosFiltrados = filtrarDadosPorSituacao(dados);
 
   // Definir datas padrão (mês atual)
   useEffect(() => {
@@ -140,7 +175,7 @@ const ContasAReceber = () => {
 
   // Calcular totais para os cards
   const calcularTotais = () => {
-    const totais = dados.reduce((acc, item) => {
+    const totais = dadosFiltrados.reduce((acc, item) => {
       acc.valorFaturado += parseFloat(item.vl_fatura) || 0;
       acc.valorPago += parseFloat(item.vl_pago) || 0;
       acc.valorCorrigido += parseFloat(item.vl_corrigido) || 0;
@@ -158,6 +193,120 @@ const ContasAReceber = () => {
   };
 
   const totais = calcularTotais();
+
+  // Funções para preparar dados dos gráficos
+  const prepararDadosGraficos = () => {
+    if (dadosFiltrados.length === 0) return;
+
+    // 2. Evolução Temporal
+    const evolucaoTemporal = {};
+    dadosFiltrados.forEach(item => {
+      const mes = item.dt_emissao ? new Date(item.dt_emissao).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }) : 'Sem Data';
+      if (!evolucaoTemporal[mes]) {
+        evolucaoTemporal[mes] = { faturado: 0, pago: 0 };
+      }
+      evolucaoTemporal[mes].faturado += parseFloat(item.vl_fatura) || 0;
+      evolucaoTemporal[mes].pago += parseFloat(item.vl_pago) || 0;
+    });
+
+    // 3. Distribuição por Status
+    const distribuicaoStatus = {};
+    dadosFiltrados.forEach(item => {
+      const status = getStatusFromData(item);
+      if (!distribuicaoStatus[status]) {
+        distribuicaoStatus[status] = 0;
+      }
+      distribuicaoStatus[status] += parseFloat(item.vl_fatura) || 0;
+    });
+
+    // 4. Análise de Clientes (Top 10)
+    const analiseClientes = {};
+    dadosFiltrados.forEach(item => {
+      const cliente = item.nm_cliente || 'Cliente não identificado';
+      if (!analiseClientes[cliente]) {
+        analiseClientes[cliente] = { faturado: 0, pago: 0, vencido: 0 };
+      }
+      analiseClientes[cliente].faturado += parseFloat(item.vl_fatura) || 0;
+      analiseClientes[cliente].pago += parseFloat(item.vl_pago) || 0;
+      
+      const status = getStatusFromData(item);
+      if (status === 'Vencido') {
+        analiseClientes[cliente].vencido += parseFloat(item.vl_fatura) || 0;
+      }
+    });
+
+
+
+    // 6. Análise de Inadimplência
+    const inadimplencia = {};
+    dadosFiltrados.forEach(item => {
+      const status = getStatusFromData(item);
+      if (status === 'Vencido') {
+        const diasVencido = item.dt_vencimento ? Math.floor((new Date() - new Date(item.dt_vencimento)) / (1000 * 60 * 60 * 24)) : 0;
+        let faixa = '';
+        
+        if (diasVencido === 1) faixa = 'Vencidos a 1 dia';
+        else if (diasVencido <= 5) faixa = 'Vencidos a 5 dias';
+        else if (diasVencido <= 15) faixa = 'Vencidos a 15 dias';
+        else if (diasVencido <= 30) faixa = 'Vencidos a 30 dias';
+        else faixa = 'Vencidos a mais de 30 dias';
+        
+        if (!inadimplencia[faixa]) {
+          inadimplencia[faixa] = 0;
+        }
+        inadimplencia[faixa] += parseFloat(item.vl_fatura) || 0;
+      }
+    });
+
+    // 7. Tipos de Documento
+    const tiposDocumento = {};
+    dadosFiltrados.forEach(item => {
+      const tipo = item.tp_documento || 'Não informado';
+      if (!tiposDocumento[tipo]) {
+        tiposDocumento[tipo] = 0;
+      }
+      tiposDocumento[tipo] += parseFloat(item.vl_fatura) || 0;
+    });
+
+    setDadosGraficos({
+      evolucaoTemporal: Object.entries(evolucaoTemporal).map(([mes, valores]) => ({
+        mes,
+        faturado: valores.faturado,
+        pago: valores.pago
+      })),
+      distribuicaoStatus: Object.entries(distribuicaoStatus).map(([status, valor]) => ({
+        status,
+        valor
+      })),
+      analiseClientes: Object.entries(analiseClientes)
+        .map(([cliente, valores]) => ({
+          cliente: cliente.length > 20 ? cliente.substring(0, 20) + '...' : cliente,
+          clienteCompleto: cliente,
+          ...valores
+        }))
+        .sort((a, b) => b.faturado - a.faturado)
+        .slice(0, 10),
+      inadimplencia: Object.entries(inadimplencia).map(([faixa, valor]) => ({
+        faixa,
+        valor
+      })),
+      tiposDocumento: Object.entries(tiposDocumento)
+        .map(([tipo, valor]) => ({ tipo, valor }))
+        .sort((a, b) => a.valor - b.valor)
+    });
+  };
+
+  // Função para determinar status baseado nos dados
+  const getStatusFromData = (item) => {
+    if (parseFloat(item.vl_pago) > 0) return 'Pago';
+    if (item.dt_vencimento && new Date(item.dt_vencimento) < new Date()) return 'Vencido';
+    return 'A Vencer';
+  };
+
+  // Executar preparação dos dados quando dados ou situação mudarem
+  useEffect(() => {
+    prepararDadosGraficos();
+  }, [dados, situacao]);
 
   // Gerar array de páginas para exibição
   const gerarPaginas = () => {
@@ -199,6 +348,236 @@ const ContasAReceber = () => {
     }
     
     return paginas;
+  };
+
+  // Componentes de Gráficos
+  const GraficoEvolucaoTemporal = ({ dados }) => {
+    const CORES = ['#8884d8', '#82ca9d'];
+    
+    if (dados.length === 0) {
+      return (
+        <div className="text-center py-8 text-gray-500">
+          Nenhum dado disponível para o gráfico
+        </div>
+      );
+    }
+
+    return (
+      <Card className="w-full bg-white">
+        <CardHeader className="bg-white">
+          <div className="flex items-center gap-2">
+            <ChartLine size={20} className="text-blue-600" />
+            <CardTitle className="text-lg font-bold text-[#000638]">
+              Evolução Temporal de Recebimentos
+            </CardTitle>
+          </div>
+          <CardDescription>
+            Faturado vs Pago ao longo do tempo
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={dados} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="mes" />
+              <YAxis />
+              <RechartsTooltip 
+                formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              />
+              <Legend />
+              <Line type="monotone" dataKey="faturado" stroke="#8884d8" strokeWidth={2} name="Faturado" />
+              <Line type="monotone" dataKey="pago" stroke="#82ca9d" strokeWidth={2} name="Pago" />
+            </LineChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const GraficoDistribuicaoStatus = ({ dados }) => {
+    const CORES = ['#82ca9d', '#ff7300', '#8884d8'];
+    
+    if (dados.length === 0) {
+      return (
+        <div className="text-center py-8 text-gray-500">
+          Nenhum dado disponível para o gráfico
+        </div>
+      );
+    }
+
+    return (
+      <Card className="w-full bg-white">
+        <CardHeader className="bg-white">
+          <div className="flex items-center gap-2">
+            <ChartPie size={20} className="text-green-600" />
+            <CardTitle className="text-lg font-bold text-[#000638]">
+              Distribuição por Status
+            </CardTitle>
+          </div>
+          <CardDescription>
+            Proporção de títulos por situação
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={dados}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={({ status, percent }) => `${status} ${(percent * 100).toFixed(0)}%`}
+                outerRadius={80}
+                fill="#8884d8"
+                dataKey="valor"
+              >
+                {dados.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={CORES[index % CORES.length]} />
+                ))}
+              </Pie>
+              <RechartsTooltip 
+                formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const GraficoAnaliseClientes = ({ dados }) => {
+    if (dados.length === 0) {
+      return (
+        <div className="text-center py-8 text-gray-500">
+          Nenhum dado disponível para o gráfico
+        </div>
+      );
+    }
+
+    return (
+      <Card className="w-full bg-white">
+        <CardHeader className="bg-white">
+          <div className="flex items-center gap-2">
+            <ChartBar size={20} className="text-purple-600" />
+            <CardTitle className="text-lg font-bold text-[#000638]">
+              Top 10 Clientes por Valor Faturado
+            </CardTitle>
+          </div>
+          <CardDescription>
+            Maiores clientes e situação de recebimento
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={dados} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="cliente" angle={-45} textAnchor="end" height={80} />
+              <YAxis />
+              <RechartsTooltip 
+                formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                labelFormatter={(label) => dados.find(d => d.cliente === label)?.clienteCompleto || label}
+              />
+              <Legend />
+              <Bar dataKey="faturado" fill="#8884d8" name="Faturado" />
+              <Bar dataKey="pago" fill="#82ca9d" name="Pago" />
+              <Bar dataKey="vencido" fill="#ff7300" name="Vencido" />
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    );
+  };
+
+
+
+  const GraficoInadimplencia = ({ dados }) => {
+    const CORES = ['#ff7300', '#ffb347', '#ffc658', '#ff6b6b'];
+    
+    if (dados.length === 0) {
+      return (
+        <div className="text-center py-8 text-gray-500">
+          Nenhum dado disponível para o gráfico
+        </div>
+      );
+    }
+
+    return (
+      <Card className="w-full bg-white">
+        <CardHeader className="bg-white">
+          <div className="flex items-center gap-2">
+            <Warning size={20} className="text-red-600" />
+            <CardTitle className="text-lg font-bold text-[#000638]">
+              Análise de Inadimplência
+            </CardTitle>
+          </div>
+          <CardDescription>
+            Distribuição de valores vencidos por faixa de atraso
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={dados} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="faixa" />
+              <YAxis />
+              <RechartsTooltip 
+                formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              />
+              <Bar dataKey="valor" fill="#ff7300">
+                {dados.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={CORES[index % CORES.length]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const GraficoTiposDocumento = ({ dados }) => {
+    const CORES = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#8dd1e1', '#d084d0'];
+    
+    if (dados.length === 0) {
+      return (
+        <div className="text-center py-8 text-gray-500">
+          Nenhum dado disponível para o gráfico
+        </div>
+      );
+    }
+
+    return (
+      <Card className="w-full bg-white">
+        <CardHeader className="bg-white">
+          <div className="flex items-center gap-2">
+            <Receipt size={20} className="text-blue-600" />
+            <CardTitle className="text-lg font-bold text-[#000638]">
+              Tipos de Documento
+            </CardTitle>
+          </div>
+          <CardDescription>
+            Distribuição por tipo de documento
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={dados} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="tipo" angle={-45} textAnchor="end" height={80} />
+              <YAxis />
+              <RechartsTooltip 
+                formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              />
+              <Bar dataKey="valor" fill="#8884d8">
+                {dados.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={CORES[index % CORES.length]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    );
   };
 
   return (
@@ -320,14 +699,14 @@ const ContasAReceber = () => {
         </div>
 
         {/* Cards de Resumo */}
-        {dados.length > 0 && (
+        {dadosFiltrados.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8 max-w-7xl mx-auto">
             {/* Valor Total Faturado */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
                   <CurrencyDollar size={18} className="text-blue-600" />
-                  <CardTitle className="text-sm font-bold text-blue-700">Valor Total Faturado</CardTitle>
+                  <CardTitle className="text-sm font-bold text-blue-700">Valor Total</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
@@ -348,7 +727,7 @@ const ContasAReceber = () => {
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
                   <CheckCircle size={18} className="text-green-600" />
-                  <CardTitle className="text-sm font-bold text-green-700">Valor Pago</CardTitle>
+                  <CardTitle className="text-sm font-bold text-green-700">Valor Recebido</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
@@ -408,12 +787,38 @@ const ContasAReceber = () => {
           </div>
         )}
 
+        {/* Gráficos */}
+        {dadosCarregados && dadosFiltrados.length > 0 && (
+          <div className="space-y-6 mb-8">
+            {/* Primeira linha de gráficos */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <GraficoEvolucaoTemporal dados={dadosGraficos.evolucaoTemporal} />
+              <GraficoDistribuicaoStatus dados={dadosGraficos.distribuicaoStatus} />
+            </div>
+            
+            {/* Gráfico Top 10 Clientes - Tela completa */}
+            <div className="w-full">
+              <GraficoAnaliseClientes dados={dadosGraficos.analiseClientes} />
+            </div>
+            
+            {/* Segunda linha de gráficos */}
+            <div className="w-full">
+              <GraficoInadimplencia dados={dadosGraficos.inadimplencia} />
+            </div>
+            
+            {/* Terceira linha de gráficos */}
+            <div className="w-full">
+              <GraficoTiposDocumento dados={dadosGraficos.tiposDocumento} />
+            </div>
+          </div>
+        )}
+
         {/* Tabela */}
         <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full">
           <div className="p-6 border-b border-[#000638]/10 flex justify-between items-center">
             <h2 className="text-xl font-bold text-[#000638]">Detalhamento de Contas a Receber</h2>
             <div className="text-sm text-gray-600">
-              {dadosCarregados ? `${dados.length} registros encontrados` : 'Nenhum dado carregado'}
+              {dadosCarregados ? `${dadosFiltrados.length} registros encontrados` : 'Nenhum dado carregado'}
             </div>
           </div>
           
@@ -532,10 +937,10 @@ const ContasAReceber = () => {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {(() => {
-                      const totalPaginas = Math.ceil(dados.length / itensPorPagina);
+                      const totalPaginas = Math.ceil(dadosFiltrados.length / itensPorPagina);
                       const indiceInicial = (paginaAtual - 1) * itensPorPagina;
                       const indiceFinal = indiceInicial + itensPorPagina;
-                      const dadosPaginaAtual = dados.slice(indiceInicial, indiceFinal);
+                      const dadosPaginaAtual = dadosFiltrados.slice(indiceInicial, indiceFinal);
                       
                       return dadosPaginaAtual.map((item, index) => (
                       <tr key={index} className="hover:bg-gray-50 text-[10px] border-b transition-colors">
@@ -674,14 +1079,14 @@ const ContasAReceber = () => {
                    </tbody>
                 </table>
                                  <div className="mt-4 text-center text-sm text-gray-600">
-                   Total de {dados.length} registros
+                   Total de {dadosFiltrados.length} registros
                  </div>
                  
                  {/* Paginação */}
                  {dados.length > itensPorPagina && (
                    <div className="flex flex-col sm:flex-row justify-between items-center mt-6 pt-6 border-t border-gray-200">
                      <div className="text-sm text-gray-600 mb-4 sm:mb-0">
-                       Mostrando {((paginaAtual - 1) * itensPorPagina) + 1} a {Math.min(paginaAtual * itensPorPagina, dados.length)} de {dados.length} registros
+                       Mostrando {((paginaAtual - 1) * itensPorPagina) + 1} a {Math.min(paginaAtual * itensPorPagina, dadosFiltrados.length)} de {dadosFiltrados.length} registros
                      </div>
                      
                      <div className="flex items-center gap-2">
@@ -718,7 +1123,7 @@ const ContasAReceber = () => {
                        {/* Botão Próximo */}
                        <button
                          onClick={proximaPagina}
-                         disabled={paginaAtual === Math.ceil(dados.length / itensPorPagina)}
+                         disabled={paginaAtual === Math.ceil(dadosFiltrados.length / itensPorPagina)}
                          className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                        >
                          Próximo

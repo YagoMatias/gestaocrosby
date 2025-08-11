@@ -22,6 +22,7 @@ import {
   CaretDown,
   TrendDown
 } from '@phosphor-icons/react';
+import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
 
 const ContasAPagar = () => {
   const apiClient = useApiClient();
@@ -296,6 +297,28 @@ const ContasAPagar = () => {
     key: 'dt_vencimento',
     direction: 'asc'
   });
+
+  // Função para filtrar dados por situação
+  const filtrarDadosPorSituacao = (dadosOriginais) => {
+    if (!dadosOriginais || dadosOriginais.length === 0) return [];
+    
+    switch (situacao) {
+      case 'NORMAIS':
+        // Mostra apenas itens com tp_situacao = 'N' (Normais)
+        return dadosOriginais.filter(item => item.tp_situacao === 'N');
+      case 'CANCELADAS':
+        // Mostra apenas itens com tp_situacao = 'C' (Canceladas)
+        return dadosOriginais.filter(item => item.tp_situacao === 'C');
+      case 'TODAS':
+        // Mostra todos os itens
+        return dadosOriginais;
+      default:
+        return dadosOriginais;
+    }
+  };
+
+  // Dados filtrados por situação
+  const dadosFiltrados = filtrarDadosPorSituacao(dados);
 
   // Função para ordenar os dados
   const handleSort = (key) => {
@@ -716,23 +739,12 @@ const ContasAPagar = () => {
     setDataFim(ultimoDia.toISOString().split('T')[0]);
   }, []);
 
-  // Filtros aplicados (todos os dados)
-  const dadosFiltrados = dados.filter((item) => {
+  // Aplicar filtros adicionais aos dados já filtrados por situação
+  const dadosComFiltrosAdicionais = dadosFiltrados.filter((item) => {
     // Filtro por status
     if (status !== 'Todos') {
       const itemStatus = getStatusFromData(item);
       if (itemStatus.toLowerCase() !== status.toLowerCase()) {
-        return false;
-      }
-    }
-    
-    // Filtro por situação (N = NORMAIS, C = CANCELADAS)
-    if (situacao !== 'TODAS') {
-      const itemSituacao = item.tp_situacao || '';
-      
-      if (situacao === 'NORMAIS' && itemSituacao !== 'N') {
-        return false;
-      } else if (situacao === 'CANCELADAS' && itemSituacao !== 'C') {
         return false;
       }
     }
@@ -781,7 +793,7 @@ const ContasAPagar = () => {
   });
 
   // Aplicar filtro mensal aos dados filtrados
-  const dadosComFiltroMensal = aplicarFiltroMensal(dadosFiltrados, filtroMensal, filtroDia);
+  const dadosComFiltroMensal = aplicarFiltroMensal(dadosComFiltrosAdicionais, filtroMensal, filtroDia);
 
   // Aplicar ordenação aos dados filtrados (cada registro já é um rateio específico)
   const dadosOrdenadosComFiltroMensal = sortDadosAgrupados(dadosComFiltroMensal);
@@ -1263,7 +1275,7 @@ const ContasAPagar = () => {
                       toggleLinhaSelecionada={toggleLinhaSelecionada}
                       filtroMensal={filtroMensal}
                       setFiltroMensal={setFiltroMensal}
-                      dadosOriginais={dadosFiltrados}
+                      dadosOriginais={dadosComFiltrosAdicionais}
                       filtroDia={filtroDia}
                       setFiltroDia={setFiltroDia}
                       handleFiltroMensalChange={handleFiltroMensalChange}
@@ -1439,53 +1451,28 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
   const classificarDespesa = (cdDespesa) => {
     const codigo = parseInt(cdDespesa) || 0;
     
-    // Códigos específicos para DESPESAS COM PESSOAL
-    const codigosPessoal = [
-      329, 330, 7204, 7205, 7206, 7207, 7208, 7209, 7210, 331, 332, 333, 334, 335, 336, 337, 338, 339, 366, 637, 931, 681, 683, 684, 685, 687, 698, 492, 498
-    ];
-    
-    // Códigos específicos para ALUGUÉIS E ARRENDAMENTOS
-    const codigosAlugueis = [
-      340, 341, 342, 699, 344
-    ];
-    
-    // Códigos específicos para DESPESAS GERAIS
-    const codigosGerais = [
-      7218, 7219, 7220, 7221, 7222, 7223, 7224, 321, 1603, 350, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 365, 943, 706, 707, 708, 709, 710, 711, 712, 713, 714, 715, 716, 717, 718, 720, 721, 722, 723, 724, 725, 726, 728, 729, 730, 731, 733, 734, 737, 738, 748, 749
-    ];
-    
-    // Códigos específicos para DESPESAS FINANCEIRAS
-    const codigosFinanceiras = [
-      369, 370, 371, 422, 372, 7226, 373, 742, 762, 743, 375, 750
-    ];
-    
-    // Códigos específicos para OUTRAS DESPESAS OPERACIONAIS
-    const codigosOutrasOperacionais = [
-      376, 377, 378, 379
-    ];
-    
-    // Códigos específicos para DESPESAS C/ VENDAS
-    const codigosVendas = [
-      1695, 7225, 744, 747, 746, 380
-    ];
-    
+    const categoriaExcecao = getCategoriaPorCodigo(codigo);
+    if (categoriaExcecao) {
+      return categoriaExcecao;
+    }
+
     if (codigo >= 1000 && codigo <= 1999) {
       return 'CUSTO DAS MERCADORIAS VENDIDAS';
     } else if (codigo >= 2000 && codigo <= 2999) {
       return 'DESPESAS OPERACIONAIS';
-    } else if ((codigo >= 3000 && codigo <= 3999) || codigosPessoal.includes(codigo)) {
+    } else if (codigo >= 3000 && codigo <= 3999) {
       return 'DESPESAS COM PESSOAL';
-    } else if ((codigo >= 4001 && codigo <= 4999) || codigosAlugueis.includes(codigo)) {
+    } else if (codigo >= 4001 && codigo <= 4999) {
       return 'ALUGUÉIS E ARRENDAMENTOS';
     } else if (codigo >= 5000 && codigo <= 5999) {
       return 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
-    } else if ((codigo >= 6000 && codigo <= 6999) || codigosGerais.includes(codigo)) {
+    } else if (codigo >= 6000 && codigo <= 6999) {
       return 'DESPESAS GERAIS';
-    } else if ((codigo >= 7000 && codigo <= 7999) || codigosFinanceiras.includes(codigo)) {
+    } else if (codigo >= 7000 && codigo <= 7999) {
       return 'DESPESAS FINANCEIRAS';
-    } else if ((codigo >= 8000 && codigo <= 8999) || codigosOutrasOperacionais.includes(codigo)) {
+    } else if (codigo >= 8000 && codigo <= 8999) {
       return 'OUTRAS DESPESAS OPERACIONAIS';
-    } else if ((codigo >= 9000 && codigo <= 9999) || codigosVendas.includes(codigo)) {
+    } else if (codigo >= 9000 && codigo <= 9999) {
       return 'DESPESAS C/ VENDAS';
     } else {
       return 'SEM CLASSIFICAÇÃO';
