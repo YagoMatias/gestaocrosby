@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import Layout from '../components/Layout';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
@@ -17,12 +17,12 @@ import {
   CaretRight,
   CaretUp,
   CaretDown,
+  CaretUpDown,
   ChartPie,
   ChartBar,
-  ChartLine,
   Percent
 } from '@phosphor-icons/react';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend, Tooltip as RechartsTooltip, LineChart, Line } from 'recharts';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend, Tooltip as RechartsTooltip } from 'recharts';
 
 const ContasAReceber = () => {
   const [dados, setDados] = useState([]);
@@ -32,7 +32,6 @@ const ContasAReceber = () => {
   const [dadosCarregados, setDadosCarregados] = useState(false);
   const [status, setStatus] = useState('Todos');
   const [situacao, setSituacao] = useState('NORMAIS');
-  const [cliente, setCliente] = useState('');
   const [duplicata, setDuplicata] = useState('');
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
   
@@ -42,14 +41,211 @@ const ContasAReceber = () => {
 
   // Estados para gráficos
   const [dadosGraficos, setDadosGraficos] = useState({
-    evolucaoTemporal: [],
     distribuicaoStatus: [],
     analiseClientes: [],
     inadimplencia: [],
-    tiposDocumento: []
+    tiposDocumento: [],
+    clientesInadimplentes: []
   });
 
+  // Estados para ordenação
+  const [ordenacao, setOrdenacao] = useState({ campo: null, direcao: 'asc' });
+
+  // Estados para filtro mensal
+  const [filtroMensal, setFiltroMensal] = useState('ANO');
+  const [filtroDia, setFiltroDia] = useState(null);
+
+  // Estados para filtros adicionais
+  const [filtroCliente, setFiltroCliente] = useState('');
+  const [filtroFatura, setFiltroFatura] = useState('');
+  const [filtroFormaPagamento, setFiltroFormaPagamento] = useState('');
+
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
+
+  // CSS customizado para a tabela
+  useEffect(() => {
+    const styleElement = document.createElement('style');
+    styleElement.textContent = `
+      .table-container {
+        overflow-x: auto;
+        position: relative;
+        max-width: 100%;
+      }
+      .extrato-table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      .extrato-table th,
+      .extrato-table td {
+        padding: 6px 8px !important;
+        border-right: 1px solid #f3f4f6;
+        word-wrap: break-word;
+        white-space: normal;
+        font-size: 11px;
+        line-height: 1.3;
+      }
+      .extrato-table th:last-child,
+      .extrato-table td:last-child {
+        border-right: none;
+      }
+      .extrato-table th {
+        background-color: #000638;
+        color: white;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 10px;
+        letter-spacing: 0.05em;
+      }
+      .extrato-table tbody tr:nth-child(odd) {
+        background-color: white;
+      }
+      .extrato-table tbody tr:nth-child(even) {
+        background-color: #f9fafb;
+      }
+      .extrato-table tbody tr:hover {
+        background-color: #f3f4f6;
+      }
+      .extrato-table thead th:first-child,
+      .extrato-table tbody td:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 10;
+        background-color: inherit;
+      }
+      .extrato-table thead th:first-child {
+        background-color: #000638;
+      }
+      .extrato-table tbody tr:nth-child(even) td:first-child {
+        background-color: #f9fafb;
+      }
+      .extrato-table tbody tr:nth-child(odd) td:first-child {
+        background-color: white;
+      }
+      .extrato-table tbody tr:hover td:first-child {
+        background-color: #f3f4f6;
+      }
+      .extrato-table tbody tr.bg-blue-100 td:first-child {
+        background-color: #dbeafe;
+      }
+      .extrato-table tbody tr.bg-blue-100:hover td:first-child {
+        background-color: #bfdbfe;
+      }
+    `;
+    document.head.appendChild(styleElement);
+
+    return () => {
+      document.head.removeChild(styleElement);
+    };
+  }, []);
+
+  // Função para ordenação
+  const handleSort = useCallback((campo) => {
+    setOrdenacao(prev => ({
+      campo,
+      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc'
+    }));
+  }, []);
+
+  // Função para ícone de ordenação
+  const getSortIcon = useCallback((campo) => {
+    if (ordenacao.campo !== campo) {
+      return <CaretUpDown size={12} className="opacity-50" />;
+    }
+    return ordenacao.direcao === 'asc' ? 
+      <CaretUp size={12} /> : 
+      <CaretDown size={12} />;
+  }, [ordenacao]);
+
+  // Função para obter número de dias do mês
+  const obterDiasDoMes = (mes) => {
+    const meses = {
+      'JAN': 31, 'FEV': 28, 'MAR': 31, 'ABR': 30, 'MAI': 31, 'JUN': 30,
+      'JUL': 31, 'AGO': 31, 'SET': 30, 'OUT': 31, 'NOV': 30, 'DEZ': 31
+    };
+    return meses[mes] || 0;
+  };
+
+  // Função para lidar com mudança de filtro mensal
+  const handleFiltroMensalChange = (novoFiltro) => {
+    setFiltroMensal(novoFiltro);
+    setFiltroDia(null); // Limpar filtro de dia quando mudar o mês
+  };
+
+  // Função para converter tipo de documento de número para nome
+  const converterTipoDocumento = (numero) => {
+    const tiposDocumento = {
+      '1': 'Fatura',
+      '2': 'Cheque',
+      '3': 'Dinheiro',
+      '4': 'Cartão crédito',
+      '5': 'Cartão débito',
+      '6': 'Nota débito',
+      '7': 'TEF',
+      '8': 'Cheque TEF',
+      '9': 'Troco',
+      '10': 'Adiantamento (saída cx.)',
+      '11': 'Desconto financeiro',
+      '12': 'DOFNI',
+      '13': 'Vale',
+      '14': 'Nota promissória',
+      '15': 'Cheque garantido',
+      '16': 'TED/DOC',
+      '17': 'Pré-Autorização TEF',
+      '18': 'Cheque presente',
+      '19': 'TEF/TECBAN - BANRISUL',
+      '20': 'CREDEV',
+      '21': 'Cartão próprio',
+      '22': 'TEF/HYPERCARD',
+      '23': 'Bônus desconto',
+      '25': 'Voucher',
+      '26': 'PIX',
+      '27': 'PicPay',
+      '28': 'Ame',
+      '29': 'Mercado Pago',
+      '30': 'Marketplace',
+      '31': 'Outro documento'
+    };
+    
+    return tiposDocumento[numero] || numero || 'Não informado';
+  };
+
+  // Função para aplicar filtro mensal e por dia
+  const aplicarFiltroMensal = (dados, filtro, diaFiltro = null) => {
+    return dados.filter((item) => {
+      // Usar dt_vencimento como base para o filtro mensal (data de vencimento)
+      const dataVencimento = item.dt_vencimento;
+      if (!dataVencimento) return false;
+      
+      const data = new Date(dataVencimento);
+      const ano = data.getFullYear();
+      const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
+      const dia = data.getDate();
+      
+      if (filtro === 'ANO') {
+        // Mostrar dados do ano atual
+        const anoAtual = new Date().getFullYear();
+        return ano === anoAtual;
+      }
+      
+      // Filtros por mês específico
+      const mesesMap = {
+        'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4,
+        'MAI': 5, 'JUN': 6, 'JUL': 7, 'AGO': 8,
+        'SET': 9, 'OUT': 10, 'NOV': 11, 'DEZ': 12
+      };
+      
+      const mesDoFiltro = mesesMap[filtro];
+      if (mesDoFiltro) {
+        // Se há filtro por dia, verificar também o dia
+        if (diaFiltro !== null) {
+          return mes === mesDoFiltro && dia === diaFiltro;
+        }
+        return mes === mesDoFiltro;
+      }
+      
+      return true;
+    });
+  };
 
   // Função para filtrar dados por situação
   const filtrarDadosPorSituacao = (dadosOriginais) => {
@@ -69,9 +265,6 @@ const ContasAReceber = () => {
         return dadosOriginais;
     }
   };
-
-  // Dados filtrados por situação
-  const dadosFiltrados = filtrarDadosPorSituacao(dados);
 
   // Função para filtrar dados por status
   const filtrarDadosPorStatus = (dadosOriginais) => {
@@ -95,8 +288,97 @@ const ContasAReceber = () => {
     }
   };
 
+  // Dados filtrados por situação
+  const dadosFiltrados = filtrarDadosPorSituacao(dados);
+
   // Dados filtrados por situação E status
   const dadosFiltradosCompletos = filtrarDadosPorStatus(dadosFiltrados);
+
+  // Aplicar filtros adicionais aos dados já filtrados por situação e status
+  const dadosComFiltrosAdicionais = dadosFiltradosCompletos.filter((item) => {
+    
+    // Filtro por cliente
+    if (filtroCliente) {
+      const cdCliente = item.cd_cliente || '';
+      const nmCliente = item.nm_cliente || '';
+      const buscaCliente = filtroCliente.toLowerCase();
+      
+      if (!cdCliente.toString().toLowerCase().includes(buscaCliente) && 
+          !nmCliente.toLowerCase().includes(buscaCliente)) {
+        return false;
+      }
+    }
+
+    // Filtro por fatura
+    if (filtroFatura) {
+      const nrFatura = item.nr_fatura || '';
+      if (!nrFatura.toString().toLowerCase().includes(filtroFatura.toLowerCase())) {
+        return false;
+      }
+    }
+
+    // Filtro por forma de pagamento
+    if (filtroFormaPagamento) {
+      const tipoDocumento = converterTipoDocumento(item.tp_documento);
+      const buscaFormaPagamento = filtroFormaPagamento.toLowerCase();
+      
+      if (!tipoDocumento.toLowerCase().includes(buscaFormaPagamento)) {
+        return false;
+      }
+    }
+    
+    return true;
+  });
+
+  // Dados processados (filtrados, ordenados e com filtro mensal)
+  const dadosProcessados = useMemo(() => {
+    let dadosFiltrados = [...dadosComFiltrosAdicionais];
+
+    // Aplicar filtro mensal
+    dadosFiltrados = aplicarFiltroMensal(dadosFiltrados, filtroMensal, filtroDia);
+
+    // Aplicar ordenação
+    if (ordenacao.campo) {
+      dadosFiltrados.sort((a, b) => {
+        let valorA = a[ordenacao.campo];
+        let valorB = b[ordenacao.campo];
+
+        // Tratamento especial para datas
+        if (ordenacao.campo.includes('dt_')) {
+          valorA = valorA ? new Date(valorA) : new Date(0);
+          valorB = valorB ? new Date(valorB) : new Date(0);
+        }
+
+        // Tratamento especial para valores numéricos
+        if (ordenacao.campo.includes('vl_') || ordenacao.campo.includes('pr_')) {
+          valorA = parseFloat(valorA) || 0;
+          valorB = parseFloat(valorB) || 0;
+        }
+
+        // Tratamento para strings
+        if (typeof valorA === 'string') {
+          valorA = valorA.toLowerCase();
+          valorB = valorB.toLowerCase();
+        }
+
+        if (valorA < valorB) return ordenacao.direcao === 'asc' ? -1 : 1;
+        if (valorA > valorB) return ordenacao.direcao === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return dadosFiltrados;
+  }, [dadosComFiltrosAdicionais, ordenacao, filtroMensal, filtroDia]);
+
+  // Dados paginados para exibição
+  const dadosPaginados = useMemo(() => {
+    const startIndex = (paginaAtual - 1) * itensPorPagina;
+    const endIndex = startIndex + itensPorPagina;
+    return dadosProcessados.slice(startIndex, endIndex);
+  }, [dadosProcessados, paginaAtual, itensPorPagina]);
+
+  // Total de páginas para paginação
+  const totalPages = Math.ceil(dadosProcessados.length / itensPorPagina);
 
   // Definir datas padrão (mês atual)
   useEffect(() => {
@@ -201,7 +483,7 @@ const ContasAReceber = () => {
 
   // Calcular totais para os cards
   const calcularTotais = () => {
-    const totais = dadosFiltradosCompletos.reduce((acc, item) => {
+    const totais = dadosProcessados.reduce((acc, item) => {
       acc.valorFaturado += parseFloat(item.vl_fatura) || 0;
       acc.valorPago += parseFloat(item.vl_pago) || 0;
       acc.valorCorrigido += parseFloat(item.vl_corrigido) || 0;
@@ -224,22 +506,13 @@ const ContasAReceber = () => {
 
   // Funções para preparar dados dos gráficos
   const prepararDadosGraficos = () => {
-    if (dadosFiltradosCompletos.length === 0) return;
+    if (dadosProcessados.length === 0) return;
 
-    // 2. Evolução Temporal
-    const evolucaoTemporal = {};
-    dadosFiltradosCompletos.forEach(item => {
-      const mes = item.dt_emissao ? new Date(item.dt_emissao).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }) : 'Sem Data';
-      if (!evolucaoTemporal[mes]) {
-        evolucaoTemporal[mes] = { faturado: 0, pago: 0 };
-      }
-      evolucaoTemporal[mes].faturado += parseFloat(item.vl_fatura) || 0;
-      evolucaoTemporal[mes].pago += parseFloat(item.vl_pago) || 0;
-    });
+
 
     // 3. Distribuição por Status
     const distribuicaoStatus = {};
-    dadosFiltradosCompletos.forEach(item => {
+    dadosProcessados.forEach(item => {
       const status = getStatusFromData(item);
       if (!distribuicaoStatus[status]) {
         distribuicaoStatus[status] = 0;
@@ -249,7 +522,7 @@ const ContasAReceber = () => {
 
     // 4. Análise de Clientes (Top 10)
     const analiseClientes = {};
-    dadosFiltradosCompletos.forEach(item => {
+    dadosProcessados.forEach(item => {
       const cliente = item.nm_cliente || 'Cliente não identificado';
       if (!analiseClientes[cliente]) {
         analiseClientes[cliente] = { faturado: 0, pago: 0, vencido: 0 };
@@ -263,11 +536,24 @@ const ContasAReceber = () => {
       }
     });
 
+    // 5. Top 10 Clientes Inadimplentes
+    const clientesInadimplentes = {};
+    dadosProcessados.forEach(item => {
+      const status = getStatusFromData(item);
+      if (status === 'Vencido') {
+        const cliente = item.nm_cliente || 'Cliente não identificado';
+        if (!clientesInadimplentes[cliente]) {
+          clientesInadimplentes[cliente] = 0;
+        }
+        clientesInadimplentes[cliente] += parseFloat(item.vl_fatura) || 0;
+      }
+    });
+
 
 
     // 6. Análise de Inadimplência
     const inadimplencia = {};
-    dadosFiltradosCompletos.forEach(item => {
+    dadosProcessados.forEach(item => {
       const status = getStatusFromData(item);
       if (status === 'Vencido') {
         const diasVencido = item.dt_vencimento ? Math.floor((new Date() - new Date(item.dt_vencimento)) / (1000 * 60 * 60 * 24)) : 0;
@@ -288,8 +574,8 @@ const ContasAReceber = () => {
 
     // 7. Tipos de Documento
     const tiposDocumento = {};
-    dadosFiltradosCompletos.forEach(item => {
-      const tipo = item.tp_documento || 'Não informado';
+    dadosProcessados.forEach(item => {
+      const tipo = converterTipoDocumento(item.tp_documento);
       if (!tiposDocumento[tipo]) {
         tiposDocumento[tipo] = 0;
       }
@@ -297,42 +583,13 @@ const ContasAReceber = () => {
     });
 
     setDadosGraficos({
-      evolucaoTemporal: Object.entries(evolucaoTemporal)
-        .map(([mes, valores]) => {
-          // Converter mês brasileiro para número
-          const meses = {
-            'jan.': 0, 'fev.': 1, 'mar.': 2, 'abr.': 3, 'mai.': 4, 'jun.': 5,
-            'jul.': 6, 'ago.': 7, 'set.': 8, 'out.': 9, 'nov.': 10, 'dez.': 11
-          };
-          
-          const partes = mes.split(' ');
-          const mesAbrev = partes[0];
-          const ano = parseInt(partes[1]);
-          const mesNum = meses[mesAbrev] || 0;
-          
-          return {
-            mes,
-            faturado: valores.faturado,
-            pago: valores.pago,
-            // Adicionar data para ordenação
-            data: new Date(ano, mesNum, 1)
-          };
-        })
-        .sort((a, b) => a.data - b.data) // Ordenar da esquerda para a direita (cronológico)
-        .reverse() // Inverter para garantir ordem correta no gráfico
-        .map(({ mes, faturado, pago }, index) => ({ 
-          mes, 
-          faturado, 
-          pago, 
-          index // Adicionar índice para garantir ordem
-        })), // Remover campo data
       distribuicaoStatus: Object.entries(distribuicaoStatus).map(([status, valor]) => ({
         status,
         valor
       })),
       analiseClientes: Object.entries(analiseClientes)
         .map(([cliente, valores]) => ({
-          cliente: cliente.length > 20 ? cliente.substring(0, 20) + '...' : cliente,
+          cliente: cliente.length > 15 ? cliente.substring(0, 15) + '...' : cliente,
           clienteCompleto: cliente,
           ...valores
         }))
@@ -342,6 +599,14 @@ const ContasAReceber = () => {
         faixa,
         valor
       })),
+      clientesInadimplentes: Object.entries(clientesInadimplentes)
+        .map(([cliente, valor]) => ({
+          cliente: cliente.length > 15 ? cliente.substring(0, 15) + '...' : cliente,
+          clienteCompleto: cliente,
+          valor
+        }))
+        .sort((a, b) => b.valor - a.valor)
+        .slice(0, 10),
       tiposDocumento: Object.entries(tiposDocumento)
         .map(([tipo, valor]) => ({ tipo, valor }))
         .sort((a, b) => a.valor - b.valor)
@@ -360,9 +625,31 @@ const ContasAReceber = () => {
     prepararDadosGraficos();
   }, [dados, situacao, status]);
 
+  // Resetar página quando dados mudarem
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [dados]);
+
+  // Resetar página quando ordenação mudar
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [ordenacao]);
+
+  // Resetar página quando filtro mensal mudar
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [filtroMensal, filtroDia]);
+
+  // Resetar página quando filtros adicionais mudarem
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [filtroCliente, filtroFatura, filtroFormaPagamento]);
+
+
+
   // Gerar array de páginas para exibição
   const gerarPaginas = () => {
-    const totalPaginas = Math.ceil(dados.length / itensPorPagina);
+    const totalPaginas = Math.ceil(dadosProcessados.length / itensPorPagina);
     const paginas = [];
     const maxPaginasVisiveis = 5;
     
@@ -403,53 +690,7 @@ const ContasAReceber = () => {
   };
 
   // Componentes de Gráficos
-  const GraficoEvolucaoTemporal = ({ dados }) => {
-    const CORES = ['#000638', '#4750A5'];
-    
-    if (dados.length === 0) {
-      return (
-        <div className="text-center py-8 text-gray-500">
-          Nenhum dado disponível para o gráfico
-        </div>
-      );
-    }
 
-    return (
-      <Card className="w-full bg-white">
-        <CardHeader className="bg-white">
-          <div className="flex items-center gap-2">
-            <ChartLine size={20} className="text-blue-600" />
-            <CardTitle className="text-lg font-bold text-[#000638]">
-              Evolução Temporal de Recebimentos
-            </CardTitle>
-          </div>
-          <CardDescription>
-            Faturado vs Pago ao longo do tempo
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={dados} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="index" 
-                type="number"
-                domain={['dataMin', 'dataMax']}
-                tickFormatter={(value, index) => dados[index]?.mes || ''}
-              />
-              <YAxis />
-              <RechartsTooltip 
-                formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              />
-              <Legend />
-              <Line type="monotone" dataKey="faturado" stroke="#000638" strokeWidth={2} name="Faturado" />
-              <Line type="monotone" dataKey="pago" stroke="#4750A5" strokeWidth={2} name="Pago" />
-            </LineChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-    );
-  };
 
   const GraficoDistribuicaoStatus = ({ dados }) => {
     const CORES = ['#000638', '#4750A5', '#252E81'];
@@ -528,8 +769,15 @@ const ContasAReceber = () => {
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={dados} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="cliente" angle={-45} textAnchor="end" height={80} />
-              <YAxis />
+              <XAxis 
+                dataKey="cliente" 
+                angle={-45} 
+                textAnchor="end" 
+                height={80}
+                fontSize={10}
+                tick={{ fontSize: 10 }}
+              />
+              <YAxis fontSize={10} />
               <RechartsTooltip 
                 formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 labelFormatter={(label) => dados.find(d => d.cliente === label)?.clienteCompleto || label}
@@ -615,21 +863,82 @@ const ContasAReceber = () => {
           <div className="flex items-center gap-2">
             <Receipt size={20} className="text-blue-600" />
             <CardTitle className="text-lg font-bold text-[#000638]">
-              Tipos de Documento
+              Formas de Pagamento
             </CardTitle>
           </div>
           <CardDescription>
-            Distribuição por tipo de documento
+            Distribuição por forma de pagamento
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={350}>
+            <BarChart data={dados} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis 
+                dataKey="tipo" 
+                angle={-45} 
+                textAnchor="end" 
+                height={100}
+                fontSize={10}
+                tick={{ fontSize: 10 }}
+              />
+              <YAxis fontSize={10} />
+              <RechartsTooltip 
+                formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                labelFormatter={(label) => label}
+              />
+              <Bar dataKey="valor" fill="#000638">
+                {dados.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={CORES[index % CORES.length]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const GraficoClientesInadimplentes = ({ dados }) => {
+    const CORES = ['#000638', '#4750A5', '#252E81', '#0D155D', '#AAB1EE', '#DBDEFF', '#737CCA', '#1E2A6B', '#3A4491', '#5B67B7'];
+    
+    if (dados.length === 0) {
+      return (
+        <div className="text-center py-8 text-gray-500">
+          Nenhum dado disponível para o gráfico
+        </div>
+      );
+    }
+
+    return (
+      <Card className="w-full bg-white">
+        <CardHeader className="bg-white">
+          <div className="flex items-center gap-2">
+            <Warning size={20} className="text-red-600" />
+            <CardTitle className="text-lg font-bold text-[#000638]">
+              Top 10 Clientes Inadimplentes
+            </CardTitle>
+          </div>
+          <CardDescription>
+            Maiores valores vencidos por cliente
           </CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={dados} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="tipo" angle={-45} textAnchor="end" height={80} />
-              <YAxis />
+              <XAxis 
+                dataKey="cliente" 
+                angle={-45} 
+                textAnchor="end" 
+                height={80}
+                fontSize={10}
+                tick={{ fontSize: 10 }}
+              />
+              <YAxis fontSize={10} />
               <RechartsTooltip 
                 formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                labelFormatter={(label) => dados.find(d => d.cliente === label)?.clienteCompleto || label}
               />
               <Bar dataKey="valor" fill="#000638">
                 {dados.map((entry, index) => (
@@ -705,7 +1014,7 @@ const ContasAReceber = () => {
               </div>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
               <div>
                 <label className="block text-xs font-semibold mb-1 text-[#000638]">Situação</label>
                 <select
@@ -722,8 +1031,8 @@ const ContasAReceber = () => {
                 <label className="block text-xs font-semibold mb-1 text-[#000638]">Cliente</label>
                 <input
                   type="text"
-                  value={cliente}
-                  onChange={(e) => setCliente(e.target.value)}
+                  value={filtroCliente}
+                  onChange={(e) => setFiltroCliente(e.target.value)}
                   placeholder="Buscar por código ou nome do cliente..."
                   className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
@@ -732,9 +1041,19 @@ const ContasAReceber = () => {
                 <label className="block text-xs font-semibold mb-1 text-[#000638]">Fatura</label>
                 <input
                   type="text"
-                  value={duplicata}
-                  onChange={(e) => setDuplicata(e.target.value)}
+                  value={filtroFatura}
+                  onChange={(e) => setFiltroFatura(e.target.value)}
                   placeholder="Buscar fatura..."
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Forma de Pagamento</label>
+                <input
+                  type="text"
+                  value={filtroFormaPagamento}
+                  onChange={(e) => setFiltroFormaPagamento(e.target.value)}
+                  placeholder="Buscar forma de pagamento..."
                   className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
               </div>
@@ -761,9 +1080,92 @@ const ContasAReceber = () => {
           </form>
         </div>
 
-        {/* Cards de Resumo */}
-        {dadosFiltradosCompletos.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-8 max-w-7xl mx-auto">
+                  {/* Painel de Filtro Mensal */}
+          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
+            <div className="flex items-center gap-2 mb-3">
+              <Calendar size={18} className="text-[#000638]" />
+              <h3 className="font-bold text-sm text-[#000638]">Filtro por Período (Data Vencimento)</h3>
+            </div>
+            
+            <div className="flex flex-wrap gap-2">
+              {/* Botão ANO */}
+              <button
+                onClick={() => handleFiltroMensalChange('ANO')}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  filtroMensal === 'ANO'
+                    ? 'bg-[#000638] text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                }`}
+              >
+                ANO
+              </button>
+
+              {/* Botões dos Meses */}
+              {['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'].map((mes) => (
+                <button
+                  key={mes}
+                  onClick={() => handleFiltroMensalChange(mes)}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    filtroMensal === mes
+                      ? 'bg-[#000638] text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                  }`}
+                >
+                  {mes}
+                </button>
+              ))}
+            </div>
+
+            {/* Informação do filtro ativo */}
+            <div className="mt-3 text-xs text-gray-500">
+              <span className="font-medium">Filtro ativo:</span> {filtroMensal} 
+              {filtroDia && <span className="ml-1">- Dia {filtroDia}</span>}
+              <span className="ml-2">({dadosProcessados.length} registro{dadosProcessados.length !== 1 ? 's' : ''})</span>
+            </div>
+
+            {/* Filtro por Dia - aparece apenas quando um mês está selecionado */}
+            {filtroMensal !== 'ANO' && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <Calendar size={16} className="text-[#000638]" />
+                  <h4 className="font-bold text-sm text-[#000638]">Filtro por Dia - {filtroMensal}</h4>
+                </div>
+                
+                <div className="flex flex-wrap gap-1">
+                  {/* Botão "Todos os Dias" */}
+                  <button
+                    onClick={() => setFiltroDia(null)}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      filtroDia === null
+                        ? 'bg-[#000638] text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                    }`}
+                  >
+                    TODOS
+                  </button>
+
+                  {/* Botões dos dias */}
+                  {Array.from({ length: obterDiasDoMes(filtroMensal) }, (_, i) => i + 1).map((dia) => (
+                    <button
+                      key={dia}
+                      onClick={() => setFiltroDia(dia)}
+                      className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                        filtroDia === dia
+                          ? 'bg-[#000638] text-white'
+                          : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                      }`}
+                    >
+                      {dia}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Cards de Resumo */}
+          {dadosProcessados.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8 max-w-7xl mx-auto">
             {/* Valor Total Faturado */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
               <CardHeader className="pb-2">
@@ -868,17 +1270,35 @@ const ContasAReceber = () => {
                 <CardDescription className="text-xs text-gray-500">Total de descontos aplicados</CardDescription>
               </CardContent>
             </Card>
+
+            {/* Valor a Receber no Período */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <Calendar size={18} className="text-purple-600" />
+                  <CardTitle className="text-sm font-bold text-purple-700">A Receber no Período</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-lg font-extrabold text-purple-600 mb-1 break-words">
+                  {loading ? <Spinner size={24} className="animate-spin text-purple-600" /> : 
+                    totais.valorFaturado.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })
+                  }
+                </div>
+                <CardDescription className="text-xs text-gray-500">
+                  {filtroMensal === 'ANO' ? 'Ano atual' : `${filtroMensal}${filtroDia ? ` - Dia ${filtroDia}` : ''}`}
+                </CardDescription>
+              </CardContent>
+            </Card>
           </div>
         )}
 
         {/* Gráficos */}
-        {dadosCarregados && dadosFiltradosCompletos.length > 0 && (
+                    {dadosCarregados && dadosProcessados.length > 0 && (
           <div className="space-y-6 mb-8">
-            {/* Evolução Temporal - Tela completa */}
-            <div className="w-full">
-              <GraficoEvolucaoTemporal dados={dadosGraficos.evolucaoTemporal} />
-            </div>
-            
             {/* Gráfico Top 10 Clientes - Tela completa */}
             <div className="w-full">
               <GraficoAnaliseClientes dados={dadosGraficos.analiseClientes} />
@@ -894,6 +1314,11 @@ const ContasAReceber = () => {
             <div className="w-full">
               <GraficoTiposDocumento dados={dadosGraficos.tiposDocumento} />
             </div>
+            
+            {/* Top 10 Clientes Inadimplentes - Tela completa */}
+            <div className="w-full">
+              <GraficoClientesInadimplentes dados={dadosGraficos.clientesInadimplentes} />
+            </div>
           </div>
         )}
 
@@ -902,7 +1327,7 @@ const ContasAReceber = () => {
           <div className="p-6 border-b border-[#000638]/10 flex justify-between items-center">
             <h2 className="text-xl font-bold text-[#000638]">Detalhamento de Contas a Receber</h2>
             <div className="text-sm text-gray-600">
-              {dadosCarregados ? `${dadosFiltradosCompletos.length} registros encontrados` : 'Nenhum dado carregado'}
+              {dadosCarregados ? `${dadosProcessados.length} registros encontrados` : 'Nenhum dado carregado'}
             </div>
           </div>
           
@@ -929,248 +1354,412 @@ const ContasAReceber = () => {
                 </div>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse rounded-lg overflow-hidden shadow-lg">
+              <div className="table-container max-w-full mx-auto">
+                <table 
+                  className="border-collapse rounded-lg overflow-hidden shadow-lg extrato-table"
+                  style={{ minWidth: '1200px' }}
+                >
                   <thead className="bg-[#000638] text-white text-xs uppercase tracking-wider">
                     <tr>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Empresa
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('cd_cliente')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Cliente
+                          {getSortIcon('cd_cliente')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Cliente
+                      <th 
+                        className="px-3 py-1 text-left text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('nm_cliente')}
+                      >
+                        <div className="flex items-center">
+                          Nome Cliente
+                          {getSortIcon('nm_cliente')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Nome Cliente
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('dt_emissao')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Emissão
+                          {getSortIcon('dt_emissao')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Parcela
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('dt_vencimento')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Vencimento
+                          {getSortIcon('dt_vencimento')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Emissão
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('vl_fatura')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Valor Fatura
+                          {getSortIcon('vl_fatura')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Vencimento
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('vl_pago')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Valor Pago
+                          {getSortIcon('vl_pago')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Cancelamento
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('vl_desconto')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Desconto
+                          {getSortIcon('vl_desconto')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Liquidação
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('vl_corrigido')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Valor Corrigido
+                          {getSortIcon('vl_corrigido')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Cobrança
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('tp_documento')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Formas de Pagamento
+                          {getSortIcon('tp_documento')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Documento
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('dt_liq')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Liquidação
+                          {getSortIcon('dt_liq')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Faturamento
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('cd_empresa')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Empresa
+                          {getSortIcon('cd_empresa')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Inclusão
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('nr_parcela')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Parcela
+                          {getSortIcon('nr_parcela')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Baixa
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('dt_cancelamento')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Cancelamento
+                          {getSortIcon('dt_cancelamento')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Situação
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('tp_cobranca')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Cobrança
+                          {getSortIcon('tp_cobranca')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Valor Fatura
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('tp_faturamento')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Faturamento
+                          {getSortIcon('tp_faturamento')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Valor Original
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('tp_inclusao')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Inclusão
+                          {getSortIcon('tp_inclusao')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Abatimento
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('tp_baixa')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Baixa
+                          {getSortIcon('tp_baixa')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Valor Pago
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('tp_situacao')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Situação
+                          {getSortIcon('tp_situacao')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Desconto
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('vl_original')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Valor Original
+                          {getSortIcon('vl_original')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Valor Líquido
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('vl_abatimento')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Abatimento
+                          {getSortIcon('vl_abatimento')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Acréscimo
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('vl_liquido')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Valor Líquido
+                          {getSortIcon('vl_liquido')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Multa
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('vl_acrescimo')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Acréscimo
+                          {getSortIcon('vl_acrescimo')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Portador
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('vl_multa')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Multa
+                          {getSortIcon('vl_multa')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Renegociação
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('nr_portador')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Portador
+                          {getSortIcon('nr_portador')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Valor Corrigido
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('vl_renegociacao')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Renegociação
+                          {getSortIcon('vl_renegociacao')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        Juros
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('vl_juros')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Juros
+                          {getSortIcon('vl_juros')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        % Juros/Mês
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('pr_juromes')}
+                      >
+                        <div className="flex items-center justify-center">
+                          % Juros/Mês
+                          {getSortIcon('pr_juromes')}
+                        </div>
                       </th>
-                      <th className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider">
-                        % Multa
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('pr_multa')}
+                      >
+                        <div className="flex items-center justify-center">
+                          % Multa
+                          {getSortIcon('pr_multa')}
+                        </div>
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {(() => {
-                      const totalPaginas = Math.ceil(dadosFiltradosCompletos.length / itensPorPagina);
-                      const indiceInicial = (paginaAtual - 1) * itensPorPagina;
-                      const indiceFinal = indiceInicial + itensPorPagina;
-                      const dadosPaginaAtual = dadosFiltradosCompletos.slice(indiceInicial, indiceFinal);
-                      
-                      return dadosPaginaAtual.map((item, index) => (
-                      <tr key={index} className="hover:bg-gray-50 text-[10px] border-b transition-colors">
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.cd_empresa || 'N/A'}
+                  <tbody className="bg-white">
+                    {dadosPaginados.map((item, index) => (
+                      <tr key={index} className="text-[10px] transition-colors">
+                        <td className="text-center text-gray-900">
+                          {item.cd_cliente || '--'}
                         </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.cd_cliente || 'N/A'}
+                        <td className="text-left text-gray-900">
+                          {item.nm_cliente || '--'}
                         </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.nm_cliente || 'N/A'}
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.nr_parcela || 'N/A'}
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
+                        <td className="text-center text-gray-900">
                           {item.dt_emissao ? 
                             new Date(item.dt_emissao).toLocaleDateString('pt-BR') 
-                            : 'N/A'
+                            : '--'
                           }
                         </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
+                        <td className="text-center text-gray-900">
                           {item.dt_vencimento ? 
                             new Date(item.dt_vencimento).toLocaleDateString('pt-BR') 
-                            : 'N/A'
+                            : '--'
                           }
                         </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.dt_cancelamento ? 
-                            new Date(item.dt_cancelamento).toLocaleDateString('pt-BR') 
-                            : 'N/A'
-                          }
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.dt_liq ? 
-                            new Date(item.dt_liq).toLocaleDateString('pt-BR') 
-                            : 'N/A'
-                          }
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.tp_cobranca || 'N/A'}
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.tp_documento || 'N/A'}
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.tp_faturamento || 'N/A'}
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.tp_inclusao || 'N/A'}
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.tp_baixa || 'N/A'}
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.tp_situacao || 'N/A'}
-                        </td>
-                        <td className="px-1 py-1 text-center font-semibold text-green-600">
+                        <td className="text-center font-semibold text-green-600">
                           {(parseFloat(item.vl_fatura) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {(parseFloat(item.vl_original) || 0).toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL',
-                          })}
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {(parseFloat(item.vl_abatimento) || 0).toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL',
-                          })}
-                        </td>
-                        <td className="px-1 py-1 text-center font-semibold text-blue-600">
+                        <td className="text-center font-semibold text-blue-600">
                           {(parseFloat(item.vl_pago) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
+                        <td className="text-center text-gray-900">
                           {(parseFloat(item.vl_desconto) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {(parseFloat(item.vl_liquido) || 0).toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL',
-                          })}
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {(parseFloat(item.vl_acrescimo) || 0).toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL',
-                          })}
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {(parseFloat(item.vl_multa) || 0).toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL',
-                          })}
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.nr_portador || 'N/A'}
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {(parseFloat(item.vl_renegociacao) || 0).toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL',
-                          })}
-                        </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
+                        <td className="text-center text-gray-900">
                           {(parseFloat(item.vl_corrigido) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
+                        <td className="text-center text-gray-900">
+                          {converterTipoDocumento(item.tp_documento)}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {item.dt_liq ? 
+                            new Date(item.dt_liq).toLocaleDateString('pt-BR') 
+                            : '--'
+                          }
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {item.cd_empresa || '--'}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {item.nr_parcela || '--'}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {item.dt_cancelamento ? 
+                            new Date(item.dt_cancelamento).toLocaleDateString('pt-BR') 
+                            : '--'
+                          }
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {item.tp_cobranca || '--'}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {item.tp_faturamento || '--'}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {item.tp_inclusao || '--'}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {item.tp_baixa || '--'}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {item.tp_situacao || '--'}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {(parseFloat(item.vl_original) || 0).toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {(parseFloat(item.vl_abatimento) || 0).toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {(parseFloat(item.vl_liquido) || 0).toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {(parseFloat(item.vl_acrescimo) || 0).toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {(parseFloat(item.vl_multa) || 0).toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {item.nr_portador || '--'}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {(parseFloat(item.vl_renegociacao) || 0).toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })}
+                        </td>
+                        <td className="text-center text-gray-900">
                           {(parseFloat(item.vl_juros) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.pr_juromes ? `${parseFloat(item.pr_juromes).toFixed(2)}%` : 'N/A'}
+                        <td className="text-center text-gray-900">
+                          {item.pr_juromes ? `${parseFloat(item.pr_juromes).toFixed(2)}%` : '--'}
                         </td>
-                        <td className="px-1 py-1 text-center text-gray-900">
-                          {item.pr_multa ? `${parseFloat(item.pr_multa).toFixed(2)}%` : 'N/A'}
-                                                 </td>
-                       </tr>
-                     ));
-                   })()}
+                        <td className="text-center text-gray-900">
+                          {item.pr_multa ? `${parseFloat(item.pr_multa).toFixed(2)}%` : '--'}
+                        </td>
+                      </tr>
+                     ))}
                    </tbody>
                 </table>
                                  <div className="mt-4 text-center text-sm text-gray-600">
-                   Total de {dadosFiltradosCompletos.length} registros
+                   Total de {dadosProcessados.length} registros
                  </div>
                  
                  {/* Paginação */}
-                 {dados.length > itensPorPagina && (
+                 {dadosProcessados.length > itensPorPagina && (
                    <div className="flex flex-col sm:flex-row justify-between items-center mt-6 pt-6 border-t border-gray-200">
                      <div className="text-sm text-gray-600 mb-4 sm:mb-0">
-                       Mostrando {((paginaAtual - 1) * itensPorPagina) + 1} a {Math.min(paginaAtual * itensPorPagina, dadosFiltradosCompletos.length)} de {dadosFiltradosCompletos.length} registros
+                       Mostrando {((paginaAtual - 1) * itensPorPagina) + 1} a {Math.min(paginaAtual * itensPorPagina, dadosProcessados.length)} de {dadosProcessados.length} registros
                      </div>
                      
                      <div className="flex items-center gap-2">
@@ -1207,7 +1796,7 @@ const ContasAReceber = () => {
                        {/* Botão Próximo */}
                        <button
                          onClick={proximaPagina}
-                         disabled={paginaAtual === Math.ceil(dadosFiltradosCompletos.length / itensPorPagina)}
+                         disabled={paginaAtual === Math.ceil(dadosProcessados.length / itensPorPagina)}
                          className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                        >
                          Próximo
