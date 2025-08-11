@@ -320,6 +320,31 @@ const ContasAPagar = () => {
   // Dados filtrados por situação
   const dadosFiltrados = filtrarDadosPorSituacao(dados);
 
+  // Função para filtrar dados por status
+  const filtrarDadosPorStatus = (dadosOriginais) => {
+    if (!dadosOriginais || dadosOriginais.length === 0) return [];
+    
+    switch (status) {
+      case 'Todos':
+        // Mostra todos os itens
+        return dadosOriginais;
+      case 'Pago':
+        // Mostra apenas itens pagos
+        return dadosOriginais.filter(item => parseFloat(item.vl_pago) > 0);
+      case 'Vencido':
+        // Mostra apenas itens vencidos
+        return dadosOriginais.filter(item => item.dt_vencimento && new Date(item.dt_vencimento) < new Date());
+      case 'A Vencer':
+        // Mostra apenas itens a vencer
+        return dadosOriginais.filter(item => !item.dt_vencimento || new Date(item.dt_vencimento) >= new Date());
+      default:
+        return dadosOriginais;
+    }
+  };
+
+  // Dados filtrados por situação E status
+  const dadosFiltradosCompletos = filtrarDadosPorStatus(dadosFiltrados);
+
   // Função para ordenar os dados
   const handleSort = (key) => {
     let direction = 'asc';
@@ -739,15 +764,8 @@ const ContasAPagar = () => {
     setDataFim(ultimoDia.toISOString().split('T')[0]);
   }, []);
 
-  // Aplicar filtros adicionais aos dados já filtrados por situação
-  const dadosComFiltrosAdicionais = dadosFiltrados.filter((item) => {
-    // Filtro por status
-    if (status !== 'Todos') {
-      const itemStatus = getStatusFromData(item);
-      if (itemStatus.toLowerCase() !== status.toLowerCase()) {
-        return false;
-      }
-    }
+  // Aplicar filtros adicionais aos dados já filtrados por situação e status
+  const dadosComFiltrosAdicionais = dadosFiltradosCompletos.filter((item) => {
     
     // Filtro por fornecedor
     if (fornecedor) {

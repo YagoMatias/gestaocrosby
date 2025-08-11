@@ -86,6 +86,39 @@ const FluxoCaixa = () => {
   // Dados filtrados por situação
   const dadosFiltrados = filtrarDadosPorSituacao(dados);
 
+  // Função para filtrar dados por status
+  const filtrarDadosPorStatus = (dadosOriginais) => {
+    if (!dadosOriginais || dadosOriginais.length === 0) return [];
+    
+    switch (status) {
+      case 'Todos':
+        // Mostra todos os itens
+        return dadosOriginais;
+      case 'Pago':
+        // Mostra apenas itens pagos
+        return dadosOriginais.filter(item => item.dt_liq || item.tp_situacao === '1' || item.tp_situacao === 'P');
+      case 'Vencido':
+        // Mostra apenas itens vencidos
+        return dadosOriginais.filter(item => {
+          if (item.dt_vencimento && new Date(item.dt_vencimento) < new Date()) return true;
+          if (item.tp_situacao === '2' || item.tp_situacao === 'V') return true;
+          return false;
+        });
+      case 'A Vencer':
+        // Mostra apenas itens a vencer
+        return dadosOriginais.filter(item => {
+          if (item.dt_vencimento && new Date(item.dt_vencimento) >= new Date()) return true;
+          if (item.tp_situacao === '3' || item.tp_situacao === 'A') return true;
+          return false;
+        });
+      default:
+        return dadosOriginais;
+    }
+  };
+
+  // Dados filtrados por situação E status
+  const dadosFiltradosCompletos = filtrarDadosPorStatus(dadosFiltrados);
+
 
 
   // Estado para controlar exibição da tabela de despesas
@@ -430,6 +463,13 @@ const FluxoCaixa = () => {
     setDataFim(ultimoDia.toISOString().split('T')[0]);
   }, []);
 
+  // Executar preparação dos dados quando dados, situação ou status mudarem
+  useEffect(() => {
+    // Recalcular dados filtrados quando situação ou status mudarem
+    const dadosRecalculados = filtrarDadosPorStatus(filtrarDadosPorSituacao(dados));
+    // Aqui você pode adicionar lógica adicional se necessário
+  }, [dados, situacao, status]);
+
   // Função para lidar com seleção de empresas
   const handleSelectEmpresas = (empresas) => {
     setEmpresasSelecionadas([...empresas]); // Garantir que é um novo array
@@ -518,15 +558,8 @@ const FluxoCaixa = () => {
     });
   };
 
-  // Aplicar filtros adicionais aos dados já filtrados por situação
-  const dadosComFiltrosAdicionais = dadosFiltrados.filter((item) => {
-    // Filtro por status
-    if (status !== 'Todos') {
-      const itemStatus = getStatusFromData(item);
-      if (itemStatus.toLowerCase() !== status.toLowerCase()) {
-        return false;
-      }
-    }
+  // Aplicar filtros adicionais aos dados já filtrados por situação e status
+  const dadosComFiltrosAdicionais = dadosFiltradosCompletos.filter((item) => {
     
     // Filtro por fornecedor
     if (fornecedor) {
@@ -799,7 +832,7 @@ const FluxoCaixa = () => {
   // Logs de debug para monitorar dados
   console.log('🔍 Debug FluxoCaixa:', {
     dadosOriginais: dados.length,
-    dadosFiltrados: dadosComFiltrosAdicionais.length,
+    dadosFiltrados: dadosFiltradosCompletos.length,
     dadosComFiltroMensal: dadosComFiltroMensal.length,
     dadosAgrupados: dadosAgrupados.length,
     dadosOrdenados: dadosOrdenados.length,
@@ -1187,8 +1220,8 @@ const FluxoCaixa = () => {
 const GraficoRankingDespesas = ({ dados, tipoGrafico, moduloGrafico, onTipoChange, onModuloChange }) => {
   // Cores para os gráficos
   const CORES = [
-    '#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#8dd1e1', 
-    '#d084d0', '#ffb347', '#87ceeb', '#dda0dd', '#98fb98'
+    '#000638', '#4750A5', '#252E81', '#0D155D', '#AAB1EE', 
+    '#DBDEFF', '#737CCA', '#1E2A6B', '#3A4491', '#5B67B7'
   ];
 
   // Função para preparar dados dos tópicos
@@ -1384,7 +1417,7 @@ const GraficoRankingDespesas = ({ dados, tipoGrafico, moduloGrafico, onTipoChang
                   labelLine={false}
                   label={({ nome, percent }) => `${nome} (${(percent * 100).toFixed(1)}%)`}
                   outerRadius={100}
-                  fill="#8884d8"
+                  fill="#000638"
                   dataKey="valor"
                 >
                   {dadosGrafico.map((entry, index) => (
