@@ -468,29 +468,29 @@ const FluxoCaixa = () => {
       // Usar dt_liq como base para o filtro mensal (data de liquidação)
       const dataLiquidacao = item.dt_liq;
       if (!dataLiquidacao) return false;
-      
+
+      // Quando filtro for ANO, não aplicar restrição por ano (pass-through)
+      if (filtro === 'ANO') {
+        return true;
+      }
+
       const data = new Date(dataLiquidacao);
       const ano = data.getFullYear();
       const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
-      
-      if (filtro === 'ANO') {
-        // Mostrar dados do ano baseado nas datas de liquidação selecionadas
-        return ano === anoFiltro;
-      }
-      
+
       // Filtros por mês específico (do ano selecionado)
       const mesesMap = {
         'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4,
         'MAI': 5, 'JUN': 6, 'JUL': 7, 'AGO': 8,
         'SET': 9, 'OUT': 10, 'NOV': 11, 'DEZ': 12
       };
-      
+
       const mesDoFiltro = mesesMap[filtro];
       if (mesDoFiltro) {
         // Verificar se é o mês correto E do ano correto
         return mes === mesDoFiltro && ano === anoFiltro;
       }
-      
+
       return true;
     });
   };
@@ -1768,7 +1768,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
         {/* Informação do filtro ativo */}
         <div className="mt-3 text-xs text-gray-500">
           <span className="font-medium">Filtro ativo:</span> {filtroMensal} 
-          {dataInicio && dataFim && (
+          {dataInicio && dataFim && filtroMensal !== 'ANO' && (
             <span className="ml-1 text-blue-600">
               ({new Date(dataInicio).getFullYear()})
             </span>
