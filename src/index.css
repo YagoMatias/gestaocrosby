@@ -12,8 +12,23 @@ html {
     overflow-x: hidden;
 }
 
+/* Configuração global para títulos */
+h1, h2, h3, h4, h5, h6 {
+    @apply font-barlow;
+}
+
+/* Estilos globais para elementos importantes */
+.title, .heading, .nav-title, .sidebar-title {
+    @apply font-barlow;
+}
+
+/* Aplicar fonte Barlow em elementos específicos */
+.text-title, .text-heading, .text-nav {
+    @apply font-barlow;
+}
+
 h1 {
-    @apply text-2xl font-bold mb-4 font-barlow;
+    @apply text-2xl font-bold mb-4;
 }
 
 form {

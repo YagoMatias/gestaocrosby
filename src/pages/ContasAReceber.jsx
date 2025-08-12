@@ -955,7 +955,7 @@ const ContasAReceber = () => {
   return (
     <Layout>
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
-        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Contas a Receber</h1>
+        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638] font-barlow">Contas a Receber</h1>
 
 
 
@@ -1084,7 +1084,7 @@ const ContasAReceber = () => {
           <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
             <div className="flex items-center gap-2 mb-3">
               <Calendar size={18} className="text-[#000638]" />
-              <h3 className="font-bold text-sm text-[#000638]">Filtro por Período (Data Vencimento)</h3>
+                              <h3 className="font-bold text-sm text-[#000638] font-barlow">Filtro por Período (Data Vencimento)</h3>
             </div>
             
             <div className="flex flex-wrap gap-2">
@@ -1128,7 +1128,7 @@ const ContasAReceber = () => {
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <div className="flex items-center gap-2 mb-3">
                   <Calendar size={16} className="text-[#000638]" />
-                  <h4 className="font-bold text-sm text-[#000638]">Filtro por Dia - {filtroMensal}</h4>
+                  <h4 className="font-bold text-sm text-[#000638] font-barlow">Filtro por Dia - {filtroMensal}</h4>
                 </div>
                 
                 <div className="flex flex-wrap gap-1">
@@ -1325,7 +1325,7 @@ const ContasAReceber = () => {
         {/* Tabela */}
         <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full">
           <div className="p-6 border-b border-[#000638]/10 flex justify-between items-center">
-            <h2 className="text-xl font-bold text-[#000638]">Detalhamento de Contas a Receber</h2>
+            <h2 className="text-xl font-bold text-[#000638] font-barlow">Detalhamento de Contas a Receber</h2>
             <div className="text-sm text-gray-600">
               {dadosCarregados ? `${dadosProcessados.length} registros encontrados` : 'Nenhum dado carregado'}
             </div>

@@ -79,7 +79,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
         onClick={() => handleNavigation(item.href)}
         className={`
           w-full flex items-center gap-3 ${paddingLeft} pr-4 py-3 
-          text-sm font-medium rounded-lg transition-all duration-200
+          text-sm font-medium rounded-lg transition-all duration-200 font-barlow
           ${isActive 
             ? 'bg-gradient-to-r from-blue-50 to-blue-100 text-blue-700 border-r-2 border-blue-600' 
             : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
@@ -103,7 +103,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     <div className="mb-3">
       <button 
         onClick={onToggle}
-        className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold rounded-lg transition-all duration-200 hover:bg-gray-50 group"
+        className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold rounded-lg transition-all duration-200 hover:bg-gray-50 group font-barlow"
       >
         <SectionIcon size={18} className="text-gray-500" />
         <span className="flex-1 text-left text-gray-800">{title}</span>
@@ -216,8 +216,8 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                 <UserGear size={16} className="text-blue-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate">{user.email}</p>
-                <p className="text-xs text-gray-500">{user.role}</p>
+                <p className="text-xs font-medium text-gray-900 truncate font-barlow">{user.email}</p>
+                <p className="text-xs text-gray-500 font-barlow">{user.role}</p>
               </div>
             </div>
           </div>
@@ -276,8 +276,8 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                 <UserGear size={16} className="text-blue-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate">{user.email}</p>
-                <p className="text-xs text-gray-500">{user.role}</p>
+                <p className="text-xs font-medium text-gray-900 truncate font-barlow">{user.email}</p>
+                <p className="text-xs text-gray-500 font-barlow">{user.role}</p>
               </div>
             </div>
           </div>
@@ -341,8 +341,8 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                 <UserGear size={16} className="text-blue-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate">{user.email}</p>
-                <p className="text-xs text-gray-500">{user.role}</p>
+                <p className="text-xs font-medium text-gray-900 truncate font-barlow">{user.email}</p>
+                <p className="text-xs text-gray-500 font-barlow">{user.role}</p>
               </div>
             </div>
           </div>
