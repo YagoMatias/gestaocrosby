@@ -7,6 +7,7 @@ import ErrorBoundary from './components/ui/ErrorBoundary';
 
 // Lazy loading de todas as páginas para otimizar bundle
 const Home = lazy(() => import('./pages/Home'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
 const ContasAPagar = lazy(() => import('./pages/ContasAPagar'));
 const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
 const FluxoCaixa = lazy(() => import('./pages/FluxoCaixa'));
@@ -57,6 +58,10 @@ const AppRoutes = memo(() => {
         <Route 
           path="/home" 
           element={createPrivateRoute(Home, ['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA'])} 
+        />
+        <Route 
+          path="/dashboard" 
+          element={createPrivateRoute(Dashboard, ['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA'])} 
         />
         <Route 
           path="/contas-a-pagar" 

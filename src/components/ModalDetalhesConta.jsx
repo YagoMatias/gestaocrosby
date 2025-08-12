@@ -265,6 +265,10 @@ const ModalDetalhesConta = ({ conta, isOpen, onClose }) => {
                     <span className="font-medium text-gray-600">Estágio:</span>
                     <span className="font-bold">{conta.tp_estagio || 'Não informado'}</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium text-gray-600">Previsão:</span>
+                    <span className="font-bold">{conta.tp_previsaoreal || 'Não informado'}</span>
+                  </div>
                 </div>
               </div>
             </div>

@@ -143,6 +143,7 @@ const ContasAPagar = () => {
   const [dadosCarregados, setDadosCarregados] = useState(false);
   const [status, setStatus] = useState('Todos');
   const [situacao, setSituacao] = useState('NORMAIS');
+  const [previsao, setPrevisao] = useState('TODOS');
   const [fornecedor, setFornecedor] = useState('');
   const [despesa, setDespesa] = useState('');
   const [duplicata, setDuplicata] = useState('');
@@ -342,8 +343,30 @@ const ContasAPagar = () => {
     }
   };
 
-  // Dados filtrados por situação E status
-  const dadosFiltradosCompletos = filtrarDadosPorStatus(dadosFiltrados);
+  // Função para filtrar dados por previsão
+  const filtrarDadosPorPrevisao = (dadosOriginais) => {
+    if (!dadosOriginais || dadosOriginais.length === 0) return [];
+    
+    switch (previsao) {
+      case 'TODOS':
+        // Mostra todos os itens
+        return dadosOriginais;
+      case 'PREVISÃO':
+        // Mostra apenas itens com tp_previsaoreal = 'P' (Previsão)
+        return dadosOriginais.filter(item => item.tp_previsaoreal === '1');
+      case 'REAL':
+        // Mostra apenas itens com tp_previsaoreal = 'R' (Real)
+        return dadosOriginais.filter(item => item.tp_previsaoreal === '2');
+      case 'CONSIGNADO':
+        // Mostra apenas itens com tp_previsaoreal = 'C' (Consignado)
+        return dadosOriginais.filter(item => item.tp_previsaoreal === '3');
+      default:
+        return dadosOriginais;
+    }
+  };
+
+  // Dados filtrados por situação, status E previsão
+  const dadosFiltradosCompletos = filtrarDadosPorPrevisao(filtrarDadosPorStatus(dadosFiltrados));
 
   // Função para ordenar os dados
   const handleSort = (key) => {
@@ -418,7 +441,7 @@ const ContasAPagar = () => {
     dados.forEach((item) => {
       // Criar chave única SEM vl_rateio para manter totais corretos
       // O vl_rateio será usado apenas para separação visual no componente
-      const chave = `${item.cd_fornecedor}|${item.nm_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
+      const chave = `${item.cd_fornecedor}|${item.nm_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.tp_previsaoreal}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
       
       if (!grupos.has(chave)) {
         grupos.set(chave, {
@@ -452,6 +475,14 @@ const ContasAPagar = () => {
         grupo.situacoes.push(item.tp_situacao);
       }
       
+      // Adicionar previsão se existir e for diferente
+      if (item.tp_previsaoreal && !grupo.previsoes) {
+        grupo.previsoes = [];
+      }
+      if (item.tp_previsaoreal && !grupo.previsoes.includes(item.tp_previsaoreal)) {
+        grupo.previsoes.push(item.tp_previsaoreal);
+      }
+      
       // Adicionar datas se existirem e forem diferentes
       if (item.dt_emissao && !grupo.datasEmissao.includes(item.dt_emissao)) {
         grupo.datasEmissao.push(item.dt_emissao);
@@ -482,6 +513,21 @@ const ContasAPagar = () => {
         // Se não há nem 'C' nem 'N', manter a primeira situação
       }
       
+      // Se há múltiplas previsões, priorizar REAL (R) sobre PREVISÃO (P) sobre CONSIGNADO (C)
+      let previsaoFinal = grupo.item.tp_previsaoreal;
+      
+      if (grupo.previsoes && grupo.previsoes.length > 1) {
+        // Prioridade: REAL > PREVISÃO > CONSIGNADO
+        if (grupo.previsoes.includes('R')) {
+          previsaoFinal = 'R';
+        } else if (grupo.previsoes.includes('P')) {
+          previsaoFinal = 'P';
+        } else if (grupo.previsoes.includes('C')) {
+          previsaoFinal = 'C';
+        }
+        // Se não há nenhum dos valores esperados, manter o primeiro
+      }
+      
       // Para as datas, usar a mais recente ou a mais relevante
       const dtEmissaoFinal = grupo.datasEmissao.length > 0 ? 
         grupo.datasEmissao.sort((a, b) => new Date(b) - new Date(a))[0] : 
@@ -504,6 +550,7 @@ const ContasAPagar = () => {
         item: {
           ...grupo.item,
           tp_situacao: situacaoFinal,
+          tp_previsaoreal: previsaoFinal,
           dt_emissao: dtEmissaoFinal,
           dt_vencimento: dtVencimentoFinal,
           dt_entrada: dtEntradaFinal,
@@ -572,6 +619,10 @@ const ContasAPagar = () => {
         case 'tp_estagio':
           aValue = a.tp_estagio || '';
           bValue = b.tp_estagio || '';
+          break;
+        case 'tp_previsaoreal':
+          aValue = a.tp_previsaoreal || '';
+          bValue = b.tp_previsaoreal || '';
           break;
         case 'vl_duplicata':
           aValue = parseFloat(a.vl_duplicata) || 0;
@@ -974,6 +1025,19 @@ const ContasAPagar = () => {
                   <option value="NORMAIS">NORMAIS</option>
                   <option value="CANCELADAS">CANCELADAS</option>
                   <option value="TODAS">TODAS</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Previsão</label>
+                <select
+                  value={previsao}
+                  onChange={(e) => setPrevisao(e.target.value)}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                >
+                  <option value="TODOS">TODOS</option>
+                  <option value="PREVISÃO">PREVISÃO</option>
+                  <option value="REAL">REAL</option>
+                  <option value="CONSIGNADO">CONSIGNADO</option>
                 </select>
               </div>
               <div>
@@ -1381,6 +1445,7 @@ const ContasAPagar = () => {
                         <th className="px-2 py-2 text-left font-medium text-gray-700">Despesa</th>
                         <th className="px-2 py-2 text-center font-medium text-gray-700">Duplicata</th>
                         <th className="px-2 py-2 text-center font-medium text-gray-700">Status</th>
+                        <th className="px-2 py-2 text-center font-medium text-gray-700">Previsão</th>
                         {tipoCardSelecionado === 'descontos' && (
                           <th className="px-2 py-2 text-right font-medium text-gray-700">Desconto</th>
                         )}
@@ -1412,6 +1477,9 @@ const ContasAPagar = () => {
                               {getStatusIcon(getStatusFromData(item))}
                               <span className="ml-1">{getStatusFromData(item)}</span>
                                   </span>
+                          </td>
+                          <td className="px-2 py-2 text-center text-gray-900">
+                            {item.tp_previsaoreal || ''}
                           </td>
                           {tipoCardSelecionado === 'descontos' && (
                             <td className="px-2 py-2 text-sm text-right font-medium text-emerald-600">
@@ -1936,6 +2004,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                               <th className="px-1 py-1 text-center text-[10px]">Parcela</th>
                                               <th className="px-1 py-1 text-center text-[10px]">Rateio</th>
                                               <th className="px-1 py-1 text-center text-[10px]">Observação</th>
+                                              <th className="px-1 py-1 text-center text-[10px]">Previsão</th>
                                             </tr>
                                           </thead>
                                           <tbody>
@@ -2028,6 +2097,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                                   <td className="px-1 py-1 text-left max-w-32 truncate" title={grupo.item.ds_observacao}>
                                                     {grupo.item.ds_observacao || ''}
                                                   </td>
+                                                  <td className="px-1 py-1 text-center">{grupo.item.tp_previsaoreal || ''}</td>
                                                 </tr>
                                               );
                                             })}

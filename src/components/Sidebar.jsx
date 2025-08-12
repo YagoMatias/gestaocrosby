@@ -149,8 +149,14 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto">
             {/* Dashboard/Home */}
             <MenuItem 
-              item={{ name: 'Dashboard', href: '/home', icon: House, color: 'text-blue-600' }}
+              item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
               isActive={location.pathname === '/home'}
+            />
+
+            {/* Dashboard */}
+            <MenuItem 
+              item={{ name: 'Dashboard', href: '/dashboard', icon: ChartLineUp, color: 'text-indigo-600' }}
+              isActive={location.pathname === '/dashboard'}
             />
 
             {/* Seções principais */}
@@ -246,8 +252,14 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto">
             {/* Dashboard/Home */}
             <MenuItem 
-              item={{ name: 'Dashboard', href: '/home', icon: House, color: 'text-blue-600' }}
+              item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
               isActive={location.pathname === '/home'}
+            />
+
+            {/* Dashboard */}
+            <MenuItem 
+              item={{ name: 'Dashboard', href: '/dashboard', icon: ChartLineUp, color: 'text-indigo-600' }}
+              isActive={location.pathname === '/dashboard'}
             />
 
             {/* Seção Financeiro */}
@@ -306,8 +318,14 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto">
             {/* Dashboard/Home */}
             <MenuItem 
-              item={{ name: 'Dashboard', href: '/home', icon: House, color: 'text-blue-600' }}
+              item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
               isActive={location.pathname === '/home'}
+            />
+
+            {/* Dashboard */}
+            <MenuItem 
+              item={{ name: 'Dashboard', href: '/dashboard', icon: ChartLineUp, color: 'text-indigo-600' }}
+              isActive={location.pathname === '/dashboard'}
             />
 
             {/* Seção Franquias */}
