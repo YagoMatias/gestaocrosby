@@ -7,11 +7,71 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [showDropdown, setShowDropdown] = useState(false);
+  const [currentDisplay, setCurrentDisplay] = useState('text'); // 'text' ou 'image'
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const dropdownRef = useRef(null);
+  const animationRef = useRef(null);
+
+  // Animação cíclica simplificada
+  useEffect(() => {
+    if (!user) return;
+
+    const startAnimation = () => {
+      // Iniciar com texto
+      setCurrentDisplay('text');
+      
+      // Ciclo a cada 20 segundos
+      const cycle = () => {
+        setIsTransitioning(true);
+        
+        // Mostrar imagem
+        setCurrentDisplay('image');
+        
+        // Após 10 segundos, voltar para texto
+        setTimeout(() => {
+          setCurrentDisplay('text');
+          setIsTransitioning(false);
+        }, 10000);
+      };
+
+      // Primeiro ciclo após 3 segundos
+      const initialTimer = setTimeout(() => {
+        cycle();
+        
+        // Ciclos subsequentes a cada 20 segundos
+        animationRef.current = setInterval(cycle, 20000);
+      }, 3000);
+
+      return () => {
+        clearTimeout(initialTimer);
+        if (animationRef.current) {
+          clearInterval(animationRef.current);
+        }
+      };
+    };
+
+    const cleanup = startAnimation();
+    return cleanup;
+  }, [user]);
+
+  // Cleanup ao desmontar
+  useEffect(() => {
+    return () => {
+      if (animationRef.current) {
+        clearInterval(animationRef.current);
+      }
+    };
+  }, []);
 
   const handleLogout = () => {
     logout();
     navigate('/');
+    // Resetar animação
+    setCurrentDisplay('text');
+    setIsTransitioning(false);
+    if (animationRef.current) {
+      clearInterval(animationRef.current);
+    }
   };
 
   // Fechar dropdown quando clicar fora
@@ -35,15 +95,38 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
 
   return (
     <header className="w-screen bg-white shadow-sm border-b border-gray-200">
-      <div className="flex items-center justify-between px-6 py-4">
-        <div className="flex items-center">
+      <div className="w-full flex items-center justify-between gap-10 px-6 py-4">
+        <div className="flex items-center gap-4">
           {/* Botão de menu hambúrguer */}
           <button
             onClick={onToggleSidebar}
-            className="p-2 mr-4 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <List size={24} />
           </button>
+
+          {/* HEADCOACH - posicionamento dinâmico */}
+          <div className={`flex items-center transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-4'}`}>
+            
+            {/* Container com altura fixa e largura mínima para evitar layout shift */}
+            <div className="h-8 w-48 flex items-center justify-start">
+              {/* Texto HEADCOACH CROSBY */}
+              {currentDisplay === 'text' && (
+                <h1 className={`text-2xl font-bold text-blue-950 font-barlow whitespace-nowrap ${!isTransitioning ? 'animate-fade-in-smooth' : ''}`}>
+                  HEADCOACH CROSBY
+                </h1>
+              )}
+
+              {/* Imagem hokey.gif */}
+              {currentDisplay === 'image' && (
+                <img 
+                  src="/hokey.gif" 
+                  alt="HEADCOACH" 
+                  className="w-10 h-10 rounded-full animate-slide-right-bounce shadow-lg" 
+                />
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="flex items-center">

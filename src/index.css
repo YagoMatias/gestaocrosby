@@ -2,16 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Configuração global de fontes */
 body {
-    @apply bg-gray-100 flex items-center justify-center h-screen;
+    @apply bg-gray-100 flex items-center justify-center h-screen font-barlow;
     overflow-x: hidden;
 }
+
 html {
     overflow-x: hidden;
 }
 
 h1 {
-    @apply text-2xl font-bold mb-4;
+    @apply text-2xl font-bold mb-4 font-barlow;
 }
 
 form {
@@ -20,4 +22,17 @@ form {
 
 input {
     @apply border border-gray-300 p-2 mb-4 w-full rounded;
+}
+
+/* Classes utilitárias para fontes */
+.font-inter {
+    font-family: 'Inter', sans-serif;
+}
+
+.font-poppins {
+    font-family: 'Poppins', sans-serif;
+}
+
+.font-roboto {
+    font-family: 'Roboto', sans-serif;
 }
