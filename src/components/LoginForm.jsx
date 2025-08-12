@@ -68,7 +68,7 @@ const LoginForm = () => {
     <div className="w-screen h-screen flex items-center justify-center bg-white">
       <form onSubmit={handleSubmit} className="w-full max-w-sm mx-auto p-8 rounded-lg shadow-lg bg-white flex flex-col justify-center">
         <Logo />
-        <h2 className="text-center text-2xl font-light tracking-wide text-gray-700 mb-2">GESTÃO CROSBY</h2>
+        <h2 className="text-center text-2xl font-light tracking-wide text-gray-700 mb-2">HEADCOACH CROSBY</h2>
         <div className="text-center text-cyan-600 text-xl font-medium mb-6">Boas-vindas</div>
         
         {/* Status da conexão */}
