@@ -21,7 +21,8 @@ import {
   ChartPieSlice,
   Folder,
   Shield,
-  House
+  House,
+  Bank
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -35,6 +36,8 @@ const financeiro = [
   { name: 'Contas a Pagar', href: '/contas-a-pagar', icon: Money, color: 'text-red-600' },
   { name: 'Contas a Receber', href: '/contas-a-receber', icon: Receipt, color: 'text-green-600' },
   { name: 'Fluxo de Caixa', href: '/fluxo-caixa', icon: TrendUp, color: 'text-indigo-600' },
+  { name: 'Saldo Bancário', href: '/saldo-bancario', icon: Bank, color: 'text-cyan-600' },
+  { name: 'Importação .RET', href: '/importacao-ret', icon: FileText, color: 'text-teal-600' },
   { name: 'Extrato Financeiro', href: '/extrato-financeiro', icon: CreditCard, color: 'text-blue-600' },
   { name: 'Extrato TOTVS', href: '/extrato-totvs', icon: FileText, color: 'text-purple-600' },
   { name: 'Consulta de Fatura', href: '/consulta-fatura', icon: FileText, color: 'text-orange-600' },

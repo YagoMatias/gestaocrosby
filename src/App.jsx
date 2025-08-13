@@ -27,6 +27,8 @@ const PainelAdmin = lazy(() => import('./pages/PainelAdmin'));
 const UserPanel = lazy(() => import('./pages/UserPanel'));
 const DreDemo = lazy(() => import('./pages/DreDemo'));
 const ManifestacaoNF = lazy(() => import('./pages/ManifestacaoNF'));
+const SaldoBancario = lazy(() => import('./pages/SaldoBancario'));
+const ImportacaoRet = lazy(() => import('./pages/ImportacaoRet'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -74,6 +76,14 @@ const AppRoutes = memo(() => {
         <Route 
           path="/fluxo-caixa" 
           element={createPrivateRoute(FluxoCaixa, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
+        />
+        <Route 
+          path="/saldo-bancario" 
+          element={createPrivateRoute(SaldoBancario, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
+        />
+        <Route 
+          path="/importacao-ret" 
+          element={createPrivateRoute(ImportacaoRet, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
         />
         <Route 
           path="/extrato-financeiro" 

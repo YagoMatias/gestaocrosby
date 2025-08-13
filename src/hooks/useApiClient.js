@@ -47,27 +47,31 @@ const useApiClient = () => {
           // Verificar se data é um objeto com propriedade data aninhada (estrutura real da API)
           let actualData = [];
           
-          if (result.data && typeof result.data === 'object') {
-            if (Array.isArray(result.data.data)) {
-              // Estrutura aninhada: { data: { data: [...] } }
-              actualData = result.data.data;
-              console.log('🔍 Detectada estrutura aninhada (data.data)');
-            } else if (Array.isArray(result.data)) {
-              // Estrutura direta: { data: [...] }
-              actualData = result.data;
-              console.log('🔍 Detectada estrutura direta (data)');
-            } else if (result.data.groupedData && Array.isArray(result.data.groupedData)) {
-              // Estrutura de franquias: { data: { groupedData: [...] } }
-              // Extrair todas as transações dos grupos
-              actualData = result.data.groupedData.reduce((acc, grupo) => {
-                if (grupo.transactions && Array.isArray(grupo.transactions)) {
-                  return acc.concat(grupo.transactions);
-                }
-                return acc;
-              }, []);
-              console.log('🔍 Detectada estrutura de franquias (data.groupedData)');
-            }
-          }
+                     if (result.data && typeof result.data === 'object') {
+             if (Array.isArray(result.data.data)) {
+               // Estrutura aninhada: { data: { data: [...] } }
+               actualData = result.data.data;
+               console.log('🔍 Detectada estrutura aninhada (data.data)');
+             } else if (Array.isArray(result.data)) {
+               // Estrutura direta: { data: [...] }
+               actualData = result.data;
+               console.log('🔍 Detectada estrutura direta (data)');
+             } else if (result.data.groupedData && Array.isArray(result.data.groupedData)) {
+               // Estrutura de franquias: { data: { groupedData: [...] } }
+               // Extrair todas as transações dos grupos
+               actualData = result.data.groupedData.reduce((acc, grupo) => {
+                 if (grupo.transactions && Array.isArray(grupo.transactions)) {
+                   return acc.concat(grupo.transactions);
+                 }
+                 return acc;
+               }, []);
+               console.log('🔍 Detectada estrutura de franquias (data.groupedData)');
+             } else if (result.data.data && typeof result.data.data === 'object' && result.data.data.saldo !== undefined) {
+               // Estrutura de saldo-conta: { data: { data: { saldo: number } } }
+               actualData = result.data.data;
+               console.log('🔍 Detectada estrutura de saldo-conta (data.data.saldo)');
+             }
+           }
           
           console.log('✅ Processando resposta da nova API:', {
             originalDataType: typeof result.data,
@@ -148,7 +152,8 @@ const useApiClient = () => {
     contasPagar: (params) => apiCall('/api/financial/contas-pagar', params),
     contasReceber: (params) => apiCall('/api/financial/contas-receber', params),
     fluxoCaixa: (params) => apiCall('/api/financial/fluxo-caixa', params),
-    nfManifestacao: (params) => apiCall('/api/financial/nfmanifestacao', params)
+    nfManifestacao: (params) => apiCall('/api/financial/nfmanifestacao', params),
+    saldoConta: (params) => apiCall('/api/financial/saldo-conta', params)
   };
 
   const sales = {

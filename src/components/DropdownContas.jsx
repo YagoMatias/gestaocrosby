@@ -59,21 +59,23 @@ const DropdownContas = ({
   };
 
   return (
-    <div className={`flex flex-col min-w-[${minWidth}px] max-w-[${maxWidth}px] `}>
+    <div className="flex flex-col w-full">
       <label className="block text-sm font-medium  text-[#000638]"></label>
-      <div className="relative" ref={dropdownRef}>
+      <div className="relative w-full" ref={dropdownRef}>
         <button
           type="button"
-          className="!bg-[#f8f9fb] !text-[#000638] !placeholder:text-gray-400 !px-3 !py-2 !w-full !rounded-lg !border !border-[#000638]/30 focus:!outline-none focus:!ring-2 focus:!ring-[#000638] !h-[42px] !text-base"
+          className="!bg-[#f8f9fb] !text-[#000638] !placeholder:text-gray-400 !px-3 !py-2 !w-full !rounded-lg !border !border-[#000638]/30 focus:!outline-none focus:!ring-2 focus:!ring-[#000638] !h-[42px] !text-sm !overflow-hidden !whitespace-nowrap"
           onClick={() => setDropdownOpen((open) => !open)}
         >
-          {contasSelecionadas.length === 0
-            ? 'Selecione as contas'
-            : `${contasSelecionadas.length} conta(s) selecionada(s)`}
+          <span className="block truncate">
+            {contasSelecionadas.length === 0
+              ? 'Selecione as contas'
+              : `${contasSelecionadas.length} conta(s) selecionada(s)`}
+          </span>
         </button>
         {dropdownOpen && (
           <div
-            className={`absolute z-10 bg-white border rounded shadow   max-h-80 overflow-y-auto mt-1`}
+            className={`absolute z-10 bg-white border rounded shadow max-h-80 overflow-y-auto mt-1 min-w-[${minWidth}px] max-w-[${maxWidth}px] w-full`}
           >
             {/* Checkboxes de grupo */}
             <div className="flex flex-col gap-1 px-4 pt-3 pb-2 border-b">
