@@ -370,6 +370,15 @@ const Dashboard = () => {
       href: '/contas-pagar',
       color: 'text-red-600',
       bgColor: 'bg-red-50'
+    },
+    {
+      title: 'Looker Studio',
+      description: 'Relatórios avançados do Google',
+      icon: ChartLineUp,
+      href: 'https://lookerstudio.google.com/u/0/reporting/fa465a90-1e72-4284-aa8a-2f5ba9cbf86b',
+      color: 'text-purple-600',
+      bgColor: 'bg-purple-50',
+      external: true
     }
   ];
 
@@ -449,13 +458,15 @@ const Dashboard = () => {
             <h2 className="text-xl font-semibold text-gray-900 mb-6 font-barlow">
               Ações Rápidas
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               {quickActions.map((action, index) => {
                 const IconComponent = action.icon;
                 return (
                   <a
                     key={index}
                     href={action.href}
+                    target={action.external ? "_blank" : undefined}
+                    rel={action.external ? "noopener noreferrer" : undefined}
                     className="group block p-4 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200"
                   >
                     <div className={`p-3 rounded-lg ${action.bgColor} w-fit mb-3`}>
@@ -511,28 +522,28 @@ const Dashboard = () => {
               </p>
             </div>
             
-            {/* Iframe do Power BI ou Link para Looker Studio */}
+            {/* Iframe do Power BI ou Botão para Looker Studio */}
             <div className="w-full">
-              {biPanels[selectedBiPanel].title === 'Looker Studio' ? (
+              {biPanels[selectedBiPanel].title.includes('Looker Studio') ? (
                 // Para Looker Studio, mostrar botão para abrir em nova aba
                 <div className="flex flex-col items-center justify-center" style={{ height: '600px' }}>
                   <div className="text-center">
-                    <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <ChartLineUp size={32} className="text-blue-600" />
+                    <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <ChartLineUp size={32} className="text-purple-600" />
                     </div>
                     <h3 className="text-xl font-semibold text-gray-900 mb-2 font-barlow">
-                      Looker Studio
+                      {biPanels[selectedBiPanel].title}
                     </h3>
                     <p className="text-gray-600 mb-6 font-barlow max-w-md">
-                      O Looker Studio será aberto em uma nova aba devido às políticas de segurança do Google.
+                      Clique no botão abaixo para acessar o relatório no Looker Studio
                     </p>
                     <a
                       href={biPanels[selectedBiPanel].url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-barlow"
+                      className="inline-flex items-center px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-barlow font-semibold"
                     >
-                      Abrir Looker Studio
+                      ABRIR LOOKER STUDIO
                     </a>
                   </div>
                 </div>
