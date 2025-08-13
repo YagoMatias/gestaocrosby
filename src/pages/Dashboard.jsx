@@ -31,8 +31,8 @@ const Dashboard = () => {
   const biPanels = [
     {
       id: 1,
-      title: 'Painel Principal',
-      description: 'Visão geral dos principais indicadores',
+      title: 'Funil de Franquias',
+      description: 'Painel de Funil das Franquias',
       url: 'https://app.powerbi.com/view?r=eyJrIjoiNjA1YjhkOGItYTgxYi00OGIzLTk4MDEtNTUyNzE0MjE2N2ZhIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9'
     },
     {
