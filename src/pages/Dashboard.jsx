@@ -31,15 +31,15 @@ const Dashboard = () => {
   const biPanels = [
     {
       id: 1,
-      title: 'Funil de Franquias',
-      description: 'Painel de Funil das Franquias',
-      url: 'https://app.powerbi.com/view?r=eyJrIjoiNjA1YjhkOGItYTgxYi00OGIzLTk4MDEtNTUyNzE0MjE2N2ZhIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9'
-    },
-    {
-      id: 2,
       title: 'Gestão PCP',
       description: 'Métricas detalhadas de PCP',
       url: 'https://app.powerbi.com/view?r=eyJrIjoiMzczYTRkZjgtNTUwYS00ZWEzLTkzYTEtZDdhNTE3MGNmMTc3IiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9'
+    },
+    {
+      id: 2,
+      title: 'Funil de Franquias',
+      description: 'Painel de Funil das Franquias',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiNjA1YjhkOGItYTgxYi00OGIzLTk4MDEtNTUyNzE0MjE2N2ZhIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9'
     },
     {
       id: 3,
