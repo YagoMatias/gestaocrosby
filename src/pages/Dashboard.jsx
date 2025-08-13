@@ -25,6 +25,47 @@ const Dashboard = () => {
   });
   
   const [loading, setLoading] = useState(true);
+  const [selectedBiPanel, setSelectedBiPanel] = useState(0);
+
+  // Array com todos os painéis BI
+  const biPanels = [
+    {
+      id: 1,
+      title: 'Painel Principal',
+      description: 'Visão geral dos principais indicadores',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiNjA1YjhkOGItYTgxYi00OGIzLTk4MDEtNTUyNzE0MjE2N2ZhIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9'
+    },
+    {
+      id: 2,
+      title: 'Gestão PCP',
+      description: 'Métricas detalhadas de PCP',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiMzczYTRkZjgtNTUwYS00ZWEzLTkzYTEtZDdhNTE3MGNmMTc3IiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9'
+    },
+    {
+      id: 3,
+      title: 'Indicadores de Cashback',
+      description: 'Análise de Cashback utilizado pelos clientes',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiYzE4NzZjZTEtYzRhNS00Y2I0LWEwYzEtMmI1ZDU3MThmNGQyIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9'
+    },
+    {
+      id: 4,
+      title: 'Performance Operacional',
+      description: 'Métricas de eficiência e produtividade',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiZDcxODA0OTMtYWY3ZC00MzY2LWFmODAtZGRiMzY4MTYwMzE3IiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9'
+    },
+    {
+      id: 5,
+      title: 'Indicadores do Vigia',
+      description: 'Análise detalhada do Vigia',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiZTlkNDZkZjYtOTRmNC00MzMxLWJhMTAtM2U4NWQ4OWRlNzY5IiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9'
+    },
+    {
+      id: 6,
+      title: 'Looker Studio Rafael',
+      description: 'Relatórios avançados de Rafael',
+      url: 'https://lookerstudio.google.com/u/0/reporting/fa465a90-1e72-4284-aa8a-2f5ba9cbf86b'
+    }
+  ];
 
   // Função para formatar valores monetários
   const formatCurrency = (value) => {
@@ -110,12 +151,9 @@ const Dashboard = () => {
 
                      const result = await apiClient.financial.contasPagar(params);
            
-           console.log(`🏢 Contas a Pagar - Empresa ${cdEmpresa}:`, result);
-           
            if (result.success && result.data) {
              // A API retorna os dados em result.data.data
              const dados = result.data.data || result.data;
-             console.log(`📋 Dados da empresa ${cdEmpresa}:`, dados);
              return dados;
            }
            return [];
@@ -128,24 +166,12 @@ const Dashboard = () => {
              const resultados = await Promise.all(todasAsPromises);
        const todosOsDados = resultados.flat();
        
-       console.log('📊 Contas a Pagar - Dados obtidos:', {
-         totalRegistros: todosOsDados.length,
-         amostra: todosOsDados.slice(0, 3),
-         camposDisponiveis: todosOsDados.length > 0 ? Object.keys(todosOsDados[0]) : []
-       });
-       
        // Aplicar os mesmos filtros da página ContasAPagar
        // Filtro por situação: NORMAIS (apenas tp_situacao = 'N')
        const dadosFiltradosSituacao = todosOsDados.filter(item => item.tp_situacao === 'N');
        
        // Filtro por status: Todos (não filtra por status)
        const dadosFiltradosCompletos = dadosFiltradosSituacao;
-       
-       console.log('🔍 Contas a Pagar - Após filtros:', {
-         totalOriginal: todosOsDados.length,
-         totalAposSituacao: dadosFiltradosSituacao.length,
-         totalFinal: dadosFiltradosCompletos.length
-       });
        
        const totalContasPagar = dadosFiltradosCompletos.reduce((acc, item) => acc + parseFloat(item.vl_duplicata || 0), 0);
       setStats(prev => ({
@@ -201,24 +227,10 @@ const Dashboard = () => {
        
        // Aplicar os mesmos filtros da página ContasAReceber
        // Filtro por situação: NORMAIS (apenas itens que NÃO têm data de cancelamento)
-       const dadosFiltradosSituacao = todosOsDados.filter(item => !item.dt_cancelamento);
+       const dadosFiltradosSituacaoReceber = todosOsDados.filter(item => !item.dt_cancelamento);
        
        // Filtro por status: Todos (não filtra por status)
-       const dadosFiltradosCompletos = dadosFiltradosSituacao;
-       
-       // Log para debug dos valores de cancelamento
-       const itensComCancelamento = todosOsDados.filter(item => item.dt_cancelamento);
-       const itensSemCancelamento = todosOsDados.filter(item => !item.dt_cancelamento);
-       
-       console.log('🔍 Contas a Receber - Debug cancelamento:', {
-         totalOriginal: todosOsDados.length,
-         itensComCancelamento: itensComCancelamento.length,
-         itensSemCancelamento: itensSemCancelamento.length,
-         totalAposSituacao: dadosFiltradosSituacao.length,
-         totalFinal: dadosFiltradosCompletos.length,
-         amostraComCancelamento: itensComCancelamento.slice(0, 2),
-         amostraSemCancelamento: itensSemCancelamento.slice(0, 2)
-       });
+       const dadosFiltradosCompletos = dadosFiltradosSituacaoReceber;
        
        const totalContasReceber = dadosFiltradosCompletos.reduce((acc, item) => acc + parseFloat(item.vl_fatura || 0), 0);
       setStats(prev => ({
@@ -336,12 +348,12 @@ const Dashboard = () => {
       bgColor: 'bg-yellow-50'
     },
     {
-      title: 'Ranking Vendedores',
-      description: 'Ver performance dos vendedores',
-      icon: Users,
-      href: '/ranking-vendedores',
-      color: 'text-indigo-600',
-      bgColor: 'bg-indigo-50'
+      title: 'Consolidado',
+      description: 'Relatório consolidado geral',
+      icon: ChartLineUp,
+      href: '/consolidado',
+      color: 'text-blue-600',
+      bgColor: 'bg-blue-50'
     },
     {
       title: 'Fluxo de Caixa',
@@ -352,18 +364,18 @@ const Dashboard = () => {
       bgColor: 'bg-emerald-50'
     },
     {
-      title: 'Compras Franquias',
-      description: 'Gestão de compras das franquias',
-      icon: ShoppingCart,
-      href: '/compras-franquias',
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-50'
+      title: 'Contas a Pagar',
+      description: 'Gestão de contas a pagar',
+      icon: Money,
+      href: '/contas-pagar',
+      color: 'text-red-600',
+      bgColor: 'bg-red-50'
     }
   ];
 
   return (
     <Layout>
-      <div className="p-6">
+      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className="mb-8">
@@ -432,7 +444,7 @@ const Dashboard = () => {
             )}
           </div>
 
-          {/* Quick Actions */}
+                    {/* Quick Actions */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h2 className="text-xl font-semibold text-gray-900 mb-6 font-barlow">
               Ações Rápidas
@@ -461,52 +473,93 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Recent Activity */}
+          {/* Painel BI */}
           <div className="mt-8 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-6 font-barlow">
-              Atividade Recente
-            </h2>
-            <div className="space-y-4">
-              <div className="flex items-center p-4 bg-gray-50 rounded-lg">
-                <div className="w-2 h-2 bg-green-500 rounded-full mr-4"></div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900 font-barlow">
-                    Nova fatura processada
-                  </p>
-                  <p className="text-xs text-gray-500 font-barlow">
-                    Fatura #12345 foi processada com sucesso
-                  </p>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-gray-900 font-barlow">
+                Painel BI
+              </h2>
+            </div>
+            
+            {/* Filtro de seleção do painel */}
+            <div className="mb-6">
+              <label htmlFor="bi-panel-select" className="block text-sm font-medium text-gray-700 mb-2 font-barlow">
+                Selecione o Painel BI
+              </label>
+              <select
+                id="bi-panel-select"
+                value={selectedBiPanel}
+                onChange={(e) => setSelectedBiPanel(parseInt(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-barlow"
+                disabled={loading}
+              >
+                {biPanels.map((panel, index) => (
+                  <option key={panel.id} value={index}>
+                    {panel.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Título do painel atual */}
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 font-barlow">
+                {biPanels[selectedBiPanel].title}
+              </h3>
+              <p className="text-sm text-gray-600 font-barlow">
+                {biPanels[selectedBiPanel].description}
+              </p>
+            </div>
+            
+            {/* Iframe do Power BI ou Link para Looker Studio */}
+            <div className="w-full">
+              {biPanels[selectedBiPanel].title === 'Looker Studio' ? (
+                // Para Looker Studio, mostrar botão para abrir em nova aba
+                <div className="flex flex-col items-center justify-center" style={{ height: '600px' }}>
+                  <div className="text-center">
+                    <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <ChartLineUp size={32} className="text-blue-600" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2 font-barlow">
+                      Looker Studio
+                    </h3>
+                    <p className="text-gray-600 mb-6 font-barlow max-w-md">
+                      O Looker Studio será aberto em uma nova aba devido às políticas de segurança do Google.
+                    </p>
+                    <a
+                      href={biPanels[selectedBiPanel].url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-barlow"
+                    >
+                      Abrir Looker Studio
+                    </a>
+                  </div>
                 </div>
-                <span className="text-xs text-gray-500 font-barlow">2 min atrás</span>
-              </div>
-              
-              <div className="flex items-center p-4 bg-gray-50 rounded-lg">
-                <div className="w-2 h-2 bg-blue-500 rounded-full mr-4"></div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900 font-barlow">
-                    Relatório gerado
-                  </p>
-                  <p className="text-xs text-gray-500 font-barlow">
-                    Relatório de fluxo de caixa foi gerado
-                  </p>
-                </div>
-                <span className="text-xs text-gray-500 font-barlow">15 min atrás</span>
-              </div>
-              
-              <div className="flex items-center p-4 bg-gray-50 rounded-lg">
-                <div className="w-2 h-2 bg-yellow-500 rounded-full mr-4"></div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900 font-barlow">
-                    Atualização de ranking
-                  </p>
-                  <p className="text-xs text-gray-500 font-barlow">
-                    Ranking de vendedores foi atualizado
-                  </p>
-                </div>
-                <span className="text-xs text-gray-500 font-barlow">1 hora atrás</span>
-              </div>
+              ) : (
+                // Para Power BI, usar iframe normalmente
+                <>
+                  <div className="relative w-full" style={{ height: '600px' }}>
+                    <iframe
+                      title={`Painel BI - ${biPanels[selectedBiPanel].title}`}
+                      src={biPanels[selectedBiPanel].url}
+                      className="w-full h-full rounded-lg border border-gray-200"
+                      frameBorder="0"
+                      allowFullScreen
+                      loading="lazy"
+                    />
+                  </div>
+                  <div className="mt-4 text-center">
+                    <p className="text-sm text-gray-600 font-barlow">
+                      Painel de Business Intelligence integrado - Visualize dados em tempo real
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
           </div>
+
+ 
         </div>
       </div>
     </Layout>
