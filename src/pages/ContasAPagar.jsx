@@ -20,8 +20,11 @@ import {
   CaretRight,
   CaretUp,
   CaretDown,
-  TrendDown
+  TrendDown,
+  FileArrowDown
 } from '@phosphor-icons/react';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
 
 const ContasAPagar = () => {
@@ -1718,6 +1721,108 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
     return data;
   };
 
+  // Função para exportar dados da última linha de hierarquia para Excel
+  const exportarDadosUltimaLinha = () => {
+    if (!dadosAgrupados || dadosAgrupados.length === 0) {
+      alert('Nenhum dado disponível para exportar');
+      return;
+    }
+
+    // Coletar todos os dados da última linha de hierarquia (itens individuais)
+    const dadosParaExportar = [];
+    
+    dadosAgrupados.forEach(categoria => {
+      categoria.despesasArray.forEach(despesa => {
+        despesa.fornecedoresArray.forEach(fornecedor => {
+          fornecedor.itens.forEach(grupo => {
+            const item = grupo.item;
+            dadosParaExportar.push({
+              'Categoria': categoria.nome,
+              'Despesa': despesa.nome,
+              'Fornecedor': fornecedor.nome,
+              'Duplicata': fornecedor.nrDuplicata,
+              'Rateio': fornecedor.vlRateio,
+              'Vencimento': formatarData(item.dt_vencimento),
+              'Valor': parseFloat(item.vl_duplicata || 0),
+              'Código Fornecedor': item.cd_fornecedor || '',
+              'Nome Fornecedor': item.nm_fornecedor || '',
+              'Despesa Item': item.ds_despesaitem || '',
+              'Centro de Custo': item.ds_ccusto || '',
+              'Empresa': item.cd_empresa || '',
+              'Portador': item.nr_portador || '',
+              'Emissão': formatarData(item.dt_emissao),
+              'Entrada': formatarData(item.dt_entrada),
+              'Liquidação': formatarData(item.dt_liq),
+              'Situação': item.tp_situacao || '',
+              'Estágio': item.tp_estagio || '',
+              'Juros': parseFloat(item.vl_juros || 0),
+              'Acréscimo': parseFloat(item.vl_acrescimo || 0),
+              'Desconto': parseFloat(item.vl_desconto || 0),
+              'Pago': parseFloat(item.vl_pago || 0),
+              'Aceite': item.tp_aceite || '',
+              'Parcela': item.nr_parcela || '',
+              'Rateio': item.vl_rateio || '',
+              'Observação': item.ds_observacao || '',
+              'Previsão': item.tp_previsaoreal || ''
+            });
+          });
+        });
+      });
+    });
+
+    if (dadosParaExportar.length === 0) {
+      alert('Nenhum dado encontrado para exportar');
+      return;
+    }
+
+    // Criar workbook e worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
+
+    // Ajustar largura das colunas
+    const colWidths = [
+      { wch: 20 }, // Categoria
+      { wch: 30 }, // Despesa
+      { wch: 25 }, // Fornecedor
+      { wch: 12 }, // Duplicata
+      { wch: 12 }, // Rateio
+      { wch: 12 }, // Vencimento
+      { wch: 15 }, // Valor
+      { wch: 15 }, // Código Fornecedor
+      { wch: 30 }, // Nome Fornecedor
+      { wch: 30 }, // Despesa Item
+      { wch: 25 }, // Centro de Custo
+      { wch: 10 }, // Empresa
+      { wch: 10 }, // Portador
+      { wch: 12 }, // Emissão
+      { wch: 12 }, // Entrada
+      { wch: 12 }, // Liquidação
+      { wch: 10 }, // Situação
+      { wch: 10 }, // Estágio
+      { wch: 12 }, // Juros
+      { wch: 12 }, // Acréscimo
+      { wch: 12 }, // Desconto
+      { wch: 12 }, // Pago
+      { wch: 10 }, // Aceite
+      { wch: 10 }, // Parcela
+      { wch: 10 }, // Rateio
+      { wch: 30 }, // Observação
+      { wch: 12 }  // Previsão
+    ];
+    ws['!cols'] = colWidths;
+
+    // Adicionar worksheet ao workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Contas a Pagar');
+
+    // Gerar arquivo e fazer download
+    const fileName = `contas_a_pagar_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const data = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(data, fileName);
+
+    console.log(`✅ Exportados ${dadosParaExportar.length} registros para Excel`);
+  };
+
   // Calcular dados mensais para mostrar quantidades nos botões
   const calcularDadosMensais = () => {
     const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
@@ -1833,9 +1938,10 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
 
       {/* Categorias de Despesas */}
       <div className="space-y-2">
-        {/* Botão discreto para expandir/colapsar todos */}
+        {/* Botões de ação */}
         {dadosAgrupados.length > 0 && (
-          <div className="flex justify-end">
+          <div className="flex justify-between items-center">
+            {/* Botão discreto para expandir/colapsar todos */}
             <button
               onClick={toggleTodosTopicos}
               className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded transition-colors flex items-center gap-1"
@@ -1852,6 +1958,16 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                   <span>Expandir tudo</span>
                 </>
               )}
+            </button>
+
+            {/* Botão para baixar Excel */}
+            <button
+              onClick={exportarDadosUltimaLinha}
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium"
+              title="Exportar todos os dados da última linha de hierarquia para Excel"
+            >
+              <FileArrowDown size={16} />
+              BAIXAR EXCEL
             </button>
           </div>
         )}

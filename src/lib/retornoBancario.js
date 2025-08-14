@@ -81,6 +81,12 @@ export const salvarRetornoBancario = async (dados) => {
       saldo_formatado: dados.saldoFormatado,
       data_processamento: new Date().toISOString(),
       data_geracao: dados.dataGeracao,
+      // Campos de operação (se fornecidos pelo backend)
+      operacao_tipo: dados.operacao?.tipo || null,
+      operacao_descricao: dados.operacao?.descricao || null,
+      operacao_sinal: dados.operacao?.sinal || null,
+      operacao_is_positive: dados.operacao?.isPositive || null,
+      operacao_valor_absoluto: dados.operacao?.valorAbsoluto || null,
       created_at: new Date().toISOString()
     };
 
@@ -324,6 +330,13 @@ export const buscarSaldosPorConta = async (filtros = {}) => {
           ultimaAtualizacao: null,
           banco: item.banco_nome,
           agencia: item.agencia,
+          operacao: {
+            tipo: item.operacao_tipo,
+            descricao: item.operacao_descricao,
+            sinal: item.operacao_sinal,
+            isPositive: item.operacao_is_positive,
+            valorAbsoluto: item.operacao_valor_absoluto
+          },
           registros: []
         };
       }

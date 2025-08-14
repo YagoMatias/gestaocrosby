@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Layout from '../components/Layout';
 import { buscarSaldosPorConta } from '../lib/retornoBancario';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 
 import { 
   Bank, 
@@ -9,7 +10,10 @@ import {
   Spinner,
   CaretUp,
   CaretDown,
-  Calendar
+  Calendar,
+  CurrencyDollar,
+  Plus,
+  Minus
 } from '@phosphor-icons/react';
 
 const SaldoBancario = () => {
@@ -69,6 +73,13 @@ const SaldoBancario = () => {
     return 'R$ 0,00';
   };
 
+  // Função para formatar número da conta (remover zeros à esquerda)
+  const formatConta = (conta) => {
+    if (!conta) return 'N/A';
+    // Remove zeros à esquerda e converte para string
+    return parseInt(conta, 10).toString();
+  };
+
   // Função para formatar percentual
   const formatPercentage = (value) => {
     if (typeof value === 'number') {
@@ -90,8 +101,8 @@ const SaldoBancario = () => {
       // Se o dia atual é maior que os dias no novo mês, usar o último dia
       if (filtroDia > diasNoNovoMes) {
         setFiltroDia(diasNoNovoMes);
-      } else if (filtroDia === null) {
-        // Se não havia dia selecionado, usar o dia atual (se válido) ou 1
+      } else {
+        // Usar o dia atual (se válido) ou 1
         const diaAtual = new Date().getDate();
         setFiltroDia(Math.min(diaAtual, diasNoNovoMes));
       }
@@ -100,21 +111,22 @@ const SaldoBancario = () => {
 
   // Função para aplicar filtro mensal e por dia
   const aplicarFiltroMensal = (dados, filtro, diaFiltro = null) => {
-    return dados.filter((item) => {
+    console.log('Aplicando filtro:', { filtro, diaFiltro, totalDados: dados.length });
+    
+    const dadosFiltrados = dados.filter((item) => {
       // Usar data_geracao como base para o filtro mensal
       const dataGeracao = item.data_geracao;
-      if (!dataGeracao) return false;
+      if (!dataGeracao) {
+        console.log('Item sem data_geracao:', item);
+        return false;
+      }
       
       const data = new Date(dataGeracao);
       const ano = data.getFullYear();
       const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
       const dia = data.getDate();
       
-      if (filtro === 'ANO') {
-        // Mostrar dados do ano atual
-        const anoAtual = new Date().getFullYear();
-        return ano === anoAtual;
-      }
+      console.log(`Item ${item.numero}: data=${dataGeracao}, mes=${mes}, dia=${dia}`);
       
       // Filtros por mês específico
       const mesesMap = {
@@ -127,13 +139,20 @@ const SaldoBancario = () => {
       if (mesDoFiltro) {
         // Se há filtro por dia, verificar também o dia
         if (diaFiltro !== null) {
-          return mes === mesDoFiltro && dia === diaFiltro;
+          const match = mes === mesDoFiltro && dia === diaFiltro;
+          console.log(`Filtro ${filtro} dia ${diaFiltro}: mes=${mes}, dia=${dia}, match=${match}`);
+          return match;
         }
-        return mes === mesDoFiltro;
+        const match = mes === mesDoFiltro;
+        console.log(`Filtro ${filtro}: mes=${mes}, match=${match}`);
+        return match;
       }
       
       return true;
     });
+    
+    console.log('Dados filtrados:', dadosFiltrados.length);
+    return dadosFiltrados;
   };
 
   // Função para buscar todos os dados da tabela retorno_bancario
@@ -159,6 +178,7 @@ const SaldoBancario = () => {
             banco: conta.banco,
             agencia: conta.agencia,
             ultimaAtualizacao: conta.ultimaAtualizacao,
+            operacao: conta.operacao,
             registros: conta.registros,
             totalRegistros: conta.registros.length,
             data_geracao: registroMaisRecente?.data_geracao || null
@@ -184,6 +204,53 @@ const SaldoBancario = () => {
     buscarTodosDados();
   }, []);
 
+  // Calcular estatísticas do dia específico
+  const estatisticasDia = useMemo(() => {
+    if (dadosOriginais.length === 0) {
+      return {
+        saldoTotal: 0,
+        contasPositivas: 0,
+        contasNegativas: 0
+      };
+    }
+
+    // Filtrar apenas os dados do dia específico
+    const dadosDoDia = aplicarFiltroMensal(dadosOriginais, filtroMensal, filtroDia);
+    
+    console.log('Dados do dia filtrados:', dadosDoDia); // Debug
+    
+    const saldoTotal = dadosDoDia.reduce((acc, conta) => acc + conta.saldo, 0);
+    
+    const contasPositivas = dadosDoDia.filter(conta => {
+      // Se tem informação de operação, usar ela
+      if (conta.operacao?.isPositive !== undefined && conta.operacao?.isPositive !== null) {
+        console.log(`Conta ${conta.numero}: operacao.isPositive = ${conta.operacao.isPositive}`);
+        return conta.operacao.isPositive === true;
+      }
+      // Senão, usar o valor do saldo
+      const isPositive = conta.saldo > 0;
+      console.log(`Conta ${conta.numero}: saldo = ${conta.saldo}, isPositive = ${isPositive}`);
+      return isPositive;
+    }).length;
+    
+    const contasNegativas = dadosDoDia.filter(conta => {
+      // Se tem informação de operação, usar ela
+      if (conta.operacao?.isPositive !== undefined && conta.operacao?.isPositive !== null) {
+        return conta.operacao.isPositive === false;
+      }
+      // Senão, usar o valor do saldo
+      return conta.saldo < 0;
+    }).length;
+
+    console.log('Estatísticas calculadas:', { saldoTotal, contasPositivas, contasNegativas });
+
+    return {
+      saldoTotal,
+      contasPositivas,
+      contasNegativas
+    };
+  }, [dadosOriginais, filtroMensal, filtroDia]);
+
   // Aplicar filtros quando dados ou filtros mudarem
   useEffect(() => {
     if (dadosOriginais.length > 0) {
@@ -197,6 +264,37 @@ const SaldoBancario = () => {
   const getVariacaoColor = (saldo) => {
     if (saldo > 0) return 'text-green-600';
     if (saldo < 0) return 'text-red-600';
+    return 'text-gray-600';
+  };
+
+  // Função para determinar a cor baseada na operação ou saldo
+  const getSaldoColor = (conta) => {
+    console.log(`getSaldoColor para conta ${conta.numero}:`, {
+      operacao: conta.operacao,
+      saldo: conta.saldo,
+      operacaoIsPositive: conta.operacao?.isPositive
+    });
+    
+    // Priorizar a informação da operação se disponível
+    if (conta.operacao?.isPositive === true) {
+      console.log(`Conta ${conta.numero}: usando operacao.isPositive=true -> verde`);
+      return 'text-green-600';
+    }
+    if (conta.operacao?.isPositive === false) {
+      console.log(`Conta ${conta.numero}: usando operacao.isPositive=false -> vermelho`);
+      return 'text-red-600';
+    }
+    
+    // Fallback para o valor do saldo
+    if (conta.saldo > 0) {
+      console.log(`Conta ${conta.numero}: usando saldo=${conta.saldo} > 0 -> verde`);
+      return 'text-green-600';
+    }
+    if (conta.saldo < 0) {
+      console.log(`Conta ${conta.numero}: usando saldo=${conta.saldo} < 0 -> vermelho`);
+      return 'text-red-600';
+    }
+    console.log(`Conta ${conta.numero}: saldo=${conta.saldo} -> cinza`);
     return 'text-gray-600';
   };
 
@@ -271,18 +369,6 @@ const SaldoBancario = () => {
             </div>
             
             <div className="flex flex-wrap gap-2">
-              {/* Botão ANO */}
-              <button
-                onClick={() => handleFiltroMensalChange('ANO')}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                  filtroMensal === 'ANO'
-                    ? 'bg-[#000638] text-white'
-                    : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
-                }`}
-              >
-                ANO
-              </button>
-
               {/* Botões dos Meses */}
               {['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'].map((mes) => (
                 <button
@@ -301,13 +387,12 @@ const SaldoBancario = () => {
 
             {/* Informação do filtro ativo */}
             <div className="mt-3 text-xs text-gray-500">
-              <span className="font-medium">Filtro ativo:</span> {filtroMensal} 
-              {filtroDia && <span className="ml-1">- Dia {filtroDia}</span>}
+              <span className="font-medium">Filtro ativo:</span> {filtroMensal} - Dia {filtroDia}
               <span className="ml-2">({saldosContas.length} registro{saldosContas.length !== 1 ? 's' : ''})</span>
             </div>
 
-            {/* Filtro por Dia - aparece apenas quando um mês está selecionado */}
-            {filtroMensal !== 'ANO' && (
+            {/* Filtro por Dia */}
+            {(
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <div className="flex items-center gap-2 mb-3">
                   <Calendar size={16} className="text-[#000638]" />
@@ -315,18 +400,6 @@ const SaldoBancario = () => {
                 </div>
                 
                 <div className="flex flex-wrap gap-1">
-                  {/* Botão "Todos os Dias" */}
-                  <button
-                    onClick={() => setFiltroDia(null)}
-                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                      filtroDia === null
-                        ? 'bg-[#000638] text-white'
-                        : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
-                    }`}
-                  >
-                    TODOS
-                  </button>
-
                   {/* Botões dos dias */}
                   {Array.from({ length: obterDiasDoMes(filtroMensal) }, (_, i) => i + 1).map((dia) => (
                     <button
@@ -352,7 +425,70 @@ const SaldoBancario = () => {
             </div>
           )}
 
+          {/* Cards de Estatísticas do Dia */}
+          {dadosCarregados && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 max-w-7xl mx-auto">
+              {/* Saldo Total do Dia */}
+              <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <CurrencyDollar size={18} className="text-blue-600" />
+                    <CardTitle className="text-sm font-bold text-blue-700">Saldo Total do Dia</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className={`text-lg font-extrabold mb-1 break-words ${getVariacaoColor(estatisticasDia.saldoTotal)}`}>
+                    {loading ? <Spinner size={24} className="animate-spin text-blue-600" /> : 
+                      formatCurrency(estatisticasDia.saldoTotal)
+                    }
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    {filtroMensal} - Dia {filtroDia}
+                  </CardDescription>
+                </CardContent>
+              </Card>
 
+              {/* Contas Positivas */}
+              <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Plus size={18} className="text-green-600" />
+                    <CardTitle className="text-sm font-bold text-green-700">Contas Positivas</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-2xl font-extrabold text-green-600 mb-1">
+                    {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : 
+                      estatisticasDia.contasPositivas
+                    }
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    {filtroMensal} - Dia {filtroDia}
+                  </CardDescription>
+                </CardContent>
+              </Card>
+
+              {/* Contas Negativas */}
+              <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Minus size={18} className="text-red-600" />
+                    <CardTitle className="text-sm font-bold text-red-700">Contas Negativas</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-2xl font-extrabold text-red-600 mb-1">
+                    {loading ? <Spinner size={24} className="animate-spin text-red-600" /> : 
+                      estatisticasDia.contasNegativas
+                    }
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    {filtroMensal} - Dia {filtroDia}
+                  </CardDescription>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           {/* Tabela de Saldos */}
           {dadosCarregados && (
@@ -422,7 +558,7 @@ const SaldoBancario = () => {
                            {conta.banco || 'N/A'}
                          </td>
                          <td className="py-3 px-4 text-gray-600 font-barlow">
-                           {conta.numero}
+                           {formatConta(conta.numero)}
                          </td>
                          <td className="py-3 px-4 text-center text-gray-600 font-barlow">
                            {conta.agencia || 'N/A'}
@@ -432,7 +568,7 @@ const SaldoBancario = () => {
                          </td>
                          <td className="py-3 px-4 text-right">
                            <div className="flex items-center justify-end gap-2">
-                             <span className={`font-semibold text-lg ${getVariacaoColor(conta.saldo)} font-barlow`}>
+                             <span className={`font-semibold text-lg ${getSaldoColor(conta)} font-barlow`}>
                                {formatCurrency(conta.saldo)}
                              </span>
                              {getVariacaoIcon(conta.saldo)}
@@ -440,13 +576,20 @@ const SaldoBancario = () => {
                          </td>
                          <td className="py-3 px-4 text-center">
                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                             conta.saldo > 0 
+                             conta.operacao?.isPositive === true
+                               ? 'bg-green-100 text-green-800' 
+                               : conta.operacao?.isPositive === false
+                               ? 'bg-red-100 text-red-800'
+                               : conta.saldo > 0 
                                ? 'bg-green-100 text-green-800' 
                                : conta.saldo < 0
                                ? 'bg-red-100 text-red-800'
                                : 'bg-gray-100 text-gray-800'
                            } font-barlow`}>
-                             {conta.saldo > 0 ? 'Positivo' : conta.saldo < 0 ? 'Negativo' : 'Zerado'}
+                             {conta.operacao?.isPositive === true ? 'Positivo' : 
+                              conta.operacao?.isPositive === false ? 'Negativo' :
+                              conta.saldo > 0 ? 'Positivo' : 
+                              conta.saldo < 0 ? 'Negativo' : 'Zerado'}
                            </span>
                          </td>
                        </tr>

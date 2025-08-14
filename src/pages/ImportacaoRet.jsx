@@ -59,10 +59,7 @@ const ImportacaoRet = () => {
       return;
     }
 
-    if (selectedFiles.length + validFiles.length > 10) {
-      setError('Máximo de 10 arquivos permitidos');
-      return;
-    }
+    // Limite removido - agora permite qualquer quantidade de arquivos
 
     setSelectedFiles(prev => [...prev, ...validFiles]);
     setError('');
@@ -100,6 +97,37 @@ const ImportacaoRet = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  // Função para determinar a cor baseada no valor do saldo
+  const getSaldoColor = (saldoFormatado) => {
+    if (!saldoFormatado) return 'text-gray-600';
+    
+    // Extrair o valor numérico do saldo formatado
+    const valorNumerico = parseFloat(saldoFormatado.replace(/[^\d.-]/g, ''));
+    
+    if (valorNumerico > 0) return 'text-green-600';
+    if (valorNumerico < 0) return 'text-red-600';
+    return 'text-gray-600';
+  };
+
+  // Função para determinar a cor de fundo baseada no valor do saldo
+  const getSaldoBgColor = (saldoFormatado) => {
+    if (!saldoFormatado) return 'bg-gray-50';
+    
+    // Extrair o valor numérico do saldo formatado
+    const valorNumerico = parseFloat(saldoFormatado.replace(/[^\d.-]/g, ''));
+    
+    if (valorNumerico > 0) return 'bg-green-50';
+    if (valorNumerico < 0) return 'bg-red-50';
+    return 'bg-gray-50';
+  };
+
+  // Função para formatar número da conta (remover zeros à esquerda)
+  const formatConta = (conta) => {
+    if (!conta) return 'N/A';
+    // Remove zeros à esquerda e converte para string
+    return parseInt(conta, 10).toString();
+  };
+
   const handleUploadClick = () => {
     fileInputRef.current?.click();
   };
@@ -112,10 +140,7 @@ const ImportacaoRet = () => {
       return;
     }
 
-    if (files.length > 10) {
-      setError('Máximo de 10 arquivos permitidos');
-      return;
-    }
+    // Limite removido - agora permite qualquer quantidade de arquivos
 
     const formData = new FormData();
     files.forEach(file => {
@@ -237,7 +262,7 @@ const ImportacaoRet = () => {
               >
                 <Upload size={48} className="mx-auto mb-4 text-blue-500" />
                 <h3 className="text-xl font-semibold text-gray-800 mb-2 font-barlow">
-                  📁 Selecione múltiplos arquivos .RET
+                  📁 Selecione arquivos .RET (sem limite)
                 </h3>
                 <p className="text-lg font-medium text-gray-700 mb-4 font-barlow">
                   Arraste e solte os arquivos aqui ou clique para selecionar
@@ -359,7 +384,7 @@ const ImportacaoRet = () => {
                         <div className="text-sm text-gray-600 font-barlow">Erros</div>
                       </div>
                       <div className="text-center">
-                        <div className="text-2xl font-bold text-purple-600 font-barlow">
+                        <div className={`text-2xl font-bold font-barlow ${getSaldoColor(result.resumo?.saldoTotalFormatado)}`}>
                           {result.resumo?.saldoTotalFormatado || 'R$ 0,00'}
                         </div>
                         <div className="text-sm text-gray-600 font-barlow">Saldo Total</div>
@@ -467,10 +492,10 @@ const ImportacaoRet = () => {
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="font-medium text-gray-700 font-barlow">📋 Conta:</span>
-                          <span className="text-gray-900 font-barlow">{resultado.conta}</span>
+                          <span className="text-gray-900 font-barlow">{formatConta(resultado.conta)}</span>
                         </div>
-                        <div className="text-center py-3 bg-green-50 rounded-lg">
-                          <div className="text-2xl font-bold text-green-600 font-barlow">
+                        <div className={`text-center py-3 rounded-lg ${getSaldoBgColor(resultado.saldoFormatado)}`}>
+                          <div className={`text-2xl font-bold font-barlow ${getSaldoColor(resultado.saldoFormatado)}`}>
                             💰 {resultado.saldoFormatado}
                           </div>
                         </div>
