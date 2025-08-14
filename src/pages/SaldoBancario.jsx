@@ -1,39 +1,59 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Layout from '../components/Layout';
-import FiltroEmpresa from '../components/FiltroEmpresa';
-import DropdownContas from '../components/DropdownContas';
-import { contas } from '../utils/contas';
-import useApiClient from '../hooks/useApiClient';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
+import { buscarSaldosPorConta } from '../lib/retornoBancario';
+
 import { 
   Bank, 
-  Money, 
   TrendUp, 
   TrendDown,
   Spinner,
-  Plus,
-  Minus,
-  ArrowsClockwise,
-  Receipt,
   CaretUp,
-  CaretDown
+  CaretDown,
+  Calendar
 } from '@phosphor-icons/react';
 
 const SaldoBancario = () => {
-  const apiClient = useApiClient();
-  
-  // Estados dos filtros
-  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
-  const [contasSelecionadas, setContasSelecionadas] = useState([]);
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
+  // Função para obter dias do mês
+  const obterDiasDoMes = (mes) => {
+    const meses = {
+      'JAN': 31, 'FEV': 28, 'MAR': 31, 'ABR': 30, 'MAI': 31, 'JUN': 30,
+      'JUL': 31, 'AGO': 31, 'SET': 30, 'OUT': 31, 'NOV': 30, 'DEZ': 31
+    };
+    return meses[mes] || 0;
+  };
+
+  // Função para obter o mês atual em formato abreviado
+  const getMesAtual = () => {
+    const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    const mesAtual = new Date().getMonth(); // 0-11
+    return meses[mesAtual];
+  };
+
+  // Função para obter o dia atual
+  const getDiaAtual = () => {
+    return new Date().getDate();
+  };
+
+  // Função para obter o dia inicial válido para o mês atual
+  const getDiaInicial = () => {
+    const diaAtual = getDiaAtual();
+    const mesAtual = getMesAtual();
+    const diasNoMes = obterDiasDoMes(mesAtual);
+    
+    // Se o dia atual é maior que os dias no mês, usar o último dia do mês
+    return Math.min(diaAtual, diasNoMes);
+  };
+
+  // Estados dos filtros - inicializar com mês e dia atual
+  const [filtroMensal, setFiltroMensal] = useState(getMesAtual());
+  const [filtroDia, setFiltroDia] = useState(getDiaInicial());
   
   // Estados dos dados
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
   const [saldosContas, setSaldosContas] = useState([]);
-  const [saldoTotal, setSaldoTotal] = useState(0);
   const [dadosCarregados, setDadosCarregados] = useState(false);
+  const [dadosOriginais, setDadosOriginais] = useState([]);
   
   // Estado para ordenação
   const [ordenacao, setOrdenacao] = useState({ campo: null, direcao: 'asc' });
@@ -57,146 +77,122 @@ const SaldoBancario = () => {
     return '0%';
   };
 
-  // Handler para seleção de empresas
-  const handleSelectEmpresas = (empresas) => {
-    setEmpresasSelecionadas(empresas);
-  };
-
-  // Função para determinar a origem da conta
-  const getOrigemConta = (nomeConta) => {
-    if (nomeConta.includes('CROSBY')) return 'CROSBY';
-    if (nomeConta.includes('FABIO')) return 'FABIO';
-    if (nomeConta.includes('IRMÃOS CR')) return 'IRMÃOS CR';
-    if (nomeConta.includes('FLAVIO')) return 'FLAVIO';
-    return 'OUTROS';
-  };
-
-  // Função para obter as cores da origem
-  const getOrigemColors = (origem) => {
-    switch (origem) {
-      case 'CROSBY':
-        return 'bg-blue-100 text-blue-800';
-      case 'FABIO':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'IRMÃOS CR':
-        return 'bg-orange-100 text-orange-800';
-      case 'FLAVIO':
-        return 'bg-green-100 text-green-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
 
 
-
-  // Função para buscar saldos das contas
-  const buscarSaldosContas = async (e) => {
-    e.preventDefault();
+  // Função para lidar com mudança de filtro mensal
+  const handleFiltroMensalChange = (novoFiltro) => {
+    setFiltroMensal(novoFiltro);
     
-    if (!dataInicio || !dataFim) {
-      setErro('Por favor, selecione as datas de início e fim.');
-      return;
+    // Se mudou para um mês diferente, ajustar o dia
+    if (novoFiltro !== filtroMensal) {
+      const diasNoNovoMes = obterDiasDoMes(novoFiltro);
+      
+      // Se o dia atual é maior que os dias no novo mês, usar o último dia
+      if (filtroDia > diasNoNovoMes) {
+        setFiltroDia(diasNoNovoMes);
+      } else if (filtroDia === null) {
+        // Se não havia dia selecionado, usar o dia atual (se válido) ou 1
+        const diaAtual = new Date().getDate();
+        setFiltroDia(Math.min(diaAtual, diasNoNovoMes));
+      }
     }
+  };
 
-    if (contasSelecionadas.length === 0) {
-      setErro('Por favor, selecione pelo menos uma conta.');
-      return;
-    }
+  // Função para aplicar filtro mensal e por dia
+  const aplicarFiltroMensal = (dados, filtro, diaFiltro = null) => {
+    return dados.filter((item) => {
+      // Usar data_geracao como base para o filtro mensal
+      const dataGeracao = item.data_geracao;
+      if (!dataGeracao) return false;
+      
+      const data = new Date(dataGeracao);
+      const ano = data.getFullYear();
+      const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
+      const dia = data.getDate();
+      
+      if (filtro === 'ANO') {
+        // Mostrar dados do ano atual
+        const anoAtual = new Date().getFullYear();
+        return ano === anoAtual;
+      }
+      
+      // Filtros por mês específico
+      const mesesMap = {
+        'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4,
+        'MAI': 5, 'JUN': 6, 'JUL': 7, 'AGO': 8,
+        'SET': 9, 'OUT': 10, 'NOV': 11, 'DEZ': 12
+      };
+      
+      const mesDoFiltro = mesesMap[filtro];
+      if (mesDoFiltro) {
+        // Se há filtro por dia, verificar também o dia
+        if (diaFiltro !== null) {
+          return mes === mesDoFiltro && dia === diaFiltro;
+        }
+        return mes === mesDoFiltro;
+      }
+      
+      return true;
+    });
+  };
 
+  // Função para buscar todos os dados da tabela retorno_bancario
+  const buscarTodosDados = async () => {
     setLoading(true);
     setErro('');
-    setDadosCarregados(false);
     
     try {
-      const saldosPromises = contasSelecionadas.map(async (nr_ctapes) => {
-        const params = {
-          nr_ctapes,
-          dt_inicio: dataInicio,
-          dt_fim: dataFim
-        };
-
-        const result = await apiClient.financial.saldoConta(params);
-        
-        if (result.success) {
-          const conta = contas.find(c => c.numero === nr_ctapes);
-          // A API retorna o saldo em result.data.data.saldo (estrutura aninhada)
-          const saldo = result.data?.data?.saldo || result.data?.saldo || 0;
-          const nomeConta = conta ? conta.nome : `Conta ${nr_ctapes}`;
+      const result = await buscarSaldosPorConta({});
+      
+      if (result.success) {
+        // Processar os dados para incluir data_geracao
+        const dadosProcessados = result.data.map(conta => {
+          // Pegar o registro mais recente para obter a data_geracao
+          const registroMaisRecente = conta.registros.sort((a, b) => 
+            new Date(b.data_geracao) - new Date(a.data_geracao)
+          )[0];
+          
           return {
-            numero: nr_ctapes,
-            nome: nomeConta,
-            origem: getOrigemConta(nomeConta),
-            saldo: parseFloat(saldo),
-            filtros: result.data?.filtros || result.filtros
+            numero: conta.numero,
+            nome: conta.nome,
+            saldo: conta.saldo,
+            banco: conta.banco,
+            agencia: conta.agencia,
+            ultimaAtualizacao: conta.ultimaAtualizacao,
+            registros: conta.registros,
+            totalRegistros: conta.registros.length,
+            data_geracao: registroMaisRecente?.data_geracao || null
           };
-        } else {
-          throw new Error(result.message || 'Erro ao buscar saldo da conta');
-        }
-      });
-
-      const saldos = await Promise.all(saldosPromises);
-      setSaldosContas(saldos);
-      
-      // Calcular saldo total
-      const total = saldos.reduce((acc, conta) => acc + conta.saldo, 0);
-      setSaldoTotal(total);
-      
-      setDadosCarregados(true);
+        });
+        
+        setDadosOriginais(dadosProcessados);
+        setDadosCarregados(true);
+      } else {
+        throw new Error(result.message || 'Erro ao buscar dados');
+      }
     } catch (error) {
-      console.error('Erro ao buscar saldos das contas:', error);
-      setErro('Erro ao buscar dados do servidor.');
-      setSaldosContas([]);
-      setSaldoTotal(0);
+      console.error('Erro ao buscar dados:', error);
+      setErro('Erro ao buscar dados do banco de dados.');
+      setDadosOriginais([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Calcular estatísticas
-  const estatisticas = useMemo(() => {
-    if (saldosContas.length === 0) {
-      return {
-        totalContas: 0,
-        contasPositivas: 0,
-        contasNegativas: 0,
-        maiorSaldo: 0,
-        menorSaldo: 0,
-        saldoPorGrupo: {
-          CROSBY: 0,
-          FABIO: 0,
-          'IRMÃOS CR': 0,
-          FLAVIO: 0,
-          OUTROS: 0
-        }
-      };
+  // Carregar dados ao montar o componente
+  useEffect(() => {
+    buscarTodosDados();
+  }, []);
+
+  // Aplicar filtros quando dados ou filtros mudarem
+  useEffect(() => {
+    if (dadosOriginais.length > 0) {
+      const dadosFiltrados = aplicarFiltroMensal(dadosOriginais, filtroMensal, filtroDia);
+      setSaldosContas(dadosFiltrados);
     }
+  }, [dadosOriginais, filtroMensal, filtroDia]);
 
-    const contasPositivas = saldosContas.filter(conta => conta.saldo > 0).length;
-    const contasNegativas = saldosContas.filter(conta => conta.saldo < 0).length;
-    const maiorSaldo = Math.max(...saldosContas.map(conta => conta.saldo));
-    const menorSaldo = Math.min(...saldosContas.map(conta => conta.saldo));
 
-    // Calcular saldo por grupo
-    const saldoPorGrupo = saldosContas.reduce((acc, conta) => {
-      acc[conta.origem] = (acc[conta.origem] || 0) + conta.saldo;
-      return acc;
-    }, {
-      CROSBY: 0,
-      FABIO: 0,
-      'IRMÃOS CR': 0,
-      FLAVIO: 0,
-      OUTROS: 0
-    });
-
-    return {
-      totalContas: saldosContas.length,
-      contasPositivas,
-      contasNegativas,
-      maiorSaldo,
-      menorSaldo,
-      saldoPorGrupo
-    };
-  }, [saldosContas]);
 
   const getVariacaoColor = (saldo) => {
     if (saldo > 0) return 'text-green-600';
@@ -262,244 +258,101 @@ const SaldoBancario = () => {
               Saldo Bancário
             </h1>
             <p className="text-gray-600 mt-2 font-barlow">
-              Acompanhe o saldo das contas bancárias por período.
+              Acompanhe o saldo das contas bancárias a partir dos arquivos .RET processados.
             </p>
+
           </div>
 
-          {/* Formulário de Filtros */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
-            <form onSubmit={buscarSaldosContas}>
-              <div className="mb-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <Receipt size={22} className="text-[#000638]" />
-                  <span className="text-lg font-bold text-[#000638] font-barlow">
-                    Filtros
-                  </span>
-                </div>
-                <span className="text-sm text-gray-500 font-barlow">
-                  Selecione o período, empresa e conta para análise
-                </span>
-              </div>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-                <div className="lg:col-span-2">
-                  <FiltroEmpresa
-                    empresasSelecionadas={empresasSelecionadas}
-                    onSelectEmpresas={handleSelectEmpresas}
-                  />
-                </div>
-                <div>
-                  <label className="w-full block text-xs font-semibold mb-1 text-[#000638] font-barlow">
-                    Contas
-                  </label>
-                  <DropdownContas
-                    contas={contas}
-                    contasSelecionadas={contasSelecionadas}
-                    setContasSelecionadas={setContasSelecionadas}
-                    minWidth={300}
-                    maxWidth={400}
-                    placeholder="Selecione as contas"
-                    hideLabel={true}
-                    className="!bg-[#f8f9fb] !text-[#000638] !placeholder:text-gray-400 !px-3 !py-2 !w-full !rounded-lg !border !border-[#000638]/30 focus:!outline-none focus:!ring-2 focus:!ring-[#000638] !h-[42px] !text-sm !overflow-hidden"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1 text-[#000638] font-barlow">
-                    Data Início
-                  </label>
-                  <input
-                    type="date"
-                    value={dataInicio}
-                    onChange={(e) => setDataInicio(e.target.value)}
-                    className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 font-barlow"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1 text-[#000638] font-barlow">
-                    Data Fim
-                  </label>
-                  <input
-                    type="date"
-                    value={dataFim}
-                    onChange={(e) => setDataFim(e.target.value)}
-                    className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 font-barlow"
-                  />
-                </div>
-              </div>
-              
-              <div className="flex justify-end gap-4">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex items-center gap-2 bg-[#000638] hover:bg-[#fe0000] disabled:bg-gray-400 text-white px-6 py-2 rounded-lg transition h-10 text-sm font-bold shadow-md tracking-wide uppercase font-barlow"
-                >
-                  {loading ? (
-                    <Spinner size={18} className="animate-spin" />
-                  ) : (
-                    <ArrowsClockwise size={18} weight="bold" />
-                  )}
-                  {loading ? 'Carregando...' : 'Buscar Saldos'}
-                </button>
-              </div>
-            </form>
+          {/* Filtros Mensais */}
+          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <Calendar size={18} className="text-[#000638]" />
+              <h3 className="font-bold text-sm text-[#000638]">Filtro por Período (Data Geração)</h3>
+            </div>
             
-            {erro && (
-              <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center font-barlow">
-                {erro}
+            <div className="flex flex-wrap gap-2">
+              {/* Botão ANO */}
+              <button
+                onClick={() => handleFiltroMensalChange('ANO')}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  filtroMensal === 'ANO'
+                    ? 'bg-[#000638] text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                }`}
+              >
+                ANO
+              </button>
+
+              {/* Botões dos Meses */}
+              {['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'].map((mes) => (
+                <button
+                  key={mes}
+                  onClick={() => handleFiltroMensalChange(mes)}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    filtroMensal === mes
+                      ? 'bg-[#000638] text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                  }`}
+                >
+                  {mes}
+                </button>
+              ))}
+            </div>
+
+            {/* Informação do filtro ativo */}
+            <div className="mt-3 text-xs text-gray-500">
+              <span className="font-medium">Filtro ativo:</span> {filtroMensal} 
+              {filtroDia && <span className="ml-1">- Dia {filtroDia}</span>}
+              <span className="ml-2">({saldosContas.length} registro{saldosContas.length !== 1 ? 's' : ''})</span>
+            </div>
+
+            {/* Filtro por Dia - aparece apenas quando um mês está selecionado */}
+            {filtroMensal !== 'ANO' && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <Calendar size={16} className="text-[#000638]" />
+                  <h4 className="font-bold text-sm text-[#000638]">Filtro por Dia - {filtroMensal}</h4>
+                </div>
+                
+                <div className="flex flex-wrap gap-1">
+                  {/* Botão "Todos os Dias" */}
+                  <button
+                    onClick={() => setFiltroDia(null)}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      filtroDia === null
+                        ? 'bg-[#000638] text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                    }`}
+                  >
+                    TODOS
+                  </button>
+
+                  {/* Botões dos dias */}
+                  {Array.from({ length: obterDiasDoMes(filtroMensal) }, (_, i) => i + 1).map((dia) => (
+                    <button
+                      key={dia}
+                      onClick={() => setFiltroDia(dia)}
+                      className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                        filtroDia === dia
+                          ? 'bg-[#000638] text-white'
+                          : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                      }`}
+                    >
+                      {dia}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
 
-                     {/* Cards de Resumo */}
-           {dadosCarregados && (
-             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8 max-w-7xl mx-auto">
-               {/* Saldo Total */}
-               <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-                 <CardHeader className="pb-2">
-                   <div className="flex items-center gap-2">
-                     <Bank size={18} className="text-blue-600" />
-                     <CardTitle className="text-sm font-bold text-blue-700">Saldo Total</CardTitle>
-                   </div>
-                 </CardHeader>
-                 <CardContent className="pt-0 px-4 pb-4">
-                   <div className="text-lg font-extrabold text-blue-600 mb-1 break-words">
-                     {loading ? <Spinner size={24} className="animate-spin text-blue-600" /> : 
-                       formatCurrency(saldoTotal)
-                     }
-                   </div>
-                   <CardDescription className="text-xs text-gray-500">{estatisticas.totalContas} conta(s) analisada(s)</CardDescription>
-                 </CardContent>
-               </Card>
+          {erro && (
+            <div className="mb-8 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center font-barlow">
+              {erro}
+            </div>
+          )}
 
-               {/* Contas Positivas */}
-               <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-                 <CardHeader className="pb-2">
-                   <div className="flex items-center gap-2">
-                     <TrendUp size={18} className="text-green-600" />
-                     <CardTitle className="text-sm font-bold text-green-700">Contas Positivas</CardTitle>
-                   </div>
-                 </CardHeader>
-                 <CardContent className="pt-0 px-4 pb-4">
-                   <div className="text-2xl font-extrabold text-green-600 mb-1">
-                     {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : 
-                       estatisticas.contasPositivas
-                     }
-                   </div>
-                   <CardDescription className="text-xs text-gray-500">Saldo positivo</CardDescription>
-                 </CardContent>
-               </Card>
 
-               {/* Contas Negativas */}
-               <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-                 <CardHeader className="pb-2">
-                   <div className="flex items-center gap-2">
-                     <TrendDown size={18} className="text-red-600" />
-                     <CardTitle className="text-sm font-bold text-red-700">Contas Negativas</CardTitle>
-                   </div>
-                 </CardHeader>
-                 <CardContent className="pt-0 px-4 pb-4">
-                   <div className="text-2xl font-extrabold text-red-600 mb-1">
-                     {loading ? <Spinner size={24} className="animate-spin text-red-600" /> : 
-                       estatisticas.contasNegativas
-                     }
-                   </div>
-                   <CardDescription className="text-xs text-gray-500">Saldo negativo</CardDescription>
-                 </CardContent>
-               </Card>
-
-               {/* Maior Saldo */}
-               <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-                 <CardHeader className="pb-2">
-                   <div className="flex items-center gap-2">
-                     <Plus size={18} className="text-purple-600" />
-                     <CardTitle className="text-sm font-bold text-purple-700">Maior Saldo</CardTitle>
-                   </div>
-                 </CardHeader>
-                 <CardContent className="pt-0 px-4 pb-4">
-                   <div className="text-lg font-extrabold text-purple-600 mb-1 break-words">
-                     {loading ? <Spinner size={24} className="animate-spin text-purple-600" /> : 
-                       formatCurrency(estatisticas.maiorSaldo)
-                     }
-                   </div>
-                   <CardDescription className="text-xs text-gray-500">Valor mais alto</CardDescription>
-                 </CardContent>
-               </Card>
-
-               {/* Saldo por Grupo - CROSBY */}
-               <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-                 <CardHeader className="pb-2">
-                   <div className="flex items-center gap-2">
-                     <Bank size={18} className="text-blue-600" />
-                     <CardTitle className="text-sm font-bold text-blue-700">CROSBY</CardTitle>
-                   </div>
-                 </CardHeader>
-                 <CardContent className="pt-0 px-4 pb-4">
-                   <div className={`text-lg font-extrabold ${getVariacaoColor(estatisticas.saldoPorGrupo.CROSBY)} mb-1 break-words`}>
-                     {loading ? <Spinner size={24} className="animate-spin text-blue-600" /> : 
-                       formatCurrency(estatisticas.saldoPorGrupo.CROSBY)
-                     }
-                   </div>
-                   <CardDescription className="text-xs text-gray-500">Saldo total CROSBY</CardDescription>
-                 </CardContent>
-               </Card>
-
-               {/* Saldo por Grupo - FABIO */}
-               <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-                 <CardHeader className="pb-2">
-                   <div className="flex items-center gap-2">
-                     <Bank size={18} className="text-yellow-600" />
-                     <CardTitle className="text-sm font-bold text-yellow-700">FABIO</CardTitle>
-                   </div>
-                 </CardHeader>
-                 <CardContent className="pt-0 px-4 pb-4">
-                   <div className={`text-lg font-extrabold ${getVariacaoColor(estatisticas.saldoPorGrupo.FABIO)} mb-1 break-words`}>
-                     {loading ? <Spinner size={24} className="animate-spin text-yellow-600" /> : 
-                       formatCurrency(estatisticas.saldoPorGrupo.FABIO)
-                     }
-                   </div>
-                   <CardDescription className="text-xs text-gray-500">Saldo total FABIO</CardDescription>
-                 </CardContent>
-               </Card>
-
-               {/* Saldo por Grupo - IRMÃOS CR */}
-               <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-                 <CardHeader className="pb-2">
-                   <div className="flex items-center gap-2">
-                     <Bank size={18} className="text-orange-600" />
-                     <CardTitle className="text-sm font-bold text-orange-700">IRMÃOS CR</CardTitle>
-                   </div>
-                 </CardHeader>
-                 <CardContent className="pt-0 px-4 pb-4">
-                   <div className={`text-lg font-extrabold ${getVariacaoColor(estatisticas.saldoPorGrupo['IRMÃOS CR'])} mb-1 break-words`}>
-                     {loading ? <Spinner size={24} className="animate-spin text-orange-600" /> : 
-                       formatCurrency(estatisticas.saldoPorGrupo['IRMÃOS CR'])
-                     }
-                   </div>
-                   <CardDescription className="text-xs text-gray-500">Saldo total IRMÃOS CR</CardDescription>
-                 </CardContent>
-               </Card>
-
-                               {/* Saldo por Grupo - FLAVIO */}
-                <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center gap-2">
-                      <Bank size={18} className="text-green-600" />
-                      <CardTitle className="text-sm font-bold text-green-700">FLAVIO</CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-0 px-4 pb-4">
-                    <div className={`text-lg font-extrabold ${getVariacaoColor(estatisticas.saldoPorGrupo.FLAVIO)} mb-1 break-words`}>
-                      {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : 
-                        formatCurrency(estatisticas.saldoPorGrupo.FLAVIO)
-                      }
-                    </div>
-                    <CardDescription className="text-xs text-gray-500">Saldo total FLAVIO</CardDescription>
-                  </CardContent>
-                </Card>
-
-                
-             </div>
-           )}
 
           {/* Tabela de Saldos */}
           {dadosCarregados && (
@@ -514,6 +367,15 @@ const SaldoBancario = () => {
                      <tr className="border-b border-gray-200">
                        <th 
                          className="text-left py-3 px-4 font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
+                         onClick={() => handleOrdenar('banco')}
+                       >
+                         <div className="flex items-center">
+                           Banco
+                           {getIconeOrdenacao('banco')}
+                         </div>
+                       </th>
+                       <th 
+                         className="text-left py-3 px-4 font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
                          onClick={() => handleOrdenar('numero')}
                        >
                          <div className="flex items-center">
@@ -522,21 +384,21 @@ const SaldoBancario = () => {
                          </div>
                        </th>
                        <th 
-                         className="text-left py-3 px-4 font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
-                         onClick={() => handleOrdenar('nome')}
+                         className="text-center py-3 px-4 font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
+                         onClick={() => handleOrdenar('agencia')}
                        >
-                         <div className="flex items-center">
-                           Nome
-                           {getIconeOrdenacao('nome')}
+                         <div className="flex items-center justify-center">
+                           Agência
+                           {getIconeOrdenacao('agencia')}
                          </div>
                        </th>
                        <th 
                          className="text-center py-3 px-4 font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
-                         onClick={() => handleOrdenar('origem')}
+                         onClick={() => handleOrdenar('data_geracao')}
                        >
                          <div className="flex items-center justify-center">
-                           Origem
-                           {getIconeOrdenacao('origem')}
+                           Data
+                           {getIconeOrdenacao('data_geracao')}
                          </div>
                        </th>
                        <th 
@@ -557,15 +419,16 @@ const SaldoBancario = () => {
                      {dadosOrdenados.map((conta) => (
                        <tr key={conta.numero} className="border-b border-gray-100 hover:bg-gray-50">
                          <td className="py-3 px-4 font-medium text-gray-900 font-barlow">
-                           {conta.numero}
+                           {conta.banco || 'N/A'}
                          </td>
                          <td className="py-3 px-4 text-gray-600 font-barlow">
-                           {conta.nome}
+                           {conta.numero}
                          </td>
-                         <td className="py-3 px-4 text-center">
-                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getOrigemColors(conta.origem)} font-barlow`}>
-                             {conta.origem}
-                           </span>
+                         <td className="py-3 px-4 text-center text-gray-600 font-barlow">
+                           {conta.agencia || 'N/A'}
+                         </td>
+                         <td className="py-3 px-4 text-center text-gray-600 font-barlow">
+                           {conta.data_geracao ? new Date(conta.data_geracao).toLocaleDateString('pt-BR') : 'N/A'}
                          </td>
                          <td className="py-3 px-4 text-right">
                            <div className="flex items-center justify-end gap-2">
@@ -602,8 +465,13 @@ const SaldoBancario = () => {
                 Nenhum saldo carregado
               </h3>
               <p className="text-gray-600 font-barlow">
-                Selecione os filtros e clique em "Buscar Saldos" para visualizar os dados.
+                Os dados são carregados automaticamente da tabela retorno_bancario. Use os filtros acima para filtrar por período.
               </p>
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg max-w-md mx-auto">
+                <p className="text-sm text-blue-700 font-barlow">
+                  <strong>Dica:</strong> Os dados são extraídos dos arquivos .RET processados e armazenados no Supabase.
+                </p>
+              </div>
             </div>
           )}
         </div>

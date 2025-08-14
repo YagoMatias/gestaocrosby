@@ -263,3 +263,101 @@ export const removerRetornoBancario = async (id) => {
     };
   }
 };
+
+/**
+ * Busca saldos por conta e período na tabela retorno_bancario
+ * @param {Object} filtros - Filtros de busca
+ * @param {Array} contas - Array de números de conta
+ * @param {string} dataInicio - Data de início (YYYY-MM-DD)
+ * @param {string} dataFim - Data de fim (YYYY-MM-DD)
+ * @returns {Promise<Object>} - Resultado da busca
+ */
+export const buscarSaldosPorConta = async (filtros = {}) => {
+  try {
+    let query = supabase
+      .from(TABLE_NAME)
+      .select('*')
+      .order('data_upload', { ascending: false });
+
+    // Aplicar filtros se fornecidos
+    if (filtros.contas && filtros.contas.length > 0) {
+      query = query.in('conta', filtros.contas);
+    }
+
+    if (filtros.dataInicio) {
+      query = query.gte('data_upload', filtros.dataInicio + 'T00:00:00');
+    }
+
+    if (filtros.dataFim) {
+      query = query.lte('data_upload', filtros.dataFim + 'T23:59:59');
+    }
+
+    if (filtros.banco) {
+      query = query.eq('banco_nome', filtros.banco);
+    }
+
+    // Se não há filtros, retornar todos os dados
+    if (Object.keys(filtros).length === 0) {
+      query = supabase
+        .from(TABLE_NAME)
+        .select('*')
+        .order('data_upload', { ascending: false });
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Erro ao buscar saldos por conta:', error);
+      throw error;
+    }
+
+    // Processar os dados para agrupar por conta
+    const saldosPorConta = {};
+    
+    data.forEach(item => {
+      const conta = item.conta;
+      if (!saldosPorConta[conta]) {
+        saldosPorConta[conta] = {
+          numero: conta,
+          nome: `Conta ${conta}`,
+          saldo: 0,
+          ultimaAtualizacao: null,
+          banco: item.banco_nome,
+          agencia: item.agencia,
+          registros: []
+        };
+      }
+      
+      // Usar o valor mais recente como saldo atual
+      const dataUpload = new Date(item.data_upload);
+      if (!saldosPorConta[conta].ultimaAtualizacao || dataUpload > saldosPorConta[conta].ultimaAtualizacao) {
+        saldosPorConta[conta].saldo = parseFloat(item.valor);
+        saldosPorConta[conta].ultimaAtualizacao = dataUpload;
+        saldosPorConta[conta].banco = item.banco_nome;
+        saldosPorConta[conta].agencia = item.agencia;
+      }
+      
+      saldosPorConta[conta].registros.push(item);
+    });
+
+    // Converter para array e ordenar por saldo
+    const resultado = Object.values(saldosPorConta).sort((a, b) => b.saldo - a.saldo);
+
+    return {
+      success: true,
+      data: resultado,
+      totalRegistros: data.length,
+      totalContas: resultado.length
+    };
+
+  } catch (error) {
+    console.error('Erro ao buscar saldos por conta:', error);
+    return {
+      success: false,
+      message: 'Erro ao buscar dados: ' + error.message,
+      error: error
+    };
+  }
+};
+
+
