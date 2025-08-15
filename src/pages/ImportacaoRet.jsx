@@ -25,6 +25,8 @@ const ImportacaoRet = () => {
   const [progress, setProgress] = useState(0);
   const [savedFiles, setSavedFiles] = useState([]);
   const [duplicateFiles, setDuplicateFiles] = useState([]);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [filesToConfirm, setFilesToConfirm] = useState([]);
   const fileInputRef = useRef(null);
 
   const handleDragOver = (e) => {
@@ -70,20 +72,54 @@ const ImportacaoRet = () => {
 
   const handleFilesAdded = (files) => {
     if (files.length > 0) {
-      const confirmMessage = `Deseja importar ${files.length} arquivo(s) .RET para o banco de dados?`;
-      if (window.confirm(confirmMessage)) {
-        uploadFiles(files);
-      } else {
-        // Se o usuário cancelar, limpar os arquivos selecionados
-        setSelectedFiles([]);
-        setProgress(0);
-        setResult(null);
-        setError(null);
-        setSavedFiles([]);
-        setDuplicateFiles([]);
-      }
+      setFilesToConfirm(files);
+      setShowConfirmModal(true);
     }
   };
+
+  const handleConfirmUpload = () => {
+    uploadFiles(filesToConfirm);
+    setShowConfirmModal(false);
+    setFilesToConfirm([]);
+  };
+
+  const handleCancelUpload = () => {
+    // Se o usuário cancelar, limpar os arquivos selecionados
+    setSelectedFiles([]);
+    setProgress(0);
+    setResult(null);
+    setError(null);
+    setSavedFiles([]);
+    setDuplicateFiles([]);
+    setShowConfirmModal(false);
+    setFilesToConfirm([]);
+  };
+
+  // Fechar modal ao clicar fora ou pressionar ESC
+  const handleModalClose = (e) => {
+    if (e.target === e.currentTarget) {
+      handleCancelUpload();
+    }
+  };
+
+  // Adicionar listener para tecla ESC
+  React.useEffect(() => {
+    const handleEscKey = (e) => {
+      if (e.key === 'Escape' && showConfirmModal) {
+        handleCancelUpload();
+      }
+    };
+
+    if (showConfirmModal) {
+      document.addEventListener('keydown', handleEscKey);
+      document.body.style.overflow = 'hidden'; // Prevenir scroll
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEscKey);
+      document.body.style.overflow = 'unset';
+    };
+  }, [showConfirmModal]);
 
   const removeFile = (index) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
@@ -234,183 +270,189 @@ const ImportacaoRet = () => {
   return (
     <Layout>
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 font-barlow flex items-center gap-3">
-              <FileText size={32} className="text-blue-600" />
-              Upload Múltiplo - Arquivos de Retorno Bancário
+            <h1 className="text-3xl font-bold text-gray-900 font-barlow">
+              Importação .RET
             </h1>
             <p className="text-gray-600 mt-2 font-barlow">
-              Faça upload de múltiplos arquivos .RET do banco para processar e visualizar os dados.
+              Faça upload de arquivos .RET do banco para processar e visualizar os dados.
             </p>
           </div>
 
           {/* Upload Area */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl rounded-xl bg-white mb-6">
-            <CardContent className="p-8 mt-8">
-              <div
-                className={`border-2 border-dashed rounded-xl p-12 text-center transition-all duration-300 cursor-pointer ${
-                  isDragOver
-                    ? 'border-green-500 bg-green-50'
-                    : 'border-blue-400 hover:border-blue-500 bg-blue-50'
-                }`}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={handleUploadClick}
-              >
-                <Upload size={48} className="mx-auto mb-4 text-blue-500" />
-                <h3 className="text-xl font-semibold text-gray-800 mb-2 font-barlow">
-                  📁 Selecione arquivos .RET (sem limite)
-                </h3>
-                <p className="text-lg font-medium text-gray-700 mb-4 font-barlow">
-                  Arraste e solte os arquivos aqui ou clique para selecionar
-                </p>
-                <div className="flex gap-4 justify-center">
-                  <button
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors font-barlow flex items-center gap-2"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleUploadClick();
-                    }}
-                  >
-                    <FolderOpen size={20} />
-                    Selecionar Arquivos
-                  </button>
-
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept=".RET,.ret,text/plain"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+            <h2 className="text-xl font-semibold text-gray-900 mb-6 font-barlow">
+              Upload de Arquivos
+            </h2>
+            
+            <div
+              className={`border-2 border-dashed rounded-xl p-12 text-center transition-all duration-300 cursor-pointer ${
+                isDragOver
+                  ? 'border-green-500 bg-green-50'
+                  : 'border-gray-300 hover:border-gray-400 bg-gray-50'
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={handleUploadClick}
+            >
+              <Upload size={48} className="mx-auto mb-4 text-gray-500" />
+              <h3 className="text-xl font-semibold text-gray-800 mb-2 font-barlow">
+                Selecione arquivos .RET
+              </h3>
+              <p className="text-lg font-medium text-gray-700 mb-4 font-barlow">
+                Arraste e solte os arquivos aqui ou clique para selecionar
+              </p>
+              <div className="flex gap-4 justify-center">
+                <button
+                  className="bg-[#000638] hover:bg-[#000638]/90 text-white px-6 py-3 rounded-lg font-medium transition-colors font-barlow flex items-center gap-2"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleUploadClick();
+                  }}
+                >
+                  <FolderOpen size={20} />
+                  Selecionar Arquivos
+                </button>
               </div>
-            </CardContent>
-          </Card>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".RET,.ret,text/plain"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+            </div>
+          </div>
 
           {/* File List */}
           {selectedFiles.length > 0 && (
-            <Card className="shadow-lg rounded-xl bg-white mb-6">
-              <CardHeader>
-                <CardTitle className="text-lg font-bold text-gray-800 font-barlow">
-                  📄 Arquivos Selecionados ({selectedFiles.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {selectedFiles.map((file, index) => (
-                    <div key={index} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
-                      <span className="text-gray-700 font-barlow">
-                        📄 {file.name} ({formatFileSize(file.size)})
-                      </span>
-                      <button
-                        onClick={() => removeFile(index)}
-                        className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg transition-colors"
-                      >
-                        <Trash size={16} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+              <h2 className="text-xl font-semibold text-gray-900 mb-6 font-barlow">
+                Arquivos Selecionados ({selectedFiles.length})
+              </h2>
+              
+              <div className="space-y-2">
+                {selectedFiles.map((file, index) => (
+                  <div key={index} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
+                    <span className="text-gray-700 font-barlow">
+                      {file.name} ({formatFileSize(file.size)})
+                    </span>
+                    <button
+                      onClick={() => removeFile(index)}
+                      className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg transition-colors"
+                    >
+                      <Trash size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
           {/* Progress Bar */}
           {isLoading && (
-            <Card className="shadow-lg rounded-xl bg-white mb-6">
-              <CardContent className="p-6">
-                <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
-                  <div 
-                    className="bg-gradient-to-r from-blue-500 to-green-500 h-4 rounded-full transition-all duration-300"
-                    style={{ width: `${progress}%` }}
-                  ></div>
-                </div>
-                <div className="text-center">
-                  <Spinner size={32} className="mx-auto mb-2 text-blue-600 animate-spin" />
-                  <p className="text-lg font-medium text-gray-700 font-barlow">
-                    Processando arquivos... {progress}%
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+              <h2 className="text-xl font-semibold text-gray-900 mb-6 font-barlow">
+                Processando Arquivos
+              </h2>
+              
+              <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
+                <div 
+                  className="bg-[#000638] h-4 rounded-full transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                ></div>
+              </div>
+              <div className="text-center">
+                <Spinner size={32} className="mx-auto mb-2 text-[#000638] animate-spin" />
+                <p className="text-lg font-medium text-gray-700 font-barlow">
+                  Processando arquivos... {progress}%
+                </p>
+              </div>
+            </div>
           )}
 
           {/* Error */}
           {error && (
-            <Card className="shadow-lg rounded-xl bg-white mb-6 border-red-200">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-3 mb-3">
-                  <XCircle size={24} className="text-red-600" />
-                  <h3 className="text-lg font-semibold text-red-800 font-barlow">❌ Erro</h3>
-                </div>
-                <p className="text-red-700 font-barlow">{error}</p>
-              </CardContent>
-            </Card>
+            <div className="bg-red-100 border border-red-300 text-red-700 px-4 py-3 rounded-lg mb-8 text-center font-barlow">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <XCircle size={20} />
+                <span className="font-semibold">Erro</span>
+              </div>
+              {error}
+            </div>
           )}
 
           {/* Success Result */}
           {result && (
-            <div className="space-y-6">
-              {/* Summary */}
-              <Card className="shadow-lg rounded-xl bg-white border-green-200">
-                <CardContent className="p-6">
-                  <div className="text-center">
-                    <CheckCircle size={32} className="mx-auto mb-3 text-green-600" />
-                    <h3 className="text-2xl font-bold text-green-800 mb-4 font-barlow">
-                      📊 Resumo do Processamento
-                    </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-blue-600 font-barlow">
-                          {result.resumo?.totalArquivos || 0}
-                        </div>
-                        <div className="text-sm text-gray-600 font-barlow">Total de Arquivos</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-green-600 font-barlow">
-                          {result.resumo?.sucessos || 0}
-                        </div>
-                        <div className="text-sm text-gray-600 font-barlow">Sucessos</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-red-600 font-barlow">
-                          {result.resumo?.erros || 0}
-                        </div>
-                        <div className="text-sm text-gray-600 font-barlow">Erros</div>
-                      </div>
-                      <div className="text-center">
-                        <div className={`text-2xl font-bold font-barlow ${getSaldoColor(result.resumo?.saldoTotalFormatado)}`}>
-                          {result.resumo?.saldoTotalFormatado || 'R$ 0,00'}
-                        </div>
-                        <div className="text-sm text-gray-600 font-barlow">Saldo Total</div>
-                      </div>
-                    </div>
+            <div className="space-y-8">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 max-w-7xl mx-auto">
+                {/* Total de Arquivos */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <FileText size={18} className="text-blue-600" />
+                    <h3 className="text-sm font-bold text-blue-700 font-barlow">Total de Arquivos</h3>
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="text-2xl font-extrabold text-blue-600 mb-1">
+                    {result.resumo?.totalArquivos || 0}
+                  </div>
+                  <p className="text-xs text-gray-500 font-barlow">Arquivos processados</p>
+                </div>
+
+                {/* Sucessos */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle size={18} className="text-green-600" />
+                    <h3 className="text-sm font-bold text-green-700 font-barlow">Sucessos</h3>
+                  </div>
+                  <div className="text-2xl font-extrabold text-green-600 mb-1">
+                    {result.resumo?.sucessos || 0}
+                  </div>
+                  <p className="text-xs text-gray-500 font-barlow">Arquivos processados com sucesso</p>
+                </div>
+
+                {/* Erros */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <XCircle size={18} className="text-red-600" />
+                    <h3 className="text-sm font-bold text-red-700 font-barlow">Erros</h3>
+                  </div>
+                  <div className="text-2xl font-extrabold text-red-600 mb-1">
+                    {result.resumo?.erros || 0}
+                  </div>
+                  <p className="text-xs text-gray-500 font-barlow">Arquivos com erro</p>
+                </div>
+
+                {/* Saldo Total */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CurrencyDollar size={18} className="text-purple-600" />
+                    <h3 className="text-sm font-bold text-purple-700 font-barlow">Saldo Total</h3>
+                  </div>
+                  <div className={`text-lg font-extrabold mb-1 break-words ${getSaldoColor(result.resumo?.saldoTotalFormatado)}`}>
+                    {result.resumo?.saldoTotalFormatado || 'R$ 0,00'}
+                  </div>
+                  <p className="text-xs text-gray-500 font-barlow">Valor total processado</p>
+                </div>
+              </div>
 
               {/* Database Results */}
               {(savedFiles.length > 0 || duplicateFiles.length > 0) && (
-                <Card className="shadow-lg rounded-xl bg-white border-blue-200">
-                  <CardHeader>
-                    <div className="flex items-center gap-2">
-                      <Database size={20} className="text-blue-600" />
-                      <CardTitle className="text-lg font-bold text-blue-800 font-barlow">
-                        💾 Resultados do Banco de Dados
-                      </CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+                  <h2 className="text-xl font-semibold text-gray-900 mb-6 font-barlow">
+                    Resultados do Banco de Dados
+                  </h2>
+                  
+                  <div className="space-y-4">
                     {/* Arquivos Salvos */}
                     {savedFiles.length > 0 && (
                       <div>
                         <h4 className="font-semibold text-green-700 mb-2 font-barlow">
-                          ✅ Arquivos Salvos ({savedFiles.length})
+                          Arquivos Salvos ({savedFiles.length})
                         </h4>
                         <div className="space-y-2">
                           {savedFiles.map((arquivo, index) => (
@@ -427,7 +469,7 @@ const ImportacaoRet = () => {
                     {duplicateFiles.length > 0 && (
                       <div>
                         <h4 className="font-semibold text-orange-700 mb-2 font-barlow">
-                          ⚠️ Arquivos Não Salvos ({duplicateFiles.length})
+                          Arquivos Não Salvos ({duplicateFiles.length})
                         </h4>
                         <div className="space-y-2">
                           {duplicateFiles.map((arquivo, index) => (
@@ -439,80 +481,139 @@ const ImportacaoRet = () => {
                         </div>
                       </div>
                     )}
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               )}
 
               {/* Files with Errors */}
               {result.arquivosComErro && result.arquivosComErro.length > 0 && (
-                <Card className="shadow-lg rounded-xl bg-white border-red-200">
-                  <CardHeader>
-                    <CardTitle className="text-lg font-bold text-red-800 font-barlow">
-                      ❌ Arquivos com Erro
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {result.arquivosComErro.map((erro, index) => (
-                        <div key={index} className="bg-red-50 p-3 rounded-lg">
-                          <p className="font-semibold text-red-800 font-barlow">{erro.nome}</p>
-                          <p className="text-red-700 font-barlow">{erro.erro}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+                  <h2 className="text-xl font-semibold text-gray-900 mb-6 font-barlow">
+                    Arquivos com Erro
+                  </h2>
+                  
+                  <div className="space-y-2">
+                    {result.arquivosComErro.map((erro, index) => (
+                      <div key={index} className="bg-red-50 p-3 rounded-lg">
+                        <p className="font-semibold text-red-800 font-barlow">{erro.nome}</p>
+                        <p className="text-red-700 font-barlow">{erro.erro}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
 
               {/* Bank Results */}
               {result.resultados && result.resultados.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {result.resultados.map((resultado, index) => (
-                    <Card key={index} className="shadow-lg rounded-xl bg-white">
-                      <CardHeader>
-                        <div className="flex items-center gap-2">
-                          <Bank size={20} className="text-blue-600" />
-                          <CardTitle className="text-lg font-bold text-blue-700 font-barlow">
-                            🏦 {resultado.banco.nome}
-                          </CardTitle>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <h2 className="text-xl font-semibold text-gray-900 mb-6 font-barlow">
+                    Resultados dos Bancos
+                  </h2>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {result.resultados.map((resultado, index) => (
+                      <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Bank size={20} className="text-[#000638]" />
+                          <h3 className="text-lg font-bold text-[#000638] font-barlow">
+                            {resultado.banco.nome}
+                          </h3>
                         </div>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium text-gray-700 font-barlow">Código:</span>
-                          <span className="text-gray-900 font-barlow">{resultado.banco.codigo}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium text-gray-700 font-barlow">Layout:</span>
-                          <span className="text-gray-900 font-barlow">{resultado.banco.layout}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium text-gray-700 font-barlow">🏛️ Agência:</span>
-                          <span className="text-gray-900 font-barlow">{resultado.agencia}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium text-gray-700 font-barlow">📋 Conta:</span>
-                          <span className="text-gray-900 font-barlow">{formatConta(resultado.conta)}</span>
-                        </div>
-                        <div className={`text-center py-3 rounded-lg ${getSaldoBgColor(resultado.saldoFormatado)}`}>
-                          <div className={`text-2xl font-bold font-barlow ${getSaldoColor(resultado.saldoFormatado)}`}>
-                            💰 {resultado.saldoFormatado}
+                        
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="font-medium text-gray-700 font-barlow">Código:</span>
+                            <span className="text-gray-900 font-barlow">{resultado.banco.codigo}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium text-gray-700 font-barlow">Layout:</span>
+                            <span className="text-gray-900 font-barlow">{resultado.banco.layout}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium text-gray-700 font-barlow">Agência:</span>
+                            <span className="text-gray-900 font-barlow">{resultado.agencia}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium text-gray-700 font-barlow">Conta:</span>
+                            <span className="text-gray-900 font-barlow">{formatConta(resultado.conta)}</span>
                           </div>
                         </div>
-                        <div className="text-sm text-gray-600 font-barlow">
-                          <strong>Arquivo:</strong> {resultado.arquivo.nomeOriginal}
+                        
+                        <div className={`text-center py-3 rounded-lg mt-3 ${getSaldoBgColor(resultado.saldoFormatado)}`}>
+                          <div className={`text-xl font-bold font-barlow ${getSaldoColor(resultado.saldoFormatado)}`}>
+                            {resultado.saldoFormatado}
+                          </div>
                         </div>
-                                                 <div className="text-sm text-gray-600 font-barlow">
-                           <strong>Processado em:</strong> {new Date(resultado.arquivo.dataUpload).toLocaleString('pt-BR')}
-                         </div>
-                         <div className="text-sm text-gray-600 font-barlow">
-                           <strong>Data de Geração:</strong> {resultado.dataGeracao ? new Date(resultado.dataGeracao).toLocaleString('pt-BR') : 'N/A'}
-                         </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        
+                        <div className="text-xs text-gray-600 font-barlow mt-3 space-y-1">
+                          <div><strong>Arquivo:</strong> {resultado.arquivo.nomeOriginal}</div>
+                          <div><strong>Processado em:</strong> {new Date(resultado.arquivo.dataUpload).toLocaleString('pt-BR')}</div>
+                          <div><strong>Data de Geração:</strong> {resultado.dataGeracao ? new Date(resultado.dataGeracao).toLocaleString('pt-BR') : 'N/A'}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Modal de Confirmação */}
+          {showConfirmModal && (
+            <div 
+              className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+              onClick={handleModalClose}
+            >
+              <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6 relative animate-in zoom-in-95 duration-200">
+                {/* Botão de fechar */}
+                <button
+                  onClick={handleCancelUpload}
+                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <XCircle size={24} />
+                </button>
+                
+                <div className="text-center mb-6">
+                  <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+                    <FileText size={32} className="text-blue-600" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2 font-barlow">
+                    Confirmar Importação
+                  </h3>
+                  <p className="text-gray-600 font-barlow">
+                    Deseja importar <strong>{filesToConfirm.length}</strong> arquivo(s) .RET para o banco de dados?
+                  </p>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4 mb-6 max-h-32 overflow-y-auto">
+                  <h4 className="font-semibold text-gray-900 mb-2 font-barlow text-sm">
+                    Arquivos selecionados:
+                  </h4>
+                  <div className="space-y-1">
+                    {filesToConfirm.map((file, index) => (
+                      <div key={index} className="text-sm text-gray-600 font-barlow flex items-center gap-2">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                        {file.name} ({formatFileSize(file.size)})
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleCancelUpload}
+                    className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors font-barlow"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleConfirmUpload}
+                    className="flex-1 px-4 py-3 bg-[#000638] hover:bg-[#000638]/90 text-white rounded-lg font-medium transition-colors font-barlow"
+                  >
+                    Confirmar
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

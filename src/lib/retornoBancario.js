@@ -140,7 +140,7 @@ export const buscarRetornosBancarios = async (filtros = {}) => {
     let query = supabase
       .from(TABLE_NAME)
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('data_geracao', { ascending: false });
 
     // Aplicar filtros se fornecidos
     if (filtros.banco) {
@@ -148,11 +148,11 @@ export const buscarRetornosBancarios = async (filtros = {}) => {
     }
 
     if (filtros.dataInicio) {
-      query = query.gte('data_upload', filtros.dataInicio);
+      query = query.gte('data_geracao', filtros.dataInicio);
     }
 
     if (filtros.dataFim) {
-      query = query.lte('data_upload', filtros.dataFim);
+      query = query.lte('data_geracao', filtros.dataFim);
     }
 
     if (filtros.limit) {
@@ -189,7 +189,7 @@ export const buscarEstatisticasRetornos = async () => {
   try {
     const { data, error } = await supabase
       .from(TABLE_NAME)
-      .select('valor, banco_nome, data_upload');
+      .select('valor, banco_nome, data_geracao');
 
     if (error) {
       console.error('Erro ao buscar estatísticas:', error);
@@ -283,7 +283,7 @@ export const buscarSaldosPorConta = async (filtros = {}) => {
     let query = supabase
       .from(TABLE_NAME)
       .select('*')
-      .order('data_upload', { ascending: false });
+      .order('data_geracao', { ascending: false });
 
     // Aplicar filtros se fornecidos
     if (filtros.contas && filtros.contas.length > 0) {
@@ -291,11 +291,11 @@ export const buscarSaldosPorConta = async (filtros = {}) => {
     }
 
     if (filtros.dataInicio) {
-      query = query.gte('data_upload', filtros.dataInicio + 'T00:00:00');
+      query = query.gte('data_geracao', filtros.dataInicio + 'T00:00:00');
     }
 
     if (filtros.dataFim) {
-      query = query.lte('data_upload', filtros.dataFim + 'T23:59:59');
+      query = query.lte('data_geracao', filtros.dataFim + 'T23:59:59');
     }
 
     if (filtros.banco) {
@@ -307,7 +307,7 @@ export const buscarSaldosPorConta = async (filtros = {}) => {
       query = supabase
         .from(TABLE_NAME)
         .select('*')
-        .order('data_upload', { ascending: false });
+        .order('data_geracao', { ascending: false });
     }
 
     const { data, error } = await query;
@@ -341,11 +341,11 @@ export const buscarSaldosPorConta = async (filtros = {}) => {
         };
       }
       
-      // Usar o valor mais recente como saldo atual
-      const dataUpload = new Date(item.data_upload);
-      if (!saldosPorConta[conta].ultimaAtualizacao || dataUpload > saldosPorConta[conta].ultimaAtualizacao) {
+      // Usar o valor mais recente como saldo atual (baseado na data_geracao)
+      const dataGeracao = new Date(item.data_geracao);
+      if (!saldosPorConta[conta].ultimaAtualizacao || dataGeracao > saldosPorConta[conta].ultimaAtualizacao) {
         saldosPorConta[conta].saldo = parseFloat(item.valor);
-        saldosPorConta[conta].ultimaAtualizacao = dataUpload;
+        saldosPorConta[conta].ultimaAtualizacao = dataGeracao;
         saldosPorConta[conta].banco = item.banco_nome;
         saldosPorConta[conta].agencia = item.agencia;
       }

@@ -49,6 +49,7 @@ const SaldoBancario = () => {
   };
 
   // Estados dos filtros - inicializar com mês e dia atual
+  const [filtroAno, setFiltroAno] = useState(new Date().getFullYear());
   const [filtroMensal, setFiltroMensal] = useState(getMesAtual());
   const [filtroDia, setFiltroDia] = useState(getDiaInicial());
   
@@ -110,8 +111,10 @@ const SaldoBancario = () => {
   };
 
   // Função para aplicar filtro mensal e por dia
-  const aplicarFiltroMensal = (dados, filtro, diaFiltro = null) => {
-    console.log('Aplicando filtro:', { filtro, diaFiltro, totalDados: dados.length });
+  const aplicarFiltroMensal = (dados, filtro, diaFiltro = null, anoFiltro = null) => {
+    console.log('Aplicando filtro:', { filtro, diaFiltro, anoFiltro, totalDados: dados.length });
+    
+    const anoParaFiltrar = anoFiltro || new Date().getFullYear();
     
     const dadosFiltrados = dados.filter((item) => {
       // Usar data_geracao como base para o filtro mensal
@@ -126,7 +129,7 @@ const SaldoBancario = () => {
       const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
       const dia = data.getDate();
       
-      console.log(`Item ${item.numero}: data=${dataGeracao}, mes=${mes}, dia=${dia}`);
+      console.log(`Item ${item.numero}: data=${dataGeracao}, ano=${ano}, mes=${mes}, dia=${dia}`);
       
       // Filtros por mês específico
       const mesesMap = {
@@ -137,14 +140,20 @@ const SaldoBancario = () => {
       
       const mesDoFiltro = mesesMap[filtro];
       if (mesDoFiltro) {
+        // Verificar se é do ano selecionado
+        if (ano !== anoParaFiltrar) {
+          console.log(`Item ${item.numero}: ano ${ano} diferente do ano selecionado ${anoParaFiltrar}`);
+          return false;
+        }
+        
         // Se há filtro por dia, verificar também o dia
         if (diaFiltro !== null) {
           const match = mes === mesDoFiltro && dia === diaFiltro;
-          console.log(`Filtro ${filtro} dia ${diaFiltro}: mes=${mes}, dia=${dia}, match=${match}`);
+          console.log(`Filtro ${filtro} dia ${diaFiltro}: ano=${ano}, mes=${mes}, dia=${dia}, match=${match}`);
           return match;
         }
         const match = mes === mesDoFiltro;
-        console.log(`Filtro ${filtro}: mes=${mes}, match=${match}`);
+        console.log(`Filtro ${filtro}: ano=${ano}, mes=${mes}, match=${match}`);
         return match;
       }
       
@@ -152,6 +161,16 @@ const SaldoBancario = () => {
     });
     
     console.log('Dados filtrados:', dadosFiltrados.length);
+    
+    // Debug: mostrar as datas dos dados filtrados
+    if (dadosFiltrados.length > 0) {
+      const datasFiltradas = [...new Set(dadosFiltrados.map(item => {
+        const data = new Date(item.data_geracao);
+        return `${data.getDate()}/${data.getMonth() + 1}/${data.getFullYear()}`;
+      }))].sort();
+      console.log('Datas dos dados filtrados:', datasFiltradas);
+    }
+    
     return dadosFiltrados;
   };
 
@@ -164,28 +183,98 @@ const SaldoBancario = () => {
       const result = await buscarSaldosPorConta({});
       
       if (result.success) {
-        // Processar os dados para incluir data_geracao
-        const dadosProcessados = result.data.map(conta => {
-          // Pegar o registro mais recente para obter a data_geracao
-          const registroMaisRecente = conta.registros.sort((a, b) => 
-            new Date(b.data_geracao) - new Date(a.data_geracao)
-          )[0];
-          
-          return {
-            numero: conta.numero,
-            nome: conta.nome,
-            saldo: conta.saldo,
-            banco: conta.banco,
-            agencia: conta.agencia,
-            ultimaAtualizacao: conta.ultimaAtualizacao,
-            operacao: conta.operacao,
-            registros: conta.registros,
-            totalRegistros: conta.registros.length,
-            data_geracao: registroMaisRecente?.data_geracao || null
-          };
+        // Processar os dados para incluir todos os registros individuais
+        const dadosProcessados = [];
+        
+        result.data.forEach(conta => {
+          // Para cada registro da conta, criar um item separado
+          conta.registros.forEach(registro => {
+            dadosProcessados.push({
+              numero: conta.numero,
+              nome: conta.nome,
+              saldo: parseFloat(registro.valor), // Usar o valor do registro específico
+              banco: registro.banco_nome,
+              agencia: registro.agencia,
+              ultimaAtualizacao: new Date(registro.data_geracao),
+              operacao: {
+                tipo: registro.operacao_tipo,
+                descricao: registro.operacao_descricao,
+                sinal: registro.operacao_sinal,
+                isPositive: registro.operacao_is_positive,
+                valorAbsoluto: registro.operacao_valor_absoluto
+              },
+              registros: [registro], // Manter apenas este registro
+              totalRegistros: 1,
+              data_geracao: registro.data_geracao // Usar a data_geracao do registro específico
+            });
+          });
         });
         
-        setDadosOriginais(dadosProcessados);
+        console.log('Dados processados:', dadosProcessados.length, 'registros individuais');
+        
+        // Contador para duplicatas
+        let duplicatasRemovidas = 0;
+        
+        // Remover duplicatas baseado em banco, agência, conta, data_geração e saldo
+        const dadosUnicos = [];
+        const chavesUnicas = new Set();
+        
+        // Primeiro, ordenar por data_geracao para garantir consistência
+        dadosProcessados.sort((a, b) => new Date(a.data_geracao) - new Date(b.data_geracao));
+        
+        dadosProcessados.forEach(item => {
+          // Normalizar os campos para evitar diferenças sutis
+          const bancoNormalizado = (item.banco || '').trim().toUpperCase();
+          const agenciaNormalizada = (item.agencia || '').toString().trim();
+          const contaNormalizada = (item.numero || '').toString().trim();
+          const dataNormalizada = item.data_geracao ? new Date(item.data_geracao).toISOString().split('T')[0] : '';
+          const saldoNormalizado = typeof item.saldo === 'number' ? item.saldo.toFixed(2) : item.saldo;
+          
+          const chaveUnica = `${bancoNormalizado}|${agenciaNormalizada}|${contaNormalizada}|${dataNormalizada}|${saldoNormalizado}`;
+          
+          if (!chavesUnicas.has(chaveUnica)) {
+            chavesUnicas.add(chaveUnica);
+            dadosUnicos.push(item);
+          } else {
+            duplicatasRemovidas++;
+            console.log('Duplicata removida:', {
+              banco: item.banco,
+              agencia: item.agencia,
+              conta: item.numero,
+              data: item.data_geracao,
+              saldo: item.saldo,
+              chaveUnica: chaveUnica
+            });
+          }
+        });
+        
+        console.log('Dados após remoção de duplicatas:', dadosUnicos.length, 'registros únicos');
+        console.log('Duplicatas removidas:', duplicatasRemovidas);
+        
+        // Debug: mostrar algumas datas para verificar
+        const datasUnicas = [...new Set(dadosUnicos.map(item => {
+          const data = new Date(item.data_geracao);
+          return `${data.getDate()}/${data.getMonth() + 1}/${data.getFullYear()}`;
+        }))].sort();
+        console.log('Datas disponíveis:', datasUnicas);
+        
+        // Debug específico para BRADESCO 11/08
+        const bradesco1108 = dadosUnicos.filter(item => 
+          item.banco && item.banco.toUpperCase().includes('BRADESCO') && 
+          item.data_geracao && item.data_geracao.includes('2025-08-11')
+        );
+        console.log('BRADESCO 11/08 encontrados:', bradesco1108.length, 'registros');
+        if (bradesco1108.length > 0) {
+          console.log('Detalhes BRADESCO 11/08:', bradesco1108.map(item => ({
+            banco: item.banco,
+            agencia: item.agencia,
+            conta: item.numero,
+            data: item.data_geracao,
+            saldo: item.saldo
+          })));
+        }
+        
+        setDadosOriginais(dadosUnicos);
         setDadosCarregados(true);
       } else {
         throw new Error(result.message || 'Erro ao buscar dados');
@@ -215,7 +304,7 @@ const SaldoBancario = () => {
     }
 
     // Filtrar apenas os dados do dia específico
-    const dadosDoDia = aplicarFiltroMensal(dadosOriginais, filtroMensal, filtroDia);
+    const dadosDoDia = aplicarFiltroMensal(dadosOriginais, filtroMensal, filtroDia, filtroAno);
     
     console.log('Dados do dia filtrados:', dadosDoDia); // Debug
     
@@ -249,15 +338,15 @@ const SaldoBancario = () => {
       contasPositivas,
       contasNegativas
     };
-  }, [dadosOriginais, filtroMensal, filtroDia]);
+  }, [dadosOriginais, filtroMensal, filtroDia, filtroAno]);
 
   // Aplicar filtros quando dados ou filtros mudarem
   useEffect(() => {
     if (dadosOriginais.length > 0) {
-      const dadosFiltrados = aplicarFiltroMensal(dadosOriginais, filtroMensal, filtroDia);
+      const dadosFiltrados = aplicarFiltroMensal(dadosOriginais, filtroMensal, filtroDia, filtroAno);
       setSaldosContas(dadosFiltrados);
     }
-  }, [dadosOriginais, filtroMensal, filtroDia]);
+  }, [dadosOriginais, filtroMensal, filtroDia, filtroAno]);
 
 
 
@@ -361,11 +450,35 @@ const SaldoBancario = () => {
 
           </div>
 
-          {/* Filtros Mensais */}
+          {/* Filtros por Ano e Mês */}
           <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-8">
             <div className="flex items-center gap-2 mb-3">
               <Calendar size={18} className="text-[#000638]" />
               <h3 className="font-bold text-sm text-[#000638]">Filtro por Período (Data Geração)</h3>
+            </div>
+            
+            {/* Filtro por Ano */}
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Calendar size={16} className="text-[#000638]" />
+                <h4 className="font-bold text-sm text-[#000638]">Ano</h4>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {/* Botões dos anos (últimos 5 anos) */}
+                {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map((ano) => (
+                  <button
+                    key={ano}
+                    onClick={() => setFiltroAno(ano)}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      filtroAno === ano
+                        ? 'bg-[#000638] text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                    }`}
+                  >
+                    {ano}
+                  </button>
+                ))}
+              </div>
             </div>
             
             <div className="flex flex-wrap gap-2">
@@ -387,7 +500,7 @@ const SaldoBancario = () => {
 
             {/* Informação do filtro ativo */}
             <div className="mt-3 text-xs text-gray-500">
-              <span className="font-medium">Filtro ativo:</span> {filtroMensal} - Dia {filtroDia}
+              <span className="font-medium">Filtro ativo:</span> {filtroAno} - {filtroMensal} - Dia {filtroDia}
               <span className="ml-2">({saldosContas.length} registro{saldosContas.length !== 1 ? 's' : ''})</span>
             </div>
 
@@ -443,7 +556,7 @@ const SaldoBancario = () => {
                     }
                   </div>
                   <CardDescription className="text-xs text-gray-500">
-                    {filtroMensal} - Dia {filtroDia}
+                    {filtroAno} - {filtroMensal} - Dia {filtroDia}
                   </CardDescription>
                 </CardContent>
               </Card>
@@ -463,7 +576,7 @@ const SaldoBancario = () => {
                     }
                   </div>
                   <CardDescription className="text-xs text-gray-500">
-                    {filtroMensal} - Dia {filtroDia}
+                    {filtroAno} - {filtroMensal} - Dia {filtroDia}
                   </CardDescription>
                 </CardContent>
               </Card>
@@ -483,7 +596,7 @@ const SaldoBancario = () => {
                     }
                   </div>
                   <CardDescription className="text-xs text-gray-500">
-                    {filtroMensal} - Dia {filtroDia}
+                    {filtroAno} - {filtroMensal} - Dia {filtroDia}
                   </CardDescription>
                 </CardContent>
               </Card>
