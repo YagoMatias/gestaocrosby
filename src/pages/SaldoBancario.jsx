@@ -52,6 +52,7 @@ const SaldoBancario = () => {
   const [filtroAno, setFiltroAno] = useState(new Date().getFullYear());
   const [filtroMensal, setFiltroMensal] = useState(getMesAtual());
   const [filtroDia, setFiltroDia] = useState(getDiaInicial());
+  const [filtroBanco, setFiltroBanco] = useState('TODOS');
   
   // Estados dos dados
   const [loading, setLoading] = useState(false);
@@ -89,6 +90,15 @@ const SaldoBancario = () => {
     return '0%';
   };
 
+  // Função para obter bancos únicos dos dados
+  const obterBancosUnicos = useMemo(() => {
+    if (dadosOriginais.length === 0) return [];
+    
+    const bancos = [...new Set(dadosOriginais.map(item => item.banco))].filter(Boolean).sort();
+    console.log('Bancos únicos encontrados:', bancos);
+    return bancos;
+  }, [dadosOriginais]);
+
 
 
   // Função para lidar com mudança de filtro mensal
@@ -110,9 +120,9 @@ const SaldoBancario = () => {
     }
   };
 
-  // Função para aplicar filtro mensal e por dia
-  const aplicarFiltroMensal = (dados, filtro, diaFiltro = null, anoFiltro = null) => {
-    console.log('Aplicando filtro:', { filtro, diaFiltro, anoFiltro, totalDados: dados.length });
+  // Função para aplicar filtro mensal, dia e banco
+  const aplicarFiltroMensal = (dados, filtro, diaFiltro = null, anoFiltro = null, bancoFiltro = null) => {
+    console.log('Aplicando filtro:', { filtro, diaFiltro, anoFiltro, bancoFiltro, totalDados: dados.length });
     
     const anoParaFiltrar = anoFiltro || new Date().getFullYear();
     
@@ -159,19 +169,35 @@ const SaldoBancario = () => {
       
       return true;
     });
+
+    // Aplicar filtro de banco se especificado
+    let dadosFiltradosPorBanco = dadosFiltrados;
+    if (bancoFiltro && bancoFiltro !== 'TODOS') {
+      console.log(`Aplicando filtro de banco: ${bancoFiltro}`);
+      dadosFiltradosPorBanco = dadosFiltrados.filter(item => {
+        const bancoItem = (item.banco || '').toUpperCase();
+        const bancoFiltroUpper = bancoFiltro.toUpperCase();
+        
+        // Verificar se o banco do item contém o filtro (para casos como "ITAU" vs "BANCO ITAU")
+        const match = bancoItem.includes(bancoFiltroUpper) || bancoFiltroUpper.includes(bancoItem);
+        console.log(`Filtro banco ${bancoFiltro}: ${bancoItem} -> ${match}`);
+        return match;
+      });
+      console.log(`Filtro de banco aplicado: ${dadosFiltradosPorBanco.length} registros encontrados`);
+    }
     
-    console.log('Dados filtrados:', dadosFiltrados.length);
+    console.log('Dados filtrados:', dadosFiltradosPorBanco.length);
     
     // Debug: mostrar as datas dos dados filtrados
-    if (dadosFiltrados.length > 0) {
-      const datasFiltradas = [...new Set(dadosFiltrados.map(item => {
+    if (dadosFiltradosPorBanco.length > 0) {
+      const datasFiltradas = [...new Set(dadosFiltradosPorBanco.map(item => {
         const data = new Date(item.data_geracao);
         return `${data.getDate()}/${data.getMonth() + 1}/${data.getFullYear()}`;
       }))].sort();
       console.log('Datas dos dados filtrados:', datasFiltradas);
     }
     
-    return dadosFiltrados;
+    return dadosFiltradosPorBanco;
   };
 
   // Função para buscar todos os dados da tabela retorno_bancario
@@ -303,10 +329,10 @@ const SaldoBancario = () => {
       };
     }
 
-    // Filtrar apenas os dados do dia específico
-    const dadosDoDia = aplicarFiltroMensal(dadosOriginais, filtroMensal, filtroDia, filtroAno);
+    // Filtrar apenas os dados do dia específico E banco selecionado
+    const dadosDoDia = aplicarFiltroMensal(dadosOriginais, filtroMensal, filtroDia, filtroAno, filtroBanco);
     
-    console.log('Dados do dia filtrados:', dadosDoDia); // Debug
+    console.log('Dados do dia filtrados (com banco):', dadosDoDia); // Debug
     
     const saldoTotal = dadosDoDia.reduce((acc, conta) => acc + conta.saldo, 0);
     
@@ -331,22 +357,27 @@ const SaldoBancario = () => {
       return conta.saldo < 0;
     }).length;
 
-    console.log('Estatísticas calculadas:', { saldoTotal, contasPositivas, contasNegativas });
+    console.log('Estatísticas calculadas (com filtro de banco):', { 
+      saldoTotal, 
+      contasPositivas, 
+      contasNegativas, 
+      bancoFiltro: filtroBanco 
+    });
 
     return {
       saldoTotal,
       contasPositivas,
       contasNegativas
     };
-  }, [dadosOriginais, filtroMensal, filtroDia, filtroAno]);
+  }, [dadosOriginais, filtroMensal, filtroDia, filtroAno, filtroBanco]);
 
   // Aplicar filtros quando dados ou filtros mudarem
   useEffect(() => {
     if (dadosOriginais.length > 0) {
-      const dadosFiltrados = aplicarFiltroMensal(dadosOriginais, filtroMensal, filtroDia, filtroAno);
+      const dadosFiltrados = aplicarFiltroMensal(dadosOriginais, filtroMensal, filtroDia, filtroAno, filtroBanco);
       setSaldosContas(dadosFiltrados);
     }
-  }, [dadosOriginais, filtroMensal, filtroDia, filtroAno]);
+  }, [dadosOriginais, filtroMensal, filtroDia, filtroAno, filtroBanco]);
 
 
 
@@ -501,6 +532,7 @@ const SaldoBancario = () => {
             {/* Informação do filtro ativo */}
             <div className="mt-3 text-xs text-gray-500">
               <span className="font-medium">Filtro ativo:</span> {filtroAno} - {filtroMensal} - Dia {filtroDia}
+              {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
               <span className="ml-2">({saldosContas.length} registro{saldosContas.length !== 1 ? 's' : ''})</span>
             </div>
 
@@ -530,6 +562,43 @@ const SaldoBancario = () => {
                 </div>
               </div>
             )}
+
+            {/* Filtro por Banco */}
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="flex items-center gap-2 mb-3">
+                <Bank size={16} className="text-[#000638]" />
+                <h4 className="font-bold text-sm text-[#000638]">Filtro por Banco</h4>
+              </div>
+              
+              <div className="flex flex-wrap gap-2">
+                {/* Botão TODOS */}
+                <button
+                  onClick={() => setFiltroBanco('TODOS')}
+                  className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                    filtroBanco === 'TODOS'
+                      ? 'bg-[#000638] text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                  }`}
+                >
+                  TODOS
+                </button>
+                
+                {/* Botões dos bancos */}
+                {obterBancosUnicos.map((banco) => (
+                  <button
+                    key={banco}
+                    onClick={() => setFiltroBanco(banco)}
+                    className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                      filtroBanco === banco
+                        ? 'bg-[#000638] text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                    }`}
+                  >
+                    {banco}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {erro && (
@@ -557,6 +626,7 @@ const SaldoBancario = () => {
                   </div>
                   <CardDescription className="text-xs text-gray-500">
                     {filtroAno} - {filtroMensal} - Dia {filtroDia}
+                    {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
                   </CardDescription>
                 </CardContent>
               </Card>
@@ -577,6 +647,7 @@ const SaldoBancario = () => {
                   </div>
                   <CardDescription className="text-xs text-gray-500">
                     {filtroAno} - {filtroMensal} - Dia {filtroDia}
+                    {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
                   </CardDescription>
                 </CardContent>
               </Card>
@@ -597,6 +668,7 @@ const SaldoBancario = () => {
                   </div>
                   <CardDescription className="text-xs text-gray-500">
                     {filtroAno} - {filtroMensal} - Dia {filtroDia}
+                    {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
                   </CardDescription>
                 </CardContent>
               </Card>

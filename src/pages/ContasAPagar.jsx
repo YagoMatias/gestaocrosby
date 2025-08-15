@@ -27,6 +27,35 @@ import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
 
+// Função para criar Date object sem problemas de fuso horário
+const criarDataSemFusoHorario = (dataString) => {
+  if (!dataString) return null;
+  if (dataString.includes('T')) {
+    // Para datas ISO, usar apenas a parte da data
+    const dataPart = dataString.split('T')[0];
+    const [ano, mes, dia] = dataPart.split('-');
+    return new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia));
+  }
+  // Para datas já no formato DD/MM/YYYY
+  if (dataString.includes('/')) {
+    const [dia, mes, ano] = dataString.split('/');
+    return new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia));
+  }
+  return new Date(dataString);
+};
+
+// Função para formatar data
+const formatarData = (data) => {
+  if (!data) return '';
+  if (data.includes('T')) {
+    // Para datas ISO, criar a data considerando apenas a parte da data (YYYY-MM-DD)
+    const dataPart = data.split('T')[0];
+    const [ano, mes, dia] = dataPart.split('-');
+    return `${dia}/${mes}/${ano}`;
+  }
+  return data;
+};
+
 const ContasAPagar = () => {
   const apiClient = useApiClient();
 
@@ -164,14 +193,9 @@ const ContasAPagar = () => {
   const [tipoCardSelecionado, setTipoCardSelecionado] = useState('');
   const [dadosCardModal, setDadosCardModal] = useState([]);
 
-  // Função para formatar data
-  const formatarData = (data) => {
-    if (!data) return '';
-    if (data.includes('T')) {
-      return new Date(data).toLocaleDateString('pt-BR');
-    }
-    return data;
-  };
+
+
+
 
   // Função para lidar com mudança de filtro mensal
   const handleFiltroMensalChange = (novoFiltro) => {
@@ -337,10 +361,20 @@ const ContasAPagar = () => {
         return dadosOriginais.filter(item => parseFloat(item.vl_pago) > 0);
       case 'Vencido':
         // Mostra apenas itens vencidos
-        return dadosOriginais.filter(item => item.dt_vencimento && new Date(item.dt_vencimento) < new Date());
+        return dadosOriginais.filter(item => {
+          if (!item.dt_vencimento) return false;
+          const dataVencimento = criarDataSemFusoHorario(item.dt_vencimento);
+          const hoje = new Date();
+          return dataVencimento < hoje;
+        });
       case 'A Vencer':
         // Mostra apenas itens a vencer
-        return dadosOriginais.filter(item => !item.dt_vencimento || new Date(item.dt_vencimento) >= new Date());
+        return dadosOriginais.filter(item => {
+          if (!item.dt_vencimento) return true;
+          const dataVencimento = criarDataSemFusoHorario(item.dt_vencimento);
+          const hoje = new Date();
+          return dataVencimento >= hoje;
+        });
       default:
         return dadosOriginais;
     }
@@ -406,7 +440,9 @@ const ContasAPagar = () => {
       const dataVencimento = item.dt_vencimento;
       if (!dataVencimento) return false;
       
-      const data = new Date(dataVencimento);
+      const data = criarDataSemFusoHorario(dataVencimento);
+      if (!data) return false;
+      
       const ano = data.getFullYear();
       const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
       const dia = data.getDate();
@@ -600,20 +636,20 @@ const ContasAPagar = () => {
           bValue = b.nr_portador || '';
           break;
         case 'dt_emissao':
-          aValue = a.dt_emissao ? new Date(a.dt_emissao) : new Date(0);
-          bValue = b.dt_emissao ? new Date(b.dt_emissao) : new Date(0);
+          aValue = a.dt_emissao ? criarDataSemFusoHorario(a.dt_emissao) : new Date(0);
+          bValue = b.dt_emissao ? criarDataSemFusoHorario(b.dt_emissao) : new Date(0);
           break;
         case 'dt_vencimento':
-          aValue = a.dt_vencimento ? new Date(a.dt_vencimento) : new Date(0);
-          bValue = b.dt_vencimento ? new Date(b.dt_vencimento) : new Date(0);
+          aValue = a.dt_vencimento ? criarDataSemFusoHorario(a.dt_vencimento) : new Date(0);
+          bValue = b.dt_vencimento ? criarDataSemFusoHorario(b.dt_vencimento) : new Date(0);
           break;
         case 'dt_entrada':
-          aValue = a.dt_entrada ? new Date(a.dt_entrada) : new Date(0);
-          bValue = b.dt_entrada ? new Date(b.dt_entrada) : new Date(0);
+          aValue = a.dt_entrada ? criarDataSemFusoHorario(a.dt_entrada) : new Date(0);
+          bValue = b.dt_entrada ? criarDataSemFusoHorario(b.dt_entrada) : new Date(0);
           break;
         case 'dt_liq':
-          aValue = a.dt_liq ? new Date(a.dt_liq) : new Date(0);
-          bValue = b.dt_liq ? new Date(b.dt_liq) : new Date(0);
+          aValue = a.dt_liq ? criarDataSemFusoHorario(a.dt_liq) : new Date(0);
+          bValue = b.dt_liq ? criarDataSemFusoHorario(b.dt_liq) : new Date(0);
           break;
         case 'tp_situacao':
           aValue = a.tp_situacao || '';
@@ -740,7 +776,7 @@ const ContasAPagar = () => {
     // Se tem vencimento, verificar se está vencido
     if (item.dt_vencimento) {
       const hoje = new Date();
-      const vencimento = new Date(item.dt_vencimento);
+      const vencimento = criarDataSemFusoHorario(item.dt_vencimento);
       const diasParaVencer = Math.ceil((vencimento - hoje) / (1000 * 60 * 60 * 24));
       
       if (vencimento < hoje) {
@@ -903,7 +939,7 @@ const ContasAPagar = () => {
   const hoje = new Date();
   const contasProximasVencerCards = dadosOrdenadosParaCards.filter(grupo => {
     if (!grupo.item.dt_vencimento) return false;
-    const dataVencimento = new Date(grupo.item.dt_vencimento);
+    const dataVencimento = criarDataSemFusoHorario(grupo.item.dt_vencimento);
     const diasParaVencer = Math.ceil((dataVencimento - hoje) / (1000 * 60 * 60 * 24));
     return diasParaVencer >= 0 && diasParaVencer <= 7 && !grupo.item.dt_liq;
   });
@@ -1713,13 +1749,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
     }
   };
 
-  const formatarData = (data) => {
-    if (!data) return '';
-    if (data.includes('T')) {
-      return new Date(data).toLocaleDateString('pt-BR');
-    }
-    return data;
-  };
+
 
   // Função para exportar dados da última linha de hierarquia para Excel
   const exportarDadosUltimaLinha = () => {
@@ -1832,7 +1862,8 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
     const anoAtual = new Date().getFullYear();
     dadosMensais['ANO'] = dadosOriginais.filter(item => {
       if (!item.dt_vencimento) return false;
-      const ano = new Date(item.dt_vencimento).getFullYear();
+      const data = criarDataSemFusoHorario(item.dt_vencimento);
+      const ano = data.getFullYear();
       return ano === anoAtual;
     }).length;
     
@@ -1841,7 +1872,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
       const numeroMes = index + 1;
       dadosMensais[mes] = dadosOriginais.filter(item => {
         if (!item.dt_vencimento) return false;
-        const data = new Date(item.dt_vencimento);
+        const data = criarDataSemFusoHorario(item.dt_vencimento);
         return data.getMonth() + 1 === numeroMes;
       }).length;
     });
