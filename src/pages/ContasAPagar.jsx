@@ -789,8 +789,7 @@ const ContasAPagar = () => {
           ds_observacao: item.ds_observacao || '',
           in_aceite: item.in_aceite || '',
           vl_rateio: item.vl_rateio || 0,
-          tp_aceite: item.in_aceite || '', // Mantém compatibilidade
-          ds_observacao: item.ds_observacao || '' // Campo não retornado pela nova rota
+          tp_aceite: item.in_aceite || '' // Mantém compatibilidade
         }));
         
         setDados(dadosProcessados);
@@ -1679,14 +1678,15 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
         };
       }
       
-      // Criar chave única para o fornecedor incluindo duplicata e rateio
-      const chaveFornecedor = `${nomeFornecedor}|${item.nr_duplicata}|${vlRateio}`;
+      // Criar chave única para o fornecedor incluindo duplicata, parcela e rateio
+      const chaveFornecedor = `${nomeFornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${vlRateio}`;
       
       // Criar sub-tópico do fornecedor se não existir
       if (!categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor]) {
         categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor] = {
           nome: nomeFornecedor,
           nrDuplicata: item.nr_duplicata,
+          nrParcela: item.nr_parcela,
           vlRateio: vlRateio,
           itens: [],
           total: 0,
@@ -1765,8 +1765,8 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
     });
   };
 
-  const toggleFornecedor = (nomeCategoria, nomeDespesa, nomeFornecedor, nrDuplicata, vlRateio) => {
-    const chave = `${nomeCategoria}|${nomeDespesa}|${nomeFornecedor}|${nrDuplicata}|${vlRateio}`;
+  const toggleFornecedor = (nomeCategoria, nomeDespesa, nomeFornecedor, nrDuplicata, nrParcela, vlRateio) => {
+    const chave = `${nomeCategoria}|${nomeDespesa}|${nomeFornecedor}|${nrDuplicata}|${nrParcela}|${vlRateio}`;
     setCategoriasExpandidas(prev => {
       const novoSet = new Set(prev);
       if (novoSet.has(chave)) {
@@ -1833,7 +1833,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
               'Pago': parseFloat(item.vl_pago || 0),
               'Aceite': item.in_aceite || '',
               'Parcela': item.nr_parcela || '',
-              'Rateio': item.vl_rateio || '',
+              'Rateio Item': item.vl_rateio || '',
               'Observação': item.ds_observacao || '',
               'Previsão': item.tp_previsaoreal || ''
             });
@@ -2117,15 +2117,15 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                         {isDespesaExpanded && (
                           <div className="bg-white border-t border-gray-50">
                                                     {despesa.fornecedoresArray.map((fornecedor, fornecedorIndex) => {
-                          const chaveExpansaoFornecedor = `${categoria.nome}|${despesa.nome}|${fornecedor.nome}|${fornecedor.nrDuplicata}|${fornecedor.vlRateio}`;
+                          const chaveExpansaoFornecedor = `${categoria.nome}|${despesa.nome}|${fornecedor.nome}|${fornecedor.nrDuplicata}|${fornecedor.nrParcela}|${fornecedor.vlRateio}`;
                           const isFornecedorExpanded = categoriasExpandidas.has(chaveExpansaoFornecedor);
                           
                           return (
-                            <div key={`fornecedor-${categoriaIndex}-${despesaIndex}-${fornecedorIndex}-${fornecedor.nome}-${fornecedor.nrDuplicata}`} className="border-b border-gray-50 last:border-b-0">
+                            <div key={`fornecedor-${categoriaIndex}-${despesaIndex}-${fornecedorIndex}-${fornecedor.nome}-${fornecedor.nrDuplicata}-${fornecedor.nrParcela}`} className="border-b border-gray-50 last:border-b-0">
                                   {/* Cabeçalho do fornecedor */}
                                   <div
                                     className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-9 py-2 flex items-center justify-between"
-                                    onClick={() => toggleFornecedor(categoria.nome, despesa.nome, fornecedor.nome, fornecedor.nrDuplicata, fornecedor.vlRateio)}
+                                    onClick={() => toggleFornecedor(categoria.nome, despesa.nome, fornecedor.nome, fornecedor.nrDuplicata, fornecedor.nrParcela, fornecedor.vlRateio)}
                                   >
                                     <div className="flex items-center space-x-2">
                                       {isFornecedorExpanded ? (
@@ -2137,7 +2137,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                         <h5 className="font-medium text-xs text-gray-600">
                                           {fornecedor.nome}
                                           <span className="ml-1 text-gray-400">
-                                            (Dup: {fornecedor.nrDuplicata})
+                                            (Dup: {fornecedor.nrDuplicata} | Parc: {fornecedor.nrParcela || '-'})
                                           </span>
                                           {fornecedor.vlRateio > 0 && (
                                             <span className="ml-1 text-gray-400">

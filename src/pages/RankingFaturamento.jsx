@@ -30,6 +30,8 @@ const RankingFaturamento = () => {
   const [loadingVendedores, setLoadingVendedores] = useState(false);
   const [tipoLoja, setTipoLoja] = useState('Todos');
   const [rankingTipo, setRankingTipo] = useState('lojas');
+  // Ordenação específica para a tabela de Vendedores (igual ao padrão do Saldo Bancário)
+  const [ordenacaoVend, setOrdenacaoVend] = useState({ campo: null, direcao: 'asc' });
 
   console.log('RankingFaturamento: Componente renderizado');
 
@@ -430,10 +432,7 @@ const RankingFaturamento = () => {
     }
     
     if (tipoLoja === 'Proprias') {
-      const isFranquia = nomeFantasia.includes('FRANQUIA') || 
-                        nomeFantasia.includes('FRANCHISE') || 
-                        nomeFantasia.includes('FRANQ') ||
-                        nomeFantasia.includes('FRANCH');
+      const isFranquia = nomeFantasia.includes('F') || nomeFantasia.includes('- CROSBY');
       console.log('É própria?', !isFranquia);
       return !isFranquia;
     }
@@ -452,9 +451,9 @@ const RankingFaturamento = () => {
   // Filtros para vendedores
   const dadosVendedoresFiltrados = dadosVendedores.filter((item) => {
     if (tipoLoja === 'Franquias')
-      return item.nome_vendedor?.includes('VND') || item.nome_vendedor?.includes('ADM');
+      return !item.nome_vendedor?.includes('- INT');
     if (tipoLoja === 'Proprias')
-      return !item.nome_vendedor?.includes('VND') && !item.nome_vendedor?.includes('ADM');
+      return item.nome_vendedor?.includes('- INT');
     return true;
   }).filter(item => item.faturamento > 0);
 
@@ -498,6 +497,78 @@ const RankingFaturamento = () => {
         return acc + paItem;
       }, 0) / dadosVendedoresFiltrados.length
     : 0;
+
+  // Mapa de calor para Ticket Médio (aplicado apenas para vendedores)
+  const getTicketColorClass = (ticket) => {
+    if (ticket >= 400) return 'bg-green-200';
+    if (ticket >= 375) return 'bg-green-100';
+    if (ticket >= 350) return 'bg-lime-100';
+    if (ticket >= 325) return 'bg-lime-200';
+    if (ticket >= 300) return 'bg-yellow-100';
+    if (ticket >= 275) return 'bg-yellow-200';
+    if (ticket >= 250) return 'bg-amber-200';
+    if (ticket >= 230) return 'bg-orange-100';
+    if (ticket >= 200) return 'bg-orange-200';
+    if (ticket >= 175) return 'bg-red-100';
+    if (ticket >= 150) return 'bg-red-200';
+    return '';
+  };
+
+  // Ordenação -Z (A/Z) para Vendedores, similar a SaldoBancario
+  const handleOrdenarVend = (campo) => {
+    setOrdenacaoVend(prev => ({
+      campo,
+      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const getIconeOrdenacaoVend = (campo) => {
+    if (ordenacaoVend.campo !== campo) return null;
+    return ordenacaoVend.direcao === 'asc' ? (
+      <CaretUp size={12} className="ml-1 inline-block" />
+    ) : (
+      <CaretDown size={12} className="ml-1 inline-block" />
+    );
+  };
+
+  const dadosVendedoresOrdenados = React.useMemo(() => {
+    if (!ordenacaoVend.campo) return dadosVendedoresFiltrados;
+    const computePA = (x) => {
+      const saida = Number(x.transacoes_saida) || 0;
+      const paS = Number(x.pa_saida) || 0;
+      const paE = Number(x.pa_entrada) || 0;
+      return saida > 0 ? (paS - paE) / saida : 0;
+    };
+    const computeTM = (x) => {
+      const saida = Number(x.transacoes_saida) || 0;
+      return saida > 0 ? (Number(x.faturamento) || 0) / saida : 0;
+    };
+    return [...dadosVendedoresFiltrados].sort((a, b) => {
+      let valorA;
+      let valorB;
+      switch (ordenacaoVend.campo) {
+        case 'rank':
+          valorA = a.rank || 0; valorB = b.rank || 0; break;
+        case 'nome':
+          valorA = (a.nome_vendedor || '').toLowerCase();
+          valorB = (b.nome_vendedor || '').toLowerCase();
+          break;
+        case 'faturamento':
+          valorA = Number(a.faturamento) || 0;
+          valorB = Number(b.faturamento) || 0;
+          break;
+        case 'pa':
+          valorA = computePA(a); valorB = computePA(b); break;
+        case 'tm':
+          valorA = computeTM(a); valorB = computeTM(b); break;
+        default:
+          valorA = 0; valorB = 0;
+      }
+      if (valorA < valorB) return ordenacaoVend.direcao === 'asc' ? -1 : 1;
+      if (valorA > valorB) return ordenacaoVend.direcao === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [dadosVendedoresFiltrados, ordenacaoVend]);
 
   // Destaques
   const lojaDestaque = dadosLojasFiltrados.length > 0 ? dadosLojasFiltrados[0] : null;
@@ -799,18 +870,64 @@ const RankingFaturamento = () => {
                   <table className="min-w-full border border-gray-200 rounded-lg">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-16">#</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                          {rankingTipo === 'lojas' ? 'Loja' : 'Vendedor'}
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-16">
+                          <button
+                            type="button"
+                            className="inline-flex items-center hover:text-[#000638]"
+                            onClick={() => rankingTipo === 'vendedores' && handleOrdenarVend('rank')}
+                          >
+                            # {rankingTipo === 'vendedores' && getIconeOrdenacaoVend('rank')}
+                          </button>
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-40">Faturamento</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-24">PA</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-40">TM</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <button
+                            type="button"
+                            className="inline-flex items-center hover:text-[#000638]"
+                            onClick={() => rankingTipo === 'vendedores' && handleOrdenarVend('nome')}
+                          >
+                            {rankingTipo === 'lojas' ? 'Loja' : 'Vendedor'} {rankingTipo === 'vendedores' && getIconeOrdenacaoVend('nome')}
+                          </button>
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-40">
+                          <button
+                            type="button"
+                            className="inline-flex items-center hover:text-[#000638]"
+                            onClick={() => rankingTipo === 'vendedores' && handleOrdenarVend('faturamento')}
+                          >
+                            Faturamento {rankingTipo === 'vendedores' && getIconeOrdenacaoVend('faturamento')}
+                          </button>
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-24">
+                          <button
+                            type="button"
+                            className="inline-flex items-center hover:text-[#000638]"
+                            onClick={() => rankingTipo === 'vendedores' && handleOrdenarVend('pa')}
+                          >
+                            PA {rankingTipo === 'vendedores' && getIconeOrdenacaoVend('pa')}
+                          </button>
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-40">
+                          <button
+                            type="button"
+                            className="inline-flex items-center hover:text-[#000638]"
+                            onClick={() => rankingTipo === 'vendedores' && handleOrdenarVend('tm')}
+                          >
+                            TM {rankingTipo === 'vendedores' && getIconeOrdenacaoVend('tm')}
+                          </button>
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {(rankingTipo === 'lojas' ? dadosLojasFiltrados : dadosVendedoresFiltrados).map((item) => (
-                        <tr key={item.rank} className="hover:bg-gray-50">
+                      {(rankingTipo === 'lojas' ? dadosLojasFiltrados : dadosVendedoresOrdenados).map((item) => (
+                        <tr
+                          key={item.rank}
+                          className={`hover:bg-gray-50 ${(() => {
+                            if (rankingTipo !== 'vendedores') return '';
+                            const transacoesSaida = Number(item.transacoes_saida) || 0;
+                            const ticket = transacoesSaida > 0 ? item.faturamento / transacoesSaida : 0;
+                            return getTicketColorClass(ticket);
+                          })()}`}
+                        >
                           <td className="px-4 py-3 text-sm font-bold text-blue-600">
                             {item.rank}
                           </td>
