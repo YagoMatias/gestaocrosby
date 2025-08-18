@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useAuth } from '../components/AuthContext';
 import Layout from '../components/Layout';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import useApiClient from '../hooks/useApiClient';
@@ -21,7 +22,9 @@ import {
   CaretUp,
   CaretDown,
   TrendDown,
-  FileArrowDown
+  FileArrowDown,
+  XCircle,
+  Trash
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -57,6 +60,7 @@ const formatarData = (data) => {
 };
 
 const ContasAPagar = () => {
+  const { user, hasRole } = useAuth?.() || { user: null, hasRole: () => false };
   const apiClient = useApiClient();
 
   const [dados, setDados] = useState([]);
@@ -176,6 +180,7 @@ const ContasAPagar = () => {
   const [status, setStatus] = useState('Todos');
   const [situacao, setSituacao] = useState('NORMAIS');
   const [previsao, setPrevisao] = useState('TODOS');
+  const [filtroAutorizacao, setFiltroAutorizacao] = useState('TODOS'); // 'AUTORIZADOS' | 'NAO_AUTORIZADOS' | 'TODOS'
   const [fornecedor, setFornecedor] = useState('');
   const [despesa, setDespesa] = useState('');
   const [duplicata, setDuplicata] = useState('');
@@ -193,7 +198,19 @@ const ContasAPagar = () => {
   const [modalCardAberto, setModalCardAberto] = useState(false);
   const [tipoCardSelecionado, setTipoCardSelecionado] = useState('');
   const [dadosCardModal, setDadosCardModal] = useState([]);
+  // Mapa local de autorizações: chave única -> nome do autorizador
+  const [autorizacoes, setAutorizacoes] = useState({});
   const [planoOpen, setPlanoOpen] = useState(true);
+  
+  // Estados para modal de confirmação de remoção de autorização
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [autorizacaoToRemove, setAutorizacaoToRemove] = useState(null);
+  
+  // Estados para modais de confirmação em massa
+  const [showAutorizarTodosModal, setShowAutorizarTodosModal] = useState(false);
+  const [showRemoverTodosModal, setShowRemoverTodosModal] = useState(false);
+  const [contasParaAutorizar, setContasParaAutorizar] = useState([]);
+  const [contasParaRemover, setContasParaRemover] = useState([]);
 
 
 
@@ -495,8 +512,16 @@ const ContasAPagar = () => {
     }
   };
 
-  // Dados filtrados por situação, status E previsão
-  const dadosFiltradosCompletos = filtrarDadosPorPrevisao(filtrarDadosPorStatus(dadosFiltrados));
+  // Dados filtrados por situação, status, previsão e autorização
+  const dadosFiltradosCompletos = useMemo(() => {
+    const base = filtrarDadosPorPrevisao(filtrarDadosPorStatus(dadosFiltrados));
+    if (filtroAutorizacao === 'TODOS') return base;
+    return base.filter((item) => {
+      const chave = `${item.cd_fornecedor}|${item.nr_duplicata}|${item.cd_empresa}|${item.nr_parcela}`;
+      const isAut = Boolean(autorizacoes[chave]);
+      return filtroAutorizacao === 'AUTORIZADOS' ? isAut : !isAut;
+    });
+  }, [dadosFiltrados, filtroAutorizacao, autorizacoes]);
 
   // Função para ordenar os dados
   const handleSort = (key) => {
@@ -1127,6 +1152,136 @@ const ContasAPagar = () => {
     setModalDetalhes({ isOpen: false, conta: null });
   };
 
+  // Funções para modal de confirmação de remoção de autorização
+  const handleRemoveAuthorization = (chaveUnica, autorizadoPor) => {
+    setAutorizacaoToRemove({ chaveUnica, autorizadoPor });
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmRemoveAuthorization = () => {
+    if (autorizacaoToRemove) {
+      setAutorizacoes(prev => ({ 
+        ...prev, 
+        [autorizacaoToRemove.chaveUnica]: undefined 
+      }));
+    }
+    setShowConfirmModal(false);
+    setAutorizacaoToRemove(null);
+  };
+
+  const handleCancelRemoveAuthorization = () => {
+    setShowConfirmModal(false);
+    setAutorizacaoToRemove(null);
+  };
+
+  // Fechar modal ao clicar fora ou pressionar ESC
+  const handleModalClose = (e) => {
+    if (e.target === e.currentTarget) {
+      handleCancelRemoveAuthorization();
+    }
+  };
+
+  // Adicionar listener para tecla ESC
+  useEffect(() => {
+    const handleEscKey = (e) => {
+      if (e.key === 'Escape' && showConfirmModal) {
+        handleCancelRemoveAuthorization();
+      }
+      if (e.key === 'Escape' && showAutorizarTodosModal) {
+        handleCancelAutorizarTodos();
+      }
+      if (e.key === 'Escape' && showRemoverTodosModal) {
+        handleCancelRemoverTodos();
+      }
+    };
+
+    if (showConfirmModal || showAutorizarTodosModal || showRemoverTodosModal) {
+      document.addEventListener('keydown', handleEscKey);
+      document.body.style.overflow = 'hidden'; // Prevenir scroll
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEscKey);
+      document.body.style.overflow = 'unset';
+    };
+  }, [showConfirmModal, showAutorizarTodosModal, showRemoverTodosModal]);
+
+  // Funções para modais de confirmação em massa
+  const handleAutorizarTodos = () => {
+    const naoAutorizados = dadosOrdenadosParaCards.filter((grupo, index) => {
+      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+      return !autorizacoes[chaveUnica];
+    });
+    
+    if (naoAutorizados.length === 0) {
+      alert('Todas as contas já estão autorizadas!');
+      return;
+    }
+    
+    setContasParaAutorizar(naoAutorizados);
+    setShowAutorizarTodosModal(true);
+  };
+
+  const handleConfirmAutorizarTodos = () => {
+    const novasAutorizacoes = {};
+    contasParaAutorizar.forEach(grupo => {
+      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+      novasAutorizacoes[chaveUnica] = user?.name || 'USUÁRIO';
+    });
+    setAutorizacoes(prev => ({ ...prev, ...novasAutorizacoes }));
+    setShowAutorizarTodosModal(false);
+    setContasParaAutorizar([]);
+  };
+
+  const handleCancelAutorizarTodos = () => {
+    setShowAutorizarTodosModal(false);
+    setContasParaAutorizar([]);
+  };
+
+  const handleRemoverTodos = () => {
+    const autorizados = dadosOrdenadosParaCards.filter((grupo, index) => {
+      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+      return autorizacoes[chaveUnica];
+    });
+    
+    if (autorizados.length === 0) {
+      alert('Nenhuma conta está autorizada para remover!');
+      return;
+    }
+    
+    setContasParaRemover(autorizados);
+    setShowRemoverTodosModal(true);
+  };
+
+  const handleConfirmRemoverTodos = () => {
+    const novasAutorizacoes = { ...autorizacoes };
+    contasParaRemover.forEach(grupo => {
+      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+      delete novasAutorizacoes[chaveUnica];
+    });
+    setAutorizacoes(novasAutorizacoes);
+    setShowRemoverTodosModal(false);
+    setContasParaRemover([]);
+  };
+
+  const handleCancelRemoverTodos = () => {
+    setShowRemoverTodosModal(false);
+    setContasParaRemover([]);
+  };
+
+  // Fechar modais ao clicar fora
+  const handleAutorizarTodosModalClose = (e) => {
+    if (e.target === e.currentTarget) {
+      handleCancelAutorizarTodos();
+    }
+  };
+
+  const handleRemoverTodosModalClose = (e) => {
+    if (e.target === e.currentTarget) {
+      handleCancelRemoverTodos();
+    }
+  };
+
   return (
     <Layout>
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
@@ -1211,6 +1366,18 @@ const ContasAPagar = () => {
                   <option value="PREVISÃO">PREVISÃO</option>
                   <option value="REAL">REAL</option>
                   <option value="CONSIGNADO">CONSIGNADO</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Autorização</label>
+                <select
+                  value={filtroAutorizacao}
+                  onChange={(e) => setFiltroAutorizacao(e.target.value)}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                >
+                  <option value="TODOS">TODOS</option>
+                  <option value="AUTORIZADOS">AUTORIZADOS</option>
+                  <option value="NAO_AUTORIZADOS">NÃO AUTORIZADOS</option>
                 </select>
               </div>
               <div>
@@ -1565,6 +1732,22 @@ const ContasAPagar = () => {
 										</button>
 									);
 								})()}
+								{hasRole(['ADM', 'DIRETOR']) && (
+									<>
+										<button
+											onClick={() => handleAutorizarTodos()}
+											className="text-xs px-2 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors"
+										>
+											Autorizar Todos
+										</button>
+										<button
+											onClick={() => handleRemoverTodos()}
+											className="text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+										>
+											Remover Todos
+										</button>
+									</>
+								)}
 								<button
 									onClick={exportarExcelDetalhamento}
 									className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
@@ -1578,6 +1761,10 @@ const ContasAPagar = () => {
 								<thead>
 									<tr className="bg-[#000638] text-white text-[10px]">
 										<th className="px-2 py-1 text-center text-[10px]" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10 }}>Selecionar</th>
+										{hasRole(['ADM', 'DIRETOR']) && (
+											<th className="px-2 py-1 text-center text-[10px]">Ações</th>
+										)}
+										<th className="px-1 py-1 text-center text-[10px]">Autorizado</th>
 										<th className="px-2 py-1 text-center text-[10px]">Vencimento</th>
 										<th className="px-2 py-1 text-center text-[10px]">Valor</th>
 										<th className="px-1 py-1 text-center text-[10px]">Fornecedor</th>
@@ -1606,10 +1793,59 @@ const ContasAPagar = () => {
 								<tbody>
 									{dadosOrdenadosParaCards.map((grupo, index) => {
 										const isSelected = linhasSelecionadasAgrupadas.has(index);
+										const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+										const autorizadoPor = autorizacoes[chaveUnica];
+										const podeAutorizar = hasRole(['ADM', 'DIRETOR']);
+										
 										return (
 										<tr key={`grp-${index}`} className={`text-[10px] border-b transition-colors cursor-pointer ${isSelected ? 'bg-blue-100 hover:bg-blue-200' : index % 2 === 0 ? 'bg-white hover:bg-gray-100' : 'bg-gray-50 hover:bg-gray-100'}`} onClick={() => abrirModalDetalhes(grupo.item)} title="Clique para ver detalhes da conta">
 											<td className="px-2 py-1 text-center" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
 												<input type="checkbox" checked={isSelected} onChange={(e) => { e.stopPropagation(); toggleLinhaSelecionadaAgrupada(index); }} className="rounded" onClick={(e) => e.stopPropagation()} />
+											</td>
+											{hasRole(['ADM', 'DIRETOR']) && (
+												<td className="px-2 py-1 text-center">
+													{podeAutorizar ? (
+														<button
+															onClick={(e) => { 
+																e.stopPropagation(); 
+																if (autorizadoPor) {
+																	// Confirmação para remover autorização
+																	handleRemoveAuthorization(chaveUnica, autorizadoPor);
+																} else {
+																	// Autorizar sem confirmação
+																	setAutorizacoes(prev => ({ 
+																		...prev, 
+																		[chaveUnica]: (user?.name || 'USUÁRIO') 
+																	}));
+																}
+															}}
+															className={`text-[10px] px-2 py-1 rounded ${autorizadoPor ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
+														>
+															{autorizadoPor ? 'REMOVER' : 'AUTORIZAR'}
+														</button>
+													) : (
+														autorizadoPor ? (
+															<span className="text-[10px] text-green-700 font-semibold">AUTORIZADO</span>
+														) : (
+															<span className="text-[10px] text-gray-500">NÃO</span>
+														)
+													)}
+												</td>
+											)}
+											<td className="px-1 py-1 text-center text-[10px]">
+												{autorizadoPor ? (
+													<div className="flex items-center justify-center gap-1">
+														<span className="w-2 h-2 bg-green-500 rounded-full"></span>
+														<span className="text-green-700 font-semibold">AUTORIZADO</span>
+														<span className="text-gray-600">por</span>
+														<span className="text-blue-600 font-medium">{autorizadoPor}</span>
+													</div>
+												) : (
+													<div className="flex items-center justify-center gap-1">
+														<span className="w-2 h-2 bg-gray-400 rounded-full"></span>
+														<span className="text-gray-500 font-medium">NÃO AUTORIZADO</span>
+													</div>
+												)}
 											</td>
 											<td className="px-2 py-1 text-center">{formatarData(grupo.item.dt_vencimento)}</td>
 											<td className="px-2 py-1 text-right font-medium text-green-600">{parseFloat(grupo.item.vl_duplicata || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
@@ -1808,6 +2044,157 @@ const ContasAPagar = () => {
         isOpen={modalDetalhes.isOpen}
         onClose={fecharModalDetalhes}
       />
+
+      {/* Modal de Confirmação de Remoção de Autorização */}
+      {showConfirmModal && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+          onClick={handleModalClose}
+        >
+          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6 relative animate-in zoom-in-95 duration-200">
+            {/* Botão de fechar */}
+            <button
+              onClick={handleCancelRemoveAuthorization}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <XCircle size={24} />
+            </button>
+            
+            <div className="text-center mb-6">
+              <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                <Trash size={32} className="text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
+                Remover Autorização
+              </h3>
+              <p className="text-gray-600">
+                Tem certeza que deseja remover a autorização de <strong>{autorizacaoToRemove?.autorizadoPor}</strong>?
+              </p>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+              <h4 className="font-semibold text-gray-900 mb-2 text-sm">
+                Detalhes da autorização:
+              </h4>
+              <div className="space-y-1">
+                <div className="text-sm text-gray-600 flex items-center gap-2">
+                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                  Autorizado por: <strong>{autorizacaoToRemove?.autorizadoPor}</strong>
+                </div>
+                <div className="text-sm text-gray-600 flex items-center gap-2">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  Esta ação não pode ser desfeita
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleCancelRemoveAuthorization}
+                className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmRemoveAuthorization}
+                className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+              >
+                Remover
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Autorização em Massa */}
+      {showAutorizarTodosModal && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+          onClick={handleAutorizarTodosModalClose}
+        >
+          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6 relative animate-in zoom-in-95 duration-200">
+            {/* Botão de fechar */}
+            <button
+              onClick={handleCancelAutorizarTodos}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <XCircle size={24} />
+            </button>
+            
+            <div className="text-center mb-6">
+              <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                <CheckCircle size={32} className="text-green-600" />
+              </div>
+              <h3 className="text-xl font-bold text-green-600 mb-2">
+                Autorizar Todos
+              </h3>
+              <p className="text-gray-600">
+                Tem certeza que deseja autorizar TODAS as {contasParaAutorizar.length} contas não autorizadas?
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleCancelAutorizarTodos}
+                className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmAutorizarTodos}
+                className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
+              >
+                Autorizar Todos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Remoção em Massa */}
+      {showRemoverTodosModal && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+          onClick={handleRemoverTodosModalClose}
+        >
+          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6 relative animate-in zoom-in-95 duration-200">
+            {/* Botão de fechar */}
+            <button
+              onClick={handleCancelRemoverTodos}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <XCircle size={24} />
+            </button>
+            
+            <div className="text-center mb-6">
+              <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                <Trash size={32} className="text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-red-600 mb-2">
+                Remover Todos
+              </h3>
+              <p className="text-gray-600">
+                Tem certeza que deseja remover TODAS as {contasParaRemover.length} autorizações?
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleCancelRemoverTodos}
+                className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmRemoverTodos}
+                className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+              >
+                Remover Todos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };
@@ -2514,12 +2901,12 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
         })}
 
         {dadosAgrupados.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-gray-500">
             Nenhuma despesa encontrada para os filtros selecionados
-                  </div>
-                )}
-              </div>
-            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 
