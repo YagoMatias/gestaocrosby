@@ -16,6 +16,35 @@ import {
   Minus
 } from '@phosphor-icons/react';
 
+// Função para criar Date object sem problemas de fuso horário
+const criarDataSemFusoHorario = (dataString) => {
+  if (!dataString) return null;
+  if (dataString.includes('T')) {
+    // Para datas ISO, usar apenas a parte da data
+    const dataPart = dataString.split('T')[0];
+    const [ano, mes, dia] = dataPart.split('-');
+    return new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia));
+  }
+  // Para datas já no formato DD/MM/YYYY
+  if (dataString.includes('/')) {
+    const [dia, mes, ano] = dataString.split('/');
+    return new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia));
+  }
+  return new Date(dataString);
+};
+
+// Função para formatar data
+const formatarData = (data) => {
+  if (!data) return '';
+  if (data.includes('T')) {
+    // Para datas ISO, criar a data considerando apenas a parte da data (YYYY-MM-DD)
+    const dataPart = data.split('T')[0];
+    const [ano, mes, dia] = dataPart.split('-');
+    return `${dia}/${mes}/${ano}`;
+  }
+  return data;
+};
+
 const SaldoBancario = () => {
   // Função para obter dias do mês
   const obterDiasDoMes = (mes) => {
@@ -63,6 +92,9 @@ const SaldoBancario = () => {
   
   // Estado para ordenação
   const [ordenacao, setOrdenacao] = useState({ campo: null, direcao: 'asc' });
+  
+  // Estado para controlar o tipo de visualização
+  const [tipoVisualizacao, setTipoVisualizacao] = useState('historico'); // 'historico' ou 'atual'
 
   // Função para formatar valores monetários
   const formatCurrency = (value) => {
@@ -99,6 +131,64 @@ const SaldoBancario = () => {
     return bancos;
   }, [dadosOriginais]);
 
+  // Função para obter saldos mais recentes de cada banco + agência + conta
+  const obterSaldosAtuais = useMemo(() => {
+    if (dadosOriginais.length === 0) return [];
+    
+    const saldosPorConta = {};
+    
+    dadosOriginais.forEach(item => {
+      const banco = item.banco;
+      const agencia = item.agencia;
+      const conta = item.numero;
+      
+      if (!banco || !agencia || !conta) return;
+      
+      const dataGeracao = criarDataSemFusoHorario(item.data_geracao);
+      if (!dataGeracao) return;
+      
+      // Criar chave única para banco + agência + conta
+      const chaveConta = `${banco}|${agencia}|${conta}`;
+      
+      // Se não temos dados para esta conta ou se a data é mais recente
+      if (!saldosPorConta[chaveConta] || dataGeracao > saldosPorConta[chaveConta].dataGeracao) {
+        saldosPorConta[chaveConta] = {
+          ...item,
+          dataGeracao: dataGeracao,
+          chaveConta: chaveConta
+        };
+      }
+    });
+    
+    let saldosAtuais = Object.values(saldosPorConta);
+    
+    // Aplicar filtro de banco se especificado
+    if (filtroBanco && filtroBanco !== 'TODOS') {
+      saldosAtuais = saldosAtuais.filter(item => {
+        const bancoItem = (item.banco || '').toUpperCase();
+        const bancoFiltroUpper = filtroBanco.toUpperCase();
+        
+        // Verificar se o banco do item contém o filtro (para casos como "ITAU" vs "BANCO ITAU")
+        const match = bancoItem.includes(bancoFiltroUpper) || bancoFiltroUpper.includes(bancoItem);
+        return match;
+      });
+    }
+    
+    // Ordenar por banco, depois agência, depois conta
+    saldosAtuais.sort((a, b) => {
+      const comparacaoBanco = (a.banco || '').localeCompare(b.banco || '');
+      if (comparacaoBanco !== 0) return comparacaoBanco;
+      
+      const comparacaoAgencia = (a.agencia || '').localeCompare(b.agencia || '');
+      if (comparacaoAgencia !== 0) return comparacaoAgencia;
+      
+      return (a.numero || '').localeCompare(b.numero || '');
+    });
+    
+    console.log('Saldos atuais por conta (banco + agência + conta):', saldosAtuais.length, 'registros');
+    return saldosAtuais;
+  }, [dadosOriginais, filtroBanco]);
+
 
 
   // Função para lidar com mudança de filtro mensal
@@ -134,7 +224,9 @@ const SaldoBancario = () => {
         return false;
       }
       
-      const data = new Date(dataGeracao);
+      const data = criarDataSemFusoHorario(dataGeracao);
+      if (!data) return false;
+      
       const ano = data.getFullYear();
       const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
       const dia = data.getDate();
@@ -191,7 +283,7 @@ const SaldoBancario = () => {
     // Debug: mostrar as datas dos dados filtrados
     if (dadosFiltradosPorBanco.length > 0) {
       const datasFiltradas = [...new Set(dadosFiltradosPorBanco.map(item => {
-        const data = new Date(item.data_geracao);
+        const data = criarDataSemFusoHorario(item.data_geracao);
         return `${data.getDate()}/${data.getMonth() + 1}/${data.getFullYear()}`;
       }))].sort();
       console.log('Datas dos dados filtrados:', datasFiltradas);
@@ -221,7 +313,7 @@ const SaldoBancario = () => {
               saldo: parseFloat(registro.valor), // Usar o valor do registro específico
               banco: registro.banco_nome,
               agencia: registro.agencia,
-              ultimaAtualizacao: new Date(registro.data_geracao),
+              ultimaAtualizacao: criarDataSemFusoHorario(registro.data_geracao),
               operacao: {
                 tipo: registro.operacao_tipo,
                 descricao: registro.operacao_descricao,
@@ -246,14 +338,18 @@ const SaldoBancario = () => {
         const chavesUnicas = new Set();
         
         // Primeiro, ordenar por data_geracao para garantir consistência
-        dadosProcessados.sort((a, b) => new Date(a.data_geracao) - new Date(b.data_geracao));
+        dadosProcessados.sort((a, b) => {
+          const dataA = criarDataSemFusoHorario(a.data_geracao);
+          const dataB = criarDataSemFusoHorario(b.data_geracao);
+          return dataA - dataB;
+        });
         
         dadosProcessados.forEach(item => {
           // Normalizar os campos para evitar diferenças sutis
           const bancoNormalizado = (item.banco || '').trim().toUpperCase();
           const agenciaNormalizada = (item.agencia || '').toString().trim();
           const contaNormalizada = (item.numero || '').toString().trim();
-          const dataNormalizada = item.data_geracao ? new Date(item.data_geracao).toISOString().split('T')[0] : '';
+          const dataNormalizada = item.data_geracao ? criarDataSemFusoHorario(item.data_geracao).toISOString().split('T')[0] : '';
           const saldoNormalizado = typeof item.saldo === 'number' ? item.saldo.toFixed(2) : item.saldo;
           
           const chaveUnica = `${bancoNormalizado}|${agenciaNormalizada}|${contaNormalizada}|${dataNormalizada}|${saldoNormalizado}`;
@@ -279,7 +375,7 @@ const SaldoBancario = () => {
         
         // Debug: mostrar algumas datas para verificar
         const datasUnicas = [...new Set(dadosUnicos.map(item => {
-          const data = new Date(item.data_geracao);
+          const data = criarDataSemFusoHorario(item.data_geracao);
           return `${data.getDate()}/${data.getMonth() + 1}/${data.getFullYear()}`;
         }))].sort();
         console.log('Datas disponíveis:', datasUnicas);
@@ -319,7 +415,7 @@ const SaldoBancario = () => {
     buscarTodosDados();
   }, []);
 
-  // Calcular estatísticas do dia específico
+  // Calcular estatísticas baseado no tipo de visualização
   const estatisticasDia = useMemo(() => {
     if (dadosOriginais.length === 0) {
       return {
@@ -329,14 +425,21 @@ const SaldoBancario = () => {
       };
     }
 
-    // Filtrar apenas os dados do dia específico E banco selecionado
-    const dadosDoDia = aplicarFiltroMensal(dadosOriginais, filtroMensal, filtroDia, filtroAno, filtroBanco);
+    let dadosParaCalcular = [];
     
-    console.log('Dados do dia filtrados (com banco):', dadosDoDia); // Debug
+    if (tipoVisualizacao === 'atual') {
+      // Para saldo atual, usar os dados mais recentes de cada banco
+      dadosParaCalcular = obterSaldosAtuais;
+    } else {
+      // Para histórico, filtrar apenas os dados do dia específico E banco selecionado
+      dadosParaCalcular = aplicarFiltroMensal(dadosOriginais, filtroMensal, filtroDia, filtroAno, filtroBanco);
+    }
     
-    const saldoTotal = dadosDoDia.reduce((acc, conta) => acc + conta.saldo, 0);
+    console.log('Dados para cálculo de estatísticas:', dadosParaCalcular.length, 'registros'); // Debug
     
-    const contasPositivas = dadosDoDia.filter(conta => {
+    const saldoTotal = dadosParaCalcular.reduce((acc, conta) => acc + conta.saldo, 0);
+    
+    const contasPositivas = dadosParaCalcular.filter(conta => {
       // Se tem informação de operação, usar ela
       if (conta.operacao?.isPositive !== undefined && conta.operacao?.isPositive !== null) {
         console.log(`Conta ${conta.numero}: operacao.isPositive = ${conta.operacao.isPositive}`);
@@ -348,7 +451,7 @@ const SaldoBancario = () => {
       return isPositive;
     }).length;
     
-    const contasNegativas = dadosDoDia.filter(conta => {
+    const contasNegativas = dadosParaCalcular.filter(conta => {
       // Se tem informação de operação, usar ela
       if (conta.operacao?.isPositive !== undefined && conta.operacao?.isPositive !== null) {
         return conta.operacao.isPositive === false;
@@ -357,10 +460,11 @@ const SaldoBancario = () => {
       return conta.saldo < 0;
     }).length;
 
-    console.log('Estatísticas calculadas (com filtro de banco):', { 
+    console.log('Estatísticas calculadas:', { 
       saldoTotal, 
       contasPositivas, 
       contasNegativas, 
+      tipoVisualizacao,
       bancoFiltro: filtroBanco 
     });
 
@@ -369,7 +473,7 @@ const SaldoBancario = () => {
       contasPositivas,
       contasNegativas
     };
-  }, [dadosOriginais, filtroMensal, filtroDia, filtroAno, filtroBanco]);
+  }, [dadosOriginais, filtroMensal, filtroDia, filtroAno, filtroBanco, tipoVisualizacao, obterSaldosAtuais]);
 
   // Aplicar filtros quando dados ou filtros mudarem
   useEffect(() => {
@@ -440,11 +544,13 @@ const SaldoBancario = () => {
       <CaretDown size={12} className="ml-1" />;
   };
 
-  // Dados ordenados
+  // Dados ordenados baseado no tipo de visualização
   const dadosOrdenados = useMemo(() => {
-    if (!ordenacao.campo) return saldosContas;
+    const dadosParaOrdenar = tipoVisualizacao === 'atual' ? obterSaldosAtuais : saldosContas;
     
-    return [...saldosContas].sort((a, b) => {
+    if (!ordenacao.campo) return dadosParaOrdenar;
+    
+    return [...dadosParaOrdenar].sort((a, b) => {
       let valorA = a[ordenacao.campo];
       let valorB = b[ordenacao.campo];
       
@@ -454,8 +560,14 @@ const SaldoBancario = () => {
         valorB = parseFloat(valorB) || 0;
       }
       
+      // Tratamento para datas
+      if (ordenacao.campo === 'data_geracao') {
+        valorA = criarDataSemFusoHorario(valorA);
+        valorB = criarDataSemFusoHorario(valorB);
+      }
+      
       // Tratamento para strings
-      if (typeof valorA === 'string') {
+      if (typeof valorA === 'string' && ordenacao.campo !== 'data_geracao') {
         valorA = valorA.toLowerCase();
         valorB = valorB.toLowerCase();
       }
@@ -464,7 +576,7 @@ const SaldoBancario = () => {
       if (valorA > valorB) return ordenacao.direcao === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [saldosContas, ordenacao]);
+  }, [saldosContas, obterSaldosAtuais, tipoVisualizacao, ordenacao]);
 
   return (
     <Layout>
@@ -478,11 +590,39 @@ const SaldoBancario = () => {
             <p className="text-gray-600 mt-2 font-barlow">
               Acompanhe o saldo das contas bancárias a partir dos arquivos .RET processados.
             </p>
-
           </div>
 
-          {/* Filtros por Ano e Mês */}
-          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-8">
+          {/* Botão de Alternância de Visualização */}
+          <div className="mb-6 flex justify-center">
+            <div className="bg-white rounded-lg border border-gray-200 p-1 shadow-sm">
+              <div className="flex">
+                <button
+                  onClick={() => setTipoVisualizacao('historico')}
+                  className={`px-6 py-2 text-sm font-medium rounded-md transition-colors ${
+                    tipoVisualizacao === 'historico'
+                      ? 'bg-[#000638] text-white shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  Histórico de Saldo
+                </button>
+                <button
+                  onClick={() => setTipoVisualizacao('atual')}
+                  className={`px-6 py-2 text-sm font-medium rounded-md transition-colors ${
+                    tipoVisualizacao === 'atual'
+                      ? 'bg-[#000638] text-white shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  Saldo Atual
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Filtros por Ano e Mês - apenas no modo Histórico */}
+          {tipoVisualizacao === 'historico' && (
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-8">
             <div className="flex items-center gap-2 mb-3">
               <Calendar size={18} className="text-[#000638]" />
               <h3 className="font-bold text-sm text-[#000638]">Filtro por Período (Data Geração)</h3>
@@ -531,9 +671,22 @@ const SaldoBancario = () => {
 
             {/* Informação do filtro ativo */}
             <div className="mt-3 text-xs text-gray-500">
-              <span className="font-medium">Filtro ativo:</span> {filtroAno} - {filtroMensal} - Dia {filtroDia}
-              {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
-              <span className="ml-2">({saldosContas.length} registro{saldosContas.length !== 1 ? 's' : ''})</span>
+              <span className="font-medium">
+                {tipoVisualizacao === 'atual' ? 'Visualização:' : 'Filtro ativo:'}
+              </span> 
+              {tipoVisualizacao === 'atual' ? (
+                <>
+                  Saldo Atual por Conta
+                  {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
+                  <span className="ml-2">({dadosOrdenados.length} conta{dadosOrdenados.length !== 1 ? 's' : ''})</span>
+                </>
+              ) : (
+                <>
+                  {filtroAno} - {filtroMensal} - Dia {filtroDia}
+                  {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
+                  <span className="ml-2">({saldosContas.length} registro{saldosContas.length !== 1 ? 's' : ''})</span>
+                </>
+              )}
             </div>
 
             {/* Filtro por Dia */}
@@ -563,41 +716,43 @@ const SaldoBancario = () => {
               </div>
             )}
 
-            {/* Filtro por Banco */}
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <div className="flex items-center gap-2 mb-3">
-                <Bank size={16} className="text-[#000638]" />
-                <h4 className="font-bold text-sm text-[#000638]">Filtro por Banco</h4>
-              </div>
+            </div>
+          )}
+
+          {/* Filtro por Banco - disponível em ambos os modos */}
+          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <Bank size={18} className="text-[#000638]" />
+              <h3 className="font-bold text-sm text-[#000638]">Filtro por Banco</h3>
+            </div>
+            
+            <div className="flex flex-wrap gap-2">
+              {/* Botão TODOS */}
+              <button
+                onClick={() => setFiltroBanco('TODOS')}
+                className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  filtroBanco === 'TODOS'
+                    ? 'bg-[#000638] text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                }`}
+              >
+                TODOS
+              </button>
               
-              <div className="flex flex-wrap gap-2">
-                {/* Botão TODOS */}
+              {/* Botões dos bancos */}
+              {obterBancosUnicos.map((banco) => (
                 <button
-                  onClick={() => setFiltroBanco('TODOS')}
+                  key={banco}
+                  onClick={() => setFiltroBanco(banco)}
                   className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                    filtroBanco === 'TODOS'
+                    filtroBanco === banco
                       ? 'bg-[#000638] text-white'
                       : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
                   }`}
                 >
-                  TODOS
+                  {banco}
                 </button>
-                
-                {/* Botões dos bancos */}
-                {obterBancosUnicos.map((banco) => (
-                  <button
-                    key={banco}
-                    onClick={() => setFiltroBanco(banco)}
-                    className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                      filtroBanco === banco
-                        ? 'bg-[#000638] text-white'
-                        : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
-                    }`}
-                  >
-                    {banco}
-                  </button>
-                ))}
-              </div>
+              ))}
             </div>
           </div>
 
@@ -615,7 +770,9 @@ const SaldoBancario = () => {
                 <CardHeader className="pb-2">
                   <div className="flex items-center gap-2">
                     <CurrencyDollar size={18} className="text-blue-600" />
-                    <CardTitle className="text-sm font-bold text-blue-700">Saldo Total do Dia</CardTitle>
+                    <CardTitle className="text-sm font-bold text-blue-700">
+                      {tipoVisualizacao === 'atual' ? 'Saldo Total Atual' : 'Saldo Total do Dia'}
+                    </CardTitle>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0 px-4 pb-4">
@@ -625,8 +782,17 @@ const SaldoBancario = () => {
                     }
                   </div>
                   <CardDescription className="text-xs text-gray-500">
-                    {filtroAno} - {filtroMensal} - Dia {filtroDia}
-                    {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
+                    {tipoVisualizacao === 'atual' ? (
+                      <>
+                        Saldo Atual por Conta
+                        {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
+                      </>
+                    ) : (
+                      <>
+                        {filtroAno} - {filtroMensal} - Dia {filtroDia}
+                        {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
+                      </>
+                    )}
                   </CardDescription>
                 </CardContent>
               </Card>
@@ -636,7 +802,9 @@ const SaldoBancario = () => {
                 <CardHeader className="pb-2">
                   <div className="flex items-center gap-2">
                     <Plus size={18} className="text-green-600" />
-                    <CardTitle className="text-sm font-bold text-green-700">Contas Positivas</CardTitle>
+                    <CardTitle className="text-sm font-bold text-green-700">
+                      {tipoVisualizacao === 'atual' ? 'Contas Positivas' : 'Contas Positivas'}
+                    </CardTitle>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0 px-4 pb-4">
@@ -646,8 +814,17 @@ const SaldoBancario = () => {
                     }
                   </div>
                   <CardDescription className="text-xs text-gray-500">
-                    {filtroAno} - {filtroMensal} - Dia {filtroDia}
-                    {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
+                    {tipoVisualizacao === 'atual' ? (
+                      <>
+                        Saldo Atual por Conta
+                        {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
+                      </>
+                    ) : (
+                      <>
+                        {filtroAno} - {filtroMensal} - Dia {filtroDia}
+                        {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
+                      </>
+                    )}
                   </CardDescription>
                 </CardContent>
               </Card>
@@ -657,7 +834,9 @@ const SaldoBancario = () => {
                 <CardHeader className="pb-2">
                   <div className="flex items-center gap-2">
                     <Minus size={18} className="text-red-600" />
-                    <CardTitle className="text-sm font-bold text-red-700">Contas Negativas</CardTitle>
+                    <CardTitle className="text-sm font-bold text-red-700">
+                      {tipoVisualizacao === 'atual' ? 'Contas Negativas' : 'Contas Negativas'}
+                    </CardTitle>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0 px-4 pb-4">
@@ -667,8 +846,17 @@ const SaldoBancario = () => {
                     }
                   </div>
                   <CardDescription className="text-xs text-gray-500">
-                    {filtroAno} - {filtroMensal} - Dia {filtroDia}
-                    {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
+                    {tipoVisualizacao === 'atual' ? (
+                      <>
+                        Saldo Atual por Conta
+                        {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
+                      </>
+                    ) : (
+                      <>
+                        {filtroAno} - {filtroMensal} - Dia {filtroDia}
+                        {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
+                      </>
+                    )}
                   </CardDescription>
                 </CardContent>
               </Card>
@@ -679,7 +867,7 @@ const SaldoBancario = () => {
           {dadosCarregados && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-6 font-barlow">
-                Saldos por Conta
+                {tipoVisualizacao === 'atual' ? 'Saldos Atuais por Conta' : 'Saldos por Conta'}
               </h2>
               
               <div className="overflow-x-auto">
@@ -749,7 +937,7 @@ const SaldoBancario = () => {
                            {conta.agencia || 'N/A'}
                          </td>
                          <td className="py-3 px-4 text-center text-gray-600 font-barlow">
-                           {conta.data_geracao ? new Date(conta.data_geracao).toLocaleDateString('pt-BR') : 'N/A'}
+                           {formatarData(conta.data_geracao) || 'N/A'}
                          </td>
                          <td className="py-3 px-4 text-right">
                            <div className="flex items-center justify-end gap-2">
@@ -793,7 +981,11 @@ const SaldoBancario = () => {
                 Nenhum saldo carregado
               </h3>
               <p className="text-gray-600 font-barlow">
-                Os dados são carregados automaticamente da tabela retorno_bancario. Use os filtros acima para filtrar por período.
+                Os dados são carregados automaticamente da tabela retorno_bancario. 
+                {tipoVisualizacao === 'atual' 
+                  ? ' Use o modo "Saldo Atual" para ver os saldos mais recentes de cada conta.' 
+                  : ' Use os filtros acima para filtrar por período.'
+                }
               </p>
               <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg max-w-md mx-auto">
                 <p className="text-sm text-blue-700 font-barlow">

@@ -743,15 +743,57 @@ const ContasAPagar = () => {
       
       const result = await apiClient.financial.contasPagar(params);
       
+      console.log('🔍 Resultado da API:', {
+        success: result.success,
+        dataLength: result.data?.length,
+        message: result.message,
+        metadata: result.metadata
+      });
+      
       if (result.success) {
         const dadosArray = Array.isArray(result.data) ? result.data : [];
+        
+        // Verificar se todos os campos necessários estão presentes
+        if (dadosArray.length > 0) {
+          const primeiroItem = dadosArray[0];
+          console.log('🔍 Campos disponíveis no primeiro item:', Object.keys(primeiroItem));
+          
+          // Verificar campos obrigatórios
+          const camposObrigatorios = ['cd_empresa', 'cd_fornecedor', 'nr_duplicata', 'dt_vencimento', 'vl_duplicata'];
+          const camposFaltando = camposObrigatorios.filter(campo => !(campo in primeiroItem));
+          
+          if (camposFaltando.length > 0) {
+            console.warn('⚠️ Campos faltando na resposta da API:', camposFaltando);
+          }
+          
+          // Verificar campos opcionais que podem estar faltando
+          const camposOpcionais = ['in_aceite', 'vl_rateio'];
+          const camposOpcionaisFaltando = camposOpcionais.filter(campo => !(campo in primeiroItem));
+          
+          if (camposOpcionaisFaltando.length > 0) {
+            console.log('ℹ️ Campos opcionais não presentes:', camposOpcionaisFaltando);
+          }
+        }
+        
         console.log('✅ Dados obtidos:', {
           total: dadosArray.length,
           amostra: dadosArray.slice(0, 2),
-          empresas: codigosEmpresas
+          empresas: codigosEmpresas,
+          metadata: result.metadata,
+          estrutura: result.metadata?.periodo ? 'Nova estrutura' : 'Estrutura antiga'
         });
         
-        setDados(dadosArray);
+        // Garantir que todos os campos necessários tenham valores padrão
+        const dadosProcessados = dadosArray.map(item => ({
+          ...item,
+          ds_observacao: item.ds_observacao || '',
+          in_aceite: item.in_aceite || '',
+          vl_rateio: item.vl_rateio || 0,
+          tp_aceite: item.in_aceite || '', // Mantém compatibilidade
+          ds_observacao: item.ds_observacao || '' // Campo não retornado pela nova rota
+        }));
+        
+        setDados(dadosProcessados);
         setDadosCarregados(true);
       } else {
         console.warn('⚠️ Falha ao buscar dados:', result.message);
@@ -1789,7 +1831,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
               'Acréscimo': parseFloat(item.vl_acrescimo || 0),
               'Desconto': parseFloat(item.vl_desconto || 0),
               'Pago': parseFloat(item.vl_pago || 0),
-              'Aceite': item.tp_aceite || '',
+              'Aceite': item.in_aceite || '',
               'Parcela': item.nr_parcela || '',
               'Rateio': item.vl_rateio || '',
               'Observação': item.ds_observacao || '',
