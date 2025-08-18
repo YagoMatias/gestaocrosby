@@ -20,7 +20,6 @@ const Revenda = lazy(() => import('./pages/Revenda'));
 const ConsultaFatura = lazy(() => import('./pages/ConsultaFatura'));
 const FundoPropaganda = lazy(() => import('./pages/FundoPropaganda'));
 const RankingFaturamento = lazy(() => import('./pages/RankingFaturamento'));
-const RankingVendedores = lazy(() => import('./pages/RankingVendedores'));
 const Consolidado = lazy(() => import('./pages/Consolidado'));
 const ComprasFranquias = lazy(() => import('./pages/ComprasFranquias'));
 const PainelAdmin = lazy(() => import('./pages/PainelAdmin'));
@@ -129,10 +128,7 @@ const AppRoutes = memo(() => {
           path="/ranking-faturamento" 
           element={createPrivateRoute(RankingFaturamento, ['ADM', 'DIRETOR', 'FRANQUIA'])} 
         />
-        <Route 
-          path="/ranking-vendedores" 
-          element={createPrivateRoute(RankingVendedores, ['ADM', 'DIRETOR', 'FINANCEIRO', 'FRANQUIA'])} 
-        />
+        {/* Rota removida: /ranking-vendedores */}
         <Route 
           path="/consolidado" 
           element={createPrivateRoute(Consolidado, ['ADM', 'DIRETOR'])} 

@@ -181,6 +181,7 @@ const ContasAPagar = () => {
   const [duplicata, setDuplicata] = useState('');
   const [centroCusto, setCentroCusto] = useState('');
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
+  const [linhasSelecionadasAgrupadas, setLinhasSelecionadasAgrupadas] = useState(new Set());
   
 
 
@@ -192,6 +193,7 @@ const ContasAPagar = () => {
   const [modalCardAberto, setModalCardAberto] = useState(false);
   const [tipoCardSelecionado, setTipoCardSelecionado] = useState('');
   const [dadosCardModal, setDadosCardModal] = useState([]);
+  const [planoOpen, setPlanoOpen] = useState(true);
 
 
 
@@ -303,10 +305,101 @@ const ContasAPagar = () => {
     setLinhasSelecionadas(new Set());
   }, [dados]);
 
+  // Limpar seleção agrupada quando os dados mudarem
+  useEffect(() => {
+    setLinhasSelecionadasAgrupadas(new Set());
+  }, [dados]);
+
   // Limpar seleção quando o filtro mensal mudar
   useEffect(() => {
     setLinhasSelecionadas(new Set());
   }, [filtroMensal]);
+
+  // Funções seleção agrupada
+  const toggleLinhaSelecionadaAgrupada = (index) => {
+    setLinhasSelecionadasAgrupadas(prev => {
+      const novoSet = new Set(prev);
+      if (novoSet.has(index)) {
+        novoSet.delete(index);
+      } else {
+        novoSet.add(index);
+      }
+      return novoSet;
+    });
+  };
+
+  // Exportar Excel do Detalhamento de Contas (agrupado)
+  const exportarExcelDetalhamento = () => {
+    if (!dadosOrdenadosParaCards || dadosOrdenadosParaCards.length === 0) {
+      alert('Nenhum dado para exportar');
+      return;
+    }
+
+    const dadosParaExportar = dadosOrdenadosParaCards.map((grupo) => {
+      const rateioTotal = (grupo.rateios && grupo.rateios.length > 0)
+        ? grupo.rateios.map(r => parseFloat(r || 0)).reduce((a, b) => a + b, 0)
+        : 0;
+
+      return {
+        'Vencimento': formatarData(grupo.item.dt_vencimento),
+        'Valor': parseFloat(grupo.item.vl_duplicata || 0),
+        'Fornecedor': grupo.item.cd_fornecedor || '',
+        'Nome Fornecedor': grupo.item.nm_fornecedor || '',
+        'Despesa': grupo.item.ds_despesaitem || '',
+        'Centro de Custo': grupo.item.ds_ccusto || '',
+        'Empresa': grupo.item.cd_empresa || '',
+        'Duplicata': grupo.item.nr_duplicata || '',
+        'Parcela': grupo.item.nr_parcela || '',
+        'Portador': grupo.item.nr_portador || '',
+        'Emissão': formatarData(grupo.item.dt_emissao),
+        'Entrada': formatarData(grupo.item.dt_entrada),
+        'Liquidação': formatarData(grupo.item.dt_liq),
+        'Situação': grupo.item.tp_situacao || '',
+        'Estágio': grupo.item.tp_estagio || '',
+        'Juros': parseFloat(grupo.item.vl_juros || 0),
+        'Acréscimo': parseFloat(grupo.item.vl_acrescimo || 0),
+        'Desconto': parseFloat(grupo.item.vl_desconto || 0),
+        'Pago': parseFloat(grupo.item.vl_pago || 0),
+        'Aceite': grupo.item.in_aceite || '',
+        'Rateio Total': rateioTotal,
+        'Observação': grupo.item.ds_observacao || '',
+        'Previsão': grupo.item.tp_previsaoreal || ''
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
+    ws['!cols'] = [
+      { wch: 12 }, // Vencimento
+      { wch: 14 }, // Valor
+      { wch: 12 }, // Fornecedor
+      { wch: 28 }, // Nome Fornecedor
+      { wch: 28 }, // Despesa
+      { wch: 24 }, // Centro de Custo
+      { wch: 10 }, // Empresa
+      { wch: 12 }, // Duplicata
+      { wch: 8 },  // Parcela
+      { wch: 10 }, // Portador
+      { wch: 12 }, // Emissão
+      { wch: 12 }, // Entrada
+      { wch: 12 }, // Liquidação
+      { wch: 10 }, // Situação
+      { wch: 10 }, // Estágio
+      { wch: 12 }, // Juros
+      { wch: 12 }, // Acréscimo
+      { wch: 12 }, // Desconto
+      { wch: 12 }, // Pago
+      { wch: 10 }, // Aceite
+      { wch: 14 }, // Rateio Total
+      { wch: 30 }, // Observação
+      { wch: 10 }  // Previsão
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, 'Detalhamento');
+    const fileName = `detalhamento_contas_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const dataBlob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(dataBlob, fileName);
+  };
 
   // Limpar filtro de dia quando o filtro mensal mudar
   useEffect(() => {
@@ -1423,29 +1516,140 @@ const ContasAPagar = () => {
               </div>
             ) : (
               <>
-                {/* Detalhamento de Contas */}
+                {/* Plano de Contas (dropdown) */}
                 <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full mb-6">
-                  <div className="p-6 border-b border-[#000638]/10">
-                    <h2 className="text-xl font-bold text-[#000638]">Detalhamento de Contas</h2>
-                  </div>
-                  
-                  <div className="p-6">
-                    <DespesasPorCategoria 
-                      dados={dadosOrdenadosComFiltroMensal}
-                      totalContas={dadosOrdenadosComFiltroMensal.length}
-                      linhasSelecionadas={linhasSelecionadas}
-                      toggleLinhaSelecionada={toggleLinhaSelecionada}
-                      filtroMensal={filtroMensal}
-                      setFiltroMensal={setFiltroMensal}
-                      dadosOriginais={dadosComFiltrosAdicionais}
-                      filtroDia={filtroDia}
-                      setFiltroDia={setFiltroDia}
-                      handleFiltroMensalChange={handleFiltroMensalChange}
-                      obterDiasDoMes={obterDiasDoMes}
-                      abrirModalDetalhes={abrirModalDetalhes}
-                    />
-                          </div>
-                          </div>
+                  <button className="w-full p-6 flex items-center justify-between" onClick={() => setPlanoOpen(!planoOpen)}>
+                    <h2 className="text-xl font-bold text-[#000638]">Plano de Contas</h2>
+                    <span className="text-sm text-gray-500">{planoOpen ? 'Ocultar' : 'Mostrar'}</span>
+                  </button>
+                  {planoOpen && (
+                    <div className="p-6 border-t border-[#000638]/10">
+                      <DespesasPorCategoria 
+                        dados={dadosOrdenadosComFiltroMensal}
+                        totalContas={dadosOrdenadosComFiltroMensal.length}
+                        linhasSelecionadas={linhasSelecionadas}
+                        toggleLinhaSelecionada={toggleLinhaSelecionada}
+                        filtroMensal={filtroMensal}
+                        setFiltroMensal={setFiltroMensal}
+                        dadosOriginais={dadosComFiltrosAdicionais}
+                        filtroDia={filtroDia}
+                        setFiltroDia={setFiltroDia}
+                        handleFiltroMensalChange={handleFiltroMensalChange}
+                        obterDiasDoMes={obterDiasDoMes}
+                        abrirModalDetalhes={abrirModalDetalhes}
+                      />
+                    </div>
+                  )}
+                </div>
+
+					{/* Detalhamento de Contas */}
+					<div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-8xl mx-auto w-full mb-6">
+						<div className="p-6 border-b border-[#000638]/10">
+							<h2 className="text-xl font-bold text-[#000638]">Detalhamento de Contas</h2>
+							<p className="text-xs text-gray-500 mt-1">Registros consolidados por duplicata/parcela/fornecedor, unificando situações, previsões e datas como nos cards.</p>
+							<div className="mt-3 flex items-center gap-2">
+								{(() => {
+									const allSelected = linhasSelecionadasAgrupadas.size === dadosOrdenadosParaCards.length && dadosOrdenadosParaCards.length > 0;
+									const cls = allSelected
+										? 'text-xs px-2 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors'
+										: 'text-xs px-2 py-1 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors';
+									return (
+										<button
+											onClick={() => {
+												const isAll = linhasSelecionadasAgrupadas.size === dadosOrdenadosParaCards.length && dadosOrdenadosParaCards.length > 0;
+												setLinhasSelecionadasAgrupadas(isAll ? new Set() : new Set(dadosOrdenadosParaCards.map((_, idx) => idx)));
+											}}
+											className={cls}
+										>
+											{allSelected ? 'Desmarcar todas' : 'Selecionar todas'}
+										</button>
+									);
+								})()}
+								<button
+									onClick={exportarExcelDetalhamento}
+									className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+								>
+									Baixar Excel
+								</button>
+							</div>
+						</div>
+						<div className="p-6 overflow-x-auto">
+							<table className="contas-table w-full border-collapse">
+								<thead>
+									<tr className="bg-[#000638] text-white text-[10px]">
+										<th className="px-2 py-1 text-center text-[10px]" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10 }}>Selecionar</th>
+										<th className="px-2 py-1 text-center text-[10px]">Vencimento</th>
+										<th className="px-2 py-1 text-center text-[10px]">Valor</th>
+										<th className="px-1 py-1 text-center text-[10px]">Fornecedor</th>
+										<th className="px-3 py-1 text-center text-[10px]">NM Fornecedor</th>
+										<th className="px-1 py-1 text-center text-[10px]">Despesa</th>
+										<th className="px-1 py-1 text-center text-[10px]">NM CUSTO</th>
+										<th className="px-1 py-1 text-center text-[10px]">Empresa</th>
+										<th className="px-1 py-1 text-center text-[10px]">Duplicata</th>
+										<th className="px-1 py-1 text-center text-[10px]">Parcela</th>
+										<th className="px-1 py-1 text-center text-[10px]">Portador</th>
+										<th className="px-1 py-1 text-center text-[10px]">Emissão</th>
+										<th className="px-1 py-1 text-center text-[10px]">Entrada</th>
+										<th className="px-1 py-1 text-center text-[10px]">Liquidação</th>
+										<th className="px-1 py-1 text-center text-[10px]">Situação</th>
+										<th className="px-1 py-1 text-center text-[10px]">Estágio</th>
+										<th className="px-1 py-1 text-center text-[10px]">Juros</th>
+										<th className="px-1 py-1 text-center text-[10px]">Acréscimo</th>
+										<th className="px-1 py-1 text-center text-[10px]">Desconto</th>
+										<th className="px-1 py-1 text-center text-[10px]">Pago</th>
+										<th className="px-1 py-1 text-center text-[10px]">Aceite</th>
+										<th className="px-1 py-1 text-center text-[10px]">Rateio(s)</th>
+										<th className="px-1 py-1 text-center text-[10px]">Observação</th>
+										<th className="px-1 py-1 text-center text-[10px]">Previsão</th>
+									</tr>
+								</thead>
+								<tbody>
+									{dadosOrdenadosParaCards.map((grupo, index) => {
+										const isSelected = linhasSelecionadasAgrupadas.has(index);
+										return (
+										<tr key={`grp-${index}`} className={`text-[10px] border-b transition-colors cursor-pointer ${isSelected ? 'bg-blue-100 hover:bg-blue-200' : index % 2 === 0 ? 'bg-white hover:bg-gray-100' : 'bg-gray-50 hover:bg-gray-100'}`} onClick={() => abrirModalDetalhes(grupo.item)} title="Clique para ver detalhes da conta">
+											<td className="px-2 py-1 text-center" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
+												<input type="checkbox" checked={isSelected} onChange={(e) => { e.stopPropagation(); toggleLinhaSelecionadaAgrupada(index); }} className="rounded" onClick={(e) => e.stopPropagation()} />
+											</td>
+											<td className="px-2 py-1 text-center">{formatarData(grupo.item.dt_vencimento)}</td>
+											<td className="px-2 py-1 text-right font-medium text-green-600">{parseFloat(grupo.item.vl_duplicata || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+											<td className="px-1 py-1 text-center">{grupo.item.cd_fornecedor || ''}</td>
+											<td className="px-3 py-1 text-left max-w-32 truncate" title={grupo.item.nm_fornecedor}>{grupo.item.nm_fornecedor || ''}</td>
+											<td className="px-1 py-1 text-left max-w-24 truncate" title={grupo.item.ds_despesaitem}>{grupo.item.ds_despesaitem || ''}</td>
+											<td className="px-1 py-1 text-left max-w-24 truncate" title={grupo.item.ds_ccusto}>{grupo.item.ds_ccusto || ''}</td>
+											<td className="px-1 py-1 text-center">{grupo.item.cd_empresa || ''}</td>
+											<td className="px-1 py-1 text-center">{grupo.item.nr_duplicata || ''}</td>
+											<td className="px-1 py-1 text-center">{grupo.item.nr_parcela || ''}</td>
+											<td className="px-1 py-1 text-center">{grupo.item.nr_portador || ''}</td>
+											<td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_emissao)}</td>
+											<td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_entrada)}</td>
+											<td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_liq)}</td>
+											<td className="px-1 py-1 text-center">{grupo.item.tp_situacao || ''}</td>
+											<td className="px-1 py-1 text-center">{grupo.item.tp_estagio || ''}</td>
+											<td className="px-1 py-1 text-right">{parseFloat(grupo.item.vl_juros || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+											<td className="px-1 py-1 text-right">{parseFloat(grupo.item.vl_acrescimo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+											<td className="px-1 py-1 text-right">{parseFloat(grupo.item.vl_desconto || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+											<td className="px-1 py-1 text-right">{parseFloat(grupo.item.vl_pago || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+											<td className="px-1 py-1 text-center">{grupo.item.in_aceite || ''}</td>
+											<td className="px-1 py-1 text-right" title={grupo.rateios && grupo.rateios.length > 0 ? grupo.rateios.join(' | ') : ''}>
+												{(grupo.rateios && grupo.rateios.length > 0) ? grupo.rateios.map(r => parseFloat(r || 0)).reduce((a,b)=>a+b,0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : ''}
+											</td>
+											<td className="px-1 py-1 text-left max-w-32 truncate" title={(grupo.observacoes||[]).join(' | ')}>{grupo.item.ds_observacao || ''}</td>
+											<td className="px-1 py-1 text-center">{grupo.item.tp_previsaoreal || ''}</td>
+										</tr>
+									)})}
+								</tbody>
+							</table>
+							<div className="mt-3 text-xs text-gray-600 flex items-center justify-between">
+								<div>
+									Selecionadas: <span className="font-semibold">{linhasSelecionadasAgrupadas.size}</span>
+								</div>
+								<div>
+									Valor total: <span className="font-semibold text-green-700">{Array.from(linhasSelecionadasAgrupadas).reduce((acc, idx) => acc + (parseFloat(dadosOrdenadosParaCards[idx]?.item?.vl_duplicata || 0)), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+								</div>
+							</div>
+						</div>
+					</div>
 
 
               </>

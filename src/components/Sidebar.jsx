@@ -190,16 +190,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               color="text-purple-600"
             />
 
-            {/* Ranking items - fora de seção */}
+            {/* Ranking Faturamento - fora de seção */}
             <div className="pt-4 border-t border-gray-100">
               <MenuItem 
                 item={{ name: 'Ranking Faturamento', href: '/ranking-faturamento', icon: Trophy, color: 'text-yellow-600' }}
                 isActive={location.pathname === '/ranking-faturamento'}
-              />
-              
-              <MenuItem 
-                item={{ name: 'Ranking Vendedores', href: '/ranking-vendedores', icon: Users, color: 'text-indigo-600' }}
-                isActive={location.pathname === '/ranking-vendedores'}
               />
             </div>
             
@@ -275,13 +270,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               color="text-emerald-600"
             />
 
-            {/* Ranking Vendedores */}
-            <div className="pt-4 border-t border-gray-100">
-              <MenuItem 
-                item={{ name: 'Ranking Vendedores', href: '/ranking-vendedores', icon: Users, color: 'text-indigo-600' }}
-                isActive={location.pathname === '/ranking-vendedores'}
-              />
-            </div>
+            {/* sem Ranking Vendedores */}
           </nav>
 
           {/* Footer com info do usuário */}
@@ -341,16 +330,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               color="text-purple-600"
             />
 
-            {/* Rankings */}
+            {/* Ranking Faturamento */}
             <div className="pt-4 border-t border-gray-100">
               <MenuItem 
                 item={{ name: 'Ranking Faturamento', href: '/ranking-faturamento', icon: Trophy, color: 'text-yellow-600' }}
                 isActive={location.pathname === '/ranking-faturamento'}
-              />
-              
-              <MenuItem 
-                item={{ name: 'Ranking Vendedores', href: '/ranking-vendedores', icon: Users, color: 'text-indigo-600' }}
-                isActive={location.pathname === '/ranking-vendedores'}
               />
             </div>
           </nav>
