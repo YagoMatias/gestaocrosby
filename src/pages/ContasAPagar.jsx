@@ -29,6 +29,7 @@ import {
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
+import { autorizacoesSupabase } from '../lib/autorizacoesSupabase';
 
 // Função para criar Date object sem problemas de fuso horário
 const criarDataSemFusoHorario = (dataString) => {
@@ -211,6 +212,9 @@ const ContasAPagar = () => {
   const [showRemoverTodosModal, setShowRemoverTodosModal] = useState(false);
   const [contasParaAutorizar, setContasParaAutorizar] = useState([]);
   const [contasParaRemover, setContasParaRemover] = useState([]);
+  
+  // Estado para controle de carregamento das autorizações
+  const [carregandoAutorizacoes, setCarregandoAutorizacoes] = useState(false);
 
 
 
@@ -1158,12 +1162,29 @@ const ContasAPagar = () => {
     setShowConfirmModal(true);
   };
 
-  const handleConfirmRemoveAuthorization = () => {
+  const handleConfirmRemoveAuthorization = async () => {
     if (autorizacaoToRemove) {
-      setAutorizacoes(prev => ({ 
-        ...prev, 
-        [autorizacaoToRemove.chaveUnica]: undefined 
-      }));
+      try {
+        const { error } = await autorizacoesSupabase.removerAutorizacao(autorizacaoToRemove.chaveUnica);
+        
+        if (error) {
+          console.error('Erro ao remover autorização:', error);
+          alert('Erro ao remover autorização. Tente novamente.');
+          return;
+        }
+        
+        // Atualizar estado local
+        setAutorizacoes(prev => {
+          const novasAutorizacoes = { ...prev };
+          delete novasAutorizacoes[autorizacaoToRemove.chaveUnica];
+          return novasAutorizacoes;
+        });
+        
+        console.log('✅ Autorização removida com sucesso');
+      } catch (error) {
+        console.error('Erro ao remover autorização:', error);
+        alert('Erro ao remover autorização. Tente novamente.');
+      }
     }
     setShowConfirmModal(false);
     setAutorizacaoToRemove(null);
@@ -1206,6 +1227,34 @@ const ContasAPagar = () => {
     };
   }, [showConfirmModal, showAutorizarTodosModal, showRemoverTodosModal]);
 
+  // Função para autorizar uma conta individual
+  const handleAutorizarConta = async (dadosConta, chaveUnica) => {
+    try {
+      const { error } = await autorizacoesSupabase.autorizarConta(
+        chaveUnica, 
+        dadosConta, 
+        user?.name || 'USUÁRIO'
+      );
+      
+      if (error) {
+        console.error('Erro ao autorizar conta:', error);
+        alert('Erro ao autorizar conta. Tente novamente.');
+        return;
+      }
+      
+      // Atualizar estado local
+      setAutorizacoes(prev => ({
+        ...prev,
+        [chaveUnica]: user?.name || 'USUÁRIO'
+      }));
+      
+      console.log('✅ Conta autorizada com sucesso');
+    } catch (error) {
+      console.error('Erro ao autorizar conta:', error);
+      alert('Erro ao autorizar conta. Tente novamente.');
+    }
+  };
+
   // Funções para modais de confirmação em massa
   const handleAutorizarTodos = () => {
     const naoAutorizados = dadosOrdenadosParaCards.filter((grupo, index) => {
@@ -1222,13 +1271,33 @@ const ContasAPagar = () => {
     setShowAutorizarTodosModal(true);
   };
 
-  const handleConfirmAutorizarTodos = () => {
-    const novasAutorizacoes = {};
-    contasParaAutorizar.forEach(grupo => {
-      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-      novasAutorizacoes[chaveUnica] = user?.name || 'USUÁRIO';
-    });
-    setAutorizacoes(prev => ({ ...prev, ...novasAutorizacoes }));
+  const handleConfirmAutorizarTodos = async () => {
+    try {
+      const { error } = await autorizacoesSupabase.autorizarMultiplasContas(
+        contasParaAutorizar, 
+        user?.name || 'USUÁRIO'
+      );
+      
+      if (error) {
+        console.error('Erro ao autorizar múltiplas contas:', error);
+        alert('Erro ao autorizar contas. Tente novamente.');
+        return;
+      }
+      
+      // Atualizar estado local
+      const novasAutorizacoes = {};
+      contasParaAutorizar.forEach(grupo => {
+        const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+        novasAutorizacoes[chaveUnica] = user?.name || 'USUÁRIO';
+      });
+      
+      setAutorizacoes(prev => ({ ...prev, ...novasAutorizacoes }));
+      console.log('✅ Múltiplas contas autorizadas com sucesso');
+    } catch (error) {
+      console.error('Erro ao autorizar múltiplas contas:', error);
+      alert('Erro ao autorizar contas. Tente novamente.');
+    }
+    
     setShowAutorizarTodosModal(false);
     setContasParaAutorizar([]);
   };
@@ -1253,13 +1322,30 @@ const ContasAPagar = () => {
     setShowRemoverTodosModal(true);
   };
 
-  const handleConfirmRemoverTodos = () => {
-    const novasAutorizacoes = { ...autorizacoes };
-    contasParaRemover.forEach(grupo => {
-      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-      delete novasAutorizacoes[chaveUnica];
-    });
-    setAutorizacoes(novasAutorizacoes);
+  const handleConfirmRemoverTodos = async () => {
+    try {
+      const { error } = await autorizacoesSupabase.removerMultiplasAutorizacoes(contasParaRemover);
+      
+      if (error) {
+        console.error('Erro ao remover múltiplas autorizações:', error);
+        alert('Erro ao remover autorizações. Tente novamente.');
+        return;
+      }
+      
+      // Atualizar estado local
+      const novasAutorizacoes = { ...autorizacoes };
+      contasParaRemover.forEach(grupo => {
+        const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+        delete novasAutorizacoes[chaveUnica];
+      });
+      
+      setAutorizacoes(novasAutorizacoes);
+      console.log('✅ Múltiplas autorizações removidas com sucesso');
+    } catch (error) {
+      console.error('Erro ao remover múltiplas autorizações:', error);
+      alert('Erro ao remover autorizações. Tente novamente.');
+    }
+    
     setShowRemoverTodosModal(false);
     setContasParaRemover([]);
   };
@@ -1281,6 +1367,37 @@ const ContasAPagar = () => {
       handleCancelRemoverTodos();
     }
   };
+
+  // Função para carregar autorizações do Supabase
+  const carregarAutorizacoesSupabase = async () => {
+    if (!user) return;
+    
+    setCarregandoAutorizacoes(true);
+    try {
+      const { data, error } = await autorizacoesSupabase.buscarAutorizacoes();
+      
+      if (error) {
+        console.error('Erro ao carregar autorizações:', error);
+        return;
+      }
+      
+      if (data) {
+        setAutorizacoes(data);
+        console.log('✅ Autorizações carregadas do Supabase:', Object.keys(data).length);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar autorizações:', error);
+    } finally {
+      setCarregandoAutorizacoes(false);
+    }
+  };
+
+  // Carregar autorizações quando o usuário mudar
+  useEffect(() => {
+    if (user && dadosCarregados) {
+      carregarAutorizacoesSupabase();
+    }
+  }, [user, dadosCarregados]);
 
   return (
     <Layout>
@@ -1714,6 +1831,12 @@ const ContasAPagar = () => {
 						<div className="p-6 border-b border-[#000638]/10">
 							<h2 className="text-xl font-bold text-[#000638]">Detalhamento de Contas</h2>
 							<p className="text-xs text-gray-500 mt-1">Registros consolidados por duplicata/parcela/fornecedor, unificando situações, previsões e datas como nos cards.</p>
+							{carregandoAutorizacoes && (
+								<div className="mt-2 flex items-center gap-2 text-xs text-blue-600">
+									<Spinner size={12} className="animate-spin" />
+									<span>Carregando autorizações...</span>
+								</div>
+							)}
 							<div className="mt-3 flex items-center gap-2">
 								{(() => {
 									const allSelected = linhasSelecionadasAgrupadas.size === dadosOrdenadosParaCards.length && dadosOrdenadosParaCards.length > 0;
@@ -1754,6 +1877,22 @@ const ContasAPagar = () => {
 								>
 									Baixar Excel
 								</button>
+								{hasRole(['ADM', 'DIRETOR']) && (
+									<button
+										onClick={carregarAutorizacoesSupabase}
+										disabled={carregandoAutorizacoes}
+										className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+									>
+										{carregandoAutorizacoes ? (
+											<div className="flex items-center gap-1">
+												<Spinner size={10} className="animate-spin" />
+												<span>Carregando...</span>
+											</div>
+										) : (
+											'🔄 Recarregar'
+										)}
+									</button>
+								)}
 							</div>
 						</div>
 						<div className="p-6 overflow-x-auto">
@@ -1813,10 +1952,7 @@ const ContasAPagar = () => {
 																	handleRemoveAuthorization(chaveUnica, autorizadoPor);
 																} else {
 																	// Autorizar sem confirmação
-																	setAutorizacoes(prev => ({ 
-																		...prev, 
-																		[chaveUnica]: (user?.name || 'USUÁRIO') 
-																	}));
+																	handleAutorizarConta(grupo.item, chaveUnica);
 																}
 															}}
 															className={`text-[10px] px-2 py-1 rounded ${autorizadoPor ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
