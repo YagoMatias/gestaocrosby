@@ -132,48 +132,30 @@ const Dashboard = () => {
     try {
       const { primeiroDiaMes, ultimoDiaMes } = getDateRange();
       
-      // Usar apenas as empresas do FiltroEmpresa (mesmas empresas usadas no sistema)
-      const codigosEmpresas = ['1','2','5','6','7','11','31','55','65','75','85','90','91','92','93','94','95','96','97','99','100','111','200','311','500','550','600','650','700','750','850','890','910','920','930','940','950','960','970','990'];
-      
+      // Mesmas empresas usadas no sistema
+      const codigosEmpresas = ['1','2','5','6','7','11','31','55','65','75','85','90','91','92','93','94','95','96','97','98','99','100','111','200','311','500','550','600','650','700','750','850','890','910','920','930','940','950','960','970','980','990'];
       if (codigosEmpresas.length === 0) {
         console.warn('Nenhuma empresa encontrada para contas a pagar');
         return;
       }
 
-      // Fazer chamadas individuais para cada empresa (como na página original)
-      const todasAsPromises = codigosEmpresas.map(async (cdEmpresa) => {
-        try {
-          const params = {
-            dt_inicio: primeiroDiaMes,
-            dt_fim: ultimoDiaMes,
-            cd_empresa: cdEmpresa
-          };
+      const params = {
+        dt_inicio: primeiroDiaMes,
+        dt_fim: ultimoDiaMes,
+        cd_empresa: codigosEmpresas
+      };
 
-                     const result = await apiClient.financial.contasPagar(params);
-           
-           if (result.success && result.data) {
-             // A API retorna os dados em result.data.data
-             const dados = result.data.data || result.data;
-             return dados;
-           }
-           return [];
-        } catch (error) {
-          console.warn(`Erro ao buscar empresa ${cdEmpresa}:`, error);
-          return [];
-        }
-      });
-
-             const resultados = await Promise.all(todasAsPromises);
-       const todosOsDados = resultados.flat();
-       
-       // Aplicar os mesmos filtros da página ContasAPagar
-       // Filtro por situação: NORMAIS (apenas tp_situacao = 'N')
-       const dadosFiltradosSituacao = todosOsDados.filter(item => item.tp_situacao === 'N');
-       
-       // Filtro por status: Todos (não filtra por status)
-       const dadosFiltradosCompletos = dadosFiltradosSituacao;
-       
-       const totalContasPagar = dadosFiltradosCompletos.reduce((acc, item) => acc + parseFloat(item.vl_duplicata || 0), 0);
+      const result = await apiClient.financial.contasPagar(params);
+      const todosOsDados = (result.success && Array.isArray(result.data)) ? result.data : [];
+      
+      // Aplicar os mesmos filtros da página ContasAPagar
+      // Filtro por situação: NORMAIS (apenas tp_situacao = 'N')
+      const dadosFiltradosSituacao = todosOsDados.filter(item => item.tp_situacao === 'N');
+      
+      // Filtro por status: Todos (não filtra por status)
+      const dadosFiltradosCompletos = dadosFiltradosSituacao;
+      
+      const totalContasPagar = dadosFiltradosCompletos.reduce((acc, item) => acc + parseFloat(item.vl_duplicata || 0), 0);
       setStats(prev => ({
         ...prev,
         contasAPagar: {

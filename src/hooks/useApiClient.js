@@ -94,7 +94,10 @@ const useApiClient = () => {
               count: result.data?.count || result.count,
               periodo: result.data?.periodo || result.periodo,
               empresas: result.data?.empresas || result.empresas,
-              estatisticas: result.data?.estatisticas || result.data?.totais || result.estatisticas || result.totais,
+              estatisticas: result.data?.estatisticas || result.data?.totais || result.data?.totals || result.estatisticas || result.totais || result.totals,
+              totals: result.data?.totals || result.totals,
+              optimized: result.data?.optimized || result.optimized,
+              queryType: result.data?.queryType || result.queryType,
               ...result
             }
           };
