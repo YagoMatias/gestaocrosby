@@ -945,16 +945,6 @@ const SaldoBancario = () => {
                 </button>
               </div>
             </div>
-            
-            {/* Botão Adicionar Saldo */}
-            <button
-              onClick={abrirModalAddSaldo}
-              className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 shadow-sm"
-              title="Adicionar novo saldo manualmente"
-            >
-              <span>➕</span>
-              Adicionar Saldo
-            </button>
           </div>
 
           {/* Filtros por Ano e Mês - apenas no modo Histórico */}
@@ -1205,9 +1195,21 @@ const SaldoBancario = () => {
           {/* Tabela de Saldos */}
           {dadosCarregados && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-6 font-barlow">
-                {tipoVisualizacao === 'atual' ? 'Saldos Atuais por Conta' : 'Saldos por Conta'}
-              </h2>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 font-barlow">
+                  {tipoVisualizacao === 'atual' ? 'Saldos Atuais por Conta' : 'Saldos por Conta'}
+                </h2>
+                
+                {/* Botão Adicionar Saldo */}
+                <button
+                  onClick={abrirModalAddSaldo}
+                  className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 shadow-sm"
+                  title="Adicionar novo saldo manualmente"
+                >
+                  <span>+</span>
+                  Adicionar Saldo
+                </button>
+              </div>
               
               <div className="overflow-x-auto">
                                  <table className="w-full">
