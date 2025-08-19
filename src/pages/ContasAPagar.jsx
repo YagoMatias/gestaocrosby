@@ -29,7 +29,7 @@ import {
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
-import { autorizacoesSupabase } from '../lib/autorizacoesSupabase';
+import { autorizacoesSupabase, STATUS_AUTORIZACAO } from '../lib/autorizacoesSupabase';
 
 // Função para criar Date object sem problemas de fuso horário
 const criarDataSemFusoHorario = (dataString) => {
@@ -75,7 +75,6 @@ const ContasAPagar = () => {
       .table-container {
         overflow-x: auto;
         position: relative;
-        max-width: 100%;
       }
       
       .table-container table {
@@ -89,7 +88,7 @@ const ContasAPagar = () => {
       
       .contas-table th,
       .contas-table td {
-        padding: 6px 8px !important;
+        padding: !important;
         border-right: 1px solid #f3f4f6;
         word-wrap: break-word;
         white-space: normal;
@@ -181,7 +180,7 @@ const ContasAPagar = () => {
   const [status, setStatus] = useState('Todos');
   const [situacao, setSituacao] = useState('NORMAIS');
   const [previsao, setPrevisao] = useState('TODOS');
-  const [filtroAutorizacao, setFiltroAutorizacao] = useState('TODOS'); // 'AUTORIZADOS' | 'NAO_AUTORIZADOS' | 'TODOS'
+  const [filtroAutorizacao, setFiltroAutorizacao] = useState('TODOS'); // 'AUTORIZADOS' | 'NAO_AUTORIZADOS' | 'ENVIADO_PAGAMENTO' | 'TODOS'
   const [fornecedor, setFornecedor] = useState('');
   const [despesa, setDespesa] = useState('');
   const [duplicata, setDuplicata] = useState('');
@@ -212,6 +211,15 @@ const ContasAPagar = () => {
   const [showRemoverTodosModal, setShowRemoverTodosModal] = useState(false);
   const [contasParaAutorizar, setContasParaAutorizar] = useState([]);
   const [contasParaRemover, setContasParaRemover] = useState([]);
+  
+  // Estados para envio para pagamento
+  const [showEnviarPagamentoModal, setShowEnviarPagamentoModal] = useState(false);
+  const [showRemoverPagamentoModal, setShowRemoverPagamentoModal] = useState(false);
+  const [contaParaEnviar, setContaParaEnviar] = useState(null);
+  
+  // Estado para modal de acesso restrito
+  const [showAcessoRestritoModal, setShowAcessoRestritoModal] = useState(false);
+  const [dadosAcessoRestrito, setDadosAcessoRestrito] = useState(null);
   
   // Estado para controle de carregamento das autorizações
   const [carregandoAutorizacoes, setCarregandoAutorizacoes] = useState(false);
@@ -516,14 +524,42 @@ const ContasAPagar = () => {
     }
   };
 
+  const dadosFiltradosPorAutorizacao = useMemo(() => {
+    if (filtroAutorizacao === 'TODOS') return dadosFiltrados;
+    
+    return dadosFiltrados.filter((item) => {
+      const chave = `${item.cd_fornecedor}|${item.nr_duplicata}|${item.cd_empresa}|${item.nr_parcela}`;
+      const autorizacao = autorizacoes[chave];
+      const status = autorizacao?.status || STATUS_AUTORIZACAO.NAO_AUTORIZADO;
+      
+      if (filtroAutorizacao === 'AUTORIZADOS') {
+        return status === STATUS_AUTORIZACAO.AUTORIZADO;
+      } else if (filtroAutorizacao === 'NAO_AUTORIZADOS') {
+        return status === STATUS_AUTORIZACAO.NAO_AUTORIZADO;
+      } else if (filtroAutorizacao === 'ENVIADO_PAGAMENTO') {
+        return status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO;
+      }
+      return true;
+    });
+  }, [dadosFiltrados, filtroAutorizacao, autorizacoes]);
+
   // Dados filtrados por situação, status, previsão e autorização
   const dadosFiltradosCompletos = useMemo(() => {
     const base = filtrarDadosPorPrevisao(filtrarDadosPorStatus(dadosFiltrados));
     if (filtroAutorizacao === 'TODOS') return base;
     return base.filter((item) => {
       const chave = `${item.cd_fornecedor}|${item.nr_duplicata}|${item.cd_empresa}|${item.nr_parcela}`;
-      const isAut = Boolean(autorizacoes[chave]);
-      return filtroAutorizacao === 'AUTORIZADOS' ? isAut : !isAut;
+      const autorizacao = autorizacoes[chave];
+      const status = autorizacao?.status || STATUS_AUTORIZACAO.NAO_AUTORIZADO;
+      
+      if (filtroAutorizacao === 'AUTORIZADOS') {
+        return status === STATUS_AUTORIZACAO.AUTORIZADO;
+      } else if (filtroAutorizacao === 'NAO_AUTORIZADOS') {
+        return status === STATUS_AUTORIZACAO.NAO_AUTORIZADO;
+      } else if (filtroAutorizacao === 'ENVIADO_PAGAMENTO') {
+        return status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO;
+      }
+      return true;
     });
   }, [dadosFiltrados, filtroAutorizacao, autorizacoes]);
 
@@ -1076,7 +1112,7 @@ const ContasAPagar = () => {
 
   // Cálculos dos cards (baseados em dados agrupados - igual ao Fluxo de Caixa)
   const totalContasCards = dadosOrdenadosParaCards.length;
-  const totalValorCards = dadosOrdenadosParaCards.reduce((acc, grupo) => acc + (parseFloat(grupo.item.vl_duplicata) || 0), 0);
+  const totalValorCards = dadosOrdenadosParaCards.reduce((acc, grupo) => acc + parseFloat(grupo.item.vl_duplicata || 0), 0);
   
   const contasVencidasCards = dadosOrdenadosParaCards.filter(grupo => {
     const status = getStatusFromData(grupo.item);
@@ -1245,7 +1281,11 @@ const ContasAPagar = () => {
       // Atualizar estado local
       setAutorizacoes(prev => ({
         ...prev,
-        [chaveUnica]: user?.name || 'USUÁRIO'
+        [chaveUnica]: {
+          autorizadoPor: user?.name || 'USUÁRIO',
+          status: STATUS_AUTORIZACAO.AUTORIZADO,
+          dataAutorizacao: new Date().toISOString()
+        }
       }));
       
       console.log('✅ Conta autorizada com sucesso');
@@ -1255,11 +1295,111 @@ const ContasAPagar = () => {
     }
   };
 
+  // Função para autorizar contas selecionadas
+  const handleAutorizarSelecionados = async () => {
+    if (linhasSelecionadasAgrupadas.size === 0) {
+      alert('Nenhuma conta selecionada para autorizar!');
+      return;
+    }
+
+    const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(index => dadosOrdenadosParaCards[index]);
+    const contasNaoAutorizadas = contasSelecionadas.filter(grupo => {
+      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+      const autorizacao = autorizacoes[chaveUnica];
+      return !autorizacao || !autorizacao.autorizadoPor;
+    });
+
+    if (contasNaoAutorizadas.length === 0) {
+      alert('Todas as contas selecionadas já estão autorizadas!');
+      return;
+    }
+
+    try {
+      const { error } = await autorizacoesSupabase.autorizarMultiplasContas(
+        contasNaoAutorizadas, 
+        user?.name || 'USUÁRIO'
+      );
+      
+      if (error) {
+        console.error('Erro ao autorizar contas selecionadas:', error);
+        alert('Erro ao autorizar contas. Tente novamente.');
+        return;
+      }
+      
+      // Atualizar estado local
+      const novasAutorizacoes = {};
+      contasNaoAutorizadas.forEach(grupo => {
+        const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+        novasAutorizacoes[chaveUnica] = {
+          autorizadoPor: user?.name || 'USUÁRIO',
+          status: STATUS_AUTORIZACAO.AUTORIZADO,
+          dataAutorizacao: new Date().toISOString()
+        };
+      });
+      
+      setAutorizacoes(prev => ({ ...prev, ...novasAutorizacoes }));
+      console.log('✅ Contas selecionadas autorizadas com sucesso');
+      
+      // Limpar seleção
+      setLinhasSelecionadasAgrupadas(new Set());
+    } catch (error) {
+      console.error('Erro ao autorizar contas selecionadas:', error);
+      alert('Erro ao autorizar contas. Tente novamente.');
+    }
+  };
+
+  // Função para remover autorizações das contas selecionadas
+  const handleRemoverSelecionados = async () => {
+    if (linhasSelecionadasAgrupadas.size === 0) {
+      alert('Nenhuma conta selecionada para remover autorização!');
+      return;
+    }
+
+    const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(index => dadosOrdenadosParaCards[index]);
+    const contasAutorizadas = contasSelecionadas.filter(grupo => {
+      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+      const autorizacao = autorizacoes[chaveUnica];
+      return autorizacao && autorizacao.autorizadoPor;
+    });
+
+    if (contasAutorizadas.length === 0) {
+      alert('Nenhuma das contas selecionadas está autorizada!');
+      return;
+    }
+
+    try {
+      const { error } = await autorizacoesSupabase.removerMultiplasAutorizacoes(contasAutorizadas);
+      
+      if (error) {
+        console.error('Erro ao remover autorizações das contas selecionadas:', error);
+        alert('Erro ao remover autorizações. Tente novamente.');
+        return;
+      }
+      
+      // Atualizar estado local
+      const novasAutorizacoes = { ...autorizacoes };
+      contasAutorizadas.forEach(grupo => {
+        const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+        delete novasAutorizacoes[chaveUnica];
+      });
+      
+      setAutorizacoes(novasAutorizacoes);
+      console.log('✅ Autorizações das contas selecionadas removidas com sucesso');
+      
+      // Limpar seleção
+      setLinhasSelecionadasAgrupadas(new Set());
+    } catch (error) {
+      console.error('Erro ao remover autorizações das contas selecionadas:', error);
+      alert('Erro ao remover autorizações. Tente novamente.');
+    }
+  };
+
   // Funções para modais de confirmação em massa
   const handleAutorizarTodos = () => {
     const naoAutorizados = dadosOrdenadosParaCards.filter((grupo, index) => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-      return !autorizacoes[chaveUnica];
+      const autorizacao = autorizacoes[chaveUnica];
+      return !autorizacao || !autorizacao.autorizadoPor;
     });
     
     if (naoAutorizados.length === 0) {
@@ -1288,7 +1428,11 @@ const ContasAPagar = () => {
       const novasAutorizacoes = {};
       contasParaAutorizar.forEach(grupo => {
         const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-        novasAutorizacoes[chaveUnica] = user?.name || 'USUÁRIO';
+        novasAutorizacoes[chaveUnica] = {
+          autorizadoPor: user?.name || 'USUÁRIO',
+          status: STATUS_AUTORIZACAO.AUTORIZADO,
+          dataAutorizacao: new Date().toISOString()
+        };
       });
       
       setAutorizacoes(prev => ({ ...prev, ...novasAutorizacoes }));
@@ -1310,7 +1454,8 @@ const ContasAPagar = () => {
   const handleRemoverTodos = () => {
     const autorizados = dadosOrdenadosParaCards.filter((grupo, index) => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-      return autorizacoes[chaveUnica];
+      const autorizacao = autorizacoes[chaveUnica];
+      return autorizacao && autorizacao.autorizadoPor;
     });
     
     if (autorizados.length === 0) {
@@ -1398,6 +1543,439 @@ const ContasAPagar = () => {
       carregarAutorizacoesSupabase();
     }
   }, [user, dadosCarregados]);
+
+  // Cálculos para autorizações
+  const contasAutorizadas = dadosOrdenadosParaCards.filter(grupo => {
+    const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+    const autorizacao = autorizacoes[chaveUnica];
+    return autorizacao && (autorizacao.status === STATUS_AUTORIZACAO.AUTORIZADO || autorizacao.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO);
+  });
+  const totalContasAutorizadas = contasAutorizadas.length;
+  const valorTotalAutorizado = contasAutorizadas.reduce((acc, grupo) => acc + parseFloat(grupo.item.vl_duplicata || 0), 0);
+
+  // Função para enviar conta para pagamento (FINANCEIRO)
+  const handleEnviarParaPagamento = (dadosConta, chaveUnica) => {
+    console.log('🚀 handleEnviarParaPagamento chamada');
+    console.log('📋 dadosConta:', dadosConta);
+    console.log('🔑 chaveUnica:', chaveUnica);
+    console.log('👤 user:', user);
+    console.log('🔐 hasRole FINANCEIRO:', hasRole(['FINANCEIRO']));
+    
+    setContaParaEnviar({ dadosConta, chaveUnica });
+    setShowEnviarPagamentoModal(true);
+    console.log('✅ Modal de envio para pagamento aberto');
+    console.log('📊 showEnviarPagamentoModal definido como true');
+  };
+
+  const handleConfirmEnviarParaPagamento = async () => {
+    console.log('🚀 handleConfirmEnviarParaPagamento chamada');
+    console.log('📋 contaParaEnviar:', contaParaEnviar);
+    console.log('👤 user:', user);
+    
+    if (!contaParaEnviar || !user) {
+      console.error('❌ Dados insuficientes para enviar para pagamento');
+      return;
+    }
+    
+    try {
+      console.log('🔄 Enviando para pagamento no Supabase...');
+      const { error } = await autorizacoesSupabase.enviarParaPagamento(
+        contaParaEnviar.chaveUnica, 
+        user?.name || 'USUÁRIO'
+      );
+      
+      if (error) {
+        console.error('❌ Erro ao enviar para pagamento:', error);
+        alert('Erro ao enviar para pagamento. Tente novamente.');
+        return;
+      }
+      
+      console.log('✅ Envio para pagamento bem-sucedido no Supabase');
+      
+      // Atualizar estado local
+      setAutorizacoes(prev => ({
+        ...prev,
+        [contaParaEnviar.chaveUnica]: {
+          ...prev[contaParaEnviar.chaveUnica],
+          status: STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO,
+          enviadoPor: user?.name || 'USUÁRIO',
+          dataEnvioPagamento: new Date().toISOString()
+        }
+      }));
+      
+      console.log('✅ Estado local atualizado');
+      console.log('✅ Conta enviada para pagamento com sucesso');
+    } catch (error) {
+      console.error('❌ Erro ao enviar para pagamento:', error);
+      alert('Erro ao enviar para pagamento. Tente novamente.');
+    } finally {
+      setShowEnviarPagamentoModal(false);
+      setContaParaEnviar(null);
+      console.log('✅ Modal fechado e estado limpo');
+    }
+  };
+
+  const handleCancelEnviarParaPagamento = () => {
+    console.log('🚫 handleCancelEnviarParaPagamento chamada');
+    setShowEnviarPagamentoModal(false);
+    setContaParaEnviar(null);
+    console.log('✅ Modal cancelado e estado limpo');
+  };
+
+  // Função para remover status "enviado para pagamento"
+  const handleRemoverEnviadoParaPagamento = (dadosConta, chaveUnica) => {
+    console.log('🚀 handleRemoverEnviadoParaPagamento chamada');
+    console.log('📋 dadosConta:', dadosConta);
+    console.log('🔑 chaveUnica:', chaveUnica);
+    console.log('👤 user:', user);
+    
+    setContaParaEnviar({ dadosConta, chaveUnica });
+    setShowRemoverPagamentoModal(true);
+    console.log('✅ Modal de remoção de pagamento aberto');
+  };
+
+  const handleConfirmRemoverEnviadoParaPagamento = async () => {
+    console.log('🚀 handleConfirmRemoverEnviadoParaPagamento chamada');
+    console.log('📋 contaParaEnviar:', contaParaEnviar);
+    console.log('👤 user:', user);
+    
+    if (!contaParaEnviar || !user) {
+      console.error('❌ Dados insuficientes para remover pagamento');
+      return;
+    }
+    
+    try {
+      console.log('🔄 Removendo status de pagamento no Supabase...');
+      const { error } = await autorizacoesSupabase.removerEnviadoParaPagamento(
+        contaParaEnviar.chaveUnica
+      );
+      
+      if (error) {
+        console.error('❌ Erro ao remover pagamento:', error);
+        alert('Erro ao remover pagamento. Tente novamente.');
+        return;
+      }
+      
+      console.log('✅ Remoção de pagamento bem-sucedida no Supabase');
+      
+      // Atualizar estado local
+      setAutorizacoes(prev => ({
+        ...prev,
+        [contaParaEnviar.chaveUnica]: {
+          ...prev[contaParaEnviar.chaveUnica],
+          status: STATUS_AUTORIZACAO.AUTORIZADO,
+          enviadoPor: null,
+          dataEnvioPagamento: null
+        }
+      }));
+      
+      console.log('✅ Estado local atualizado');
+      console.log('✅ Status de pagamento removido com sucesso');
+    } catch (error) {
+      console.error('❌ Erro ao remover pagamento:', error);
+      alert('Erro ao remover pagamento. Tente novamente.');
+    } finally {
+      setShowRemoverPagamentoModal(false);
+      setContaParaEnviar(null);
+      console.log('✅ Modal fechado e estado limpo');
+    }
+  };
+
+  const handleCancelRemoverEnviadoParaPagamento = () => {
+    console.log('🚫 handleCancelRemoverEnviadoParaPagamento chamada');
+    setShowRemoverPagamentoModal(false);
+    setContaParaEnviar(null);
+    console.log('✅ Modal de remoção cancelado e estado limpo');
+  };
+
+  // Funções para modal de acesso restrito
+  const handleAcessoRestrito = (enviadoPor) => {
+    setDadosAcessoRestrito({ enviadoPor });
+    setShowAcessoRestritoModal(true);
+  };
+
+  const handleCloseAcessoRestrito = () => {
+    setShowAcessoRestritoModal(false);
+    setDadosAcessoRestrito(null);
+  };
+
+  // Função para pagar todas as contas autorizadas
+  const handlePagarTodos = async () => {
+    const contasAutorizadas = dadosOrdenadosParaCards.filter(grupo => {
+      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+      const autorizacao = autorizacoes[chaveUnica];
+      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
+      return autorizacao && autorizacao.status === STATUS_AUTORIZACAO.AUTORIZADO && !contaPaga;
+    });
+
+    if (contasAutorizadas.length === 0) {
+      alert('Nenhuma conta autorizada para pagar!');
+      return;
+    }
+
+    try {
+      const chavesUnicas = contasAutorizadas.map(grupo => 
+        `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+      );
+      
+      const { error } = await autorizacoesSupabase.enviarMultiplasParaPagamento(
+        chavesUnicas, 
+        user?.name || 'USUÁRIO'
+      );
+      
+      if (error) {
+        console.error('Erro ao pagar todas as contas:', error);
+        alert('Erro ao pagar contas. Tente novamente.');
+        return;
+      }
+      
+      // Atualizar estado local
+      const novasAutorizacoes = { ...autorizacoes };
+      contasAutorizadas.forEach(grupo => {
+        const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+        novasAutorizacoes[chaveUnica] = {
+          ...novasAutorizacoes[chaveUnica],
+          status: STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO,
+          enviadoPor: user?.name || 'USUÁRIO',
+          dataEnvioPagamento: new Date().toISOString()
+        };
+      });
+      
+      setAutorizacoes(novasAutorizacoes);
+      console.log('✅ Todas as contas autorizadas foram pagas com sucesso');
+      alert(`✅ ${contasAutorizadas.length} contas foram pagas com sucesso!`);
+    } catch (error) {
+      console.error('Erro ao pagar todas as contas:', error);
+      alert('Erro ao pagar contas. Tente novamente.');
+    }
+  };
+
+  // Função para remover pagamento de todas as contas
+  const handleRemoverPagamentoTodos = async () => {
+    const contasEnviadas = dadosOrdenadosParaCards.filter(grupo => {
+      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+      const autorizacao = autorizacoes[chaveUnica];
+      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
+      return autorizacao && autorizacao.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO && !contaPaga;
+    });
+
+    if (contasEnviadas.length === 0) {
+      alert('Nenhuma conta enviada para pagamento para remover!');
+      return;
+    }
+
+    try {
+      const chavesUnicas = contasEnviadas.map(grupo => 
+        `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+      );
+      
+      const { error } = await autorizacoesSupabase.removerMultiplasEnviadasParaPagamento(
+        chavesUnicas
+      );
+      
+      if (error) {
+        console.error('Erro ao remover pagamento de todas as contas:', error);
+        alert('Erro ao remover pagamento. Tente novamente.');
+        return;
+      }
+      
+      // Atualizar estado local
+      const novasAutorizacoes = { ...autorizacoes };
+      contasEnviadas.forEach(grupo => {
+        const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+        novasAutorizacoes[chaveUnica] = {
+          ...novasAutorizacoes[chaveUnica],
+          status: STATUS_AUTORIZACAO.AUTORIZADO,
+          enviadoPor: null,
+          dataEnvioPagamento: null
+        };
+      });
+      
+      setAutorizacoes(novasAutorizacoes);
+      console.log('✅ Pagamento removido de todas as contas com sucesso');
+      alert(`✅ Pagamento removido de ${contasEnviadas.length} contas com sucesso!`);
+    } catch (error) {
+      console.error('Erro ao remover pagamento de todas as contas:', error);
+      alert('Erro ao remover pagamento. Tente novamente.');
+    }
+  };
+
+  // Função para pagar contas selecionadas
+  const handlePagarSelecionados = async () => {
+    if (linhasSelecionadasAgrupadas.size === 0) {
+      alert('Nenhuma conta selecionada para pagar!');
+      return;
+    }
+
+    const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(index => dadosOrdenadosParaCards[index]);
+    const contasAutorizadas = contasSelecionadas.filter(grupo => {
+      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+      const autorizacao = autorizacoes[chaveUnica];
+      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
+      return autorizacao && autorizacao.status === STATUS_AUTORIZACAO.AUTORIZADO && !contaPaga;
+    });
+
+    if (contasAutorizadas.length === 0) {
+      alert('Nenhuma das contas selecionadas está autorizada!');
+      return;
+    }
+
+    try {
+      const chavesUnicas = contasAutorizadas.map(grupo => 
+        `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+      );
+      
+      const { error } = await autorizacoesSupabase.enviarMultiplasParaPagamento(
+        chavesUnicas, 
+        user?.name || 'USUÁRIO'
+      );
+      
+      if (error) {
+        console.error('Erro ao pagar contas selecionadas:', error);
+        alert('Erro ao pagar contas. Tente novamente.');
+        return;
+      }
+      
+      // Atualizar estado local
+      const novasAutorizacoes = { ...autorizacoes };
+      contasAutorizadas.forEach(grupo => {
+        const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+        novasAutorizacoes[chaveUnica] = {
+          ...novasAutorizacoes[chaveUnica],
+          status: STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO,
+          enviadoPor: user?.name || 'USUÁRIO',
+          dataEnvioPagamento: new Date().toISOString()
+        };
+      });
+      
+      setAutorizacoes(novasAutorizacoes);
+      console.log('✅ Contas selecionadas pagas com sucesso');
+      alert(`✅ ${contasAutorizadas.length} contas selecionadas foram pagas com sucesso!`);
+      
+      // Limpar seleção
+      setLinhasSelecionadasAgrupadas(new Set());
+    } catch (error) {
+      console.error('Erro ao pagar contas selecionadas:', error);
+      alert('Erro ao pagar contas. Tente novamente.');
+    }
+  };
+
+  // Função para remover pagamento de contas selecionadas
+  const handleRemoverPagamentoSelecionados = async () => {
+    if (linhasSelecionadasAgrupadas.size === 0) {
+      alert('Nenhuma conta selecionada para remover pagamento!');
+      return;
+    }
+
+    const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(index => dadosOrdenadosParaCards[index]);
+    const contasEnviadas = contasSelecionadas.filter(grupo => {
+      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+      const autorizacao = autorizacoes[chaveUnica];
+      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
+      return autorizacao && autorizacao.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO && !contaPaga;
+    });
+
+    if (contasEnviadas.length === 0) {
+      alert('Nenhuma das contas selecionadas foi enviada para pagamento!');
+      return;
+    }
+
+    try {
+      const chavesUnicas = contasEnviadas.map(grupo => 
+        `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+      );
+      
+      const { error } = await autorizacoesSupabase.removerMultiplasEnviadasParaPagamento(
+        chavesUnicas
+      );
+      
+      if (error) {
+        console.error('Erro ao remover pagamento das contas selecionadas:', error);
+        alert('Erro ao remover pagamento. Tente novamente.');
+        return;
+      }
+      
+      // Atualizar estado local
+      const novasAutorizacoes = { ...autorizacoes };
+      contasEnviadas.forEach(grupo => {
+        const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+        novasAutorizacoes[chaveUnica] = {
+          ...novasAutorizacoes[chaveUnica],
+          status: STATUS_AUTORIZACAO.AUTORIZADO,
+          enviadoPor: null,
+          dataEnvioPagamento: null
+        };
+      });
+      
+      setAutorizacoes(novasAutorizacoes);
+      console.log('✅ Pagamento removido das contas selecionadas com sucesso');
+      alert(`✅ Pagamento removido de ${contasEnviadas.length} contas selecionadas com sucesso!`);
+      
+      // Limpar seleção
+      setLinhasSelecionadasAgrupadas(new Set());
+    } catch (error) {
+      console.error('Erro ao remover pagamento das contas selecionadas:', error);
+      alert('Erro ao remover pagamento. Tente novamente.');
+    }
+  };
+
+  // Função para enviar múltiplas contas selecionadas para pagamento
+  const handleEnviarSelecionadosParaPagamento = async () => {
+    if (linhasSelecionadasAgrupadas.size === 0) {
+      alert('Nenhuma conta selecionada para enviar para pagamento!');
+      return;
+    }
+
+    const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(index => dadosOrdenadosParaCards[index]);
+    const contasAutorizadas = contasSelecionadas.filter(grupo => {
+      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+      const autorizacao = autorizacoes[chaveUnica];
+      return autorizacao && autorizacao.status === STATUS_AUTORIZACAO.AUTORIZADO;
+    });
+
+    if (contasAutorizadas.length === 0) {
+      alert('Nenhuma das contas selecionadas está autorizada!');
+      return;
+    }
+
+    try {
+      const chavesUnicas = contasAutorizadas.map(grupo => 
+        `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+      );
+      
+      const { error } = await autorizacoesSupabase.enviarMultiplasParaPagamento(
+        chavesUnicas, 
+        user?.name || 'USUÁRIO'
+      );
+      
+      if (error) {
+        console.error('Erro ao enviar contas selecionadas para pagamento:', error);
+        alert('Erro ao enviar contas para pagamento. Tente novamente.');
+        return;
+      }
+      
+      // Atualizar estado local
+      const novasAutorizacoes = { ...autorizacoes };
+      contasAutorizadas.forEach(grupo => {
+        const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+        novasAutorizacoes[chaveUnica] = {
+          ...novasAutorizacoes[chaveUnica],
+          status: STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO,
+          enviadoPor: user?.name || 'USUÁRIO',
+          dataEnvioPagamento: new Date().toISOString()
+        };
+      });
+      
+      setAutorizacoes(novasAutorizacoes);
+      console.log('✅ Contas selecionadas enviadas para pagamento com sucesso');
+      
+      // Limpar seleção
+      setLinhasSelecionadasAgrupadas(new Set());
+    } catch (error) {
+      console.error('Erro ao enviar contas selecionadas para pagamento:', error);
+      alert('Erro ao enviar contas para pagamento. Tente novamente.');
+    }
+  };
 
   return (
     <Layout>
@@ -1495,6 +2073,7 @@ const ContasAPagar = () => {
                   <option value="TODOS">TODOS</option>
                   <option value="AUTORIZADOS">AUTORIZADOS</option>
                   <option value="NAO_AUTORIZADOS">NÃO AUTORIZADOS</option>
+                  <option value="ENVIADO_PAGAMENTO">ENVIADO PAGAMENTO</option>
                 </select>
               </div>
               <div>
@@ -1596,6 +2175,35 @@ const ContasAPagar = () => {
                 }
               </div>
               <CardDescription className="text-xs text-gray-500">Valor total das contas</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Falta Pagar */}
+          <Card 
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+            onClick={() => abrirModalCard('faltaPagar')}
+          >
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <ArrowDown size={18} className="text-purple-600" />
+                <CardTitle className="text-sm font-bold text-purple-700">Falta Pagar</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-purple-600 mb-1">
+                {loading ? <Spinner size={24} className="animate-spin text-purple-600" /> : 
+                                     valorFaltaPagarCards.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })
+                }
+              </div>
+              <div className="text-xs font-medium text-purple-500">
+                {loading ? '...' : 
+                                     `${totalContasCards - totalContasPagasCards} contas`
+                }
+              </div>
+              <CardDescription className="text-xs text-gray-500">Contas pendentes</CardDescription>
             </CardContent>
           </Card>
 
@@ -1715,35 +2323,6 @@ const ContasAPagar = () => {
             </CardContent>
           </Card>
 
-          {/* Falta Pagar */}
-          <Card 
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={() => abrirModalCard('faltaPagar')}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <ArrowDown size={18} className="text-purple-600" />
-                <CardTitle className="text-sm font-bold text-purple-700">Falta Pagar</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-purple-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-purple-600" /> : 
-                                     (totalContasCards - totalContasPagasCards)
-                }
-              </div>
-              <div className="text-xs font-medium text-purple-500">
-                {loading ? '...' : 
-                                      valorFaltaPagarCards.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                    })
-                }
-              </div>
-              <CardDescription className="text-xs text-gray-500">Contas pendentes</CardDescription>
-            </CardContent>
-          </Card>
-
           {/* Descontos Ganhos */}
           <Card 
             className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
@@ -1775,7 +2354,7 @@ const ContasAPagar = () => {
           </div>
           
         {/* Conteúdo principal */}
-        <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-8xl mx-auto w-full">
+        <div className="flex flex-col gap-6 justify-center bg-white rounded-2xl shadow-lg border border-[#000638]/10">
           <div className="p-6">
             {loading ? (
               <div className="flex justify-center items-center py-20">
@@ -1801,7 +2380,7 @@ const ContasAPagar = () => {
             ) : (
               <>
                 {/* Plano de Contas (dropdown) */}
-                <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full mb-6">
+                <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 w-full mb-6">
                   <button className="w-full p-6 flex items-center justify-between" onClick={() => setPlanoOpen(!planoOpen)}>
                     <h2 className="text-xl font-bold text-[#000638]">Plano de Contas</h2>
                     <span className="text-sm text-gray-500">{planoOpen ? 'Ocultar' : 'Mostrar'}</span>
@@ -1827,7 +2406,7 @@ const ContasAPagar = () => {
                 </div>
 
 					{/* Detalhamento de Contas */}
-					<div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-8xl mx-auto w-full mb-6">
+					<div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10  w-full mb-6">
 						<div className="p-6 border-b border-[#000638]/10">
 							<h2 className="text-xl font-bold text-[#000638]">Detalhamento de Contas</h2>
 							<p className="text-xs text-gray-500 mt-1">Registros consolidados por duplicata/parcela/fornecedor, unificando situações, previsões e datas como nos cards.</p>
@@ -1869,6 +2448,46 @@ const ContasAPagar = () => {
 										>
 											Remover Todos
 										</button>
+										<button
+											onClick={() => handleAutorizarSelecionados()}
+											disabled={linhasSelecionadasAgrupadas.size === 0}
+											className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+										>
+											Autorizar Selecionados ({linhasSelecionadasAgrupadas.size})
+										</button>
+										<button onClick={() => handleRemoverSelecionados()} disabled={linhasSelecionadasAgrupadas.size === 0} className="text-xs px-2 py-1 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+											Remover Selecionados ({linhasSelecionadasAgrupadas.size})
+										</button>
+									</>
+								)}
+								{hasRole(['FINANCEIRO']) && (
+									<>
+										<button
+											onClick={() => handlePagarTodos()}
+											className="text-xs px-2 py-1 bg-yellow-500 text-black font-bold rounded hover:bg-yellow-600 transition-colors"
+										>
+											PAGAR TODOS
+										</button>
+										<button
+											onClick={() => handleRemoverPagamentoTodos()}
+											className="text-xs px-2 py-1 bg-red-500 text-white font-bold rounded hover:bg-red-600 transition-colors"
+										>
+											REMOVER TODOS
+										</button>
+										<button
+											onClick={() => handlePagarSelecionados()}
+											disabled={linhasSelecionadasAgrupadas.size === 0}
+											className="text-xs px-2 py-1 bg-yellow-500 text-black font-bold rounded hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+										>
+											PAGAR SELECIONADOS ({linhasSelecionadasAgrupadas.size})
+										</button>
+										<button
+											onClick={() => handleRemoverPagamentoSelecionados()}
+											disabled={linhasSelecionadasAgrupadas.size === 0}
+											className="text-xs px-2 py-1 bg-red-500 text-white font-bold rounded hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+										>
+											REMOVER SELECIONADOS ({linhasSelecionadasAgrupadas.size})
+										</button>
 									</>
 								)}
 								<button
@@ -1893,17 +2512,18 @@ const ContasAPagar = () => {
 										)}
 									</button>
 								)}
+
 							</div>
 						</div>
 						<div className="p-6 overflow-x-auto">
 							<table className="contas-table w-full border-collapse">
-								<thead>
+								<thead className="min-w-full border border-gray-200 rounded-lg">
 									<tr className="bg-[#000638] text-white text-[10px]">
 										<th className="px-2 py-1 text-center text-[10px]" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10 }}>Selecionar</th>
-										{hasRole(['ADM', 'DIRETOR']) && (
+										{(hasRole(['ADM', 'DIRETOR']) || hasRole(['FINANCEIRO'])) && (
 											<th className="px-2 py-1 text-center text-[10px]">Ações</th>
 										)}
-										<th className="px-1 py-1 text-center text-[10px]">Autorizado</th>
+										<th className="px-1 py-1 text-center text-[10px]">Status</th>
 										<th className="px-2 py-1 text-center text-[10px]">Vencimento</th>
 										<th className="px-2 py-1 text-center text-[10px]">Valor</th>
 										<th className="px-1 py-1 text-center text-[10px]">Fornecedor</th>
@@ -1933,43 +2553,107 @@ const ContasAPagar = () => {
 									{dadosOrdenadosParaCards.map((grupo, index) => {
 										const isSelected = linhasSelecionadasAgrupadas.has(index);
 										const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-										const autorizadoPor = autorizacoes[chaveUnica];
+										const autorizacao = autorizacoes[chaveUnica];
+										const autorizadoPor = autorizacao?.autorizadoPor;
 										const podeAutorizar = hasRole(['ADM', 'DIRETOR']);
+										const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
+										
+										// Debug para o botão ENVIAR PARA PAGAMENTO
+										if (index === 0) { // Apenas para o primeiro item para não poluir o console
+											console.log('🔍 Debug condições botão ENVIAR PARA PAGAMENTO:');
+											console.log('👤 hasRole FINANCEIRO:', hasRole(['FINANCEIRO']));
+											console.log('✅ autorizadoPor:', autorizadoPor);
+											console.log('📊 autorizacao?.status:', autorizacao?.status);
+											console.log('🎯 STATUS_AUTORIZACAO.AUTORIZADO:', STATUS_AUTORIZACAO.AUTORIZADO);
+											console.log('🔗 Condição completa:', hasRole(['FINANCEIRO']) && autorizadoPor && autorizacao?.status === STATUS_AUTORIZACAO.AUTORIZADO);
+											console.log('💰 contaPaga:', contaPaga);
+										}
 										
 										return (
 										<tr key={`grp-${index}`} className={`text-[10px] border-b transition-colors cursor-pointer ${isSelected ? 'bg-blue-100 hover:bg-blue-200' : index % 2 === 0 ? 'bg-white hover:bg-gray-100' : 'bg-gray-50 hover:bg-gray-100'}`} onClick={() => abrirModalDetalhes(grupo.item)} title="Clique para ver detalhes da conta">
 											<td className="px-2 py-1 text-center" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
 												<input type="checkbox" checked={isSelected} onChange={(e) => { e.stopPropagation(); toggleLinhaSelecionadaAgrupada(index); }} className="rounded" onClick={(e) => e.stopPropagation()} />
 											</td>
-											{hasRole(['ADM', 'DIRETOR']) && (
+											{(hasRole(['ADM', 'DIRETOR']) || hasRole(['FINANCEIRO'])) && (
 												<td className="px-2 py-1 text-center">
-													{podeAutorizar ? (
-														<button
-															onClick={(e) => { 
-																e.stopPropagation(); 
-																if (autorizadoPor) {
-																	// Confirmação para remover autorização
-																	handleRemoveAuthorization(chaveUnica, autorizadoPor);
-																} else {
-																	// Autorizar sem confirmação
-																	handleAutorizarConta(grupo.item, chaveUnica);
-																}
-															}}
-															className={`text-[10px] px-2 py-1 rounded ${autorizadoPor ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
-														>
-															{autorizadoPor ? 'REMOVER' : 'AUTORIZAR'}
-														</button>
+													{contaPaga ? (
+														<span className="text-[10px] text-red-700 font-semibold">PAGO</span>
 													) : (
-														autorizadoPor ? (
-															<span className="text-[10px] text-green-700 font-semibold">AUTORIZADO</span>
-														) : (
-															<span className="text-[10px] text-gray-500">NÃO</span>
-														)
+														<>
+															{podeAutorizar ? (
+																<button
+																	onClick={(e) => { 
+																		e.stopPropagation(); 
+																		if (autorizadoPor) {
+																			// Verificar se é ADM para remover quando enviado para pagamento
+																			if (autorizacao?.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO && !hasRole(['ADM'])) {
+																				handleAcessoRestrito(autorizacao.enviadoPor);
+																				return;
+																			}
+																			// Confirmação para remover autorização
+																			handleRemoveAuthorization(chaveUnica, autorizadoPor);
+																		} else {
+																			// Autorizar sem confirmação
+																			handleAutorizarConta(grupo.item, chaveUnica);
+																		}
+																	}}
+																	className={`text-[10px] px-2 py-1 rounded ${autorizadoPor ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
+																>
+																	{autorizadoPor ? 'REMOVER' : 'AUTORIZAR'}
+																</button>
+															) : null}
+															{hasRole(['FINANCEIRO']) && autorizadoPor && autorizacao?.status === STATUS_AUTORIZACAO.AUTORIZADO && (
+																<div className="mt-1">
+																	<button
+																		onClick={(e) => { 
+																			e.stopPropagation(); 
+																			console.log('🔵 Botão PAGAR clicado');
+																			console.log('📋 Dados da conta:', grupo.item);
+																			console.log('🔑 Chave única:', chaveUnica);
+																			handleEnviarParaPagamento(grupo.item, chaveUnica);
+																		}}
+																		className="text-[10px] px-2 py-1 rounded bg-yellow-500 hover:bg-yellow-600 text-black font-bold w-full"
+																	>
+																		PAGAR
+																	</button>
+																</div>
+															)}
+															{hasRole(['FINANCEIRO']) && autorizadoPor && autorizacao?.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO && (
+																<div className="mt-1">
+																	<button
+																		onClick={(e) => { 
+																			e.stopPropagation(); 
+																			console.log('🔴 Botão REMOVER PAGAMENTO clicado');
+																			console.log('📋 Dados da conta:', grupo.item);
+																			console.log('🔑 Chave única:', chaveUnica);
+																			handleRemoverEnviadoParaPagamento(grupo.item, chaveUnica);
+																		}}
+																		className="text-[10px] px-2 py-1 rounded bg-red-500 hover:bg-red-600 text-white font-bold w-full"
+																	>
+																		REMOVER PAGAMENTO
+																	</button>
+																</div>
+															)}
+														</>
 													)}
 												</td>
 											)}
 											<td className="px-1 py-1 text-center text-[10px]">
-												{autorizadoPor ? (
+												{contaPaga ? (
+													<div className="flex items-center justify-center gap-1">
+														<span className="w-2 h-2 bg-red-500 rounded-full"></span>
+														<span className="text-red-700 font-semibold">PAGO</span>
+														<span className="text-gray-600">em</span>
+														<span className="text-red-600 font-medium">{formatarData(grupo.item.dt_liq)}</span>
+													</div>
+												) : autorizacao?.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO ? (
+													<div className="flex items-center justify-center gap-1">
+														<span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
+														<span className="text-yellow-700 font-semibold">ENVIADO PARA PAGAMENTO</span>
+														<span className="text-gray-600">por</span>
+														<span className="text-blue-600 font-medium">{autorizacao.enviadoPor}</span>
+													</div>
+												) : autorizadoPor ? (
 													<div className="flex items-center justify-center gap-1">
 														<span className="w-2 h-2 bg-green-500 rounded-full"></span>
 														<span className="text-green-700 font-semibold">AUTORIZADO</span>
@@ -2016,8 +2700,16 @@ const ContasAPagar = () => {
 								<div>
 									Selecionadas: <span className="font-semibold">{linhasSelecionadasAgrupadas.size}</span>
 								</div>
-								<div>
-									Valor total: <span className="font-semibold text-green-700">{Array.from(linhasSelecionadasAgrupadas).reduce((acc, idx) => acc + (parseFloat(dadosOrdenadosParaCards[idx]?.item?.vl_duplicata || 0)), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+								<div className="flex items-center gap-6">
+									<div>
+										Valor total: <span className="font-semibold text-green-700">{Array.from(linhasSelecionadasAgrupadas).reduce((acc, idx) => acc + (parseFloat(dadosOrdenadosParaCards[idx]?.item?.vl_duplicata || 0)), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+									</div>
+									<div>
+										Valor autorizado: <span className="font-semibold text-emerald-700">{valorTotalAutorizado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+									</div>
+									<div>
+										Contas autorizadas: <span className="font-semibold text-emerald-700">{totalContasAutorizadas}</span>
+									</div>
 								</div>
 							</div>
 						</div>
@@ -2331,6 +3023,205 @@ const ContasAPagar = () => {
           </div>
         </div>
       )}
+
+
+      
+      {/* Debug: Mostrar estado do modal */}
+      {console.log('🔍 Renderizando componente - showEnviarPagamentoModal:', showEnviarPagamentoModal)}
+
+      {/* Modal de Teste Simples */}
+      {showEnviarPagamentoModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }} onClick={handleCancelEnviarParaPagamento}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '20px',
+            borderRadius: '8px',
+            maxWidth: '400px',
+            width: '90%',
+            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.3)'
+          }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ color: '#000638', fontSize: '20px', fontWeight: 'bold', marginBottom: '10px' }}>
+              Confirmar Pagamento
+            </h2>
+            <p style={{ marginBottom: '20px', color: '#666' }}>
+              Tem certeza que deseja pagar esta conta?
+            </p>
+            <p style={{ marginBottom: '20px', color: '#666', fontSize: '12px' }}>
+              Fornecedor: {contaParaEnviar?.dadosConta?.nm_fornecedor || 'N/A'}
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleCancelEnviarParaPagamento}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  backgroundColor: '#666',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Fechar
+              </button>
+              <button
+                onClick={handleConfirmEnviarParaPagamento}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  backgroundColor: '#eab308',
+                  color: 'black',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+              >
+                PAGAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação para Remover Pagamento */}
+      {showRemoverPagamentoModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }} onClick={handleCancelRemoverEnviadoParaPagamento}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '20px',
+            borderRadius: '8px',
+            maxWidth: '400px',
+            width: '90%',
+            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.3)'
+          }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ color: '#dc2626', fontSize: '20px', fontWeight: 'bold', marginBottom: '10px' }}>
+              Remover Pagamento
+            </h2>
+            <p style={{ marginBottom: '20px', color: '#666' }}>
+              Tem certeza que deseja remover o status de pagamento desta conta?
+            </p>
+            <p style={{ marginBottom: '20px', color: '#666', fontSize: '12px' }}>
+              Fornecedor: {contaParaEnviar?.dadosConta?.nm_fornecedor || 'N/A'}
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleCancelRemoverEnviadoParaPagamento}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  backgroundColor: '#666',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmRemoverEnviadoParaPagamento}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  backgroundColor: '#dc2626',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+              >
+                REMOVER
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Acesso Restrito */}
+      {showAcessoRestritoModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }} onClick={handleCloseAcessoRestrito}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '20px',
+            borderRadius: '8px',
+            maxWidth: '450px',
+            width: '90%',
+            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.3)'
+          }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ color: '#dc2626', fontSize: '20px', fontWeight: 'bold', marginBottom: '15px', textAlign: 'center' }}>
+              ⚠️ ACESSO RESTRITO
+            </h2>
+            <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#fef3c7', borderRadius: '6px', border: '1px solid #f59e0b' }}>
+              <p style={{ marginBottom: '10px', color: '#92400e', fontSize: '14px', fontWeight: 'bold' }}>
+                Esta conta foi enviada para pagamento por <strong>{dadosAcessoRestrito?.enviadoPor}</strong>.
+              </p>
+              <p style={{ marginBottom: '10px', color: '#92400e', fontSize: '13px' }}>
+                Apenas administradores podem remover autorizações de contas que já foram enviadas para pagamento.
+              </p>
+              <p style={{ color: '#92400e', fontSize: '13px' }}>
+                Para solicitar a remoção, entre em contato com um administrador do sistema.
+              </p>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <button
+                onClick={handleCloseAcessoRestrito}
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: '#6b7280',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '14px'
+                }}
+              >
+                Entendi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Debug: Mostrar estado do modal */}
+      {console.log('🔍 Renderizando componente - showEnviarPagamentoModal:', showEnviarPagamentoModal)}
+      {console.log('🔍 Renderizando componente - showRemoverPagamentoModal:', showRemoverPagamentoModal)}
+      {console.log('🔍 Renderizando componente - showAcessoRestritoModal:', showAcessoRestritoModal)}
     </Layout>
   );
 };

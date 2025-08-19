@@ -544,7 +544,7 @@ const Consolidado = () => {
 
   return (
     <Layout>
-      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 scale-90">
+      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start mt-10">
         <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Consolidado</h1>
         {/* Filtros */}
         <div className="mb-8">
