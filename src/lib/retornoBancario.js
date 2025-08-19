@@ -283,6 +283,7 @@ export const buscarSaldosPorConta = async (filtros = {}) => {
     let query = supabase
       .from(TABLE_NAME)
       .select('*')
+      .neq('nome_arquivo', 'saldo_manual_deletado') // Excluir registros marcados como deletados
       .order('data_geracao', { ascending: false });
 
     // Aplicar filtros se fornecidos
@@ -307,15 +308,19 @@ export const buscarSaldosPorConta = async (filtros = {}) => {
       query = supabase
         .from(TABLE_NAME)
         .select('*')
+        .neq('nome_arquivo', 'saldo_manual_deletado') // Excluir registros marcados como deletados
         .order('data_geracao', { ascending: false });
     }
 
-    const { data, error } = await query;
+         const { data, error } = await query;
 
-    if (error) {
-      console.error('Erro ao buscar saldos por conta:', error);
-      throw error;
-    }
+     console.log('🔍 Dados retornados da query:', data?.length || 0, 'registros');
+     console.log('🔍 Exemplo de registro:', data?.[0]);
+
+     if (error) {
+       console.error('Erro ao buscar saldos por conta:', error);
+       throw error;
+     }
 
     // Processar os dados para agrupar por conta
     const saldosPorConta = {};
@@ -416,85 +421,340 @@ export const buscarLimiteChequeEspecial = async (bancoNome) => {
 };
 
 /**
- * Salva ou atualiza o limite de cheque especial para um banco
- * @param {string} bancoNome - Nome do banco
- * @param {number} limite - Valor do limite
+ * Salva um saldo bancário inserido manualmente
+ * @param {Object} dados - Dados do saldo manual
  * @returns {Promise<Object>} - Resultado da operação
  */
-export const salvarLimiteChequeEspecial = async (bancoNome, limite) => {
+export const salvarSaldoManual = async (dados) => {
   try {
-    // Buscar um registro existente para este banco
-    const { data: existingData, error: searchError } = await supabase
+         // Preparar dados para inserção
+     const dadosParaInserir = {
+       nome_arquivo: dados.nome_arquivo,
+       data_upload: dados.data_upload,
+       valor: dados.valor,
+       banco_nome: dados.banco_nome,
+       banco_codigo: dados.banco_codigo,
+       banco_layout: dados.banco_layout,
+       agencia: dados.agencia,
+       conta: dados.conta,
+       saldo_formatado: dados.saldo_formatado,
+       data_processamento: dados.data_processamento,
+       data_geracao: dados.data_geracao,
+       operacao_tipo: dados.operacao_tipo,
+       operacao_descricao: dados.operacao_descricao,
+       operacao_sinal: dados.operacao_sinal,
+       operacao_is_positive: dados.operacao_is_positive,
+       operacao_valor_absoluto: dados.operacao_valor_absoluto,
+       chq_especial: dados.chq_especial,
+       usuario_inseriu: dados.usuario_inseriu,
+       created_at: dados.created_at
+     };
+
+    // Inserir no Supabase
+    const { data, error } = await supabase
       .from(TABLE_NAME)
-      .select('*')
-      .eq('banco_nome', bancoNome)
-      .limit(1)
+      .insert([dadosParaInserir])
+      .select()
       .single();
 
-    if (searchError && searchError.code !== 'PGRST116') {
-      console.error('Erro ao buscar dados do banco:', searchError);
-      throw searchError;
-    }
-
-    let result;
-
-    if (existingData) {
-      // Atualizar o registro existente
-      const { data: updateData, error: updateError } = await supabase
-        .from(TABLE_NAME)
-        .update({ chq_especial: limite })
-        .eq('id', existingData.id)
-        .select()
-        .single();
-
-      if (updateError) {
-        console.error('Erro ao atualizar limite de cheque especial:', updateError);
-        throw updateError;
+    if (error) {
+      if (error.code === '42501') { // Erro de permissão RLS
+        console.error('Erro de permissão RLS - verifique se a tabela está configurada corretamente:', error.message);
+        throw new Error('Erro de permissão no banco de dados. Verifique a configuração da tabela.');
       }
-
-      result = updateData;
-    } else {
-      // Se não há registros para este banco, criar um novo com dados mínimos
-      const novoRegistro = {
-        nome_arquivo: 'limite_cheque_especial',
-        data_upload: new Date().toISOString(),
-        valor: 0,
-        banco_nome: bancoNome,
-        banco_codigo: '000',
-        agencia: '0000',
-        conta: '00000000',
-        chq_especial: limite,
-        created_at: new Date().toISOString()
-      };
-
-      const { data: insertData, error: insertError } = await supabase
-        .from(TABLE_NAME)
-        .insert([novoRegistro])
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error('Erro ao criar limite de cheque especial:', insertError);
-        throw insertError;
+      if (error.code === '23505') { // Violação de chave única
+        console.warn('Saldo duplicado detectado pelo banco:', error.message);
+        return {
+          success: false,
+          message: `Saldo para ${dados.banco_nome} - Agência ${dados.agencia} - Conta ${dados.conta} já foi inserido anteriormente`,
+          duplicate: true
+        };
       }
-
-      result = insertData;
+      console.error('Erro ao salvar saldo manual:', error);
+      throw error;
     }
 
     return {
       success: true,
-      data: result,
-      message: existingData ? 'Limite de cheque especial atualizado com sucesso' : 'Limite de cheque especial criado com sucesso'
+      message: 'Saldo manual salvo com sucesso no banco de dados',
+      data: data
     };
 
   } catch (error) {
-    console.error('Erro ao salvar limite de cheque especial:', error);
+    console.error('Erro ao salvar saldo manual:', error);
     return {
       success: false,
-      message: 'Erro ao salvar limite: ' + error.message,
+      message: 'Erro ao salvar no banco de dados: ' + error.message,
       error: error
     };
   }
 };
+
+ /**
+  * Remove um saldo bancário manual
+  * @param {number} id - ID do registro
+  * @returns {Promise<Object>} - Resultado da operação
+  */
+ export const removerSaldoManual = async (id) => {
+   try {
+     console.log('🔍 Tentando remover saldo manual com ID:', id);
+     
+     // Primeiro, verificar se o registro existe e é um saldo manual
+     const { data: checkData, error: checkError } = await supabase
+       .from(TABLE_NAME)
+       .select('*')
+       .eq('id', id)
+       .single();
+     
+     console.log('🔍 Verificação do registro:', { checkData, checkError });
+     
+     if (checkError) {
+       console.error('❌ Erro ao verificar registro:', checkError);
+       return {
+         success: false,
+         message: 'Registro não encontrado: ' + checkError.message
+       };
+     }
+     
+     if (!checkData || checkData.nome_arquivo !== 'saldo_manual') {
+       console.error('❌ Registro não é um saldo manual:', checkData);
+       return {
+         success: false,
+         message: 'Registro não é um saldo manual'
+       };
+     }
+     
+     console.log('✅ Registro encontrado e é um saldo manual. Tentando excluir...');
+     
+     // Tentar excluir usando apenas o ID (mais simples)
+     const { data: deleteData, error: deleteError } = await supabase
+       .from(TABLE_NAME)
+       .delete()
+       .eq('id', id)
+       .select();
+
+     console.log('📊 Resultado da query de exclusão:', { deleteData, deleteError });
+
+     if (deleteError) {
+       console.error('❌ Erro ao remover saldo manual:', deleteError);
+       
+       // Se der erro de permissão, tentar uma abordagem diferente
+       if (deleteError.code === '42501') {
+         console.log('🔄 Tentando abordagem alternativa para exclusão...');
+         
+         // Tentar marcar como deletado em vez de excluir fisicamente
+         const { data: updateData, error: updateError } = await supabase
+           .from(TABLE_NAME)
+           .update({ 
+             nome_arquivo: 'saldo_manual_deletado',
+             data_processamento: new Date().toISOString()
+           })
+           .eq('id', id)
+           .eq('nome_arquivo', 'saldo_manual')
+           .select();
+         
+         console.log('📊 Resultado da marcação como deletado:', { updateData, updateError });
+         
+         if (updateError) {
+           console.error('❌ Erro ao marcar como deletado:', updateError);
+           return {
+             success: false,
+             message: 'Erro de permissão: ' + deleteError.message + '. Erro ao marcar como deletado: ' + updateError.message
+           };
+         }
+         
+         return {
+           success: true,
+           message: 'Saldo manual marcado como deletado (não foi possível excluir fisicamente)',
+           data: updateData
+         };
+       }
+       
+       throw deleteError;
+     }
+
+     console.log('✅ Saldo manual removido com sucesso. Registros afetados:', deleteData?.length || 0);
+
+     return {
+       success: true,
+       message: 'Saldo manual removido com sucesso',
+       data: deleteData
+     };
+
+   } catch (error) {
+     console.error('❌ Erro ao remover saldo manual:', error);
+     return {
+       success: false,
+       message: 'Erro ao remover saldo: ' + error.message,
+       error: error
+     };
+   }
+ };
+
+ /**
+  * Salva ou atualiza o limite de cheque especial para um banco
+  * @param {string} bancoNome - Nome do banco
+  * @param {number} limite - Valor do limite
+  * @returns {Promise<Object>} - Resultado da operação
+  */
+ export const salvarLimiteChequeEspecial = async (bancoNome, limite) => {
+   try {
+     // Buscar um registro existente para este banco
+     const { data: existingData, error: searchError } = await supabase
+       .from(TABLE_NAME)
+       .select('*')
+       .eq('banco_nome', bancoNome)
+       .limit(1)
+       .single();
+
+     if (searchError && searchError.code !== 'PGRST116') {
+       console.error('Erro ao buscar dados do banco:', searchError);
+       throw searchError;
+     }
+
+     let result;
+
+     if (existingData) {
+       // Atualizar o registro existente
+       const { data: updateData, error: updateError } = await supabase
+         .from(TABLE_NAME)
+         .update({ chq_especial: limite })
+         .eq('id', existingData.id)
+         .select()
+         .single();
+
+       if (updateError) {
+         console.error('Erro ao atualizar limite de cheque especial:', updateError);
+         throw updateError;
+       }
+
+       result = updateData;
+     } else {
+       // Se não há registros para este banco, criar um novo com dados mínimos
+       const novoRegistro = {
+         nome_arquivo: 'limite_cheque_especial',
+         data_upload: new Date().toISOString(),
+         valor: 0,
+         banco_nome: bancoNome,
+         banco_codigo: '000',
+         agencia: '0000',
+         conta: '00000000',
+         chq_especial: limite,
+         created_at: new Date().toISOString()
+       };
+
+       const { data: insertData, error: insertError } = await supabase
+         .from(TABLE_NAME)
+         .insert([novoRegistro])
+         .select()
+         .single();
+
+       if (insertError) {
+         console.error('Erro ao criar limite de cheque especial:', insertError);
+         throw insertError;
+       }
+
+       result = insertData;
+     }
+
+     return {
+       success: true,
+       data: result,
+       message: existingData ? 'Limite de cheque especial atualizado com sucesso' : 'Limite de cheque especial criado com sucesso'
+     };
+
+   } catch (error) {
+     console.error('Erro ao salvar limite de cheque especial:', error);
+     return {
+       success: false,
+       message: 'Erro ao salvar limite: ' + error.message,
+       error: error
+     };
+   }
+ };
+
+ /**
+  * Força a remoção de um saldo bancário manual (tenta múltiplas abordagens)
+  * @param {number} id - ID do registro
+  * @returns {Promise<Object>} - Resultado da operação
+  */
+ export const forcarRemocaoSaldoManual = async (id) => {
+   try {
+     console.log('🔨 Forçando remoção de saldo manual com ID:', id);
+     
+     // Abordagem 1: Tentar exclusão direta
+     try {
+       const { data, error } = await supabase
+         .from(TABLE_NAME)
+         .delete()
+         .eq('id', id)
+         .select();
+       
+       if (!error && data && data.length > 0) {
+         console.log('✅ Exclusão direta bem-sucedida');
+         return {
+           success: true,
+           message: 'Saldo manual removido com sucesso',
+           data: data
+         };
+       }
+     } catch (error) {
+       console.log('❌ Exclusão direta falhou:', error.message);
+     }
+     
+     // Abordagem 2: Marcar como deletado
+     try {
+       const { data, error } = await supabase
+         .from(TABLE_NAME)
+         .update({ 
+           nome_arquivo: 'saldo_manual_deletado',
+           data_processamento: new Date().toISOString()
+         })
+         .eq('id', id)
+         .select();
+       
+       if (!error && data && data.length > 0) {
+         console.log('✅ Marcação como deletado bem-sucedida');
+         return {
+           success: true,
+           message: 'Saldo manual marcado como deletado',
+           data: data
+         };
+       }
+     } catch (error) {
+       console.log('❌ Marcação como deletado falhou:', error.message);
+     }
+     
+     // Abordagem 3: Tentar com RPC (se disponível)
+     try {
+       const { data, error } = await supabase
+         .rpc('remover_saldo_manual', { saldo_id: id });
+       
+       if (!error && data) {
+         console.log('✅ Remoção via RPC bem-sucedida');
+         return {
+           success: true,
+           message: 'Saldo manual removido via RPC',
+           data: data
+         };
+       }
+     } catch (error) {
+       console.log('❌ Remoção via RPC falhou:', error.message);
+     }
+     
+     return {
+       success: false,
+       message: 'Não foi possível remover o saldo manual. Verifique as permissões do banco de dados.'
+     };
+     
+   } catch (error) {
+     console.error('❌ Erro ao forçar remoção de saldo manual:', error);
+     return {
+       success: false,
+       message: 'Erro ao forçar remoção: ' + error.message,
+       error: error
+     };
+   }
+ };
 
 

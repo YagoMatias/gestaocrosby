@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Layout from '../components/Layout';
-import { buscarSaldosPorConta, buscarLimiteChequeEspecial, salvarLimiteChequeEspecial } from '../lib/retornoBancario';
+import { useAuth } from '../components/AuthContext';
+import { buscarSaldosPorConta, buscarLimiteChequeEspecial, salvarLimiteChequeEspecial, salvarSaldoManual, removerSaldoManual, forcarRemocaoSaldoManual } from '../lib/retornoBancario';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 
 import { 
@@ -46,6 +47,9 @@ const formatarData = (data) => {
 };
 
 const SaldoBancario = () => {
+  // Hook de autenticação
+  const { user } = useAuth();
+  
   // Função para obter dias do mês
   const obterDiasDoMes = (mes) => {
     const meses = {
@@ -103,6 +107,23 @@ const SaldoBancario = () => {
   const [salvandoLimite, setSalvandoLimite] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [acaoConfirmacao, setAcaoConfirmacao] = useState(null); // 'criar' ou 'atualizar'
+  
+  // Estados para adicionar saldo manualmente
+  const [showAddSaldoModal, setShowAddSaldoModal] = useState(false);
+  const [novoSaldo, setNovoSaldo] = useState({
+    banco: '',
+    agencia: '',
+    conta: '',
+    saldo: '',
+    chqEspecial: ''
+  });
+  const [salvandoSaldo, setSalvandoSaldo] = useState(false);
+  
+  // Estados para modal de detalhes e exclusão
+  const [showDetalhesModal, setShowDetalhesModal] = useState(false);
+  const [saldoSelecionado, setSaldoSelecionado] = useState(null);
+  const [showConfirmExclusaoModal, setShowConfirmExclusaoModal] = useState(false);
+  const [excluindoSaldo, setExcluindoSaldo] = useState(false);
 
   // Função para formatar valores monetários
   const formatCurrency = (value) => {
@@ -227,6 +248,177 @@ const SaldoBancario = () => {
   const cancelarConfirmacao = () => {
     setShowConfirmModal(false);
     setAcaoConfirmacao(null);
+  };
+
+  // Função para abrir modal de adicionar saldo
+  const abrirModalAddSaldo = () => {
+    setNovoSaldo({
+      banco: '',
+      agencia: '',
+      conta: '',
+      saldo: '',
+      chqEspecial: ''
+    });
+    setShowAddSaldoModal(true);
+  };
+
+  // Função para fechar modal de adicionar saldo
+  const fecharModalAddSaldo = () => {
+    setShowAddSaldoModal(false);
+    setNovoSaldo({
+      banco: '',
+      agencia: '',
+      conta: '',
+      saldo: '',
+      chqEspecial: ''
+    });
+  };
+
+  // Funções para modal de detalhes e exclusão
+  const abrirModalDetalhes = (saldo) => {
+    setSaldoSelecionado(saldo);
+    setShowDetalhesModal(true);
+  };
+
+  const fecharModalDetalhes = () => {
+    setShowDetalhesModal(false);
+    setSaldoSelecionado(null);
+  };
+
+  const confirmarExclusao = () => {
+    setShowConfirmExclusaoModal(true);
+  };
+
+  const cancelarExclusao = () => {
+    setShowConfirmExclusaoModal(false);
+    setSaldoSelecionado(null);
+  };
+
+  const excluirSaldo = async () => {
+    if (!saldoSelecionado) {
+      console.error('Nenhum saldo selecionado para exclusão');
+      return;
+    }
+
+    console.log('Tentando excluir saldo:', saldoSelecionado);
+    console.log('ID do saldo:', saldoSelecionado.id);
+    console.log('Nome do arquivo:', saldoSelecionado.nome_arquivo);
+
+    setExcluindoSaldo(true);
+    try {
+      // Primeiro tentar a remoção normal
+      let resultado = await removerSaldoManual(saldoSelecionado.id);
+      console.log('Resultado da exclusão normal:', resultado);
+      
+      // Se falhar, tentar a remoção forçada
+      if (!resultado.success) {
+        console.log('Tentando remoção forçada...');
+        resultado = await forcarRemocaoSaldoManual(saldoSelecionado.id);
+        console.log('Resultado da exclusão forçada:', resultado);
+      }
+      
+      if (resultado.success) {
+        console.log('Saldo excluído com sucesso, recarregando dados...');
+        // Recarregar dados
+        await buscarTodosDados();
+        setShowConfirmExclusaoModal(false);
+        setShowDetalhesModal(false);
+        setSaldoSelecionado(null);
+        alert('Saldo excluído com sucesso!');
+      } else {
+        console.error('Erro na exclusão:', resultado.message);
+        alert('Erro ao excluir saldo: ' + resultado.message);
+      }
+    } catch (error) {
+      console.error('Erro ao excluir saldo:', error);
+      alert('Erro ao excluir saldo: ' + error.message);
+    } finally {
+      setExcluindoSaldo(false);
+    }
+  };
+
+  // Função para salvar novo saldo
+  const salvarNovoSaldo = async () => {
+    // Validações
+    if (!novoSaldo.banco || !novoSaldo.agencia || !novoSaldo.conta || !novoSaldo.saldo) {
+      alert('Por favor, preencha todos os campos obrigatórios.');
+      return;
+    }
+
+    const saldo = parseFloat(novoSaldo.saldo);
+    if (isNaN(saldo)) {
+      alert('Por favor, insira um valor válido para o saldo.');
+      return;
+    }
+
+    // Verificar se já existe uma conta com os mesmos dados
+    const contaExistente = dadosOriginais.find(conta => 
+      conta.banco_nome === novoSaldo.banco && 
+      conta.agencia === novoSaldo.agencia && 
+      conta.conta === novoSaldo.conta
+    );
+
+    if (contaExistente) {
+      alert('Já existe uma conta com este banco, agência e número. Não é possível adicionar duplicatas.');
+      return;
+    }
+
+    setSalvandoSaldo(true);
+    try {
+      // Determinar se o saldo é positivo ou negativo
+      const isPositive = saldo >= 0;
+      
+      // Preparar dados para inserção
+      const dadosParaInserir = {
+        nome_arquivo: 'saldo_manual',
+        data_upload: new Date().toISOString(),
+        valor: saldo,
+        banco_nome: novoSaldo.banco,
+        banco_codigo: '000', // Código padrão para saldos manuais
+        banco_layout: 'manual', // Layout padrão para saldos manuais
+        agencia: novoSaldo.agencia,
+        conta: novoSaldo.conta,
+        saldo_formatado: new Intl.NumberFormat('pt-BR', {
+          style: 'currency',
+          currency: 'BRL'
+        }).format(saldo),
+        data_processamento: new Date().toISOString(),
+        data_geracao: new Date().toISOString(),
+        operacao_tipo: 'saldo_manual',
+        operacao_descricao: `Saldo inserido manualmente por ${user?.name || 'Usuário'}`,
+        operacao_sinal: isPositive ? '+' : '-',
+        operacao_is_positive: isPositive,
+        operacao_valor_absoluto: Math.abs(saldo),
+        chq_especial: novoSaldo.chqEspecial ? parseFloat(novoSaldo.chqEspecial) : null,
+        usuario_inseriu: user?.name || 'Usuário',
+        created_at: new Date().toISOString()
+      };
+
+      // Salvar no Supabase
+      const resultado = await salvarSaldoManual(dadosParaInserir);
+      
+      if (resultado.success) {
+        alert('Saldo adicionado com sucesso!');
+        fecharModalAddSaldo();
+        
+        // Recarregar dados
+        buscarTodosDados();
+        
+        // Recarregar limites de cheque especial se foi definido
+        if (novoSaldo.chqEspecial) {
+          setTimeout(() => {
+            carregarLimitesChequeEspecial();
+          }, 500);
+        }
+      } else {
+        alert('Erro ao salvar saldo: ' + resultado.message);
+      }
+    } catch (error) {
+      console.error('Erro ao salvar novo saldo:', error);
+      alert('Erro ao salvar saldo. Tente novamente.');
+    } finally {
+      setSalvandoSaldo(false);
+    }
   };
 
 
@@ -410,6 +602,8 @@ const SaldoBancario = () => {
       const result = await buscarSaldosPorConta({});
       
       if (result.success) {
+        console.log('📊 Dados brutos recebidos:', result.data);
+        
         // Processar os dados para incluir todos os registros individuais
         const dadosProcessados = [];
         
@@ -432,7 +626,11 @@ const SaldoBancario = () => {
               },
               registros: [registro], // Manter apenas este registro
               totalRegistros: 1,
-              data_geracao: registro.data_geracao // Usar a data_geracao do registro específico
+              data_geracao: registro.data_geracao, // Usar a data_geracao do registro específico
+              // Preservar todos os campos do registro original
+              id: registro.id,
+              nome_arquivo: registro.nome_arquivo,
+              usuario_inseriu: registro.usuario_inseriu
             });
           });
         });
@@ -722,7 +920,7 @@ const SaldoBancario = () => {
           </div>
 
           {/* Botão de Alternância de Visualização */}
-          <div className="mb-6 flex justify-center">
+          <div className="mb-6 flex justify-center items-center gap-4">
             <div className="bg-white rounded-lg border border-gray-200 p-1 shadow-sm">
               <div className="flex">
                 <button
@@ -747,6 +945,16 @@ const SaldoBancario = () => {
                 </button>
               </div>
             </div>
+            
+            {/* Botão Adicionar Saldo */}
+            <button
+              onClick={abrirModalAddSaldo}
+              className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 shadow-sm"
+              title="Adicionar novo saldo manualmente"
+            >
+              <span>➕</span>
+              Adicionar Saldo
+            </button>
           </div>
 
           {/* Filtros por Ano e Mês - apenas no modo Histórico */}
@@ -1006,7 +1214,7 @@ const SaldoBancario = () => {
                    <thead>
                      <tr className="border-b border-gray-200">
                        <th 
-                         className="text-left py-3 px-4 font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
+                         className="text-left py-2 px-2 text-xs font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
                          onClick={() => handleOrdenar('banco')}
                        >
                          <div className="flex items-center">
@@ -1015,7 +1223,7 @@ const SaldoBancario = () => {
                          </div>
                        </th>
                        <th 
-                         className="text-left py-3 px-4 font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
+                         className="text-left py-2 px-2 text-xs font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
                          onClick={() => handleOrdenar('numero')}
                        >
                          <div className="flex items-center">
@@ -1024,7 +1232,7 @@ const SaldoBancario = () => {
                          </div>
                        </th>
                        <th 
-                         className="text-center py-3 px-4 font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
+                         className="text-center py-2 px-2 text-xs font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
                          onClick={() => handleOrdenar('agencia')}
                        >
                          <div className="flex items-center justify-center">
@@ -1033,7 +1241,7 @@ const SaldoBancario = () => {
                          </div>
                        </th>
                        <th 
-                         className="text-center py-3 px-4 font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
+                         className="text-center py-2 px-2 text-xs font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
                          onClick={() => handleOrdenar('data_geracao')}
                        >
                          <div className="flex items-center justify-center">
@@ -1042,7 +1250,7 @@ const SaldoBancario = () => {
                          </div>
                        </th>
                        <th 
-                         className="text-right py-3 px-4 font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
+                         className="text-right py-2 px-2 text-xs font-semibold text-gray-900 font-barlow cursor-pointer hover:bg-gray-50 transition-colors"
                          onClick={() => handleOrdenar('saldo')}
                        >
                          <div className="flex items-center justify-end">
@@ -1050,60 +1258,102 @@ const SaldoBancario = () => {
                            {getIconeOrdenacao('saldo')}
                          </div>
                        </th>
-                       <th className="text-center py-3 px-4 font-semibold text-gray-900 font-barlow">
-                         Limite Cheque Especial
+                       <th className="text-center py-2 px-2 text-xs font-semibold text-gray-900 font-barlow">
+                         Limite CHQ
                        </th>
-                       <th className="text-center py-3 px-4 font-semibold text-gray-900 font-barlow">
+                       <th className="text-center py-2 px-2 text-xs font-semibold text-gray-900 font-barlow">
                          Status
+                       </th>
+                       <th className="text-center py-2 px-2 text-xs font-semibold text-gray-900 font-barlow">
+                         Tipo
+                       </th>
+                       <th className="text-center py-2 px-2 text-xs font-semibold text-gray-900 font-barlow">
+                         Ações
                        </th>
                      </tr>
                    </thead>
                                      <tbody>
-                     {dadosOrdenados.map((conta) => (
-                       <tr key={conta.numero} className="border-b border-gray-100 hover:bg-gray-50">
-                         <td className="py-3 px-4 font-medium text-gray-900 font-barlow">
+                     {dadosOrdenados.map((conta) => {
+                       // Verificar se é um saldo manual
+                       const isSaldoManual = conta.registros && conta.registros.some(reg => reg.nome_arquivo === 'saldo_manual');
+                       const registroManual = conta.registros?.find(reg => reg.nome_arquivo === 'saldo_manual');
+                       
+                       // Debug: verificar se o campo nome_arquivo existe
+                       if (conta.registros && conta.registros.length > 0) {
+                         const primeiroRegistro = conta.registros[0];
+                         if (!primeiroRegistro.hasOwnProperty('nome_arquivo')) {
+                           console.error('❌ Campo nome_arquivo não encontrado no registro:', primeiroRegistro);
+                         }
+                       }
+                       
+                       // Debug: log para verificar se está encontrando saldos manuais
+                       if (isSaldoManual && registroManual) {
+                         console.log('💰 Saldo manual encontrado:', {
+                           conta: conta.numero,
+                           banco: conta.banco,
+                           id: registroManual.id,
+                           nome_arquivo: registroManual.nome_arquivo
+                         });
+                       }
+                       
+                       // Debug: verificar estrutura dos registros
+                       if (conta.registros && conta.registros.length > 0) {
+                         console.log('📋 Registros da conta:', conta.numero, conta.registros.map(reg => ({
+                           id: reg.id,
+                           nome_arquivo: reg.nome_arquivo,
+                           valor: reg.valor
+                         })));
+                       }
+                       
+                       return (
+                         <tr 
+                           key={conta.numero} 
+                           className={`border-b border-gray-100 hover:bg-gray-50 ${isSaldoManual ? 'cursor-pointer bg-blue-50 hover:bg-blue-100' : ''}`}
+                           onClick={isSaldoManual ? () => abrirModalDetalhes(registroManual) : undefined}
+                         >
+                         <td className="py-2 px-2 text-xs font-medium text-gray-900 font-barlow">
                            {conta.banco || 'N/A'}
                          </td>
-                         <td className="py-3 px-4 text-gray-600 font-barlow">
+                         <td className="py-2 px-2 text-xs text-gray-600 font-barlow">
                            {formatConta(conta.numero)}
                          </td>
-                         <td className="py-3 px-4 text-center text-gray-600 font-barlow">
+                         <td className="py-2 px-2 text-xs text-center text-gray-600 font-barlow">
                            {conta.agencia || 'N/A'}
                          </td>
-                         <td className="py-3 px-4 text-center text-gray-600 font-barlow">
+                         <td className="py-2 px-2 text-xs text-center text-gray-600 font-barlow">
                            {formatarData(conta.data_geracao) || 'N/A'}
                          </td>
-                         <td className="py-3 px-4 text-right">
-                           <div className="flex items-center justify-end gap-2">
-                             <span className={`font-semibold text-lg ${getSaldoColor(conta)} font-barlow`}>
+                         <td className="py-2 px-2 text-right">
+                           <div className="flex items-center justify-end gap-1">
+                             <span className={`font-semibold text-sm ${getSaldoColor(conta)} font-barlow`}>
                                {formatCurrency(conta.saldo)}
                              </span>
                              {getVariacaoIcon(conta.saldo)}
                            </div>
                          </td>
-                                                   <td className="py-3 px-4 text-center">
+                                                   <td className="py-2 px-2 text-center">
                             {bancoEditando === `${conta.banco}_${conta.numero}` ? (
-                              <div className="flex flex-col items-center gap-2">
+                              <div className="flex flex-col items-center gap-1">
                                 <div className="relative">
                                   <input
                                     type="number"
                                     value={valorLimiteInput}
                                     onChange={(e) => setValorLimiteInput(e.target.value)}
                                     onKeyPress={(e) => handleKeyPress(e, conta.banco, conta.numero, limitesChequeEspecial[conta.banco])}
-                                    className="w-32 px-3 py-2 text-sm border-2 border-blue-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-600 bg-white shadow-sm"
+                                    className="w-24 px-2 py-1 text-xs border-2 border-blue-500 rounded focus:outline-none focus:ring-1 focus:ring-blue-300 focus:border-blue-600 bg-white shadow-sm"
                                     placeholder="0,00"
                                     step="0.01"
                                     min="0"
                                     autoFocus
                                   />
-                                  <div className="absolute -top-6 left-0 text-xs text-blue-600 font-medium">
-                                    Insira o valor
+                                  <div className="absolute -top-4 left-0 text-xs text-blue-600 font-medium">
+                                    Valor
                                   </div>
                                 </div>
                                 <div className="flex gap-1">
                                   <button
                                     onClick={cancelarEdicaoLimite}
-                                    className="px-3 py-1 text-xs bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
+                                    className="px-2 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
                                   >
                                     Cancelar
                                   </button>
@@ -1113,7 +1363,7 @@ const SaldoBancario = () => {
                               <div className="flex flex-col items-center">
                                 <button
                                   onClick={() => iniciarEdicaoLimite(conta.banco, conta.numero, limitesChequeEspecial[conta.banco])}
-                                  className="text-lg font-bold text-yellow-600 hover:text-yellow-700 hover:underline transition-all duration-200 cursor-pointer"
+                                  className="text-sm font-bold text-yellow-600 hover:text-yellow-700 hover:underline transition-all duration-200 cursor-pointer"
                                   title="Clique para editar o limite de cheque especial"
                                 >
                                   {limitesChequeEspecial[conta.banco] ? formatCurrency(limitesChequeEspecial[conta.banco]) : 'R$ 0,00'}
@@ -1121,8 +1371,8 @@ const SaldoBancario = () => {
                               </div>
                             )}
                           </td>
-                         <td className="py-3 px-4 text-center">
-                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                         <td className="py-2 px-2 text-center">
+                           <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
                              conta.operacao?.isPositive === true
                                ? 'bg-green-100 text-green-800' 
                                : conta.operacao?.isPositive === false
@@ -1139,8 +1389,33 @@ const SaldoBancario = () => {
                               conta.saldo < 0 ? 'Negativo' : 'Zerado'}
                            </span>
                          </td>
+                         <td className="py-2 px-2 text-center">
+                           <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                             isSaldoManual
+                               ? 'bg-blue-100 text-blue-800'
+                               : 'bg-green-100 text-green-800'
+                           } font-barlow`}>
+                             {isSaldoManual ? 'Manual' : '.RET'}
+                           </span>
+                         </td>
+                         <td className="py-2 px-2 text-center">
+                           {isSaldoManual && (
+                             <button
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 setSaldoSelecionado(registroManual);
+                                 confirmarExclusao();
+                               }}
+                               className="text-red-600 hover:text-red-800 text-base font-bold"
+                               title="Excluir saldo manual"
+                             >
+                               ✕
+                             </button>
+                           )}
+                         </td>
                        </tr>
-                     ))}
+                       );
+                     })}
                   </tbody>
                 </table>
               </div>
@@ -1213,6 +1488,251 @@ const SaldoBancario = () => {
                       )}
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal de Detalhes do Saldo Manual */}
+          {showDetalhesModal && saldoSelecionado && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
+              <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 transform transition-all">
+                <div className="text-center">
+                  <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-4">
+                    <span className="text-2xl">📊</span>
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">
+                    Detalhes do Saldo Manual
+                  </h3>
+                  
+                  <div className="text-left space-y-3 mb-6">
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">Banco:</span>
+                      <span className="text-gray-900">{saldoSelecionado.banco_nome}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">Agência:</span>
+                      <span className="text-gray-900">{saldoSelecionado.agencia}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">Conta:</span>
+                      <span className="text-gray-900">{saldoSelecionado.conta}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">Saldo:</span>
+                      <span className="text-gray-900 font-bold">{formatCurrency(saldoSelecionado.valor)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">Inserido por:</span>
+                      <span className="text-gray-900 font-medium">{saldoSelecionado.usuario_inseriu || saldoSelecionado.operacao_descricao?.replace('Saldo inserido manualmente por ', '') || 'Usuário'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">Data de Inclusão:</span>
+                      <span className="text-gray-900">{new Date(saldoSelecionado.created_at).toLocaleDateString('pt-BR')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">Hora de Inclusão:</span>
+                      <span className="text-gray-900">{new Date(saldoSelecionado.created_at).toLocaleTimeString('pt-BR')}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={fecharModalDetalhes}
+                      className="px-4 py-2 text-sm bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                    >
+                      Fechar
+                    </button>
+                    <button
+                      onClick={() => {
+                        fecharModalDetalhes();
+                        confirmarExclusao();
+                      }}
+                      className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                    >
+                      Excluir Saldo
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal de Confirmação de Exclusão */}
+          {showConfirmExclusaoModal && saldoSelecionado && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
+              <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 transform transition-all">
+                <div className="text-center">
+                  <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                    <span className="text-2xl">⚠️</span>
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-2">
+                    Confirmar Exclusão
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-6">
+                    Tem certeza que deseja excluir o saldo manual de <strong>{saldoSelecionado.banco_nome}</strong> - 
+                    Agência <strong>{saldoSelecionado.agencia}</strong> - Conta <strong>{saldoSelecionado.conta}</strong>?
+                  </p>
+                  
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={cancelarExclusao}
+                      disabled={excluindoSaldo}
+                      className="px-4 py-2 text-sm bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors disabled:opacity-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={excluirSaldo}
+                      disabled={excluindoSaldo}
+                      className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {excluindoSaldo ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Excluindo...
+                        </>
+                      ) : (
+                        <>
+                          <span>🗑️</span>
+                          Excluir
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal para Adicionar Saldo */}
+          {showAddSaldoModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+              <div className="bg-white rounded-xl shadow-2xl p-4 max-w-md w-full transform transition-all max-h-[90vh] overflow-y-auto">
+                <div className="text-center mb-4">
+                  <div className="mx-auto flex items-center justify-center h-10 w-10 rounded-full bg-blue-100 mb-3">
+                    <span className="text-xl">🏦</span>
+                  </div>
+                  <h3 className="text-base font-bold text-gray-900">
+                    Adicionar Novo Saldo
+                  </h3>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Preencha os dados da conta bancária
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  {/* Banco */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Banco *
+                    </label>
+                    <select
+                      value={novoSaldo.banco}
+                      onChange={(e) => setNovoSaldo(prev => ({ ...prev, banco: e.target.value }))}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-600"
+                      required
+                    >
+                      <option value="">Selecione um banco</option>
+                      {obterBancosUnicos.map((banco) => (
+                        <option key={banco} value={banco}>
+                          {banco}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Agência */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Agência *
+                    </label>
+                    <input
+                      type="text"
+                      value={novoSaldo.agencia}
+                      onChange={(e) => setNovoSaldo(prev => ({ ...prev, agencia: e.target.value }))}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-600"
+                      placeholder="0000"
+                      required
+                    />
+                  </div>
+
+                  {/* Conta */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Número da Conta *
+                    </label>
+                    <input
+                      type="text"
+                      value={novoSaldo.conta}
+                      onChange={(e) => setNovoSaldo(prev => ({ ...prev, conta: e.target.value }))}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-600"
+                      placeholder="00000000"
+                      required
+                    />
+                  </div>
+
+                  {/* Saldo */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Saldo *
+                    </label>
+                    <input
+                      type="number"
+                      value={novoSaldo.saldo}
+                      onChange={(e) => setNovoSaldo(prev => ({ ...prev, saldo: e.target.value }))}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-600"
+                      placeholder="0,00"
+                      step="0.01"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Use valores negativos para saldos negativos
+                    </p>
+                  </div>
+
+                  {/* Limite de Cheque Especial */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Limite de Cheque Especial
+                    </label>
+                    <input
+                      type="number"
+                      value={novoSaldo.chqEspecial}
+                      onChange={(e) => setNovoSaldo(prev => ({ ...prev, chqEspecial: e.target.value }))}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-600"
+                      placeholder="0,00 (opcional)"
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-center mt-4">
+                  <button
+                    onClick={fecharModalAddSaldo}
+                    disabled={salvandoSaldo}
+                    className="px-3 py-1 text-xs bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={salvarNovoSaldo}
+                    disabled={salvandoSaldo}
+                    className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-1"
+                  >
+                    {salvandoSaldo ? (
+                      <>
+                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Salvando...
+                      </>
+                    ) : (
+                      <>
+                        <span>✓</span>
+                        Salvar Saldo
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
