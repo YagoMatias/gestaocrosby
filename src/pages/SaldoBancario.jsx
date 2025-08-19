@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Layout from '../components/Layout';
-import { buscarSaldosPorConta } from '../lib/retornoBancario';
+import { buscarSaldosPorConta, buscarLimiteChequeEspecial, salvarLimiteChequeEspecial } from '../lib/retornoBancario';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 
 import { 
@@ -94,7 +94,15 @@ const SaldoBancario = () => {
   const [ordenacao, setOrdenacao] = useState({ campo: null, direcao: 'asc' });
   
   // Estado para controlar o tipo de visualização
-  const [tipoVisualizacao, setTipoVisualizacao] = useState('historico'); // 'historico' ou 'atual'
+  const [tipoVisualizacao, setTipoVisualizacao] = useState('atual'); // 'historico' ou 'atual'
+  
+  // Estados para limite de cheque especial
+  const [limitesChequeEspecial, setLimitesChequeEspecial] = useState({});
+  const [valorLimiteInput, setValorLimiteInput] = useState('');
+  const [bancoEditando, setBancoEditando] = useState(null);
+  const [salvandoLimite, setSalvandoLimite] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [acaoConfirmacao, setAcaoConfirmacao] = useState(null); // 'criar' ou 'atualizar'
 
   // Função para formatar valores monetários
   const formatCurrency = (value) => {
@@ -121,6 +129,107 @@ const SaldoBancario = () => {
     }
     return '0%';
   };
+
+  // Função para carregar limites de cheque especial
+  const carregarLimitesChequeEspecial = async () => {
+    try {
+      const bancos = obterBancosUnicos;
+      const novosLimites = {};
+      
+      console.log('🔄 Carregando limites para bancos:', bancos);
+      
+      for (const banco of bancos) {
+        console.log(`🔍 Buscando limite para banco: ${banco}`);
+        const resultado = await buscarLimiteChequeEspecial(banco);
+        console.log(`📊 Resultado para ${banco}:`, resultado);
+        
+        if (resultado.success && resultado.data) {
+          novosLimites[banco] = resultado.data;
+          console.log(`✅ Limite carregado para ${banco}: ${resultado.data}`);
+        } else {
+          console.log(`❌ Nenhum limite encontrado para ${banco}`);
+        }
+      }
+      
+      console.log('📋 Limites carregados:', novosLimites);
+      setLimitesChequeEspecial(novosLimites);
+    } catch (error) {
+      console.error('Erro ao carregar limites de cheque especial:', error);
+    }
+  };
+
+  // Função para iniciar edição de limite
+  const iniciarEdicaoLimite = (banco, conta, valorAtual = '') => {
+    const chaveUnica = `${banco}_${conta}`;
+    setBancoEditando(chaveUnica);
+    setValorLimiteInput(valorAtual.toString());
+  };
+
+  // Função para cancelar edição de limite
+  const cancelarEdicaoLimite = () => {
+    setBancoEditando(null);
+    setValorLimiteInput('');
+  };
+
+  // Função para lidar com tecla Enter
+  const handleKeyPress = (e, banco, conta, valorAtual) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const valor = parseFloat(valorLimiteInput);
+      if (!valor || isNaN(valor)) {
+        alert('Por favor, insira um valor válido.');
+        return;
+      }
+      
+      const isUpdate = valorAtual && valorAtual > 0;
+      setAcaoConfirmacao(isUpdate ? 'atualizar' : 'criar');
+      setShowConfirmModal(true);
+    }
+  };
+
+  // Função para confirmar ação
+  const confirmarAcao = async () => {
+    if (!bancoEditando) return;
+    
+    // Extrair o nome do banco da chave única
+    const bancoNome = bancoEditando.split('_')[0];
+    
+    setSalvandoLimite(true);
+    try {
+      const valor = parseFloat(valorLimiteInput);
+      const resultado = await salvarLimiteChequeEspecial(bancoNome, valor);
+      
+      if (resultado.success) {
+        setLimitesChequeEspecial(prev => ({
+          ...prev,
+          [bancoNome]: valor
+        }));
+        cancelarEdicaoLimite();
+        setShowConfirmModal(false);
+        console.log('✅ Limite salvo com sucesso:', resultado.message);
+        
+        // Recarregar limites para garantir sincronização
+        setTimeout(() => {
+          carregarLimitesChequeEspecial();
+        }, 500);
+      } else {
+        alert('Erro ao salvar limite: ' + resultado.message);
+      }
+    } catch (error) {
+      console.error('Erro ao salvar limite:', error);
+      alert('Erro ao salvar limite. Tente novamente.');
+    } finally {
+      setSalvandoLimite(false);
+    }
+  };
+
+  // Função para cancelar confirmação
+  const cancelarConfirmacao = () => {
+    setShowConfirmModal(false);
+    setAcaoConfirmacao(null);
+  };
+
+
 
   // Função para obter bancos únicos dos dados
   const obterBancosUnicos = useMemo(() => {
@@ -415,6 +524,26 @@ const SaldoBancario = () => {
     buscarTodosDados();
   }, []);
 
+  // Carregar limites de cheque especial quando a página é carregada
+  useEffect(() => {
+    const carregarLimitesInicial = async () => {
+      if (obterBancosUnicos.length > 0) {
+        console.log('🔄 Carregamento inicial de limites...');
+        await carregarLimitesChequeEspecial();
+      }
+    };
+    
+    carregarLimitesInicial();
+  }, [obterBancosUnicos]);
+
+  // Carregar limites de cheque especial quando os dados são carregados
+  useEffect(() => {
+    if (dadosOriginais.length > 0 && obterBancosUnicos.length > 0) {
+      console.log('🚀 Carregando limites de cheque especial...');
+      carregarLimitesChequeEspecial();
+    }
+  }, [dadosOriginais, obterBancosUnicos]);
+
   // Calcular estatísticas baseado no tipo de visualização
   const estatisticasDia = useMemo(() => {
     if (dadosOriginais.length === 0) {
@@ -597,16 +726,6 @@ const SaldoBancario = () => {
             <div className="bg-white rounded-lg border border-gray-200 p-1 shadow-sm">
               <div className="flex">
                 <button
-                  onClick={() => setTipoVisualizacao('historico')}
-                  className={`px-6 py-2 text-sm font-medium rounded-md transition-colors ${
-                    tipoVisualizacao === 'historico'
-                      ? 'bg-[#000638] text-white shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                  }`}
-                >
-                  Histórico de Saldo
-                </button>
-                <button
                   onClick={() => setTipoVisualizacao('atual')}
                   className={`px-6 py-2 text-sm font-medium rounded-md transition-colors ${
                     tipoVisualizacao === 'atual'
@@ -615,6 +734,16 @@ const SaldoBancario = () => {
                   }`}
                 >
                   Saldo Atual
+                </button>
+                <button
+                  onClick={() => setTipoVisualizacao('historico')}
+                  className={`px-6 py-2 text-sm font-medium rounded-md transition-colors ${
+                    tipoVisualizacao === 'historico'
+                      ? 'bg-[#000638] text-white shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  Histórico de Saldo
                 </button>
               </div>
             </div>
@@ -761,6 +890,8 @@ const SaldoBancario = () => {
               {erro}
             </div>
           )}
+
+
 
           {/* Cards de Estatísticas do Dia */}
           {dadosCarregados && (
@@ -920,6 +1051,9 @@ const SaldoBancario = () => {
                          </div>
                        </th>
                        <th className="text-center py-3 px-4 font-semibold text-gray-900 font-barlow">
+                         Limite Cheque Especial
+                       </th>
+                       <th className="text-center py-3 px-4 font-semibold text-gray-900 font-barlow">
                          Status
                        </th>
                      </tr>
@@ -947,6 +1081,46 @@ const SaldoBancario = () => {
                              {getVariacaoIcon(conta.saldo)}
                            </div>
                          </td>
+                                                   <td className="py-3 px-4 text-center">
+                            {bancoEditando === `${conta.banco}_${conta.numero}` ? (
+                              <div className="flex flex-col items-center gap-2">
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    value={valorLimiteInput}
+                                    onChange={(e) => setValorLimiteInput(e.target.value)}
+                                    onKeyPress={(e) => handleKeyPress(e, conta.banco, conta.numero, limitesChequeEspecial[conta.banco])}
+                                    className="w-32 px-3 py-2 text-sm border-2 border-blue-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-600 bg-white shadow-sm"
+                                    placeholder="0,00"
+                                    step="0.01"
+                                    min="0"
+                                    autoFocus
+                                  />
+                                  <div className="absolute -top-6 left-0 text-xs text-blue-600 font-medium">
+                                    Insira o valor
+                                  </div>
+                                </div>
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={cancelarEdicaoLimite}
+                                    className="px-3 py-1 text-xs bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center">
+                                <button
+                                  onClick={() => iniciarEdicaoLimite(conta.banco, conta.numero, limitesChequeEspecial[conta.banco])}
+                                  className="text-lg font-bold text-yellow-600 hover:text-yellow-700 hover:underline transition-all duration-200 cursor-pointer"
+                                  title="Clique para editar o limite de cheque especial"
+                                >
+                                  {limitesChequeEspecial[conta.banco] ? formatCurrency(limitesChequeEspecial[conta.banco]) : 'R$ 0,00'}
+                                </button>
+                              </div>
+                            )}
+                          </td>
                          <td className="py-3 px-4 text-center">
                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                              conta.operacao?.isPositive === true
@@ -991,6 +1165,55 @@ const SaldoBancario = () => {
                 <p className="text-sm text-blue-700 font-barlow">
                   <strong>Dica:</strong> Os dados são extraídos dos arquivos .RET processados e armazenados no Supabase.
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* Modal de Confirmação para Limite de Cheque Especial */}
+          {showConfirmModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
+              <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 transform transition-all">
+                <div className="text-center">
+                  <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-4">
+                    <span className="text-2xl">💰</span>
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-2">
+                    {acaoConfirmacao === 'criar' ? 'Definir Limite' : 'Atualizar Limite'}
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-6">
+                    {acaoConfirmacao === 'criar' 
+                      ? `Deseja definir o limite de cheque especial para ${bancoEditando} como ${formatCurrency(parseFloat(valorLimiteInput))}?`
+                      : `Deseja atualizar o limite de cheque especial para ${bancoEditando} para ${formatCurrency(parseFloat(valorLimiteInput))}?`
+                    }
+                  </p>
+                  
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={cancelarConfirmacao}
+                      disabled={salvandoLimite}
+                      className="px-4 py-2 text-sm bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors disabled:opacity-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={confirmarAcao}
+                      disabled={salvandoLimite}
+                      className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {salvandoLimite ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Salvando...
+                        </>
+                      ) : (
+                        <>
+                          <span>✓</span>
+                          {acaoConfirmacao === 'criar' ? 'Definir' : 'Atualizar'}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

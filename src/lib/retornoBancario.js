@@ -373,4 +373,128 @@ export const buscarSaldosPorConta = async (filtros = {}) => {
   }
 };
 
+/**
+ * Busca o limite de cheque especial para um banco específico
+ * @param {string} bancoNome - Nome do banco
+ * @returns {Promise<Object>} - Resultado da busca
+ */
+export const buscarLimiteChequeEspecial = async (bancoNome) => {
+  try {
+    console.log(`🔍 Buscando limite para banco: ${bancoNome}`);
+    
+    const { data, error } = await supabase
+      .from(TABLE_NAME)
+      .select('chq_especial')
+      .eq('banco_nome', bancoNome)
+      .not('chq_especial', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') { // No rows returned
+        console.log(`❌ Nenhum limite encontrado para ${bancoNome}`);
+        return { success: true, data: null };
+      }
+      console.error('Erro ao buscar limite de cheque especial:', error);
+      throw error;
+    }
+
+    console.log(`✅ Limite encontrado para ${bancoNome}: ${data?.chq_especial}`);
+    return {
+      success: true,
+      data: data?.chq_especial || null
+    };
+  } catch (error) {
+    console.error('Erro ao buscar limite de cheque especial:', error);
+    return {
+      success: false,
+      message: 'Erro ao buscar limite: ' + error.message,
+      error: error
+    };
+  }
+};
+
+/**
+ * Salva ou atualiza o limite de cheque especial para um banco
+ * @param {string} bancoNome - Nome do banco
+ * @param {number} limite - Valor do limite
+ * @returns {Promise<Object>} - Resultado da operação
+ */
+export const salvarLimiteChequeEspecial = async (bancoNome, limite) => {
+  try {
+    // Buscar um registro existente para este banco
+    const { data: existingData, error: searchError } = await supabase
+      .from(TABLE_NAME)
+      .select('*')
+      .eq('banco_nome', bancoNome)
+      .limit(1)
+      .single();
+
+    if (searchError && searchError.code !== 'PGRST116') {
+      console.error('Erro ao buscar dados do banco:', searchError);
+      throw searchError;
+    }
+
+    let result;
+
+    if (existingData) {
+      // Atualizar o registro existente
+      const { data: updateData, error: updateError } = await supabase
+        .from(TABLE_NAME)
+        .update({ chq_especial: limite })
+        .eq('id', existingData.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('Erro ao atualizar limite de cheque especial:', updateError);
+        throw updateError;
+      }
+
+      result = updateData;
+    } else {
+      // Se não há registros para este banco, criar um novo com dados mínimos
+      const novoRegistro = {
+        nome_arquivo: 'limite_cheque_especial',
+        data_upload: new Date().toISOString(),
+        valor: 0,
+        banco_nome: bancoNome,
+        banco_codigo: '000',
+        agencia: '0000',
+        conta: '00000000',
+        chq_especial: limite,
+        created_at: new Date().toISOString()
+      };
+
+      const { data: insertData, error: insertError } = await supabase
+        .from(TABLE_NAME)
+        .insert([novoRegistro])
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('Erro ao criar limite de cheque especial:', insertError);
+        throw insertError;
+      }
+
+      result = insertData;
+    }
+
+    return {
+      success: true,
+      data: result,
+      message: existingData ? 'Limite de cheque especial atualizado com sucesso' : 'Limite de cheque especial criado com sucesso'
+    };
+
+  } catch (error) {
+    console.error('Erro ao salvar limite de cheque especial:', error);
+    return {
+      success: false,
+      message: 'Erro ao salvar limite: ' + error.message,
+      error: error
+    };
+  }
+};
+
 
