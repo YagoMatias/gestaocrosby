@@ -197,7 +197,7 @@ router.get('/contas-pagar',
       WHERE fd.dt_vencimento BETWEEN $1 AND $2
         AND fd.cd_empresa IN (${empresaPlaceholders})
       ORDER BY fd.dt_vencimento DESC
-      LIMIT 25000
+      LIMIT 50000
     ` : `
       SELECT
         fd.cd_empresa,
@@ -234,7 +234,7 @@ router.get('/contas-pagar',
       WHERE fd.dt_vencimento BETWEEN $1 AND $2
         AND fd.cd_empresa IN (${empresaPlaceholders})
       ORDER BY fd.dt_vencimento DESC
-      ${isHeavyQuery ? 'LIMIT 50000' : ''}
+      ${isHeavyQuery ? 'LIMIT 100000' : ''}
     `;
 
     const queryType = isVeryHeavyQuery ? 'muito-pesada' : isHeavyQuery ? 'pesada' : 'completa';
@@ -262,7 +262,7 @@ router.get('/contas-pagar',
         isHeavyQuery,
         isVeryHeavyQuery,
         diasPeriodo: Math.ceil((new Date(dt_fim) - new Date(dt_inicio)) / (1000 * 60 * 60 * 24)),
-        limiteAplicado: isVeryHeavyQuery ? 25000 : isHeavyQuery ? 50000 : 'sem limite'
+        limiteAplicado: isVeryHeavyQuery ? 50000 : isHeavyQuery ? 100000 : 'sem limite'
       },
       data: rows
     }, `Contas a pagar obtidas com sucesso (${queryType})`);

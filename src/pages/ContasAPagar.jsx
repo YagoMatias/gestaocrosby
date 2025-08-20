@@ -1001,7 +1001,12 @@ const ContasAPagar = () => {
           ds_observacao: item.ds_observacao || '',
           in_aceite: item.in_aceite || '',
           vl_rateio: item.vl_rateio || 0,
-          tp_aceite: item.in_aceite || '' // Mantém compatibilidade
+          tp_aceite: item.in_aceite || '', // Mantém compatibilidade
+          ds_despesaitem: item.ds_despesaitem || '',
+          ds_ccusto: item.ds_ccusto || '',
+          nm_fornecedor: item.nm_fornecedor || '',
+          cd_despesaitem: item.cd_despesaitem || '',
+          cd_ccusto: item.cd_ccusto || ''
         }));
         
         // Debug para verificar dados de despesa e centro de custo
