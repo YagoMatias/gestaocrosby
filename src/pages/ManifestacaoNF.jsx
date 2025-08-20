@@ -44,6 +44,8 @@ const ManifestacaoNF = () => {
   const [numeroNF, setNumeroNF] = useState('');
   const [fornecedor, setFornecedor] = useState('');
   const [chaveAcesso, setChaveAcesso] = useState('');
+  const [filtroDocFiscal, setFiltroDocFiscal] = useState('NFE');
+  const [filtroSituacao, setFiltroSituacao] = useState('AUTORIZADA');
   
   // Estados para seleção de linhas
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
@@ -339,6 +341,32 @@ const ManifestacaoNF = () => {
     }
   };
 
+  const getTipoDocumento = (modelo) => {
+    const modeloStr = modelo?.toString() || '';
+    switch (modeloStr) {
+      case '55':
+        return 'NFE';
+      case '57':
+        return 'CTE';
+      default:
+        return modeloStr;
+    }
+  };
+
+  const getSituacaoDocumento = (situacao) => {
+    const situacaoStr = situacao?.toString() || '';
+    switch (situacaoStr) {
+      case 'A':
+        return 'AUTORIZADA';
+      case 'C':
+        return 'CANCELADA';
+      case 'D':
+        return 'DENEGADA';
+      default:
+        return situacaoStr;
+    }
+  };
+
   const isLancada = (item) => {
     return item.nr_fatura && item.nr_fatura.toString().trim() !== '';
   };
@@ -373,7 +401,8 @@ const ManifestacaoNF = () => {
         'Lançada': isLancada(item) ? 'Sim' : 'Não',
         'Operação': item.tp_operacao || '',
         'Operador': item.cd_operador || '',
-        'Modelo': item.tp_moddctofiscal || '',
+        'Tipo Documento': getTipoDocumento(item.tp_moddctofiscal),
+        'Situação Documento': getSituacaoDocumento(item.tp_situacao),
         'Número Fatura': item.nr_fatura || '',
         'Data Fatura': formatarData(item.dt_fatura),
         'Valor Fatura': parseFloat(item.vl_fatura || 0).toLocaleString('pt-BR', {
@@ -404,7 +433,8 @@ const ManifestacaoNF = () => {
         { wch: 10 }, // Lançada
         { wch: 12 }, // Operação
         { wch: 12 }, // Operador
-        { wch: 10 }, // Modelo
+        { wch: 15 }, // Tipo Documento
+        { wch: 18 }, // Situação Documento
         { wch: 15 }, // Número Fatura
         { wch: 12 }, // Data Fatura
         { wch: 15 }  // Valor Fatura
@@ -447,6 +477,31 @@ const ManifestacaoNF = () => {
         return false;
       }
       if (filtroLancamento === 'Não Lançadas' && lancada) {
+        return false;
+      }
+    }
+    
+    // Filtro por Doc Fiscal (NFE/CTE)
+    if (filtroDocFiscal !== 'TODOS') {
+      const modeloDoc = item.tp_moddctofiscal?.toString() || '';
+      if (filtroDocFiscal === 'NFE' && modeloDoc !== '55') {
+        return false;
+      }
+      if (filtroDocFiscal === 'CTE' && modeloDoc !== '57') {
+        return false;
+      }
+    }
+
+    // Filtro por Situação (AUTORIZADA/CANCELADA/DENEGADA)
+    if (filtroSituacao !== 'TODAS') {
+      const situacaoDoc = item.tp_situacao?.toString() || '';
+      if (filtroSituacao === 'AUTORIZADA' && situacaoDoc !== 'A') {
+        return false;
+      }
+      if (filtroSituacao === 'CANCELADA' && situacaoDoc !== 'C') {
+        return false;
+      }
+      if (filtroSituacao === 'DENEGADA' && situacaoDoc !== 'D') {
         return false;
       }
     }
@@ -534,6 +589,14 @@ const ManifestacaoNF = () => {
           aValue = a.ds_chaveacesso || '';
           bValue = b.ds_chaveacesso || '';
           break;
+        case 'tp_moddctofiscal':
+          aValue = a.tp_moddctofiscal || '';
+          bValue = b.tp_moddctofiscal || '';
+          break;
+        case 'tp_situacao':
+          aValue = a.tp_situacao || '';
+          bValue = b.tp_situacao || '';
+          break;
         default:
           return 0;
       }
@@ -592,7 +655,7 @@ const ManifestacaoNF = () => {
               <span className="text-sm text-gray-500 mt-1">Selecione o período e empresa para análise</span>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
               <div className="lg:col-span-2">
                 <FiltroEmpresa
                   empresasSelecionadas={empresasSelecionadas}
@@ -629,9 +692,35 @@ const ManifestacaoNF = () => {
                   <option value="Não Lançadas">NÃO LANÇADAS</option>
                 </select>
               </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Doc Fiscal</label>
+                <select
+                  value={filtroDocFiscal}
+                  onChange={(e) => setFiltroDocFiscal(e.target.value)}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                >
+                  <option value="TODOS">TODOS</option>
+                  <option value="NFE">NFE</option>
+                  <option value="CTE">CTE</option>
+                </select>
+              </div>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Situação</label>
+                <select
+                  value={filtroSituacao}
+                  onChange={(e) => setFiltroSituacao(e.target.value)}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                >
+                  <option value="TODAS">TODAS</option>
+                  <option value="AUTORIZADA">AUTORIZADA</option>
+                  <option value="CANCELADA">CANCELADA</option>
+                  <option value="DENEGADA">DENEGADA</option>
+                </select>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold mb-1 text-[#000638]">Número NF</label>
                 <input
@@ -642,6 +731,7 @@ const ManifestacaoNF = () => {
                   className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
               </div>
+
               <div>
                 <label className="block text-xs font-semibold mb-1 text-[#000638]">Fornecedor</label>
                 <input
@@ -652,6 +742,7 @@ const ManifestacaoNF = () => {
                   className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
               </div>
+
               <div>
                 <label className="block text-xs font-semibold mb-1 text-[#000638]">Chave de Acesso</label>
                 <input
@@ -662,10 +753,11 @@ const ManifestacaoNF = () => {
                   className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
               </div>
-              <div className="flex items-center">
+
+              <div className="flex items-end">
                 <button 
                   type="submit"
-                  className="flex items-center gap-2 bg-[#000638] text-white px-6 py-2 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-10 text-sm font-bold shadow-md tracking-wide uppercase"
+                  className="w-full flex items-center justify-center gap-2 bg-[#000638] text-white px-6 py-2 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-10 text-sm font-bold shadow-md tracking-wide uppercase"
                   disabled={loading || !dataInicio || !dataFim}
                 >
                   {loading ? (
@@ -990,8 +1082,17 @@ const ManifestacaoNF = () => {
                           onClick={() => handleSort('tp_moddctofiscal')}
                         >
                           <div className="flex items-center">
-                            MODELO DOCTO
+                            TIPO DOC
                             {getSortIcon('tp_moddctofiscal')}
+                          </div>
+                        </th>
+                        <th 
+                          className="cursor-pointer hover:bg-blue-800 transition-colors"
+                          onClick={() => handleSort('tp_situacao')}
+                        >
+                          <div className="flex items-center">
+                            SITUAÇÃO DOC
+                            {getSortIcon('tp_situacao')}
                           </div>
                         </th>
                         <th 
@@ -1089,7 +1190,30 @@ const ManifestacaoNF = () => {
                             </td>
                             <td className="text-center">{item.tp_operacao || ''}</td>
                             <td className="text-center">{item.cd_operador || ''}</td>
-                            <td className="text-center">{item.tp_moddctofiscal || ''}</td>
+                            <td className="text-center font-medium">
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                item.tp_moddctofiscal === '55' 
+                                  ? 'bg-blue-100 text-blue-800' 
+                                  : item.tp_moddctofiscal === '57'
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}>
+                                {getTipoDocumento(item.tp_moddctofiscal)}
+                              </span>
+                            </td>
+                            <td className="text-center font-medium">
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                item.tp_situacao === 'A' 
+                                  ? 'bg-green-100 text-green-800' 
+                                  : item.tp_situacao === 'C'
+                                  ? 'bg-red-100 text-red-800'
+                                  : item.tp_situacao === 'D'
+                                  ? 'bg-orange-100 text-orange-800'
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}>
+                                {getSituacaoDocumento(item.tp_situacao)}
+                              </span>
+                            </td>
                             <td className="text-center">{item.nr_fatura || ''}</td>
                             <td className="text-center">{formatarData(item.dt_fatura)}</td>
                             <td className="text-center">{formatarData(item.dt_cadastro)}</td>
