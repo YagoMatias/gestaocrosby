@@ -284,6 +284,7 @@ export const buscarSaldosPorConta = async (filtros = {}) => {
       .from(TABLE_NAME)
       .select('*')
       .neq('nome_arquivo', 'saldo_manual_deletado') // Excluir registros marcados como deletados
+      .neq('nome_arquivo', 'limite_cheque_especial') // Não misturar limite como registro de saldo
       .order('data_geracao', { ascending: false });
 
     // Aplicar filtros se fornecidos
@@ -308,11 +309,12 @@ export const buscarSaldosPorConta = async (filtros = {}) => {
       query = supabase
         .from(TABLE_NAME)
         .select('*')
-        .neq('nome_arquivo', 'saldo_manual_deletado') // Excluir registros marcados como deletados
+        .neq('nome_arquivo', 'saldo_manual_deletado')
+        .neq('nome_arquivo', 'limite_cheque_especial')
         .order('data_geracao', { ascending: false });
     }
 
-         const { data, error } = await query;
+        const { data, error } = await query;
 
      console.log('🔍 Dados retornados da query:', data?.length || 0, 'registros');
      console.log('🔍 Exemplo de registro:', data?.[0]);
@@ -383,32 +385,35 @@ export const buscarSaldosPorConta = async (filtros = {}) => {
  * @param {string} bancoNome - Nome do banco
  * @returns {Promise<Object>} - Resultado da busca
  */
-export const buscarLimiteChequeEspecial = async (bancoNome) => {
+export const buscarLimiteChequeEspecial = async (bancoNome, agenciaNumero, contaNumero) => {
   try {
-    console.log(`🔍 Buscando limite para banco: ${bancoNome}`);
+    console.log(`🔍 Buscando limite para banco/agencia/conta: ${bancoNome} / ${agenciaNumero} / ${contaNumero}`);
     
     const { data, error } = await supabase
       .from(TABLE_NAME)
-      .select('chq_especial')
+      .select('chq_especial, conta, agencia')
       .eq('banco_nome', bancoNome)
+      .eq('agencia', agenciaNumero)
+      .eq('conta', contaNumero)
+      .eq('nome_arquivo', 'limite_cheque_especial')
       .not('chq_especial', 'is', null)
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (error) {
       if (error.code === 'PGRST116') { // No rows returned
-        console.log(`❌ Nenhum limite encontrado para ${bancoNome}`);
         return { success: true, data: null };
       }
       console.error('Erro ao buscar limite de cheque especial:', error);
       throw error;
     }
 
-    console.log(`✅ Limite encontrado para ${bancoNome}: ${data?.chq_especial}`);
     return {
       success: true,
-      data: data?.chq_especial || null
+      data: data?.chq_especial || null,
+      conta: data?.conta || null,
+      agencia: data?.agencia || null
     };
   } catch (error) {
     console.error('Erro ao buscar limite de cheque especial:', error);
@@ -427,67 +432,67 @@ export const buscarLimiteChequeEspecial = async (bancoNome) => {
  */
 export const salvarSaldoManual = async (dados) => {
   try {
-         // Preparar dados para inserção
-     const dadosParaInserir = {
-       nome_arquivo: dados.nome_arquivo,
-       data_upload: dados.data_upload,
-       valor: dados.valor,
-       banco_nome: dados.banco_nome,
-       banco_codigo: dados.banco_codigo,
-       banco_layout: dados.banco_layout,
-       agencia: dados.agencia,
-       conta: dados.conta,
-       saldo_formatado: dados.saldo_formatado,
-       data_processamento: dados.data_processamento,
-       data_geracao: dados.data_geracao,
-       operacao_tipo: dados.operacao_tipo,
-       operacao_descricao: dados.operacao_descricao,
-       operacao_sinal: dados.operacao_sinal,
-       operacao_is_positive: dados.operacao_is_positive,
-       operacao_valor_absoluto: dados.operacao_valor_absoluto,
-       chq_especial: dados.chq_especial,
-       usuario_inseriu: dados.usuario_inseriu,
-       created_at: dados.created_at
-     };
-
-    // Inserir no Supabase
-    const { data, error } = await supabase
-      .from(TABLE_NAME)
-      .insert([dadosParaInserir])
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === '42501') { // Erro de permissão RLS
-        console.error('Erro de permissão RLS - verifique se a tabela está configurada corretamente:', error.message);
-        throw new Error('Erro de permissão no banco de dados. Verifique a configuração da tabela.');
-      }
-      if (error.code === '23505') { // Violação de chave única
-        console.warn('Saldo duplicado detectado pelo banco:', error.message);
-        return {
-          success: false,
-          message: `Saldo para ${dados.banco_nome} - Agência ${dados.agencia} - Conta ${dados.conta} já foi inserido anteriormente`,
-          duplicate: true
-        };
-      }
-      console.error('Erro ao salvar saldo manual:', error);
-      throw error;
-    }
-
-    return {
-      success: true,
-      message: 'Saldo manual salvo com sucesso no banco de dados',
-      data: data
+        // Preparar dados para inserção
+    const dadosParaInserir = {
+      nome_arquivo: dados.nome_arquivo,
+      data_upload: dados.data_upload,
+      valor: dados.valor,
+      banco_nome: dados.banco_nome,
+      banco_codigo: dados.banco_codigo,
+      banco_layout: dados.banco_layout,
+      agencia: dados.agencia,
+      conta: dados.conta,
+      saldo_formatado: dados.saldo_formatado,
+      data_processamento: dados.data_processamento,
+      data_geracao: dados.data_geracao,
+      operacao_tipo: dados.operacao_tipo,
+      operacao_descricao: dados.operacao_descricao,
+      operacao_sinal: dados.operacao_sinal,
+      operacao_is_positive: dados.operacao_is_positive,
+      operacao_valor_absoluto: dados.operacao_valor_absoluto,
+      chq_especial: dados.chq_especial,
+      usuario_inseriu: dados.usuario_inseriu,
+      created_at: dados.created_at
     };
 
-  } catch (error) {
-    console.error('Erro ao salvar saldo manual:', error);
-    return {
-      success: false,
-      message: 'Erro ao salvar no banco de dados: ' + error.message,
-      error: error
-    };
-  }
+   // Inserir no Supabase
+   const { data, error } = await supabase
+     .from(TABLE_NAME)
+     .insert([dadosParaInserir])
+     .select()
+     .single();
+
+   if (error) {
+     if (error.code === '42501') { // Erro de permissão RLS
+       console.error('Erro de permissão RLS - verifique se a tabela está configurada corretamente:', error.message);
+       throw new Error('Erro de permissão no banco de dados. Verifique a configuração da tabela.');
+     }
+     if (error.code === '23505') { // Violação de chave única
+       console.warn('Saldo duplicado detectado pelo banco:', error.message);
+       return {
+         success: false,
+         message: `Saldo para ${dados.banco_nome} - Agência ${dados.agencia} - Conta ${dados.conta} já foi inserido anteriormente`,
+         duplicate: true
+       };
+     }
+     console.error('Erro ao salvar saldo manual:', error);
+     throw error;
+   }
+
+   return {
+     success: true,
+     message: 'Saldo manual salvo com sucesso no banco de dados',
+     data: data
+   };
+
+ } catch (error) {
+   console.error('Erro ao salvar saldo manual:', error);
+   return {
+     success: false,
+     message: 'Erro ao salvar no banco de dados: ' + error.message,
+     error: error
+   };
+ }
 };
 
  /**
@@ -592,23 +597,28 @@ export const salvarSaldoManual = async (dados) => {
  };
 
  /**
-  * Salva ou atualiza o limite de cheque especial para um banco
+  * Salva ou atualiza o limite de cheque especial para um banco+conta
   * @param {string} bancoNome - Nome do banco
   * @param {number} limite - Valor do limite
+  * @param {string} contaNumero - Número da conta
   * @returns {Promise<Object>} - Resultado da operação
   */
- export const salvarLimiteChequeEspecial = async (bancoNome, limite) => {
+ export const salvarLimiteChequeEspecial = async (bancoNome, limite, contaNumero, agenciaNumero) => {
    try {
-     // Buscar um registro existente para este banco
+     // Buscar um registro existente para este banco+agência+conta do tipo 'limite_cheque_especial'
      const { data: existingData, error: searchError } = await supabase
        .from(TABLE_NAME)
        .select('*')
        .eq('banco_nome', bancoNome)
+       .eq('agencia', agenciaNumero)
+       .eq('conta', contaNumero)
+       .eq('nome_arquivo', 'limite_cheque_especial')
+       .order('created_at', { ascending: false })
        .limit(1)
-       .single();
+       .maybeSingle();
 
      if (searchError && searchError.code !== 'PGRST116') {
-       console.error('Erro ao buscar dados do banco:', searchError);
+       console.error('Erro ao buscar dados do banco/conta:', searchError);
        throw searchError;
      }
 
@@ -618,7 +628,7 @@ export const salvarSaldoManual = async (dados) => {
        // Atualizar o registro existente
        const { data: updateData, error: updateError } = await supabase
          .from(TABLE_NAME)
-         .update({ chq_especial: limite })
+         .update({ chq_especial: limite, data_processamento: new Date().toISOString() })
          .eq('id', existingData.id)
          .select()
          .single();
@@ -630,17 +640,22 @@ export const salvarSaldoManual = async (dados) => {
 
        result = updateData;
      } else {
-       // Se não há registros para este banco, criar um novo com dados mínimos
+       // Criar um novo registro do tipo 'limite_cheque_especial'
+       const agora = new Date().toISOString();
        const novoRegistro = {
          nome_arquivo: 'limite_cheque_especial',
-         data_upload: new Date().toISOString(),
+         data_upload: agora,
          valor: 0,
          banco_nome: bancoNome,
          banco_codigo: '000',
-         agencia: '0000',
-         conta: '00000000',
+         banco_layout: 'limite',
+         agencia: agenciaNumero,
+         conta: contaNumero,
          chq_especial: limite,
-         created_at: new Date().toISOString()
+         saldo_formatado: (0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+         data_processamento: agora,
+         data_geracao: agora,
+         created_at: agora
        };
 
        const { data: insertData, error: insertError } = await supabase

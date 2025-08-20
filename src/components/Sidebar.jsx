@@ -134,7 +134,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     // ADM e DIRETOR: tudo
     if (user.role === 'ADM' || user.role === 'DIRETOR') {
       return (
-        <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200">
+        <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
           {/* Header com logo e close button */}
           <div className="h-20 px-6 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-3">
@@ -149,7 +149,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto">
+          <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto overflow-x-hidden">
             {/* Dashboard/Home */}
             <MenuItem 
               item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
@@ -232,7 +232,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     // FINANCEIRO: só menus financeiros
     if (user.role === 'FINANCEIRO') {
       return (
-        <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200">
+        <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
           {/* Header com logo e close button */}
           <div className="h-20 px-6 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-3">
@@ -247,7 +247,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto">
+          <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto overflow-x-hidden">
             {/* Dashboard/Home */}
             <MenuItem 
               item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
@@ -292,7 +292,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     // FRANQUIA: ranking de faturamento e compras franquias
     if (user.role === 'FRANQUIA') {
       return (
-        <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200">
+        <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
           {/* Header com logo e close button */}
           <div className="h-20 px-6 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-3">
@@ -307,7 +307,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto">
+          <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto overflow-x-hidden">
             {/* Dashboard/Home */}
             <MenuItem 
               item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}

@@ -154,25 +154,24 @@ const SaldoBancario = () => {
   // Função para carregar limites de cheque especial
   const carregarLimitesChequeEspecial = async () => {
     try {
-      const bancos = obterBancosUnicos;
       const novosLimites = {};
-      
-      console.log('🔄 Carregando limites para bancos:', bancos);
-      
-      for (const banco of bancos) {
-        console.log(`🔍 Buscando limite para banco: ${banco}`);
-        const resultado = await buscarLimiteChequeEspecial(banco);
-        console.log(`📊 Resultado para ${banco}:`, resultado);
-        
-        if (resultado.success && resultado.data) {
-          novosLimites[banco] = resultado.data;
-          console.log(`✅ Limite carregado para ${banco}: ${resultado.data}`);
-        } else {
-          console.log(`❌ Nenhum limite encontrado para ${banco}`);
+      // criar chaves por banco_conta a partir dos saldos atuais
+      (obterSaldosAtuais || []).forEach(item => {
+        novosLimites[`${item.banco}_${item.numero}`] = null;
+      });
+
+      for (const chave of Object.keys(novosLimites)) {
+        const [banco, conta] = chave.split('_');
+        const item = (obterSaldosAtuais || []).find(i => i.banco === banco && i.numero === conta);
+        const agencia = item?.agencia;
+        const resultado = await buscarLimiteChequeEspecial(banco, agencia, conta);
+        if (resultado.success) {
+          if (!resultado.conta || (resultado.conta === conta && (!resultado.agencia || resultado.agencia === agencia))) {
+            novosLimites[chave] = resultado.data;
+          }
         }
       }
-      
-      console.log('📋 Limites carregados:', novosLimites);
+
       setLimitesChequeEspecial(novosLimites);
     } catch (error) {
       console.error('Erro ao carregar limites de cheque especial:', error);
@@ -213,17 +212,18 @@ const SaldoBancario = () => {
     if (!bancoEditando) return;
     
     // Extrair o nome do banco da chave única
-    const bancoNome = bancoEditando.split('_')[0];
+    const [bancoNome, contaNumero] = bancoEditando.split('_');
+    const agenciaNumero = (obterSaldosAtuais || []).find(i => i.banco === bancoNome && i.numero === contaNumero)?.agencia;
     
     setSalvandoLimite(true);
     try {
       const valor = parseFloat(valorLimiteInput);
-      const resultado = await salvarLimiteChequeEspecial(bancoNome, valor);
+      const resultado = await salvarLimiteChequeEspecial(bancoNome, valor, contaNumero, agenciaNumero);
       
       if (resultado.success) {
         setLimitesChequeEspecial(prev => ({
           ...prev,
-          [bancoNome]: valor
+          [bancoEditando]: valor
         }));
         cancelarEdicaoLimite();
         setShowConfirmModal(false);
@@ -1263,6 +1263,9 @@ const SaldoBancario = () => {
                        <th className="text-center py-2 px-2 text-xs font-semibold text-gray-900 font-barlow">
                          Limite CHQ
                        </th>
+                       <th className="text-right py-2 px-2 text-xs font-semibold text-gray-900 font-barlow">
+                         Saldo + CHQ
+                       </th>
                        <th className="text-center py-2 px-2 text-xs font-semibold text-gray-900 font-barlow">
                          Status
                        </th>
@@ -1333,7 +1336,7 @@ const SaldoBancario = () => {
                              {getVariacaoIcon(conta.saldo)}
                            </div>
                          </td>
-                                                   <td className="py-2 px-2 text-center">
+                         <td className="py-2 px-2 text-center">
                             {bancoEditando === `${conta.banco}_${conta.numero}` ? (
                               <div className="flex flex-col items-center gap-1">
                                 <div className="relative">
@@ -1341,7 +1344,7 @@ const SaldoBancario = () => {
                                     type="number"
                                     value={valorLimiteInput}
                                     onChange={(e) => setValorLimiteInput(e.target.value)}
-                                    onKeyPress={(e) => handleKeyPress(e, conta.banco, conta.numero, limitesChequeEspecial[conta.banco])}
+                                    onKeyPress={(e) => handleKeyPress(e, conta.banco, conta.numero, limitesChequeEspecial[`${conta.banco}_${conta.numero}`])}
                                     className="w-24 px-2 py-1 text-xs border-2 border-blue-500 rounded focus:outline-none focus:ring-1 focus:ring-blue-300 focus:border-blue-600 bg-white shadow-sm"
                                     placeholder="0,00"
                                     step="0.01"
@@ -1364,14 +1367,21 @@ const SaldoBancario = () => {
                             ) : (
                               <div className="flex flex-col items-center">
                                 <button
-                                  onClick={() => iniciarEdicaoLimite(conta.banco, conta.numero, limitesChequeEspecial[conta.banco])}
+                                  onClick={() => iniciarEdicaoLimite(conta.banco, conta.numero, limitesChequeEspecial[`${conta.banco}_${conta.numero}`])}
                                   className="text-sm font-bold text-yellow-600 hover:text-yellow-700 hover:underline transition-all duration-200 cursor-pointer"
                                   title="Clique para editar o limite de cheque especial"
                                 >
-                                  {limitesChequeEspecial[conta.banco] ? formatCurrency(limitesChequeEspecial[conta.banco]) : 'R$ 0,00'}
+                                  {limitesChequeEspecial[`${conta.banco}_${conta.numero}`] ? formatCurrency(limitesChequeEspecial[`${conta.banco}_${conta.numero}`]) : 'R$ 0,00'}
                                 </button>
                               </div>
                             )}
+                          </td>
+                          <td className="py-2 px-2 text-right">
+                            {(() => {
+                              const limite = limitesChequeEspecial[`${conta.banco}_${conta.numero}`] || 0;
+                              const soma = (parseFloat(conta.saldo) || 0) + (parseFloat(limite) || 0);
+                              return <span className={`font-semibold text-sm ${getSaldoColor({ saldo: soma })} font-barlow`}>{formatCurrency(soma)}</span>;
+                            })()}
                           </td>
                          <td className="py-2 px-2 text-center">
                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
