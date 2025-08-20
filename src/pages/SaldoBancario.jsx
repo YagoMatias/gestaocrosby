@@ -1211,8 +1211,8 @@ const SaldoBancario = () => {
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-semibold text-gray-900 font-barlow">
-                  {tipoVisualizacao === 'atual' ? 'Saldos Atuais por Conta' : 'Saldos por Conta'}
-                </h2>
+                {tipoVisualizacao === 'atual' ? 'Saldos Atuais por Conta' : 'Saldos por Conta'}
+              </h2>
                 
                 {/* Botão Adicionar Saldo */}
                 <button
@@ -1399,22 +1399,30 @@ const SaldoBancario = () => {
                             })()}
                           </td>
                          <td className="py-2 px-2 text-center">
-                           <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
-                             conta.operacao?.isPositive === true
-                               ? 'bg-green-100 text-green-800' 
-                               : conta.operacao?.isPositive === false
-                               ? 'bg-red-100 text-red-800'
-                               : conta.saldo > 0 
-                               ? 'bg-green-100 text-green-800' 
-                               : conta.saldo < 0
-                               ? 'bg-red-100 text-red-800'
-                               : 'bg-gray-100 text-gray-800'
-                           } font-barlow`}>
-                             {conta.operacao?.isPositive === true ? 'Positivo' : 
-                              conta.operacao?.isPositive === false ? 'Negativo' :
-                              conta.saldo > 0 ? 'Positivo' : 
-                              conta.saldo < 0 ? 'Negativo' : 'Zerado'}
-                           </span>
+                           {(() => {
+                             const limite = limitesChequeEspecial[`${conta.banco}_${conta.numero}`] || 0;
+                             const saldoTotal = (parseFloat(conta.saldo) || 0) + (parseFloat(limite) || 0);
+                             
+                             let statusClass = '';
+                             let statusText = '';
+                             
+                             if (saldoTotal > 0) {
+                               statusClass = 'bg-green-100 text-green-800';
+                               statusText = 'Positivo';
+                             } else if (saldoTotal < 0) {
+                               statusClass = 'bg-red-100 text-red-800';
+                               statusText = 'Negativo';
+                             } else {
+                               statusClass = 'bg-gray-100 text-gray-800';
+                               statusText = 'Zerado';
+                             }
+                             
+                             return (
+                               <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${statusClass} font-barlow`}>
+                                 {statusText}
+                               </span>
+                             );
+                           })()}
                          </td>
                          <td className="py-2 px-2 text-center">
                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${

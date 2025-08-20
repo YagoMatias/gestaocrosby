@@ -10,7 +10,7 @@ export default function FundoPropaganda() {
 
         <div className="bg-white p-12 rounded-2xl shadow-lg border border-[#000638]/10 text-center">
           <div className="flex flex-col items-center">
-            <div className="mb-6">
+                <div className="mb-6">
               <Wrench size={64} className="text-[#fe0000] animate-spin" style={{ animation: 'spin 2s linear infinite' }} />
             </div>
             <h2 className="text-2xl font-bold text-[#000638] mb-2">Em Desenvolvimento</h2>

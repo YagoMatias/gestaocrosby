@@ -59,6 +59,7 @@ const ContasAReceber = () => {
   const [filtroCliente, setFiltroCliente] = useState('');
   const [filtroFatura, setFiltroFatura] = useState('');
   const [filtroFormaPagamento, setFiltroFormaPagamento] = useState('');
+  const [filtroCobranca, setFiltroCobranca] = useState('TODOS');
 
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
 
@@ -323,6 +324,21 @@ const ContasAReceber = () => {
       const buscaFormaPagamento = filtroFormaPagamento.toLowerCase();
       
       if (!tipoDocumento.toLowerCase().includes(buscaFormaPagamento)) {
+        return false;
+      }
+    }
+
+    // Filtro por cobrança
+    if (filtroCobranca !== 'TODOS') {
+      const tipoCobranca = item.tp_cobranca;
+      
+      if (filtroCobranca === 'DESCONTADA' && tipoCobranca !== '2') {
+        return false;
+      }
+      if (filtroCobranca === 'NÃO ESTÁ EM COBRANÇA' && tipoCobranca !== '0') {
+        return false;
+      }
+      if (filtroCobranca === 'SIMPLES' && tipoCobranca !== '1') {
         return false;
       }
     }
@@ -643,7 +659,7 @@ const ContasAReceber = () => {
   // Resetar página quando filtros adicionais mudarem
   useEffect(() => {
     setPaginaAtual(1);
-  }, [filtroCliente, filtroFatura, filtroFormaPagamento]);
+  }, [filtroCliente, filtroFatura, filtroFormaPagamento, filtroCobranca]);
 
 
 
@@ -1014,7 +1030,7 @@ const ContasAReceber = () => {
               </div>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
               <div>
                 <label className="block text-xs font-semibold mb-1 text-[#000638]">Situação</label>
                 <select
@@ -1025,6 +1041,19 @@ const ContasAReceber = () => {
                   <option value="NORMAIS">NORMAIS</option>
                   <option value="CANCELADAS">CANCELADAS</option>
                   <option value="TODAS">TODAS</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Cobrança</label>
+                <select
+                  value={filtroCobranca}
+                  onChange={(e) => setFiltroCobranca(e.target.value)}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                >
+                  <option value="TODOS">TODOS</option>
+                  <option value="DESCONTADA">DESCONTADA</option>
+                  <option value="NÃO ESTÁ EM COBRANÇA">NÃO ESTÁ EM COBRANÇA</option>
+                  <option value="SIMPLES">SIMPLES</option>
                 </select>
               </div>
               <div>
@@ -1296,32 +1325,6 @@ const ContasAReceber = () => {
           </div>
         )}
 
-        {/* Gráficos */}
-                    {dadosCarregados && dadosProcessados.length > 0 && (
-          <div className="space-y-6 mb-8">
-            {/* Gráfico Top 10 Clientes - Tela completa */}
-            <div className="w-full">
-              <GraficoAnaliseClientes dados={dadosGraficos.analiseClientes} />
-            </div>
-            
-            {/* Análise de Inadimplência e Distribuição por Status - Lado a lado */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <GraficoInadimplencia dados={dadosGraficos.inadimplencia} />
-              <GraficoDistribuicaoStatus dados={dadosGraficos.distribuicaoStatus} />
-            </div>
-            
-            {/* Tipos de Documento - Tela completa */}
-            <div className="w-full">
-              <GraficoTiposDocumento dados={dadosGraficos.tiposDocumento} />
-            </div>
-            
-            {/* Top 10 Clientes Inadimplentes - Tela completa */}
-            <div className="w-full">
-              <GraficoClientesInadimplentes dados={dadosGraficos.clientesInadimplentes} />
-            </div>
-          </div>
-        )}
-
         {/* Tabela */}
         <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full">
           <div className="p-6 border-b border-[#000638]/10 flex justify-between items-center">
@@ -1453,6 +1456,15 @@ const ContasAReceber = () => {
                       </th>
                       <th 
                         className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('tp_cobranca')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Cobrança
+                          {getSortIcon('tp_cobranca')}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('cd_empresa')}
                       >
                         <div className="flex items-center justify-center">
@@ -1476,15 +1488,6 @@ const ContasAReceber = () => {
                         <div className="flex items-center justify-center">
                           Cancelamento
                           {getSortIcon('dt_cancelamento')}
-                        </div>
-                      </th>
-                      <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                        onClick={() => handleSort('tp_cobranca')}
-                      >
-                        <div className="flex items-center justify-center">
-                          Cobrança
-                          {getSortIcon('tp_cobranca')}
                         </div>
                       </th>
                       <th 
@@ -1670,6 +1673,15 @@ const ContasAReceber = () => {
                           }
                         </td>
                         <td className="text-center text-gray-900">
+                          {(() => {
+                            const tipo = item.tp_cobranca;
+                            if (tipo === '2') return 'DESCONTADA';
+                            if (tipo === '0') return 'NÃO ESTÁ EM COBRANÇA';
+                            if (tipo === '1') return 'SIMPLES';
+                            return tipo || '--';
+                          })()}
+                        </td>
+                        <td className="text-center text-gray-900">
                           {item.cd_empresa || '--'}
                         </td>
                         <td className="text-center text-gray-900">
@@ -1680,9 +1692,6 @@ const ContasAReceber = () => {
                             new Date(item.dt_cancelamento).toLocaleDateString('pt-BR') 
                             : '--'
                           }
-                        </td>
-                        <td className="text-center text-gray-900">
-                          {item.tp_cobranca || '--'}
                         </td>
                         <td className="text-center text-gray-900">
                           {item.tp_faturamento || '--'}
@@ -1809,6 +1818,32 @@ const ContasAReceber = () => {
             )}
           </div>
         </div>
+
+        {/* Gráficos */}
+        {dadosCarregados && dadosProcessados.length > 0 && (
+          <div className="space-y-6 mb-8 mt-8">
+            {/* Gráfico Top 10 Clientes - Tela completa */}
+            <div className="w-full">
+              <GraficoAnaliseClientes dados={dadosGraficos.analiseClientes} />
+            </div>
+            
+            {/* Análise de Inadimplência e Distribuição por Status - Lado a lado */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <GraficoInadimplencia dados={dadosGraficos.inadimplencia} />
+              <GraficoDistribuicaoStatus dados={dadosGraficos.distribuicaoStatus} />
+            </div>
+            
+            {/* Tipos de Documento - Tela completa */}
+            <div className="w-full">
+              <GraficoTiposDocumento dados={dadosGraficos.tiposDocumento} />
+            </div>
+            
+            {/* Top 10 Clientes Inadimplentes - Tela completa */}
+            <div className="w-full">
+              <GraficoClientesInadimplentes dados={dadosGraficos.clientesInadimplentes} />
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );
