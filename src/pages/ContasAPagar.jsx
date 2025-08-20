@@ -950,6 +950,20 @@ const ContasAPagar = () => {
           tp_aceite: item.in_aceite || '' // Mantém compatibilidade
         }));
         
+        // Debug para verificar dados de despesa e centro de custo
+        if (dadosProcessados.length > 0) {
+          console.log('🔍 Debug - Primeiros 3 registros com despesa e centro de custo:');
+          dadosProcessados.slice(0, 3).forEach((item, index) => {
+            console.log(`📋 Registro ${index + 1}:`, {
+              fornecedor: item.nm_fornecedor,
+              despesa: item.ds_despesaitem,
+              centroCusto: item.ds_ccusto,
+              temDespesa: !!item.ds_despesaitem,
+              temCentroCusto: !!item.ds_ccusto
+            });
+          });
+        }
+        
         setDados(dadosProcessados);
         setDadosCarregados(true);
       } else {
@@ -2671,8 +2685,8 @@ const ContasAPagar = () => {
 											<td className="px-2 py-1 text-right font-medium text-green-600">{parseFloat(grupo.item.vl_duplicata || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
 											<td className="px-1 py-1 text-center">{grupo.item.cd_fornecedor || ''}</td>
 											<td className="px-3 py-1 text-left max-w-32 truncate" title={grupo.item.nm_fornecedor}>{grupo.item.nm_fornecedor || ''}</td>
-											<td className="px-1 py-1 text-left max-w-24 truncate" title={grupo.item.ds_despesaitem}>{grupo.item.ds_despesaitem || ''}</td>
-											<td className="px-1 py-1 text-left max-w-24 truncate" title={grupo.item.ds_ccusto}>{grupo.item.ds_ccusto || ''}</td>
+											<td className="px-1 py-1 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_despesaitem}>{grupo.item.ds_despesaitem || ''}</td>
+											<td className="px-1 py-1 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_ccusto}>{grupo.item.ds_ccusto || ''}</td>
 											<td className="px-1 py-1 text-center">{grupo.item.cd_empresa || ''}</td>
 											<td className="px-1 py-1 text-center">{grupo.item.nr_duplicata || ''}</td>
 											<td className="px-1 py-1 text-center">{grupo.item.nr_parcela || ''}</td>
@@ -3855,10 +3869,10 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                                   <td className="px-3 py-1 text-left max-w-32 truncate" title={grupo.item.nm_fornecedor}>
                                                     {grupo.item.nm_fornecedor || ''}
                                                   </td>
-                                                  <td className="px-1 py-1 text-left max-w-24 truncate" title={grupo.item.ds_despesaitem}>
+                                                  <td className="px-1 py-1 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_despesaitem}>
                                                     {grupo.item.ds_despesaitem || ''}
                                                   </td>
-                                                  <td className="px-1 py-1 text-left max-w-24 truncate" title={grupo.item.ds_ccusto}>
+                                                  <td className="px-1 py-1 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_ccusto}>
                                                     {grupo.item.ds_ccusto || ''}
                                                   </td>
                                                   <td className="px-1 py-1 text-center">{grupo.item.cd_empresa || ''}</td>

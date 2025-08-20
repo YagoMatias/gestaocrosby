@@ -177,10 +177,10 @@ router.get('/contas-pagar',
         fd.in_aceite,
         od.ds_observacao,
         fd.cd_despesaitem,
-        fdi.ds_despesaitem,
+        COALESCE(fdi.ds_despesaitem, 'SEM DESCRIÇÃO') as ds_despesaitem,
         vpf.nm_fornecedor,
         fd.cd_ccusto,
-        gc.ds_ccusto
+        COALESCE(gc.ds_ccusto, 'SEM CENTRO DE CUSTO') as ds_ccusto
       FROM vr_fcp_despduplicatai fd
       LEFT JOIN obs_dupi od ON fd.nr_duplicata = od.nr_duplicata 
         AND fd.cd_fornecedor = od.cd_fornecedor
@@ -201,12 +201,66 @@ router.get('/contas-pagar',
         AND fd.cd_empresa = $3
     `;
 
-    const [resultado, totalResult] = await Promise.all([
+    // Query de diagnóstico para verificar dados de despesa e centro de custo
+    const diagnosticQuery = `
+      SELECT 
+        COUNT(*) as total_registros,
+        COUNT(CASE WHEN cd_despesaitem IS NOT NULL THEN 1 END) as com_despesa,
+        COUNT(CASE WHEN cd_ccusto IS NOT NULL THEN 1 END) as com_centro_custo,
+        COUNT(CASE WHEN cd_despesaitem IS NOT NULL AND cd_ccusto IS NOT NULL THEN 1 END) as com_ambos
+      FROM vr_fcp_despduplicatai fd
+      WHERE fd.dt_vencimento BETWEEN $1 AND $2
+        AND fd.cd_empresa = $3
+    `;
+
+    // Query específica para verificar dados da RECEITA FEDERAL
+    const receitaQuery = `
+      SELECT 
+        fd.cd_fornecedor,
+        fd.nr_duplicata,
+        fd.cd_despesaitem,
+        fd.cd_ccusto,
+        fdi.ds_despesaitem,
+        gc.ds_ccusto,
+        vpf.nm_fornecedor
+      FROM vr_fcp_despduplicatai fd
+      LEFT JOIN fcp_despesaitem fdi ON fd.cd_despesaitem = fdi.cd_despesaitem
+      LEFT JOIN ger_ccusto gc ON fd.cd_ccusto = gc.cd_ccusto
+      LEFT JOIN vr_pes_fornecedor vpf ON fd.cd_fornecedor = vpf.cd_fornecedor
+      WHERE fd.dt_vencimento BETWEEN $1 AND $2
+        AND fd.cd_empresa = $3
+        AND vpf.nm_fornecedor LIKE '%RECEITA FEDERAL%'
+      LIMIT 5
+    `;
+
+    const [resultado, totalResult, diagnosticResult, receitaResult] = await Promise.all([
       pool.query(query, [dt_inicio, dt_fim, cd_empresa, limit, offset]),
-      pool.query(countQuery, [dt_inicio, dt_fim, cd_empresa])
+      pool.query(countQuery, [dt_inicio, dt_fim, cd_empresa]),
+      pool.query(diagnosticQuery, [dt_inicio, dt_fim, cd_empresa]),
+      pool.query(receitaQuery, [dt_inicio, dt_fim, cd_empresa])
     ]);
 
     const total = parseInt(totalResult.rows[0].total, 10);
+
+    // Debug para verificar dados de despesa e centro de custo
+    console.log('📊 Diagnóstico - Estatísticas dos dados:');
+    console.log(diagnosticResult.rows[0]);
+    
+    console.log('🏛️ Dados específicos da RECEITA FEDERAL:');
+    console.log(receitaResult.rows);
+    
+    if (resultado.rows.length > 0) {
+      console.log('🔍 Debug - Primeiros 3 registros do banco:');
+      resultado.rows.slice(0, 3).forEach((row, index) => {
+        console.log(`📋 Registro ${index + 1}:`, {
+          fornecedor: row.nm_fornecedor,
+          cd_despesaitem: row.cd_despesaitem,
+          ds_despesaitem: row.ds_despesaitem,
+          cd_ccusto: row.cd_ccusto,
+          ds_ccusto: row.ds_ccusto
+        });
+      });
+    }
 
     successResponse(res, {
       total,
@@ -344,17 +398,17 @@ router.get('/fluxo-caixa',
         fd.cd_despesaitem,
         fd.cd_ccusto,
         -- CORREÇÃO: Manter JOINs essenciais mesmo em queries pesadas
-        fdi.ds_despesaitem,
+        COALESCE(fdi.ds_despesaitem, 'SEM DESCRIÇÃO') as ds_despesaitem,
         vpf.nm_fornecedor,
-        gc.ds_ccusto
+        COALESCE(gc.ds_ccusto, 'SEM CENTRO DE CUSTO') as ds_ccusto
       FROM vr_fcp_despduplicatai fd
       -- JOINs essenciais mantidos para preservar dados de fornecedor e despesas
       LEFT JOIN fcp_despesaitem fdi ON fd.cd_despesaitem = fdi.cd_despesaitem
       LEFT JOIN vr_pes_fornecedor vpf ON fd.cd_fornecedor = vpf.cd_fornecedor
       LEFT JOIN gec_ccusto gc ON fd.cd_ccusto = gc.cd_ccusto
-      WHERE fd.dt_liq BETWEEN $1 AND $2
+      WHERE fd.dt_vencimento BETWEEN $1 AND $2
         AND fd.cd_empresa IN (${empresaPlaceholders})
-      ORDER BY fd.dt_liq DESC
+      ORDER BY fd.dt_vencimento DESC
       LIMIT 5000000
     ` : `
       SELECT
@@ -377,19 +431,19 @@ router.get('/fluxo-caixa',
         fd.in_aceite,
         od.ds_observacao,
         fd.cd_despesaitem,
-        fdi.ds_despesaitem,
+        COALESCE(fdi.ds_despesaitem, 'SEM DESCRIÇÃO') as ds_despesaitem,
         vpf.nm_fornecedor,
         fd.cd_ccusto,
-        gc.ds_ccusto
+        COALESCE(gc.ds_ccusto, 'SEM CENTRO DE CUSTO') as ds_ccusto
       FROM vr_fcp_despduplicatai fd
       LEFT JOIN obs_dupi od ON fd.nr_duplicata = od.nr_duplicata 
         AND fd.cd_fornecedor = od.cd_fornecedor
       LEFT JOIN fcp_despesaitem fdi ON fd.cd_despesaitem = fdi.cd_despesaitem
       LEFT JOIN vr_pes_fornecedor vpf ON fd.cd_fornecedor = vpf.cd_fornecedor
       LEFT JOIN gec_ccusto gc ON fd.cd_ccusto = gc.cd_ccusto
-      WHERE fd.dt_liq BETWEEN $1 AND $2
+      WHERE fd.dt_vencimento BETWEEN $1 AND $2
         AND fd.cd_empresa IN (${empresaPlaceholders})
-      ORDER BY fd.dt_liq DESC
+      ORDER BY fd.dt_vencimento DESC
     `;
 
     console.log(`🔍 Fluxo-caixa: ${empresas.length} empresas, query ${isHeavyQuery ? 'otimizada' : 'completa'}`);
@@ -402,6 +456,21 @@ router.get('/fluxo-caixa',
     } : query;
 
     const { rows } = await pool.query(queryOptions, isHeavyQuery ? undefined : params);
+
+    // Debug para verificar dados de despesa e centro de custo
+    if (rows.length > 0) {
+      console.log('🔍 Debug - Primeiros 3 registros de contas a pagar:');
+      rows.slice(0, 3).forEach((row, index) => {
+        console.log(`📋 Registro ${index + 1}:`, {
+          fornecedor: row.nm_fornecedor,
+          cd_despesaitem: row.cd_despesaitem,
+          ds_despesaitem: row.ds_despesaitem,
+          cd_ccusto: row.cd_ccusto,
+          ds_ccusto: row.ds_ccusto,
+          dt_vencimento: row.dt_vencimento
+        });
+      });
+    }
 
     // Calcular totais (igual ao faturamento)
     const totals = rows.reduce((acc, row) => {
