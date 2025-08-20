@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-const FiltroEmpresa = ({ empresasSelecionadas = [], onSelectEmpresas }) => {
+const FiltroEmpresa = ({ empresasSelecionadas = [], onSelectEmpresas, apenasEmpresa101 = false }) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [todasEmpresas, setTodasEmpresas] = useState([]);
@@ -8,7 +8,9 @@ const FiltroEmpresa = ({ empresasSelecionadas = [], onSelectEmpresas }) => {
   const dropdownRef = useRef(null);
 
   // Códigos das empresas que queremos buscar
-  const codigosEmpresas = ['1','2','5','6','7','11','31','55','65','75','85','90','91','92','93','94','95','96','97','98','99','100','111','200','311','500','550','600','650','700','750','850','890','910','920','930','940','950','960','970','980','990'];
+  const codigosEmpresas = apenasEmpresa101 
+    ? ['1','2','5','6','7','11','31','55','65','75','85','90','91','92','93','94','95','96','97','98','99','100','101','111','200','311','500','550','600','650','700','750','850','890','910','920','930','940','950','960','970','980','990']
+    : ['1','2','5','6','7','11','31','55','65','75','85','90','91','92','93','94','95','96','97','98','99','100','111','200','311','500','550','600','650','700','750','850','890','910','920','930','940','950','960','970','980','990'];
   // Buscar empresas do banco de dados
   useEffect(() => {
     const buscarEmpresas = async () => {

@@ -991,6 +991,7 @@ const ContasAReceber = () => {
                 <FiltroEmpresa
                   empresasSelecionadas={empresasSelecionadas}
                   onSelectEmpresas={handleSelectEmpresas}
+                  apenasEmpresa101={true}
                 />
               </div>
               <div>
