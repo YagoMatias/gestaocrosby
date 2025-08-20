@@ -398,6 +398,20 @@ const SaldoBancario = () => {
       const resultado = await salvarSaldoManual(dadosParaInserir);
       
       if (resultado.success) {
+        // Se foi informado um limite de cheque especial, persistir como registro dedicado
+        if (novoSaldo.chqEspecial) {
+          try {
+            const limiteValor = parseFloat(novoSaldo.chqEspecial);
+            await salvarLimiteChequeEspecial(novoSaldo.banco, limiteValor, novoSaldo.conta, novoSaldo.agencia);
+            setLimitesChequeEspecial((prev) => ({
+              ...prev,
+              [`${novoSaldo.banco}_${novoSaldo.conta}`]: limiteValor
+            }));
+          } catch (e) {
+            console.error('Erro ao salvar limite junto com saldo manual:', e);
+          }
+        }
+
         alert('Saldo adicionado com sucesso!');
         fecharModalAddSaldo();
         
@@ -1344,6 +1358,7 @@ const SaldoBancario = () => {
                                     type="number"
                                     value={valorLimiteInput}
                                     onChange={(e) => setValorLimiteInput(e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
                                     onKeyPress={(e) => handleKeyPress(e, conta.banco, conta.numero, limitesChequeEspecial[`${conta.banco}_${conta.numero}`])}
                                     className="w-24 px-2 py-1 text-xs border-2 border-blue-500 rounded focus:outline-none focus:ring-1 focus:ring-blue-300 focus:border-blue-600 bg-white shadow-sm"
                                     placeholder="0,00"
@@ -1357,7 +1372,7 @@ const SaldoBancario = () => {
                                 </div>
                                 <div className="flex gap-1">
                                   <button
-                                    onClick={cancelarEdicaoLimite}
+                                    onClick={(e) => { e.stopPropagation(); cancelarEdicaoLimite(); }}
                                     className="px-2 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
                                   >
                                     Cancelar
@@ -1367,7 +1382,7 @@ const SaldoBancario = () => {
                             ) : (
                               <div className="flex flex-col items-center">
                                 <button
-                                  onClick={() => iniciarEdicaoLimite(conta.banco, conta.numero, limitesChequeEspecial[`${conta.banco}_${conta.numero}`])}
+                                  onClick={(e) => { e.stopPropagation(); iniciarEdicaoLimite(conta.banco, conta.numero, limitesChequeEspecial[`${conta.banco}_${conta.numero}`]); }}
                                   className="text-sm font-bold text-yellow-600 hover:text-yellow-700 hover:underline transition-all duration-200 cursor-pointer"
                                   title="Clique para editar o limite de cheque especial"
                                 >
