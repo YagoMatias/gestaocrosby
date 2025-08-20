@@ -40,7 +40,7 @@ const financeiro = [
   { name: 'Importação .RET', href: '/importacao-ret', icon: FileText, color: 'text-teal-600' },
   { name: 'Extrato Financeiro', href: '/extrato-financeiro', icon: CreditCard, color: 'text-blue-600' },
   { name: 'Extrato TOTVS', href: '/extrato-totvs', icon: FileText, color: 'text-purple-600' },
-  { name: 'Consulta de Fatura', href: '/consulta-fatura', icon: FileText, color: 'text-orange-600' },
+
   { name: 'Fundo de Propaganda', href: '/fundo-propaganda', icon: Megaphone, color: 'text-pink-600' },
   { name: 'DRE Demo', href: '/dre-demo', icon: ChartPieSlice, color: 'text-emerald-600' },
   { name: 'Manifestação de NF', href: '/manifestacao-nf', icon: FileText, color: 'text-indigo-600' },

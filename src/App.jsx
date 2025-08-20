@@ -17,7 +17,7 @@ const Varejo = lazy(() => import('./pages/Varejo'));
 const Franquias = lazy(() => import('./pages/Franquias'));
 const Multimarcas = lazy(() => import('./pages/Multimarcas'));
 const Revenda = lazy(() => import('./pages/Revenda'));
-const ConsultaFatura = lazy(() => import('./pages/ConsultaFatura'));
+
 const FundoPropaganda = lazy(() => import('./pages/FundoPropaganda'));
 const RankingFaturamento = lazy(() => import('./pages/RankingFaturamento'));
 const Consolidado = lazy(() => import('./pages/Consolidado'));
@@ -108,10 +108,7 @@ const AppRoutes = memo(() => {
           path="/revenda" 
           element={createPrivateRoute(Revenda, ['ADM', 'DIRETOR'])} 
         />
-        <Route 
-          path="/consulta-fatura" 
-          element={createPrivateRoute(ConsultaFatura, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 
-        />
+
         <Route 
           path="/fundo-propaganda" 
           element={createPrivateRoute(FundoPropaganda, ['ADM', 'DIRETOR', 'FINANCEIRO'])} 

@@ -176,7 +176,7 @@ const useApiClient = () => {
   };
 
   const franchise = {
-    consultaFatura: (params) => apiCall('/api/franchise/consulta-fatura', params),
+
     fundoPropaganda: (params) => apiCall('/api/franchise/fundo-propaganda', params),
     franquiasCredev: (params) => apiCall('/api/franchise/franquias-credev', params)
   };

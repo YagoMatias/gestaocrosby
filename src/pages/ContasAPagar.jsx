@@ -67,6 +67,9 @@ const ContasAPagar = () => {
   const [dados, setDados] = useState([]);
   const [dataInicio, setDataInicio] = useState('');
   const [modalDetalhes, setModalDetalhes] = useState({ isOpen: false, conta: null });
+  
+  // Estados para ordenação
+  const [ordenacao, setOrdenacao] = useState({ campo: 'dt_vencimento', direcao: 'asc' });
 
   // Injetar CSS customizado para a tabela
   useEffect(() => {
@@ -166,6 +169,24 @@ const ContasAPagar = () => {
       .contas-table td:first-child input[type="checkbox"] {
         transform: scale(1.1);
       }
+      
+      /* Estilos para cabeçalhos ordenáveis */
+      .contas-table th[onclick] {
+        user-select: none;
+        position: relative;
+      }
+      
+      .contas-table th[onclick]:hover {
+        background-color: #1e40af !important;
+      }
+      
+      .contas-table th[onclick] svg {
+        transition: all 0.2s ease;
+      }
+      
+      .contas-table th[onclick]:hover svg {
+        transform: scale(1.1);
+      }
     `;
     document.head.appendChild(styleElement);
 
@@ -193,6 +214,24 @@ const ContasAPagar = () => {
   // Estados para filtro mensal
   const [filtroMensal, setFiltroMensal] = useState('ANO');
   const [filtroDia, setFiltroDia] = useState(null);
+
+  // Função para ordenar dados
+  const ordenarDados = (campo) => {
+    setOrdenacao(prev => ({
+      campo,
+      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  // Função para obter o ícone de ordenação
+  const getIconeOrdenacao = (campo) => {
+    if (ordenacao.campo !== campo) {
+      return <CaretUp size={12} className="text-gray-400" />;
+    }
+    return ordenacao.direcao === 'asc' 
+      ? <CaretUp size={12} className="text-white" />
+      : <CaretDown size={12} className="text-white" />;
+  };
 
   // Estados para modais dos cards
   const [modalCardAberto, setModalCardAberto] = useState(false);
@@ -905,32 +944,47 @@ const ContasAPagar = () => {
         success: result.success,
         dataLength: result.data?.length,
         message: result.message,
-        metadata: result.metadata
+        metadata: result.metadata,
+        estrutura: result.metadata?.periodo ? 'Nova estrutura' : 'Estrutura antiga',
+        performance: result.performance,
+        queryType: result.queryType
       });
       
       if (result.success) {
-        const dadosArray = Array.isArray(result.data) ? result.data : [];
+        // Verificar se os dados estão na estrutura correta
+        let dadosArray = [];
+        
+        if (Array.isArray(result.data)) {
+          dadosArray = result.data;
+        } else if (result.metadata && Array.isArray(result.metadata.data)) {
+          dadosArray = result.metadata.data;
+        } else if (result.data && Array.isArray(result.data.data)) {
+          dadosArray = result.data.data;
+        } else {
+          console.warn('⚠️ Estrutura de dados não reconhecida:', result);
+          dadosArray = [];
+        }
         
         // Verificar se todos os campos necessários estão presentes
         if (dadosArray.length > 0) {
           const primeiroItem = dadosArray[0];
           console.log('🔍 Campos disponíveis no primeiro item:', Object.keys(primeiroItem));
           
-          // Verificar campos obrigatórios
-          const camposObrigatorios = ['cd_empresa', 'cd_fornecedor', 'nr_duplicata', 'dt_vencimento', 'vl_duplicata'];
-          const camposFaltando = camposObrigatorios.filter(campo => !(campo in primeiroItem));
-          
-          if (camposFaltando.length > 0) {
-            console.warn('⚠️ Campos faltando na resposta da API:', camposFaltando);
-          }
-          
-          // Verificar campos opcionais que podem estar faltando
-          const camposOpcionais = ['in_aceite', 'vl_rateio'];
-          const camposOpcionaisFaltando = camposOpcionais.filter(campo => !(campo in primeiroItem));
-          
-          if (camposOpcionaisFaltando.length > 0) {
-            console.log('ℹ️ Campos opcionais não presentes:', camposOpcionaisFaltando);
-          }
+                  // Verificar campos obrigatórios
+        const camposObrigatorios = ['cd_empresa', 'cd_fornecedor', 'nr_duplicata', 'dt_vencimento', 'vl_duplicata'];
+        const camposFaltando = camposObrigatorios.filter(campo => !(campo in primeiroItem));
+        
+        if (camposFaltando.length > 0) {
+          console.warn('⚠️ Campos faltando na resposta da API:', camposFaltando);
+        }
+        
+        // Verificar campos opcionais que podem estar faltando
+        const camposOpcionais = ['in_aceite', 'vl_rateio'];
+        const camposOpcionaisFaltando = camposOpcionais.filter(campo => !(campo in primeiroItem));
+        
+        if (camposOpcionaisFaltando.length > 0) {
+          console.log('ℹ️ Campos opcionais não presentes:', camposOpcionaisFaltando);
+        }
         }
         
         console.log('✅ Dados obtidos:', {
@@ -1116,8 +1170,37 @@ const ContasAPagar = () => {
   // Aplicar filtro mensal aos dados filtrados
   const dadosComFiltroMensal = aplicarFiltroMensal(dadosComFiltrosAdicionais, filtroMensal, filtroDia);
 
-  // Aplicar ordenação aos dados filtrados (cada registro já é um rateio específico)
-  const dadosOrdenadosComFiltroMensal = sortDadosAgrupados(dadosComFiltroMensal);
+  // Aplicar ordenação personalizada aos dados filtrados
+  const dadosOrdenadosComFiltroMensal = useMemo(() => {
+    if (!dadosComFiltroMensal || dadosComFiltroMensal.length === 0) return [];
+    
+    return [...dadosComFiltroMensal].sort((a, b) => {
+      let aValue = a[ordenacao.campo];
+      let bValue = b[ordenacao.campo];
+      
+      // Tratamento especial para diferentes tipos de dados
+      if (ordenacao.campo === 'dt_vencimento' || ordenacao.campo === 'dt_emissao' || ordenacao.campo === 'dt_entrada' || ordenacao.campo === 'dt_liq') {
+        // Para datas, converter para Date objects
+        aValue = aValue ? criarDataSemFusoHorario(aValue) : new Date(0);
+        bValue = bValue ? criarDataSemFusoHorario(bValue) : new Date(0);
+      } else if (ordenacao.campo === 'vl_duplicata' || ordenacao.campo === 'vl_pago' || ordenacao.campo === 'vl_juros' || ordenacao.campo === 'vl_desconto' || ordenacao.campo === 'vl_acrescimo') {
+        // Para valores monetários, converter para números
+        aValue = parseFloat(aValue || 0);
+        bValue = parseFloat(bValue || 0);
+      } else {
+        // Para texto, converter para string e normalizar
+        aValue = String(aValue || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        bValue = String(bValue || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      }
+      
+      // Aplicar ordenação
+      if (ordenacao.direcao === 'asc') {
+        return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+      } else {
+        return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+      }
+    });
+  }, [dadosComFiltroMensal, ordenacao]);
 
   // ===== LÓGICA SEPARADA PARA OS CARDS (igual ao Fluxo de Caixa) =====
   // Agrupar dados APENAS para os cards (não afeta a tabela)
@@ -2538,29 +2621,155 @@ const ContasAPagar = () => {
 											<th className="px-2 py-1 text-center text-[10px]">Ações</th>
 										)}
 										<th className="px-1 py-1 text-center text-[10px]">Status</th>
-										<th className="px-2 py-1 text-center text-[10px]">Vencimento</th>
-										<th className="px-2 py-1 text-center text-[10px]">Valor</th>
-										<th className="px-1 py-1 text-center text-[10px]">Fornecedor</th>
-										<th className="px-3 py-1 text-center text-[10px]">NM Fornecedor</th>
-										<th className="px-1 py-1 text-center text-[10px]">Despesa</th>
-										<th className="px-1 py-1 text-center text-[10px]">NM CUSTO</th>
-										<th className="px-1 py-1 text-center text-[10px]">Empresa</th>
-										<th className="px-1 py-1 text-center text-[10px]">Duplicata</th>
-										<th className="px-1 py-1 text-center text-[10px]">Parcela</th>
-										<th className="px-1 py-1 text-center text-[10px]">Portador</th>
-										<th className="px-1 py-1 text-center text-[10px]">Emissão</th>
-										<th className="px-1 py-1 text-center text-[10px]">Entrada</th>
-										<th className="px-1 py-1 text-center text-[10px]">Liquidação</th>
-										<th className="px-1 py-1 text-center text-[10px]">Situação</th>
-										<th className="px-1 py-1 text-center text-[10px]">Estágio</th>
-										<th className="px-1 py-1 text-center text-[10px]">Juros</th>
-										<th className="px-1 py-1 text-center text-[10px]">Acréscimo</th>
-										<th className="px-1 py-1 text-center text-[10px]">Desconto</th>
-										<th className="px-1 py-1 text-center text-[10px]">Pago</th>
-										<th className="px-1 py-1 text-center text-[10px]">Aceite</th>
+										<th 
+											className="px-2 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('dt_vencimento')}
+											title="Clique para ordenar por Vencimento"
+										>
+											Vencimento {getIconeOrdenacao('dt_vencimento')}
+										</th>
+										<th 
+											className="px-2 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('vl_duplicata')}
+											title="Clique para ordenar por Valor"
+										>
+											Valor {getIconeOrdenacao('vl_duplicata')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('cd_fornecedor')}
+											title="Clique para ordenar por Fornecedor"
+										>
+											Fornecedor {getIconeOrdenacao('cd_fornecedor')}
+										</th>
+										<th 
+											className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('nm_fornecedor')}
+											title="Clique para ordenar por Nome do Fornecedor"
+										>
+											NM Fornecedor {getIconeOrdenacao('nm_fornecedor')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('ds_despesaitem')}
+											title="Clique para ordenar por Despesa"
+										>
+											Despesa {getIconeOrdenacao('ds_despesaitem')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('ds_ccusto')}
+											title="Clique para ordenar por Centro de Custo"
+										>
+											NM CUSTO {getIconeOrdenacao('ds_ccusto')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('cd_empresa')}
+											title="Clique para ordenar por Empresa"
+										>
+											Empresa {getIconeOrdenacao('cd_empresa')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('nr_duplicata')}
+											title="Clique para ordenar por Duplicata"
+										>
+											Duplicata {getIconeOrdenacao('nr_duplicata')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('nr_parcela')}
+											title="Clique para ordenar por Parcela"
+										>
+											Parcela {getIconeOrdenacao('nr_parcela')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('nr_portador')}
+											title="Clique para ordenar por Portador"
+										>
+											Portador {getIconeOrdenacao('nr_portador')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('dt_emissao')}
+											title="Clique para ordenar por Emissão"
+										>
+											Emissão {getIconeOrdenacao('dt_emissao')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('dt_entrada')}
+											title="Clique para ordenar por Entrada"
+										>
+											Entrada {getIconeOrdenacao('dt_entrada')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('dt_liq')}
+											title="Clique para ordenar por Liquidação"
+										>
+											Liquidação {getIconeOrdenacao('dt_liq')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('tp_situacao')}
+											title="Clique para ordenar por Situação"
+										>
+											Situação {getIconeOrdenacao('tp_situacao')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('tp_estagio')}
+											title="Clique para ordenar por Estágio"
+										>
+											Estágio {getIconeOrdenacao('tp_estagio')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('vl_juros')}
+											title="Clique para ordenar por Juros"
+										>
+											Juros {getIconeOrdenacao('vl_juros')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('vl_acrescimo')}
+											title="Clique para ordenar por Acréscimo"
+										>
+											Acréscimo {getIconeOrdenacao('vl_acrescimo')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('vl_desconto')}
+											title="Clique para ordenar por Desconto"
+										>
+											Desconto {getIconeOrdenacao('vl_desconto')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('vl_pago')}
+											title="Clique para ordenar por Pago"
+										>
+											Pago {getIconeOrdenacao('vl_pago')}
+										</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('in_aceite')}
+											title="Clique para ordenar por Aceite"
+										>
+											Aceite {getIconeOrdenacao('in_aceite')}
+										</th>
 										<th className="px-1 py-1 text-center text-[10px]">Rateio(s)</th>
 										<th className="px-1 py-1 text-center text-[10px]">Observação</th>
-										<th className="px-1 py-1 text-center text-[10px]">Previsão</th>
+										<th 
+											className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+											onClick={() => ordenarDados('tp_previsaoreal')}
+											title="Clique para ordenar por Previsão"
+										>
+											Previsão {getIconeOrdenacao('tp_previsaoreal')}
+										</th>
 									</tr>
 								</thead>
 								<tbody>

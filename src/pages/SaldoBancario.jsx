@@ -500,9 +500,20 @@ const SaldoBancario = () => {
       return (a.numero || '').localeCompare(b.numero || '');
     });
     
-    console.log('Saldos atuais por conta (banco + agência + conta):', saldosAtuais.length, 'registros');
-    return saldosAtuais;
-  }, [dadosOriginais, filtroBanco]);
+    // Adicionar limite de cheque especial aos saldos atuais
+    const saldosComLimite = saldosAtuais.map(item => {
+      const chaveLimite = `${item.banco}_${item.numero}`;
+      const limite = limitesChequeEspecial[chaveLimite] || 0;
+      
+      return {
+        ...item,
+        limiteChequeEspecial: limite
+      };
+    });
+    
+    console.log('Saldos atuais por conta (banco + agência + conta) com limite CHQ:', saldosComLimite.length, 'registros');
+    return saldosComLimite;
+  }, [dadosOriginais, filtroBanco, limitesChequeEspecial]);
 
 
 
@@ -778,7 +789,12 @@ const SaldoBancario = () => {
     
     console.log('Dados para cálculo de estatísticas:', dadosParaCalcular.length, 'registros'); // Debug
     
-    const saldoTotal = dadosParaCalcular.reduce((acc, conta) => acc + conta.saldo, 0);
+    const saldoTotal = dadosParaCalcular.reduce((acc, conta) => {
+      const saldo = parseFloat(conta.saldo) || 0;
+      const limite = parseFloat(conta.limiteChequeEspecial) || 0;
+      const saldoMaisLimite = saldo + limite;
+      return acc + saldoMaisLimite;
+    }, 0);
     
     const contasPositivas = dadosParaCalcular.filter(conta => {
       // Se tem informação de operação, usar ela
@@ -801,7 +817,7 @@ const SaldoBancario = () => {
       return conta.saldo < 0;
     }).length;
 
-    console.log('Estatísticas calculadas:', { 
+    console.log('Estatísticas calculadas (Saldo Total = Soma de Saldo+CHQ):', { 
       saldoTotal, 
       contasPositivas, 
       contasNegativas, 
@@ -1017,7 +1033,7 @@ const SaldoBancario = () => {
               </span> 
               {tipoVisualizacao === 'atual' ? (
                 <>
-                  Saldo Atual por Conta
+                  Saldo por Conta
                   {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
                   <span className="ml-2">({dadosOrdenados.length} conta{dadosOrdenados.length !== 1 ? 's' : ''})</span>
                 </>
@@ -1114,7 +1130,7 @@ const SaldoBancario = () => {
                   <div className="flex items-center gap-2">
                     <CurrencyDollar size={18} className="text-blue-600" />
                     <CardTitle className="text-sm font-bold text-blue-700">
-                      {tipoVisualizacao === 'atual' ? 'Saldo Total Atual' : 'Saldo Total do Dia'}
+                      {tipoVisualizacao === 'atual' ? 'Saldo + Limite CHQ Total' : 'Saldo Total do Dia'}
                     </CardTitle>
                   </div>
                 </CardHeader>
@@ -1127,7 +1143,7 @@ const SaldoBancario = () => {
                   <CardDescription className="text-xs text-gray-500">
                     {tipoVisualizacao === 'atual' ? (
                       <>
-                        Saldo Atual por Conta
+                        Soma de Saldo + Limite CHQ
                         {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
                       </>
                     ) : (
@@ -1159,7 +1175,7 @@ const SaldoBancario = () => {
                   <CardDescription className="text-xs text-gray-500">
                     {tipoVisualizacao === 'atual' ? (
                       <>
-                        Saldo Atual por Conta
+                        Contas com Saldo Positivo
                         {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
                       </>
                     ) : (
@@ -1191,7 +1207,7 @@ const SaldoBancario = () => {
                   <CardDescription className="text-xs text-gray-500">
                     {tipoVisualizacao === 'atual' ? (
                       <>
-                        Saldo Atual por Conta
+                        Contas com Saldo Negativo
                         {filtroBanco !== 'TODOS' && ` - ${filtroBanco}`}
                       </>
                     ) : (
