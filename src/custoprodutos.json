@@ -35,7 +35,8 @@
  },
  {
   "Codigo": "002 005 003",
-  "Modelo": "BERMUDA MOLETON KING"
+  "Modelo": "BERMUDA MOLETON KING",
+  "Custo": 27.25
  },
  {
   "Codigo": "002 005 002",
@@ -2234,21 +2235,6 @@
   "Custo": 24.4
  },
  {
-  "Codigo": "010 008 004",
-  "Modelo": "VESTIDO CROSBY NPV SOFT",
-  "Custo": 34.88
- },
- {
-  "Codigo": "010 008 003",
-  "Modelo": "VESTIDO CROSBY NPV TOUCH",
-  "Custo": 34.88
- },
- {
-  "Codigo": "010 008 005",
-  "Modelo": "VESTIDO CROSBY STORM",
-  "Custo": 34.88
- },
- {
   "Codigo": "0102 001 78005",
   "Modelo": "VESTIDO GOLA POLO BORDADO",
   "Custo": 34.88
@@ -2274,13 +2260,208 @@
   "Custo": 21.17
  },
  {
-  "Codigo": "010 001 007",
-  "Modelo": "VESTIDO POLO LIGHT",
-  "Custo": 34.88
+  "Codigo": "012 002 002",
+  "Modelo": "SACOLA PERSONALIZADA BONIFICADA",
+  "Custo": 0.01
  },
  {
-  "Codigo": "010 001 006",
-  "Modelo": "VESTIDO POLO WIND",
-  "Custo": 34.88
+  "Codigo": "0111 001 49015",
+  "Modelo": "SAPATO CASUAL STORMRISE",
+  "Custo": 140
+ },
+ {
+  "Codigo": "012 001 001",
+  "Modelo": "SACOLA PRESENTE CROSBY",
+  "Custo": 1.65
+ },
+ {
+  "Codigo": "012 002 02",
+  "Modelo": "SACOLA PERSONALIZADA EMBALAGEM 30X45 IMP TP BC PALH",
+  "Custo": 0.29
+ },
+ {
+  "Codigo": "012 001 007",
+  "Modelo": "SACOLA PRESENTE CROSBY P",
+  "Custo": 2.54
+ },
+ {
+  "Codigo": "012 001 009",
+  "Modelo": "SACOLA PRESENTE CROSBY M",
+  "Custo": 2.46
+ },
+ {
+  "Codigo": "0101 006 82110",
+  "Modelo": "T-SHIRT ESTAMPADA WEAR IT",
+  "Custo": 29.13
+ },
+ {
+  "Codigo": "0101 006 82114",
+  "Modelo": "T-SHIRT ESTAMPADA BE THE CHANGE",
+  "Custo": 20.02
+ },
+ {
+  "Codigo": "0101 006 82115",
+  "Modelo": "T-SHIRT ESTAMPADA DRESS TO INSPIRE",
+  "Custo": 26.53
+ },
+ {
+  "Codigo": "0101 006 82126",
+  "Modelo": "T-SHIRT ESTAMPADA CIRCLE",
+  "Custo": 48.04
+ },
+ {
+  "Codigo": "0101 006 82127",
+  "Modelo": "T-SHIRT ESTAMPADA BEACH",
+  "Custo": 40.72
+ },
+ {
+  "Codigo": "0101 006 92110",
+  "Modelo": "T-SHIRT ESTAMPADA KING WEAR IT",
+  "Custo": 56.14
+ },
+ {
+  "Codigo": "0101 020 62114",
+  "Modelo": "T-SHIRT ESTAMPADA KIDS BE THE CHANCE",
+  "Custo": 31.6
+ },
+ {
+  "Codigo": "0101 020 62126",
+  "Modelo": "T-SHIRT ESTAMPADA KIDS CIRCLE",
+  "Custo": 23.9
+ },
+ {
+  "Codigo": "0101 020 62127",
+  "Modelo": "T-SHIRT ESTAMPADA KIDS BEACH",
+  "Custo": 24.09
+ },
+ {
+  "Codigo": "0101 021 92127",
+  "Modelo": "T-SHIRT ESTAMPADA KING BEACH",
+  "Custo": 25.7
+ },
+ {
+  "Codigo": "0101 027 92086",
+  "Modelo": "T-SHIRT KING ULTRA BLOCK",
+  "Custo": 34.47
+ },
+ {
+  "Codigo": "0103 001 83017",
+  "Modelo": "MG CURTA SOCIAL ULTRA",
+  "Custo": 40.27
+ },
+ {
+  "Codigo": "0103 001 93015",
+  "Modelo": "MG CURTA SOCIAL KING NEW",
+  "Custo": 48.04
+ },
+ {
+  "Codigo": "0104 003 84012",
+  "Modelo": "MG LONGA SOCIAL ULTRA",
+  "Custo": 56.14
+ },
+ {
+  "Codigo": "0106 001 86009",
+  "Modelo": "SHORT TACTEL TRICOLINE",
+  "Custo": 20.02
+ },
+ {
+  "Codigo": "0106 004 76004",
+  "Modelo": "SHORT FEMININO ALFAIATARIA",
+  "Custo": 25.71
+ },
+ {
+  "Codigo": "0106 005 86022",
+  "Modelo": "SHORT TACTEL NEW",
+  "Custo": 17.32
+ },
+ {
+  "Codigo": "0106 005 86023",
+  "Modelo": "SHORT TACTEL ALFAIATARIA",
+  "Custo": 21.49
+ },
+ {
+  "Codigo": "0108 006 81021",
+  "Modelo": "POLO TRAD PIQUET COMFORT",
+  "Custo": 29.13
+ },
+ {
+  "Codigo": "0108 006 81026",
+  "Modelo": "POLO TRAD PIQUET EMBORRACHADO C SILK C VIVO",
+  "Custo": 26.53
+ },
+ {
+  "Codigo": "0108 006 81041",
+  "Modelo": "POLO TRAD PIQUET COM ZIPER",
+  "Custo": 17.32
+ },
+ {
+  "Codigo": "0108 010 71007",
+  "Modelo": "POLO FARDAMENTO ULTRA FEM",
+  "Custo": 24.87
+ },
+ {
+  "Codigo": "0111 001 49015",
+  "Modelo": "SAPATO CASUAL STORMRISE",
+  "Custo": 140
+ },
+ {
+  "Codigo": "0111 001 49016",
+  "Modelo": "SAPATO CASUAL GLACIER",
+  "Custo": 179
+ },
+ {
+  "Codigo": "0111 001 49017",
+  "Modelo": "SAPATO CASUAL ARCTIC TRAIL",
+  "Custo": 179
+ },
+ {
+  "Codigo": "0111 001 49018",
+  "Modelo": "SAPATO CASUAL IRONCLAD",
+  "Custo": 170
+ },
+ {
+  "Codigo": "0117 001 87009",
+  "Modelo": "CALCA CHINO TECNO",
+  "Custo": 0.01
+ },
+ {
+  "Codigo": "012 001 001",
+  "Modelo": "SACOLA PRESENTE CROSBY",
+  "Custo": 52.7
+ },
+ {
+  "Codigo": "012 001 007",
+  "Modelo": "SACOLA PRESENTE CROSBY P",
+  "Custo": 2.539781
+ },
+ {
+  "Codigo": "012 001 009",
+  "Modelo": "SACOLA PRESENTE CROSBY M",
+  "Custo": 2.468589
+ },
+ {
+  "Codigo": "012 002 002",
+  "Modelo": "SACOLA PERSONALIZADA BONIFICADA",
+  "Custo": 179
+ },
+ {
+  "Codigo": "012 002 02",
+  "Modelo": "SACOLA PERSONALIZADA EMBALAGEM 30X45 IMP TP BC",
+  "Custo": 170
+ },
+ {
+  "Codigo": "0124 001 19006",
+  "Modelo": "MEIA CROSBY INVISIVEL",
+  "Custo": 4
+ },
+ {
+  "Codigo": "601 001 CHU001",
+  "Modelo": "KIT CHURRASCO ESTOJO COM 7 PCS",
+  "Custo": 32.9
+ },
+ {
+  "Codigo": "997 001 001",
+  "Modelo": "VALOR COMPLEMENTAR",
+  "Custo": 0
  }
 ]

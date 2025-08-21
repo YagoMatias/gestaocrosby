@@ -143,7 +143,13 @@ const Varejo = () => {
     { cd_empresa: '96' },
     { cd_empresa: '960' },
     { cd_empresa: '97' },
-    { cd_empresa: '970' }
+    { cd_empresa: '970' },
+    { cd_empresa: '90' },
+    { cd_empresa: '91' },
+    { cd_empresa: '92' },
+    { cd_empresa: '890' },
+    { cd_empresa: '910' },
+    { cd_empresa: '920' }
   ]);
 
   const handleSelectEmpresas = (empresas) => {

@@ -52,6 +52,7 @@ const faturamento = [
   { name: 'Multimarcas', href: '/multimarcas', icon: TrendUp, color: 'text-purple-600' },
   { name: 'Revenda', href: '/revenda', icon: ShoppingCart, color: 'text-orange-600' },
   { name: 'Consolidado', href: '/consolidado', icon: ChartLineUp, color: 'text-indigo-600' },
+  { name: 'Auditoria CMV', href: '/auditoria-cmv', icon: FileText, color: 'text-indigo-600' },
 ];
 
 const franquias = [

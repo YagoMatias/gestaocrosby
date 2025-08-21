@@ -21,6 +21,7 @@ const Revenda = lazy(() => import('./pages/Revenda'));
 const FundoPropaganda = lazy(() => import('./pages/FundoPropaganda'));
 const RankingFaturamento = lazy(() => import('./pages/RankingFaturamento'));
 const Consolidado = lazy(() => import('./pages/Consolidado'));
+const AuditoriaCMV = lazy(() => import('./pages/AuditoriaCMV'));
 const ComprasFranquias = lazy(() => import('./pages/ComprasFranquias'));
 const PainelAdmin = lazy(() => import('./pages/PainelAdmin'));
 const UserPanel = lazy(() => import('./pages/UserPanel'));
@@ -129,6 +130,10 @@ const AppRoutes = memo(() => {
         <Route 
           path="/consolidado" 
           element={createPrivateRoute(Consolidado, ['ADM', 'DIRETOR'])} 
+        />
+        <Route 
+          path="/auditoria-cmv" 
+          element={createPrivateRoute(AuditoriaCMV, ['ADM', 'DIRETOR'])} 
         />
         <Route 
           path="/compras-franquias" 

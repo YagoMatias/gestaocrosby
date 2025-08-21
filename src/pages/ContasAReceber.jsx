@@ -20,9 +20,12 @@ import {
   CaretUpDown,
   ChartPie,
   ChartBar,
-  Percent
+  Percent,
+  FileArrowDown
 } from '@phosphor-icons/react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend, Tooltip as RechartsTooltip } from 'recharts';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 
 const ContasAReceber = () => {
   const [dados, setDados] = useState([]);
@@ -60,8 +63,34 @@ const ContasAReceber = () => {
   const [filtroFatura, setFiltroFatura] = useState('');
   const [filtroFormaPagamento, setFiltroFormaPagamento] = useState('');
   const [filtroCobranca, setFiltroCobranca] = useState('TODOS');
+  const [filtroTipoCliente, setFiltroTipoCliente] = useState('TODOS');
+
+  // Estado para informações de pessoas
+  const [infoPessoas, setInfoPessoas] = useState({});
 
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
+
+  // Helpers de data sem fuso horário (tratar 'YYYY-MM-DD' como data local)
+  const parseDateNoTZ = (isoDate) => {
+    if (!isoDate) return null;
+    try {
+      const [datePart] = String(isoDate).split('T');
+      const [y, m, d] = datePart.split('-').map(n => parseInt(n, 10));
+      if (!y || !m || !d) return null;
+      return new Date(y, m - 1, d);
+    } catch {
+      return null;
+    }
+  };
+
+  const formatDateBR = (isoDate) => {
+    const d = parseDateNoTZ(isoDate);
+    if (!d) return '--';
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = String(d.getFullYear());
+    return `${dd}/${mm}/${yyyy}`;
+  };
 
   // CSS customizado para a tabela
   useEffect(() => {
@@ -217,7 +246,7 @@ const ContasAReceber = () => {
       const dataVencimento = item.dt_vencimento;
       if (!dataVencimento) return false;
       
-      const data = new Date(dataVencimento);
+      const data = parseDateNoTZ(dataVencimento);
       const ano = data.getFullYear();
       const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
       const dia = data.getDate();
@@ -280,10 +309,20 @@ const ContasAReceber = () => {
         return dadosOriginais.filter(item => parseFloat(item.vl_pago) > 0);
       case 'Vencido':
         // Mostra apenas itens vencidos
-        return dadosOriginais.filter(item => item.dt_vencimento && new Date(item.dt_vencimento) < new Date());
+        return dadosOriginais.filter(item => {
+          const dv = parseDateNoTZ(item.dt_vencimento);
+          const hoje = new Date();
+          hoje.setHours(0,0,0,0);
+          return dv && dv < hoje;
+        });
       case 'A Vencer':
         // Mostra apenas itens a vencer
-        return dadosOriginais.filter(item => !item.dt_vencimento || new Date(item.dt_vencimento) >= new Date());
+        return dadosOriginais.filter(item => {
+          const dv = parseDateNoTZ(item.dt_vencimento);
+          const hoje = new Date();
+          hoje.setHours(0,0,0,0);
+          return !dv || dv >= hoje;
+        });
       default:
         return dadosOriginais;
     }
@@ -343,6 +382,20 @@ const ContasAReceber = () => {
       }
     }
     
+    // Filtro por Tipo de Cliente (Franquias/Outros)
+    if (filtroTipoCliente !== 'TODOS') {
+      // Se informações de pessoas ainda não carregaram, não filtrar por tipo
+      if (!infoPessoas || Object.keys(infoPessoas).length === 0) {
+        // Mantém o item até dados estarem disponíveis
+      } else {
+        const key = String(item.cd_cliente || '').trim();
+        const fantasia = (infoPessoas[key]?.nm_fantasia || '').toUpperCase();
+        const ehFranquia = fantasia.includes(' - CROSBY');
+        if (filtroTipoCliente === 'FRANQUIAS' && !ehFranquia) return false;
+        if (filtroTipoCliente === 'OUTROS' && ehFranquia) return false;
+      }
+    }
+
     return true;
   });
 
@@ -356,8 +409,19 @@ const ContasAReceber = () => {
     // Aplicar ordenação
     if (ordenacao.campo) {
       dadosFiltrados.sort((a, b) => {
-        let valorA = a[ordenacao.campo];
-        let valorB = b[ordenacao.campo];
+        let valorA, valorB;
+
+        // Tratamento especial para campos de informações de pessoas
+        if (ordenacao.campo === 'nm_fantasia') {
+          valorA = infoPessoas[String(a.cd_cliente).trim()]?.nm_fantasia || '';
+          valorB = infoPessoas[String(b.cd_cliente).trim()]?.nm_fantasia || '';
+        } else if (ordenacao.campo === 'ds_siglaest') {
+          valorA = infoPessoas[String(a.cd_cliente).trim()]?.ds_siglaest || '';
+          valorB = infoPessoas[String(b.cd_cliente).trim()]?.ds_siglaest || '';
+        } else {
+          valorA = a[ordenacao.campo];
+          valorB = b[ordenacao.campo];
+        }
 
         // Tratamento especial para datas
         if (ordenacao.campo.includes('dt_')) {
@@ -384,7 +448,7 @@ const ContasAReceber = () => {
     }
 
     return dadosFiltrados;
-  }, [dadosComFiltrosAdicionais, ordenacao, filtroMensal, filtroDia]);
+  }, [dadosComFiltrosAdicionais, ordenacao, filtroMensal, filtroDia, infoPessoas]);
 
   // Dados paginados para exibição
   const dadosPaginados = useMemo(() => {
@@ -405,6 +469,57 @@ const ContasAReceber = () => {
     setDataInicio(primeiroDia.toISOString().split('T')[0]);
     setDataFim(ultimoDia.toISOString().split('T')[0]);
   }, []);
+
+  // Função para buscar informações de pessoas (em lotes para evitar URL muito longa)
+  const buscarInfoPessoas = async (codigosPessoa) => {
+    if (!codigosPessoa || codigosPessoa.length === 0) return {};
+
+    try {
+      const codigosUnicos = [...new Set(codigosPessoa.filter(Boolean))];
+      const CHUNK_SIZE = 50; // Número de códigos por requisição
+      const chunks = [];
+      for (let i = 0; i < codigosUnicos.length; i += CHUNK_SIZE) {
+        chunks.push(codigosUnicos.slice(i, i + CHUNK_SIZE));
+      }
+
+      const results = await Promise.all(chunks.map(async (chunk) => {
+        const queryParams = chunk.map(codigo => `cd_pessoa=${encodeURIComponent(codigo)}`).join('&');
+        const url = `${BaseURL}infopessoa?${queryParams}`;
+        try {
+          const res = await fetch(url);
+          if (!res.ok) {
+            console.warn('Erro ao buscar informações de pessoas (lote):', res.status, res.statusText, url);
+            return [];
+          }
+          const data = await res.json();
+          // Formatos suportados:
+          // 1) { success, data: { data: [ ... ] } }
+          // 2) { success, data: [ ... ] }
+          // 3) [ ... ]
+          if (data?.data?.data && Array.isArray(data.data.data)) return data.data.data;
+          if (Array.isArray(data?.data)) return data.data;
+          if (Array.isArray(data)) return data;
+          return [];
+        } catch (e) {
+          console.warn('Falha ao buscar lote de pessoas:', e);
+          return [];
+        }
+      }));
+
+      const infoPessoasObj = {};
+      results.flat().forEach((pessoa) => {
+        if (pessoa && pessoa.cd_pessoa != null) {
+          const key = String(pessoa.cd_pessoa).trim();
+          infoPessoasObj[key] = pessoa;
+        }
+      });
+
+      return infoPessoasObj;
+    } catch (err) {
+      console.error('Erro ao buscar informações de pessoas:', err);
+      return {};
+    }
+  };
 
   const buscarDados = async (inicio = dataInicio, fim = dataFim) => {
     if (!inicio || !fim) return;
@@ -459,6 +574,15 @@ const ContasAReceber = () => {
       const todosOsDados = resultados.flat();
       
       console.log('📊 Total de dados:', todosOsDados.length);
+      
+      // Extrair códigos únicos de clientes para buscar informações de pessoas
+      const codigosClientes = [...new Set(todosOsDados.map(item => item.cd_cliente).filter(Boolean))];
+      console.log('👥 Códigos de clientes únicos:', codigosClientes);
+      
+      // Buscar informações de pessoas
+      const infoPessoasData = await buscarInfoPessoas(codigosClientes);
+      setInfoPessoas(infoPessoasData);
+      
       setDados(todosOsDados);
       setDadosCarregados(true);
     } catch (err) {
@@ -477,6 +601,85 @@ const ContasAReceber = () => {
 
   const handleSelectEmpresas = (empresas) => {
     setEmpresasSelecionadas(empresas);
+  };
+
+  // Função para exportar dados para Excel
+  const handleExportExcel = () => {
+    if (dadosProcessados.length === 0) {
+      alert('Não há dados para exportar!');
+      return;
+    }
+
+    try {
+      // Preparar dados para exportação
+      const dadosParaExportar = dadosProcessados.map((item, index) => {
+        const key = String(item.cd_cliente || '').trim();
+        const fantasia = infoPessoas[key]?.nm_fantasia || '';
+        const estado = infoPessoas[key]?.ds_siglaest || '';
+        const ehFranquia = fantasia.toUpperCase().includes(' - CROSBY');
+
+        return {
+          'Cliente': item.cd_cliente || '',
+          'Nome Cliente': item.nm_cliente || '',
+          'Nome Fantasia': fantasia || '',
+          'Tipo Cliente': ehFranquia ? 'FRANQUIA' : 'OUTRO',
+          'Estado': estado || '',
+          'Emissão': formatDateBR(item.dt_emissao) === '--' ? '' : formatDateBR(item.dt_emissao),
+          'Vencimento': formatDateBR(item.dt_vencimento) === '--' ? '' : formatDateBR(item.dt_vencimento),
+          'Valor Fatura': parseFloat(item.vl_fatura) || 0,
+          'Valor Pago': parseFloat(item.vl_pago) || 0,
+          'Desconto': parseFloat(item.vl_desconto) || 0,
+          'Valor Corrigido': parseFloat(item.vl_corrigido) || 0,
+          'Forma de Pagamento': converterTipoDocumento(item.tp_documento),
+          'Liquidação': formatDateBR(item.dt_liq) === '--' ? '' : formatDateBR(item.dt_liq),
+          'Cobrança': (() => {
+            const tipo = item.tp_cobranca;
+            if (tipo === '2') return 'DESCONTADA';
+            if (tipo === '0') return 'NÃO ESTÁ EM COBRANÇA';
+            if (tipo === '1') return 'SIMPLES';
+            return tipo || '';
+          })(),
+          'Empresa': item.cd_empresa || '',
+          'Parcela': item.nr_parcela || '',
+          'Cancelamento': formatDateBR(item.dt_cancelamento) === '--' ? '' : formatDateBR(item.dt_cancelamento),
+          'Faturamento': item.tp_faturamento || '',
+          'Inclusão': item.tp_inclusao || '',
+          'Baixa': item.tp_baixa || '',
+          'Situação': item.tp_situacao || '',
+          'Valor Original': parseFloat(item.vl_original) || 0,
+          'Abatimento': parseFloat(item.vl_abatimento) || 0,
+          'Valor Líquido': parseFloat(item.vl_liquido) || 0,
+          'Acréscimo': parseFloat(item.vl_acrescimo) || 0,
+          'Multa': parseFloat(item.vl_multa) || 0,
+          'Portador': item.nr_portador || '',
+          'Renegociação': parseFloat(item.vl_renegociacao) || 0,
+          'Juros': parseFloat(item.vl_juros) || 0,
+          '% Juros/Mês': item.pr_juromes ? parseFloat(item.pr_juromes) : 0,
+          '% Multa': item.pr_multa ? parseFloat(item.pr_multa) : 0
+        };
+      });
+
+      // Criar workbook e worksheet
+      const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Contas a Receber');
+
+      // Gerar arquivo
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const data = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+      // Nome do arquivo com data
+      const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+      const nomeArquivo = `contas-a-receber-${hoje}.xlsx`;
+
+      // Download
+      saveAs(data, nomeArquivo);
+      
+      console.log('✅ Excel exportado com sucesso:', nomeArquivo);
+    } catch (error) {
+      console.error('❌ Erro ao exportar Excel:', error);
+      alert('Erro ao exportar arquivo Excel. Tente novamente.');
+    }
   };
 
   // Funções para paginação
@@ -572,7 +775,9 @@ const ContasAReceber = () => {
     dadosProcessados.forEach(item => {
       const status = getStatusFromData(item);
       if (status === 'Vencido') {
-        const diasVencido = item.dt_vencimento ? Math.floor((new Date() - new Date(item.dt_vencimento)) / (1000 * 60 * 60 * 24)) : 0;
+        const dv = parseDateNoTZ(item.dt_vencimento);
+        const base = new Date(); base.setHours(0,0,0,0);
+        const diasVencido = dv ? Math.floor((base - dv) / (1000 * 60 * 60 * 24)) : 0;
         let faixa = '';
         
         if (diasVencido === 1) faixa = 'Vencidos a 1 dia';
@@ -632,7 +837,11 @@ const ContasAReceber = () => {
   // Função para determinar status baseado nos dados
   const getStatusFromData = (item) => {
     if (parseFloat(item.vl_pago) > 0) return 'Pago';
-    if (item.dt_vencimento && new Date(item.dt_vencimento) < new Date()) return 'Vencido';
+    if (item.dt_vencimento) {
+      const dv = parseDateNoTZ(item.dt_vencimento);
+      const hoje = new Date(); hoje.setHours(0,0,0,0);
+      if (dv && dv < hoje) return 'Vencido';
+    }
     return 'A Vencer';
   };
 
@@ -659,7 +868,7 @@ const ContasAReceber = () => {
   // Resetar página quando filtros adicionais mudarem
   useEffect(() => {
     setPaginaAtual(1);
-  }, [filtroCliente, filtroFatura, filtroFormaPagamento, filtroCobranca]);
+  }, [filtroCliente, filtroFatura, filtroFormaPagamento, filtroCobranca, filtroTipoCliente]);
 
 
 
@@ -1058,6 +1267,18 @@ const ContasAReceber = () => {
                 </select>
               </div>
               <div>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Tipo Cliente</label>
+                <select
+                  value={filtroTipoCliente}
+                  onChange={(e) => setFiltroTipoCliente(e.target.value)}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                >
+                  <option value="TODOS">TODOS</option>
+                  <option value="FRANQUIAS">FRANQUIAS</option>
+                  <option value="OUTROS">OUTROS</option>
+                </select>
+              </div>
+              <div>
                 <label className="block text-xs font-semibold mb-1 text-[#000638]">Cliente</label>
                 <input
                   type="text"
@@ -1330,8 +1551,19 @@ const ContasAReceber = () => {
         <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full">
           <div className="p-6 border-b border-[#000638]/10 flex justify-between items-center">
             <h2 className="text-xl font-bold text-[#000638] font-barlow">Detalhamento de Contas a Receber</h2>
-            <div className="text-sm text-gray-600">
-              {dadosCarregados ? `${dadosProcessados.length} registros encontrados` : 'Nenhum dado carregado'}
+            <div className="flex items-center gap-4">
+              <div className="text-sm text-gray-600">
+                {dadosCarregados ? `${dadosProcessados.length} registros encontrados` : 'Nenhum dado carregado'}
+              </div>
+              {dadosProcessados.length > 0 && (
+                <button
+                  onClick={handleExportExcel}
+                  className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
+                >
+                  <FileArrowDown size={16} />
+                  BAIXAR EXCEL
+                </button>
+              )}
             </div>
           </div>
           
@@ -1381,6 +1613,24 @@ const ContasAReceber = () => {
                         <div className="flex items-center">
                           Nome Cliente
                           {getSortIcon('nm_cliente')}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('nm_fantasia')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Nome Fantasia
+                          {getSortIcon('nm_fantasia')}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        onClick={() => handleSort('ds_siglaest')}
+                      >
+                        <div className="flex items-center justify-center">
+                          Estado
+                          {getSortIcon('ds_siglaest')}
                         </div>
                       </th>
                       <th 
@@ -1629,16 +1879,30 @@ const ContasAReceber = () => {
                           {item.nm_cliente || '--'}
                         </td>
                         <td className="text-center text-gray-900">
-                          {item.dt_emissao ? 
-                            new Date(item.dt_emissao).toLocaleDateString('pt-BR') 
-                            : '--'
-                          }
+                          {(() => {
+                            const key = String(item.cd_cliente).trim();
+                            const fantasia = infoPessoas[key]?.nm_fantasia || '';
+                            const ehFranquia = fantasia.toUpperCase().includes(' - CROSBY');
+                            return (
+                              <div className="flex items-center justify-center gap-2">
+                                <span>{fantasia || '--'}</span>
+                                {ehFranquia && (
+                                  <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-blue-100 text-blue-700 border border-blue-300">
+                                    FRANQUIA
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="text-center text-gray-900">
-                          {item.dt_vencimento ? 
-                            new Date(item.dt_vencimento).toLocaleDateString('pt-BR') 
-                            : '--'
-                          }
+                          {infoPessoas[String(item.cd_cliente).trim()]?.ds_siglaest || '--'}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {formatDateBR(item.dt_emissao)}
+                        </td>
+                        <td className="text-center text-gray-900">
+                          {formatDateBR(item.dt_vencimento)}
                         </td>
                         <td className="text-center font-semibold text-green-600">
                           {(parseFloat(item.vl_fatura) || 0).toLocaleString('pt-BR', {
@@ -1668,10 +1932,7 @@ const ContasAReceber = () => {
                           {converterTipoDocumento(item.tp_documento)}
                         </td>
                         <td className="text-center text-gray-900">
-                          {item.dt_liq ? 
-                            new Date(item.dt_liq).toLocaleDateString('pt-BR') 
-                            : '--'
-                          }
+                          {formatDateBR(item.dt_liq)}
                         </td>
                         <td className="text-center text-gray-900">
                           {(() => {
@@ -1689,10 +1950,7 @@ const ContasAReceber = () => {
                           {item.nr_parcela || '--'}
                         </td>
                         <td className="text-center text-gray-900">
-                          {item.dt_cancelamento ? 
-                            new Date(item.dt_cancelamento).toLocaleDateString('pt-BR') 
-                            : '--'
-                          }
+                          {formatDateBR(item.dt_cancelamento)}
                         </td>
                         <td className="text-center text-gray-900">
                           {item.tp_faturamento || '--'}

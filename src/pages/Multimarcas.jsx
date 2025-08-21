@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import Layout from '../components/Layout';
-import LoadingCircle from '../components/LoadingCircle';
 import FiltroEmpresa from '../components/FiltroEmpresa';
+import useApiClient from '../hooks/useApiClient';
 import custoProdutos from '../custoprodutos.json';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, ArrowCircleDown, ArrowCircleUp, CurrencyDollar, Package } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, ArrowCircleDown, ArrowCircleUp, CurrencyDollar, Package, Spinner } from '@phosphor-icons/react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
 
 const Multimarcas = () => {
+  const apiClient = useApiClient();
   const [dados, setDados] = useState([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
@@ -29,6 +30,8 @@ const Multimarcas = () => {
     { cd_empresa: '31' },
     { cd_empresa: '6' },
     { cd_empresa: '11' },
+    { cd_empresa: '99' },
+    { cd_empresa: '85' },
   ]);
 
   const handleSelectEmpresas = (empresas) => {
@@ -39,17 +42,41 @@ const Multimarcas = () => {
     setLoading(true);
     setErro('');
     try {
-      const params = new URLSearchParams();
-      if (filtros.dt_inicio) params.append('dt_inicio', filtros.dt_inicio);
-      if (filtros.dt_fim) params.append('dt_fim', filtros.dt_fim);
-      empresasParam.forEach(emp => {
-        params.append('cd_empresa', emp.cd_empresa);
+      console.log('🔍 Iniciando busca de faturamento multimarcas:', { 
+        dt_inicio: filtros.dt_inicio, 
+        dt_fim: filtros.dt_fim, 
+        empresas: empresasParam.length 
       });
-      const res = await fetch(`https://apigestaocrosby-bw2v.onrender.com/api/sales/faturamento-mtm?${params.toString()}`);
-      if (!res.ok) throw new Error('Erro ao buscar dados do servidor');
-      const json = await res.json();
-      setDados(json);
+
+      const empresasFiltradas = empresasParam
+        .filter(emp => emp.cd_empresa !== undefined && emp.cd_empresa !== null && emp.cd_empresa !== '')
+        .map(emp => emp.cd_empresa);
+
+      if (empresasFiltradas.length === 0) {
+        throw new Error('Nenhuma empresa válida selecionada');
+      }
+
+      const params = {
+        dt_inicio: filtros.dt_inicio || '2025-07-01',
+        dt_fim: filtros.dt_fim || '2025-07-15',
+        cd_empresa: empresasFiltradas
+      };
+
+      const result = await apiClient.sales.faturamentoMtm(params);
+      
+      if (result.success) {
+        console.log('✅ Dados de multimarcas recebidos:', {
+          total: result.data.length,
+          estatisticas: result.metadata?.totals,
+          periodo: result.metadata?.periodo,
+          amostra: result.data.slice(0, 2)
+        });
+        setDados(result.data);
+      } else {
+        throw new Error(result.message || 'Erro ao buscar dados de faturamento');
+      }
     } catch (err) {
+      console.error('❌ Erro ao buscar dados de multimarcas:', err);
       setErro('Erro ao buscar dados do servidor.');
       setDados([]);
     } finally {
@@ -321,7 +348,7 @@ const Multimarcas = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-green-600 mb-1">
-                {loading ? <LoadingCircle size={24} /> : (() => {
+                {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : (() => {
                   const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
                   const somaEntradas = dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
                   const faturamentoTotal = somaSaidas - somaEntradas;
@@ -342,7 +369,7 @@ const Multimarcas = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-purple-600 mb-1">
-                {loading ? <LoadingCircle size={24} /> : (() => {
+                {loading ? <Spinner size={24} className="animate-spin text-purple-600" /> : (() => {
                   let valorBrutoTotal = 0;
                   dados.forEach(row => {
                     const qtFaturado = Number(row.qt_faturado) || 1;
@@ -371,7 +398,7 @@ const Multimarcas = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-orange-600 mb-1">
-                {loading ? <LoadingCircle size={24} /> : (() => {
+                {loading ? <Spinner size={24} className="animate-spin text-orange-600" /> : (() => {
                   let descontoTotal = 0;
                   dados.forEach(row => {
                     const qtFaturado = Number(row.qt_faturado) || 1;
@@ -402,7 +429,7 @@ const Multimarcas = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-red-700 mb-1">
-                {loading ? <LoadingCircle size={24} /> : (() => {
+                {loading ? <Spinner size={24} className="animate-spin text-red-700" /> : (() => {
                   let custoTotal = 0;
                   dados.forEach(row => {
                     if (row.tp_operacao === 'S') {
@@ -429,7 +456,7 @@ const Multimarcas = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              {loading ? <LoadingCircle size={24} /> : (() => {
+              {loading ? <Spinner size={24} className="animate-spin text-orange-600" /> : (() => {
                 let custoTotal = 0;
                 let valorTotalVenda = 0;
                 dados.forEach(row => {
@@ -467,7 +494,7 @@ const Multimarcas = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-green-600 mb-1">
-                {loading ? <LoadingCircle size={24} /> : dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
+                {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
               </div>
               <CardDescription className="text-xs text-gray-500">Quantidade</CardDescription>
             </CardContent>
@@ -483,7 +510,7 @@ const Multimarcas = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-[#fe0000] mb-1">
-                {loading ? <LoadingCircle size={24} /> : dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
+                {loading ? <Spinner size={24} className="animate-spin text-[#fe0000]" /> : dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
               </div>
               <CardDescription className="text-xs text-gray-500">Quantidade</CardDescription>
             </CardContent>
@@ -515,7 +542,7 @@ const Multimarcas = () => {
                 </thead>
                 <tbody className="overflow-y-auto">
                   {loading ? (
-                    <tr><td colSpan={9} className="text-center py-8"><LoadingCircle size={32} /></td></tr>
+                    <tr><td colSpan={9} className="text-center py-8"><Spinner size={32} className="animate-spin text-gray-500" /></td></tr>
                   ) : dados.length === 0 ? (
                     <tr><td colSpan={9} className="text-center py-8">Nenhum dado encontrado.</td></tr>
                   ) : (
@@ -691,7 +718,7 @@ const Multimarcas = () => {
                           <tr>
                             <td colSpan={11} className="text-center py-12">
                               <div className="flex flex-col items-center gap-3">
-                                <LoadingCircle size={32} />
+                                <Spinner size={32} className="animate-spin text-gray-500" />
                                 <span className="text-gray-500 text-sm">Carregando produtos...</span>
                               </div>
                             </td>
