@@ -2422,12 +2422,12 @@
  {
   "Codigo": "0117 001 87009",
   "Modelo": "CALCA CHINO TECNO",
-  "Custo": 0.01
+  "Custo": 52.7
  },
  {
   "Codigo": "012 001 001",
   "Modelo": "SACOLA PRESENTE CROSBY",
-  "Custo": 52.7
+  "Custo": 2.468589
  },
  {
   "Codigo": "012 001 007",
@@ -2442,12 +2442,12 @@
  {
   "Codigo": "012 002 002",
   "Modelo": "SACOLA PERSONALIZADA BONIFICADA",
-  "Custo": 179
+  "Custo": 2.468589
  },
  {
   "Codigo": "012 002 02",
   "Modelo": "SACOLA PERSONALIZADA EMBALAGEM 30X45 IMP TP BC",
-  "Custo": 170
+  "Custo": 2.468589
  },
  {
   "Codigo": "0124 001 19006",
@@ -2458,10 +2458,5 @@
   "Codigo": "601 001 CHU001",
   "Modelo": "KIT CHURRASCO ESTOJO COM 7 PCS",
   "Custo": 32.9
- },
- {
-  "Codigo": "997 001 001",
-  "Modelo": "VALOR COMPLEMENTAR",
-  "Custo": 0
  }
 ]

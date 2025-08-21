@@ -5,7 +5,7 @@ export const testSupabaseConnection = async () => {
   try {
     // Teste simples para verificar se conseguimos conectar
     const { data, error } = await supabase
-      .from('user_profiles')
+      .from('user_profiles_antiga')
       .select('id')
       .limit(1);
     
@@ -14,7 +14,7 @@ export const testSupabaseConnection = async () => {
       
       // Tenta com o cliente admin
       const { data: data2, error: error2 } = await supabaseAdmin
-        .from('user_profiles')
+        .from('user_profiles_antiga')
         .select('id')
         .limit(1);
       
@@ -22,7 +22,7 @@ export const testSupabaseConnection = async () => {
         return { 
           success: false, 
           error: `Normal: ${error.message}, Admin: ${error2.message}`,
-          suggestion: 'Verifique se a tabela user_profiles existe no projeto Supabase'
+          suggestion: 'Verifique se a tabela user_profiles_antiga existe no projeto Supabase'
         };
       }
       
@@ -36,13 +36,13 @@ export const testSupabaseConnection = async () => {
   }
 };
 
-// Funções para gerenciar usuários na tabela user_profiles
+// Funções para gerenciar usuários na tabela user_profiles_antiga
 
 // Buscar todos os usuários
 export const fetchUsers = async () => {
   try {
     const { data, error } = await supabaseAdmin
-      .from('user_profiles')
+      .from('user_profiles_antiga')
       .select('id, name, email, role, active, created_at')
       .order('created_at', { ascending: false });
 
@@ -58,7 +58,7 @@ export const fetchUserByEmail = async (email) => {
   try {
     // Tenta com o cliente normal primeiro (mais seguro)
     const { data, error } = await supabase
-      .from('user_profiles')
+      .from('user_profiles_antiga')
       .select('id, name, email, password, role, active')
       .eq('email', email)
       .single();
@@ -67,7 +67,7 @@ export const fetchUserByEmail = async (email) => {
       console.error('Erro com supabase normal:', error);
       // Se falhar, tenta com o cliente admin
       const { data: data2, error: error2 } = await supabaseAdmin
-        .from('user_profiles')
+        .from('user_profiles_antiga')
         .select('id, name, email, password, role, active')
         .eq('email', email)
         .single();
@@ -92,7 +92,7 @@ export const createUser = async (userData) => {
     validateRole(userDataWithoutId.role);
     
     const { data, error } = await supabaseAdmin
-      .from('user_profiles')
+      .from('user_profiles_antiga')
       .insert([userDataWithoutId])
       .select('id, name, email, role, active')
       .single();
@@ -116,7 +116,7 @@ export const updateUser = async (id, userData) => {
     }
     
     const { data, error } = await supabaseAdmin
-      .from('user_profiles')
+      .from('user_profiles_antiga')
       .update(userDataWithoutId)
       .eq('id', id)
       .select('id, name, email, role, active')
@@ -133,7 +133,7 @@ export const updateUser = async (id, userData) => {
 export const deleteUser = async (id) => {
   try {
     const { error } = await supabaseAdmin
-      .from('user_profiles')
+      .from('user_profiles_antiga')
       .delete()
       .eq('id', id);
 
@@ -175,7 +175,7 @@ export const authenticateUser = async (email, password) => {
 export const checkEmailExists = async (email, excludeId = null) => {
   try {
     let query = supabaseAdmin
-      .from('user_profiles')
+      .from('user_profiles_antiga')
       .select('id')
       .eq('email', email);
 
@@ -197,7 +197,7 @@ export const changePassword = async (userId, currentPassword, newPassword) => {
   try {
     // Primeiro, verificar se a senha atual está correta
     const { data: user, error: fetchError } = await supabaseAdmin
-      .from('user_profiles')
+      .from('user_profiles_antiga')
       .select('password')
       .eq('id', userId)
       .single();
@@ -210,7 +210,7 @@ export const changePassword = async (userId, currentPassword, newPassword) => {
 
     // Atualizar a senha
     const { error: updateError } = await supabaseAdmin
-      .from('user_profiles')
+      .from('user_profiles_antiga')
       .update({ password: newPassword })
       .eq('id', userId);
 

@@ -53,7 +53,7 @@ export function AuthProvider({ children }) {
 
       // Busca dados do usuário
       const { data: userProfile, error: profileError } = await supabase
-        .from('user_profiles')
+        .from('user_profile_antiga')
         .select('id, name, email, role, active')
         .eq('email', email)
         .single();
@@ -132,7 +132,7 @@ export function AuthProvider({ children }) {
         if (session?.user) {
           // Se há sessão do Supabase, buscar dados do usuário
           const { data: userProfile, error: profileError } = await supabase
-            .from('user_profiles')
+            .from('user_profile_antiga')
             .select('id, name, email, role, active')
             .eq('email', session.user.email)
             .single();
