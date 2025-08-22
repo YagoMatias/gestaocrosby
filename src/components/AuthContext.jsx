@@ -1,259 +1,224 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import LoadingSpinner from './LoadingSpinner';
-import Toast from './Toast';
-import { USER_ROLES, ERROR_MESSAGES } from '../config/constants';
 
-// Cria contexto com tipo de dados esperado
-const AuthContext = createContext({
-  user: null,
-  setUser: () => {},
-  logout: () => {},
-  login: () => {},
-  isAuthenticated: false,
-  hasRole: () => false,
-  loading: false,
-  error: null
-});
+// Roles disponíveis no sistema (ordenados por hierarquia)
+const ROLES = ['owner', 'admin', 'manager', 'user', 'guest'];
 
-// Validação dos dados do usuário
-const validateUserData = (userData) => {
-  if (!userData || typeof userData !== 'object') return false;
-  
-  const requiredFields = ['id', 'email', 'role'];
-  return requiredFields.every(field => userData[field]);
+// Configuração de roles com labels e níveis
+const ROLE_CONFIG = {
+  owner: {
+    label: 'Proprietário',
+    level: 1,
+    color: '#9c27b0'
+  },
+  admin: {
+    label: 'Administrador',
+    level: 2,
+    color: '#ff4747'
+  },
+  manager: {
+    label: 'Gerente',
+    level: 3,
+    color: '#ff6b35'
+  },
+  user: {
+    label: 'Usuário',
+    level: 4,
+    color: '#4CAF50'
+  },
+  guest: {
+    label: 'Convidado',
+    level: 5,
+    color: '#757575'
+  }
 };
 
-export function AuthProvider({ children }) {
-  // Usa hook personalizado para localStorage com validação
-  const [user, setUser, removeUser] = useLocalStorage('user', null, {
-    validateValue: validateUserData
-  });
+const AuthContext = createContext();
 
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth deve ser usado dentro de um AuthProvider');
+  }
+  return context;
+};
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [toast, setToast] = useState(null);
 
-  // Função de login otimizada
-  const login = useCallback(async (email, password) => {
-    setLoading(true);
-    setError(null);
-
+  // Função de login
+  const login = async (email, password) => {
     try {
-      // Autentica no Supabase
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      console.log('🔐 Tentando login com:', email);
+      setLoading(true);
+
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
-      if (authError) {
-        throw new Error(authError.message);
+      if (error) {
+        console.error('❌ Erro no login:', error);
+        throw error;
       }
 
-      // Busca dados do usuário
-      const { data: userProfile, error: profileError } = await supabase
-        .from('user_profile_antiga')
-        .select('id, name, email, role, active')
-        .eq('email', email)
-        .single();
+      console.log('✅ Login bem-sucedido:', authData.user.email);
 
-      if (profileError) {
-        throw new Error('Perfil de usuário não encontrado');
-      }
+      // Obter role do metadata do usuário
+      const userRole = authData.user.user_metadata?.role || 'guest';
+      console.log('👤 Role do usuário:', userRole);
 
-      if (!userProfile.active) {
-        throw new Error('Usuário inativo');
-      }
+      // Verificar se o role é válido
+      const validRole = ROLES.includes(userRole) ? userRole : 'guest';
+      const roleConfig = ROLE_CONFIG[validRole];
 
-      // Valida e salva dados do usuário
+      // Configurar usuário
       const userData = {
-        id: userProfile.id,
-        name: userProfile.name,
-        email: userProfile.email,
-        role: userProfile.role,
-        active: userProfile.active,
-        lastLogin: new Date().toISOString()
+        id: authData.user.id,
+        email: authData.user.email,
+        name: authData.user.user_metadata?.name || 'Usuário',
+        role: validRole,
+        profile: {
+          name: validRole,
+          label: roleConfig.label,
+          level: roleConfig.level,
+          color: roleConfig.color
+        }
       };
 
-      if (validateUserData(userData)) {
-        setUser(userData);
-        return userData;
-      } else {
-        throw new Error('Dados de usuário inválidos');
-      }
-
-    } catch (err) {
-      const errorMessage = err.message || ERROR_MESSAGES.SERVER_ERROR;
-      setError(errorMessage);
-      setToast({
-        type: 'error',
-        message: errorMessage
-      });
-      throw err;
-    } finally {
+      console.log('✅ Dados do usuário configurados:', userData);
+      setUser(userData);
       setLoading(false);
+
+      return { success: true, user: userData };
+
+    } catch (error) {
+      console.error('❌ Erro no login:', error);
+      setLoading(false);
+      throw error;
     }
-  }, [setUser]);
+  };
 
-  // Função de logout otimizada
-  const logout = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
+  // Função de logout
+  const logout = async () => {
     try {
       await supabase.auth.signOut();
-    } catch (err) {
-      console.warn('Erro ao fazer logout do Supabase:', err);
-    } finally {
       setUser(null);
-      removeUser();
-      setLoading(false);
-      
-      setToast({
-        type: 'success',
-        message: 'Logout realizado com sucesso'
-      });
+    } catch (error) {
+      console.error('Erro no logout:', error);
     }
-  }, [setUser, removeUser]);
+  };
 
-  // Verificação de sessão inicial
+  // Verificar sessão inicial
   useEffect(() => {
     const checkSession = async () => {
       try {
-        setLoading(true);
-        
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          throw error;
-        }
+        console.log('🔄 Verificando sessão inicial...');
+        const { data: { session } } = await supabase.auth.getSession();
 
         if (session?.user) {
-          // Se há sessão do Supabase, buscar dados do usuário
-          const { data: userProfile, error: profileError } = await supabase
-            .from('user_profile_antiga')
-            .select('id, name, email, role, active')
-            .eq('email', session.user.email)
-            .single();
+          console.log('✅ Sessão encontrada:', session.user.email);
+          const userRole = session.user.user_metadata?.role || 'guest';
           
-          if (profileError) {
-            console.warn('Erro ao buscar perfil do usuário:', profileError);
-            await supabase.auth.signOut();
-            removeUser();
-          } else if (userProfile && userProfile.active) {
-            const userData = {
-              id: userProfile.id,
-              name: userProfile.name,
-              email: userProfile.email,
-              role: userProfile.role,
-              active: userProfile.active,
-              lastLogin: new Date().toISOString()
-            };
-            
-            if (validateUserData(userData)) {
-              setUser(userData);
+          // Verificar se o role é válido
+          const validRole = ROLES.includes(userRole) ? userRole : 'guest';
+          const roleConfig = ROLE_CONFIG[validRole];
+
+          setUser({
+            id: session.user.id,
+            email: session.user.email,
+            name: session.user.user_metadata?.name || 'Usuário',
+            role: validRole,
+            profile: {
+              name: validRole,
+              label: roleConfig.label,
+              level: roleConfig.level,
+              color: roleConfig.color
             }
-          } else {
-            await supabase.auth.signOut();
-            removeUser();
-          }
+          });
+        } else {
+          console.log('❌ Nenhuma sessão encontrada');
         }
-      } catch (err) {
-        console.error('Erro ao verificar sessão:', err);
-        setError('Erro ao verificar autenticação');
-        removeUser();
+      } catch (error) {
+        console.error('❌ Erro ao verificar sessão:', error);
       } finally {
         setLoading(false);
       }
     };
 
     checkSession();
-  }, [setUser, removeUser]);
 
-  // Verifica se usuário tem role específica
-  const hasRole = useCallback((requiredRoles) => {
-    if (!user || !user.role) return false;
-    
-    const roles = Array.isArray(requiredRoles) ? requiredRoles : [requiredRoles];
-    return roles.includes(user.role);
-  }, [user]);
-
-  // Estado de autenticação computado
-  const isAuthenticated = useMemo(() => {
-    return !!(user && user.active);
-  }, [user]);
-
-  // Valor do contexto memoizado
-  const contextValue = useMemo(() => ({
-    user,
-    setUser,
-    logout,
-    login,
-    isAuthenticated,
-    hasRole,
-    loading,
-    error
-  }), [user, setUser, logout, login, isAuthenticated, hasRole, loading, error]);
-
-  // Renderiza loading durante inicialização
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <LoadingSpinner size="lg" text="Inicializando sistema..." />
-      </div>
+    // Listener para mudanças de autenticação
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('🔄 Evento de autenticação:', event);
+        
+        if (event === 'SIGNED_IN' && session?.user) {
+          console.log('✅ Usuário fez login:', session.user.email);
+          const userRole = session.user.user_metadata?.role || 'guest';
+          
+          // Verificar se o role é válido
+          const validRole = ROLES.includes(userRole) ? userRole : 'guest';
+          const roleConfig = ROLE_CONFIG[validRole];
+          
+          setUser({
+            id: session.user.id,
+            email: session.user.email,
+            name: session.user.user_metadata?.name || 'Usuário',
+            role: validRole,
+            profile: {
+              name: validRole,
+              label: roleConfig.label,
+              level: roleConfig.level,
+              color: roleConfig.color
+            }
+          });
+          setLoading(false);
+        } else if (event === 'SIGNED_OUT') {
+          console.log('🚪 Usuário fez logout');
+          setUser(null);
+          setLoading(false);
+        }
+      }
     );
-  }
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Funções de verificação de permissão
+  const hasRole = (requiredRole) => {
+    return user?.role === requiredRole;
+  };
+
+  const hasAnyRole = (requiredRoles) => {
+    return requiredRoles.includes(user?.role);
+  };
+
+  const hasPermission = (requiredLevel) => {
+    return user?.profile?.level >= requiredLevel;
+  };
+
+  const getRoleConfig = (role) => {
+    return ROLE_CONFIG[role] || ROLE_CONFIG.guest;
+  };
+
+  const value = {
+    user,
+    loading,
+    login,
+    logout,
+    hasRole,
+    hasAnyRole,
+    hasPermission,
+    getRoleConfig,
+    ROLES,
+    ROLE_CONFIG
+  };
 
   return (
-    <AuthContext.Provider value={contextValue}>
+    <AuthContext.Provider value={value}>
       {children}
-      
-      {/* Toast de notificação */}
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
     </AuthContext.Provider>
   );
-}
-
-// Hook customizado com validação
-export function useAuth() {
-  const context = useContext(AuthContext);
-  
-  if (context === undefined) {
-    throw new Error('useAuth deve ser usado dentro de um AuthProvider');
-  }
-  
-  return context;
-}
-
-// Hook para verificar autenticação
-export function useRequireAuth(redirectTo = '/') {
-  const { isAuthenticated, loading } = useAuth();
-  
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      window.location.href = redirectTo;
-    }
-  }, [isAuthenticated, loading, redirectTo]);
-  
-  return { isAuthenticated, loading };
-}
-
-// Hook para verificar role
-export function useRequireRole(requiredRoles, redirectTo = '/') {
-  const { hasRole, isAuthenticated, loading } = useAuth();
-  
-  useEffect(() => {
-    if (!loading && isAuthenticated && !hasRole(requiredRoles)) {
-      window.location.href = redirectTo;
-    }
-  }, [hasRole, requiredRoles, isAuthenticated, loading, redirectTo]);
-  
-  return { hasRole: hasRole(requiredRoles), loading };
-} 
+}; 

@@ -132,8 +132,20 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const SidebarContent = () => {
     if (!user) return null;
     
-    // ADM e DIRETOR: tudo
-    if (user.role === 'ADM' || user.role === 'DIRETOR') {
+    // Função para obter o label do role
+    const getRoleLabel = (role) => {
+      const roleConfig = {
+        admin: 'Administrador',
+        manager: 'Gerente',
+        user: 'Usuário',
+        guest: 'Varejo', // Alterado visualmente para Varejo
+        owner: 'Proprietário'
+      };
+      return roleConfig[role] || role;
+    };
+    
+    // Owner: acesso total
+    if (user.role === 'owner') {
       return (
         <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
           {/* Header com logo e close button */}
@@ -199,8 +211,8 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               />
             </div>
             
-            {/* Seção Administrativa - apenas para ADM */}
-            {user.role === 'ADM' && (
+            {/* Seção Administrativa - apenas para owner */}
+            {user.role === 'owner' && (
               <div className="pt-6 border-t border-gray-200">
                 <MenuSection 
                   title="Administração"
@@ -214,7 +226,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             )}
           </nav>
 
-          {/* Footer com info do usuário */}
+          {/* Footer com info do usuário - Owner */}
           <div className="p-4 border-t border-gray-100 bg-gray-50">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
@@ -222,7 +234,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-gray-900 truncate font-barlow">{user.email}</p>
-                <p className="text-xs text-gray-500 font-barlow">{user.role}</p>
+                <p className="text-xs text-gray-500 font-barlow">{getRoleLabel(user.role)}</p>
               </div>
             </div>
           </div>
@@ -230,8 +242,104 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       );
     }
     
-    // FINANCEIRO: só menus financeiros
-    if (user.role === 'FINANCEIRO') {
+    // Admin: acesso total (igual ao owner)
+    if (user.role === 'admin') {
+      return (
+        <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
+          {/* Header com logo e close button */}
+          <div className="h-20 px-6 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
+            <div className="flex items-center gap-3">
+              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-10 w-auto" />
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto overflow-x-hidden">
+            {/* Dashboard/Home */}
+            <MenuItem 
+              item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
+              isActive={location.pathname === '/home'}
+            />
+
+            {/* Dashboard */}
+            <MenuItem 
+              item={{ name: 'Dashboard', href: '/dashboard', icon: ChartLineUp, color: 'text-indigo-600' }}
+              isActive={location.pathname === '/dashboard'}
+            />
+
+            {/* Seções principais */}
+            <MenuSection 
+              title="Financeiro"
+              items={financeiro}
+              isOpen={financeiroOpen}
+              onToggle={() => setFinanceiroOpen(!financeiroOpen)}
+              icon={Money}
+              color="text-emerald-600"
+            />
+
+            <MenuSection 
+              title="CMV"
+              items={faturamento}
+              isOpen={faturamentoOpen}
+              onToggle={() => setFaturamentoOpen(!faturamentoOpen)}
+              icon={ChartLineUp}
+              color="text-blue-600"
+            />
+
+            <MenuSection 
+              title="Franquias"
+              items={franquias}
+              isOpen={franquiasOpen}
+              onToggle={() => setFranquiasOpen(!franquiasOpen)}
+              icon={Buildings}
+              color="text-purple-600"
+            />
+
+            {/* Ranking Faturamento - fora de seção */}
+            <div className="pt-4 border-t border-gray-100">
+              <MenuItem 
+                item={{ name: 'Ranking Faturamento', href: '/ranking-faturamento', icon: Trophy, color: 'text-yellow-600' }}
+                isActive={location.pathname === '/ranking-faturamento'}
+              />
+            </div>
+            
+            {/* Seção Administrativa - apenas para owner e admin */}
+            <div className="pt-6 border-t border-gray-200">
+              <MenuSection 
+                title="Administração"
+                items={[{ name: 'Painel Admin', href: '/painel-admin', icon: UserGear, color: 'text-red-600' }]}
+                isOpen={adminOpen}
+                onToggle={() => setAdminOpen(!adminOpen)}
+                icon={Shield}
+                color="text-red-600"
+              />
+            </div>
+          </nav>
+
+          {/* Footer com info do usuário - Admin */}
+          <div className="p-4 border-t border-gray-100 bg-gray-50">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                <UserGear size={16} className="text-blue-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-gray-900 truncate font-barlow">{user.email}</p>
+                <p className="text-xs text-gray-500 font-barlow">{getRoleLabel(user.role)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    // Manager: acesso total exceto administração
+    if (user.role === 'manager') {
       return (
         <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
           {/* Header com logo e close button */}
@@ -271,10 +379,34 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               color="text-emerald-600"
             />
 
-            {/* sem Ranking Vendedores */}
+            <MenuSection 
+              title="CMV"
+              items={faturamento}
+              isOpen={faturamentoOpen}
+              onToggle={() => setFaturamentoOpen(!faturamentoOpen)}
+              icon={ChartLineUp}
+              color="text-blue-600"
+            />
+
+            <MenuSection 
+              title="Franquias"
+              items={franquias}
+              isOpen={franquiasOpen}
+              onToggle={() => setFranquiasOpen(!franquiasOpen)}
+              icon={Buildings}
+              color="text-purple-600"
+            />
+
+            {/* Ranking Faturamento - fora de seção */}
+            <div className="pt-4 border-t border-gray-100">
+              <MenuItem 
+                item={{ name: 'Ranking Faturamento', href: '/ranking-faturamento', icon: Trophy, color: 'text-yellow-600' }}
+                isActive={location.pathname === '/ranking-faturamento'}
+              />
+            </div>
           </nav>
 
-          {/* Footer com info do usuário */}
+          {/* Footer com info do usuário - Manager */}
           <div className="p-4 border-t border-gray-100 bg-gray-50">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
@@ -282,7 +414,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-gray-900 truncate font-barlow">{user.email}</p>
-                <p className="text-xs text-gray-500 font-barlow">{user.role}</p>
+                <p className="text-xs text-gray-500 font-barlow">{getRoleLabel(user.role)}</p>
               </div>
             </div>
           </div>
@@ -290,8 +422,66 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       );
     }
     
-    // FRANQUIA: ranking de faturamento e compras franquias
-    if (user.role === 'FRANQUIA') {
+    // User: acesso apenas ao financeiro
+    if (user.role === 'user') {
+      return (
+        <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
+          {/* Header com logo e close button */}
+          <div className="h-20 px-6 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
+            <div className="flex items-center gap-3">
+              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-10 w-auto" />
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto overflow-x-hidden">
+            {/* Dashboard/Home */}
+            <MenuItem 
+              item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
+              isActive={location.pathname === '/home'}
+            />
+
+            {/* Dashboard */}
+            <MenuItem 
+              item={{ name: 'Dashboard', href: '/dashboard', icon: ChartLineUp, color: 'text-indigo-600' }}
+              isActive={location.pathname === '/dashboard'}
+            />
+
+            {/* Seção Financeiro */}
+            <MenuSection 
+              title="Financeiro"
+              items={financeiro}
+              isOpen={financeiroOpen}
+              onToggle={() => setFinanceiroOpen(!financeiroOpen)}
+              icon={Money}
+              color="text-emerald-600"
+            />
+          </nav>
+
+          {/* Footer com info do usuário - User */}
+          <div className="p-4 border-t border-gray-100 bg-gray-50">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                <UserGear size={16} className="text-blue-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-gray-900 truncate font-barlow">{user.email}</p>
+                <p className="text-xs text-gray-500 font-barlow">{getRoleLabel(user.role)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    // Guest (Varejo): acesso a franquias e ranking faturamento
+    if (user.role === 'guest') {
       return (
         <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
           {/* Header com logo e close button */}
@@ -340,7 +530,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             </div>
           </nav>
 
-          {/* Footer com info do usuário */}
+          {/* Footer com info do usuário - Guest */}
           <div className="p-4 border-t border-gray-100 bg-gray-50">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
@@ -348,7 +538,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-gray-900 truncate font-barlow">{user.email}</p>
-                <p className="text-xs text-gray-500 font-barlow">{user.role}</p>
+                <p className="text-xs text-gray-500 font-barlow">{getRoleLabel(user.role)}</p>
               </div>
             </div>
           </div>
