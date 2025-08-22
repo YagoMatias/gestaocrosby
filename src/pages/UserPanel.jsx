@@ -346,7 +346,6 @@ const UserPanel = () => {
             </button>
           </form>
         </div>
-      </div>
 
       {/* Toast de notificação */}
       {toast && (
@@ -356,7 +355,8 @@ const UserPanel = () => {
           onClose={() => setToast(null)}
         />
       )}
-    );
+      </div>
+      );
 };
 
 export default UserPanel; 
