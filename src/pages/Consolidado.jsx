@@ -44,7 +44,7 @@ const Consolidado = () => {
   // Empresas fixas para Revenda e Franquia
   const empresasFixas = ['2', '200', '75', '31', '6', '85', '11','99','85','92'];
   // Empresas fixas para Varejo
-  const empresasVarejoFixas = ['2', '5', '500', '55', '550', '65', '650', '93', '930', '94', '940', '95', '950', '96', '960', '97', '970','90','91','92','890','910','920'];
+  const empresasVarejoFixas = ['2', '5', '500', '55', '550', '65', '650', '93', '930', '94', '940', '95', '950', '96', '960', '97', '970','90','91','92','890','910'];
 
   // Estados para armazenar os dados brutos de cada segmento para cálculo do CMV
   const [dadosRevenda, setDadosRevenda] = useState([]);

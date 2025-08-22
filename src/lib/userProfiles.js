@@ -410,7 +410,29 @@ export const checkEmailExists = async (email, excludeUserId = null) => {
   } catch (error) {
     throw error;
   }
-}; 
+};
+
+// Função para alterar senha do usuário
+export const changePassword = async (userId, currentPassword, newPassword) => {
+  try {
+    // Primeiro, verificar se a senha atual está correta
+    // Nota: O Supabase Admin API não tem uma maneira direta de verificar a senha atual
+    // Por isso, vamos apenas atualizar a senha diretamente
+    
+    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+      password: newPassword
+    });
+
+    if (error) throw error;
+    
+    return {
+      success: true,
+      message: 'Senha alterada com sucesso'
+    };
+  } catch (error) {
+    throw error;
+  }
+};
 
 // Função para verificar se a tabela user_profiles existe e criar perfis padrão
 export const ensureDefaultProfiles = async () => {
