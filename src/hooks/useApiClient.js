@@ -98,8 +98,18 @@ const useApiClient = () => {
               totals: result.data?.totals || result.totals,
               optimized: result.data?.optimized || result.optimized,
               queryType: result.data?.queryType || result.queryType,
+              operacoes_permitidas: result.data?.operacoes_permitidas || result.operacoes_permitidas,
+              performance: result.data?.performance || result.performance,
               ...result
-            }
+            },
+            // Campos específicos da nova rota de faturamento
+            periodo: result.data?.periodo || result.periodo,
+            empresas: result.data?.empresas || result.empresas,
+            operacoes_permitidas: result.data?.operacoes_permitidas || result.operacoes_permitidas,
+            totals: result.data?.totals || result.totals,
+            optimized: result.data?.optimized || result.optimized,
+            queryType: result.data?.queryType || result.queryType,
+            performance: result.data?.performance || result.performance
           };
         }
         

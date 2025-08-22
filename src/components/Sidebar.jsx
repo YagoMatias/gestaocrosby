@@ -22,7 +22,8 @@ import {
   Folder,
   Shield,
   House,
-  Bank
+  Bank,
+  Eye
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -39,7 +40,6 @@ const financeiro = [
   { name: 'Saldo Bancário', href: '/saldo-bancario', icon: Bank, color: 'text-cyan-600' },
   { name: 'Importação .RET', href: '/importacao-ret', icon: FileText, color: 'text-teal-600' },
   { name: 'Extrato Financeiro', href: '/extrato-financeiro', icon: CreditCard, color: 'text-blue-600' },
-
   { name: 'DRE Demo', href: '/dre-demo', icon: ChartPieSlice, color: 'text-emerald-600' },
   { name: 'Manifestação de NF', href: '/manifestacao-nf', icon: FileText, color: 'text-indigo-600' },
 ];
@@ -66,9 +66,13 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const [adminOpen, setAdminOpen] = useState(false);
   const { user } = useAuth();
 
-  const handleNavigation = (href) => {
+  const handleNavigation = (href, external = false) => {
     onClose();
-    navigate(href);
+    if (external) {
+      window.open(href, '_blank');
+    } else {
+      navigate(href);
+    }
   };
 
   // Componente para renderizar itens de menu
@@ -78,7 +82,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     
     return (
       <button 
-        onClick={() => handleNavigation(item.href)}
+        onClick={() => handleNavigation(item.href, item.external)}
         className={`
           w-full flex items-center gap-3 ${paddingLeft} pr-4 py-3 
           text-sm font-medium rounded-lg transition-all duration-200 font-barlow
@@ -96,6 +100,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
         <span className={`${isActive ? 'font-semibold' : ''}`}>
           {item.name}
         </span>
+        {item.external && (
+          <svg className="ml-auto w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+        )}
       </button>
     );
   };
@@ -201,6 +210,12 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               color="text-purple-600"
             />
 
+            {/* VIGIA - item independente */}
+            <MenuItem 
+              item={{ name: 'Vigia', href: 'https://vigia.crosbytech.com.br/', icon: Eye, color: 'text-blue-600', external: true }}
+              isActive={false}
+            />
+
             {/* Ranking Faturamento - fora de seção */}
             <div className="pt-4 border-t border-gray-100">
               <MenuItem 
@@ -299,6 +314,12 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               color="text-purple-600"
             />
 
+            {/* VIGIA - item independente */}
+            <MenuItem 
+              item={{ name: 'VIGIA', href: 'https://vigia.crosbytech.com.br/', icon: Eye, color: 'text-blue-600', external: true }}
+              isActive={false}
+            />
+
             {/* Ranking Faturamento - fora de seção */}
             <div className="pt-4 border-t border-gray-100">
               <MenuItem 
@@ -393,6 +414,12 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               onToggle={() => setFranquiasOpen(!franquiasOpen)}
               icon={Buildings}
               color="text-purple-600"
+            />
+
+            {/* VIGIA - item independente */}
+            <MenuItem 
+              item={{ name: 'VIGIA', href: 'https://vigia.crosbytech.com.br/', icon: Eye, color: 'text-blue-600', external: true }}
+              isActive={false}
             />
 
             {/* Ranking Faturamento - fora de seção */}
@@ -517,6 +544,12 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               onToggle={() => setFranquiasOpen(!franquiasOpen)}
               icon={Buildings}
               color="text-purple-600"
+            />
+
+            {/* VIGIA - item independente */}
+            <MenuItem 
+              item={{ name: 'VIGIA', href: 'https://vigia.crosbytech.com.br/', icon: Eye, color: 'text-blue-600', external: true }}
+              isActive={false}
             />
 
             {/* Ranking Faturamento */}
