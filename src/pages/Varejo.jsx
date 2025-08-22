@@ -4,8 +4,9 @@ import useApiClient from '../hooks/useApiClient';
 import custoProdutos from '../custoprodutos.json';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, ArrowCircleDown, ArrowCircleUp, CurrencyDollar, ShoppingCart, Package, CaretLeft, Spinner } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, CurrencyDollar, ShoppingCart, Package, CaretLeft, Spinner, Percent, TrendUp } from '@phosphor-icons/react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
+
 
 
 
@@ -19,6 +20,57 @@ const Varejo = () => {
     dt_fim: '',
     cd_empresa: ''
   });
+
+  // Cria um Map para lookup rápido do custo pelo código
+  const custoMap = React.useMemo(() => {
+    const map = {};
+    if (custoProdutos && Array.isArray(custoProdutos)) {
+      custoProdutos.forEach(item => {
+        if (item && item.Codigo && item.Custo !== undefined) {
+          map[item.Codigo.trim()] = item.Custo;
+        }
+      });
+    }
+    return map;
+  }, []);
+
+  // Função para calcular margem do canal
+  function calcularMargemCanal(fat, custo) {
+    if (fat > 0 && custo > 0) return ((fat - custo) / fat) * 100;
+    return null;
+  }
+
+  // Cálculos para os cards
+  const faturamentoVarejo = React.useMemo(() => {
+    const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
+    const somaEntradas = dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
+    return somaSaidas - somaEntradas;
+  }, [dados]);
+
+  const custoBrutoVarejo = React.useMemo(() => {
+    let custoTotal = 0;
+    dados.forEach(row => {
+      if (row.tp_operacao === 'S') {
+        const qtFaturado = Number(row.qt_faturado) || 1;
+        const custoUnit = custoMap[row.cd_nivel?.trim()];
+        if (custoUnit !== undefined) {
+          custoTotal += qtFaturado * custoUnit;
+        }
+      }
+    });
+    return custoTotal;
+  }, [dados, custoMap]);
+
+  const precoTabelaVarejo = React.useMemo(() => {
+    let total = 0;
+    dados.forEach(row => {
+      const q = Number(row.qt_faturado) || 1;
+      const bruto = (Number(row.vl_unitbruto) || 0) * q;
+      if (row.tp_operacao === 'S') total += bruto;
+      if (row.tp_operacao === 'E') total -= bruto; // Compensação de entrada para varejo
+    });
+    return total;
+  }, [dados]);
 
   // Injetar CSS customizado para as tabelas
   React.useEffect(() => {
@@ -216,17 +268,6 @@ const Varejo = () => {
     return d.toLocaleDateString('pt-BR');
   }
 
-  // Cria um Map para lookup rápido do custo pelo código
-  const custoMap = React.useMemo(() => {
-    const map = {};
-    custoProdutos.forEach(item => {
-      if (item.Codigo && item.Custo !== undefined) {
-        map[item.Codigo.trim()] = item.Custo;
-      }
-    });
-    return map;
-  }, []);
-
   // Função para exportar o ranking para Excel
   const exportarRankParaExcel = () => {
     const rankProdutos = dados.reduce((acc, row) => {
@@ -255,11 +296,13 @@ const Varejo = () => {
       return acc;
     }, {});
     const custoMap = {};
-    custoProdutos.forEach(item => {
-      if (item.Codigo && item.Custo !== undefined) {
-        custoMap[item.Codigo.trim()] = item.Custo;
-      }
-    });
+    if (custoProdutos && Array.isArray(custoProdutos)) {
+      custoProdutos.forEach(item => {
+        if (item && item.Codigo && item.Custo !== undefined) {
+          custoMap[item.Codigo.trim()] = item.Custo;
+        }
+      });
+    }
     const rankArray = Object.values(rankProdutos)
       .sort((a, b) => b.valorTotal - a.valorTotal)
       .map(produto => {
@@ -503,224 +546,206 @@ const Varejo = () => {
         <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Faturamento - Varejo</h1>
         {/* Filtros */}
         <div className="mb-8">
-          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
+          <form onSubmit={handleFiltrar} className="bg-white p-6 rounded-2xl shadow-lg w-full max-w-6xl mx-auto border border-[#000638]/10">
+            {/* Header do Filtro */}
             <div className="mb-6">
-              <span className="text-lg font-bold text-[#000638] flex items-center gap-2"><CurrencyDollar size={22} weight="bold" />Filtros</span>
-              <span className="text-sm text-gray-500 mt-1">Selecione o período, grupo empresa ou data para análise</span>
+              <div className="flex items-center gap-3 mb-2">
+                <CurrencyDollar size={24} className="text-[#000638]" />
+                <h2 className="text-xl font-bold text-[#000638]">Filtros</h2>
+              </div>
+              <p className="text-sm text-gray-600">Selecione o período e empresas para análise</p>
             </div>
-            <div className="flex flex-row gap-x-6 w-full">
-              <FiltroEmpresa
-                empresasSelecionadas={empresasSelecionadas}
-                onSelectEmpresas={handleSelectEmpresas}
-              />
+
+            {/* Campos do Filtro */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
+              {/* Empresas */}
+              <div className="lg:col-span-2">
+                <FiltroEmpresa
+                  empresasSelecionadas={empresasSelecionadas}
+                  onSelectEmpresas={handleSelectEmpresas}
+                />
+              </div>
+
+              {/* Data Inicial */}
               <div className="flex flex-col">
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Inicial</label>
+                <label className="block text-sm font-semibold mb-2 text-[#000638]">
+                  Data Inicial
+                </label>
                 <input 
                   type="date" 
                   name="dt_inicio" 
                   value={filtros.dt_inicio} 
                   onChange={e => setFiltros({ ...filtros, dt_inicio: e.target.value })} 
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" 
+                  className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] focus:border-[#000638] bg-white text-[#000638] placeholder:text-gray-400 transition-all duration-200" 
+                  placeholder="Data inicial"
                 />
               </div>
+
+              {/* Data Final */}
               <div className="flex flex-col">
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Final</label>
+                <label className="block text-sm font-semibold mb-2 text-[#000638]">
+                  Data Final
+                </label>
                 <input 
                   type="date" 
                   name="dt_fim" 
                   value={filtros.dt_fim} 
                   onChange={e => setFiltros({ ...filtros, dt_fim: e.target.value })} 
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" 
+                  className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] focus:border-[#000638] bg-white text-[#000638] placeholder:text-gray-400 transition-all duration-200" 
+                  placeholder="Data final"
                 />
               </div>
             </div>
-            <div className="flex justify-end w-full">
-              <button type="submit" className="flex items-center gap-2 bg-[#000638] text-white px-4 py-2 rounded-lg hover:bg-[#fe0000] transition h-10 text-sm font-bold shadow-md tracking-wide uppercase">
-                <ArrowsClockwise size={18} weight="bold" /> Filtrar
+
+            {/* Botão de Ação */}
+            <div className="flex justify-end">
+              <button 
+                type="submit" 
+                className="flex items-center gap-3 bg-[#000638] text-white px-6 py-3 rounded-lg hover:bg-[#001060] transition-all duration-200 text-sm font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+              >
+                <ArrowsClockwise size={20} weight="bold" /> 
+                Filtrar Dados
               </button>
             </div>
           </form>
-          {erro && <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{erro}</div>}
+          
+          {/* Mensagem de Erro */}
+          {erro && (
+            <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-center max-w-6xl mx-auto">
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-red-500">⚠️</span>
+                {erro}
+              </div>
+            </div>
+          )}
         </div>
+
         {/* Cards de Resumo */}
         <div className="flex flex-wrap gap-4 mb-8 justify-center">
-          {/* Card Faturamento Total */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
-            <CardHeader className="pb-2">
-              <div className="flex flex-row items-center gap-2">
-                <CurrencyDollar size={18} className="text-gray-700" />
-                <CardTitle className="text-sm font-bold text-gray-900">Faturamento Total</CardTitle>
+          {/* Vendas após Desconto Varejo */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-green-700" />
+                <CardTitle className="text-sm font-bold text-green-700">Vendas após Desconto Varejo</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-green-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : (() => {
-                  const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  const somaEntradas = dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  const faturamentoTotal = somaSaidas - somaEntradas;
-                  return faturamentoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                })()}
+                {loading ? <Spinner size={24} className="text-green-600 animate-spin" /> : (faturamentoVarejo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
-              <CardDescription className="text-xs text-gray-500">S - E</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Total Varejo</CardDescription>
             </CardContent>
           </Card>
 
-          {/* Card Valor Bruto Total */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
-            <CardHeader className="pb-2">
-              <div className="flex flex-row items-center gap-2">
-                <CurrencyDollar size={18} className="text-purple-600" />
-                <CardTitle className="text-sm font-bold text-purple-600">Valor Bruto Total</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-purple-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-purple-600" /> : (() => {
-                  let valorBrutoTotal = 0;
-                  dados.forEach(row => {
-                    const qtFaturado = Number(row.qt_faturado) || 1;
-                    const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-                    
-                    if (row.tp_operacao === 'S') {
-                      valorBrutoTotal += valorBruto;
-                    } else if (row.tp_operacao === 'E') {
-                      valorBrutoTotal -= valorBruto;
-                    }
-                  });
-                  return valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                })()}
-              </div>
-              <span className="text-xs text-gray-500">Valor Bruto Total do Período</span>
-            </CardContent>
-          </Card>
-
-          {/* Card Desconto Total */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
-            <CardHeader className="pb-2">
-              <div className="flex flex-row items-center gap-2">
-                <CurrencyDollar size={18} className="text-orange-600" />
-                <CardTitle className="text-sm font-bold text-orange-600">Desconto Total</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-orange-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-orange-600" /> : (() => {
-                  let descontoTotal = 0;
-                  dados.forEach(row => {
-                    const qtFaturado = Number(row.qt_faturado) || 1;
-                    const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
-                    const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-                    const desconto = valorBrutoTotal - valorTotal;
-                    
-                    if (row.tp_operacao === 'S') {
-                      descontoTotal += desconto;
-                    } else if (row.tp_operacao === 'E') {
-                      descontoTotal -= desconto;
-                    }
-                  });
-                  return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                })()}
-              </div>
-              <span className="text-xs text-gray-500">Desconto Total do Período</span>
-            </CardContent>
-          </Card>
-
-          {/* Card CMV $ */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
-            <CardHeader className="pb-2">
-              <div className="flex flex-row items-center gap-2">
+          {/* CMV Varejo */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
                 <CurrencyDollar size={18} className="text-red-700" />
-                <CardTitle className="text-sm font-bold text-red-700">CMV $</CardTitle>
+                <CardTitle className="text-sm font-bold text-red-700">CMV Varejo</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-red-700 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-red-700" /> : (() => {
-                  let custoTotal = 0;
-                  dados.forEach(row => {
-                    if (row.tp_operacao === 'S') {
-                      const qtFaturado = Number(row.qt_faturado) || 1;
-                      const custoUnit = custoMap[row.cd_nivel?.trim()];
-                      if (custoUnit !== undefined) {
-                        custoTotal += qtFaturado * custoUnit;
-                      }
-                    }
-                  });
-                  return custoTotal !== undefined ? custoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-';
-                })()}
+                {loading ? <Spinner size={24} className="text-red-600 animate-spin" /> : (custoBrutoVarejo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
-              <span className="text-xs text-gray-500">CMV $ do Período</span>
+              <CardDescription className="text-xs text-gray-500">CMV do Varejo</CardDescription>
             </CardContent>
           </Card>
 
-          {/* Card CMV % */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
-            <CardHeader className="pb-2">
-              <div className="flex flex-row items-center gap-2">
-                <Package size={18} className="text-orange-600" />
-                <CardTitle className="text-sm font-bold text-orange-600">CMV %</CardTitle>
+          {/* CMV Varejo (%) */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <Percent size={18} className="text-orange-600" />
+                <CardTitle className="text-sm font-bold text-orange-600">CMV Varejo</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              {loading ? <Spinner size={24} className="animate-spin text-orange-600" /> : (() => {
-                let custoTotal = 0;
-                let valorTotalVenda = 0;
-                dados.forEach(row => {
-                  if (row.tp_operacao === 'S') {
-                    const qtFaturado = Number(row.qt_faturado) || 1;
-                    const custoUnit = custoMap[row.cd_nivel?.trim()];
-                    if (custoUnit !== undefined) {
-                      custoTotal += qtFaturado * custoUnit;
-                    }
-                    const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  const faturamentoTotal = somaSaidas;
-                  valorTotalVenda = faturamentoTotal;
-                  }
-                });
-                // Cálculo do CMV padronizado
-                const cmv = (valorTotalVenda > 0 && custoTotal > 0) ? (custoTotal / valorTotalVenda) * 100 : null;
-                return (
-                  <div className="flex flex-col gap-1 items-start">
-                    <span className="text-2xl font-extrabold text-orange-700">{cmv !== null ? cmv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '-'}</span>
-                    <span className="text-xs text-gray-500">CMV Total (Custo / Venda)</span>
-                  </div>
-                );
-              })()}
+              <div className="text-2xl font-extrabold text-orange-700 mb-1">
+                {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
+                  (faturamentoVarejo > 0 && custoBrutoVarejo > 0)
+                    ? ((custoBrutoVarejo / faturamentoVarejo) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
+                    : '--'
+                )}
+              </div>
+              <CardDescription className="text-xs text-gray-500">CMV Varejo (%)</CardDescription>
             </CardContent>
           </Card>
 
-          {/* Card Produtos Saíram */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
-            <CardHeader className="pb-2">
-              <div className="flex flex-row items-center gap-2">
-                <ArrowCircleUp size={18} className="text-green-600" />
-                <CardTitle className="text-sm font-bold text-green-600">Produtos Saíram (S)</CardTitle>
+          {/* Margem Varejo */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <Percent size={18} className="text-yellow-700" />
+                <CardTitle className="text-sm font-bold text-yellow-700">Margem Varejo</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-green-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
+              <div className="text-2xl font-extrabold text-yellow-700 mb-1">
+                {loading ? <Spinner size={24} className="text-yellow-600 animate-spin" /> : (
+                  (() => {
+                    const margem = calcularMargemCanal(faturamentoVarejo, custoBrutoVarejo);
+                    return margem !== null ? margem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
+                  })()
+                )}
               </div>
-              <CardDescription className="text-xs text-gray-500">Quantidade</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Margem do Varejo</CardDescription>
             </CardContent>
           </Card>
 
-          {/* Card Produtos Entraram */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
-            <CardHeader className="pb-2">
-              <div className="flex flex-row items-center gap-2">
-                <ArrowCircleDown size={18} className="text-[#fe0000]" />
-                <CardTitle className="text-sm font-bold text-[#fe0000]">Produtos Entraram (E)</CardTitle>
+          {/* Markup Varejo */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <TrendUp size={18} className="text-blue-600" />
+                <CardTitle className="text-sm font-bold text-blue-600">Markup Varejo</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-[#fe0000] mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-[#fe0000]" /> : dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
+              <div className="text-2xl font-extrabold text-blue-700 mb-1">
+                {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
+                  custoBrutoVarejo > 0 ? (faturamentoVarejo / custoBrutoVarejo).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'
+                )}
               </div>
-              <CardDescription className="text-xs text-gray-500">Quantidade</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Markup Varejo</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Preço de Tabela Varejo */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-purple-600" />
+                <CardTitle className="text-sm font-bold text-purple-600">Preço de Tabela Varejo</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-purple-700 mb-1">
+                {loading ? <Spinner size={24} className="text-purple-600 animate-spin" /> : (precoTabelaVarejo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Preço de Tabela do Varejo</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Desconto Varejo */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-orange-600" />
+                <CardTitle className="text-sm font-bold text-orange-600">Desconto Varejo</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-orange-700 mb-1">
+                {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : ((precoTabelaVarejo - faturamentoVarejo) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Desconto do Varejo</CardDescription>
             </CardContent>
           </Card>
         </div>
+
         {/* Tabela de Transações */}
         <div className="rounded-2xl shadow-lg bg-white mt-8 border border-[#000638]/10">
           <div className="p-4 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandTabela(e => !e)}>

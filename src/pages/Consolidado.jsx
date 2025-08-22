@@ -823,7 +823,7 @@ const Consolidado = () => {
               </CardContent>
             </Card>
 
-          {/* Preço de Tabela Revenda */}
+            {/* Preço de Tabela Revenda */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
@@ -849,7 +849,7 @@ const Consolidado = () => {
               </CardContent>
             </Card>
 
-          {/* Desconto Revenda */}
+            {/* Desconto Revenda */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
@@ -878,7 +878,7 @@ const Consolidado = () => {
               </CardContent>
             </Card>
 
-          {/* Representatividade Revenda */}
+            {/* Representatividade Revenda */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
@@ -898,9 +898,9 @@ const Consolidado = () => {
                 <CardDescription className="text-xs text-gray-500">% das vendas após desconto total da rede</CardDescription>
               </CardContent>
             </Card>
+          </div>
                 </div>
-                </div>
-
+        
       {/* Varejo */}
         <div className="w-full border-t border-gray-200 my-4"></div>
         <div>
@@ -992,7 +992,7 @@ const Consolidado = () => {
               </CardContent>
             </Card>
 
-          {/* Preço de Tabela Varejo */}
+            {/* Preço de Tabela Varejo */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
@@ -1019,7 +1019,7 @@ const Consolidado = () => {
               </CardContent>
             </Card>
 
-          {/* Desconto Varejo */}
+            {/* Desconto Varejo */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
@@ -1049,7 +1049,7 @@ const Consolidado = () => {
               </CardContent>
             </Card>
 
-          {/* Representatividade Varejo */}
+            {/* Representatividade Varejo */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
@@ -1069,9 +1069,9 @@ const Consolidado = () => {
                 <CardDescription className="text-xs text-gray-500">% das vendas após desconto total da rede</CardDescription>
               </CardContent>
             </Card>
-                </div>
-                </div>
-
+          </div>
+        </div>
+        
       {/* Franquia */}
         <div className="w-full border-t border-gray-200 my-4"></div>
         <div>
@@ -1163,7 +1163,7 @@ const Consolidado = () => {
               </CardContent>
             </Card>
 
-          {/* Preço de Tabela Franquia */}
+            {/* Preço de Tabela Franquia */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
@@ -1189,7 +1189,7 @@ const Consolidado = () => {
               </CardContent>
             </Card>
 
-          {/* Desconto Franquia */}
+            {/* Desconto Franquia */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
@@ -1218,7 +1218,7 @@ const Consolidado = () => {
               </CardContent>
             </Card>
 
-          {/* Representatividade Franquia */}
+            {/* Representatividade Franquia */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
@@ -1238,9 +1238,9 @@ const Consolidado = () => {
                 <CardDescription className="text-xs text-gray-500">% das vendas após desconto total da rede</CardDescription>
               </CardContent>
             </Card>
-                </div>
-                </div>
-
+          </div>
+        </div>
+        
       {/* Multimarcas */}
         <div className="w-full border-t border-gray-200 my-4"></div>
         <div>
@@ -1332,7 +1332,7 @@ const Consolidado = () => {
               </CardContent>
             </Card>
 
-          {/* Preço de Tabela Multimarcas */}
+            {/* Preço de Tabela Multimarcas */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
@@ -1358,7 +1358,7 @@ const Consolidado = () => {
               </CardContent>
             </Card>
 
-          {/* Desconto Multimarcas */}
+            {/* Desconto Multimarcas */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
@@ -1387,7 +1387,7 @@ const Consolidado = () => {
               </CardContent>
             </Card>
 
-          {/* Representatividade Multimarcas */}
+            {/* Representatividade Multimarcas */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
@@ -1407,8 +1407,8 @@ const Consolidado = () => {
                 <CardDescription className="text-xs text-gray-500">% das vendas após desconto total da rede</CardDescription>
               </CardContent>
             </Card>
-                </div>
-                </div>
+          </div>
+        </div>
 
       {/* Gráficos */}
       <div className="mt-12 w-full max-w-7xl mx-auto">

@@ -4,8 +4,9 @@ import useApiClient from '../hooks/useApiClient';
 import custoProdutos from '../custoprodutos.json';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, ArrowCircleDown, ArrowCircleUp, CurrencyDollar, Package, Spinner } from '@phosphor-icons/react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
+import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, CurrencyDollar, Package, Spinner, Percent, TrendUp } from '@phosphor-icons/react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
+
 
 const Multimarcas = () => {
   const apiClient = useApiClient();
@@ -102,13 +103,61 @@ const Multimarcas = () => {
   // Cria um Map para lookup rápido do custo pelo código
   const custoMap = React.useMemo(() => {
     const map = {};
-    custoProdutos.forEach(item => {
-      if (item.Codigo && item.Custo !== undefined) {
-        map[item.Codigo.trim()] = item.Custo;
-      }
-    });
+    if (custoProdutos && Array.isArray(custoProdutos)) {
+      custoProdutos.forEach(item => {
+        if (item && item.Codigo && item.Custo !== undefined) {
+          map[item.Codigo.trim()] = item.Custo;
+        }
+      });
+    }
     return map;
   }, []);
+
+  // Cálculos para os cards (baseados no Consolidado)
+  const calcularMargemCanal = (faturamento, custo) => {
+    if (faturamento > 0 && custo > 0) {
+      return ((faturamento - custo) / faturamento) * 100;
+    }
+    return null;
+  };
+
+  // Cálculos dos valores para os cards
+  const faturamentoMultimarcas = React.useMemo(() => {
+    return dados.reduce((acc, row) => {
+      const qtFaturado = Number(row.qt_faturado) || 1;
+      const valor = (Number(row.vl_unitliquido) || 0) * qtFaturado;
+      if (row.tp_operacao === 'S') {
+        acc += valor;
+      } else if (row.tp_operacao === 'E') {
+        acc -= valor;
+      }
+      return acc;
+    }, 0);
+  }, [dados]);
+
+  const custoBrutoMultimarcas = React.useMemo(() => {
+    return dados.reduce((acc, row) => {
+      if (row.tp_operacao === 'S') {
+        const qtFaturado = Number(row.qt_faturado) || 1;
+        const custoUnit = custoMap[row.cd_nivel?.trim()];
+        if (custoUnit !== undefined) {
+          acc += qtFaturado * custoUnit;
+        }
+      }
+      return acc;
+    }, 0);
+  }, [dados, custoMap]);
+
+  const precoTabelaMultimarcas = React.useMemo(() => {
+    return dados.reduce((acc, row) => {
+      const qtFaturado = Number(row.qt_faturado) || 1;
+      const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
+      if (row.tp_operacao === 'S') {
+        acc += valorBruto;
+      }
+      return acc;
+    }, 0);
+  }, [dados]);
 
   // Função para exportar o ranking para Excel
   const exportarRankParaExcel = () => {
@@ -334,186 +383,154 @@ const Multimarcas = () => {
           </form>
           {erro && <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{erro}</div>}
         </div>
+
         {/* Cards de Resumo */}
         <div className="flex flex-wrap gap-4 mb-8 justify-center">
-          {/* Card Faturamento Total */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
-            <CardHeader className="pb-2">
-              <div className="flex flex-row items-center gap-2">
-                <CurrencyDollar size={18} className="text-gray-700" />
-                <CardTitle className="text-sm font-bold text-gray-900">Faturamento Total</CardTitle>
+          {/* Vendas após Desconto Multimarcas */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-green-700" />
+                <CardTitle className="text-sm font-bold text-green-700">Vendas após Desconto Multimarcas</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-green-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : (() => {
-                  const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  const somaEntradas = dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  const faturamentoTotal = somaSaidas - somaEntradas;
-                  return faturamentoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                })()}
+                {loading ? <Spinner size={24} className="text-green-600 animate-spin" /> : (faturamentoMultimarcas || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
-              <CardDescription className="text-xs text-gray-500">S - E</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Total Multimarcas</CardDescription>
             </CardContent>
           </Card>
 
-          {/* Card Valor Bruto Total */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
-            <CardHeader className="pb-2">
-              <div className="flex flex-row items-center gap-2">
-                <CurrencyDollar size={18} className="text-purple-600" />
-                <CardTitle className="text-sm font-bold text-purple-600">Valor Bruto Total</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-purple-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-purple-600" /> : (() => {
-                  let valorBrutoTotal = 0;
-                  dados.forEach(row => {
-                    const qtFaturado = Number(row.qt_faturado) || 1;
-                    const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-                    
-                    if (row.tp_operacao === 'S') {
-                      valorBrutoTotal += valorBruto;
-                    } else if (row.tp_operacao === 'E') {
-                      valorBrutoTotal -= valorBruto;
-                    }
-                  });
-                  return valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                })()}
-              </div>
-              <span className="text-xs text-gray-500">Valor Bruto Total do Período</span>
-            </CardContent>
-          </Card>
-
-          {/* Card Desconto Total */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
-            <CardHeader className="pb-2">
-              <div className="flex flex-row items-center gap-2">
-                <CurrencyDollar size={18} className="text-orange-600" />
-                <CardTitle className="text-sm font-bold text-orange-600">Desconto Total</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-orange-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-orange-600" /> : (() => {
-                  let descontoTotal = 0;
-                  dados.forEach(row => {
-                    const qtFaturado = Number(row.qt_faturado) || 1;
-                    const valorTotal = (Number(row.vl_unitliquido) || 0) * qtFaturado;
-                    const valorBrutoTotal = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-                    const desconto = valorBrutoTotal - valorTotal;
-                    
-                    if (row.tp_operacao === 'S') {
-                      descontoTotal += desconto;
-                    } else if (row.tp_operacao === 'E') {
-                      descontoTotal -= desconto;
-                    }
-                  });
-                  return descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                })()}
-              </div>
-              <span className="text-xs text-gray-500">Desconto Total do Período</span>
-            </CardContent>
-          </Card>
-
-          {/* Card CMV $ */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
-            <CardHeader className="pb-2">
-              <div className="flex flex-row items-center gap-2">
+          {/* CMV Multimarcas */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
                 <CurrencyDollar size={18} className="text-red-700" />
-                <CardTitle className="text-sm font-bold text-red-700">CMV $</CardTitle>
+                <CardTitle className="text-sm font-bold text-red-700">CMV Multimarcas</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-red-700 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-red-700" /> : (() => {
-                  let custoTotal = 0;
-                  dados.forEach(row => {
-                    if (row.tp_operacao === 'S') {
-                      const qtFaturado = Number(row.qt_faturado) || 1;
-                      const custoUnit = custoMap[row.cd_nivel?.trim()];
-                      if (custoUnit !== undefined) {
-                        custoTotal += qtFaturado * custoUnit;
-                      }
-                    }
-                  });
-                  return custoTotal !== undefined ? custoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-';
-                })()}
+                {loading ? <Spinner size={24} className="text-red-600 animate-spin" /> : (custoBrutoMultimarcas || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
-              <span className="text-xs text-gray-500">CMV $ do Período</span>
+              <CardDescription className="text-xs text-gray-500">CMV da Multimarcas</CardDescription>
             </CardContent>
           </Card>
 
-          {/* Card CMV % */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
-            <CardHeader className="pb-2">
-              <div className="flex flex-row items-center gap-2">
-                <Package size={18} className="text-orange-600" />
-                <CardTitle className="text-sm font-bold text-orange-600">CMV %</CardTitle>
+          {/* CMV Multimarcas (%) */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <Percent size={18} className="text-orange-600" />
+                <CardTitle className="text-sm font-bold text-orange-600">CMV Multimarcas</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              {loading ? <Spinner size={24} className="animate-spin text-orange-600" /> : (() => {
-                let custoTotal = 0;
-                let valorTotalVenda = 0;
-                dados.forEach(row => {
-                  if (row.tp_operacao === 'S') {
-                    const qtFaturado = Number(row.qt_faturado) || 1;
-                    const custoUnit = custoMap[row.cd_nivel?.trim()];
-                    if (custoUnit !== undefined) {
-                      custoTotal += qtFaturado * custoUnit;
-                    }
-                    const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  const somaEntradas = dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-                  valorTotalVenda = somaSaidas - somaEntradas;
-                  valorTotalVenda;
-                  }
-                });
-                // Cálculo do CMV padronizado
-                const cmv = (valorTotalVenda > 0 && custoTotal > 0) ? (custoTotal / valorTotalVenda) * 100 : null;
-                return (
-                  <div className="flex flex-col gap-1 items-start">
-                    <span className="text-2xl font-extrabold text-orange-700">{cmv !== null ? cmv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '-'}</span>
-                    <span className="text-xs text-gray-500">CMV Total (Custo / Venda)</span>
-                  </div>
-                );
-              })()}
+              <div className="text-2xl font-extrabold text-orange-700 mb-1">
+                {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
+                  (faturamentoMultimarcas > 0 && custoBrutoMultimarcas > 0)
+                    ? ((custoBrutoMultimarcas / faturamentoMultimarcas) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
+                    : '--'
+                )}
+              </div>
+              <CardDescription className="text-xs text-gray-500">CMV Multimarcas (%)</CardDescription>
             </CardContent>
           </Card>
 
-          {/* Card Produtos Saíram */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
-            <CardHeader className="pb-2">
-              <div className="flex flex-row items-center gap-2">
-                <ArrowCircleUp size={18} className="text-green-600" />
-                <CardTitle className="text-sm font-bold text-green-600">Produtos Saíram (S)</CardTitle>
+          {/* Margem Multimarcas */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <Percent size={18} className="text-yellow-700" />
+                <CardTitle className="text-sm font-bold text-yellow-700">Margem Multimarcas</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-green-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
+              <div className="text-2xl font-extrabold text-yellow-700 mb-1">
+                {loading ? <Spinner size={24} className="text-yellow-600 animate-spin" /> : (
+                  (() => {
+                    const margem = calcularMargemCanal(faturamentoMultimarcas, custoBrutoMultimarcas);
+                    return margem !== null ? margem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
+                  })()
+                )}
               </div>
-              <CardDescription className="text-xs text-gray-500">Quantidade</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Margem da Multimarcas</CardDescription>
             </CardContent>
           </Card>
 
-          {/* Card Produtos Entraram */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
-            <CardHeader className="pb-2">
-              <div className="flex flex-row items-center gap-2">
-                <ArrowCircleDown size={18} className="text-[#fe0000]" />
-                <CardTitle className="text-sm font-bold text-[#fe0000]">Produtos Entraram (E)</CardTitle>
+          {/* Markup Multimarcas */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <TrendUp size={18} className="text-blue-600" />
+                <CardTitle className="text-sm font-bold text-blue-600">Markup Multimarcas</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-[#fe0000] mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-[#fe0000]" /> : dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + (Number(row.qt_faturado) || 1), 0)}
+              <div className="text-2xl font-extrabold text-blue-700 mb-1">
+                {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
+                  custoBrutoMultimarcas > 0 ? (faturamentoMultimarcas / custoBrutoMultimarcas).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'
+                )}
               </div>
-              <CardDescription className="text-xs text-gray-500">Quantidade</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Markup Multimarcas</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Preço de Tabela Multimarcas */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-purple-600" />
+                <CardTitle className="text-sm font-bold text-purple-600">Preço de Tabela Multimarcas</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-purple-700 mb-1">
+                {loading ? <Spinner size={24} className="text-purple-600 animate-spin" /> : (precoTabelaMultimarcas || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Preço de Tabela da Multimarcas</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Desconto Multimarcas */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-orange-600" />
+                <CardTitle className="text-sm font-bold text-orange-600">Desconto Multimarcas</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-orange-700 mb-1">
+                {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : ((precoTabelaMultimarcas - faturamentoMultimarcas) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Desconto da Multimarcas</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Representatividade Multimarcas */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <Percent size={18} className="text-blue-600" />
+                <CardTitle className="text-sm font-bold text-blue-600">Representatividade Multimarcas</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-blue-700 mb-1">
+                {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
+                  (() => {
+                    // Como estamos na página Multimarcas, a representatividade será sempre 100%
+                    return '100,00%';
+                  })()
+                )}
+              </div>
+              <CardDescription className="text-xs text-gray-500">% das vendas após desconto total da rede</CardDescription>
             </CardContent>
           </Card>
         </div>
+
         {/* Tabela de Transações */}
         <div className="rounded-2xl shadow-lg bg-white mt-8 border border-[#000638]/10">
           <div className="p-4 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandTabela(e => !e)}>
