@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import Layout from '../components/Layout';
 import DropdownContas from '../components/DropdownContas';
 import { contas } from "../utils/contas";
 import { 
@@ -491,8 +490,7 @@ const ExtratoFinanceiro = () => {
         console.error('ExtratoFinanceiro Error:', error, errorInfo); 
       }}
     >
-    <Layout>
-      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
+    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
         <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Extrato Financeiro</h1>
         <div className="mb-4">
           <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
@@ -1185,7 +1183,6 @@ const ExtratoFinanceiro = () => {
           </div>
         </div>
       )}
-    </Layout>
     </ErrorBoundary>
   );
 };

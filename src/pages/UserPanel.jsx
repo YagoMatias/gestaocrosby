@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { User, Lock, Eye, EyeSlash, CheckCircle, XCircle, ArrowLeft } from '@phosphor-icons/react';
-import Layout from '../components/Layout';
 import { changePassword, updateUser } from '../lib/userProfiles';
 import Toast from '../components/Toast';
 
@@ -137,8 +136,7 @@ const UserPanel = () => {
   };
 
   return (
-    <Layout>
-      <div className="w-full max-w-2xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
+    <div className="w-full max-w-2xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <button
@@ -358,8 +356,7 @@ const UserPanel = () => {
           onClose={() => setToast(null)}
         />
       )}
-    </Layout>
-  );
+    );
 };
 
 export default UserPanel; 

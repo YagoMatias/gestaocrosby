@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import Layout from '../components/Layout';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
 import { CurrencyDollar, ChartBar, Percent, TrendUp, Question, Spinner } from '@phosphor-icons/react';
@@ -543,7 +542,6 @@ const Consolidado = () => {
   };
 
   return (
-    <Layout>
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start mt-10">
         <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Consolidado</h1>
         {/* Filtros */}
@@ -1512,8 +1510,7 @@ const Consolidado = () => {
         </div>
       </div>
     </div>
-    </div>
-
+    
     {/* Modal de Ajuda */}
     {showModal && (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -1542,8 +1539,7 @@ const Consolidado = () => {
         </div>
       </div>
     )}
-  </Layout>
-  );
+</div>)
 };
 
 export default Consolidado; 

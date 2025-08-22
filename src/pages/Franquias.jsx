@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import Layout from '../components/Layout';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import useApiClient from '../hooks/useApiClient';
 import custoProdutos from '../custoprodutos.json';
@@ -518,8 +517,7 @@ const Franquias = () => {
   };
 
   return (
-    <Layout>
-      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
+    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
         <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Faturamento - Franquias</h1>
         {/* Filtros */}
         <div className="mb-8">
@@ -1100,8 +1098,7 @@ const Franquias = () => {
           )}
         </div>
       </div>
-    </Layout>
-  );
+    );
 };
 
 export default Franquias; 

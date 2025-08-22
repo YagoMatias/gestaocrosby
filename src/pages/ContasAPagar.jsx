@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../components/AuthContext';
-import Layout from '../components/Layout';
+
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import useApiClient from '../hooks/useApiClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
@@ -2016,8 +2016,7 @@ const ContasAPagar = () => {
   };
 
   return (
-    <Layout>
-      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
+    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
         <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Contas a Pagar</h1>
         
         {/* Filtros */}
@@ -2800,7 +2799,7 @@ const ContasAPagar = () => {
             )}
                           </div>
                           </div>
-                          </div>
+                          
 
             {/* Modal para exibir observações */}
       {modalAberto && (
@@ -2834,7 +2833,7 @@ const ContasAPagar = () => {
                           </div>
               )}
                           </div>
-
+                          </div>
             {/* Footer do Modal */}
             <div className="bg-gray-50 px-6 py-4 flex justify-end">
               <button
@@ -2845,9 +2844,8 @@ const ContasAPagar = () => {
               </button>
                           </div>
                           </div>
-                          </div>
       )}
-
+      
       {/* Modal para exibir dados dos cards */}
       {modalCardAberto && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -3302,7 +3300,7 @@ const ContasAPagar = () => {
       {console.log('🔍 Renderizando componente - showEnviarPagamentoModal:', showEnviarPagamentoModal)}
       {console.log('🔍 Renderizando componente - showRemoverPagamentoModal:', showRemoverPagamentoModal)}
       {console.log('🔍 Renderizando componente - showAcessoRestritoModal:', showAcessoRestritoModal)}
-    </Layout>
+    </div>
   );
 };
 

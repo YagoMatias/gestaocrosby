@@ -1,13 +1,11 @@
 import React from 'react';
-import Layout from '../components/Layout';
 import { 
   Wrench
 } from '@phosphor-icons/react';
 
 const DreDemo = () => {
   return (
-    <Layout>
-      <div className="w-full max-w-6xl mx-auto flex flex-col items-center justify-center py-16">
+    <div className="w-full max-w-6xl mx-auto flex flex-col items-center justify-center py-16">
         <h1 className="text-3xl font-bold mb-8 text-center text-[#000638]">
           DRE - Demonstração do Resultado do Exercício
         </h1>
@@ -35,8 +33,7 @@ const DreDemo = () => {
           </div>
         </div>
       </div>
-    </Layout>
-  );
+    );
 };
 
 export default DreDemo;

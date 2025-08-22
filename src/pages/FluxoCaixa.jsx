@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import Layout from '../components/Layout';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import useApiClient from '../hooks/useApiClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
@@ -961,8 +960,7 @@ const FluxoCaixa = () => {
   };
 
   return (
-    <Layout>
-      <div className="w-full w-8xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
+    <div className="w-full w-8xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
         <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Fluxo de Caixa</h1>
         
         {/* Filtros */}
@@ -1212,8 +1210,7 @@ const FluxoCaixa = () => {
           onClose={fecharModalDetalhes}
         />
               </div>
-    </Layout>
-  );
+    );
 };
 
 // Componente para gráfico de ranking de despesas

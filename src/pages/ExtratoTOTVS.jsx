@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import Layout from '../components/Layout';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import DropdownContas from '../components/DropdownContas';
 import { contas } from '../utils/contas';
@@ -281,8 +280,7 @@ const ExtratoTOTVS = () => {
   };
 
   return (
-    <Layout>
-      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
+    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className="mb-8">
@@ -623,8 +621,7 @@ const ExtratoTOTVS = () => {
           </div>
         </div>
       </div>
-    </Layout>
-  );
+    );
 };
 
 export default ExtratoTOTVS;

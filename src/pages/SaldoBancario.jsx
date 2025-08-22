@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import Layout from '../components/Layout';
 import { useAuth } from '../components/AuthContext';
 import { buscarSaldosPorConta, buscarLimiteChequeEspecial, salvarLimiteChequeEspecial, salvarSaldoManual, removerSaldoManual, forcarRemocaoSaldoManual } from '../lib/retornoBancario';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
@@ -936,8 +935,7 @@ const SaldoBancario = () => {
   }, [saldosContas, obterSaldosAtuais, tipoVisualizacao, ordenacao]);
 
   return (
-    <Layout>
-      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
+    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className="mb-8">
@@ -1790,8 +1788,7 @@ const SaldoBancario = () => {
           )}
         </div>
       </div>
-    </Layout>
-  );
+    );
 };
 
 export default SaldoBancario;

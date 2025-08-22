@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import Layout from '../components/Layout';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
 import { FileText, Funnel, Calendar, Spinner, CaretUp, CaretDown, CaretUpDown, FileArrowDown } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
@@ -266,7 +265,6 @@ const AuditoriaCMV = () => {
   };
 
   return (
-    <Layout>
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold text-[#000638] font-barlow">Auditoria CMV</h1>
@@ -538,7 +536,6 @@ const AuditoriaCMV = () => {
           </CardContent>
         </Card>
       </div>
-    </Layout>
   );
 };
 

@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import Layout from '../components/Layout';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import useApiClient from '../hooks/useApiClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
@@ -636,8 +635,7 @@ const ManifestacaoNF = () => {
   // Dados só são buscados quando o usuário clicar em "Buscar Dados"
 
   return (
-    <Layout>
-      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
+    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
         {/* Cabeçalho */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-[#000638] mb-2">Manifestação de Notas Fiscais</h1>
@@ -1324,8 +1322,7 @@ const ManifestacaoNF = () => {
 
 
       </div>
-    </Layout>
-  );
+    );
 };
 
 export default ManifestacaoNF; 

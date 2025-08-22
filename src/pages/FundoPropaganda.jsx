@@ -1,11 +1,9 @@
 import React from 'react';
-import Layout from '../components/Layout';
 import { Wrench } from '@phosphor-icons/react';
 
 export default function FundoPropaganda() {
   return (
-    <Layout>
-      <div className="w-full max-w-6xl mx-auto flex flex-col items-center justify-center py-16">
+    <div className="w-full max-w-6xl mx-auto flex flex-col items-center justify-center py-16">
         <h1 className="text-3xl font-bold mb-8 text-center text-[#000638]">Fundo de Propaganda</h1>
 
         <div className="bg-white p-12 rounded-2xl shadow-lg border border-[#000638]/10 text-center">
@@ -18,6 +16,5 @@ export default function FundoPropaganda() {
           </div>
         </div>
       </div>
-    </Layout>
-  );
+    );
 }

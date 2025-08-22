@@ -5,7 +5,6 @@ import { usePermissions } from '../hooks/usePermissions';
 import { fetchUsers, createUser, updateUser, deleteUser, checkEmailExists } from '../lib/userProfiles';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Notification from '../components/Notification';
-import Layout from '../components/Layout';
 import { USER_ROLES, USER_ROLE_LABELS, USER_ROLE_COLORS } from '../config/constants';
 
 const perfis = Object.entries(USER_ROLE_LABELS).map(([value, label]) => ({ value, label }));
@@ -23,14 +22,12 @@ export default function PainelAdmin() {
   // Só Owner pode acessar
   if (!user || !canAccessAdmin()) {
     return (
-      <Layout>
-        <div className="p-8 text-red-600 font-bold text-center">
+      <div className="p-8 text-red-600 font-bold text-center">
           <UserGear size={48} className="mx-auto mb-4 text-red-500" />
           <p>Acesso restrito ao Proprietário.</p>
           <p className="text-sm text-gray-600 mt-2">Você não tem permissão para acessar esta página.</p>
         </div>
-      </Layout>
-    );
+      );
   }
 
   // Buscar usuários
@@ -110,8 +107,7 @@ export default function PainelAdmin() {
   };
 
   return (
-    <Layout>
-      <div className="p-8 max-w-4xl mx-auto">
+    <div className="p-8 max-w-4xl mx-auto">
         {erro && <Notification message={erro} type="error" onClose={() => setErro('')} />}
         {success && <Notification message={success} type="success" onClose={() => setSuccess('')} />}
         
@@ -239,6 +235,5 @@ export default function PainelAdmin() {
           </table>
         )}
       </div>
-    </Layout>
-  );
+    );
 }

@@ -1,5 +1,4 @@
 import React, { Suspense, lazy, memo } from 'react';
-import Layout from '../components/Layout';
 import { useComprasFranquias } from '../hooks/useComprasFranquias';
 import { useResponsive } from '../hooks/useResponsive';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -58,7 +57,6 @@ const ComprasFranquias = memo(() => {
         keywords="compras, franquias, ranking, vendas, gestão, ERP"
       />
 
-    <Layout>
         <ErrorBoundary
           message="Erro ao carregar a página de Compras Franquias"
           onError={(error, errorInfo) => {
@@ -146,7 +144,6 @@ const ComprasFranquias = memo(() => {
             </main>
           </div>
         </ErrorBoundary>
-    </Layout>
     </>
   );
 });

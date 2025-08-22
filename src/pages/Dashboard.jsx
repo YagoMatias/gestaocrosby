@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import Layout from '../components/Layout';
 import { useAuth } from '../components/AuthContext';
 import useApiClient from '../hooks/useApiClient';
 import { 
@@ -365,7 +364,6 @@ const Dashboard = () => {
   ];
 
   return (
-    <Layout>
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
@@ -551,12 +549,9 @@ const Dashboard = () => {
               )}
             </div>
           </div>
-
- 
         </div>
       </div>
-    </Layout>
-  );
+);
 };
 
 export default Dashboard;
