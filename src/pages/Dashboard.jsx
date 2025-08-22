@@ -18,8 +18,6 @@ const Dashboard = () => {
   
   const [stats, setStats] = useState({
     faturamentoTotal: { value: 'R$ 0', change: '0%', changeType: 'neutral' },
-    contasAPagar: { value: 'R$ 0', change: '0%', changeType: 'neutral' },
-    contasAReceber: { value: 'R$ 0', change: '0%', changeType: 'neutral' },
     lojasAtivas: { value: '0', change: '0', changeType: 'neutral' }
   });
   
@@ -126,106 +124,9 @@ const Dashboard = () => {
     }
   };
 
-  // Função para buscar dados de contas a pagar
-  const buscarContasAPagar = async () => {
-    try {
-      const { primeiroDiaMes, ultimoDiaMes } = getDateRange();
-      
-      // Mesmas empresas usadas no sistema
-      const codigosEmpresas = ['1','2','5','6','7','11','31','55','65','75','85','90','91','92','93','94','95','96','97','98','99','100','111','200','311','500','550','600','650','700','750','850','890','910','920','930','940','950','960','970','980','990'];
-      if (codigosEmpresas.length === 0) {
-        console.warn('Nenhuma empresa encontrada para contas a pagar');
-        return;
-      }
 
-      const params = {
-        dt_inicio: primeiroDiaMes,
-        dt_fim: ultimoDiaMes,
-        cd_empresa: codigosEmpresas
-      };
 
-      const result = await apiClient.financial.contasPagar(params);
-      const todosOsDados = (result.success && Array.isArray(result.data)) ? result.data : [];
-      
-      // Aplicar os mesmos filtros da página ContasAPagar
-      // Filtro por situação: NORMAIS (apenas tp_situacao = 'N')
-      const dadosFiltradosSituacao = todosOsDados.filter(item => item.tp_situacao === 'N');
-      
-      // Filtro por status: Todos (não filtra por status)
-      const dadosFiltradosCompletos = dadosFiltradosSituacao;
-      
-      const totalContasPagar = dadosFiltradosCompletos.reduce((acc, item) => acc + parseFloat(item.vl_duplicata || 0), 0);
-      setStats(prev => ({
-        ...prev,
-        contasAPagar: {
-          value: formatCurrency(totalContasPagar),
-          change: '+0%',
-          changeType: 'negative'
-        }
-      }));
-    } catch (error) {
-      console.error('Erro ao buscar contas a pagar:', error);
-    }
-  };
 
-  // Função para buscar dados de contas a receber
-  const buscarContasAReceber = async () => {
-    try {
-      const { primeiroDiaMes, ultimoDiaMes } = getDateRange();
-      
-      // Usar apenas as empresas do FiltroEmpresa (mesmas empresas usadas no sistema)
-      const codigosEmpresas = ['1','2','5','6','7','11','31','55','65','75','85','90','91','92','93','94','95','96','97','99','100','111','200','311','500','550','600','650','700','750','850','890','910','920','930','940','950','960','970','990'];
-      
-      if (codigosEmpresas.length === 0) {
-        console.warn('Nenhuma empresa encontrada para contas a receber');
-        return;
-      }
-
-      // Fazer chamadas individuais para cada empresa (como na página original)
-      const todasAsPromises = codigosEmpresas.map(async (cdEmpresa) => {
-        try {
-          const params = {
-            dt_inicio: primeiroDiaMes,
-            dt_fim: ultimoDiaMes,
-            cd_empresa: cdEmpresa
-          };
-
-                     const result = await apiClient.financial.contasReceber(params);
-           
-           if (result.success && result.data) {
-             // A API retorna os dados em result.data.data
-             return result.data.data || result.data;
-           }
-           return [];
-        } catch (error) {
-          console.warn(`Erro ao buscar empresa ${cdEmpresa}:`, error);
-          return [];
-        }
-      });
-
-             const resultados = await Promise.all(todasAsPromises);
-       const todosOsDados = resultados.flat();
-       
-       // Aplicar os mesmos filtros da página ContasAReceber
-       // Filtro por situação: NORMAIS (apenas itens que NÃO têm data de cancelamento)
-       const dadosFiltradosSituacaoReceber = todosOsDados.filter(item => !item.dt_cancelamento);
-       
-       // Filtro por status: Todos (não filtra por status)
-       const dadosFiltradosCompletos = dadosFiltradosSituacaoReceber;
-       
-       const totalContasReceber = dadosFiltradosCompletos.reduce((acc, item) => acc + parseFloat(item.vl_fatura || 0), 0);
-      setStats(prev => ({
-        ...prev,
-        contasAReceber: {
-          value: formatCurrency(totalContasReceber),
-          change: '+0%',
-          changeType: 'positive'
-        }
-      }));
-    } catch (error) {
-      console.error('Erro ao buscar contas a receber:', error);
-    }
-  };
 
   // Função para buscar número de lojas ativas
   const buscarLojasAtivas = async () => {
@@ -266,8 +167,6 @@ const Dashboard = () => {
       try {
         await Promise.all([
           buscarFaturamento(),
-          buscarContasAPagar(),
-          buscarContasAReceber(),
           buscarLojasAtivas()
         ]);
       } catch (error) {
@@ -289,24 +188,6 @@ const Dashboard = () => {
       icon: ChartLineUp,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50'
-    },
-    {
-      title: 'Contas a Pagar',
-      value: stats.contasAPagar.value,
-      change: stats.contasAPagar.change,
-      changeType: stats.contasAPagar.changeType,
-      icon: Money,
-      color: 'text-red-600',
-      bgColor: 'bg-red-50'
-    },
-    {
-      title: 'Contas a Receber',
-      value: stats.contasAReceber.value,
-      change: stats.contasAReceber.change,
-      changeType: stats.contasAReceber.changeType,
-      icon: Money,
-      color: 'text-green-600',
-      bgColor: 'bg-green-50'
     },
     {
       title: 'Lojas Ativas',
@@ -377,10 +258,10 @@ const Dashboard = () => {
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             {loading ? (
               // Loading state
-              Array.from({ length: 4 }).map((_, index) => (
+              Array.from({ length: 2 }).map((_, index) => (
                 <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">

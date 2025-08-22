@@ -137,7 +137,7 @@ app.get('/api/docs', (req, res) => {
     },
     'Financeiro': {
       'GET /api/financial/extrato': 'Extrato bancário com filtros',
-      'GET /api/financial/extrato-totvs': 'Extrato TOTVS',
+    
       'GET /api/financial/contas-pagar': 'Contas a pagar',
       'GET /api/financial/contas-receber': 'Contas a receber',
       'GET /api/financial/fluxo-caixa': 'Fluxo de caixa com múltiplas empresas'
@@ -158,7 +158,7 @@ app.get('/api/docs', (req, res) => {
     },
     'Franquias': {
       'GET /api/franchise/consulta-fatura': 'Consultar faturas de franquias',
-      'GET /api/franchise/fundo-propaganda': 'Fundo de propaganda',
+    
       'GET /api/franchise/franquias-credev': 'Franquias crédito/débito'
     },
     'Utilitários': {

@@ -77,67 +77,7 @@ router.get('/extrato',
   })
 );
 
-/**
- * @route GET /financial/extrato-totvs
- * @desc Buscar extrato TOTVS com filtros
- * @access Public
- * @query {nr_ctapes, dt_movim_ini, dt_movim_fim, limit, offset}
- */
-router.get('/extrato-totvs',
-  sanitizeInput,
-  validatePagination,
-  asyncHandler(async (req, res) => {
-    const { nr_ctapes, dt_movim_ini, dt_movim_fim } = req.query;
-    const limit = parseInt(req.query.limit, 10) || 50000000;
-    const offset = parseInt(req.query.offset, 10) || 0;
 
-    let baseQuery = ' FROM fcc_mov fm WHERE fm.in_estorno = $1';
-    const params = ['F']; // Filtro fixo para não estornados
-    let idx = 2;
-
-    if (nr_ctapes) {
-      let contas = Array.isArray(nr_ctapes) ? nr_ctapes : [nr_ctapes];
-      if (contas.length > 1) {
-        baseQuery += ` AND fm.nr_ctapes IN (${contas.map(() => `$${idx++}`).join(',')})`;
-        params.push(...contas);
-      } else {
-        baseQuery += ` AND fm.nr_ctapes = $${idx++}`;
-        params.push(contas[0]);
-      }
-    }
-
-    if (dt_movim_ini && dt_movim_fim) {
-      baseQuery += ` AND fm.dt_movim BETWEEN $${idx++} AND $${idx++}`;
-      params.push(dt_movim_ini, dt_movim_fim);
-    }
-
-    const dataQuery = `
-      SELECT 
-        fm.cd_empresa, 
-        fm.nr_ctapes, 
-        fm.dt_movim, 
-        fm.ds_doc, 
-        fm.dt_liq, 
-        fm.in_estorno, 
-        fm.tp_operacao, 
-        fm.ds_aux, 
-        fm.vl_lancto
-      ${baseQuery}
-      ORDER BY fm.dt_movim DESC
-      LIMIT $${idx++} OFFSET $${idx++}
-    `;
-    
-    const dataParams = [...params, limit, offset];
-    const { rows } = await pool.query(dataQuery, dataParams);
-
-    successResponse(res, {
-      limit,
-      offset,
-      count: rows.length,
-      data: rows
-    }, 'Extrato TOTVS obtido com sucesso');
-  })
-);
 
 /**
  * @route GET /financial/contas-pagar

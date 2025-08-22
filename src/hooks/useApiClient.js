@@ -151,7 +151,7 @@ const useApiClient = () => {
   // Métodos específicos para cada tipo de endpoint
   const financial = {
     extrato: (params) => apiCall('/api/financial/extrato', params),
-    extratoTotvs: (params) => apiCall('/api/financial/extrato-totvs', params),
+  
     contasPagar: (params) => apiCall('/api/financial/contas-pagar', params),
     contasReceber: (params) => apiCall('/api/financial/contas-receber', params),
     fluxoCaixa: (params) => apiCall('/api/financial/fluxo-caixa', params),
@@ -177,7 +177,7 @@ const useApiClient = () => {
 
   const franchise = {
 
-    fundoPropaganda: (params) => apiCall('/api/franchise/fundo-propaganda', params),
+  
     franquiasCredev: (params) => apiCall('/api/franchise/franquias-credev', params)
   };
 

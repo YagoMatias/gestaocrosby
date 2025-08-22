@@ -10,7 +10,7 @@ export const API_BASE_URL = 'https://apigestaocrosby-bw2v.onrender.com';
 export const API_ENDPOINTS = {
   // Financial
   EXTRATO: '/api/financial/extrato',
-  EXTRATO_TOTVS: '/api/financial/extrato-totvs',
+
   CONTAS_PAGAR: '/api/financial/contas-pagar',
   CONTAS_RECEBER: '/api/financial/contas-receber',
   
@@ -30,7 +30,7 @@ export const API_ENDPOINTS = {
   
   // Franchise
   CONSULTA_FATURA: '/api/franchise/consulta-fatura',
-  FUNDO_PROPAGANDA: '/api/franchise/fundo-propaganda',
+
   FRANQUIAS_CREDEV: '/api/franchise/franquias-credev',
   
   // Utils

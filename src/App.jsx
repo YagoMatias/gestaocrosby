@@ -14,13 +14,13 @@ const ContasAPagar = lazy(() => import('./pages/ContasAPagar'));
 const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
 const FluxoCaixa = lazy(() => import('./pages/FluxoCaixa'));
 const ExtratoFinanceiro = lazy(() => import('./pages/ExtratoFinanceiro'));
-const ExtratoTOTVS = lazy(() => import('./pages/ExtratoTOTVS'));
+
 const Varejo = lazy(() => import('./pages/Varejo'));
 const Franquias = lazy(() => import('./pages/Franquias'));
 const Multimarcas = lazy(() => import('./pages/Multimarcas'));
 const Revenda = lazy(() => import('./pages/Revenda'));
 
-const FundoPropaganda = lazy(() => import('./pages/FundoPropaganda'));
+
 const RankingFaturamento = lazy(() => import('./pages/RankingFaturamento'));
 const Consolidado = lazy(() => import('./pages/Consolidado'));
 const AuditoriaCMV = lazy(() => import('./pages/AuditoriaCMV'));
@@ -106,10 +106,7 @@ const AppRoutes = memo(() => {
               path="/extrato-financeiro" 
               element={createPrivateRoute(ExtratoFinanceiro, ['owner', 'admin', 'manager', 'user'])} 
             />
-            <Route 
-              path="/extrato-totvs" 
-              element={createPrivateRoute(ExtratoTOTVS, ['owner', 'admin', 'manager', 'user'])} 
-            />
+            
             <Route 
               path="/varejo" 
               element={createPrivateRoute(Varejo, ['owner', 'admin', 'manager'])} 
@@ -127,10 +124,7 @@ const AppRoutes = memo(() => {
               element={createPrivateRoute(Revenda, ['owner', 'admin', 'manager'])} 
             />
 
-            <Route 
-              path="/fundo-propaganda" 
-              element={createPrivateRoute(FundoPropaganda, ['owner', 'admin', 'manager','user'])} 
-            />
+            
             <Route 
               path="/dre-demo" 
               element={createPrivateRoute(DreDemo, ['owner', 'admin', 'manager'])} 
