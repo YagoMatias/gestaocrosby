@@ -188,6 +188,11 @@ export const AuthProvider = ({ children }) => {
 
   // Funções de verificação de permissão
   const hasRole = (requiredRole) => {
+    // Se for um array, usar hasAnyRole
+    if (Array.isArray(requiredRole)) {
+      return requiredRole.includes(user?.role);
+    }
+    // Se for uma string, verificar se o role é igual
     return user?.role === requiredRole;
   };
 

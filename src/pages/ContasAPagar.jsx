@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../components/AuthContext';
 
 import FiltroEmpresa from '../components/FiltroEmpresa';
+import FiltroCentroCusto from '../components/FiltroCentroCusto';
 import useApiClient from '../hooks/useApiClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
@@ -62,6 +63,14 @@ const formatarData = (data) => {
 const ContasAPagar = () => {
   const { user, hasRole } = useAuth?.() || { user: null, hasRole: () => false };
   const apiClient = useApiClient();
+
+  // Debug logs para verificar o status do usuário
+  useEffect(() => {
+    console.log('🔍 DEBUG - Usuário atual:', user);
+    console.log('🔍 DEBUG - Role do usuário:', user?.role);
+    console.log('🔍 DEBUG - hasRole owner:', hasRole(['owner', 'admin', 'manager']));
+    console.log('🔍 DEBUG - hasRole user:', hasRole(['user']));
+  }, [user, hasRole]);
 
   const [dados, setDados] = useState([]);
   const [dadosFornecedor, setDadosFornecedor] = useState([]);
@@ -190,7 +199,7 @@ const ContasAPagar = () => {
   const [fornecedor, setFornecedor] = useState('');
   const [despesa, setDespesa] = useState('');
   const [duplicata, setDuplicata] = useState('');
-  const [centroCusto, setCentroCusto] = useState('');
+
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
   const [linhasSelecionadasAgrupadas, setLinhasSelecionadasAgrupadas] = useState(new Set());
   
@@ -445,6 +454,9 @@ const ContasAPagar = () => {
 
   // Empresas pré-selecionadas (serão carregadas do banco de dados)
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
+  
+  // Centros de custo selecionados (carregados dos dados filtrados)
+  const [centrosCustoSelecionados, setCentrosCustoSelecionados] = useState([]);
   
   // Estados para o modal de observações
   const [modalAberto, setModalAberto] = useState(false);
@@ -1339,12 +1351,12 @@ const ContasAPagar = () => {
       }
     }
 
-    // Filtro por centro de custo
-    if (centroCusto) {
-      const dsCentroCusto = item.ds_ccusto || '';
-      const buscaCentroCusto = centroCusto.toLowerCase();
+    // Filtro por centro de custo (dropdown)
+    if (centrosCustoSelecionados.length > 0) {
+      const cdCentroCusto = item.cd_ccusto || '';
+      const isSelected = centrosCustoSelecionados.some(centro => centro.cd_ccusto === cdCentroCusto);
       
-      if (!dsCentroCusto.toLowerCase().includes(buscaCentroCusto)) {
+      if (!isSelected) {
         return false;
       }
     }
@@ -1425,6 +1437,11 @@ const ContasAPagar = () => {
     setEmpresasSelecionadas([...empresas]); // Garantir que é um novo array
   };
 
+  // Função para lidar com seleção de centros de custo
+  const handleSelectCentrosCusto = (centrosCusto) => {
+    setCentrosCustoSelecionados([...centrosCusto]); // Garantir que é um novo array
+  };
+
   const handleFiltrar = (e) => {
     e.preventDefault();
     buscarDados();
@@ -1447,6 +1464,13 @@ const ContasAPagar = () => {
 
   // Funções para modal de confirmação de remoção de autorização
   const handleRemoveAuthorization = (chaveUnica, autorizadoPor) => {
+    // Verificar se o usuário tem permissão
+    if (!hasRole(['owner', 'admin', 'manager'])) {
+      console.error('❌ Usuário sem permissão para remover autorização');
+      alert('Você não tem permissão para realizar esta ação.');
+      return;
+    }
+    
     setAutorizacaoToRemove({ chaveUnica, autorizadoPor });
     setShowConfirmModal(true);
   };
@@ -1518,6 +1542,13 @@ const ContasAPagar = () => {
 
   // Função para autorizar uma conta individual
   const handleAutorizarConta = async (dadosConta, chaveUnica) => {
+    // Verificar se o usuário tem permissão
+    if (!hasRole(['owner', 'admin', 'manager'])) {
+      console.error('❌ Usuário sem permissão para autorizar contas');
+      alert('Você não tem permissão para realizar esta ação.');
+      return;
+    }
+    
     try {
       const { error } = await autorizacoesSupabase.autorizarConta(
         chaveUnica, 
@@ -1550,6 +1581,13 @@ const ContasAPagar = () => {
 
   // Função para autorizar contas selecionadas
   const handleAutorizarSelecionados = async () => {
+    // Verificar se o usuário tem permissão
+    if (!hasRole(['owner', 'admin', 'manager'])) {
+      console.error('❌ Usuário sem permissão para autorizar contas selecionadas');
+      alert('Você não tem permissão para realizar esta ação.');
+      return;
+    }
+    
     if (linhasSelecionadasAgrupadas.size === 0) {
       alert('Nenhuma conta selecionada para autorizar!');
       return;
@@ -1603,6 +1641,13 @@ const ContasAPagar = () => {
 
   // Função para remover autorizações das contas selecionadas
   const handleRemoverSelecionados = async () => {
+    // Verificar se o usuário tem permissão
+    if (!hasRole(['owner', 'admin', 'manager'])) {
+      console.error('❌ Usuário sem permissão para remover autorizações');
+      alert('Você não tem permissão para realizar esta ação.');
+      return;
+    }
+    
     if (linhasSelecionadasAgrupadas.size === 0) {
       alert('Nenhuma conta selecionada para remover autorização!');
       return;
@@ -1649,6 +1694,13 @@ const ContasAPagar = () => {
 
   // Funções para modais de confirmação em massa
   const handleAutorizarTodos = () => {
+    // Verificar se o usuário tem permissão
+    if (!hasRole(['owner', 'admin', 'manager'])) {
+      console.error('❌ Usuário sem permissão para autorizar todas as contas');
+      alert('Você não tem permissão para realizar esta ação.');
+      return;
+    }
+    
     const naoAutorizados = dadosOrdenadosParaCards.filter((grupo, index) => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
       const autorizacao = autorizacoes[chaveUnica];
@@ -1705,6 +1757,13 @@ const ContasAPagar = () => {
   };
 
   const handleRemoverTodos = () => {
+    // Verificar se o usuário tem permissão
+    if (!hasRole(['owner', 'admin', 'manager'])) {
+      console.error('❌ Usuário sem permissão para remover todas as autorizações');
+      alert('Você não tem permissão para realizar esta ação.');
+      return;
+    }
+    
     const autorizados = dadosOrdenadosParaCards.filter((grupo, index) => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
       const autorizacao = autorizacoes[chaveUnica];
@@ -1768,6 +1827,13 @@ const ContasAPagar = () => {
 
   // Função para carregar autorizações do Supabase
   const carregarAutorizacoesSupabase = async () => {
+    // Verificar se o usuário tem permissão
+    if (!hasRole(['owner', 'admin', 'manager'])) {
+      console.error('❌ Usuário sem permissão para carregar autorizações');
+      alert('Você não tem permissão para realizar esta ação.');
+      return;
+    }
+    
     if (!user) return;
     
     setCarregandoAutorizacoes(true);
@@ -1808,11 +1874,18 @@ const ContasAPagar = () => {
 
   // Função para enviar conta para pagamento (FINANCEIRO)
   const handleEnviarParaPagamento = (dadosConta, chaveUnica) => {
+    // Verificar se o usuário tem permissão
+    if (!hasRole(['user'])) {
+      console.error('❌ Usuário sem permissão para enviar para pagamento');
+      alert('Você não tem permissão para realizar esta ação.');
+      return;
+    }
+    
     console.log('🚀 handleEnviarParaPagamento chamada');
     console.log('📋 dadosConta:', dadosConta);
     console.log('🔑 chaveUnica:', chaveUnica);
     console.log('👤 user:', user);
-    console.log('🔐 hasRole FINANCEIRO:', hasRole(['FINANCEIRO']));
+    console.log('🔐 hasRole FINANCEIRO:', hasRole(['user']));
     
     setContaParaEnviar({ dadosConta, chaveUnica });
     setShowEnviarPagamentoModal(true);
@@ -1877,6 +1950,13 @@ const ContasAPagar = () => {
 
   // Função para remover status "enviado para pagamento"
   const handleRemoverEnviadoParaPagamento = (dadosConta, chaveUnica) => {
+    // Verificar se o usuário tem permissão
+    if (!hasRole(['user'])) {
+      console.error('❌ Usuário sem permissão para remover pagamento');
+      alert('Você não tem permissão para realizar esta ação.');
+      return;
+    }
+    
     console.log('🚀 handleRemoverEnviadoParaPagamento chamada');
     console.log('📋 dadosConta:', dadosConta);
     console.log('🔑 chaveUnica:', chaveUnica);
@@ -1954,6 +2034,13 @@ const ContasAPagar = () => {
 
   // Função para pagar todas as contas autorizadas
   const handlePagarTodos = async () => {
+    // Verificar se o usuário tem permissão
+    if (!hasRole(['user'])) {
+      console.error('❌ Usuário sem permissão para pagar contas');
+      alert('Você não tem permissão para realizar esta ação.');
+      return;
+    }
+    
     const contasAutorizadas = dadosOrdenadosParaCards.filter(grupo => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
       const autorizacao = autorizacoes[chaveUnica];
@@ -2005,6 +2092,13 @@ const ContasAPagar = () => {
 
   // Função para remover pagamento de todas as contas
   const handleRemoverPagamentoTodos = async () => {
+    // Verificar se o usuário tem permissão
+    if (!hasRole(['user'])) {
+      console.error('❌ Usuário sem permissão para remover pagamento');
+      alert('Você não tem permissão para realizar esta ação.');
+      return;
+    }
+    
     const contasEnviadas = dadosOrdenadosParaCards.filter(grupo => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
       const autorizacao = autorizacoes[chaveUnica];
@@ -2055,6 +2149,13 @@ const ContasAPagar = () => {
 
   // Função para pagar contas selecionadas
   const handlePagarSelecionados = async () => {
+    // Verificar se o usuário tem permissão
+    if (!hasRole(['user'])) {
+      console.error('❌ Usuário sem permissão para pagar contas selecionadas');
+      alert('Você não tem permissão para realizar esta ação.');
+      return;
+    }
+    
     if (linhasSelecionadasAgrupadas.size === 0) {
       alert('Nenhuma conta selecionada para pagar!');
       return;
@@ -2115,6 +2216,13 @@ const ContasAPagar = () => {
 
   // Função para remover pagamento de contas selecionadas
   const handleRemoverPagamentoSelecionados = async () => {
+    // Verificar se o usuário tem permissão
+    if (!hasRole(['user'])) {
+      console.error('❌ Usuário sem permissão para remover pagamento de contas selecionadas');
+      alert('Você não tem permissão para realizar esta ação.');
+      return;
+    }
+    
     if (linhasSelecionadasAgrupadas.size === 0) {
       alert('Nenhuma conta selecionada para remover pagamento!');
       return;
@@ -2359,13 +2467,10 @@ const ContasAPagar = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Centro de Custo</label>
-                <input
-                  type="text"
-                  value={centroCusto}
-                  onChange={(e) => setCentroCusto(e.target.value)}
-                  placeholder="Buscar por nome do centro de custo..."
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                <FiltroCentroCusto
+                  centrosCustoSelecionados={centrosCustoSelecionados}
+                  onSelectCentrosCusto={handleSelectCentrosCusto}
+                  dadosCentroCusto={dadosCentroCusto}
                 />
               </div>
               <div className="flex items-center">
@@ -2686,7 +2791,7 @@ const ContasAPagar = () => {
 										</button>
 									);
 								})()}
-								{hasRole(['ADM', 'DIRETOR']) && (
+								{hasRole(['owner', 'admin', 'manager']) && (
 									<>
 										<button
 											onClick={() => handleAutorizarTodos()}
@@ -2712,7 +2817,7 @@ const ContasAPagar = () => {
 										</button>
 									</>
 								)}
-								{hasRole(['FINANCEIRO']) && (
+								{hasRole(['user']) && (
 									<>
 										<button
 											onClick={() => handlePagarTodos()}
@@ -2748,7 +2853,7 @@ const ContasAPagar = () => {
 								>
 									Baixar Excel
 								</button>
-								{hasRole(['ADM', 'DIRETOR']) && (
+								{hasRole(['owner', 'admin', 'manager']) && (
 									<button
 										onClick={carregarAutorizacoesSupabase}
 										disabled={carregandoAutorizacoes}
@@ -2772,7 +2877,7 @@ const ContasAPagar = () => {
 								<thead className="min-w-full border border-gray-200 rounded-lg">
 									<tr className="bg-[#000638] text-white text-[10px]">
 										<th className="px-2 py-1 text-center text-[10px]" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10 }}>Selecionar</th>
-										{(hasRole(['ADM', 'DIRETOR']) || hasRole(['FINANCEIRO'])) && (
+										{(hasRole(['owner', 'admin', 'manager']) || hasRole(['user'])) && (
 											<th className="px-2 py-1 text-center text-[10px]">Ações</th>
 										)}
 										<th className="px-1 py-1 text-center text-[10px]">Status</th>
@@ -2849,17 +2954,17 @@ const ContasAPagar = () => {
 										const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
 										const autorizacao = autorizacoes[chaveUnica];
 										const autorizadoPor = autorizacao?.autorizadoPor;
-										const podeAutorizar = hasRole(['ADM', 'DIRETOR']);
+										const podeAutorizar = hasRole(['owner', 'admin', 'manager']);
 										const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
 										
 										// Debug para o botão ENVIAR PARA PAGAMENTO
 										if (index === 0) { // Apenas para o primeiro item para não poluir o console
 											console.log('🔍 Debug condições botão ENVIAR PARA PAGAMENTO:');
-											console.log('👤 hasRole FINANCEIRO:', hasRole(['FINANCEIRO']));
+											console.log('👤 hasRole FINANCEIRO:', hasRole(['user']));
 											console.log('✅ autorizadoPor:', autorizadoPor);
 											console.log('📊 autorizacao?.status:', autorizacao?.status);
 											console.log('🎯 STATUS_AUTORIZACAO.AUTORIZADO:', STATUS_AUTORIZACAO.AUTORIZADO);
-											console.log('🔗 Condição completa:', hasRole(['FINANCEIRO']) && autorizadoPor && autorizacao?.status === STATUS_AUTORIZACAO.AUTORIZADO);
+											console.log('🔗 Condição completa:', hasRole(['user']) && autorizadoPor && autorizacao?.status === STATUS_AUTORIZACAO.AUTORIZADO);
 											console.log('💰 contaPaga:', contaPaga);
 										}
 										
@@ -2868,7 +2973,7 @@ const ContasAPagar = () => {
 											<td className="px-2 py-1 text-center" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
 												<input type="checkbox" checked={isSelected} onChange={(e) => { e.stopPropagation(); toggleLinhaSelecionadaAgrupada(index); }} className="rounded" onClick={(e) => e.stopPropagation()} />
 											</td>
-											{(hasRole(['ADM', 'DIRETOR']) || hasRole(['FINANCEIRO'])) && (
+											{(hasRole(['owner', 'admin', 'manager']) || hasRole(['user'])) && (
 												<td className="px-2 py-1 text-center">
 													{contaPaga ? (
 														<span className="text-[10px] text-red-700 font-semibold">PAGO</span>
@@ -2880,7 +2985,7 @@ const ContasAPagar = () => {
 																		e.stopPropagation(); 
 																		if (autorizadoPor) {
 																			// Verificar se é ADM para remover quando enviado para pagamento
-																			if (autorizacao?.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO && !hasRole(['ADM'])) {
+																			if (autorizacao?.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO && !hasRole(['owner', 'admin', 'manager'])) {
 																				handleAcessoRestrito(autorizacao.enviadoPor);
 																				return;
 																			}
@@ -2896,7 +3001,7 @@ const ContasAPagar = () => {
 																	{autorizadoPor ? 'REMOVER' : 'AUTORIZAR'}
 																</button>
 															) : null}
-															{hasRole(['FINANCEIRO']) && autorizadoPor && autorizacao?.status === STATUS_AUTORIZACAO.AUTORIZADO && (
+															{hasRole(['user']) && autorizadoPor && autorizacao?.status === STATUS_AUTORIZACAO.AUTORIZADO && (
 																<div className="mt-1">
 																	<button
 																		onClick={(e) => { 
@@ -2912,7 +3017,7 @@ const ContasAPagar = () => {
 																	</button>
 																</div>
 															)}
-															{hasRole(['FINANCEIRO']) && autorizadoPor && autorizacao?.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO && (
+															{hasRole(['user']) && autorizadoPor && autorizacao?.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO && (
 																<div className="mt-1">
 																	<button
 																		onClick={(e) => { 
