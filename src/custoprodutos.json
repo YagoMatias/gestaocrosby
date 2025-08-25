@@ -458,17 +458,17 @@
   "Custo": 23.57
  },
  {
-  "Codigo": "06 001 008",
+  "Codigo": "006 001 008",
   "Modelo": "CAMISA INF BASICA NPV STORM",
   "Custo": 9.86
  },
  {
-  "Codigo": "06 001 001",
-  "Modelo": "CAMISA INF BASICA NPV STORM",
+  "Codigo": "006 001 001",
+  "Modelo": "CAMISA INF BASICA NPV CROSBY",
   "Custo": 9.86
  },
  {
-  "Codigo": "001 9 2",
+  "Codigo": "001 009 002",
   "Modelo": "CAMISA INFANTIL COTTON METAL",
   "Custo": 11.6
  },
@@ -714,17 +714,17 @@
  },
  {
   "Codigo": "0112 001 39002",
-  "Modelo": "Carteira Couro Com Placa (Preto) - 39002",
+  "Modelo": "CARTEIRA COURO C PLACA 01",
   "Custo": 35.03
  },
  {
   "Codigo": "0112 001 39003",
-  "Modelo": "Carteira Couro Com Placa (Marrom) - 39003",
+  "Modelo": "CARTEIRA COURO C PLACA 02",
   "Custo": 26.92
  },
  {
   "Codigo": "0112 001 39004",
-  "Modelo": "Carteira Couro Com Placa Pequena - 39004",
+  "Modelo": "CARTEIRA COURO C PLACA 03",
   "Custo": 28.08
  },
  {
@@ -1092,7 +1092,7 @@
  },
  {
   "Codigo": "0108 003 71005",
-  "Modelo": "POLO FEMININA ULTRA",
+  "Modelo": "POLO TRAD FEM ULTRA",
   "Custo": 23.67
  },
  {
@@ -1107,7 +1107,7 @@
  },
  {
   "Codigo": "0108 004 91037",
-  "Modelo": "POLO TRAD KING PIMA GOLA RETILINEA",
+  "Modelo": "POLO TRAD KING PIMA GOLA PROPRIA MALHA",
   "Custo": 66.67
  },
  {
@@ -2011,7 +2011,7 @@
  },
  {
   "Codigo": "0101 009 62040",
-  "Modelo": "TSHIRT HILLOW INFANTIL",
+  "Modelo": "T-SHIRT TEXTU HILLOW INFANTIL",
   "Custo": 12.07
  },
  {

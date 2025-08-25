@@ -166,7 +166,10 @@ const useApiClient = () => {
     contasReceber: (params) => apiCall('/api/financial/contas-receber', params),
     fluxoCaixa: (params) => apiCall('/api/financial/fluxo-caixa', params),
     nfManifestacao: (params) => apiCall('/api/financial/nfmanifestacao', params),
-    saldoConta: (params) => apiCall('/api/financial/saldo-conta', params)
+    saldoConta: (params) => apiCall('/api/financial/saldo-conta', params),
+    fornecedor: (params) => apiCall('/api/financial/fornecedor', params),
+    centrocusto: (params) => apiCall('/api/financial/centrocusto', params),
+    despesa: (params) => apiCall('/api/financial/despesa', params)
   };
 
   const sales = {

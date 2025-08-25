@@ -19,6 +19,7 @@ import {
   ArrowDown,
   CaretLeft,
   CaretRight,
+  CaretDown,
   TrendDown,
   FileArrowDown,
   XCircle,
@@ -63,6 +64,9 @@ const ContasAPagar = () => {
   const apiClient = useApiClient();
 
   const [dados, setDados] = useState([]);
+  const [dadosFornecedor, setDadosFornecedor] = useState([]);
+  const [dadosCentroCusto, setDadosCentroCusto] = useState([]);
+  const [dadosDespesa, setDadosDespesa] = useState([]);
   const [dataInicio, setDataInicio] = useState('');
   const [modalDetalhes, setModalDetalhes] = useState({ isOpen: false, conta: null });
   
@@ -880,6 +884,11 @@ const ContasAPagar = () => {
     }
     
     setLoading(true);
+    
+    // Declarar variáveis com valores padrão para evitar ReferenceError
+    let resultFornecedor = { success: true, data: [] };
+    let resultCentroCusto = { success: true, data: [] };
+    
     try {
       console.log('🔍 Iniciando busca de contas a pagar...');
       console.log('📅 Período:', { inicio, fim });
@@ -903,6 +912,7 @@ const ContasAPagar = () => {
       console.log('📋 Parâmetros da requisição:', params);
       console.log('🏢 Códigos das empresas:', codigosEmpresas);
       
+      // Buscar dados principais de contas a pagar
       const result = await apiClient.financial.contasPagar(params);
       
       console.log('🔍 Resultado da API:', {
@@ -959,41 +969,246 @@ const ContasAPagar = () => {
           metadata: result.metadata,
           estrutura: result.metadata?.periodo ? 'Nova estrutura' : 'Estrutura antiga'
         });
+
+        // Extrair códigos únicos de fornecedor, centro de custo e despesa dos dados principais
+        const codigosFornecedor = [...new Set(dadosArray.map(item => item.cd_fornecedor).filter(Boolean))];
+        const codigosCentroCusto = [...new Set(dadosArray.map(item => item.cd_ccusto).filter(Boolean))];
+        const codigosDespesa = [...new Set(dadosArray.map(item => item.cd_despesaitem).filter(Boolean))];
+        
+        console.log('🔍 Debug - Extração de códigos:');
+        console.log('   - Dados originais (primeiros 3):', dadosArray.slice(0, 3).map(item => ({
+          cd_fornecedor: item.cd_fornecedor,
+          cd_ccusto: item.cd_ccusto,
+          cd_despesaitem: item.cd_despesaitem
+        })));
+        console.log('   - Todos cd_fornecedor:', dadosArray.map(item => item.cd_fornecedor));
+        console.log('   - Todos cd_ccusto:', dadosArray.map(item => item.cd_ccusto));
+        console.log('   - Todos cd_despesaitem:', dadosArray.map(item => item.cd_despesaitem));
+
+        console.log('📋 Códigos únicos extraídos:');
+        console.log('   - Fornecedores:', codigosFornecedor.length, 'códigos');
+        console.log('   - Centros de custo:', codigosCentroCusto.length, 'códigos');
+        console.log('   - Itens de despesa:', codigosDespesa.length, 'códigos');
+        console.log('🔍 Debug - Códigos de centro de custo:', codigosCentroCusto);
+        console.log('🔍 Debug - Códigos de fornecedor:', codigosFornecedor);
+        console.log('🔍 Debug - Códigos de despesa:', codigosDespesa);
+
+        // Verificar se há códigos válidos antes de fazer as chamadas
+        if (codigosCentroCusto.length === 0) {
+          console.log('⚠️ Nenhum código de centro de custo encontrado, pulando chamada da API');
+        }
+        if (codigosFornecedor.length === 0) {
+          console.log('⚠️ Nenhum código de fornecedor encontrado, pulando chamada da API');
+        }
+        if (codigosDespesa.length === 0) {
+          console.log('⚠️ Nenhum código de despesa encontrado, pulando chamada da API');
+        }
+
+        // Buscar dados de fornecedor, centro de custo e despesa das novas rotas com os códigos extraídos
+        const promises = [];
+        
+        if (codigosFornecedor.length > 0) {
+          promises.push(apiClient.financial.fornecedor({ cd_fornecedor: codigosFornecedor }));
+        } else {
+          promises.push(Promise.resolve({ success: true, data: [] }));
+        }
+        
+        if (codigosCentroCusto.length > 0) {
+          promises.push(apiClient.financial.centrocusto({ cd_ccusto: codigosCentroCusto }));
+        } else {
+          promises.push(Promise.resolve({ success: true, data: [] }));
+        }
+        
+        if (codigosDespesa.length > 0) {
+          promises.push(apiClient.financial.despesa({ cd_despesaitem: codigosDespesa }));
+        } else {
+          promises.push(Promise.resolve({ success: true, data: [] }));
+        }
+        
+        const results = await Promise.all(promises);
+        resultFornecedor = results[0];
+        resultCentroCusto = results[1];
+        let resultDespesa = results[2];
+        
+                // Processar dados de fornecedor
+        let dadosFornecedorArray = [];
+        if (resultFornecedor.success) {
+          if (Array.isArray(resultFornecedor.data)) {
+            dadosFornecedorArray = resultFornecedor.data;
+          } else if (resultFornecedor.data && Array.isArray(resultFornecedor.data.data)) {
+            dadosFornecedorArray = resultFornecedor.data.data;
+          } else if (resultFornecedor.metadata && Array.isArray(resultFornecedor.metadata.data)) {
+            dadosFornecedorArray = resultFornecedor.metadata.data;
+          }
+        }
+
+        // Processar dados de centro de custo
+        let dadosCentroCustoArray = [];
+        if (resultCentroCusto.success) {
+          if (Array.isArray(resultCentroCusto.data)) {
+            dadosCentroCustoArray = resultCentroCusto.data;
+          } else if (resultCentroCusto.data && Array.isArray(resultCentroCusto.data.data)) {
+            dadosCentroCustoArray = resultCentroCusto.data.data;
+          } else if (resultCentroCusto.metadata && Array.isArray(resultCentroCusto.metadata.data)) {
+            dadosCentroCustoArray = resultCentroCusto.metadata.data;
+          }
+        }
+
+        // Processar dados de despesa
+        let dadosDespesaArray = [];
+        if (resultDespesa.success) {
+          if (Array.isArray(resultDespesa.data)) {
+            dadosDespesaArray = resultDespesa.data;
+          } else if (resultDespesa.data && Array.isArray(resultDespesa.data.data)) {
+            dadosDespesaArray = resultDespesa.data.data;
+          } else if (resultDespesa.metadata && Array.isArray(resultDespesa.metadata.data)) {
+            dadosDespesaArray = resultDespesa.metadata.data;
+          }
+        }
+        
+        console.log('🔍 Estrutura completa da resposta de fornecedor:', resultFornecedor);
+        console.log('🔍 Dados de fornecedor obtidos:', {
+          total: dadosFornecedorArray.length,
+          amostra: dadosFornecedorArray.slice(0, 2)
+        });
+        
+        console.log('🔍 Estrutura completa da resposta de centro de custo:', resultCentroCusto);
+        console.log('🔍 Dados de centro de custo obtidos:', {
+          total: dadosCentroCustoArray.length,
+          amostra: dadosCentroCustoArray.slice(0, 2)
+        });
+        
+        console.log('🔍 Estrutura completa da resposta de despesa:', resultDespesa);
+        console.log('🔍 Dados de despesa obtidos:', {
+          total: dadosDespesaArray.length,
+          amostra: dadosDespesaArray.slice(0, 2)
+        });
+        
+        // Criar mapas para busca eficiente de fornecedor, centro de custo e despesa usando apenas os códigos
+        const fornecedorMap = new Map();
+        dadosFornecedorArray.forEach(item => {
+          fornecedorMap.set(item.cd_fornecedor, item);
+        });
+        
+        const centroCustoMap = new Map();
+        dadosCentroCustoArray.forEach(item => {
+          centroCustoMap.set(item.cd_ccusto, item);
+        });
+        
+        const despesaMap = new Map();
+        dadosDespesaArray.forEach(item => {
+          despesaMap.set(item.cd_despesaitem, item);
+        });
+        
+        console.log('🗺️ Mapas criados:', {
+          fornecedorMapSize: fornecedorMap.size,
+          centroCustoMapSize: centroCustoMap.size,
+          despesaMapSize: despesaMap.size,
+          amostraFornecedorMap: Array.from(fornecedorMap.entries()).slice(0, 2),
+          amostraCentroCustoMap: Array.from(centroCustoMap.entries()).slice(0, 2),
+          amostraDespesaMap: Array.from(despesaMap.entries()).slice(0, 2)
+        });
         
         // Garantir que todos os campos necessários tenham valores padrão
-        const dadosProcessados = dadosArray.map(item => ({
-          ...item,
-          ds_observacao: item.ds_observacao || '',
-          in_aceite: item.in_aceite || '',
-          vl_rateio: item.vl_rateio || 0,
-          tp_aceite: item.in_aceite || '', // Mantém compatibilidade
-          ds_despesaitem: item.ds_despesaitem || '',
-          ds_ccusto: item.ds_ccusto || '',
-          nm_fornecedor: item.nm_fornecedor || '',
-          cd_despesaitem: item.cd_despesaitem || '',
-          cd_ccusto: item.cd_ccusto || ''
-        }));
+        const dadosProcessados = dadosArray.map(item => {
+          // Buscar dados de fornecedor, centro de custo e despesa dos mapas usando apenas os códigos
+          const dadosFornecedor = fornecedorMap.get(item.cd_fornecedor);
+          const dadosCentroCusto = centroCustoMap.get(item.cd_ccusto);
+          const dadosDespesa = despesaMap.get(item.cd_despesaitem);
+          
+          // Debug para os primeiros 3 itens
+          if (dadosArray.indexOf(item) < 3) {
+            console.log(`🔍 Processando item ${dadosArray.indexOf(item) + 1}:`, {
+              cd_fornecedor: item.cd_fornecedor,
+              cd_ccusto: item.cd_ccusto,
+              cd_despesaitem: item.cd_despesaitem,
+              encontrouFornecedor: !!dadosFornecedor,
+              encontrouCentroCusto: !!dadosCentroCusto,
+              encontrouDespesa: !!dadosDespesa,
+              dadosFornecedor: dadosFornecedor,
+              dadosCentroCusto: dadosCentroCusto,
+              dadosDespesa: dadosDespesa
+            });
+          }
+          
+          return {
+            ...item,
+            ds_observacao: item.ds_observacao || '',
+            in_aceite: item.in_aceite || '',
+            vl_rateio: item.vl_rateio || 0,
+            tp_aceite: item.in_aceite || '', // Mantém compatibilidade
+            // Usar dados das novas rotas separadas
+            ds_ccusto: dadosCentroCusto?.ds_ccusto || item.ds_ccusto || '',
+            nm_fornecedor: dadosFornecedor?.nm_fornecedor || item.nm_fornecedor || '',
+            ds_despesaitem: dadosDespesa?.ds_despesaitem || item.ds_despesaitem || '',
+            cd_despesaitem: item.cd_despesaitem || '',
+            cd_ccusto: dadosCentroCusto?.cd_ccusto || item.cd_ccusto || ''
+          };
+        });
         
-        // Debug para verificar dados de despesa e centro de custo
+        // Debug para verificar dados de despesa, centro de custo e fornecedor
         if (dadosProcessados.length > 0) {
-          console.log('🔍 Debug - Primeiros 3 registros com despesa e centro de custo:');
+          console.log('🔍 Debug - Primeiros 3 registros com dados das novas rotas:');
           dadosProcessados.slice(0, 3).forEach((item, index) => {
             console.log(`📋 Registro ${index + 1}:`, {
-              fornecedor: item.nm_fornecedor,
-              despesa: item.ds_despesaitem,
-              centroCusto: item.ds_ccusto,
+              cd_fornecedor: item.cd_fornecedor,
+              nm_fornecedor: item.nm_fornecedor,
+              cd_ccusto: item.cd_ccusto,
+              ds_ccusto: item.ds_ccusto,
+              cd_despesaitem: item.cd_despesaitem,
+              ds_despesaitem: item.ds_despesaitem,
+              temFornecedor: !!item.nm_fornecedor,
+              temCentroCusto: !!item.ds_ccusto,
               temDespesa: !!item.ds_despesaitem,
-              temCentroCusto: !!item.ds_ccusto
+              fonteFornecedor: item.nm_fornecedor ? 'Nova rota /fornecedor' : 'Dados originais',
+              fonteCentroCusto: item.ds_ccusto ? 'Nova rota /centrocusto' : 'Dados originais',
+              fonteDespesa: item.ds_despesaitem ? 'Nova rota /despesa' : 'Dados originais'
             });
+          });
+          
+          // Verificar se há dados vazios
+          const fornecedoresVazios = dadosProcessados.filter(item => !item.nm_fornecedor).length;
+          const centrosCustoVazios = dadosProcessados.filter(item => !item.ds_ccusto).length;
+          const despesasVazias = dadosProcessados.filter(item => !item.ds_despesaitem).length;
+          
+          console.log('📊 Estatísticas dos dados processados:', {
+            total: dadosProcessados.length,
+            fornecedoresVazios,
+            centrosCustoVazios,
+            despesasVazias,
+            percentualFornecedoresVazios: ((fornecedoresVazios / dadosProcessados.length) * 100).toFixed(2) + '%',
+            percentualCentrosCustoVazios: ((centrosCustoVazios / dadosProcessados.length) * 100).toFixed(2) + '%',
+            percentualDespesasVazias: ((despesasVazias / dadosProcessados.length) * 100).toFixed(2) + '%'
           });
         }
         
         setDados(dadosProcessados);
+        setDadosFornecedor(dadosFornecedorArray);
+        setDadosCentroCusto(dadosCentroCustoArray);
+        setDadosDespesa(dadosDespesaArray);
         setDadosCarregados(true);
+        
+        console.log('✅ Resumo das chamadas das novas rotas:', {
+          contasPagar: dadosProcessados.length,
+          fornecedor: dadosFornecedorArray.length,
+          centroCusto: dadosCentroCustoArray.length,
+          despesa: dadosDespesaArray.length,
+          sucessoFornecedor: resultFornecedor.success,
+          sucessoCentroCusto: resultCentroCusto.success,
+          sucessoDespesa: resultDespesa.success
+        });
       } else {
         console.warn('⚠️ Falha ao buscar dados:', result.message);
         setDados([]);
         setDadosCarregados(false);
+      }
+      
+      // Log de erros das novas rotas se houver
+      if (!resultFornecedor.success) {
+        console.warn('⚠️ Falha ao buscar dados de fornecedor:', resultFornecedor.message);
+      }
+      if (!resultCentroCusto.success) {
+        console.warn('⚠️ Falha ao buscar dados de centro de custo:', resultCentroCusto.message);
       }
     } catch (err) {
       console.error('❌ Erro geral ao buscar dados:', err);
@@ -2776,8 +2991,14 @@ const ContasAPagar = () => {
 								</tbody>
 							</table>
 							<div className="mt-3 text-xs text-gray-600 flex items-center justify-between">
-								<div>
-									Selecionadas: <span className="font-semibold">{linhasSelecionadasAgrupadas.size}</span>
+								<div className="flex items-center gap-4">
+									<div>
+										Selecionadas: <span className="font-semibold">{linhasSelecionadasAgrupadas.size}</span>
+									</div>
+									<div className="flex items-center gap-2">
+										<span className="text-green-600">✓</span>
+										                <span>Dados de fornecedor, centro de custo e despesa das rotas refeitas (/fornecedor, /centrocusto e /despesa)</span>
+									</div>
 								</div>
 								<div className="flex items-center gap-6">
 									<div>
