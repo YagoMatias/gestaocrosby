@@ -447,7 +447,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       );
     }
     
-    // User: acesso apenas ao financeiro
+    // User: acesso ao financeiro e franquias
     if (user.role === 'user') {
       return (
         <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
@@ -486,6 +486,16 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               onToggle={() => setFinanceiroOpen(!financeiroOpen)}
               icon={Money}
               color="text-emerald-600"
+            />
+
+            {/* Seção Franquias */}
+            <MenuSection 
+              title="Franquias"
+              items={franquias}
+              isOpen={franquiasOpen}
+              onToggle={() => setFranquiasOpen(!franquiasOpen)}
+              icon={Buildings}
+              color="text-purple-600"
             />
           </nav>
 
