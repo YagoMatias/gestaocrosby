@@ -4,7 +4,8 @@ import useApiClient from '../hooks/useApiClient';
 import custoProdutos from '../custoprodutos.json';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, CurrencyDollar, Package, Spinner } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, CurrencyDollar, Package, Spinner, Percent, TrendUp } from '@phosphor-icons/react';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
 
 
 const Franquias = () => {
@@ -308,20 +309,43 @@ const Franquias = () => {
     saveAs(new Blob([excelBuffer], { type: 'application/octet-stream' }), 'rank_produtos_franquias.xlsx');
   };
 
-  // Calcule o custo total da franquia usando a função padronizada
-  const custoTotal = React.useMemo(() => {
-    let totalCusto = 0;
+  // Função para calcular margem do canal
+  function calcularMargemCanal(fat, custo) {
+    if (fat > 0 && custo > 0) return ((fat - custo) / fat) * 100;
+    return null;
+  }
+
+  // Cálculos para os cards
+  const faturamentoFranquias = React.useMemo(() => {
+    const somaSaidas = dados.filter(row => row.tp_operacao === 'S').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
+    const somaEntradas = dados.filter(row => row.tp_operacao === 'E').reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
+    return somaSaidas - somaEntradas;
+  }, [dados]);
+
+  const custoBrutoFranquias = React.useMemo(() => {
+    let custoTotal = 0;
     dados.forEach(row => {
       if (row.tp_operacao === 'S') {
         const qtFaturado = Number(row.qt_faturado) || 1;
         const custoUnit = custoMap[row.cd_nivel?.trim()];
         if (custoUnit !== undefined) {
-          totalCusto += qtFaturado * custoUnit;
+          custoTotal += qtFaturado * custoUnit;
         }
       }
     });
-    return totalCusto;
+    return custoTotal;
   }, [dados, custoMap]);
+
+  const precoTabelaFranquias = React.useMemo(() => {
+    let total = 0;
+    dados.forEach(row => {
+      const q = Number(row.qt_faturado) || 1;
+      const bruto = (Number(row.vl_unitbruto) || 0) * q;
+      if (row.tp_operacao === 'S') total += bruto;
+      if (row.tp_operacao === 'E') total -= bruto; // Compensação de entrada para franquias
+    });
+    return total;
+  }, [dados]);
 
   // Função para ordenar os dados
   const handleSort = (key) => {
@@ -561,6 +585,132 @@ const Franquias = () => {
             </div>
           </form>
           {erro && <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{erro}</div>}
+        </div>
+
+        {/* Cards de Resumo */}
+        <div className="flex flex-wrap gap-4 mb-8 justify-center">
+          {/* Vendas após Desconto Franquias */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-green-700" />
+                <CardTitle className="text-sm font-bold text-green-700">Vendas após Desconto Franquias</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-green-600 mb-1">
+                {loading ? <Spinner size={24} className="text-green-600 animate-spin" /> : (faturamentoFranquias || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Total Franquias</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* CMV Franquias */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-red-700" />
+                <CardTitle className="text-sm font-bold text-red-700">CMV Franquias</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-red-700 mb-1">
+                {loading ? <Spinner size={24} className="text-red-600 animate-spin" /> : (custoBrutoFranquias || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">CMV das Franquias</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* CMV Franquias (%) */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <Percent size={18} className="text-orange-600" />
+                <CardTitle className="text-sm font-bold text-orange-600">CMV Franquias</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-orange-700 mb-1">
+                {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
+                  (faturamentoFranquias > 0 && custoBrutoFranquias > 0)
+                    ? ((custoBrutoFranquias / faturamentoFranquias) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
+                    : '--'
+                )}
+              </div>
+              <CardDescription className="text-xs text-gray-500">CMV Franquias (%)</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Margem Franquias */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <Percent size={18} className="text-yellow-700" />
+                <CardTitle className="text-sm font-bold text-yellow-700">Margem Franquias</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-yellow-700 mb-1">
+                {loading ? <Spinner size={24} className="text-yellow-600 animate-spin" /> : (
+                  (() => {
+                    const margem = calcularMargemCanal(faturamentoFranquias, custoBrutoFranquias);
+                    return margem !== null ? margem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
+                  })()
+                )}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Margem das Franquias</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Markup Franquias */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <TrendUp size={18} className="text-blue-600" />
+                <CardTitle className="text-sm font-bold text-blue-600">Markup Franquias</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-blue-700 mb-1">
+                {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
+                  custoBrutoFranquias > 0 ? (faturamentoFranquias / custoBrutoFranquias).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'
+                )}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Markup Franquias</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Preço de Tabela Franquias */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-purple-600" />
+                <CardTitle className="text-sm font-bold text-purple-600">Preço de Tabela Franquias</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-purple-700 mb-1">
+                {loading ? <Spinner size={24} className="text-purple-600 animate-spin" /> : (precoTabelaFranquias || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Preço de Tabela das Franquias</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Desconto Franquias */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-orange-600" />
+                <CardTitle className="text-sm font-bold text-orange-600">Desconto Franquias</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-orange-700 mb-1">
+                {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : ((precoTabelaFranquias - faturamentoFranquias) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Desconto das Franquias</CardDescription>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Tabela de Transações */}

@@ -64,6 +64,12 @@ const FluxoCaixa = () => {
   // Estados para paginação
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [itensPorPagina] = useState(30);
+  
+  // Estados para Recebimentos (FluxoCaixa-Recebimento)
+  const [dadosReceb, setDadosReceb] = useState([]);
+  const [loadingReceb, setLoadingReceb] = useState(false);
+  const [dadosRecebCarregados, setDadosRecebCarregados] = useState(false);
+  const [mostrarTabelaReceb, setMostrarTabelaReceb] = useState(false);
 
   // Estados para ordenação
   const [sortConfig, setSortConfig] = useState({
@@ -546,16 +552,16 @@ const FluxoCaixa = () => {
         
         setDadosCentroCusto(dadosCentroCustoArray);
         return dadosCentroCustoArray;
-      } else {
+            } else {
         console.warn('⚠️ Falha ao carregar dados de centro de custo:', resultCentroCusto.message);
         setDadosCentroCusto([]);
-        return [];
-      }
-    } catch (err) {
+              return [];
+            }
+          } catch (err) {
       console.error('❌ Erro ao carregar dados de centro de custo:', err);
       setDadosCentroCusto([]);
-      return [];
-    }
+            return [];
+          }
   };
 
   // Função para carregar dados de despesas
@@ -721,6 +727,53 @@ const FluxoCaixa = () => {
   const handleFiltrar = (e) => {
     e.preventDefault();
     buscarDados();
+    buscarRecebimentos();
+  };
+
+  // Buscar dados de Recebimento (por liquidação) usando rota fluxocaixa-recebimento
+  const buscarRecebimentos = async (inicio = dataInicio, fim = dataFim) => {
+    if (!inicio || !fim) return;
+    if (empresasSelecionadas.length === 0) {
+      alert('Selecione pelo menos uma empresa para consultar!');
+      return;
+    }
+    try {
+      setLoadingReceb(true);
+      // Montar query para UMA empresa (rota suporta um único cd_empresa)
+      const params = new URLSearchParams();
+      params.append('dt_inicio', inicio);
+      params.append('dt_fim', fim);
+      const primeiraEmpresa = empresasSelecionadas.find(e => e.cd_empresa);
+      if (!primeiraEmpresa) {
+        alert('Empresa selecionada inválida.');
+        setLoadingReceb(false);
+        return;
+      }
+      params.append('cd_empresa', primeiraEmpresa.cd_empresa);
+      const url = `https://apigestaocrosby-bw2v.onrender.com/api/financial/fluxocaixa-recebimento?${params.toString()}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.warn('⚠️ Erro HTTP em fluxocaixa-recebimento:', res.status, res.statusText);
+        setDadosReceb([]);
+        setDadosRecebCarregados(false);
+        return;
+      }
+      const body = await res.json();
+      // Aceitar tanto array direto quanto estrutura aninhada { data: { data: [...] } }
+      let lista = [];
+      if (Array.isArray(body)) lista = body;
+      else if (Array.isArray(body?.data)) lista = body.data;
+      else if (Array.isArray(body?.data?.data)) lista = body.data.data;
+      else if (Array.isArray(body?.result)) lista = body.result;
+      setDadosReceb(lista || []);
+      setDadosRecebCarregados(true);
+    } catch (err) {
+      console.error('❌ Erro ao buscar fluxocaixa-recebimento:', err);
+      setDadosReceb([]);
+      setDadosRecebCarregados(false);
+    } finally {
+      setLoadingReceb(false);
+    }
   };
 
   // Função para aplicar filtro mensal
@@ -1130,6 +1183,12 @@ const FluxoCaixa = () => {
   // Cálculo para valor que falta pagar
   const valorFaltaPagar = totalValor - valorContasPagas;
 
+  // Total de Recebimentos (soma das faturas do detalhamento de recebimento)
+  const totalRecebimento = (dadosReceb || []).reduce((acc, item) => {
+    const valor = parseFloat(item?.vl_fatura) || 0;
+    return acc + valor;
+  }, 0);
+
   // Cálculos para paginação (usando dados ordenados)
   const totalPaginas = Math.ceil(dadosOrdenados.length / itensPorPagina);
   const indiceInicial = (paginaAtual - 1) * itensPorPagina;
@@ -1327,20 +1386,26 @@ const FluxoCaixa = () => {
           </form>
         </div>
 
+        
+
         {/* Cards de Resumo */}
         <div className="flex flex-wrap gap-4 mb-8 justify-center">
           <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <Receipt size={18} className="text-blue-600" />
-                <CardTitle className="text-sm font-bold text-blue-700">Total de Contas</CardTitle>
+                <CurrencyDollar size={18} className="text-green-600" />
+                <CardTitle className="text-sm font-bold text-green-700">Recebido</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-blue-600 mb-1">
-                {loading ? <Spinner size={24} className="animate-spin text-blue-600" /> : totalContas}
+              <div className="text-2xl font-extrabold text-green-600 mb-1 break-words">
+                {loadingReceb ? (
+                  <Spinner size={24} className="animate-spin text-green-600" />
+                ) : (
+                  totalRecebimento.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                )}
               </div>
-              <CardDescription className="text-xs text-gray-500">Contas no período</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Soma das faturas recebidas</CardDescription>
             </CardContent>
           </Card>
 
@@ -1423,6 +1488,79 @@ const FluxoCaixa = () => {
           )}
                 </div>
 
+        {/* Detalhamento de Recebimento (abaixo de Despesas) */}
+        <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full mt-6">
+          <div 
+            className="p-6 border-b border-[#000638]/10 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors"
+            onClick={() => setMostrarTabelaReceb(!mostrarTabelaReceb)}
+          >
+            <h2 className="text-xl font-bold text-[#000638]">Detalhamento de Recebimento</h2>
+            <div className="flex items-center gap-2">
+              {mostrarTabelaReceb ? (
+                <CaretUp size={20} className="text-[#000638]" />
+              ) : (
+                <CaretDown size={20} className="text-[#000638]" />
+              )}
+              </div>
+        </div>
+          {mostrarTabelaReceb && (
+            <div className="p-6">
+              {loadingReceb ? (
+                <div className="flex justify-center items-center py-20">
+                  <div className="flex items-center gap-3">
+                    <Spinner size={32} className="animate-spin text-blue-600" />
+                    <span className="text-gray-600">Carregando recebimentos...</span>
+      </div>
+          </div>
+              ) : !dadosRecebCarregados ? (
+                <div className="flex justify-center items-center py-20">
+                  <div className="text-center">
+                    <div className="text-gray-500 text-lg mb-2">Clique em "Buscar Dados" para carregar os recebimentos</div>
+              </div>
+            </div>
+              ) : dadosReceb.length === 0 ? (
+                <div className="flex justify-center items-center py-20">
+                  <div className="text-center">
+                    <div className="text-gray-500 text-lg mb-2">Nenhum recebimento encontrado</div>
+              </div>
+            </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="contas-table w-full border-collapse">
+                    <thead>
+                      <tr className="bg-[#000638] text-white text-[10px]">
+                        <th className="px-2 py-1 text-center">Cliente</th>
+                        <th className="px-2 py-1 text-left">Nome Cliente</th>
+                        <th className="px-2 py-1 text-center">Emissão</th>
+                        <th className="px-2 py-1 text-center">Vencimento</th>
+                        <th className="px-2 py-1 text-center">Liquidação</th>
+                        <th className="px-2 py-1 text-center">Valor Fatura</th>
+                        <th className="px-2 py-1 text-center">Valor Pago</th>
+                        <th className="px-2 py-1 text-center">Empresa</th>
+                        <th className="px-2 py-1 text-center">Parcela</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dadosReceb.map((it, idx) => (
+                        <tr key={idx} className="text-[10px] border-b">
+                          <td className="px-2 py-1 text-center">{it.cd_cliente || ''}</td>
+                          <td className="px-2 py-1 text-left">{it.nm_cliente || ''}</td>
+                          <td className="px-2 py-1 text-center">{it.dt_emissao ? new Date(it.dt_emissao).toLocaleDateString('pt-BR') : ''}</td>
+                          <td className="px-2 py-1 text-center">{it.dt_vencimento ? new Date(it.dt_vencimento).toLocaleDateString('pt-BR') : ''}</td>
+                          <td className="px-2 py-1 text-center">{it.dt_liq ? new Date(it.dt_liq).toLocaleDateString('pt-BR') : ''}</td>
+                          <td className="px-2 py-1 text-right font-medium text-green-600">{(parseFloat(it.vl_fatura) || 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                          <td className="px-2 py-1 text-right font-medium text-blue-600">{(parseFloat(it.vl_pago) || 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                          <td className="px-2 py-1 text-center">{it.cd_empresa || ''}</td>
+                          <td className="px-2 py-1 text-center">{it.nr_parcela || ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+          </div>
+              )}
+        </div>
+          )}
+        </div>
 
 
         {/* Modal de Detalhes da Conta */}
@@ -1431,8 +1569,8 @@ const FluxoCaixa = () => {
           isOpen={modalDetalhes.isOpen}
           onClose={fecharModalDetalhes}
         />
-              </div>
-    );
+        </div>
+  );
 };
 
 
