@@ -4,6 +4,7 @@ import { useAuth } from '../components/AuthContext';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import FiltroCentroCusto from '../components/FiltroCentroCusto';
 import FiltroDespesas from '../components/FiltroDespesas';
+import FiltroFornecedor from '../components/FiltroFornecedor';
 import useApiClient from '../hooks/useApiClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
@@ -198,7 +199,7 @@ const ContasAPagar = () => {
   const [situacao, setSituacao] = useState('NORMAIS');
   const [previsao, setPrevisao] = useState('TODOS');
   const [filtroAutorizacao, setFiltroAutorizacao] = useState('TODOS'); // 'AUTORIZADOS' | 'NAO_AUTORIZADOS' | 'ENVIADO_PAGAMENTO' | 'TODOS'
-  const [fornecedor, setFornecedor] = useState('');
+
   const [duplicata, setDuplicata] = useState('');
 
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
@@ -459,6 +460,7 @@ const ContasAPagar = () => {
   // Centros de custo selecionados (carregados dos dados filtrados)
   const [centrosCustoSelecionados, setCentrosCustoSelecionados] = useState([]);
   const [despesasSelecionadas, setDespesasSelecionadas] = useState([]);
+  const [fornecedoresSelecionados, setFornecedoresSelecionados] = useState([]);
   
   // Estados para o modal de observações
   const [modalAberto, setModalAberto] = useState(false);
@@ -593,7 +595,6 @@ const ContasAPagar = () => {
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
       direction = 'desc';
     }
-    console.log('🔄 handleSort chamado:', { key, direction, sortConfigAtual: sortConfig });
     setSortConfig({ key, direction });
   };
 
@@ -786,8 +787,6 @@ const ContasAPagar = () => {
   const sortDadosAgrupados = (dados) => {
     if (!dados || dados.length === 0) return dados;
 
-    console.log('🔄 sortDadosAgrupados chamado:', { sortConfig, dadosLength: dados.length });
-    
     return [...dados].sort((a, b) => {
       let aValue, bValue;
 
@@ -1318,14 +1317,12 @@ const ContasAPagar = () => {
   // Aplicar filtros adicionais aos dados já filtrados por situação e status
   const dadosComFiltrosAdicionais = dadosFiltradosCompletos.filter((item) => {
     
-    // Filtro por fornecedor
-    if (fornecedor) {
+    // Filtro por fornecedor (dropdown)
+    if (fornecedoresSelecionados.length > 0) {
       const cdFornecedor = item.cd_fornecedor || '';
-      const nmFornecedor = item.nm_fornecedor || '';
-      const buscaFornecedor = fornecedor.toLowerCase();
+      const isSelected = fornecedoresSelecionados.some(fornecedor => fornecedor.cd_fornecedor === cdFornecedor);
       
-      if (!cdFornecedor.toString().toLowerCase().includes(buscaFornecedor) && 
-          !nmFornecedor.toLowerCase().includes(buscaFornecedor)) {
+      if (!isSelected) {
         return false;
       }
     }
@@ -1375,7 +1372,6 @@ const ContasAPagar = () => {
   
   // Ordenar dados para cards usando useMemo para re-calcular quando sortConfig mudar
   const dadosOrdenadosParaCards = useMemo(() => {
-    console.log('🔄 useMemo executado:', { sortConfig, dadosAgrupadosParaCardsLength: dadosAgrupadosParaCards?.length });
     return sortDadosAgrupados(dadosAgrupadosParaCards);
   }, [dadosAgrupadosParaCards, sortConfig]);
 
@@ -1449,6 +1445,11 @@ const ContasAPagar = () => {
   // Função para lidar com seleção de despesas
   const handleSelectDespesas = (despesas) => {
     setDespesasSelecionadas([...despesas]); // Garantir que é um novo array
+  };
+
+  // Função para lidar com seleção de fornecedores
+  const handleSelectFornecedores = (fornecedores) => {
+    setFornecedoresSelecionados([...fornecedores]); // Garantir que é um novo array
   };
 
   const handleFiltrar = (e) => {
@@ -2446,13 +2447,10 @@ const ContasAPagar = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Fornecedor</label>
-                <input
-                  type="text"
-                  value={fornecedor}
-                  onChange={(e) => setFornecedor(e.target.value)}
-                  placeholder="Buscar por código ou nome do fornecedor..."
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                <FiltroFornecedor
+                  fornecedoresSelecionados={fornecedoresSelecionados}
+                  onSelectFornecedores={handleSelectFornecedores}
+                  dadosFornecedor={dadosFornecedor}
                 />
               </div>
               <div>
