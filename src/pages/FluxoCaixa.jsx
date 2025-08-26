@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
+import FiltroFornecedor from '../components/FiltroFornecedor';
+import FiltroCentroCusto from '../components/FiltroCentroCusto';
+import FiltroDespesas from '../components/FiltroDespesas';
 import useApiClient from '../hooks/useApiClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend, Tooltip as RechartsTooltip } from 'recharts';
+
 import ModalDetalhesConta from '../components/ModalDetalhesConta';
 import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
 
@@ -23,8 +26,7 @@ import {
   CaretRight,
   CaretUp,
   CaretDown,
-  ChartPie,
-  ChartBar
+
 } from '@phosphor-icons/react';
 
 const FluxoCaixa = () => {
@@ -37,11 +39,17 @@ const FluxoCaixa = () => {
   const [dadosCarregados, setDadosCarregados] = useState(false);
   const [status, setStatus] = useState('Todos');
   const [situacao, setSituacao] = useState('NORMAIS');
-  const [fornecedor, setFornecedor] = useState('');
-  const [despesa, setDespesa] = useState('');
+
   const [duplicata, setDuplicata] = useState('');
-  const [centroCusto, setCentroCusto] = useState('');
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
+  
+  // Estados para filtros dropdown
+  const [dadosFornecedor, setDadosFornecedor] = useState([]);
+  const [fornecedoresSelecionados, setFornecedoresSelecionados] = useState([]);
+  const [dadosCentroCusto, setDadosCentroCusto] = useState([]);
+  const [centrosCustoSelecionados, setCentrosCustoSelecionados] = useState([]);
+  const [dadosDespesa, setDadosDespesa] = useState([]);
+  const [despesasSelecionadas, setDespesasSelecionadas] = useState([]);
   
   // Empresas pré-selecionadas
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
@@ -84,6 +92,21 @@ const FluxoCaixa = () => {
 
   // Dados filtrados por situação
   const dadosFiltrados = filtrarDadosPorSituacao(dados);
+
+  // Função para lidar com seleção de fornecedores
+  const handleSelectFornecedores = (fornecedores) => {
+    setFornecedoresSelecionados([...fornecedores]); // Garantir que é um novo array
+  };
+
+  // Função para lidar com seleção de centros de custo
+  const handleSelectCentrosCusto = (centrosCusto) => {
+    setCentrosCustoSelecionados([...centrosCusto]); // Garantir que é um novo array
+  };
+
+  // Função para lidar com seleção de despesas
+  const handleSelectDespesas = (despesas) => {
+    setDespesasSelecionadas([...despesas]); // Garantir que é um novo array
+  };
 
   // Função para filtrar dados por status
   const filtrarDadosPorStatus = (dadosOriginais) => {
@@ -135,9 +158,7 @@ const FluxoCaixa = () => {
   // Estado para controlar exibição da tabela de despesas
   const [mostrarTabela, setMostrarTabela] = useState(false);
 
-  // Estados para o gráfico de ranking
-  const [tipoGrafico, setTipoGrafico] = useState('pizza'); // 'pizza' ou 'barra'
-  const [moduloGrafico, setModuloGrafico] = useState('topicos'); // 'topicos' ou 'despesas'
+
 
   // Estados para filtro mensal
   const [filtroMensal, setFiltroMensal] = useState('ANO'); // 'ANO', 'JAN', 'FEV', etc.
@@ -381,12 +402,168 @@ const FluxoCaixa = () => {
       
       setDados(todosOsDados);
       setDadosCarregados(true);
+      
+      // Carregar dados de fornecedor para o filtro dropdown
+      await carregarDadosFornecedor(todosOsDados);
+      
+      // Carregar dados de centro de custo para o filtro dropdown
+      await carregarDadosCentroCusto(todosOsDados);
+      
+      // Carregar dados de despesas para o filtro dropdown
+      await carregarDadosDespesas(todosOsDados);
     } catch (err) {
       console.error('❌ Erro geral ao buscar dados:', err);
       setDados([]);
       setDadosCarregados(false);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Função para carregar dados de fornecedor
+  const carregarDadosFornecedor = async (dadosPrincipais) => {
+    try {
+      console.log('🔍 Carregando dados de fornecedor...');
+      
+      // Extrair códigos únicos de fornecedor dos dados principais
+      const codigosFornecedor = [...new Set(dadosPrincipais.map(item => item.cd_fornecedor).filter(Boolean))];
+      
+      console.log('🔍 Códigos de fornecedor extraídos:', {
+        total: codigosFornecedor.length,
+        amostra: codigosFornecedor.slice(0, 5)
+      });
+      
+      if (codigosFornecedor.length === 0) {
+        console.log('⚠️ Nenhum código de fornecedor encontrado, definindo array vazio');
+        setDadosFornecedor([]);
+        return;
+      }
+      
+      const resultFornecedor = await apiClient.financial.fornecedor({ cd_fornecedor: codigosFornecedor });
+      
+      let dadosFornecedorArray = [];
+      
+      if (resultFornecedor.success) {
+        // Verificar diferentes estruturas de resposta
+        if (Array.isArray(resultFornecedor.data)) {
+          dadosFornecedorArray = resultFornecedor.data;
+        } else if (resultFornecedor.data && Array.isArray(resultFornecedor.data.data)) {
+          dadosFornecedorArray = resultFornecedor.data.data;
+        } else if (resultFornecedor.metadata && Array.isArray(resultFornecedor.metadata.data)) {
+          dadosFornecedorArray = resultFornecedor.metadata.data;
+        }
+        
+        console.log('✅ Dados de fornecedor carregados:', {
+          total: dadosFornecedorArray.length,
+          amostra: dadosFornecedorArray.slice(0, 2)
+        });
+        
+        setDadosFornecedor(dadosFornecedorArray);
+      } else {
+        console.warn('⚠️ Falha ao carregar dados de fornecedor:', resultFornecedor.message);
+        setDadosFornecedor([]);
+      }
+    } catch (err) {
+      console.error('❌ Erro ao carregar dados de fornecedor:', err);
+      setDadosFornecedor([]);
+    }
+  };
+
+  // Função para carregar dados de centro de custo
+  const carregarDadosCentroCusto = async (dadosPrincipais) => {
+    try {
+      console.log('🔍 Carregando dados de centro de custo...');
+      
+      // Extrair códigos únicos de centro de custo dos dados principais
+      const codigosCentroCusto = [...new Set(dadosPrincipais.map(item => item.cd_ccusto).filter(Boolean))];
+      
+      console.log('🔍 Códigos de centro de custo extraídos:', {
+        total: codigosCentroCusto.length,
+        amostra: codigosCentroCusto.slice(0, 5)
+      });
+      
+      if (codigosCentroCusto.length === 0) {
+        console.log('⚠️ Nenhum código de centro de custo encontrado, definindo array vazio');
+        setDadosCentroCusto([]);
+        return;
+      }
+      
+      const resultCentroCusto = await apiClient.financial.centrocusto({ cd_ccusto: codigosCentroCusto });
+      
+      let dadosCentroCustoArray = [];
+      
+      if (resultCentroCusto.success) {
+        // Verificar diferentes estruturas de resposta
+        if (Array.isArray(resultCentroCusto.data)) {
+          dadosCentroCustoArray = resultCentroCusto.data;
+        } else if (resultCentroCusto.data && Array.isArray(resultCentroCusto.data.data)) {
+          dadosCentroCustoArray = resultCentroCusto.data.data;
+        } else if (resultCentroCusto.metadata && Array.isArray(resultCentroCusto.metadata.data)) {
+          dadosCentroCustoArray = resultCentroCusto.metadata.data;
+        }
+        
+        console.log('✅ Dados de centro de custo carregados:', {
+          total: dadosCentroCustoArray.length,
+          amostra: dadosCentroCustoArray.slice(0, 2)
+        });
+        
+        setDadosCentroCusto(dadosCentroCustoArray);
+      } else {
+        console.warn('⚠️ Falha ao carregar dados de centro de custo:', resultCentroCusto.message);
+        setDadosCentroCusto([]);
+      }
+    } catch (err) {
+      console.error('❌ Erro ao carregar dados de centro de custo:', err);
+      setDadosCentroCusto([]);
+    }
+  };
+
+  // Função para carregar dados de despesas
+  const carregarDadosDespesas = async (dadosPrincipais) => {
+    try {
+      console.log('🔍 Carregando dados de despesas...');
+      
+      // Extrair códigos únicos de despesa dos dados principais
+      const codigosDespesa = [...new Set(dadosPrincipais.map(item => item.cd_despesaitem).filter(Boolean))];
+      
+      console.log('🔍 Códigos de despesa extraídos:', {
+        total: codigosDespesa.length,
+        amostra: codigosDespesa.slice(0, 5)
+      });
+      
+      if (codigosDespesa.length === 0) {
+        console.log('⚠️ Nenhum código de despesa encontrado, definindo array vazio');
+        setDadosDespesa([]);
+        return;
+      }
+      
+      const resultDespesas = await apiClient.financial.despesa({ cd_despesaitem: codigosDespesa });
+      
+      let dadosDespesasArray = [];
+      
+      if (resultDespesas.success) {
+        // Verificar diferentes estruturas de resposta
+        if (Array.isArray(resultDespesas.data)) {
+          dadosDespesasArray = resultDespesas.data;
+        } else if (resultDespesas.data && Array.isArray(resultDespesas.data.data)) {
+          dadosDespesasArray = resultDespesas.data.data;
+        } else if (resultDespesas.metadata && Array.isArray(resultDespesas.metadata.data)) {
+          dadosDespesasArray = resultDespesas.metadata.data;
+        }
+        
+        console.log('✅ Dados de despesas carregados:', {
+          total: dadosDespesasArray.length,
+          amostra: dadosDespesasArray.slice(0, 2)
+        });
+        
+        setDadosDespesa(dadosDespesasArray);
+      } else {
+        console.warn('⚠️ Falha ao carregar dados de despesas:', resultDespesas.message);
+        setDadosDespesa([]);
+      }
+    } catch (err) {
+      console.error('❌ Erro ao carregar dados de despesas:', err);
+      setDadosDespesa([]);
     }
   };
 
@@ -574,24 +751,22 @@ const FluxoCaixa = () => {
   // Aplicar filtros adicionais aos dados já filtrados por situação e status
   const dadosComFiltrosAdicionais = dadosFiltradosCompletos.filter((item) => {
     
-    // Filtro por fornecedor
-    if (fornecedor) {
+    // Filtro por fornecedor (dropdown)
+    if (fornecedoresSelecionados.length > 0) {
       const cdFornecedor = item.cd_fornecedor || '';
-      const nmFornecedor = item.nm_fornecedor || '';
-      const buscaFornecedor = fornecedor.toLowerCase();
+      const isSelected = fornecedoresSelecionados.some(fornecedor => fornecedor.cd_fornecedor === cdFornecedor);
       
-      if (!cdFornecedor.toString().toLowerCase().includes(buscaFornecedor) && 
-          !nmFornecedor.toLowerCase().includes(buscaFornecedor)) {
+      if (!isSelected) {
         return false;
       }
     }
 
-    // Filtro por despesa
-    if (despesa) {
-      const dsDespesa = item.ds_despesaitem || '';
-      const buscaDespesa = despesa.toLowerCase();
+    // Filtro por despesa (dropdown)
+    if (despesasSelecionadas.length > 0) {
+      const cdDespesa = item.cd_despesaitem || '';
+      const isSelected = despesasSelecionadas.some(despesa => despesa.cd_despesaitem === cdDespesa);
       
-      if (!dsDespesa.toLowerCase().includes(buscaDespesa)) {
+      if (!isSelected) {
         return false;
       }
     }
@@ -604,12 +779,12 @@ const FluxoCaixa = () => {
       }
     }
 
-    // Filtro por centro de custo
-    if (centroCusto) {
-      const dsCentroCusto = item.ds_ccusto || '';
-      const buscaCentroCusto = centroCusto.toLowerCase();
+    // Filtro por centro de custo (dropdown)
+    if (centrosCustoSelecionados.length > 0) {
+      const cdCentroCusto = item.cd_ccusto || '';
+      const isSelected = centrosCustoSelecionados.some(centro => centro.cd_ccusto === cdCentroCusto);
       
-      if (!dsCentroCusto.toLowerCase().includes(buscaCentroCusto)) {
+      if (!isSelected) {
         return false;
       }
     }
@@ -849,7 +1024,7 @@ const FluxoCaixa = () => {
     dadosComFiltroMensal: dadosComFiltroMensal.length,
     dadosAgrupados: dadosAgrupados.length,
     dadosOrdenados: dadosOrdenados.length,
-    filtrosAtivos: { status, situacao, fornecedor, despesa, duplicata, centroCusto, filtroMensal },
+            filtrosAtivos: { status, situacao, duplicata, filtroMensal },
     amostraDados: dados.slice(0, 2)
   });
 
@@ -1046,23 +1221,17 @@ const FluxoCaixa = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Fornecedor</label>
-                <input
-                  type="text"
-                  value={fornecedor}
-                  onChange={(e) => setFornecedor(e.target.value)}
-                  placeholder="Buscar por código ou nome do fornecedor..."
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                <FiltroFornecedor
+                  fornecedoresSelecionados={fornecedoresSelecionados}
+                  onSelectFornecedores={handleSelectFornecedores}
+                  dadosFornecedor={dadosFornecedor}
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Despesa</label>
-                <input
-                  type="text"
-                  value={despesa}
-                  onChange={(e) => setDespesa(e.target.value)}
-                  placeholder="Buscar por descrição da despesa..."
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                <FiltroDespesas
+                  despesasSelecionadas={despesasSelecionadas}
+                  onSelectDespesas={handleSelectDespesas}
+                  dadosDespesa={dadosDespesa}
                 />
               </div>
               <div>
@@ -1076,13 +1245,10 @@ const FluxoCaixa = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Centro de Custo</label>
-                <input
-                  type="text"
-                  value={centroCusto}
-                  onChange={(e) => setCentroCusto(e.target.value)}
-                  placeholder="Buscar por nome do centro de custo..."
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                <FiltroCentroCusto
+                  centrosCustoSelecionados={centrosCustoSelecionados}
+                  onSelectCentrosCusto={handleSelectCentrosCusto}
+                  dadosCentroCusto={dadosCentroCusto}
                 />
               </div>
               <div className="flex items-center">
@@ -1204,18 +1370,7 @@ const FluxoCaixa = () => {
           )}
                 </div>
 
-        {/* Gráfico de Ranking de Despesas */}
-        {dadosCarregados && dadosOrdenados.length > 0 && (
-          <div className="max-w-6xl mx-auto w-full mt-6">
-            <GraficoRankingDespesas 
-              dados={dadosOrdenados}
-              tipoGrafico={tipoGrafico}
-              moduloGrafico={moduloGrafico}
-              onTipoChange={setTipoGrafico}
-              onModuloChange={setModuloGrafico}
-            />
-          </div>
-        )}
+
 
         {/* Modal de Detalhes da Conta */}
         <ModalDetalhesConta
@@ -1227,259 +1382,7 @@ const FluxoCaixa = () => {
     );
 };
 
-// Componente para gráfico de ranking de despesas
-const GraficoRankingDespesas = ({ dados, tipoGrafico, moduloGrafico, onTipoChange, onModuloChange }) => {
-  // Cores para os gráficos
-  const CORES = [
-    '#000638', '#4750A5', '#252E81', '#0D155D', '#AAB1EE', 
-    '#DBDEFF', '#737CCA', '#1E2A6B', '#3A4491', '#5B67B7'
-  ];
 
-  // Função para preparar dados dos tópicos
-  const prepararDadosTopicos = (dados) => {
-    const grupos = {};
-    
-    // As listas de exceções agora residem em src/config/categoriasDespesas.js
-    
-    dados.forEach((grupo) => {
-      const cdDespesa = grupo.item.cd_despesaitem;
-      const codigo = parseInt(cdDespesa) || 0;
-      
-      // 1) Primeiro tenta exceções pontuais
-      let categoria = getCategoriaPorCodigo(codigo);
-      
-      // 2) Se não houver exceção, aplica regra por faixa
-      if (!categoria && (codigo >= 1000 && codigo <= 1999)) {
-        categoria = 'CUSTO DAS MERCADORIAS VENDIDAS';
-      } else if (!categoria && codigo >= 2000 && codigo <= 2999) {
-        categoria = 'DESPESAS OPERACIONAIS';
-      } else if (!categoria && (codigo >= 3000 && codigo <= 3999)) {
-        categoria = 'DESPESAS COM PESSOAL';
-      } else if (!categoria && (codigo >= 4001 && codigo <= 4999)) {
-        categoria = 'ALUGUÉIS E ARRENDAMENTOS';
-      } else if (!categoria && (codigo >= 5000 && codigo <= 5999)) {
-        categoria = 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
-      } else if (!categoria && (codigo >= 6000 && codigo <= 6999)) {
-        categoria = 'DESPESAS GERAIS';
-      } else if (!categoria && (codigo >= 7000 && codigo <= 7999)) {
-        categoria = 'DESPESAS FINANCEIRAS';
-      } else if (!categoria && (codigo >= 8000 && codigo <= 8999)) {
-        categoria = 'OUTRAS DESPESAS OPERACIONAIS';
-      } else if (!categoria && (codigo >= 9000 && codigo <= 9999)) {
-        categoria = 'DESPESAS C/ VENDAS';
-      } else if (!categoria) {
-        categoria = 'SEM CLASSIFICAÇÃO';
-      }
-      
-      if (!grupos[categoria]) {
-        grupos[categoria] = 0;
-      }
-      grupos[categoria] += parseFloat(grupo.item.vl_duplicata || 0);
-    });
-
-    return Object.entries(grupos)
-      .map(([nome, valor]) => ({
-        nome: nome.length > 20 ? nome.substring(0, 20) + '...' : nome,
-        nomeCompleto: nome,
-        valor: valor
-      }))
-      .sort((a, b) => b.valor - a.valor)
-      .slice(0, 8); // Top 8
-  };
-
-  // Função para preparar dados das despesas individuais
-  const prepararDadosDespesas = (dados) => {
-    const grupos = {};
-    
-    dados.forEach((grupo) => {
-      const despesa = grupo.item.ds_despesaitem || 'SEM DESCRIÇÃO';
-      
-      if (!grupos[despesa]) {
-        grupos[despesa] = 0;
-      }
-      grupos[despesa] += parseFloat(grupo.item.vl_duplicata || 0);
-    });
-
-    return Object.entries(grupos)
-      .map(([nome, valor]) => ({
-        nome: nome.length > 25 ? nome.substring(0, 25) + '...' : nome,
-        nomeCompleto: nome,
-        valor: valor
-      }))
-      .sort((a, b) => b.valor - a.valor)
-      .slice(0, 10); // Top 10
-  };
-
-  // Preparar dados baseado no módulo selecionado
-  const dadosGrafico = moduloGrafico === 'topicos' 
-    ? prepararDadosTopicos(dados)
-    : prepararDadosDespesas(dados);
-
-  // Tooltip customizado
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-white p-3 border border-gray-300 rounded shadow-lg">
-          <p className="font-medium text-gray-800">{data.nomeCompleto}</p>
-          <p className="text-sm text-gray-600">
-            Valor: {data.valor.toLocaleString('pt-BR', {
-              style: 'currency',
-              currency: 'BRL',
-            })}
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  if (dadosGrafico.length === 0) {
-    return (
-      <div className="text-center py-8 text-gray-500">
-        Nenhum dado disponível para o gráfico
-      </div>
-    );
-  }
-
-  return (
-    <Card className="w-full bg-white">
-      <CardHeader className="bg-white">
-        <div className="flex justify-between items-center">
-          <div>
-            <CardTitle className="text-lg font-bold text-[#000638]">
-              Ranking de {moduloGrafico === 'topicos' ? 'Tópicos de Despesas' : 'Despesas'}
-            </CardTitle>
-            <CardDescription>
-              {moduloGrafico === 'topicos' ? 'Top 8 categorias' : 'Top 10 despesas'} por valor
-            </CardDescription>
-          </div>
-          
-          {/* Controles */}
-          <div className="flex items-center gap-4">
-            {/* Toggle Módulo */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-600">Módulo:</span>
-              <div className="flex border border-gray-300 rounded-md overflow-hidden">
-                <button
-                  onClick={() => onModuloChange('topicos')}
-                  className={`px-3 py-1 text-xs font-medium transition-colors ${
-                    moduloGrafico === 'topicos'
-                      ? 'bg-[#000638] text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  Tópicos
-                </button>
-                <button
-                  onClick={() => onModuloChange('despesas')}
-                  className={`px-3 py-1 text-xs font-medium transition-colors ${
-                    moduloGrafico === 'despesas'
-                      ? 'bg-[#000638] text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  Despesas
-                </button>
-              </div>
-            </div>
-
-            {/* Toggle Tipo de Gráfico */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-600">Tipo:</span>
-              <div className="flex border border-gray-300 rounded-md overflow-hidden">
-                <button
-                  onClick={() => onTipoChange('pizza')}
-                  className={`px-3 py-1 text-xs font-medium transition-colors flex items-center gap-1 ${
-                    tipoGrafico === 'pizza'
-                      ? 'bg-[#000638] text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  <ChartPie size={14} />
-                  Pizza
-                </button>
-                <button
-                  onClick={() => onTipoChange('barra')}
-                  className={`px-3 py-1 text-xs font-medium transition-colors flex items-center gap-1 ${
-                    tipoGrafico === 'barra'
-                      ? 'bg-[#000638] text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  <ChartBar size={14} />
-                  Barra
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </CardHeader>
-      
-      <CardContent className="bg-white">
-        <div className="h-80 bg-white">
-          <ResponsiveContainer width="100%" height="100%">
-            {tipoGrafico === 'pizza' ? (
-              <PieChart>
-                <Pie
-                  data={dadosGrafico}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ nome, percent }) => `${nome} (${(percent * 100).toFixed(1)}%)`}
-                  outerRadius={100}
-                  fill="#000638"
-                  dataKey="valor"
-                >
-                  {dadosGrafico.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={CORES[index % CORES.length]} />
-                  ))}
-                </Pie>
-                <RechartsTooltip content={<CustomTooltip />} />
-              </PieChart>
-            ) : (
-              <BarChart
-                data={dadosGrafico}
-                margin={{
-                  top: 5,
-                  right: 30,
-                  left: 20,
-                  bottom: 60,
-                }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="nome" 
-                  angle={-45}
-                  textAnchor="end"
-                  height={80}
-                  fontSize={11}
-                />
-                <YAxis 
-                  tickFormatter={(value) => 
-                    value.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                      minimumFractionDigits: 0,
-                      maximumFractionDigits: 0,
-                    })
-                  }
-                  fontSize={11}
-                />
-                <RechartsTooltip content={<CustomTooltip />} />
-                <Bar dataKey="valor">
-                  {dadosGrafico.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={CORES[index % CORES.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            )}
-          </ResponsiveContainer>
-        </div>
-      </CardContent>
-    </Card>
-  );
-};
 
 // Componente para agrupar despesas por categoria
 const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, dataInicio, dataFim, abrirModalDetalhes }) => {
