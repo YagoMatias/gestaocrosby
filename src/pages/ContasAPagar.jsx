@@ -21,6 +21,7 @@ import {
   ArrowDown,
   CaretLeft,
   CaretRight,
+  CaretUp,
   CaretDown,
   TrendDown,
   FileArrowDown,
@@ -592,6 +593,7 @@ const ContasAPagar = () => {
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
       direction = 'desc';
     }
+    console.log('🔄 handleSort chamado:', { key, direction, sortConfigAtual: sortConfig });
     setSortConfig({ key, direction });
   };
 
@@ -784,97 +786,99 @@ const ContasAPagar = () => {
   const sortDadosAgrupados = (dados) => {
     if (!dados || dados.length === 0) return dados;
 
+    console.log('🔄 sortDadosAgrupados chamado:', { sortConfig, dadosLength: dados.length });
+    
     return [...dados].sort((a, b) => {
       let aValue, bValue;
 
       switch (sortConfig.key) {
         case 'cd_empresa':
-          aValue = a.cd_empresa || '';
-          bValue = b.cd_empresa || '';
+          aValue = a.item?.cd_empresa || '';
+          bValue = b.item?.cd_empresa || '';
           break;
         case 'cd_fornecedor':
-          aValue = a.cd_fornecedor || '';
-          bValue = b.cd_fornecedor || '';
+          aValue = a.item?.cd_fornecedor || '';
+          bValue = b.item?.cd_fornecedor || '';
           break;
         case 'nm_fornecedor':
-          aValue = a.nm_fornecedor || '';
-          bValue = b.nm_fornecedor || '';
+          aValue = a.item?.nm_fornecedor || '';
+          bValue = b.item?.nm_fornecedor || '';
           break;
         case 'ds_despesaitem':
-          aValue = a.ds_despesaitem || '';
-          bValue = b.ds_despesaitem || '';
+          aValue = a.item?.ds_despesaitem || '';
+          bValue = b.item?.ds_despesaitem || '';
           break;
         case 'ds_ccusto':
-          aValue = a.ds_ccusto || '';
-          bValue = b.ds_ccusto || '';
+          aValue = a.item?.ds_ccusto || '';
+          bValue = b.item?.ds_ccusto || '';
           break;
         case 'nr_duplicata':
-          aValue = a.nr_duplicata || '';
-          bValue = b.nr_duplicata || '';
+          aValue = a.item?.nr_duplicata || '';
+          bValue = b.item?.nr_duplicata || '';
           break;
         case 'nr_portador':
-          aValue = a.nr_portador || '';
-          bValue = b.nr_portador || '';
+          aValue = a.item?.nr_portador || '';
+          bValue = b.item?.nr_portador || '';
           break;
         case 'dt_emissao':
-          aValue = a.dt_emissao ? criarDataSemFusoHorario(a.dt_emissao) : new Date(0);
-          bValue = b.dt_emissao ? criarDataSemFusoHorario(b.dt_emissao) : new Date(0);
+          aValue = a.item?.dt_emissao ? criarDataSemFusoHorario(a.item.dt_emissao) : new Date(0);
+          bValue = b.item?.dt_emissao ? criarDataSemFusoHorario(b.item.dt_emissao) : new Date(0);
           break;
         case 'dt_vencimento':
-          aValue = a.dt_vencimento ? criarDataSemFusoHorario(a.dt_vencimento) : new Date(0);
-          bValue = b.dt_vencimento ? criarDataSemFusoHorario(b.dt_vencimento) : new Date(0);
+          aValue = a.item?.dt_vencimento ? criarDataSemFusoHorario(a.item.dt_vencimento) : new Date(0);
+          bValue = b.item?.dt_vencimento ? criarDataSemFusoHorario(b.item.dt_vencimento) : new Date(0);
           break;
         case 'dt_entrada':
-          aValue = a.dt_entrada ? criarDataSemFusoHorario(a.dt_entrada) : new Date(0);
-          bValue = b.dt_entrada ? criarDataSemFusoHorario(b.dt_entrada) : new Date(0);
+          aValue = a.item?.dt_entrada ? criarDataSemFusoHorario(a.item.dt_entrada) : new Date(0);
+          bValue = b.item?.dt_entrada ? criarDataSemFusoHorario(b.item.dt_entrada) : new Date(0);
           break;
         case 'dt_liq':
-          aValue = a.dt_liq ? criarDataSemFusoHorario(a.dt_liq) : new Date(0);
-          bValue = b.dt_liq ? criarDataSemFusoHorario(b.dt_liq) : new Date(0);
+          aValue = a.item?.dt_liq ? criarDataSemFusoHorario(a.item.dt_liq) : new Date(0);
+          bValue = b.item?.dt_liq ? criarDataSemFusoHorario(b.item.dt_liq) : new Date(0);
           break;
         case 'tp_situacao':
-          aValue = a.tp_situacao || '';
-          bValue = b.tp_situacao || '';
+          aValue = a.item?.tp_situacao || '';
+          bValue = b.item?.tp_situacao || '';
           break;
         case 'tp_estagio':
-          aValue = a.tp_estagio || '';
-          bValue = b.tp_estagio || '';
+          aValue = a.item?.tp_estagio || '';
+          bValue = b.item?.tp_estagio || '';
           break;
         case 'tp_previsaoreal':
-          aValue = a.tp_previsaoreal || '';
-          bValue = b.tp_previsaoreal || '';
+          aValue = a.item?.tp_previsaoreal || '';
+          bValue = b.item?.tp_previsaoreal || '';
           break;
         case 'vl_duplicata':
-          aValue = parseFloat(a.vl_duplicata) || 0;
-          bValue = parseFloat(b.vl_duplicata) || 0;
+          aValue = parseFloat(a.item?.vl_duplicata) || 0;
+          bValue = parseFloat(b.item?.vl_duplicata) || 0;
           break;
         case 'vl_juros':
-          aValue = parseFloat(a.vl_juros) || 0;
-          bValue = parseFloat(b.vl_juros) || 0;
+          aValue = parseFloat(a.item?.vl_juros) || 0;
+          bValue = parseFloat(b.item?.vl_juros) || 0;
           break;
         case 'vl_acrescimo':
-          aValue = parseFloat(a.vl_acrescimo) || 0;
-          bValue = parseFloat(b.vl_acrescimo) || 0;
+          aValue = parseFloat(a.item?.vl_acrescimo) || 0;
+          bValue = parseFloat(b.item?.vl_acrescimo) || 0;
           break;
         case 'vl_desconto':
-          aValue = parseFloat(a.vl_desconto) || 0;
-          bValue = parseFloat(b.vl_desconto) || 0;
+          aValue = parseFloat(a.item?.vl_desconto) || 0;
+          bValue = parseFloat(b.item?.vl_desconto) || 0;
           break;
         case 'vl_pago':
-          aValue = parseFloat(a.vl_pago) || 0;
-          bValue = parseFloat(b.vl_pago) || 0;
+          aValue = parseFloat(a.item?.vl_pago) || 0;
+          bValue = parseFloat(b.item?.vl_pago) || 0;
           break;
         case 'in_aceite':
-          aValue = a.in_aceite || '';
-          bValue = b.in_aceite || '';
+          aValue = a.item?.in_aceite || '';
+          bValue = b.item?.in_aceite || '';
           break;
         case 'nr_parcela':
-          aValue = parseInt(a.nr_parcela) || 0;
-          bValue = parseInt(b.nr_parcela) || 0;
+          aValue = parseInt(a.item?.nr_parcela) || 0;
+          bValue = parseInt(b.item?.nr_parcela) || 0;
           break;
         default:
-          aValue = a[sortConfig.key] || '';
-          bValue = b[sortConfig.key] || '';
+          aValue = a.item?.[sortConfig.key] || '';
+          bValue = b.item?.[sortConfig.key] || '';
       }
 
       if (typeof aValue === 'string' && typeof bValue === 'string') {
@@ -1368,7 +1372,12 @@ const ContasAPagar = () => {
   // ===== LÓGICA SEPARADA PARA OS CARDS (igual ao Fluxo de Caixa) =====
   // Agrupar dados APENAS para os cards (não afeta a tabela)
   const dadosAgrupadosParaCards = agruparDadosIdenticos(dadosComFiltroMensal);
-  const dadosOrdenadosParaCards = sortDadosAgrupados(dadosAgrupadosParaCards);
+  
+  // Ordenar dados para cards usando useMemo para re-calcular quando sortConfig mudar
+  const dadosOrdenadosParaCards = useMemo(() => {
+    console.log('🔄 useMemo executado:', { sortConfig, dadosAgrupadosParaCardsLength: dadosAgrupadosParaCards?.length });
+    return sortDadosAgrupados(dadosAgrupadosParaCards);
+  }, [dadosAgrupadosParaCards, sortConfig]);
 
   // Cálculos dos cards (baseados em dados agrupados - igual ao Fluxo de Caixa)
   const totalContasCards = dadosOrdenadosParaCards.length;
@@ -2754,6 +2763,8 @@ const ContasAPagar = () => {
                         handleFiltroMensalChange={handleFiltroMensalChange}
                         obterDiasDoMes={obterDiasDoMes}
                         abrirModalDetalhes={abrirModalDetalhes}
+                        getSortIcon={getSortIcon}
+                        handleSort={handleSort}
                       />
                     </div>
                   )}
@@ -2877,71 +2888,73 @@ const ContasAPagar = () => {
 										{(hasRole(['owner', 'admin', 'manager']) || hasRole(['user'])) && (
 											<th className="px-2 py-1 text-center text-[10px]">Ações</th>
 										)}
-										<th className="px-1 py-1 text-center text-[10px]">Status</th>
-										<th className="px-2 py-1 text-center text-[10px]">
-											Vencimento
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_situacao')}>
+											<div className="flex items-center justify-center">Status {getSortIcon('tp_situacao')}</div>
 										</th>
-										<th className="px-2 py-1 text-center text-[10px]">
-											Valor
+										<th className="px-2 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_vencimento')}>
+											<div className="flex items-center justify-center">Vencimento {getSortIcon('dt_vencimento')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Fornecedor
+										<th className="px-2 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_duplicata')}>
+											<div className="flex items-center justify-center">Valor {getSortIcon('vl_duplicata')}</div>
 										</th>
-										<th className="px-3 py-1 text-center text-[10px]">
-											NM Fornecedor
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_fornecedor')}>
+											<div className="flex items-center justify-center">Fornecedor {getSortIcon('cd_fornecedor')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Despesa
+										<th className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nm_fornecedor')}>
+											<div className="flex items-center justify-center">NM Fornecedor {getSortIcon('nm_fornecedor')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											NM CUSTO
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_despesaitem')}>
+											<div className="flex items-center justify-center">Despesa {getSortIcon('ds_despesaitem')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Empresa
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_ccusto')}>
+											<div className="flex items-center justify-center">NM CUSTO {getSortIcon('ds_ccusto')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Duplicata
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_empresa')}>
+											<div className="flex items-center justify-center">Empresa {getSortIcon('cd_empresa')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Parcela
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_duplicata')}>
+											<div className="flex items-center justify-center">Duplicata {getSortIcon('nr_duplicata')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Portador
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_parcela')}>
+											<div className="flex items-center justify-center">Parcela {getSortIcon('nr_parcela')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Emissão
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_portador')}>
+											<div className="flex items-center justify-center">Portador {getSortIcon('nr_portador')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Entrada
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_emissao')}>
+											<div className="flex items-center justify-center">Emissão {getSortIcon('dt_emissao')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Liquidação
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_entrada')}>
+											<div className="flex items-center justify-center">Entrada {getSortIcon('dt_entrada')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Situação
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_liq')}>
+											<div className="flex items-center justify-center">Liquidação {getSortIcon('dt_liq')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Estágio
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_situacao')}>
+											<div className="flex items-center justify-center">Situação {getSortIcon('tp_situacao')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Juros
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_estagio')}>
+											<div className="flex items-center justify-center">Estágio {getSortIcon('tp_estagio')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Acréscimo
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_juros')}>
+											<div className="flex items-center justify-center">Juros {getSortIcon('vl_juros')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Desconto
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_acrescimo')}>
+											<div className="flex items-center justify-center">Acréscimo {getSortIcon('vl_acrescimo')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Pago
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_desconto')}>
+											<div className="flex items-center justify-center">Desconto {getSortIcon('vl_desconto')}</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Aceite
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_pago')}>
+											<div className="flex items-center justify-center">Pago {getSortIcon('vl_pago')}</div>
+										</th>
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('in_aceite')}>
+											<div className="flex items-center justify-center">Aceite {getSortIcon('in_aceite')}</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px]">Rateio(s)</th>
 										<th className="px-1 py-1 text-center text-[10px]">Observação</th>
-										<th className="px-1 py-1 text-center text-[10px]">
-											Previsão
+										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_previsaoreal')}>
+											<div className="flex items-center justify-center">Previsão {getSortIcon('tp_previsaoreal')}</div>
 										</th>
 									</tr>
 								</thead>
@@ -3628,7 +3641,7 @@ const ContasAPagar = () => {
 };
 
 // Componente para agrupar despesas por categoria
-const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, filtroDia, setFiltroDia, handleFiltroMensalChange, obterDiasDoMes, abrirModalDetalhes }) => {
+const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, filtroDia, setFiltroDia, handleFiltroMensalChange, obterDiasDoMes, abrirModalDetalhes, getSortIcon, handleSort }) => {
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(new Set());
   const [todosExpandidos, setTodosExpandidos] = useState(false);
 
@@ -4190,29 +4203,71 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                               <th className="px-2 py-1 text-center text-[10px]" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: '#000638' }}>
                                                 Selecionar
                                               </th>
-                                              <th className="px-2 py-1 text-center text-[10px]">Vencimento</th>
-                                              <th className="px-2 py-1 text-center text-[10px]">Valor</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Fornecedor</th>
-                                              <th className="px-3 py-1 text-center text-[10px]">NM Fornecedor</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Despesa</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">NM CUSTO</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Empresa</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Duplicata</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Portador</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Emissão</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Entrada</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Liquidação</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Situação</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Estágio</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Juros</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Acréscimo</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Desconto</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Pago</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Aceite</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Parcela</th>
+                                              <th className="px-2 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_vencimento')}>
+                                                <div className="flex items-center justify-center">Vencimento {getSortIcon('dt_vencimento')}</div>
+                                              </th>
+                                              <th className="px-2 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_duplicata')}>
+                                                <div className="flex items-center justify-center">Valor {getSortIcon('vl_duplicata')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_fornecedor')}>
+                                                <div className="flex items-center justify-center">Fornecedor {getSortIcon('cd_fornecedor')}</div>
+                                              </th>
+                                              <th className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nm_fornecedor')}>
+                                                <div className="flex items-center justify-center">NM Fornecedor {getSortIcon('nm_fornecedor')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_despesaitem')}>
+                                                <div className="flex items-center justify-center">Despesa {getSortIcon('ds_despesaitem')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_ccusto')}>
+                                                <div className="flex items-center justify-center">NM CUSTO {getSortIcon('ds_ccusto')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_empresa')}>
+                                                <div className="flex items-center justify-center">Empresa {getSortIcon('cd_empresa')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_duplicata')}>
+                                                <div className="flex items-center justify-center">Duplicata {getSortIcon('nr_duplicata')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_portador')}>
+                                                <div className="flex items-center justify-center">Portador {getSortIcon('nr_portador')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_emissao')}>
+                                                <div className="flex items-center justify-center">Emissão {getSortIcon('dt_emissao')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_entrada')}>
+                                                <div className="flex items-center justify-center">Entrada {getSortIcon('dt_entrada')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_liq')}>
+                                                <div className="flex items-center justify-center">Liquidação {getSortIcon('dt_liq')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_situacao')}>
+                                                <div className="flex items-center justify-center">Situação {getSortIcon('tp_situacao')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_estagio')}>
+                                                <div className="flex items-center justify-center">Estágio {getSortIcon('tp_estagio')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_juros')}>
+                                                <div className="flex items-center justify-center">Juros {getSortIcon('vl_juros')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_acrescimo')}>
+                                                <div className="flex items-center justify-center">Acréscimo {getSortIcon('vl_acrescimo')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_desconto')}>
+                                                <div className="flex items-center justify-center">Desconto {getSortIcon('vl_desconto')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_pago')}>
+                                                <div className="flex items-center justify-center">Pago {getSortIcon('vl_pago')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('in_aceite')}>
+                                                <div className="flex items-center justify-center">Aceite {getSortIcon('in_aceite')}</div>
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_parcela')}>
+                                                <div className="flex items-center justify-center">Parcela {getSortIcon('nr_parcela')}</div>
+                                              </th>
                                               <th className="px-1 py-1 text-center text-[10px]">Rateio</th>
                                               <th className="px-1 py-1 text-center text-[10px]">Observação</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Previsão</th>
+                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_previsaoreal')}>
+                                                <div className="flex items-center justify-center">Previsão {getSortIcon('tp_previsaoreal')}</div>
+                                              </th>
                                             </tr>
                                           </thead>
                                           <tbody>
