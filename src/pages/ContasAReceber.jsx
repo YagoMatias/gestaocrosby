@@ -307,7 +307,7 @@ const ContasAReceber = () => {
         // Mostra apenas itens pagos
         return dadosOriginais.filter(item => parseFloat(item.vl_pago) > 0);
       case 'Vencido':
-        // Mostra apenas itens vencidos
+        // Mostra apenas itens vencidos (data de vencimento menor que hoje)
         return dadosOriginais.filter(item => {
           const dv = parseDateNoTZ(item.dt_vencimento);
           const hoje = new Date();
@@ -315,7 +315,7 @@ const ContasAReceber = () => {
           return dv && dv < hoje;
         });
       case 'A Vencer':
-        // Mostra apenas itens a vencer
+        // Mostra apenas itens a vencer (data de vencimento maior ou igual a hoje)
         return dadosOriginais.filter(item => {
           const dv = parseDateNoTZ(item.dt_vencimento);
           const hoje = new Date();
@@ -839,8 +839,10 @@ const ContasAReceber = () => {
     if (item.dt_vencimento) {
       const dv = parseDateNoTZ(item.dt_vencimento);
       const hoje = new Date(); hoje.setHours(0,0,0,0);
+      // Vencido: data de vencimento menor que hoje (passou da data)
       if (dv && dv < hoje) return 'Vencido';
     }
+    // A Vencer: data de vencimento maior ou igual a hoje (incluindo hoje)
     return 'A Vencer';
   };
 

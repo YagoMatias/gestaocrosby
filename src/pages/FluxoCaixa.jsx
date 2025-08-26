@@ -97,16 +97,28 @@ const FluxoCaixa = () => {
         // Mostra apenas itens pagos
         return dadosOriginais.filter(item => item.dt_liq || item.tp_situacao === '1' || item.tp_situacao === 'P');
       case 'Vencido':
-        // Mostra apenas itens vencidos
+        // Mostra apenas itens vencidos (data de vencimento menor que hoje)
         return dadosOriginais.filter(item => {
-          if (item.dt_vencimento && new Date(item.dt_vencimento) < new Date()) return true;
+          if (item.dt_vencimento) {
+            const hoje = new Date();
+            hoje.setHours(0, 0, 0, 0);
+            const dataVencimento = new Date(item.dt_vencimento);
+            dataVencimento.setHours(0, 0, 0, 0);
+            if (dataVencimento < hoje) return true;
+          }
           if (item.tp_situacao === '2' || item.tp_situacao === 'V') return true;
           return false;
         });
       case 'A Vencer':
-        // Mostra apenas itens a vencer
+        // Mostra apenas itens a vencer (data de vencimento maior ou igual a hoje)
         return dadosOriginais.filter(item => {
-          if (item.dt_vencimento && new Date(item.dt_vencimento) >= new Date()) return true;
+          if (item.dt_vencimento) {
+            const hoje = new Date();
+            hoje.setHours(0, 0, 0, 0);
+            const dataVencimento = new Date(item.dt_vencimento);
+            dataVencimento.setHours(0, 0, 0, 0);
+            if (dataVencimento >= hoje) return true;
+          }
           if (item.tp_situacao === '3' || item.tp_situacao === 'A') return true;
           return false;
         });
@@ -387,7 +399,9 @@ const FluxoCaixa = () => {
     // Se tem vencimento, verificar se está vencido
     if (item.dt_vencimento) {
       const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
       const vencimento = new Date(item.dt_vencimento);
+      vencimento.setHours(0, 0, 0, 0);
       
       if (vencimento < hoje) {
         return 'Vencido';

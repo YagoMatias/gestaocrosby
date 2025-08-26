@@ -3,6 +3,7 @@ import { useAuth } from '../components/AuthContext';
 
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import FiltroCentroCusto from '../components/FiltroCentroCusto';
+import FiltroDespesas from '../components/FiltroDespesas';
 import useApiClient from '../hooks/useApiClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
@@ -197,7 +198,6 @@ const ContasAPagar = () => {
   const [previsao, setPrevisao] = useState('TODOS');
   const [filtroAutorizacao, setFiltroAutorizacao] = useState('TODOS'); // 'AUTORIZADOS' | 'NAO_AUTORIZADOS' | 'ENVIADO_PAGAMENTO' | 'TODOS'
   const [fornecedor, setFornecedor] = useState('');
-  const [despesa, setDespesa] = useState('');
   const [duplicata, setDuplicata] = useState('');
 
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
@@ -457,6 +457,7 @@ const ContasAPagar = () => {
   
   // Centros de custo selecionados (carregados dos dados filtrados)
   const [centrosCustoSelecionados, setCentrosCustoSelecionados] = useState([]);
+  const [despesasSelecionadas, setDespesasSelecionadas] = useState([]);
   
   // Estados para o modal de observações
   const [modalAberto, setModalAberto] = useState(false);
@@ -502,19 +503,21 @@ const ContasAPagar = () => {
         // Mostra apenas itens pagos
         return dadosOriginais.filter(item => parseFloat(item.vl_pago) > 0);
       case 'Vencido':
-        // Mostra apenas itens vencidos
+        // Mostra apenas itens vencidos (data de vencimento menor que hoje)
         return dadosOriginais.filter(item => {
           if (!item.dt_vencimento) return false;
           const dataVencimento = criarDataSemFusoHorario(item.dt_vencimento);
           const hoje = new Date();
+          hoje.setHours(0, 0, 0, 0);
           return dataVencimento < hoje;
         });
       case 'A Vencer':
-        // Mostra apenas itens a vencer
+        // Mostra apenas itens a vencer (data de vencimento maior ou igual a hoje)
         return dadosOriginais.filter(item => {
           if (!item.dt_vencimento) return true;
           const dataVencimento = criarDataSemFusoHorario(item.dt_vencimento);
           const hoje = new Date();
+          hoje.setHours(0, 0, 0, 0);
           return dataVencimento >= hoje;
         });
       default:
@@ -993,17 +996,6 @@ const ContasAPagar = () => {
           cd_ccusto: item.cd_ccusto,
           cd_despesaitem: item.cd_despesaitem
         })));
-        console.log('   - Todos cd_fornecedor:', dadosArray.map(item => item.cd_fornecedor));
-        console.log('   - Todos cd_ccusto:', dadosArray.map(item => item.cd_ccusto));
-        console.log('   - Todos cd_despesaitem:', dadosArray.map(item => item.cd_despesaitem));
-
-        console.log('📋 Códigos únicos extraídos:');
-        console.log('   - Fornecedores:', codigosFornecedor.length, 'códigos');
-        console.log('   - Centros de custo:', codigosCentroCusto.length, 'códigos');
-        console.log('   - Itens de despesa:', codigosDespesa.length, 'códigos');
-        console.log('🔍 Debug - Códigos de centro de custo:', codigosCentroCusto);
-        console.log('🔍 Debug - Códigos de fornecedor:', codigosFornecedor);
-        console.log('🔍 Debug - Códigos de despesa:', codigosDespesa);
 
         // Verificar se há códigos válidos antes de fazer as chamadas
         if (codigosCentroCusto.length === 0) {
@@ -1240,6 +1232,7 @@ const ContasAPagar = () => {
     // Se tem vencimento, verificar se está vencido
     if (item.dt_vencimento) {
       const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
       const vencimento = criarDataSemFusoHorario(item.dt_vencimento);
       const diasParaVencer = Math.ceil((vencimento - hoje) / (1000 * 60 * 60 * 24));
       
@@ -1333,15 +1326,7 @@ const ContasAPagar = () => {
       }
     }
 
-    // Filtro por despesa
-    if (despesa) {
-      const dsDespesa = item.ds_despesaitem || '';
-      const buscaDespesa = despesa.toLowerCase();
-      
-      if (!dsDespesa.toLowerCase().includes(buscaDespesa)) {
-        return false;
-      }
-    }
+
     
     // Filtro por duplicata
     if (duplicata) {
@@ -1355,6 +1340,16 @@ const ContasAPagar = () => {
     if (centrosCustoSelecionados.length > 0) {
       const cdCentroCusto = item.cd_ccusto || '';
       const isSelected = centrosCustoSelecionados.some(centro => centro.cd_ccusto === cdCentroCusto);
+      
+      if (!isSelected) {
+        return false;
+      }
+    }
+
+    // Filtro por despesa (dropdown)
+    if (despesasSelecionadas.length > 0) {
+      const cdDespesa = item.cd_despesaitem || '';
+      const isSelected = despesasSelecionadas.some(despesa => despesa.cd_despesaitem === cdDespesa);
       
       if (!isSelected) {
         return false;
@@ -1440,6 +1435,11 @@ const ContasAPagar = () => {
   // Função para lidar com seleção de centros de custo
   const handleSelectCentrosCusto = (centrosCusto) => {
     setCentrosCustoSelecionados([...centrosCusto]); // Garantir que é um novo array
+  };
+
+  // Função para lidar com seleção de despesas
+  const handleSelectDespesas = (despesas) => {
+    setDespesasSelecionadas([...despesas]); // Garantir que é um novo array
   };
 
   const handleFiltrar = (e) => {
@@ -2447,13 +2447,10 @@ const ContasAPagar = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Despesa</label>
-                <input
-                  type="text"
-                  value={despesa}
-                  onChange={(e) => setDespesa(e.target.value)}
-                  placeholder="Buscar por descrição da despesa..."
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                <FiltroDespesas
+                  despesasSelecionadas={despesasSelecionadas}
+                  onSelectDespesas={handleSelectDespesas}
+                  dadosDespesa={dadosDespesa}
                 />
               </div>
               <div>
