@@ -312,7 +312,7 @@ const FluxoCaixa = () => {
       console.log('📅 Período (Data Liquidação):', { inicio, fim });
       console.log('🏢 Empresas selecionadas:', empresasSelecionadas);
       
-      // Buscar dados usando uma única requisição com múltiplas empresas
+      // Buscar dados usando a nova rota refatorada
       const params = {
         dt_inicio: inicio,
         dt_fim: fim
@@ -335,17 +335,24 @@ const FluxoCaixa = () => {
       let todosOsDados = [];
       
       if (result.success) {
-        // Nova estrutura de resposta do backend
-        const responseData = result.data || {};
-        const dadosArray = Array.isArray(responseData.data) ? responseData.data : 
-                          Array.isArray(result.data) ? result.data : [];
+        // Nova estrutura de resposta do backend refatorado
+        // Aceitar tanto array direto (result.data) quanto objeto aninhado (result.data.data)
+        const rawData = result.data;
+        const dadosArray = Array.isArray(rawData)
+          ? rawData
+          : (rawData && Array.isArray(rawData.data))
+            ? rawData.data
+            : [];
+        const responseData = Array.isArray(rawData) ? {} : (rawData || {});
         
-        console.log('✅ Dados obtidos com requisição única:', {
+        console.log('✅ Dados obtidos com nova rota refatorada:', {
           total: dadosArray.length,
           amostra: dadosArray.slice(0, 2),
-          empresas: codigosEmpresas,
+          empresas: responseData.empresas,
           totais: responseData.totals,
-          periodo: responseData.periodo
+          periodo: responseData.periodo,
+          performance: responseData.performance,
+          queryType: responseData.queryType
         });
         
         // Armazenar informações adicionais do backend
@@ -353,45 +360,16 @@ const FluxoCaixa = () => {
           console.log('💰 Totais do período:', responseData.totals);
         }
         
+        if (responseData.performance) {
+          console.log('⚡ Performance da query:', responseData.performance);
+        }
+        
         todosOsDados = dadosArray;
       } else {
-        console.warn('⚠️ Falha com requisição única, tentando requisições individuais...');
-        
-        // Fallback: tentar requisições individuais
-        const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
-          try {
-            console.log(`📡 Fallback: Buscando dados para empresa ${empresa.cd_empresa}...`);
-            
-            const paramsIndividual = {
-              dt_inicio: inicio,
-              dt_fim: fim,
-              cd_empresa: empresa.cd_empresa
-            };
-            
-            const resultIndividual = await apiClient.financial.fluxoCaixa(paramsIndividual);
-            
-            if (resultIndividual.success) {
-              // Compatibilidade com nova estrutura de resposta
-              const responseData = resultIndividual.data || {};
-              const dadosArray = Array.isArray(responseData.data) ? responseData.data : 
-                                Array.isArray(resultIndividual.data) ? resultIndividual.data : [];
-              console.log(`✅ Sucesso fallback para empresa ${empresa.cd_empresa}:`, {
-                total: dadosArray.length
-              });
-              return dadosArray;
-            } else {
-              console.warn(`⚠️ Falha fallback para empresa ${empresa.cd_empresa}:`, resultIndividual.message);
-              return [];
-            }
-          } catch (err) {
-            console.error(`❌ Erro fallback para empresa ${empresa.cd_empresa}:`, err);
-            return [];
-          }
-        });
-        
-        // Aguardar todas as requisições fallback
-        const resultados = await Promise.all(todasAsPromises);
-        todosOsDados = resultados.flat();
+        console.error('❌ Falha ao buscar dados:', result.message);
+        setDados([]);
+        setDadosCarregados(false);
+        return;
       }
       
       console.log('📊 Resultado final:', {
@@ -400,17 +378,70 @@ const FluxoCaixa = () => {
         primeirosRegistros: todosOsDados.slice(0, 3)
       });
       
-      setDados(todosOsDados);
+      // Carregar dados de fornecedor, centro de custo e despesas
+      const [dadosFornecedor, dadosCentroCusto, dadosDespesa] = await Promise.all([
+        carregarDadosFornecedor(todosOsDados),
+        carregarDadosCentroCusto(todosOsDados),
+        carregarDadosDespesas(todosOsDados)
+      ]);
+      
+      // Criar mapas para buscar rapidamente por código (normalizando como string)
+      const fornecedorMap = new Map(
+        (dadosFornecedor || []).map((f) => [String(f.cd_fornecedor), f])
+      );
+      const centroCustoMap = new Map(
+        (dadosCentroCusto || []).map((c) => [String(c.cd_ccusto), c])
+      );
+      const despesaMap = new Map(
+        (dadosDespesa || []).map((d) => [String(d.cd_despesaitem), d])
+      );
+
+      console.log('🗺️ Map sizes:', {
+        fornecedores: fornecedorMap.size,
+        centrosCusto: centroCustoMap.size,
+        despesas: despesaMap.size,
+        amostraFornecedor: Array.from(fornecedorMap.entries()).slice(0, 2),
+        amostraCentroCusto: Array.from(centroCustoMap.entries()).slice(0, 2),
+        amostraDespesa: Array.from(despesaMap.entries()).slice(0, 2)
+      });
+
+      // Mapear os dados de fornecedor, centro de custo e despesas aos dados principais
+      const dadosCompletos = todosOsDados.map(item => {
+        const chaveFornecedor = String(item.cd_fornecedor ?? '');
+        const chaveCentroCusto = String(item.cd_ccusto ?? '');
+        const chaveDespesa = String(item.cd_despesaitem ?? '');
+
+        const fornecedor = fornecedorMap.get(chaveFornecedor);
+        const centroCusto = centroCustoMap.get(chaveCentroCusto);
+        const despesa = despesaMap.get(chaveDespesa);
+
+        const resultado = {
+          ...item,
+          nm_fornecedor: fornecedor?.nm_fornecedor || item.nm_fornecedor || '',
+          ds_ccusto: centroCusto?.ds_ccusto || item.ds_ccusto || '',
+          ds_despesaitem: despesa?.ds_despesaitem || item.ds_despesaitem || ''
+        };
+        return resultado;
+      });
+
+      console.log('🧪 Amostra mapeada:', dadosCompletos.slice(0, 3).map(x => ({
+        cd_fornecedor: x.cd_fornecedor,
+        nm_fornecedor: x.nm_fornecedor,
+        cd_ccusto: x.cd_ccusto,
+        ds_ccusto: x.ds_ccusto,
+        cd_despesaitem: x.cd_despesaitem,
+        ds_despesaitem: x.ds_despesaitem
+      })));
+      
+      console.log('✅ Dados mapeados com sucesso:', {
+        total: dadosCompletos.length,
+        fornecedores_encontrados: dadosFornecedor.length,
+        centros_custo_encontrados: dadosCentroCusto.length,
+        despesas_encontradas: dadosDespesa.length
+      });
+      
+      setDados(dadosCompletos);
       setDadosCarregados(true);
-      
-      // Carregar dados de fornecedor para o filtro dropdown
-      await carregarDadosFornecedor(todosOsDados);
-      
-      // Carregar dados de centro de custo para o filtro dropdown
-      await carregarDadosCentroCusto(todosOsDados);
-      
-      // Carregar dados de despesas para o filtro dropdown
-      await carregarDadosDespesas(todosOsDados);
     } catch (err) {
       console.error('❌ Erro geral ao buscar dados:', err);
       setDados([]);
@@ -434,9 +465,9 @@ const FluxoCaixa = () => {
       });
       
       if (codigosFornecedor.length === 0) {
-        console.log('⚠️ Nenhum código de fornecedor encontrado, definindo array vazio');
+        console.log('⚠️ Nenhum código de fornecedor encontrado, retornando array vazio');
         setDadosFornecedor([]);
-        return;
+        return [];
       }
       
       const resultFornecedor = await apiClient.financial.fornecedor({ cd_fornecedor: codigosFornecedor });
@@ -444,28 +475,32 @@ const FluxoCaixa = () => {
       let dadosFornecedorArray = [];
       
       if (resultFornecedor.success) {
-        // Verificar diferentes estruturas de resposta
-        if (Array.isArray(resultFornecedor.data)) {
-          dadosFornecedorArray = resultFornecedor.data;
-        } else if (resultFornecedor.data && Array.isArray(resultFornecedor.data.data)) {
-          dadosFornecedorArray = resultFornecedor.data.data;
-        } else if (resultFornecedor.metadata && Array.isArray(resultFornecedor.metadata.data)) {
-          dadosFornecedorArray = resultFornecedor.metadata.data;
-        }
-        
+        // Aceitar array direto ou estrutura aninhada
+        const rawData = resultFornecedor.data;
+        dadosFornecedorArray = Array.isArray(rawData)
+          ? rawData
+          : (rawData && Array.isArray(rawData.data))
+            ? rawData.data
+            : [];
+        const responseData = Array.isArray(rawData) ? {} : (rawData || {});
         console.log('✅ Dados de fornecedor carregados:', {
           total: dadosFornecedorArray.length,
-          amostra: dadosFornecedorArray.slice(0, 2)
+          amostra: dadosFornecedorArray.slice(0, 2),
+          fornecedores_buscados: responseData.fornecedores_buscados,
+          fornecedores_encontrados: responseData.fornecedores_encontrados
         });
         
         setDadosFornecedor(dadosFornecedorArray);
+        return dadosFornecedorArray;
       } else {
         console.warn('⚠️ Falha ao carregar dados de fornecedor:', resultFornecedor.message);
         setDadosFornecedor([]);
+        return [];
       }
     } catch (err) {
       console.error('❌ Erro ao carregar dados de fornecedor:', err);
       setDadosFornecedor([]);
+      return [];
     }
   };
 
@@ -483,9 +518,9 @@ const FluxoCaixa = () => {
       });
       
       if (codigosCentroCusto.length === 0) {
-        console.log('⚠️ Nenhum código de centro de custo encontrado, definindo array vazio');
+        console.log('⚠️ Nenhum código de centro de custo encontrado, retornando array vazio');
         setDadosCentroCusto([]);
-        return;
+        return [];
       }
       
       const resultCentroCusto = await apiClient.financial.centrocusto({ cd_ccusto: codigosCentroCusto });
@@ -493,28 +528,33 @@ const FluxoCaixa = () => {
       let dadosCentroCustoArray = [];
       
       if (resultCentroCusto.success) {
-        // Verificar diferentes estruturas de resposta
-        if (Array.isArray(resultCentroCusto.data)) {
-          dadosCentroCustoArray = resultCentroCusto.data;
-        } else if (resultCentroCusto.data && Array.isArray(resultCentroCusto.data.data)) {
-          dadosCentroCustoArray = resultCentroCusto.data.data;
-        } else if (resultCentroCusto.metadata && Array.isArray(resultCentroCusto.metadata.data)) {
-          dadosCentroCustoArray = resultCentroCusto.metadata.data;
-        }
-        
+        // Aceitar array direto ou estrutura aninhada
+        const rawData = resultCentroCusto.data;
+        dadosCentroCustoArray = Array.isArray(rawData)
+          ? rawData
+          : (rawData && Array.isArray(rawData.data))
+            ? rawData.data
+            : [];
+
+        const responseData = Array.isArray(rawData) ? {} : (rawData || {});
         console.log('✅ Dados de centro de custo carregados:', {
           total: dadosCentroCustoArray.length,
-          amostra: dadosCentroCustoArray.slice(0, 2)
+          amostra: dadosCentroCustoArray.slice(0, 2),
+          centros_custo_buscados: responseData.centros_custo_buscados,
+          centros_custo_encontrados: responseData.centros_custo_encontrados
         });
         
         setDadosCentroCusto(dadosCentroCustoArray);
+        return dadosCentroCustoArray;
       } else {
         console.warn('⚠️ Falha ao carregar dados de centro de custo:', resultCentroCusto.message);
         setDadosCentroCusto([]);
+        return [];
       }
     } catch (err) {
       console.error('❌ Erro ao carregar dados de centro de custo:', err);
       setDadosCentroCusto([]);
+      return [];
     }
   };
 
@@ -532,38 +572,51 @@ const FluxoCaixa = () => {
       });
       
       if (codigosDespesa.length === 0) {
-        console.log('⚠️ Nenhum código de despesa encontrado, definindo array vazio');
+        console.log('⚠️ Nenhum código de despesa encontrado, retornando array vazio');
         setDadosDespesa([]);
-        return;
+        return [];
       }
       
-      const resultDespesas = await apiClient.financial.despesa({ cd_despesaitem: codigosDespesa });
+      // Compatibilidade: tentar /despesa e, se disponível, fallback para /despesas
+      let resultDespesas = await apiClient.financial.despesa({ cd_despesaitem: codigosDespesa });
+      if (!resultDespesas?.success && apiClient.financial.despesas) {
+        try {
+          resultDespesas = await apiClient.financial.despesas({ cd_despesaitem: codigosDespesa });
+        } catch (e) {
+          // manter o primeiro resultado
+        }
+      }
       
       let dadosDespesasArray = [];
       
       if (resultDespesas.success) {
-        // Verificar diferentes estruturas de resposta
-        if (Array.isArray(resultDespesas.data)) {
-          dadosDespesasArray = resultDespesas.data;
-        } else if (resultDespesas.data && Array.isArray(resultDespesas.data.data)) {
-          dadosDespesasArray = resultDespesas.data.data;
-        } else if (resultDespesas.metadata && Array.isArray(resultDespesas.metadata.data)) {
-          dadosDespesasArray = resultDespesas.metadata.data;
-        }
-        
+        // Aceitar array direto ou estrutura aninhada
+        const rawData = resultDespesas.data;
+        dadosDespesasArray = Array.isArray(rawData)
+          ? rawData
+          : (rawData && Array.isArray(rawData.data))
+            ? rawData.data
+            : [];
+
+        const responseData = Array.isArray(rawData) ? {} : (rawData || {});
         console.log('✅ Dados de despesas carregados:', {
           total: dadosDespesasArray.length,
-          amostra: dadosDespesasArray.slice(0, 2)
+          amostra: dadosDespesasArray.slice(0, 2),
+          despesas_buscadas: responseData.despesas_buscadas,
+          despesas_encontradas: responseData.despesas_encontradas
         });
         
         setDadosDespesa(dadosDespesasArray);
+        return dadosDespesasArray;
       } else {
         console.warn('⚠️ Falha ao carregar dados de despesas:', resultDespesas.message);
         setDadosDespesa([]);
+        return [];
       }
     } catch (err) {
       console.error('❌ Erro ao carregar dados de despesas:', err);
       setDadosDespesa([]);
+      return [];
     }
   };
 
@@ -1789,7 +1842,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                             const isFornecedorExpanded = categoriasExpandidas.has(chaveExpansaoFornecedor);
                             
                             return (
-                              <div key={fornecedor.nome} className="border-b border-gray-50 last:border-b-0">
+                              <div key={`${fornecedor.nome}|${fornecedor.nrDuplicata}|${fornecedor.vlRateio}`} className="border-b border-gray-50 last:border-b-0">
                                 {/* Cabeçalho do fornecedor */}
                                 <div
                                   className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-9 py-2 flex items-center justify-between"
