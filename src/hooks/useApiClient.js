@@ -161,6 +161,7 @@ const useApiClient = () => {
   // Métodos específicos para cada tipo de endpoint
   const financial = {
     extrato: (params) => apiCall('/api/financial/extrato', params),
+    extratoTotvs: (params) => apiCall('/api/financial/extrato-totvs', params),
   
     contasPagar: (params) => apiCall('/api/financial/contas-pagar', params),
     contasReceber: (params) => apiCall('/api/financial/contas-receber', params),

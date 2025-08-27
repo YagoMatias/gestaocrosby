@@ -483,6 +483,61 @@ const ExtratoFinanceiro = () => {
     });
   }
 
+  // Cálculo do saldo por conta
+  const saldoPorConta = useMemo(() => {
+    const saldo = {};
+    
+    // Processar dados do extrato financeiro
+    dadosProcessados.forEach(row => {
+      const contaNumero = String(row.nr_ctapes);
+      if (!saldo[contaNumero]) {
+        saldo[contaNumero] = {
+          numero: contaNumero,
+          nome: contas.find(c => c.numero === contaNumero)?.nome || contaNumero,
+          creditos: 0,
+          debitos: 0,
+          saldo: 0,
+          creditosTotvs: 0,
+          debitosTotvs: 0,
+          saldoExtrato: 0
+        };
+      }
+
+      if (row.tp_operbco === 'C') {
+        saldo[contaNumero].creditos += parseFloat(row.vl_lancto) || 0;
+      } else if (row.tp_operbco === 'D') {
+        saldo[contaNumero].debitos += parseFloat(row.vl_lancto) || 0;
+      }
+      saldo[contaNumero].saldo = saldo[contaNumero].creditos - saldo[contaNumero].debitos;
+    });
+
+    // Processar dados do TOTVS
+    dadosTotvs.forEach(row => {
+      const contaNumero = String(row.nr_ctapes);
+      if (!saldo[contaNumero]) {
+        saldo[contaNumero] = {
+          numero: contaNumero,
+          nome: contas.find(c => c.numero === contaNumero)?.nome || contaNumero,
+          creditos: 0,
+          debitos: 0,
+          saldo: 0,
+          creditosTotvs: 0,
+          debitosTotvs: 0,
+          saldoExtrato: 0
+        };
+      }
+
+      if (row.tp_operacao === 'C') {
+        saldo[contaNumero].creditosTotvs += parseFloat(row.vl_lancto) || 0;
+      } else if (row.tp_operacao === 'D') {
+        saldo[contaNumero].debitosTotvs += parseFloat(row.vl_lancto) || 0;
+      }
+      saldo[contaNumero].saldoExtrato = saldo[contaNumero].creditosTotvs - saldo[contaNumero].debitosTotvs;
+    });
+    
+    return Object.values(saldo).sort((a, b) => a.numero.localeCompare(b.numero));
+  }, [dadosProcessados, dadosTotvs, contas]);
+
   return (
     <ErrorBoundary 
       message="Erro ao carregar a página de Extrato Financeiro"
@@ -777,6 +832,112 @@ const ExtratoFinanceiro = () => {
             {loading ? 'Carregando...' : 'Baixar Excel'}
           </button>
         </div>
+
+        {/* Tabela de Saldo por Conta */}
+        {saldoPorConta.length > 0 && (
+          <div className="rounded-2xl shadow-lg bg-white border border-[#000638]/10 mb-6">
+            <div className="p-4 border-b border-[#000638]/10">
+              <h2 className="text-xl font-bold text-[#000638]">Saldo por Conta</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Resumo financeiro por conta (Créditos - Débitos) e Saldo do Extrato TOTVS
+              </p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead className="bg-[#000638] text-white">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-sm font-semibold">Conta</th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold">Créditos</th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold">Débitos</th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold">Saldo</th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold">Saldo Extrato</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {saldoPorConta.map((conta, index) => (
+                    <tr 
+                      key={conta.numero}
+                      className={`border-b ${
+                        index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                      } hover:bg-gray-100 transition-colors`}
+                    >
+                      <td className="px-4 py-3">
+                        <div className={`font-medium ${corConta(conta.nome)}`}>
+                          {conta.numero} - {conta.nome}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-green-600">
+                        {conta.creditos.toLocaleString('pt-BR', { 
+                          style: 'currency', 
+                          currency: 'BRL' 
+                        })}
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-red-600">
+                        {conta.debitos.toLocaleString('pt-BR', { 
+                          style: 'currency', 
+                          currency: 'BRL' 
+                        })}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-bold ${
+                        conta.saldo > 0 ? 'text-green-600' : 
+                        conta.saldo < 0 ? 'text-red-600' : 'text-gray-600'
+                      }`}>
+                        {conta.saldo.toLocaleString('pt-BR', { 
+                          style: 'currency', 
+                          currency: 'BRL' 
+                        })}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-bold ${
+                        conta.saldoExtrato > 0 ? 'text-green-600' : 
+                        conta.saldoExtrato < 0 ? 'text-red-600' : 'text-gray-600'
+                      }`}>
+                        {conta.saldoExtrato.toLocaleString('pt-BR', { 
+                          style: 'currency', 
+                          currency: 'BRL' 
+                        })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-gray-100 border-t-2 border-[#000638]">
+                  <tr>
+                    <td className="px-4 py-3 font-bold text-[#000638]">TOTAL</td>
+                    <td className="px-4 py-3 text-right font-bold text-green-600">
+                      {saldoPorConta.reduce((acc, conta) => acc + conta.creditos, 0).toLocaleString('pt-BR', { 
+                        style: 'currency', 
+                        currency: 'BRL' 
+                      })}
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-red-600">
+                      {saldoPorConta.reduce((acc, conta) => acc + conta.debitos, 0).toLocaleString('pt-BR', { 
+                        style: 'currency', 
+                        currency: 'BRL' 
+                      })}
+                    </td>
+                    <td className={`px-4 py-3 text-right font-bold ${
+                      saldoPorConta.reduce((acc, conta) => acc + conta.saldo, 0) > 0 ? 'text-green-600' : 
+                      saldoPorConta.reduce((acc, conta) => acc + conta.saldo, 0) < 0 ? 'text-red-600' : 'text-gray-600'
+                    }`}>
+                      {saldoPorConta.reduce((acc, conta) => acc + conta.saldo, 0).toLocaleString('pt-BR', { 
+                        style: 'currency', 
+                        currency: 'BRL' 
+                      })}
+                    </td>
+                    <td className={`px-4 py-3 text-right font-bold ${
+                      saldoPorConta.reduce((acc, conta) => acc + conta.saldoExtrato, 0) > 0 ? 'text-green-600' : 
+                      saldoPorConta.reduce((acc, conta) => acc + conta.saldoExtrato, 0) < 0 ? 'text-red-600' : 'text-gray-600'
+                    }`}>
+                      {saldoPorConta.reduce((acc, conta) => acc + conta.saldoExtrato, 0).toLocaleString('pt-BR', { 
+                        style: 'currency', 
+                        currency: 'BRL' 
+                      })}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        )}
         {/* Tabela modernizada */}
         <div className="rounded-2xl shadow-lg bg-white border border-[#000638]/10">
           <div className="p-4 border-b border-[#000638]/10 flex items-center justify-between">
