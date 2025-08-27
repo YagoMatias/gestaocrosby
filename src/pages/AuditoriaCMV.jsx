@@ -25,6 +25,15 @@ const AuditoriaCMV = () => {
   const [cmvAltoCount, setCmvAltoCount] = useState(0);
   const [cmvAltoItens, setCmvAltoItens] = useState([]);
   const [cmvAltoModalOpen, setCmvAltoModalOpen] = useState(false);
+  
+  // Estados para análise por canal
+  const [cmvPorCanal, setCmvPorCanal] = useState({
+    multimarca: { baixo: [], alto: [] },
+    franquias: { baixo: [], alto: [] },
+    varejo: { baixo: [], alto: [] },
+    revenda: { baixo: [], alto: [] }
+  });
+  const [cmvPorCanalModalOpen, setCmvPorCanalModalOpen] = useState(false);
 
   // Map rápido: Modelo -> Custo (usa primeiro custo encontrado por modelo)
   const modeloParaCustoMap = React.useMemo(() => {
@@ -99,12 +108,19 @@ const AuditoriaCMV = () => {
       const dadosFranquia = resultFranquia?.success ? resultFranquia.data : [];
       const dadosMtm = resultMtm?.success ? resultMtm.data : [];
 
-      // Combinar todos os dados
-      const todosDados = [...dadosRevenda, ...dadosVarejo, ...dadosFranquia, ...dadosMtm];
+      // Combinar todos os dados com identificação de canal
+      const todosDados = [
+        ...dadosRevenda.map(item => ({ ...item, canal: 'revenda' })),
+        ...dadosVarejo.map(item => ({ ...item, canal: 'varejo' })),
+        ...dadosFranquia.map(item => ({ ...item, canal: 'franquias' })),
+        ...dadosMtm.map(item => ({ ...item, canal: 'multimarca' }))
+      ];
       setDados(todosDados);
 
       // Montar base por produto (cd_nivel) para cálculos, incluindo receita e quantidade
       const porProduto = new Map();
+      const porProdutoCanal = new Map(); // Para análise por canal
+      
       for (const row of todosDados) {
         const cd = (row?.cd_nivel || '').toString().trim();
         if (!cd) continue;
@@ -112,6 +128,9 @@ const AuditoriaCMV = () => {
         const qt = Number(row?.qt_faturado) || 0;
         const vlUnit = Number(row?.vl_unitliquido) || 0;
         const valor = vlUnit * qt;
+        const canal = row.canal;
+        
+        // Agregação geral
         if (!porProduto.has(cd)) {
           porProduto.set(cd, { cd_nivel: cd, modelo, receita: 0, quantidade: 0 });
         }
@@ -122,6 +141,26 @@ const AuditoriaCMV = () => {
         } else if (row?.tp_operacao === 'E') {
           acc.receita -= valor;
           acc.quantidade -= qt;
+        }
+        
+        // Agregação por canal
+        const chaveCanal = `${cd}_${canal}`;
+        if (!porProdutoCanal.has(chaveCanal)) {
+          porProdutoCanal.set(chaveCanal, { 
+            cd_nivel: cd, 
+            modelo, 
+            canal,
+            receita: 0, 
+            quantidade: 0 
+          });
+        }
+        const accCanal = porProdutoCanal.get(chaveCanal);
+        if (row?.tp_operacao === 'S') {
+          accCanal.receita += valor;
+          accCanal.quantidade += qt;
+        } else if (row?.tp_operacao === 'E') {
+          accCanal.receita -= valor;
+          accCanal.quantidade -= qt;
         }
       }
 
@@ -177,6 +216,41 @@ const AuditoriaCMV = () => {
        }
       setCmvAltoItens(cmvAltoLista);
       setCmvAltoCount(cmvAltoLista.length);
+
+      // Análise de CMV por canal
+      const cmvPorCanalTemp = {
+        multimarca: { baixo: [], alto: [] },
+        franquias: { baixo: [], alto: [] },
+        varejo: { baixo: [], alto: [] },
+        revenda: { baixo: [], alto: [] }
+      };
+
+      for (const item of porProdutoCanal.values()) {
+        const custoUnit = custoMap[item.cd_nivel];
+        if (custoUnit === undefined) continue; // precisa ter custo
+        if ((item?.receita || 0) <= 0) continue; // precisa ter receita positiva
+        
+        const custoTotal = (item.quantidade || 0) * custoUnit;
+        const cmv = custoTotal / item.receita;
+        
+        const itemCompleto = {
+          cd_nivel: item.cd_nivel,
+          modelo: item.modelo,
+          canal: item.canal,
+          quantidade: item.quantidade,
+          receita: item.receita,
+          custo: custoTotal,
+          cmv: cmv * 100
+        };
+
+        if (cmv < 0.10) {
+          cmvPorCanalTemp[item.canal].baixo.push(itemCompleto);
+        } else if (cmv > 0.70) {
+          cmvPorCanalTemp[item.canal].alto.push(itemCompleto);
+        }
+      }
+
+      setCmvPorCanal(cmvPorCanalTemp);
       
     } catch (err) {
       console.error('Erro ao buscar Auditoria CMV:', err);
@@ -187,6 +261,12 @@ const AuditoriaCMV = () => {
       setCmvBaixoCount(0);
       setCmvAltoItens([]);
       setCmvAltoCount(0);
+      setCmvPorCanal({
+        multimarca: { baixo: [], alto: [] },
+        franquias: { baixo: [], alto: [] },
+        varejo: { baixo: [], alto: [] },
+        revenda: { baixo: [], alto: [] }
+      });
     } finally {
       setLoading(false);
     }
@@ -403,7 +483,7 @@ const AuditoriaCMV = () => {
       </form>
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
         {/* Produtos sem custo */}
         <button
           type="button"
@@ -455,6 +535,30 @@ const AuditoriaCMV = () => {
             </div>
           </div>
         </button>
+        
+        {/* Análise por Canal */}
+        <button
+          type="button"
+          onClick={() => setCmvPorCanalModalOpen(true)}
+          className="w-full text-left bg-white rounded-2xl shadow-lg border border-[#000638]/10 p-5 hover:shadow-xl transition"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600 mb-1">Análise por Canal</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {loading ? '-' : (
+                  Object.values(cmvPorCanal).reduce((total, canal) => 
+                    total + canal.baixo.length + canal.alto.length, 0
+                  ).toLocaleString('pt-BR')
+                )}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">CMV baixo/alto por canal de venda</p>
+            </div>
+            <div className="p-3 rounded-full bg-blue-500">
+              <Package size={24} className="text-white" />
+            </div>
+          </div>
+        </button>
       </div>
 
       {/* Modal: Produtos sem custo */}
@@ -500,34 +604,39 @@ const AuditoriaCMV = () => {
          size="5xl"
        >
          <div className="overflow-x-auto rounded-lg border border-gray-200">
-           <table className="min-w-full text-sm">
-             <thead>
-               <tr className="bg-[#000638] text-white">
-                 <th className="px-2 py-2 text-left text-[11px]">Código</th>
-                 <th className="px-2 py-2 text-left text-[11px]">Modelo</th>
-                 <th className="px-2 py-2 text-center text-[11px]">Quantidade</th>
-                 <th className="px-2 py-2 text-right text-[11px]">Custo</th>
-                 <th className="px-2 py-2 text-right text-[11px]">CMV %</th>
-               </tr>
-             </thead>
-             <tbody>
-               {loading ? (
-                 <tr><td colSpan={5} className="text-center py-8"><Spinner size={24} className="animate-spin" /></td></tr>
-               ) : cmvBaixoItens.length === 0 ? (
-                 <tr><td colSpan={5} className="text-center py-8">Nenhum produto com CMV baixo encontrado.</td></tr>
-               ) : (
-                 cmvBaixoItens.map((item, idx) => (
-                   <tr key={idx} className="border-b hover:bg-gray-50">
-                     <td className="px-2 py-2">{item.cd_nivel || '-'}</td>
-                     <td className="px-2 py-2">{item.modelo || '-'}</td>
-                     <td className="px-2 py-2 text-center">{item.quantidade?.toLocaleString('pt-BR') || '-'}</td>
-                     <td className="px-2 py-2 text-right">{item.custo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                     <td className="px-2 py-2 text-right">{item.cmv != null ? item.cmv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '-'}</td>
-                   </tr>
-                 ))
-               )}
-             </tbody>
-           </table>
+                       <table className="min-w-full text-sm">
+              <thead>
+                <tr className="bg-[#000638] text-white">
+                  <th className="px-2 py-2 text-left text-[11px]">Código</th>
+                  <th className="px-2 py-2 text-left text-[11px]">Modelo</th>
+                  <th className="px-2 py-2 text-center text-[11px]">Quantidade</th>
+                  <th className="px-2 py-2 text-right text-[11px]">Custo Unit.</th>
+                  <th className="px-2 py-2 text-right text-[11px]">Custo Total</th>
+                  <th className="px-2 py-2 text-right text-[11px]">CMV %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={6} className="text-center py-8"><Spinner size={24} className="animate-spin" /></td></tr>
+                ) : cmvBaixoItens.length === 0 ? (
+                  <tr><td colSpan={6} className="text-center py-8">Nenhum produto com CMV baixo encontrado.</td></tr>
+                ) : (
+                  cmvBaixoItens.map((item, idx) => {
+                    const custoUnit = custoMap[item.cd_nivel];
+                    return (
+                      <tr key={idx} className="border-b hover:bg-gray-50">
+                        <td className="px-2 py-2">{item.cd_nivel || '-'}</td>
+                        <td className="px-2 py-2">{item.modelo || '-'}</td>
+                        <td className="px-2 py-2 text-center">{item.quantidade?.toLocaleString('pt-BR') || '-'}</td>
+                        <td className="px-2 py-2 text-right">{custoUnit?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
+                        <td className="px-2 py-2 text-right">{item.custo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="px-2 py-2 text-right">{item.cmv != null ? item.cmv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '-'}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
          </div>
        </Modal>
 
@@ -539,34 +648,39 @@ const AuditoriaCMV = () => {
          size="5xl"
        >
          <div className="overflow-x-auto rounded-lg border border-gray-200">
-           <table className="min-w-full text-sm">
-             <thead>
-               <tr className="bg-[#000638] text-white">
-                 <th className="px-2 py-2 text-left text-[11px]">Código</th>
-                 <th className="px-2 py-2 text-left text-[11px]">Modelo</th>
-                 <th className="px-2 py-2 text-center text-[11px]">Quantidade</th>
-                 <th className="px-2 py-2 text-right text-[11px]">Custo</th>
-                 <th className="px-2 py-2 text-right text-[11px]">CMV %</th>
-               </tr>
-             </thead>
-             <tbody>
-               {loading ? (
-                 <tr><td colSpan={5} className="text-center py-8"><Spinner size={24} className="animate-spin" /></td></tr>
-               ) : cmvAltoItens.length === 0 ? (
-                 <tr><td colSpan={5} className="text-center py-8">Nenhum produto com CMV alto encontrado.</td></tr>
-               ) : (
-                 cmvAltoItens.map((item, idx) => (
-                   <tr key={idx} className="border-b hover:bg-gray-50">
-                     <td className="px-2 py-2">{item.cd_nivel || '-'}</td>
-                     <td className="px-2 py-2">{item.modelo || '-'}</td>
-                     <td className="px-2 py-2 text-center">{item.quantidade?.toLocaleString('pt-BR') || '-'}</td>
-                     <td className="px-2 py-2 text-right">{item.custo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                     <td className="px-2 py-2 text-right">{item.cmv != null ? item.cmv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '-'}</td>
-                   </tr>
-                 ))
-               )}
-             </tbody>
-           </table>
+                       <table className="min-w-full text-sm">
+              <thead>
+                <tr className="bg-[#000638] text-white">
+                  <th className="px-2 py-2 text-left text-[11px]">Código</th>
+                  <th className="px-2 py-2 text-left text-[11px]">Modelo</th>
+                  <th className="px-2 py-2 text-center text-[11px]">Quantidade</th>
+                  <th className="px-2 py-2 text-right text-[11px]">Custo Unit.</th>
+                  <th className="px-2 py-2 text-right text-[11px]">Custo Total</th>
+                  <th className="px-2 py-2 text-right text-[11px]">CMV %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={6} className="text-center py-8"><Spinner size={24} className="animate-spin" /></td></tr>
+                ) : cmvAltoItens.length === 0 ? (
+                  <tr><td colSpan={6} className="text-center py-8">Nenhum produto com CMV alto encontrado.</td></tr>
+                ) : (
+                  cmvAltoItens.map((item, idx) => {
+                    const custoUnit = custoMap[item.cd_nivel];
+                    return (
+                      <tr key={idx} className="border-b hover:bg-gray-50">
+                        <td className="px-2 py-2">{item.cd_nivel || '-'}</td>
+                        <td className="px-2 py-2">{item.modelo || '-'}</td>
+                        <td className="px-2 py-2 text-center">{item.quantidade?.toLocaleString('pt-BR') || '-'}</td>
+                        <td className="px-2 py-2 text-right">{custoUnit?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
+                        <td className="px-2 py-2 text-right">{item.custo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="px-2 py-2 text-right">{item.cmv != null ? item.cmv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '-'}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
          </div>
        </Modal>
 
@@ -757,48 +871,64 @@ const AuditoriaCMV = () => {
                             <td className="px-0.5 py-0.5 text-center">{produto.cd_nivel || 'N/A'}</td>
                             <td className="px-0.5 py-0.5 text-center">{produto.modelo || 'N/A'}</td>
                             <td className="px-0.5 py-0.5 text-center">{produto.quantidade.toLocaleString('pt-BR')}</td>
-                            <td className="px-0.5 py-0.5 text-right font-semibold">{produto.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="px-0.5 py-0.5 text-right font-semibold">{produto.valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="px-0.5 py-0.5 text-right font-semibold text-orange-600">{descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="px-0.5 py-0.5 text-right font-semibold">
-                              {custoMap[produto.cd_nivel?.trim()] !== undefined
-                                ? (produto.quantidade * custoMap[produto.cd_nivel.trim()]).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                                : '-'}
-                            </td>
-                            {/* CMV: custo / valor */}
-                            <td className="px-0.5 py-0.5 text-right font-semibold">
-                              {(() => {
-                                const custoUnit = custoMap[produto.cd_nivel?.trim()];
-                                const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
-                                if (custoTotal !== undefined && produto.valorTotal > 0) {
-                                  const cmv = custoTotal / produto.valorTotal;
-                                  return (cmv * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
-                                }
-                                return '-';
-                              })()}
-                            </td>
-                            <td className="px-0.5 py-0.5 text-right font-semibold">
-                              {(() => {
-                                const custoUnit = custoMap[produto.cd_nivel?.trim()];
-                                const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
-                                if (custoTotal && custoTotal !== 0) {
-                                  const markup = produto.valorTotal / custoTotal;
-                                  return markup.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                                }
-                                return '-';
-                              })()}
-                            </td>
-                            <td className="px-0.5 py-0.5 text-right font-semibold">
-                              {(() => {
-                                const custoUnit = custoMap[produto.cd_nivel?.trim()];
-                                const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
-                                if (produto.valorTotal && custoTotal !== undefined && produto.valorTotal !== 0) {
-                                  const margem = ((produto.valorTotal - custoTotal) / produto.valorTotal) * 100;
-                                  return margem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
-                                }
-                                return '-';
-                              })()}
-                            </td>
+                                                         <td className="px-0.5 py-0.5 text-right font-semibold text-green-600">{produto.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                             <td className="px-0.5 py-0.5 text-right font-semibold text-blue-600">{produto.valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                             <td className="px-0.5 py-0.5 text-right font-semibold text-orange-600">{descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                                                         <td className="px-0.5 py-0.5 text-right font-semibold text-red-600">
+                               {custoMap[produto.cd_nivel?.trim()] !== undefined
+                                 ? (produto.quantidade * custoMap[produto.cd_nivel.trim()]).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                                 : '-'}
+                             </td>
+                                                         {/* CMV: custo / valor */}
+                             <td className="px-0.5 py-0.5 text-right font-semibold">
+                               {(() => {
+                                 const custoUnit = custoMap[produto.cd_nivel?.trim()];
+                                 const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
+                                 if (custoTotal !== undefined && produto.valorTotal > 0) {
+                                   const cmv = custoTotal / produto.valorTotal;
+                                   const cmvPercent = cmv * 100;
+                                   let cmvColor = 'text-gray-600';
+                                   if (cmvPercent < 30) cmvColor = 'text-green-600';
+                                   else if (cmvPercent < 50) cmvColor = 'text-blue-600';
+                                   else if (cmvPercent < 70) cmvColor = 'text-yellow-600';
+                                   else cmvColor = 'text-red-600';
+                                   return <span className={cmvColor}>{(cmvPercent).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'}</span>;
+                                 }
+                                 return '-';
+                               })()}
+                             </td>
+                                                         <td className="px-0.5 py-0.5 text-right font-semibold">
+                               {(() => {
+                                 const custoUnit = custoMap[produto.cd_nivel?.trim()];
+                                 const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
+                                 if (custoTotal && custoTotal !== 0) {
+                                   const markup = produto.valorTotal / custoTotal;
+                                   let markupColor = 'text-gray-600';
+                                   if (markup > 3) markupColor = 'text-green-600';
+                                   else if (markup > 2) markupColor = 'text-blue-600';
+                                   else if (markup > 1.5) markupColor = 'text-yellow-600';
+                                   else markupColor = 'text-red-600';
+                                   return <span className={markupColor}>{markup.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
+                                 }
+                                 return '-';
+                               })()}
+                             </td>
+                                                         <td className="px-0.5 py-0.5 text-right font-semibold">
+                               {(() => {
+                                 const custoUnit = custoMap[produto.cd_nivel?.trim()];
+                                 const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
+                                 if (produto.valorTotal && custoTotal !== undefined && produto.valorTotal !== 0) {
+                                   const margem = ((produto.valorTotal - custoTotal) / produto.valorTotal) * 100;
+                                   let margemColor = 'text-gray-600';
+                                   if (margem > 70) margemColor = 'text-green-600';
+                                   else if (margem > 50) margemColor = 'text-blue-600';
+                                   else if (margem > 30) margemColor = 'text-yellow-600';
+                                   else margemColor = 'text-red-600';
+                                   return <span className={margemColor}>{margem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'}</span>;
+                                 }
+                                 return '-';
+                               })()}
+                             </td>
                           </tr>
                         );
                       })
@@ -810,6 +940,148 @@ const AuditoriaCMV = () => {
           </div>
         )}
       </div>
+
+             {/* Modal: Análise por Canal */}
+       <Modal
+         isOpen={cmvPorCanalModalOpen}
+         onClose={() => setCmvPorCanalModalOpen(false)}
+         title="Análise de CMV por Canal"
+         size="full"
+       >
+        <div className="space-y-6">
+          {/* Resumo por Canal */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            {Object.entries(cmvPorCanal).map(([canal, dados]) => (
+              <div key={canal} className="bg-gray-50 rounded-lg p-4">
+                <h3 className="font-bold text-lg capitalize text-[#000638] mb-2">
+                  {canal === 'multimarca' ? 'Multimarca' : 
+                   canal === 'franquias' ? 'Franquias' :
+                   canal === 'varejo' ? 'Varejo' : 'Revenda'}
+                </h3>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-yellow-600">CMV Baixo:</span>
+                    <span className="font-semibold">{dados.baixo.length}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-red-600">CMV Alto:</span>
+                    <span className="font-semibold">{dados.alto.length}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-bold border-t pt-1">
+                    <span>Total:</span>
+                    <span>{dados.baixo.length + dados.alto.length}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Tabelas por Canal */}
+          {Object.entries(cmvPorCanal).map(([canal, dados]) => (
+            <div key={canal} className="border rounded-lg overflow-hidden">
+              <div className="bg-[#000638] text-white p-4">
+                <h3 className="text-lg font-bold capitalize">
+                  {canal === 'multimarca' ? 'Multimarca' : 
+                   canal === 'franquias' ? 'Franquias' :
+                   canal === 'varejo' ? 'Varejo' : 'Revenda'}
+                </h3>
+              </div>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-4">
+                {/* CMV Baixo */}
+                <div>
+                                     <h4 className="font-semibold text-yellow-600 mb-3 flex items-center gap-2">
+                     <ArrowDown size={16} />
+                     CMV Baixo (&lt; 10%) - {dados.baixo.length} produto(s)
+                   </h4>
+                  <div className="overflow-x-auto rounded-lg border border-gray-200">
+                                         <table className="min-w-full text-xs">
+                       <thead>
+                         <tr className="bg-gray-100">
+                           <th className="px-2 py-2 text-left text-[10px]">Código</th>
+                           <th className="px-2 py-2 text-left text-[10px]">Modelo</th>
+                           <th className="px-2 py-2 text-center text-[10px]">Qtd</th>
+                           <th className="px-2 py-2 text-right text-[10px]">Custo Unit.</th>
+                           <th className="px-2 py-2 text-right text-[10px]">Custo Total</th>
+                           <th className="px-2 py-2 text-right text-[10px]">Receita</th>
+                           <th className="px-2 py-2 text-right text-[10px]">CMV %</th>
+                         </tr>
+                       </thead>
+                       <tbody>
+                         {dados.baixo.length === 0 ? (
+                           <tr><td colSpan={7} className="text-center py-4 text-gray-500 text-xs">Nenhum produto com CMV baixo</td></tr>
+                         ) : (
+                           dados.baixo.map((item, idx) => {
+                             const custoUnit = custoMap[item.cd_nivel];
+                             return (
+                               <tr key={idx} className="border-b hover:bg-gray-50">
+                                 <td className="px-2 py-2 text-xs">{item.cd_nivel || '-'}</td>
+                                 <td className="px-2 py-2 text-xs">{item.modelo || '-'}</td>
+                                 <td className="px-2 py-2 text-center text-xs">{item.quantidade?.toLocaleString('pt-BR') || '-'}</td>
+                                 <td className="px-2 py-2 text-right text-xs">{custoUnit?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
+                                 <td className="px-2 py-2 text-right text-xs">{item.custo?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
+                                 <td className="px-2 py-2 text-right text-xs">{item.receita?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
+                                 <td className="px-2 py-2 text-right text-yellow-600 font-semibold text-xs">
+                                   {item.cmv?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' || '-'}
+                                 </td>
+                               </tr>
+                             );
+                           })
+                         )}
+                       </tbody>
+                     </table>
+                  </div>
+                </div>
+
+                {/* CMV Alto */}
+                <div>
+                                     <h4 className="font-semibold text-red-600 mb-3 flex items-center gap-2">
+                     <ArrowUp size={16} />
+                     CMV Alto (&gt; 70%) - {dados.alto.length} produto(s)
+                   </h4>
+                  <div className="overflow-x-auto rounded-lg border border-gray-200">
+                                         <table className="min-w-full text-xs">
+                       <thead>
+                         <tr className="bg-gray-100">
+                           <th className="px-2 py-2 text-left text-[10px]">Código</th>
+                           <th className="px-2 py-2 text-left text-[10px]">Modelo</th>
+                           <th className="px-2 py-2 text-center text-[10px]">Qtd</th>
+                           <th className="px-2 py-2 text-right text-[10px]">Custo Unit.</th>
+                           <th className="px-2 py-2 text-right text-[10px]">Custo Total</th>
+                           <th className="px-2 py-2 text-right text-[10px]">Receita</th>
+                           <th className="px-2 py-2 text-right text-[10px]">CMV %</th>
+                         </tr>
+                       </thead>
+                       <tbody>
+                         {dados.alto.length === 0 ? (
+                           <tr><td colSpan={7} className="text-center py-4 text-gray-500 text-xs">Nenhum produto com CMV alto</td></tr>
+                         ) : (
+                           dados.alto.map((item, idx) => {
+                             const custoUnit = custoMap[item.cd_nivel];
+                             return (
+                               <tr key={idx} className="border-b hover:bg-gray-50">
+                                 <td className="px-2 py-2 text-xs">{item.cd_nivel || '-'}</td>
+                                 <td className="px-2 py-2 text-xs">{item.modelo || '-'}</td>
+                                 <td className="px-2 py-2 text-center text-xs">{item.quantidade?.toLocaleString('pt-BR') || '-'}</td>
+                                 <td className="px-2 py-2 text-right text-xs">{custoUnit?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
+                                 <td className="px-2 py-2 text-right text-xs">{item.custo?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
+                                 <td className="px-2 py-2 text-right text-xs">{item.receita?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
+                                 <td className="px-2 py-2 text-right text-red-600 font-semibold text-xs">
+                                   {item.cmv?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' || '-'}
+                                 </td>
+                               </tr>
+                             );
+                           })
+                         )}
+                       </tbody>
+                     </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Modal>
     </div>
   );
 };
