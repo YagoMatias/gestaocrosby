@@ -27,6 +27,7 @@ import {
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
+import { supabase } from '../lib/supabase';
 
 const ManifestacaoNF = () => {
   const apiClient = useApiClient();
@@ -45,6 +46,19 @@ const ManifestacaoNF = () => {
   const [chaveAcesso, setChaveAcesso] = useState('');
   const [filtroDocFiscal, setFiltroDocFiscal] = useState('NFE');
   const [filtroSituacao, setFiltroSituacao] = useState('AUTORIZADA');
+  
+  // Observações por chave de acesso
+  const [observacoes, setObservacoes] = useState({}); // { chave: { id, observacao } }
+  const [observacoesEdicao, setObservacoesEdicao] = useState({}); // { chave: texto }
+  const [salvandoChave, setSalvandoChave] = useState(null);
+  
+  // Modal de observações
+  const [modalObservacao, setModalObservacao] = useState({
+    aberto: false,
+    chave: null,
+    observacao: '',
+    editando: false
+  });
   
   // Estados para seleção de linhas
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
@@ -270,6 +284,200 @@ const ManifestacaoNF = () => {
       setLoading(false);
     }
   };
+
+  // Funções para o modal de observações
+  const abrirModalObservacao = (chave, editando = false) => {
+    const observacaoExistente = observacoes[chave]?.observacao || '';
+    setModalObservacao({
+      aberto: true,
+      chave,
+      observacao: editando ? observacaoExistente : '',
+      editando
+    });
+  };
+
+  const fecharModalObservacao = () => {
+    setModalObservacao({
+      aberto: false,
+      chave: null,
+      observacao: '',
+      editando: false
+    });
+  };
+
+  const salvarObservacaoModal = async () => {
+    const { chave, observacao, editando } = modalObservacao;
+    const texto = observacao.trim();
+    
+    if (!texto) {
+      alert('Digite uma observação antes de salvar.');
+      return;
+    }
+
+    setSalvandoChave(chave);
+    try {
+      const existente = observacoes[chave];
+      console.log('💾 Salvando observação via modal...', { chave, texto, existente, editando });
+      
+      if (existente && existente.id) {
+        // Update
+        const { data, error } = await supabase
+          .from('nf_observacoes')
+          .update({ observacao: texto, updated_at: new Date().toISOString() })
+          .eq('id', existente.id)
+          .select();
+        console.log('🟦 Resultado UPDATE nf_observacoes', { data, error });
+        if (!error) {
+          setObservacoes(prev => ({ ...prev, [chave]: { id: existente.id, observacao: texto } }));
+        }
+      } else {
+        // Insert
+        const { data, error } = await supabase
+          .from('nf_observacoes')
+          .insert({ ds_chaveacesso: chave, observacao: texto })
+          .select();
+        console.log('🟩 Resultado INSERT nf_observacoes', { data, error });
+        if (!error && Array.isArray(data) && data[0]) {
+          setObservacoes(prev => ({ ...prev, [chave]: { id: data[0].id, observacao: texto } }));
+        }
+      }
+      
+      fecharModalObservacao();
+    } finally {
+      setSalvandoChave(null);
+    }
+  };
+
+  const removerObservacaoModal = async () => {
+    const { chave } = modalObservacao;
+    const existente = observacoes[chave];
+    
+    if (!existente || !existente.id) {
+      alert('Nenhuma observação encontrada para remover.');
+      return;
+    }
+
+    if (!confirm('Tem certeza que deseja remover esta observação?')) {
+      return;
+    }
+
+    setSalvandoChave(chave);
+    try {
+      const { data, error } = await supabase.from('nf_observacoes').delete().eq('id', existente.id);
+      console.log('🟥 Resultado DELETE nf_observacoes', { data, error, chave, existente });
+      
+      if (!error) {
+        setObservacoes(prev => { const n = { ...prev }; delete n[chave]; return n; });
+        fecharModalObservacao();
+      }
+    } finally {
+      setSalvandoChave(null);
+    }
+  };
+
+  // Funções antigas mantidas para compatibilidade
+  const handleChangeObservacao = (chave, texto) => {
+    setObservacoesEdicao(prev => ({ ...prev, [chave]: texto }));
+  };
+
+  const salvarObservacao = async (chave) => {
+    const texto = (observacoesEdicao[chave] || '').trim();
+    setSalvandoChave(chave);
+    try {
+      const existente = observacoes[chave];
+      console.log('💾 Salvando observação...', { chave, texto, existente });
+      if (existente && existente.id) {
+        // Update
+        const { data, error } = await supabase
+          .from('nf_observacoes')
+          .update({ observacao: texto, updated_at: new Date().toISOString() })
+          .eq('id', existente.id)
+          .select();
+        console.log('🟦 Resultado UPDATE nf_observacoes', { data, error });
+        if (!error) {
+          setObservacoes(prev => ({ ...prev, [chave]: { id: existente.id, observacao: texto } }));
+        }
+      } else {
+        // Insert
+        const { data, error } = await supabase
+          .from('nf_observacoes')
+          .insert({ ds_chaveacesso: chave, observacao: texto })
+          .select();
+        console.log('🟩 Resultado INSERT nf_observacoes', { data, error });
+        if (!error && Array.isArray(data) && data[0]) {
+          setObservacoes(prev => ({ ...prev, [chave]: { id: data[0].id, observacao: texto } }));
+        }
+      }
+    } finally {
+      setSalvandoChave(null);
+    }
+  };
+
+  const removerObservacao = async (chave) => {
+    const existente = observacoes[chave];
+    setSalvandoChave(chave);
+    try {
+      if (existente && existente.id) {
+        const { data, error } = await supabase.from('nf_observacoes').delete().eq('id', existente.id);
+        console.log('🟥 Resultado DELETE nf_observacoes', { data, error, chave, existente });
+      }
+      setObservacoes(prev => { const n = { ...prev }; delete n[chave]; return n; });
+      setObservacoesEdicao(prev => ({ ...prev, [chave]: '' }));
+    } finally {
+      setSalvandoChave(null);
+    }
+  };
+
+  // Carregar observações após dados principais mudarem
+  useEffect(() => {
+    const carregarObservacoes = async () => {
+      try {
+        const chaves = Array.from(new Set((dados || []).map(i => i.ds_chaveacesso).filter(Boolean)));
+        console.log('🔎 Buscando observações no Supabase', { totalChaves: chaves.length, chaves: chaves.slice(0, 20) });
+        
+        if (chaves.length > 0) {
+          // Teste 1: Buscar todas as observações primeiro
+          console.log('🧪 Teste 1: Buscando TODAS as observações...');
+          const { data: todasObs, error: errorTodas } = await supabase
+            .from('nf_observacoes')
+            .select('*');
+          console.log('📋 Todas as observações no banco:', { errorTodas, count: todasObs?.length, data: todasObs });
+          
+          // Teste 2: Buscar observações específicas
+          console.log('🧪 Teste 2: Buscando observações específicas...');
+          const { data: obsData, error } = await supabase
+            .from('nf_observacoes')
+            .select('id, ds_chaveacesso, observacao')
+            .in('ds_chaveacesso', chaves);
+          console.log('📥 Retorno Supabase (observações específicas)', { error, obsCount: obsData?.length, sample: Array.isArray(obsData) ? obsData.slice(0, 5) : obsData });
+          
+          if (!error && Array.isArray(obsData)) {
+            const map = {};
+            obsData.forEach(r => {
+              map[r.ds_chaveacesso] = { id: r.id, observacao: r.observacao || '' };
+            });
+            console.log('📌 Observações mapeadas por chave', { total: Object.keys(map).length, sample: Object.entries(map).slice(0, 5) });
+            setObservacoes(map);
+            const edit = {};
+            chaves.forEach(ch => { edit[ch] = map[ch]?.observacao || ''; });
+            setObservacoesEdicao(edit);
+          } else {
+            console.warn('⚠️ Falha ao carregar observações do Supabase', { error });
+            setObservacoes({});
+            setObservacoesEdicao({});
+          }
+        } else {
+          setObservacoes({});
+          setObservacoesEdicao({});
+        }
+      } catch (err) {
+        console.error('❌ Erro inesperado ao carregar observações do Supabase:', err);
+        setObservacoes({});
+        setObservacoesEdicao({});
+      }
+    };
+    if (dadosCarregados) carregarObservacoes();
+  }, [dados, dadosCarregados]);
 
   const formatarMoeda = (valor) => {
     if (!valor || isNaN(valor)) return 'R$ 0,00';
@@ -752,7 +960,7 @@ const ManifestacaoNF = () => {
                 />
               </div>
 
-              <div className="flex items-end">
+              <div className="flex items-center">
                 <button 
                   type="submit"
                   className="w-full flex items-center justify-center gap-2 bg-[#000638] text-white px-6 py-2 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-10 text-sm font-bold shadow-md tracking-wide uppercase"
@@ -1120,6 +1328,9 @@ const ManifestacaoNF = () => {
                             {getSortIcon('dt_cadastro')}
                           </div>
                         </th>
+                        <th>
+                          <div className="flex items-center">OBSERVAÇÕES</div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1215,6 +1426,29 @@ const ManifestacaoNF = () => {
                             <td className="text-center">{item.nr_fatura || ''}</td>
                             <td className="text-center">{formatarData(item.dt_fatura)}</td>
                             <td className="text-center">{formatarData(item.dt_cadastro)}</td>
+                            <td>
+                              <div className="flex justify-center">
+                                {observacoes[item.ds_chaveacesso]?.observacao ? (
+                                  // Se tem observação, mostra tag clicável
+                                  <button
+                                    onClick={() => abrirModalObservacao(item.ds_chaveacesso, true)}
+                                    className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium hover:bg-blue-200 transition-colors cursor-pointer"
+                                    title="Clique para ver/editar observação"
+                                  >
+                                    📝 1 Observação
+                                  </button>
+                                ) : (
+                                  // Se não tem observação, mostra botão para adicionar
+                                  <button
+                                    onClick={() => abrirModalObservacao(item.ds_chaveacesso, false)}
+                                    className="px-3 py-1 bg-gray-100 text-gray-700 rounded text-xs font-medium hover:bg-gray-200 transition-colors"
+                                    title="Adicionar observação"
+                                  >
+                                    + ADICIONAR OBS
+                                  </button>
+                                )}
+                              </div>
+                            </td>
                           </tr>
                         );
                       })}
@@ -1318,11 +1552,68 @@ const ManifestacaoNF = () => {
               </div>
             </CardContent>
           </Card>
-        )}
+                 )}
+
+         {/* Modal de Observações */}
+         {modalObservacao.aberto && (
+           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+             <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+               <div className="flex items-center justify-between mb-4">
+                 <h3 className="text-lg font-semibold text-gray-900">
+                   {modalObservacao.editando ? 'Editar Observação' : 'Adicionar Observação'}
+                 </h3>
+                 <button
+                   onClick={fecharModalObservacao}
+                   className="text-gray-400 hover:text-gray-600"
+                 >
+                   <X size={20} />
+                 </button>
+               </div>
+               
+               <div className="mb-4">
+                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                   Observação
+                 </label>
+                 <textarea
+                   value={modalObservacao.observacao}
+                   onChange={(e) => setModalObservacao(prev => ({ ...prev, observacao: e.target.value }))}
+                   className="w-full border border-gray-300 rounded-lg p-3 text-sm resize-none"
+                   rows={4}
+                   placeholder="Digite sua observação..."
+                 />
+               </div>
+               
+               <div className="flex gap-2 justify-end">
+                 {modalObservacao.editando && (
+                   <button
+                     onClick={removerObservacaoModal}
+                     disabled={salvandoChave === modalObservacao.chave}
+                     className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                   >
+                     {salvandoChave === modalObservacao.chave ? 'Removendo...' : 'Remover'}
+                   </button>
+                 )}
+                 <button
+                   onClick={fecharModalObservacao}
+                   className="px-4 py-2 text-sm bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+                 >
+                   Cancelar
+                 </button>
+                 <button
+                   onClick={salvarObservacaoModal}
+                   disabled={salvandoChave === modalObservacao.chave}
+                   className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                 >
+                   {salvandoChave === modalObservacao.chave ? 'Salvando...' : 'Salvar'}
+                 </button>
+               </div>
+             </div>
+           </div>
+         )}
 
 
-      </div>
-    );
-};
+       </div>
+     );
+ };
 
 export default ManifestacaoNF; 
