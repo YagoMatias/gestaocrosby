@@ -1,5 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
+import FiltroCliente from '../components/FiltroCliente';
+import FiltroFormaPagamento from '../components/FiltroFormaPagamento';
+import FiltroNomeFantasia from '../components/FiltroNomeFantasia';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 import { 
   Receipt, 
@@ -58,11 +61,17 @@ const ContasAReceber = () => {
   const [filtroDia, setFiltroDia] = useState(null);
 
   // Estados para filtros adicionais
-  const [filtroCliente, setFiltroCliente] = useState('');
   const [filtroFatura, setFiltroFatura] = useState('');
-  const [filtroFormaPagamento, setFiltroFormaPagamento] = useState('');
   const [filtroCobranca, setFiltroCobranca] = useState('TODOS');
   const [filtroTipoCliente, setFiltroTipoCliente] = useState('TODOS');
+
+  // Estados para os novos filtros de seleção múltipla
+  const [clientesSelecionados, setClientesSelecionados] = useState([]);
+  const [formasPagamentoSelecionadas, setFormasPagamentoSelecionadas] = useState([]);
+  const [nomesFantasiaSelecionados, setNomesFantasiaSelecionados] = useState([]);
+  const [dadosClientes, setDadosClientes] = useState([]);
+  const [dadosFormasPagamento, setDadosFormasPagamento] = useState([]);
+  const [dadosNomesFantasia, setDadosNomesFantasia] = useState([]);
 
   // Estado para informações de pessoas
   const [infoPessoas, setInfoPessoas] = useState({});
@@ -336,14 +345,11 @@ const ContasAReceber = () => {
   // Aplicar filtros adicionais aos dados já filtrados por situação e status
   const dadosComFiltrosAdicionais = dadosFiltradosCompletos.filter((item) => {
     
-    // Filtro por cliente
-    if (filtroCliente) {
-      const cdCliente = item.cd_cliente || '';
-      const nmCliente = item.nm_cliente || '';
-      const buscaCliente = filtroCliente.toLowerCase();
-      
-      if (!cdCliente.toString().toLowerCase().includes(buscaCliente) && 
-          !nmCliente.toLowerCase().includes(buscaCliente)) {
+    // Filtro por cliente (seleção múltipla)
+    if (clientesSelecionados.length > 0) {
+      const cdCliente = item.cd_cliente?.toString();
+      const isSelected = clientesSelecionados.some(cliente => cliente.cd_cliente?.toString() === cdCliente);
+      if (!isSelected) {
         return false;
       }
     }
@@ -356,13 +362,27 @@ const ContasAReceber = () => {
       }
     }
 
-    // Filtro por forma de pagamento
-    if (filtroFormaPagamento) {
-      const tipoDocumento = converterTipoDocumento(item.tp_documento);
-      const buscaFormaPagamento = filtroFormaPagamento.toLowerCase();
-      
-      if (!tipoDocumento.toLowerCase().includes(buscaFormaPagamento)) {
+    // Filtro por forma de pagamento (seleção múltipla)
+    if (formasPagamentoSelecionadas.length > 0) {
+      const tpDocumento = item.tp_documento?.toString();
+      const isSelected = formasPagamentoSelecionadas.some(forma => forma.codigo?.toString() === tpDocumento);
+      if (!isSelected) {
         return false;
+      }
+    }
+
+    // Filtro por nome fantasia (seleção múltipla)
+    if (nomesFantasiaSelecionados.length > 0) {
+      // Se informações de pessoas ainda não carregaram, não filtrar por nome fantasia
+      if (!infoPessoas || Object.keys(infoPessoas).length === 0) {
+        // Mantém o item até dados estarem disponíveis
+      } else {
+        const key = String(item.cd_cliente || '').trim();
+        const fantasia = infoPessoas[key]?.nm_fantasia;
+        const isSelected = nomesFantasiaSelecionados.some(nome => nome.nm_fantasia === fantasia);
+        if (!isSelected) {
+          return false;
+        }
       }
     }
 
@@ -581,9 +601,37 @@ const ContasAReceber = () => {
       // Buscar informações de pessoas
       const infoPessoasData = await buscarInfoPessoas(codigosClientes);
       setInfoPessoas(infoPessoasData);
+
+      // Extrair dados únicos de nomes fantasia das informações de pessoas
+      const nomesFantasiaUnicos = Object.entries(infoPessoasData)
+        .filter(([key, pessoa]) => pessoa.nm_fantasia)
+        .map(([key, pessoa]) => ({
+          cd_cliente: key,
+          nm_fantasia: pessoa.nm_fantasia
+        }))
+        .filter((item, index, self) => 
+          index === self.findIndex(t => t.nm_fantasia === item.nm_fantasia)
+        );
+      setDadosNomesFantasia(nomesFantasiaUnicos);
       
       setDados(todosOsDados);
       setDadosCarregados(true);
+
+      // Extrair dados únicos de clientes
+      const clientesUnicos = [...new Set(todosOsDados.map(item => JSON.stringify({
+        cd_cliente: item.cd_cliente?.toString(),
+        nm_cliente: item.nm_cliente
+      })))].map(str => JSON.parse(str)).filter(cliente => cliente.cd_cliente && cliente.nm_cliente);
+      setDadosClientes(clientesUnicos);
+
+      // Extrair dados únicos de formas de pagamento
+      const formasPagamentoUnicas = [...new Set(todosOsDados.map(item => JSON.stringify({
+        codigo: item.tp_documento?.toString(),
+        descricao: converterTipoDocumento(item.tp_documento)
+      })))].map(str => JSON.parse(str)).filter(forma => forma.codigo && forma.descricao);
+      setDadosFormasPagamento(formasPagamentoUnicas);
+
+
     } catch (err) {
       console.error('Erro ao buscar dados:', err);
       setDados([]);
@@ -600,6 +648,18 @@ const ContasAReceber = () => {
 
   const handleSelectEmpresas = (empresas) => {
     setEmpresasSelecionadas(empresas);
+  };
+
+  const handleSelectClientes = (clientes) => {
+    setClientesSelecionados([...clientes]); // Garantir que é um novo array
+  };
+
+  const handleSelectFormasPagamento = (formasPagamento) => {
+    setFormasPagamentoSelecionadas([...formasPagamento]); // Garantir que é um novo array
+  };
+
+  const handleSelectNomesFantasia = (nomesFantasia) => {
+    setNomesFantasiaSelecionados([...nomesFantasia]); // Garantir que é um novo array
   };
 
   // Função para exportar dados para Excel
@@ -869,7 +929,7 @@ const ContasAReceber = () => {
   // Resetar página quando filtros adicionais mudarem
   useEffect(() => {
     setPaginaAtual(1);
-  }, [filtroCliente, filtroFatura, filtroFormaPagamento, filtroCobranca, filtroTipoCliente]);
+  }, [clientesSelecionados, filtroFatura, formasPagamentoSelecionadas, nomesFantasiaSelecionados, filtroCobranca, filtroTipoCliente]);
 
 
 
@@ -1240,7 +1300,7 @@ const ContasAReceber = () => {
               </div>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4 mb-6">
               <div>
                 <label className="block text-xs font-semibold mb-1 text-[#000638]">Situação</label>
                 <select
@@ -1278,16 +1338,7 @@ const ContasAReceber = () => {
                   <option value="OUTROS">OUTROS</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Cliente</label>
-                <input
-                  type="text"
-                  value={filtroCliente}
-                  onChange={(e) => setFiltroCliente(e.target.value)}
-                  placeholder="Buscar por código ou nome do cliente..."
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
-                />
-              </div>
+            
               <div>
                 <label className="block text-xs font-semibold mb-1 text-[#000638]">Fatura</label>
                 <input
@@ -1298,31 +1349,42 @@ const ContasAReceber = () => {
                   className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Forma de Pagamento</label>
-                <input
-                  type="text"
-                  value={filtroFormaPagamento}
-                  onChange={(e) => setFiltroFormaPagamento(e.target.value)}
-                  placeholder="Buscar forma de pagamento..."
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+              <div className="lg:col-span-3">
+                <FiltroCliente
+                  clientesSelecionados={clientesSelecionados}
+                  onSelectClientes={handleSelectClientes}
+                  dadosClientes={dadosClientes}
                 />
               </div>
-              <div className="flex items-center">
+              <div className="lg:col-span-3">
+                <FiltroFormaPagamento
+                  formasPagamentoSelecionadas={formasPagamentoSelecionadas}
+                  onSelectFormasPagamento={handleSelectFormasPagamento}
+                  dadosFormasPagamento={dadosFormasPagamento}
+                />
+              </div>
+              <div className="lg:col-span-3">
+                <FiltroNomeFantasia
+                  nomesFantasiaSelecionados={nomesFantasiaSelecionados}
+                  onSelectNomesFantasia={handleSelectNomesFantasia}
+                  dadosNomesFantasia={dadosNomesFantasia}
+                />
+              </div>
+              <div className="flex items-end">
                 <button 
                   type="submit"
-                  className="flex items-center gap-2 bg-[#000638] text-white px-6 py-2 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-10 text-sm font-bold shadow-md tracking-wide uppercase"
+                  className="flex items-center gap-2 bg-[#000638] text-white px-6 py-4 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-10 text-sm font-bold shadow-md tracking-wide uppercase"
                   disabled={loading || !dataInicio || !dataFim}
                 >
                   {loading ? (
                     <>
                       <Spinner size={18} className="animate-spin" />
-                      <span>Buscando...</span>
+                      <span></span>
                     </>
                   ) : (
                     <>
                       <Calendar size={18} />
-                      <span>Buscar Dados</span>
+                      <span>Buscar</span>
                     </>
                   )}
                 </button>
