@@ -1218,7 +1218,7 @@ const FluxoCaixa = () => {
   // Cálculo para valor que falta pagar
   const valorFaltaPagar = totalValor - valorContasPagas;
 
-  // Total de Recebimentos (soma dos valores pagos do detalhamento de recebimento)
+  // Total de Contas a Receber (soma dos valores pagos do detalhamento de contas a receber)
   const totalRecebimento = (dadosReceb || []).reduce((acc, item) => {
     const valor = parseFloat(item?.vl_pago) || 0;
     return acc + valor;
@@ -1259,7 +1259,7 @@ const FluxoCaixa = () => {
     });
   }, [dadosReceb, sortRecebConfig]);
 
-  // Saldo: Recebido - Despesas
+  // Saldo: Contas a Receber - Contas a Pagar
   const totalLiquidez = (totalRecebimento || 0) - (totalValor || 0);
 
   // Cálculos para paginação (usando dados ordenados)
@@ -1477,7 +1477,7 @@ const FluxoCaixa = () => {
               <div className={'text-blue-600 text-2xl font-extrabold mb-1 break-words'}>
                 { (totalLiquidez || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
               </div>
-              <CardDescription className="text-xs text-gray-500">Recebido - Despesas</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Contas a Receber - Contas a Pagar</CardDescription>
             </CardContent>
           </Card>
 
@@ -1488,7 +1488,7 @@ const FluxoCaixa = () => {
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
                 <CurrencyDollar size={18} className="text-green-600" />
-                <CardTitle className="text-sm font-bold text-green-700">Recebido</CardTitle>
+                <CardTitle className="text-sm font-bold text-green-700">Contas a Receber</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
@@ -1499,7 +1499,7 @@ const FluxoCaixa = () => {
                   totalRecebimento.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                 )}
               </div>
-              <CardDescription className="text-xs text-gray-500">Soma dos valores pagos recebidos</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Soma dos valores de contas a receber</CardDescription>
             </CardContent>
           </Card>
 
@@ -1510,7 +1510,7 @@ const FluxoCaixa = () => {
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
                 <CurrencyDollar size={18} className="text-red-600" />
-                <CardTitle className="text-sm font-bold text-red-700">Despesas</CardTitle>
+                <CardTitle className="text-sm font-bold text-red-700">Contas a Pagar</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
@@ -1520,7 +1520,7 @@ const FluxoCaixa = () => {
                   currency: 'BRL',
                 })}
               </div>
-              <CardDescription className="text-xs text-gray-500">Valor total das duplicatas</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Valor total das contas a pagar</CardDescription>
             </CardContent>
           </Card>
               </div>
@@ -1539,11 +1539,11 @@ const FluxoCaixa = () => {
           onClose={fecharModalDetalhes}
         />
 
-        {/* Modal de Detalhamento de Recebimento */}
+        {/* Modal de Detalhamento de Contas a Receber */}
         <Modal
           isOpen={modalRecebimentoOpen}
           onClose={() => setModalRecebimentoOpen(false)}
-          title="Detalhamento de Recebimento"
+          title="Detalhamento de Contas a Receber"
           size="full"
         >
             <div className="p-6">
@@ -1551,19 +1551,19 @@ const FluxoCaixa = () => {
                 <div className="flex justify-center items-center py-20">
                   <div className="flex items-center gap-3">
                     <Spinner size={32} className="animate-spin text-blue-600" />
-                    <span className="text-gray-600">Carregando recebimentos...</span>
+                    <span className="text-gray-600">Carregando contas a receber...</span>
       </div>
           </div>
               ) : !dadosRecebCarregados ? (
                 <div className="flex justify-center items-center py-20">
                   <div className="text-center">
-                    <div className="text-gray-500 text-lg mb-2">Clique em "Buscar Dados" para carregar os recebimentos</div>
+                    <div className="text-gray-500 text-lg mb-2">Clique em "Buscar Dados" para carregar as contas a receber</div>
               </div>
             </div>
               ) : dadosReceb.length === 0 ? (
                 <div className="flex justify-center items-center py-20">
                   <div className="text-center">
-                    <div className="text-gray-500 text-lg mb-2">Nenhum recebimento encontrado</div>
+                    <div className="text-gray-500 text-lg mb-2">Nenhuma conta a receber encontrada</div>
               </div>
             </div>
               ) : (
@@ -1603,11 +1603,11 @@ const FluxoCaixa = () => {
         </div>
         </Modal>
 
-        {/* Modal de Detalhamento de Despesas */}
+        {/* Modal de Detalhamento de Contas a Pagar */}
         <Modal
           isOpen={modalDespesasOpen}
           onClose={() => setModalDespesasOpen(false)}
-          title="Detalhamento de Despesas"
+          title="Detalhamento de Contas a Pagar"
           size="full"
         >
           <div className="p-6">
@@ -1615,20 +1615,20 @@ const FluxoCaixa = () => {
               <div className="flex justify-center items-center py-20">
                 <div className="flex items-center gap-3">
                   <Spinner size={32} className="animate-spin text-blue-600" />
-                  <span className="text-gray-600">Carregando dados...</span>
+                  <span className="text-gray-600">Carregando contas a pagar...</span>
                 </div>
               </div>
             ) : !dadosCarregados ? (
               <div className="flex justify-center items-center py-20">
                 <div className="text-center">
-                  <div className="text-gray-500 text-lg mb-2">Clique em "Buscar Dados" para carregar as informações</div>
+                  <div className="text-gray-500 text-lg mb-2">Clique em "Buscar Dados" para carregar as contas a pagar</div>
                   <div className="text-gray-400 text-sm">Selecione o período e empresa desejados</div>
                 </div>
               </div>
             ) : dados.length === 0 ? (
               <div className="flex justify-center items-center py-20">
                 <div className="text-center">
-                  <div className="text-gray-500 text-lg mb-2">Nenhum dado encontrado</div>
+                  <div className="text-gray-500 text-lg mb-2">Nenhuma conta a pagar encontrada</div>
                   <div className="text-gray-400 text-sm">Verifique o período selecionado ou tente novamente</div>
                 </div>
               </div>
@@ -1654,7 +1654,7 @@ const FluxoCaixa = () => {
 
 
 
-// Componente para agrupar despesas por categoria
+// Componente para agrupar contas a pagar por categoria
 const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, dataInicio, dataFim, abrirModalDetalhes }) => {
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(new Set());
   const [despesasExpandidas, setDespesasExpandidas] = useState(new Set());
