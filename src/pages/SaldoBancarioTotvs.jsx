@@ -39,7 +39,7 @@ const SaldoBancarioTotvs = () => {
   const [expandTabelaTotvs, setExpandTabelaTotvs] = useState(true);
   const [filtros, setFiltros] = useState({
     nr_ctapes: [], // agora é array
-    dt_movim_ini: '',
+    dt_movim_ini: '2024-01-01',
     dt_movim_fim: '',
   });
   const [expandTabela, setExpandTabela] = useState(true);
@@ -129,7 +129,10 @@ const SaldoBancarioTotvs = () => {
     setLoading(true);
     setErro('');
     try {
-      const params = { nr_ctapes: filtrosParam.nr_ctapes, dt_movim_ini: filtrosParam.dt_movim_ini, dt_movim_fim: filtrosParam.dt_movim_fim, limit: 1000000, offset: 0 };
+      const contasUsadas = (Array.isArray(filtrosParam.nr_ctapes) && filtrosParam.nr_ctapes.length > 0)
+        ? filtrosParam.nr_ctapes
+        : contas.map(c => c.numero);
+      const params = { nr_ctapes: contasUsadas, dt_movim_ini: filtrosParam.dt_movim_ini, dt_movim_fim: filtrosParam.dt_movim_fim, limit: 1000000, offset: 0 };
       const result = await apiClient.financial.extrato(params);
       if (result.success) { setDados(result.data || []); setTotal(result.total || 0); } else { throw new Error(result.message || 'Erro ao buscar dados'); }
     } catch (err) { console.error('Erro ao buscar extrato:', err); setErro('Erro ao buscar dados do servidor.'); setDados([]); setTotal(0); } 
@@ -137,7 +140,10 @@ const SaldoBancarioTotvs = () => {
 
     setLoadingTotvs(true); setErroTotvs('');
     try {
-      const params = { nr_ctapes: filtrosParam.nr_ctapes, dt_movim_ini: filtrosParam.dt_movim_ini, dt_movim_fim: filtrosParam.dt_movim_fim, limit: 1000000, offset: 0 };
+      const contasUsadasTotvs = (Array.isArray(filtrosParam.nr_ctapes) && filtrosParam.nr_ctapes.length > 0)
+        ? filtrosParam.nr_ctapes
+        : contas.map(c => c.numero);
+      const params = { nr_ctapes: contasUsadasTotvs, dt_movim_ini: filtrosParam.dt_movim_ini, dt_movim_fim: filtrosParam.dt_movim_fim, limit: 1000000, offset: 0 };
       const resultTotvs = await apiClient.financial.extratoTotvs(params);
       if (resultTotvs.success) { setDadosTotvs(resultTotvs.data || []); setTotalTotvs(resultTotvs.total || 0); } else { throw new Error(resultTotvs.message || 'Erro ao buscar dados TOTVS'); }
     } catch (err) { console.error('Erro ao buscar extrato TOTVS:', err); setErroTotvs('Erro ao buscar dados do servidor TOTVS.'); setDadosTotvs([]); setTotalTotvs(0); } 
@@ -193,8 +199,100 @@ const SaldoBancarioTotvs = () => {
       else if (row.tp_operacao === 'D') saldo[contaNumero].debitosTotvs += parseFloat(row.vl_lancto) || 0;
       saldo[contaNumero].saldoExtrato = saldo[contaNumero].creditosTotvs - saldo[contaNumero].debitosTotvs;
     });
+    // Garantir que todas as contas apareçam mesmo sem dados
+    contas.forEach(c => {
+      const numero = String(c.numero);
+      if (!saldo[numero]) {
+        saldo[numero] = {
+          numero,
+          nome: c.nome,
+          creditos: 0,
+          debitos: 0,
+          saldo: 0,
+          creditosTotvs: 0,
+          debitosTotvs: 0,
+          saldoExtrato: 0
+        };
+      }
+    });
     return Object.values(saldo).sort((a, b) => a.numero.localeCompare(b.numero));
   }, [dadosProcessados, dadosTotvs, contas]);
+
+  // Ordenação A-Z para a tabela de saldo por conta
+  const [ordenacaoSaldo, setOrdenacaoSaldo] = useState({ campo: 'nome', direcao: 'asc' });
+  const handleSortSaldo = useCallback((campo) => {
+    setOrdenacaoSaldo(prev => ({
+      campo,
+      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc'
+    }));
+  }, []);
+  const getSortIconSaldo = useCallback((campo) => {
+    if (ordenacaoSaldo.campo !== campo) return <CaretUpDown size={12} className="opacity-50 inline-block ml-1" />;
+    return ordenacaoSaldo.direcao === 'asc' ? <CaretUp size={12} className="inline-block ml-1" /> : <CaretDown size={12} className="inline-block ml-1" />;
+  }, [ordenacaoSaldo]);
+  const saldoOrdenado = useMemo(() => {
+    const arr = [...saldoPorConta];
+    arr.sort((a, b) => {
+      let aVal = a[ordenacaoSaldo.campo];
+      let bVal = b[ordenacaoSaldo.campo];
+      // Numeros
+      if (['creditos','debitos','saldo','saldoExtrato'].includes(ordenacaoSaldo.campo)) {
+        aVal = parseFloat(aVal) || 0;
+        bVal = parseFloat(bVal) || 0;
+      } else if (typeof aVal === 'string' && typeof bVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = bVal.toLowerCase();
+      }
+      if (ordenacaoSaldo.direcao === 'asc') return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+      return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+    });
+    return arr;
+  }, [saldoPorConta, ordenacaoSaldo]);
+
+  // Filtro por banco (includes no nome da conta)
+  const [filtroBanco, setFiltroBanco] = useState('TODOS');
+  const [filtroGrupo, setFiltroGrupo] = useState('TODOS');
+  const saldoFiltrado = useMemo(() => {
+    if (!filtroBanco || filtroBanco === 'TODOS') return saldoOrdenado;
+    const termo = filtroBanco.toUpperCase();
+    return saldoOrdenado.filter(c => {
+      const nome = (c.nome || '').toUpperCase();
+      switch (termo) {
+        case 'CAIXA':
+          return nome.includes('CAIXA');
+        case 'BB':
+          return nome.includes('BB') || nome.includes('BRASIL') || nome.includes('BANCO DO BRASIL');
+        case 'SICREDI':
+          return nome.includes('SICREDI');
+        case 'SANT':
+          return nome.includes('SANTANDER') || nome.includes('SANT');
+        case 'BNB':
+          return nome.includes('BNB') || nome.includes('BANCO DO NORDESTE');
+        case 'BRADESCO':
+          return nome.includes('BRADESCO');
+        case 'ITAU':
+          return nome.includes('ITAU') || nome.includes('ITAÚ');
+        case 'UNICRED':
+          return nome.includes('UNICRED');
+        default:
+          return nome.includes(termo);
+      }
+    });
+  }, [saldoOrdenado, filtroBanco]);
+
+  // Aplicar filtro por Grupo sobre o resultado do filtro por Banco
+  const saldoFiltradoGrupo = useMemo(() => {
+    if (!filtroGrupo || filtroGrupo === 'TODOS') return saldoFiltrado;
+    const g = filtroGrupo.toUpperCase();
+    return saldoFiltrado.filter(c => {
+      const nome = (c.nome || '').toUpperCase();
+      if (g === 'FABIO') return nome.includes('FABIO');
+      if (g === 'CROSBY') return nome.includes('CROSBY');
+      if (g === 'IRMAOS CR' || g === 'IRMÃOS CR') return nome.includes('IRMAOS CR') || nome.includes('IRMÃOS CR');
+      if (g === 'FLAVIO') return nome.includes('FLAVIO');
+      return true;
+    });
+  }, [saldoFiltrado, filtroGrupo]);
 
   return (
     <ErrorBoundary 
@@ -216,7 +314,7 @@ const SaldoBancarioTotvs = () => {
               </div>
               <div className="flex flex-col">
                 <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Inicial</label>
-                <input type="date" name="dt_movim_ini" value={filtros.dt_movim_ini} onChange={handleChange} className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" />
+                <input type="date" name="dt_movim_ini" value={filtros.dt_movim_ini} readOnly disabled className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full bg-gray-100 text-[#000638] cursor-not-allowed" />
               </div>
               <div className="flex flex-col">
                 <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Final</label>
@@ -233,26 +331,71 @@ const SaldoBancarioTotvs = () => {
           {erro && <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{erro}</div>}
         </div>
 
-        {/* Tabela de Saldo por Conta (igual ao Extrato Financeiro) */}
-        {saldoPorConta.length > 0 && (
-          <div className="rounded-2xl shadow-lg bg-white border border-[#000638]/10 mb-6">
+        {/* Tabela de Saldo por Conta (sempre visível; valores atualizam ao filtrar) */}
+        <div className="rounded-2xl shadow-lg bg-white border border-[#000638]/10 mb-6">
             <div className="p-4 border-b border-[#000638]/10">
               <h2 className="text-xl font-bold text-[#000638]">Saldo por Conta</h2>
               <p className="text-sm text-gray-500 mt-1">Resumo financeiro por conta (Créditos - Débitos) e Saldo do Extrato TOTVS</p>
+            </div>
+            {/* Filtro por Banco (includes no nome da conta) */}
+            <div className="px-4 pt-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-semibold text-[#000638]">Filtrar por Banco</span>
+              </div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {['TODOS','CAIXA','BB','SICREDI','SANT','BNB','BRADESCO','ITAU','UNICRED'].map(b => (
+                  <button
+                    key={b}
+                    onClick={() => setFiltroBanco(b)}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      filtroBanco === b ? 'bg-[#000638] text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                    }`}
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+              {/* Filtro por Grupo */}
+              <div className="flex items-center gap-2 mt-3 mb-2">
+                <span className="text-xs font-semibold text-[#000638]">Filtrar por Grupo</span>
+              </div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {['TODOS','FABIO','CROSBY','IRMAOS CR','FLAVIO'].map(g => (
+                  <button
+                    key={g}
+                    onClick={() => setFiltroGrupo(g)}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      filtroGrupo === g ? 'bg-[#000638] text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                    }`}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead className="bg-[#000638] text-white">
                   <tr>
-                    <th className="px-4 py-3 text-left text-sm font-semibold">Conta</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold">Créditos</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold">Débitos</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold">Saldo</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold">Saldo Extrato</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold cursor-pointer" onClick={() => handleSortSaldo('nome')}>
+                      <span className="inline-flex items-center">Conta {getSortIconSaldo('nome')}</span>
+                    </th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold cursor-pointer" onClick={() => handleSortSaldo('creditos')}>
+                      <span className="inline-flex items-center">Créditos {getSortIconSaldo('creditos')}</span>
+                    </th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold cursor-pointer" onClick={() => handleSortSaldo('debitos')}>
+                      <span className="inline-flex items-center">Débitos {getSortIconSaldo('debitos')}</span>
+                    </th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold cursor-pointer" onClick={() => handleSortSaldo('saldo')}>
+                      <span className="inline-flex items-center">Saldo {getSortIconSaldo('saldo')}</span>
+                    </th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold cursor-pointer" onClick={() => handleSortSaldo('saldoExtrato')}>
+                      <span className="inline-flex items-center">Saldo Extrato {getSortIconSaldo('saldoExtrato')}</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {saldoPorConta.map((conta, index) => (
+                  {saldoFiltradoGrupo.map((conta, index) => (
                     <tr key={conta.numero} className={`border-b ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100 transition-colors`}>
                       <td className="px-4 py-3"><div className={`font-medium ${corConta(conta.nome)}`}>{conta.numero} - {conta.nome}</div></td>
                       <td className="px-4 py-3 text-right font-medium text-green-600">{conta.creditos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
@@ -265,17 +408,15 @@ const SaldoBancarioTotvs = () => {
                 <tfoot className="bg-gray-100 border-t-2 border-[#000638]">
                   <tr>
                     <td className="px-4 py-3 font-bold text-[#000638]">TOTAL</td>
-                    <td className="px-4 py-3 text-right font-bold text-green-600">{saldoPorConta.reduce((acc, c) => acc + c.creditos, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                    <td className="px-4 py-3 text-right font-bold text-red-600">{saldoPorConta.reduce((acc, c) => acc + c.debitos, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                    <td className={`px-4 py-3 text-right font-bold ${saldoPorConta.reduce((acc, c) => acc + c.saldo, 0) > 0 ? 'text-green-600' : saldoPorConta.reduce((acc, c) => acc + c.saldo, 0) < 0 ? 'text-red-600' : 'text-gray-600'}`}>{saldoPorConta.reduce((acc, c) => acc + c.saldo, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                    <td className={`px-4 py-3 text-right font-bold ${saldoPorConta.reduce((acc, c) => acc + c.saldoExtrato, 0) > 0 ? 'text-green-600' : saldoPorConta.reduce((acc, c) => acc + c.saldoExtrato, 0) < 0 ? 'text-red-600' : 'text-gray-600'}`}>{saldoPorConta.reduce((acc, c) => acc + c.saldoExtrato, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td className="px-4 py-3 text-right font-bold text-green-600">{saldoFiltradoGrupo.reduce((acc, c) => acc + c.creditos, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td className="px-4 py-3 text-right font-bold text-red-600">{saldoFiltradoGrupo.reduce((acc, c) => acc + c.debitos, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td className={`px-4 py-3 text-right font-bold ${saldoFiltradoGrupo.reduce((acc, c) => acc + c.saldo, 0) > 0 ? 'text-green-600' : saldoFiltradoGrupo.reduce((acc, c) => acc + c.saldo, 0) < 0 ? 'text-red-600' : 'text-gray-600'}`}>{saldoFiltradoGrupo.reduce((acc, c) => acc + c.saldo, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td className={`px-4 py-3 text-right font-bold ${saldoFiltradoGrupo.reduce((acc, c) => acc + c.saldoExtrato, 0) > 0 ? 'text-green-600' : saldoFiltradoGrupo.reduce((acc, c) => acc + c.saldoExtrato, 0) < 0 ? 'text-red-600' : 'text-gray-600'}`}>{saldoFiltradoGrupo.reduce((acc, c) => acc + c.saldoExtrato, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
           </div>
-        )}
-
         {/* Tabela TOTVS já existente abaixo (mantida) */}
       </div>
     </ErrorBoundary>
