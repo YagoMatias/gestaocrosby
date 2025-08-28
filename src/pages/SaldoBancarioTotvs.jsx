@@ -413,6 +413,11 @@ const SaldoBancarioTotvs = () => {
                     <td className={`px-4 py-3 text-right font-bold ${saldoFiltradoGrupo.reduce((acc, c) => acc + c.saldo, 0) > 0 ? 'text-green-600' : saldoFiltradoGrupo.reduce((acc, c) => acc + c.saldo, 0) < 0 ? 'text-red-600' : 'text-gray-600'}`}>{saldoFiltradoGrupo.reduce((acc, c) => acc + c.saldo, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                     <td className={`px-4 py-3 text-right font-bold ${saldoFiltradoGrupo.reduce((acc, c) => acc + c.saldoExtrato, 0) > 0 ? 'text-green-600' : saldoFiltradoGrupo.reduce((acc, c) => acc + c.saldoExtrato, 0) < 0 ? 'text-red-600' : 'text-gray-600'}`}>{saldoFiltradoGrupo.reduce((acc, c) => acc + c.saldoExtrato, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                   </tr>
+                  <tr>
+                    <td colSpan={5} className="px-4 py-2 text-xs font-semibold text-[#000638]">
+                      Total de contas exibidas: {saldoFiltradoGrupo.length}
+                    </td>
+                  </tr>
                 </tfoot>
               </table>
             </div>

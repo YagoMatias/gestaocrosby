@@ -62,6 +62,7 @@ const ContasAReceber = () => {
 
   // Estados para filtros adicionais
   const [filtroFatura, setFiltroFatura] = useState('');
+  const [filtroPortador, setFiltroPortador] = useState('');
   const [filtroCobranca, setFiltroCobranca] = useState('TODOS');
   const [filtroTipoCliente, setFiltroTipoCliente] = useState('TODOS');
 
@@ -358,6 +359,14 @@ const ContasAReceber = () => {
     if (filtroFatura) {
       const nrFatura = item.nr_fatura || '';
       if (!nrFatura.toString().toLowerCase().includes(filtroFatura.toLowerCase())) {
+        return false;
+      }
+    }
+
+    // Filtro por portador (usa nr_portador, igual fatura)
+    if (filtroPortador) {
+      const nrPortador = item.nr_portador || '';
+      if (!nrPortador.toString().toLowerCase().includes(filtroPortador.toLowerCase())) {
         return false;
       }
     }
@@ -929,7 +938,7 @@ const ContasAReceber = () => {
   // Resetar página quando filtros adicionais mudarem
   useEffect(() => {
     setPaginaAtual(1);
-  }, [clientesSelecionados, filtroFatura, formasPagamentoSelecionadas, nomesFantasiaSelecionados, filtroCobranca, filtroTipoCliente]);
+  }, [clientesSelecionados, filtroFatura, filtroPortador, formasPagamentoSelecionadas, nomesFantasiaSelecionados, filtroCobranca, filtroTipoCliente]);
 
 
 
@@ -1349,14 +1358,24 @@ const ContasAReceber = () => {
                   className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
               </div>
-              <div className="lg:col-span-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Portador</label>
+                <input
+                  type="text"
+                  value={filtroPortador}
+                  onChange={(e) => setFiltroPortador(e.target.value)}
+                  placeholder="Buscar portador..."
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                />
+              </div>
+              <div className="lg:col-span-1">
                 <FiltroCliente
                   clientesSelecionados={clientesSelecionados}
                   onSelectClientes={handleSelectClientes}
                   dadosClientes={dadosClientes}
                 />
               </div>
-              <div className="lg:col-span-3">
+              <div className="lg:col-3">
                 <FiltroFormaPagamento
                   formasPagamentoSelecionadas={formasPagamentoSelecionadas}
                   onSelectFormasPagamento={handleSelectFormasPagamento}
