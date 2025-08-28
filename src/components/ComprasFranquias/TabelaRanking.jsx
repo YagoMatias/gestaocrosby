@@ -1,6 +1,9 @@
 import React, { memo } from 'react';
 import LoadingSpinner from '../LoadingSpinner';
 import { ERROR_MESSAGES } from '../../config/constants';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
+import { FileArrowDown } from '@phosphor-icons/react';
 
 /**
  * Componente de tabela para ranking de compras franquias
@@ -40,6 +43,61 @@ const TabelaRanking = memo(({
         return 'text-indigo-700';
       default:
         return 'text-gray-700';
+    }
+  };
+
+  // Função para exportar dados para Excel
+  const exportarExcel = () => {
+    try {
+      // Preparar dados para exportação
+      const dadosExportacao = dados.map(item => ({
+        'Grupo Empresa': item.nm_grupoempresa || '',
+        'Nome Fantasia': item.nm_fantasia || '',
+        'Devolução': parseFloat(item.devolucao || 0).toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL'
+        }),
+        'Compras': parseFloat(item.compras || 0).toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL'
+        }),
+        'Líquido': parseFloat(item.total || 0).toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL'
+        }),
+        'Vendas Franquias': item.vendasTotal || ''
+      }));
+
+      // Criar workbook
+      const ws = XLSX.utils.json_to_sheet(dadosExportacao);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Compras Franquias');
+
+      // Ajustar largura das colunas
+      const colWidths = [
+        { wch: 20 }, // Grupo Empresa
+        { wch: 30 }, // Nome Fantasia
+        { wch: 15 }, // Devolução
+        { wch: 15 }, // Compras
+        { wch: 15 }, // Líquido
+        { wch: 20 }  // Vendas Franquias
+      ];
+      ws['!cols'] = colWidths;
+
+      // Gerar arquivo
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const data = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      
+      // Nome do arquivo com data atual
+      const dataAtual = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+      const nomeArquivo = `compras-franquias-${dataAtual}.xlsx`;
+      
+      saveAs(data, nomeArquivo);
+
+      console.log('✅ Excel exportado com sucesso!');
+    } catch (error) {
+      console.error('❌ Erro ao exportar Excel:', error);
+      alert('Erro ao exportar dados para Excel. Tente novamente.');
     }
   };
 
@@ -90,9 +148,23 @@ const TabelaRanking = memo(({
           )}
         </div>
         
-        {/* Indicador de atualização */}
-        <div className="text-xs text-gray-400">
-          Atualizado em {new Date().toLocaleTimeString('pt-BR')}
+        <div className="flex items-center gap-4">
+          {/* Botão de exportar Excel */}
+          {dados.length > 0 && (
+            <button
+              onClick={exportarExcel}
+              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium text-sm shadow-md"
+              title="Exportar dados para Excel"
+            >
+              <FileArrowDown size={18} />
+              <span>Baixar Excel</span>
+            </button>
+          )}
+          
+          {/* Indicador de atualização */}
+          <div className="text-xs text-gray-400">
+            Atualizado em {new Date().toLocaleTimeString('pt-BR')}
+          </div>
         </div>
       </div>
 
