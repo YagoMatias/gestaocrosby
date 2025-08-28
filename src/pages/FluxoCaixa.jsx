@@ -3,6 +3,8 @@ import FiltroEmpresa from '../components/FiltroEmpresa';
 import FiltroFornecedor from '../components/FiltroFornecedor';
 import FiltroCentroCusto from '../components/FiltroCentroCusto';
 import FiltroDespesas from '../components/FiltroDespesas';
+import DropdownContas from '../components/DropdownContas';
+import { contas } from "../utils/contas";
 import useApiClient from '../hooks/useApiClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
@@ -52,8 +54,7 @@ const FluxoCaixa = () => {
   const [dataFim, setDataFim] = useState('');
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
-  const [status, setStatus] = useState('Todos');
-  const [situacao, setSituacao] = useState('NORMAIS');
+
 
   const [duplicata, setDuplicata] = useState('');
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
@@ -87,9 +88,25 @@ const FluxoCaixa = () => {
   const [mostrarTabelaReceb, setMostrarTabelaReceb] = useState(false);
   const [sortRecebConfig, setSortRecebConfig] = useState({ key: 'nm_cliente', direction: 'asc' });
   
+  // Estados para Saídas (FluxoCaixa-Saida)
+  const [dadosSaida, setDadosSaida] = useState([]);
+  const [loadingSaida, setLoadingSaida] = useState(false);
+  const [dadosSaidaCarregados, setDadosSaidaCarregados] = useState(false);
+  const [mostrarTabelaSaida, setMostrarTabelaSaida] = useState(false);
+  const [sortSaidaConfig, setSortSaidaConfig] = useState({ key: 'dt_liq', direction: 'desc' });
+
+  
   // Estados para modais de detalhamento
   const [modalRecebimentoOpen, setModalRecebimentoOpen] = useState(false);
   const [modalDespesasOpen, setModalDespesasOpen] = useState(false);
+  
+  // Estados para Saldo Bancário
+  const [dadosSaldoBancario, setDadosSaldoBancario] = useState([]);
+  const [dadosTotvsSaldo, setDadosTotvsSaldo] = useState([]);
+  const [loadingSaldoBancario, setLoadingSaldoBancario] = useState(false);
+  const [erroSaldoBancario, setErroSaldoBancario] = useState('');
+  const [contasSelecionadasSaldo, setContasSelecionadasSaldo] = useState([]);
+  const [dataFinalSaldo, setDataFinalSaldo] = useState('');
 
   // Estados para ordenação
   const [sortConfig, setSortConfig] = useState({
@@ -97,27 +114,7 @@ const FluxoCaixa = () => {
     direction: 'asc'
   });
 
-  // Função para filtrar dados por situação
-  const filtrarDadosPorSituacao = (dadosOriginais) => {
-    if (!dadosOriginais || dadosOriginais.length === 0) return [];
-    
-    switch (situacao) {
-              case 'NORMAIS':
-          // Mostra apenas itens com tp_situacao = 'N' (Normais)
-          return dadosOriginais.filter(item => item.tp_situacao === 'N');
-        case 'CANCELADAS':
-          // Mostra apenas itens com tp_situacao = 'C' (Canceladas)
-          return dadosOriginais.filter(item => item.tp_situacao === 'C');
-      case 'TODAS':
-        // Mostra todos os itens
-        return dadosOriginais;
-      default:
-        return dadosOriginais;
-    }
-  };
 
-  // Dados filtrados por situação
-  const dadosFiltrados = filtrarDadosPorSituacao(dados);
 
   // Função para lidar com seleção de fornecedores
   const handleSelectFornecedores = (fornecedores) => {
@@ -134,50 +131,7 @@ const FluxoCaixa = () => {
     setDespesasSelecionadas([...despesas]); // Garantir que é um novo array
   };
 
-  // Função para filtrar dados por status
-  const filtrarDadosPorStatus = (dadosOriginais) => {
-    if (!dadosOriginais || dadosOriginais.length === 0) return [];
-    
-    switch (status) {
-      case 'Todos':
-        // Mostra todos os itens
-        return dadosOriginais;
-      case 'Pago':
-        // Mostra apenas itens pagos
-        return dadosOriginais.filter(item => item.dt_liq || item.tp_situacao === '1' || item.tp_situacao === 'P');
-      case 'Vencido':
-        // Mostra apenas itens vencidos (data de vencimento menor que hoje)
-        return dadosOriginais.filter(item => {
-          if (item.dt_vencimento) {
-            const hoje = new Date();
-            hoje.setHours(0, 0, 0, 0);
-            const dataVencimento = new Date(item.dt_vencimento);
-            dataVencimento.setHours(0, 0, 0, 0);
-            if (dataVencimento < hoje) return true;
-          }
-          if (item.tp_situacao === '2' || item.tp_situacao === 'V') return true;
-          return false;
-        });
-      case 'A Vencer':
-        // Mostra apenas itens a vencer (data de vencimento maior ou igual a hoje)
-        return dadosOriginais.filter(item => {
-          if (item.dt_vencimento) {
-            const hoje = new Date();
-            hoje.setHours(0, 0, 0, 0);
-            const dataVencimento = new Date(item.dt_vencimento);
-            dataVencimento.setHours(0, 0, 0, 0);
-            if (dataVencimento >= hoje) return true;
-          }
-          if (item.tp_situacao === '3' || item.tp_situacao === 'A') return true;
-          return false;
-        });
-      default:
-        return dadosOriginais;
-    }
-  };
 
-  // Dados filtrados por situação E status
-  const dadosFiltradosCompletos = filtrarDadosPorStatus(dadosFiltrados);
 
 
 
@@ -730,14 +684,13 @@ const FluxoCaixa = () => {
     
     setDataInicio(primeiroDia.toISOString().split('T')[0]);
     setDataFim(ultimoDia.toISOString().split('T')[0]);
+    setDataFinalSaldo(hoje.toISOString().split('T')[0]); // Data atual para saldo bancário
   }, []);
 
   // Executar preparação dos dados quando dados, situação ou status mudarem
   useEffect(() => {
-    // Recalcular dados filtrados quando situação ou status mudarem
-    const dadosRecalculados = filtrarDadosPorStatus(filtrarDadosPorSituacao(dados));
-    // Aqui você pode adicionar lógica adicional se necessário
-  }, [dados, situacao, status]);
+
+  }, [dados]);
 
   // Função para lidar com seleção de empresas
   const handleSelectEmpresas = (empresas) => {
@@ -748,6 +701,8 @@ const FluxoCaixa = () => {
     e.preventDefault();
     buscarDados();
     buscarRecebimentos();
+    buscarSaidas();
+    buscarSaldoBancario();
   };
 
   // Buscar dados de Recebimento (por liquidação) usando rota fluxocaixa-recebimento
@@ -808,6 +763,67 @@ const FluxoCaixa = () => {
       setDadosRecebCarregados(false);
     } finally {
       setLoadingReceb(false);
+    }
+  };
+
+  // Buscar dados de Saída (por liquidação) usando rota fluxocaixa-saida
+  const buscarSaidas = async (inicio = dataInicio, fim = dataFim) => {
+    if (!inicio || !fim) return;
+    if (empresasSelecionadas.length === 0) {
+      alert('Selecione pelo menos uma empresa para consultar!');
+      return;
+    }
+    try {
+      setLoadingSaida(true);
+      
+      // Buscar dados de TODAS as empresas selecionadas
+      const todasEmpresas = empresasSelecionadas.filter(e => e.cd_empresa);
+      if (todasEmpresas.length === 0) {
+        alert('Empresas selecionadas inválidas.');
+        setLoadingSaida(false);
+        return;
+      }
+      
+      // Fazer requisições para todas as empresas em paralelo
+      const promises = todasEmpresas.map(async (empresa) => {
+        const params = new URLSearchParams();
+        params.append('dt_inicio', inicio);
+        params.append('dt_fim', fim);
+        params.append('cd_empresa', empresa.cd_empresa);
+        
+        const url = `https://apigestaocrosby-bw2v.onrender.com/api/financial/fluxocaixa-saida?${params.toString()}`;
+        const res = await fetch(url);
+        
+        if (!res.ok) {
+          console.warn(`⚠️ Erro HTTP em fluxocaixa-saida para empresa ${empresa.cd_empresa}:`, res.status, res.statusText);
+          return [];
+        }
+        
+        const body = await res.json();
+        // Aceitar tanto array direto quanto estrutura aninhada { data: { data: [...] } }
+        let lista = [];
+        if (Array.isArray(body)) lista = body;
+        else if (Array.isArray(body?.data)) lista = body.data;
+        else if (Array.isArray(body?.data?.data)) lista = body.data.data;
+        else if (Array.isArray(body?.result)) lista = body.result;
+        
+        return lista || [];
+      });
+      
+      // Aguardar todas as requisições e combinar os resultados
+      const resultados = await Promise.all(promises);
+      const todasSaidas = resultados.flat();
+      
+      console.log(`📊 Saídas carregadas: ${todasSaidas.length} registros de ${todasEmpresas.length} empresa(s)`);
+      
+      setDadosSaida(todasSaidas);
+      setDadosSaidaCarregados(true);
+    } catch (err) {
+      console.error('❌ Erro ao buscar fluxocaixa-saida:', err);
+      setDadosSaida([]);
+      setDadosSaidaCarregados(false);
+    } finally {
+      setLoadingSaida(false);
     }
   };
 
@@ -890,7 +906,7 @@ const FluxoCaixa = () => {
   };
 
   // Aplicar filtros adicionais aos dados já filtrados por situação e status
-  const dadosComFiltrosAdicionais = dadosFiltradosCompletos.filter((item) => {
+  const dadosComFiltrosAdicionais = dados.filter((item) => {
     
     // Filtro por fornecedor (dropdown)
     if (fornecedoresSelecionados.length > 0) {
@@ -1161,11 +1177,11 @@ const FluxoCaixa = () => {
   // Logs de debug para monitorar dados
   console.log('🔍 Debug FluxoCaixa:', {
     dadosOriginais: dados.length,
-    dadosFiltrados: dadosFiltradosCompletos.length,
+            dadosFiltrados: dados.length,
     dadosComFiltroMensal: dadosComFiltroMensal.length,
     dadosAgrupados: dadosAgrupados.length,
     dadosOrdenados: dadosOrdenados.length,
-            filtrosAtivos: { status, situacao, duplicata, filtroMensal },
+            filtrosAtivos: { duplicata, filtroMensal },
     amostraDados: dados.slice(0, 2)
   });
 
@@ -1224,6 +1240,114 @@ const FluxoCaixa = () => {
     return acc + valor;
   }, 0);
 
+  // Total de Contas a Pagar (soma dos valores pagos do detalhamento de saídas)
+  const totalSaidas = React.useMemo(() => {
+    // Agrupar dados para evitar duplicação (igual à página Contas a Pagar)
+    const agruparDadosIdenticos = (dados) => {
+      const grupos = new Map();
+      
+      dados.forEach((item) => {
+        const chave = `${item.cd_fornecedor}|${item.nm_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.tp_previsaoreal}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
+        
+        if (!grupos.has(chave)) {
+          grupos.set(chave, {
+            item: item,
+            observacoes: [],
+            situacoes: [],
+            datasEmissao: [],
+            datasVencimento: [],
+            datasEntrada: [],
+            datasLiquidacao: [],
+            rateios: [],
+            quantidade: 0
+          });
+        }
+        
+        const grupo = grupos.get(chave);
+        grupo.quantidade += 1;
+        
+        // Adicionar situação se existir e for diferente
+        if (item.tp_situacao && !grupo.situacoes.includes(item.tp_situacao)) {
+          grupo.situacoes.push(item.tp_situacao);
+        }
+      });
+      
+      // Processar os grupos para determinar a situação final
+      return Array.from(grupos.values()).map(grupo => {
+        let situacaoFinal = grupo.item.tp_situacao;
+        
+        if (grupo.situacoes.length > 1) {
+          if (grupo.situacoes.includes('C')) {
+            situacaoFinal = 'C';
+          } else if (grupo.situacoes.includes('N')) {
+            situacaoFinal = 'N';
+          }
+        }
+        
+        return {
+          ...grupo,
+          item: {
+            ...grupo.item,
+            tp_situacao: situacaoFinal
+          }
+        };
+      });
+    };
+
+    const dadosAgrupados = agruparDadosIdenticos(dadosSaida || []);
+    
+    return dadosAgrupados.reduce((acc, grupo) => {
+      const valor = parseFloat(grupo.item?.vl_pago) || 0;
+      return acc + valor;
+    }, 0);
+  }, [dadosSaida]);
+
+  // Função para buscar dados do saldo bancário
+  const buscarSaldoBancario = async () => {
+    if (!dataFinalSaldo) return;
+    
+    setLoadingSaldoBancario(true);
+    setErroSaldoBancario('');
+    
+    try {
+      const contasUsadas = contasSelecionadasSaldo.length > 0 
+        ? contasSelecionadasSaldo 
+        : contas.map(c => c.numero);
+      
+      const params = { 
+        nr_ctapes: contasUsadas, 
+        dt_movim_ini: '2024-01-01', 
+        dt_movim_fim: dataFinalSaldo, 
+        limit: 1000000, 
+        offset: 0 
+      };
+      
+      // Buscar dados financeiros
+      const result = await apiClient.financial.extrato(params);
+      if (result.success) {
+        setDadosSaldoBancario(result.data || []);
+      } else {
+        throw new Error(result.message || 'Erro ao buscar dados financeiros');
+      }
+      
+      // Buscar dados TOTVS
+      const resultTotvs = await apiClient.financial.extratoTotvs(params);
+      if (resultTotvs.success) {
+        setDadosTotvsSaldo(resultTotvs.data || []);
+      } else {
+        throw new Error(resultTotvs.message || 'Erro ao buscar dados TOTVS');
+      }
+      
+    } catch (err) {
+      console.error('Erro ao buscar saldo bancário:', err);
+      setErroSaldoBancario('Erro ao buscar dados do saldo bancário.');
+      setDadosSaldoBancario([]);
+      setDadosTotvsSaldo([]);
+    } finally {
+      setLoadingSaldoBancario(false);
+    }
+  };
+
   // Lista ordenada de recebimentos para o modal
   const dadosRecebOrdenados = React.useMemo(() => {
     const lista = Array.isArray(dadosReceb) ? [...dadosReceb] : [];
@@ -1261,6 +1385,44 @@ const FluxoCaixa = () => {
 
   // Saldo: Contas a Receber - Contas a Pagar
   const totalLiquidez = (totalRecebimento || 0) - (totalValor || 0);
+
+  // Cálculo do saldo bancário total (soma de todos os saldos de extrato)
+  const saldoBancarioTotal = React.useMemo(() => {
+    const saldo = {};
+    
+    // Processar dados financeiros
+    dadosSaldoBancario.forEach(row => {
+      const contaNumero = String(row.nr_ctapes);
+      if (!saldo[contaNumero]) {
+        saldo[contaNumero] = {
+          creditosTotvs: 0,
+          debitosTotvs: 0,
+          saldoExtrato: 0
+        };
+      }
+    });
+    
+    // Processar dados TOTVS
+    dadosTotvsSaldo.forEach(row => {
+      const contaNumero = String(row.nr_ctapes);
+      if (!saldo[contaNumero]) {
+        saldo[contaNumero] = {
+          creditosTotvs: 0,
+          debitosTotvs: 0,
+          saldoExtrato: 0
+        };
+      }
+      if (row.tp_operacao === 'C') {
+        saldo[contaNumero].creditosTotvs += parseFloat(row.vl_lancto) || 0;
+      } else if (row.tp_operacao === 'D') {
+        saldo[contaNumero].debitosTotvs += parseFloat(row.vl_lancto) || 0;
+      }
+      saldo[contaNumero].saldoExtrato = saldo[contaNumero].creditosTotvs - saldo[contaNumero].debitosTotvs;
+    });
+    
+    // Somar todos os saldos de extrato
+    return Object.values(saldo).reduce((total, conta) => total + conta.saldoExtrato, 0);
+  }, [dadosSaldoBancario, dadosTotvsSaldo]);
 
   // Cálculos para paginação (usando dados ordenados)
   const totalPaginas = Math.ceil(dadosOrdenados.length / itensPorPagina);
@@ -1348,7 +1510,7 @@ const FluxoCaixa = () => {
               <span className="text-sm text-gray-500 mt-1">Selecione o período e empresa para análise</span>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <div className="lg:col-span-2">
                 <FiltroEmpresa
                   empresasSelecionadas={empresasSelecionadas}
@@ -1377,34 +1539,9 @@ const FluxoCaixa = () => {
                   className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Status</label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
-                >
-                  <option value="Todos">TODOS</option>
-                  <option value="Pago">PAGO</option>
-                  <option value="Vencido">VENCIDO</option>
-                  <option value="A Vencer">A VENCER</option>
-                </select>
-              </div>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Situação</label>
-                <select
-                  value={situacao}
-                  onChange={(e) => setSituacao(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
-                >
-                  <option value="NORMAIS">NORMAIS</option>
-                  <option value="CANCELADAS">CANCELADAS</option>
-                  <option value="TODAS">TODAS</option>
-                </select>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
               <div>
                 <FiltroFornecedor
                   fornecedoresSelecionados={fornecedoresSelecionados}
@@ -1436,6 +1573,28 @@ const FluxoCaixa = () => {
                   dadosCentroCusto={dadosCentroCusto}
                 />
               </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Contas (Saldo Bancário)</label>
+                <DropdownContas 
+                  contas={contas} 
+                  contasSelecionadas={contasSelecionadasSaldo} 
+                  setContasSelecionadas={setContasSelecionadasSaldo} 
+                  minWidth={200} 
+                  maxWidth={400} 
+                  placeholder="Selecione as contas" 
+                  hideLabel={true} 
+                  className="!bg-[#f8f9fb] !text-[#000638] !placeholder:text-gray-400 !px-3 !py-2 !w-full !rounded-lg !border !border-[#000638]/30 focus:!outline-none focus:!ring-2 focus:!ring-[#000638] !h-[42px] !text-base" 
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Final do Saldo</label>
+                <input
+                  type="date"
+                  value={dataFinalSaldo}
+                  onChange={(e) => setDataFinalSaldo(e.target.value)}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                />
+              </div>
               <div className="flex items-center">
                 <button 
                   type="submit"
@@ -1457,6 +1616,11 @@ const FluxoCaixa = () => {
               </div>
             </div>
           </form>
+          {erroSaldoBancario && (
+            <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">
+              {erroSaldoBancario}
+            </div>
+          )}
         </div>
 
         
@@ -1515,12 +1679,34 @@ const FluxoCaixa = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-red-600 mb-1 break-words">
-                {loading ? <Spinner size={24} className="animate-spin text-red-600" /> : totalValor.toLocaleString('pt-BR', {
+                {loadingSaida ? <Spinner size={24} className="animate-spin text-red-600" /> : totalSaidas.toLocaleString('pt-BR', {
                   style: 'currency',
                   currency: 'BRL',
                 })}
               </div>
-              <CardDescription className="text-xs text-gray-500">Valor total das contas a pagar</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Valor total das saídas (vl_pago)</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Card Saldo Bancário */}
+          <Card 
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white"
+          >
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-purple-600" />
+                <CardTitle className="text-sm font-bold text-purple-700">Saldo Bancário</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-purple-600 mb-1 break-words">
+                {loadingSaldoBancario ? (
+                  <Spinner size={24} className="animate-spin text-purple-600" />
+                ) : (
+                  saldoBancarioTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                )}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Soma dos saldos de extrato de todos os bancos</CardDescription>
             </CardContent>
           </Card>
               </div>
@@ -1611,39 +1797,33 @@ const FluxoCaixa = () => {
           size="full"
         >
           <div className="p-6">
-            {loading ? (
+            {loadingSaida ? (
               <div className="flex justify-center items-center py-20">
                 <div className="flex items-center gap-3">
                   <Spinner size={32} className="animate-spin text-blue-600" />
-                  <span className="text-gray-600">Carregando contas a pagar...</span>
+                  <span className="text-gray-600">Carregando saídas...</span>
                 </div>
               </div>
-            ) : !dadosCarregados ? (
+            ) : !dadosSaidaCarregados ? (
               <div className="flex justify-center items-center py-20">
                 <div className="text-center">
-                  <div className="text-gray-500 text-lg mb-2">Clique em "Buscar Dados" para carregar as contas a pagar</div>
+                  <div className="text-gray-500 text-lg mb-2">Clique em "Buscar Dados" para carregar as saídas</div>
                   <div className="text-gray-400 text-sm">Selecione o período e empresa desejados</div>
                 </div>
               </div>
-            ) : dados.length === 0 ? (
+            ) : dadosSaida.length === 0 ? (
               <div className="flex justify-center items-center py-20">
                 <div className="text-center">
-                  <div className="text-gray-500 text-lg mb-2">Nenhuma conta a pagar encontrada</div>
+                  <div className="text-gray-500 text-lg mb-2">Nenhuma saída encontrada</div>
                   <div className="text-gray-400 text-sm">Verifique o período selecionado ou tente novamente</div>
                 </div>
               </div>
             ) : (
-              <DespesasPorCategoria 
-                dados={dadosOrdenados}
-                totalContas={totalContas}
-                linhasSelecionadas={linhasSelecionadas}
-                toggleLinhaSelecionada={toggleLinhaSelecionada}
-                filtroMensal={filtroMensal}
-                setFiltroMensal={setFiltroMensal}
-                dadosOriginais={dadosComFiltrosAdicionais}
+              <SaidasPorCategoria 
+                dados={dadosSaida}
+                totalSaidas={totalSaidas}
                 dataInicio={dataInicio}
                 dataFim={dataFim}
-                abrirModalDetalhes={abrirModalDetalhes}
               />
             )}
           </div>
@@ -2250,6 +2430,343 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
           Nenhuma despesa encontrada para os filtros selecionados
         </div>
       )}
+      </div>
+    </div>
+  );
+};
+
+// Componente para exibir saídas em tabela simples
+const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
+  const [ordenacao, setOrdenacao] = useState({ campo: 'dt_liq', direcao: 'desc' });
+
+  // Função para agrupar dados idênticos (igual à página Contas a Pagar)
+  const agruparDadosIdenticos = (dados) => {
+    const grupos = new Map();
+    
+    dados.forEach((item) => {
+      // Criar chave única SEM vl_rateio para manter totais corretos
+      // O vl_rateio será usado apenas para separação visual no componente
+      const chave = `${item.cd_fornecedor}|${item.nm_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.tp_previsaoreal}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
+      
+      if (!grupos.has(chave)) {
+        grupos.set(chave, {
+          item: item,
+          observacoes: [],
+          situacoes: [],
+          datasEmissao: [],
+          datasVencimento: [],
+          datasEntrada: [],
+          datasLiquidacao: [],
+          rateios: [], // Array para armazenar diferentes rateios
+          quantidade: 0
+        });
+      }
+      
+      const grupo = grupos.get(chave);
+      grupo.quantidade += 1;
+      
+      // Adicionar rateio se não existir
+      if (item.vl_rateio && !grupo.rateios.includes(item.vl_rateio)) {
+        grupo.rateios.push(item.vl_rateio);
+      }
+      
+      // Adicionar observação se existir e for diferente
+      if (item.ds_observacao && !grupo.observacoes.includes(item.ds_observacao)) {
+        grupo.observacoes.push(item.ds_observacao);
+      }
+      
+      // Adicionar situação se existir e for diferente
+      if (item.tp_situacao && !grupo.situacoes.includes(item.tp_situacao)) {
+        grupo.situacoes.push(item.tp_situacao);
+      }
+      
+      // Adicionar previsão se existir e for diferente
+      if (item.tp_previsaoreal && !grupo.previsoes) {
+        grupo.previsoes = [];
+      }
+      if (item.tp_previsaoreal && !grupo.previsoes.includes(item.tp_previsaoreal)) {
+        grupo.previsoes.push(item.tp_previsaoreal);
+      }
+      
+      // Adicionar datas se existirem e forem diferentes
+      if (item.dt_emissao && !grupo.datasEmissao.includes(item.dt_emissao)) {
+        grupo.datasEmissao.push(item.dt_emissao);
+      }
+      if (item.dt_vencimento && !grupo.datasVencimento.includes(item.dt_vencimento)) {
+        grupo.datasVencimento.push(item.dt_vencimento);
+      }
+      if (item.dt_entrada && !grupo.datasEntrada.includes(item.dt_entrada)) {
+        grupo.datasEntrada.push(item.dt_entrada);
+      }
+      if (item.dt_liq && !grupo.datasLiquidacao.includes(item.dt_liq)) {
+        grupo.datasLiquidacao.push(item.dt_liq);
+      }
+    });
+    
+    // Processar os grupos para determinar a situação final e datas mais relevantes
+    return Array.from(grupos.values()).map(grupo => {
+      // Se há múltiplas situações, priorizar CANCELADAS (C) sobre NORMAIS (N)
+      let situacaoFinal = grupo.item.tp_situacao;
+      
+      if (grupo.situacoes.length > 1) {
+        // Se há 'C' entre as situações, usar 'C' (cancelada tem prioridade)
+        if (grupo.situacoes.includes('C')) {
+          situacaoFinal = 'C';
+        } else if (grupo.situacoes.includes('N')) {
+          situacaoFinal = 'N';
+        }
+        // Se não há nem 'C' nem 'N', manter a primeira situação
+      }
+      
+      // Se há múltiplas previsões, priorizar REAL (R) sobre PREVISÃO (P) sobre CONSIGNADO (C)
+      let previsaoFinal = grupo.item.tp_previsaoreal;
+      
+      if (grupo.previsoes && grupo.previsoes.length > 1) {
+        // Prioridade: REAL > PREVISÃO > CONSIGNADO
+        if (grupo.previsoes.includes('R')) {
+          previsaoFinal = 'R';
+        } else if (grupo.previsoes.includes('P')) {
+          previsaoFinal = 'P';
+        } else if (grupo.previsoes.includes('C')) {
+          previsaoFinal = 'C';
+        }
+        // Se não há nenhum dos valores esperados, manter o primeiro
+      }
+      
+      // Para as datas, usar a mais recente ou a mais relevante
+      const dtEmissaoFinal = grupo.datasEmissao.length > 0 ? 
+        grupo.datasEmissao.sort((a, b) => new Date(b) - new Date(a))[0] : 
+        grupo.item.dt_emissao;
+      
+      const dtVencimentoFinal = grupo.datasVencimento.length > 0 ? 
+        grupo.datasVencimento.sort((a, b) => new Date(b) - new Date(a))[0] : 
+        grupo.item.dt_vencimento;
+      
+      const dtEntradaFinal = grupo.datasEntrada.length > 0 ? 
+        grupo.datasEntrada.sort((a, b) => new Date(b) - new Date(a))[0] : 
+        grupo.item.dt_entrada;
+      
+      const dtLiquidacaoFinal = grupo.datasLiquidacao.length > 0 ? 
+        grupo.datasLiquidacao.sort((a, b) => new Date(b) - new Date(a))[0] : 
+        grupo.item.dt_liq;
+      
+      // Atualizar o item do grupo com os valores finais
+      return {
+        ...grupo,
+        item: {
+          ...grupo.item,
+          tp_situacao: situacaoFinal,
+          tp_previsaoreal: previsaoFinal,
+          dt_emissao: dtEmissaoFinal,
+          dt_vencimento: dtVencimentoFinal,
+          dt_entrada: dtEntradaFinal,
+          dt_liq: dtLiquidacaoFinal
+        }
+      };
+    });
+  };
+
+  // Agrupar dados para evitar duplicação
+  const dadosAgrupados = React.useMemo(() => {
+    return agruparDadosIdenticos(dados);
+  }, [dados]);
+
+  // Função para ordenar dados
+  const dadosOrdenados = React.useMemo(() => {
+    return [...dadosAgrupados].sort((a, b) => {
+      let aValue, bValue;
+
+      switch (ordenacao.campo) {
+        case 'dt_liq':
+          aValue = a.item.dt_liq ? new Date(a.item.dt_liq) : new Date(0);
+          bValue = b.item.dt_liq ? new Date(b.item.dt_liq) : new Date(0);
+          break;
+        case 'vl_pago':
+          aValue = parseFloat(a.item.vl_pago) || 0;
+          bValue = parseFloat(b.item.vl_pago) || 0;
+          break;
+        case 'cd_fornecedor':
+          aValue = (a.item.cd_fornecedor || '').toLowerCase();
+          bValue = (b.item.cd_fornecedor || '').toLowerCase();
+          break;
+        case 'nr_duplicata':
+          aValue = (a.item.nr_duplicata || '').toLowerCase();
+          bValue = (b.item.nr_duplicata || '').toLowerCase();
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return ordenacao.direcao === 'asc' ? -1 : 1;
+      if (aValue > bValue) return ordenacao.direcao === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [dadosAgrupados, ordenacao]);
+
+  const handleSort = (campo) => {
+    setOrdenacao(prev => ({
+      campo,
+      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const getSortIcon = (campo) => {
+    if (ordenacao.campo !== campo) {
+      return <CaretDown size={12} className="ml-1 opacity-50" />;
+    }
+    return ordenacao.direcao === 'asc' 
+      ? <CaretUp size={12} className="ml-1" />
+      : <CaretDown size={12} className="ml-1" />;
+  };
+
+  const formatarData = (data) => {
+    if (!data) return '';
+    try {
+      return new Date(data).toLocaleDateString('pt-BR');
+    } catch {
+      return data;
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Resumo */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
+          <div className="text-center">
+            <div className="font-semibold text-gray-700">Total de Saídas</div>
+            <div className="text-blue-600 font-bold">{dadosAgrupados.length}</div>
+            <div className="text-xs text-gray-500">({dados.length} registros originais)</div>
+          </div>
+          <div className="text-center">
+            <div className="font-semibold text-gray-700">Valor Total Pago</div>
+            <div className="text-green-600 font-bold">
+              {totalSaidas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="font-semibold text-gray-700">Período</div>
+            <div className="text-gray-600">
+              {formatarData(dataInicio)} a {formatarData(dataFim)}
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="font-semibold text-gray-700">Média por Saída</div>
+            <div className="text-purple-600 font-bold">
+              {dadosAgrupados.length > 0 
+                ? (totalSaidas / dadosAgrupados.length).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                : 'R$ 0,00'
+              }
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="font-semibold text-gray-700">Registros Agrupados</div>
+            <div className="text-orange-600 font-bold">
+              {dados.length - dadosAgrupados.length}
+            </div>
+            <div className="text-xs text-gray-500">duplicatas removidas</div>
+          </div>
+
+        </div>
+      </div>
+
+      {/* Tabela de Saídas */}
+      <div className="bg-white rounded-lg border border-gray-200">
+        <div className="p-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900">Detalhamento de Saídas</h3>
+          <p className="text-sm text-gray-500 mt-1">
+            Lista de todas as saídas do período selecionado
+          </p>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th 
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('dt_liq')}
+                >
+                  <div className="flex items-center">
+                    Data Liquidação
+                    {getSortIcon('dt_liq')}
+                  </div>
+                </th>
+                <th 
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('cd_fornecedor')}
+                >
+                  <div className="flex items-center">
+                    Fornecedor
+                    {getSortIcon('cd_fornecedor')}
+                  </div>
+                </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Duplicata
+                </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Empresa
+                </th>
+                <th 
+                  className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('vl_pago')}
+                >
+                  <div className="flex items-center justify-end">
+                    Valor Pago
+                    {getSortIcon('vl_pago')}
+                  </div>
+                </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Situação
+                </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Estágio
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {dadosOrdenados.map((grupo, index) => (
+                <tr key={`${grupo.item.cd_empresa}-${grupo.item.nr_duplicata}-${index}`} className="hover:bg-gray-50">
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    {formatarData(grupo.item.dt_liq)}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    <div className="flex flex-col">
+                      <span className="font-medium">{grupo.item.cd_fornecedor}</span>
+                      <span className="text-xs text-gray-500">{grupo.item.nm_fornecedor || 'N/A'}</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    {grupo.item.nr_duplicata}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    {grupo.item.cd_empresa}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-right font-medium text-green-600">
+                    {parseFloat(grupo.item.vl_pago || 0).toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      grupo.item.tp_situacao === 'N' ? 'bg-green-100 text-green-800' :
+                      grupo.item.tp_situacao === 'C' ? 'bg-red-100 text-red-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {grupo.item.tp_situacao === 'N' ? 'Normal' :
+                       grupo.item.tp_situacao === 'C' ? 'Cancelada' :
+                       grupo.item.tp_situacao || 'N/A'}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    {grupo.item.tp_estagio || 'N/A'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
