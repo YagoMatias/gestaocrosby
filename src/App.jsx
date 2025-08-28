@@ -14,6 +14,8 @@ const ContasAPagar = lazy(() => import('./pages/ContasAPagar'));
 const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
 const FluxoCaixa = lazy(() => import('./pages/FluxoCaixa'));
 const ExtratoFinanceiro = lazy(() => import('./pages/ExtratoFinanceiro'));
+const Conciliacao = lazy(() => import('./pages/Conciliacao'));
+const SaldoBancarioTotvs = lazy(() => import('./pages/SaldoBancarioTotvs'));
 
 const Varejo = lazy(() => import('./pages/Varejo'));
 const Franquias = lazy(() => import('./pages/Franquias'));
@@ -64,6 +66,38 @@ const AppRoutes = memo(() => {
       <Route path="/" element={<LoginForm />} />
       
       {/* Rotas protegidas com layout completo */}
+      <Route 
+        path="/conciliacao" 
+        element={
+          <div className="h-screen flex">
+            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
+            <div className="flex-1 flex flex-col">
+              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
+              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
+                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
+              }`}>
+                {createPrivateRoute(Conciliacao, ['owner', 'admin', 'manager','user'])}
+              </main>
+            </div>
+          </div>
+        } 
+      />
+      <Route 
+        path="/saldo-bancario-totvs" 
+        element={
+          <div className="h-screen flex">
+            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
+            <div className="flex-1 flex flex-col">
+              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
+              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
+                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
+              }`}>
+                {createPrivateRoute(SaldoBancarioTotvs, ['owner', 'admin', 'manager','user'])}
+              </main>
+            </div>
+          </div>
+        } 
+      />
       <Route 
         path="/home" 
         element={

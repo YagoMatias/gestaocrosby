@@ -9,6 +9,7 @@ import {
   CreditCard, 
   FileText, 
   ChartLineUp,
+  CheckCircle,
   Megaphone,
   Storefront,
   Buildings,
@@ -40,6 +41,8 @@ const financeiro = [
   { name: 'Saldo Bancário', href: '/saldo-bancario', icon: Bank, color: 'text-cyan-600' },
   { name: 'Importação .RET', href: '/importacao-ret', icon: FileText, color: 'text-teal-600' },
   { name: 'Extrato Financeiro', href: '/extrato-financeiro', icon: CreditCard, color: 'text-blue-600' },
+  { name: 'Conciliação', href: '/conciliacao', icon: CheckCircle, color: 'text-green-600' },
+  { name: 'Saldo Bancário TOTVS', href: '/saldo-bancario-totvs', icon: Bank, color: 'text-blue-600' },
   { name: 'DRE Demo', href: '/dre-demo', icon: ChartPieSlice, color: 'text-emerald-600' },
   { name: 'Manifestação de NF', href: '/manifestacao-nf', icon: FileText, color: 'text-indigo-600' },
 ];

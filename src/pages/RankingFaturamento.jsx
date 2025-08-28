@@ -403,20 +403,11 @@ const RankingFaturamento = () => {
     return 'regular';
   };
 
+  // Inicializa com data em branco - só busca quando clicar em Atualizar
   useEffect(() => {
-    const hoje = new Date();
-    hoje.setUTCHours(hoje.getUTCHours() - 3);
-    const dataBrasilia = hoje.toISOString().split('T')[0];
-    setDataInicio(dataBrasilia);
-    setDataFim(dataBrasilia);
+    setDataInicio('');
+    setDataFim('');
   }, []);
-
-  useEffect(() => {
-    if (dataInicio && dataFim) {
-      buscarDados(dataInicio, dataFim);
-      buscarDadosVendedores(dataInicio, dataFim);
-    }
-  }, [dataInicio, dataFim]);
 
   // Filtros para lojas
   console.log('Total de dados recebidos:', dados.length);

@@ -38,7 +38,6 @@ const ExtratoFinanceiro = () => {
   const [erroTotvs, setErroTotvs] = useState('');
   const [expandTabelaTotvs, setExpandTabelaTotvs] = useState(true);
   const [filtros, setFiltros] = useState({
-    cd_empresa: '',
     nr_ctapes: [], // agora é array
     dt_movim_ini: '',
     dt_movim_fim: '',
@@ -258,7 +257,6 @@ const ExtratoFinanceiro = () => {
     setErro('');
     try {
       const params = {
-        cd_empresa: filtrosParam.cd_empresa,
         nr_ctapes: filtrosParam.nr_ctapes,
         dt_movim_ini: filtrosParam.dt_movim_ini,
         dt_movim_fim: filtrosParam.dt_movim_fim,
@@ -289,7 +287,6 @@ const ExtratoFinanceiro = () => {
     setErroTotvs('');
     try {
       const params = {
-        cd_empresa: filtrosParam.cd_empresa,
         nr_ctapes: filtrosParam.nr_ctapes,
         dt_movim_ini: filtrosParam.dt_movim_ini,
         dt_movim_fim: filtrosParam.dt_movim_fim,
@@ -459,29 +456,7 @@ const ExtratoFinanceiro = () => {
     };
   }, [dadosTotvs]);
 
-  // Verifica contas selecionadas
-  const [expandBancos, setExpandBancos] = useState(false);
-  const contasSelecionadas = contas.filter(c => filtros.nr_ctapes.includes(c.numero));
-
-  // Calcula data da transação desconciliada mais antiga por banco
-  let ultimasDesconciliadas = [];
-  if (contasSelecionadas.length > 0) {
-    ultimasDesconciliadas = contasSelecionadas.map(conta => {
-      const transacoesDesconciliadas = dados.filter(row => String(row.nr_ctapes) === conta.numero && !row.dt_conciliacao);
-      let dataMaisAntiga = null;
-      if (transacoesDesconciliadas.length > 0) {
-        dataMaisAntiga = transacoesDesconciliadas.reduce((min, row) => {
-          const data = new Date(row.dt_lancto);
-          return (!min || data < new Date(min)) ? row.dt_lancto : min;
-        }, null);
-      }
-      return {
-        numero: conta.numero,
-        nome: conta.nome,
-        maisAntigaDesconciliada: dataMaisAntiga
-      };
-    });
-  }
+  // (Removido: cards de transação desconciliada por banco nesta página)
 
   // Cálculo do saldo por conta
   const saldoPorConta = useMemo(() => {
@@ -551,13 +526,9 @@ const ExtratoFinanceiro = () => {
           <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
             <div className="mb-6">
               <span className="text-lg font-bold text-[#000638] flex items-center gap-2"><Receipt size={22} weight="bold" />Filtros</span>
-              <span className="text-sm text-gray-500 mt-1">Selecione o período, empresa, conta ou data para análise</span>
+              <span className="text-sm text-gray-500 mt-1">Selecione o período e as contas para análise</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-x-3 gap-y-2 w-full mb-4">
-              <div className="flex flex-col">
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Empresa</label>
-                <input name="cd_empresa" value={filtros.cd_empresa} onChange={handleChange} className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" placeholder="Empresa" />
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-x-3 gap-y-2 w-full mb-4">
               <div className="flex flex-col">
                 <label className="block text-xs font-semibold mb-1 text-[#000638]">Contas</label>
                 <DropdownContas
@@ -602,40 +573,7 @@ const ExtratoFinanceiro = () => {
           </form>
           {erro && <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{erro}</div>}
         </div>
-        {/* Cards de bancos: última transação desconciliada em dropdown */}
-        {contasSelecionadas.length > 0 && (
-           <div className="rounded-2xl shadow-lg bg-white mb-4 border border-[#000638]/10 max-w-5xl mx-auto">
-             <div className="p-3 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandBancos(e => !e)}>
-               <span className="text-base font-bold text-[#000638]">Transação desconciliada mais antiga por banco</span>
-               <span className="flex items-center">
-                 {expandBancos ? <CaretDown size={20} color="#9ca3af" /> : <CaretRight size={20} color="#9ca3af" />}
-               </span>
-             </div>
-             {expandBancos && (
-               <div className="flex flex-row gap-2 p-3 flex-wrap justify-center items-stretch">
-                 {ultimasDesconciliadas.map(banco => (
-                   <Card key={banco.numero} className="min-w-[140px] max-w-[180px] shadow-md rounded-lg bg-white cursor-pointer p-1 border border-gray-200">
-                     <CardHeader className="pb-0 px-1 pt-1">
-                       <div className="flex flex-row items-center gap-1">
-                         <CardTitle className="text-xs font-bold text-blue-900 truncate">{banco.nome}</CardTitle>
-                       </div>
-                     </CardHeader>
-                     <CardContent className="pt-1 pl-2">
-                       <div className="text-[10px] text-gray-500">Data mais antiga desconciliada</div>
-                       <div className="text-xs font-bold text-gray-700 mt-0.5">
-                         {loading ? <Spinner size={18} className="animate-spin text-blue-600" /> : (
-                           banco.maisAntigaDesconciliada
-                             ? <span className="text-[#fe0000] font-bold">{new Date(banco.maisAntigaDesconciliada).toLocaleDateString('pt-BR')}</span>
-                             : <span className="text-green-600 font-bold">Conciliações realizadas no período</span>
-                         )}
-                       </div>
-                     </CardContent>
-                   </Card>
-                 ))}
-               </div>
-             )}
-           </div>
-         )}
+        {/* (Removido: seção de transação desconciliada por banco) */}
         {/* Cards em linha, ainda menores */}
         <div className="flex flex-row gap-2 mb-8 max-w-full justify-center items-stretch flex-wrap">
           {/* Card Débitos Financeiro */}
@@ -971,7 +909,7 @@ const ExtratoFinanceiro = () => {
                 <div className="flex justify-center items-center py-20">
                   <div className="text-center">
                     <div className="text-gray-500 text-lg mb-2">Clique em "Filtrar" para carregar as informações</div>
-                    <div className="text-gray-400 text-sm">Selecione o período e empresa desejados</div>
+                    <div className="text-gray-400 text-sm">Selecione o período e as contas desejadas</div>
                   </div>
                 </div>
               ) : (

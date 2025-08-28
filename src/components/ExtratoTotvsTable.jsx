@@ -1,5 +1,5 @@
-import React from 'react';
-import { CaretDown, CaretRight, Spinner } from '@phosphor-icons/react';
+import React, { useMemo, useState } from 'react';
+import { CaretDown, CaretRight, CaretUp, Spinner } from '@phosphor-icons/react';
 
 function formatarDataBR(data) {
   if (!data) return '-';
@@ -22,7 +22,41 @@ const ExtratoTotvsTable = ({
   totalRegistros,
   onPageChange,
   pageSize
-}) => (
+}) => {
+  const [sortConfig, setSortConfig] = useState({ key: 'dt_movim', direction: 'asc' });
+
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    setSortConfig({ key, direction });
+  };
+
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) return <CaretDown size={12} className="ml-1 opacity-50" />;
+    return sortConfig.direction === 'asc' ? <CaretUp size={12} className="ml-1" /> : <CaretDown size={12} className="ml-1" />;
+  };
+
+  const dadosOrdenados = useMemo(() => {
+    const arr = Array.isArray(dados) ? [...dados] : [];
+    return arr.sort((a, b) => {
+      let aValue = a[sortConfig.key];
+      let bValue = b[sortConfig.key];
+      if (sortConfig.key.startsWith('dt_')) {
+        aValue = aValue ? new Date(aValue) : new Date(0);
+        bValue = bValue ? new Date(bValue) : new Date(0);
+      } else if (sortConfig.key === 'vl_lancto') {
+        aValue = parseFloat(aValue) || 0;
+        bValue = parseFloat(bValue) || 0;
+      } else if (typeof aValue === 'string' && typeof bValue === 'string') {
+        aValue = aValue.toLowerCase();
+        bValue = bValue.toLowerCase();
+      }
+      if (sortConfig.direction === 'asc') return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
+      return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
+    });
+  }, [dados, sortConfig]);
+
+  return (
   <div className="rounded-2xl shadow-lg bg-white mt-8 border border-[#000638]/10">
     <div className="p-4 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandTabela(e => !e)}>
       <div>
@@ -40,7 +74,7 @@ const ExtratoTotvsTable = ({
     </div>
     {erro && <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{erro}</div>}
     {expandTabela && (
-      <div className="overflow-x-auto">
+      <div className="varejo-table-container overflow-x-auto">
         {loading ? (
           <div className="flex justify-center items-center py-8">
             <div className="flex items-center gap-3">
@@ -49,26 +83,32 @@ const ExtratoTotvsTable = ({
             </div>
           </div>
         ) : (
-          <table className="w-full border border-gray-200 rounded-lg">
+          <table className="varejo-table w-full border border-gray-200 rounded-lg">
             <thead>
               <tr className="bg-[#000638] text-white">
-                <th className="px-4 py-2 font-semibold">Conta</th>
-                <th className="px-4 py-2 font-semibold">Data Lançamento</th>
-                <th className="px-4 py-2 font-semibold">Documento</th>
-                <th className="px-4 py-2 font-semibold">Estorno</th>
-                <th className="px-4 py-2 font-semibold">Operação</th>
-                <th className="px-4 py-2 font-semibold">Auxiliar</th>
-                <th className="px-4 py-2 font-semibold">Valor</th>
-                <th className="px-4 py-2 font-semibold">Data Liquidação</th>
+                <th className="px-3 py-2 font-semibold">Conta</th>
+                <th onClick={() => handleSort('dt_movim')} className="px-3 py-2 font-semibold cursor-pointer">
+                  <div className="flex items-center justify-center gap-1">Data Lançamento {getSortIcon('dt_movim')}</div>
+                </th>
+                <th className="px-3 py-2 font-semibold">Documento</th>
+                <th className="px-3 py-2 font-semibold">Estorno</th>
+                <th className="px-3 py-2 font-semibold">Operação</th>
+                <th className="px-3 py-2 font-semibold">Auxiliar</th>
+                <th onClick={() => handleSort('vl_lancto')} className="px-3 py-2 font-semibold cursor-pointer">
+                  <div className="flex items-center justify-center gap-1">Valor {getSortIcon('vl_lancto')}</div>
+                </th>
+                <th onClick={() => handleSort('dt_liq')} className="px-3 py-2 font-semibold cursor-pointer">
+                  <div className="flex items-center justify-center gap-1">Data Liquidação {getSortIcon('dt_liq')}</div>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {dados.length === 0 ? (
+              {dadosOrdenados.length === 0 ? (
                 <tr><td colSpan={8} className="text-center py-8">Nenhum dado encontrado.</td></tr>
               ) : (
-                dados.map((row, i) => (
+                dadosOrdenados.map((row, i) => (
                   <tr key={i} className="border-b hover:bg-[#f8f9fb]">
-                    <td className={`px-4 py-2 text-center text-xs ${(() => {
+                    <td className={`px-3 py-2 text-center text-xs ${(() => {
                       const conta = contas.find(c => c.numero === String(row.nr_ctapes));
                       return conta ? corConta(conta.nome) : '';
                     })()}`}>{
@@ -77,13 +117,13 @@ const ExtratoTotvsTable = ({
                         return conta ? `${conta.numero} - ${conta.nome}` : row.nr_ctapes;
                       })()
                     }</td>
-                    <td className="px-4 py-2 text-center text-[#000638]">{formatarDataBR(row.dt_movim)}</td>
-                    <td className="px-4 py-2 text-[#000000]">{row.ds_doc}</td>
-                    <td className="px-4 py-2 text-center text-[#000000]">{row.in_estorno}</td>
-                    <td className="px-4 py-2 text-center text-[#000000]">{row.tp_operacao}</td>
-                    <td className="px-4 py-2 text-[#000000]">{row.ds_aux}</td>
-                    <td className={`px-4 py-2 text-right font-bold ${row.tp_operacao === 'D' ? 'text-[#fe0000]' : row.tp_operacao === 'C' ? 'text-green-600' : ''}`}>{row.vl_lancto !== null && row.vl_lancto !== undefined ? Number(row.vl_lancto).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
-                    <td className="px-4 py-2 text-center text-[#000638]">{formatarDataBR(row.dt_liq)}</td>
+                    <td className="px-3 py-2 text-center text-[#000638]">{formatarDataBR(row.dt_movim)}</td>
+                    <td className="px-3 py-2 text-[#000000]">{row.ds_doc}</td>
+                    <td className="px-3 py-2 text-center text-[#000000]">{row.in_estorno}</td>
+                    <td className="px-3 py-2 text-center text-[#000000]">{row.tp_operacao}</td>
+                    <td className="px-3 py-2 text-[#000000]">{row.ds_aux}</td>
+                    <td className={`px-3 py-2 text-right font-bold ${row.tp_operacao === 'D' ? 'text-[#fe0000]' : row.tp_operacao === 'C' ? 'text-green-600' : ''}`}>{row.vl_lancto !== null && row.vl_lancto !== undefined ? Number(row.vl_lancto).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
+                    <td className="px-3 py-2 text-center text-[#000638]">{formatarDataBR(row.dt_liq)}</td>
                   </tr>
                 ))
               )}
@@ -182,5 +222,6 @@ const ExtratoTotvsTable = ({
     )}
   </div>
 );
+}
 
 export default ExtratoTotvsTable; 
