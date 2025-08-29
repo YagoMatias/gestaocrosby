@@ -88,14 +88,9 @@ const FluxoCaixa = () => {
   const [mostrarTabelaSaida, setMostrarTabelaSaida] = useState(false);
   const [sortSaidaConfig, setSortSaidaConfig] = useState({ key: 'dt_liq', direction: 'desc' });
 
-  // Estados para Entradas (FluxoCaixa-Entradas) - Contas a Receber
-  const [dadosEntradas, setDadosEntradas] = useState([]);
-  const [loadingEntradas, setLoadingEntradas] = useState(false);
-  const [dadosEntradasCarregados, setDadosEntradasCarregados] = useState(false);
-
-  
   // Estados para modais de detalhamento
   const [modalDespesasOpen, setModalDespesasOpen] = useState(false);
+  const [modalContasReceberOpen, setModalContasReceberOpen] = useState(false);
   
   // Estados para Saldo Bancário
   const [dadosSaldoBancario, setDadosSaldoBancario] = useState([]);
@@ -104,6 +99,10 @@ const FluxoCaixa = () => {
   const [erroSaldoBancario, setErroSaldoBancario] = useState('');
   const [contasSelecionadasSaldo, setContasSelecionadasSaldo] = useState([]);
   const [dataFinalSaldo, setDataFinalSaldo] = useState('');
+  
+  // Estados para Contas a Receber
+  const [dadosContasReceber, setDadosContasReceber] = useState([]);
+  const [loadingContasReceber, setLoadingContasReceber] = useState(false);
 
   // Estados para ordenação
   const [sortConfig, setSortConfig] = useState({
@@ -698,7 +697,7 @@ const FluxoCaixa = () => {
     e.preventDefault();
     buscarDados();
     buscarSaidas();
-    buscarEntradas();
+    buscarContasReceber();
     buscarSaldoBancario();
   };
 
@@ -767,21 +766,21 @@ const FluxoCaixa = () => {
     }
   };
 
-  // Buscar dados de Entradas (por liquidação) usando rota fluxocaixa-entradas
-  const buscarEntradas = async (inicio = dataInicio, fim = dataFim) => {
+  // Buscar dados de Contas a Receber (por liquidação) usando rota fluxocaixa-entradas
+  const buscarContasReceber = async (inicio = dataInicio, fim = dataFim) => {
     if (!inicio || !fim) return;
     if (empresasSelecionadas.length === 0) {
       alert('Selecione pelo menos uma empresa para consultar!');
       return;
     }
     try {
-      setLoadingEntradas(true);
+      setLoadingContasReceber(true);
       
       // Buscar dados de TODAS as empresas selecionadas
       const todasEmpresas = empresasSelecionadas.filter(e => e.cd_empresa);
       if (todasEmpresas.length === 0) {
         alert('Empresas selecionadas inválidas.');
-        setLoadingEntradas(false);
+        setLoadingContasReceber(false);
         return;
       }
       
@@ -801,42 +800,12 @@ const FluxoCaixa = () => {
         }
         
         const body = await res.json();
-        
-        // Debug da estrutura da resposta
-        console.log(`🔍 Resposta da API para empresa ${empresa.cd_empresa}:`, {
-          success: body.success,
-          hasData: !!body.data,
-          dataType: typeof body.data,
-          isDataArray: Array.isArray(body.data),
-          hasNestedData: !!body.data?.data,
-          nestedDataType: typeof body.data?.data,
-          isNestedArray: Array.isArray(body.data?.data),
-          total: body.data?.total,
-          message: body.message
-        });
-        
-        // Log completo da primeira resposta para debug
-        if (empresa.cd_empresa === empresasSelecionadas[0]?.cd_empresa) {
-          console.log(`🔍 Resposta completa da primeira empresa (${empresa.cd_empresa}):`, body);
-        }
-        
         // Aceitar tanto array direto quanto estrutura aninhada { data: { data: [...] } }
         let lista = [];
-        if (Array.isArray(body)) {
-          lista = body;
-          console.log(`📊 Empresa ${empresa.cd_empresa}: Array direto com ${lista.length} registros`);
-        } else if (Array.isArray(body?.data)) {
-          lista = body.data;
-          console.log(`📊 Empresa ${empresa.cd_empresa}: data direto com ${lista.length} registros`);
-        } else if (Array.isArray(body?.data?.data)) {
-          lista = body.data.data;
-          console.log(`📊 Empresa ${empresa.cd_empresa}: data.data aninhado com ${lista.length} registros`);
-        } else if (Array.isArray(body?.result)) {
-          lista = body.result;
-          console.log(`📊 Empresa ${empresa.cd_empresa}: result com ${lista.length} registros`);
-        } else {
-          console.warn(`⚠️ Empresa ${empresa.cd_empresa}: Estrutura não reconhecida:`, body);
-        }
+        if (Array.isArray(body)) lista = body;
+        else if (Array.isArray(body?.data)) lista = body.data;
+        else if (Array.isArray(body?.data?.data)) lista = body.data.data;
+        else if (Array.isArray(body?.result)) lista = body.result;
         
         return lista || [];
       });
@@ -845,50 +814,18 @@ const FluxoCaixa = () => {
       const resultados = await Promise.all(promises);
       const todasEntradas = resultados.flat();
       
-      // Debug dos dados antes do filtro
-      console.log(`📊 Entradas carregadas: ${todasEntradas.length} registros de ${todasEmpresas.length} empresa(s)`);
+      console.log(`📊 Contas a Receber carregadas: ${todasEntradas.length} registros de ${todasEmpresas.length} empresa(s)`);
       
-      if (todasEntradas.length > 0) {
-        const situacoes = [...new Set(todasEntradas.map(item => item.tp_situacao))];
-        console.log(`📊 Situações encontradas:`, situacoes);
-        
-        // Contar registros por situação
-        const contagemPorSituacao = {};
-        todasEntradas.forEach(item => {
-          const situacao = item.tp_situacao || 'sem_situacao';
-          contagemPorSituacao[situacao] = (contagemPorSituacao[situacao] || 0) + 1;
-        });
-        console.log(`📊 Contagem por situação:`, contagemPorSituacao);
-        
-        console.log(`📊 Amostra de dados:`, todasEntradas.slice(0, 2).map(item => ({
-          cd_cliente: item.cd_cliente,
-          nm_cliente: item.nm_cliente,
-          tp_situacao: item.tp_situacao,
-          vl_pago: item.vl_pago
-        })));
-      }
-      
-      // Aplicar filtro para mostrar apenas contas com situação NORMAL
-      // Na rota fluxocaixa-entradas, tp_situacao = "1" significa normal
-      const todasEntradasFiltradas = todasEntradas.filter(item => {
-        // Se não há tp_situacao, incluir o registro (assumir que é normal)
-        if (!item.tp_situacao) return true;
-        // Se há tp_situacao, incluir apenas os normais (1 = normal, outros = cancelados)
-        return item.tp_situacao === '1' || item.tp_situacao === 'N';
-      });
-      
-      console.log(`📊 Entradas filtradas (apenas NORMAL): ${todasEntradasFiltradas.length} registros`);
-      
-      setDadosEntradas(todasEntradasFiltradas);
-      setDadosEntradasCarregados(true);
+      setDadosContasReceber(todasEntradas);
     } catch (err) {
       console.error('❌ Erro ao buscar fluxocaixa-entradas:', err);
-      setDadosEntradas([]);
-      setDadosEntradasCarregados(false);
+      setDadosContasReceber([]);
     } finally {
-      setLoadingEntradas(false);
+      setLoadingContasReceber(false);
     }
   };
+
+
 
   // Função para aplicar filtro mensal
   const aplicarFiltroMensal = (dados, filtro) => {
@@ -1302,129 +1239,7 @@ const FluxoCaixa = () => {
   // Cálculo para valor que falta pagar
   const valorFaltaPagar = totalValor - valorContasPagas;
 
-  // Total de Contas a Receber (soma dos valores pagos do detalhamento de entradas)
-  const totalRecebimento = React.useMemo(() => {
-    // Agrupar dados para evitar duplicação (igual à página Contas a Receber)
-    const agruparDadosIdenticos = (dados) => {
-      const grupos = new Map();
-      
-      dados.forEach((item) => {
-        // Criar chave única baseada em CLIENTE, FATURA e outros campos relevantes
-        const chave = `${item.cd_cliente}|${item.nm_cliente}|${item.nr_fatura}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.vl_fatura}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
-        
-        if (!grupos.has(chave)) {
-          grupos.set(chave, {
-            item: item,
-            observacoes: [],
-            situacoes: [],
-            datasEmissao: [],
-            datasVencimento: [],
-            datasEntrada: [],
-            datasLiquidacao: [],
-            quantidade: 0
-          });
-        }
-        
-        const grupo = grupos.get(chave);
-        grupo.quantidade += 1;
-        
-        // Adicionar observação se existir e for diferente
-        if (item.ds_observacao && !grupo.observacoes.includes(item.ds_observacao)) {
-          grupo.observacoes.push(item.ds_observacao);
-        }
-        
-        // Adicionar situação se existir e for diferente
-        if (item.tp_situacao && !grupo.situacoes.includes(item.tp_situacao)) {
-          grupo.situacoes.push(item.tp_situacao);
-        }
-        
-        // Adicionar datas se existirem e forem diferentes
-        if (item.dt_emissao && !grupo.datasEmissao.includes(item.dt_emissao)) {
-          grupo.datasEmissao.push(item.dt_emissao);
-        }
-        if (item.dt_vencimento && !grupo.datasVencimento.includes(item.dt_vencimento)) {
-          grupo.datasVencimento.push(item.dt_vencimento);
-        }
-        if (item.dt_entrada && !grupo.datasEntrada.includes(item.dt_entrada)) {
-          grupo.datasEntrada.push(item.dt_entrada);
-        }
-        if (item.dt_liq && !grupo.datasLiquidacao.includes(item.dt_liq)) {
-          grupo.datasLiquidacao.push(item.dt_liq);
-        }
-      });
-      
-      // Processar os grupos para determinar a situação final e datas mais relevantes
-      return Array.from(grupos.values()).map(grupo => {
-        // Se há múltiplas situações, priorizar CANCELADAS (C) sobre NORMAIS (N)
-        let situacaoFinal = grupo.item.tp_situacao;
-        
-        if (grupo.situacoes.length > 1) {
-          // Se há 'C' entre as situações, usar 'C' (cancelada tem prioridade)
-          if (grupo.situacoes.includes('C')) {
-            situacaoFinal = 'C';
-          } else if (grupo.situacoes.includes('N')) {
-            situacaoFinal = 'N';
-          }
-          // Se não há nem 'C' nem 'N', manter a primeira situação
-        }
-        
-        // Para as datas, usar a mais recente ou a mais relevante
-        const dtEmissaoFinal = grupo.datasEmissao.length > 0 ? 
-          grupo.datasEmissao.sort((a, b) => new Date(b) - new Date(a))[0] : 
-          grupo.item.dt_emissao;
-        
-        const dtVencimentoFinal = grupo.datasVencimento.length > 0 ? 
-          grupo.datasVencimento.sort((a, b) => new Date(b) - new Date(a))[0] : 
-          grupo.item.dt_vencimento;
-        
-        const dtEntradaFinal = grupo.datasEntrada.length > 0 ? 
-          grupo.datasEntrada.sort((a, b) => new Date(b) - new Date(a))[0] : 
-          grupo.item.dt_entrada;
-        
-        const dtLiquidacaoFinal = grupo.datasLiquidacao.length > 0 ? 
-          grupo.datasLiquidacao.sort((a, b) => new Date(b) - new Date(a))[0] : 
-          grupo.item.dt_liq;
-        
-        return {
-          ...grupo,
-          item: {
-            ...grupo.item,
-            tp_situacao: situacaoFinal,
-            dt_emissao: dtEmissaoFinal,
-            dt_vencimento: dtVencimentoFinal,
-            dt_entrada: dtEntradaFinal,
-            dt_liq: dtLiquidacaoFinal
-          }
-        };
-      });
-    };
 
-    const dadosAgrupados = agruparDadosIdenticos(dadosEntradas || []);
-    
-    // Debug dos dados agrupados
-    if (dadosAgrupados.length > 0) {
-      console.log('🔍 Amostra dos dados agrupados:', dadosAgrupados.slice(0, 3).map(grupo => ({
-        cd_cliente: grupo.item.cd_cliente,
-        nm_cliente: grupo.item.nm_cliente,
-        vl_pago: grupo.item.vl_pago,
-        tp_situacao: grupo.item.tp_situacao
-      })));
-    }
-    
-    const totalCalculado = dadosAgrupados.reduce((acc, grupo) => {
-      const valor = parseFloat(grupo.item?.vl_pago) || 0;
-      return acc + valor;
-    }, 0);
-
-    console.log('💰 Total Contas a Receber (fluxocaixa-entradas):', {
-      registrosOriginais: dadosEntradas?.length || 0,
-      registrosAgrupados: dadosAgrupados.length,
-      totalCalculado: totalCalculado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-      amostraValores: dadosAgrupados.slice(0, 5).map(g => parseFloat(g.item?.vl_pago) || 0)
-    });
-
-    return totalCalculado;
-  }, [dadosEntradas]);
 
   // Total de Contas a Pagar (soma dos valores pagos do detalhamento de saídas)
   const totalSaidas = React.useMemo(() => {
@@ -1488,6 +1303,16 @@ const FluxoCaixa = () => {
     }, 0);
   }, [dadosSaida]);
 
+  // Total de Contas a Receber (soma dos valores pagos do detalhamento de entradas)
+  const totalContasReceber = React.useMemo(() => {
+    return (dadosContasReceber || [])
+      .filter(item => item.tp_situacao === '1') // Filtrar apenas tp_situacao = 1
+      .reduce((acc, item) => {
+        const valor = parseFloat(item?.vl_pago) || 0;
+        return acc + valor;
+      }, 0);
+  }, [dadosContasReceber]);
+
   // Função para buscar dados do saldo bancário
   const buscarSaldoBancario = async () => {
     if (!dataFinalSaldo) return;
@@ -1536,8 +1361,7 @@ const FluxoCaixa = () => {
 
 
 
-  // Saldo: Contas a Receber - Contas a Pagar
-  const totalLiquidez = (totalRecebimento || 0) - (totalValor || 0);
+
 
   // Cálculo do saldo bancário total (soma de todos os saldos de extrato)
   const saldoBancarioTotal = React.useMemo(() => {
@@ -1650,7 +1474,7 @@ const FluxoCaixa = () => {
 
   return (
     <div className="w-full w-8xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
-        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Contas a Pagar - Fluxo de Caixa</h1>
+        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Fluxo de Caixa</h1>
         
         {/* Filtros */}
         <div className="mb-8">
@@ -1781,43 +1605,9 @@ const FluxoCaixa = () => {
         {/* Cards de Resumo */}
         <div className="flex flex-wrap gap-4 mb-8 justify-center">
           {/* Card Saldo */}
-          <Card 
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white"
-          >
-            <CardHeader className="pb-0">
-              <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className={'text-blue-600'} />
-                <CardTitle className={"text-sm font-bold text-blue-700"}>Saldo</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className={'text-blue-600 text-2xl font-extrabold mb-1 break-words'}>
-                { (totalLiquidez || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
-              </div>
-              <CardDescription className="text-xs text-gray-500">Contas a Receber - Contas a Pagar</CardDescription>
-            </CardContent>
-          </Card>
 
-          <Card 
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white"
-          >
-            <CardHeader className="pb-0">
-              <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-green-600" />
-                <CardTitle className="text-sm font-bold text-green-700">Contas a Receber</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-green-600 mb-1 break-words">
-                {loadingEntradas ? (
-                  <Spinner size={24} className="animate-spin text-green-600" />
-                ) : (
-                  totalRecebimento.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                )}
-              </div>
-              <CardDescription className="text-xs text-gray-500">Soma dos valores pagos (vl_pago) - fluxocaixa-entradas</CardDescription>
-            </CardContent>
-          </Card>
+
+
 
           <Card 
             className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer"
@@ -1837,6 +1627,28 @@ const FluxoCaixa = () => {
                 })}
               </div>
               <CardDescription className="text-xs text-gray-500">Valor total das saídas (vl_pago)</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Card Contas a Receber */}
+          <Card 
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer"
+            onClick={() => setModalContasReceberOpen(true)}
+          >
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-green-600" />
+                <CardTitle className="text-sm font-bold text-green-700">Contas a Receber</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-green-600 mb-1 break-words">
+                {loadingContasReceber ? <Spinner size={24} className="animate-spin text-green-600" /> : totalContasReceber.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Valor total das entradas (vl_pago)</CardDescription>
             </CardContent>
           </Card>
 
@@ -1918,6 +1730,41 @@ const FluxoCaixa = () => {
             )}
           </div>
         </Modal>
+
+        {/* Modal de Detalhamento de Contas a Receber */}
+        <Modal
+          isOpen={modalContasReceberOpen}
+          onClose={() => setModalContasReceberOpen(false)}
+          title="Detalhamento de Contas a Receber"
+          size="full"
+        >
+          <div className="p-6">
+            {loadingContasReceber ? (
+              <div className="flex justify-center items-center py-20">
+                <div className="flex items-center gap-3">
+                  <Spinner size={32} className="animate-spin text-green-600" />
+                  <span className="text-gray-600">Carregando contas a receber...</span>
+                </div>
+              </div>
+            ) : dadosContasReceber.length === 0 ? (
+              <div className="flex justify-center items-center py-20">
+                <div className="text-center">
+                  <div className="text-gray-500 text-lg mb-2">Clique em "Buscar Dados" para carregar as contas a receber</div>
+                  <div className="text-gray-400 text-sm">Selecione o período e empresa desejados</div>
+                </div>
+              </div>
+            ) : (
+              <ContasReceberDetalhamento 
+                dados={dadosContasReceber}
+                totalContasReceber={totalContasReceber}
+                dataInicio={dataInicio}
+                dataFim={dataFim}
+              />
+            )}
+          </div>
+        </Modal>
+
+
         </div>
   );
 };
@@ -2857,6 +2704,254 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  );
+};
+
+
+
+// Componente para detalhamento de Contas a Receber
+const ContasReceberDetalhamento = ({ dados, totalContasReceber, dataInicio, dataFim }) => {
+  const [ordenacao, setOrdenacao] = useState({ campo: 'dt_liq', direcao: 'desc' });
+
+  // Filtrar apenas dados com tp_situacao = 1
+  const dadosFiltrados = dados.filter(item => item.tp_situacao === '1');
+
+  // Função para agrupar dados idênticos (evitar duplicação)
+  const agruparDadosIdenticos = (dados) => {
+    const grupos = new Map();
+    
+    dados.forEach((item) => {
+      const chave = `${item.cd_cliente}|${item.nm_cliente}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_liq}|${item.tp_situacao}|${item.vl_fatura}|${item.vl_pago}`;
+      
+      if (!grupos.has(chave)) {
+        grupos.set(chave, {
+          item: item,
+          quantidade: 0
+        });
+      }
+      
+      const grupo = grupos.get(chave);
+      grupo.quantidade += 1;
+    });
+    
+    return Array.from(grupos.values());
+  };
+
+  // Agrupar dados para evitar duplicação
+  const dadosAgrupados = React.useMemo(() => {
+    return agruparDadosIdenticos(dadosFiltrados);
+  }, [dadosFiltrados]);
+
+  // Função para ordenar dados
+  const dadosOrdenados = React.useMemo(() => {
+    return [...dadosAgrupados].sort((a, b) => {
+      let aValue, bValue;
+
+      switch (ordenacao.campo) {
+        case 'dt_liq':
+          aValue = a.item.dt_liq ? new Date(a.item.dt_liq) : new Date(0);
+          bValue = b.item.dt_liq ? new Date(b.item.dt_liq) : new Date(0);
+          break;
+        case 'vl_pago':
+          aValue = parseFloat(a.item.vl_pago) || 0;
+          bValue = parseFloat(b.item.vl_pago) || 0;
+          break;
+        case 'cd_cliente':
+          aValue = (a.item.cd_cliente || '').toLowerCase();
+          bValue = (b.item.cd_cliente || '').toLowerCase();
+          break;
+        case 'nm_cliente':
+          aValue = (a.item.nm_cliente || '').toLowerCase();
+          bValue = (b.item.nm_cliente || '').toLowerCase();
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return ordenacao.direcao === 'asc' ? -1 : 1;
+      if (aValue > bValue) return ordenacao.direcao === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [dadosAgrupados, ordenacao]);
+
+  const handleSort = (campo) => {
+    setOrdenacao(prev => ({
+      campo,
+      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const getSortIcon = (campo) => {
+    if (ordenacao.campo !== campo) {
+      return <CaretDown size={12} className="ml-1 opacity-50" />;
+    }
+    return ordenacao.direcao === 'asc' 
+      ? <CaretUp size={12} className="ml-1" />
+      : <CaretDown size={12} className="ml-1" />;
+  };
+
+  const formatarData = (data) => {
+    if (!data) return '';
+    try {
+      return new Date(data).toLocaleDateString('pt-BR');
+    } catch {
+      return data;
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Resumo */}
+      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
+          <div className="text-center">
+            <div className="font-semibold text-gray-700">Total de Entradas</div>
+            <div className="text-green-600 font-bold">{dadosAgrupados.length}</div>
+            <div className="text-xs text-gray-500">({dados.length} registros originais)</div>
+          </div>
+          <div className="text-center">
+            <div className="font-semibold text-gray-700">Valor Total Recebido</div>
+            <div className="text-green-600 font-bold">
+              {totalContasReceber.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="font-semibold text-gray-700">Período</div>
+            <div className="text-gray-600">
+              {formatarData(dataInicio)} a {formatarData(dataFim)}
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="font-semibold text-gray-700">Média por Entrada</div>
+            <div className="text-purple-600 font-bold">
+              {dadosAgrupados.length > 0 
+                ? (totalContasReceber / dadosAgrupados.length).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                : 'R$ 0,00'
+              }
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="font-semibold text-gray-700">Situação = 1</div>
+            <div className="text-green-600 font-bold">
+              {dadosFiltrados.length}
+            </div>
+            <div className="text-xs text-gray-500">registros filtrados</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabela de Contas a Receber */}
+      <div className="bg-white rounded-lg border border-gray-200">
+        <div className="p-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900">Detalhamento de Contas a Receber</h3>
+          <p className="text-sm text-gray-500 mt-1">
+            Lista de todas as entradas do período selecionado (apenas tp_situacao = 1)
+          </p>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th 
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('dt_liq')}
+                >
+                  <div className="flex items-center">
+                    Data Liquidação
+                    {getSortIcon('dt_liq')}
+                  </div>
+                </th>
+                <th 
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('cd_cliente')}
+                >
+                  <div className="flex items-center">
+                    Cliente
+                    {getSortIcon('cd_cliente')}
+                  </div>
+                </th>
+                <th 
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('nm_cliente')}
+                >
+                  <div className="flex items-center">
+                    Nome Cliente
+                    {getSortIcon('nm_cliente')}
+                  </div>
+                </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Parcela
+                </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Empresa
+                </th>
+                <th 
+                  className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('vl_pago')}
+                >
+                  <div className="flex items-center justify-end">
+                    Valor Recebido
+                    {getSortIcon('vl_pago')}
+                  </div>
+                </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Situação
+                </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Tipo Doc.
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {dadosOrdenados.map((grupo, index) => (
+                <tr key={`${grupo.item.cd_empresa}-${grupo.item.cd_cliente}-${grupo.item.nr_parcela}-${index}`} className="hover:bg-gray-50">
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    {formatarData(grupo.item.dt_liq)}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    <div className="flex flex-col">
+                      <span className="font-medium">{grupo.item.cd_cliente}</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    <div className="max-w-xs truncate">
+                      {grupo.item.nm_cliente || 'N/A'}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    {grupo.item.nr_parcela}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    {grupo.item.cd_empresa}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-right font-medium text-green-600">
+                    {parseFloat(grupo.item.vl_pago || 0).toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                      Situação 1
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    {grupo.item.tp_documento || 'N/A'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {dadosOrdenados.length === 0 && (
+          <div className="text-center py-8 text-gray-500">
+            Nenhum registro encontrado com tp_situacao = 1
+          </div>
+        )}
       </div>
     </div>
   );

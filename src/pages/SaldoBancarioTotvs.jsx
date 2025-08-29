@@ -39,7 +39,7 @@ const SaldoBancarioTotvs = () => {
   const [expandTabelaTotvs, setExpandTabelaTotvs] = useState(true);
   const [filtros, setFiltros] = useState({
     nr_ctapes: [], // agora é array
-    dt_movim_ini: '2024-01-01',
+    dt_movim_ini: '2020-01-01',
     dt_movim_fim: '',
   });
   const [expandTabela, setExpandTabela] = useState(true);
