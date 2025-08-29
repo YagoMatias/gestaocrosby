@@ -491,6 +491,16 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               color="text-emerald-600"
             />
 
+            {/* Seção CMV */}
+            <MenuSection 
+              title="CMV"
+              items={faturamento}
+              isOpen={faturamentoOpen}
+              onToggle={() => setFaturamentoOpen(!faturamentoOpen)}
+              icon={ChartLineUp}
+              color="text-blue-600"
+            />
+
             {/* Seção Franquias */}
             <MenuSection 
               title="Franquias"

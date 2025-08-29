@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import FiltroFornecedor from '../components/FiltroFornecedor';
 import FiltroCentroCusto from '../components/FiltroCentroCusto';
@@ -81,13 +81,6 @@ const FluxoCaixa = () => {
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [itensPorPagina] = useState(30);
   
-  // Estados para Recebimentos (FluxoCaixa-Recebimento)
-  const [dadosReceb, setDadosReceb] = useState([]);
-  const [loadingReceb, setLoadingReceb] = useState(false);
-  const [dadosRecebCarregados, setDadosRecebCarregados] = useState(false);
-  const [mostrarTabelaReceb, setMostrarTabelaReceb] = useState(false);
-  const [sortRecebConfig, setSortRecebConfig] = useState({ key: 'nm_cliente', direction: 'asc' });
-  
   // Estados para Saídas (FluxoCaixa-Saida)
   const [dadosSaida, setDadosSaida] = useState([]);
   const [loadingSaida, setLoadingSaida] = useState(false);
@@ -95,9 +88,13 @@ const FluxoCaixa = () => {
   const [mostrarTabelaSaida, setMostrarTabelaSaida] = useState(false);
   const [sortSaidaConfig, setSortSaidaConfig] = useState({ key: 'dt_liq', direction: 'desc' });
 
+  // Estados para Entradas (FluxoCaixa-Entradas) - Contas a Receber
+  const [dadosEntradas, setDadosEntradas] = useState([]);
+  const [loadingEntradas, setLoadingEntradas] = useState(false);
+  const [dadosEntradasCarregados, setDadosEntradasCarregados] = useState(false);
+
   
   // Estados para modais de detalhamento
-  const [modalRecebimentoOpen, setModalRecebimentoOpen] = useState(false);
   const [modalDespesasOpen, setModalDespesasOpen] = useState(false);
   
   // Estados para Saldo Bancário
@@ -288,11 +285,11 @@ const FluxoCaixa = () => {
     setLoading(true);
     setPaginaAtual(1); // Reset para primeira página ao buscar novos dados
     try {
-      console.log('🔍 Iniciando busca de fluxo de caixa...');
+      console.log('🔍 Iniciando busca de contas a pagar...');
       console.log('📅 Período (Data Liquidação):', { inicio, fim });
       console.log('🏢 Empresas selecionadas:', empresasSelecionadas);
       
-      // Buscar dados usando a nova rota refatorada
+      // Buscar dados usando a rota contas-pagar
       const params = {
         dt_inicio: inicio,
         dt_fim: fim
@@ -310,7 +307,7 @@ const FluxoCaixa = () => {
       console.log('📋 Parâmetros da requisição:', params);
       console.log('🏢 Códigos das empresas:', codigosEmpresas);
       
-      const result = await apiClient.financial.fluxoCaixa(params);
+      const result = await apiClient.financial.contasPagar(params);
       
       let todosOsDados = [];
       
@@ -325,7 +322,7 @@ const FluxoCaixa = () => {
             : [];
         const responseData = Array.isArray(rawData) ? {} : (rawData || {});
         
-        console.log('✅ Dados obtidos com nova rota refatorada:', {
+        console.log('✅ Dados obtidos com rota contas-pagar:', {
           total: dadosArray.length,
           amostra: dadosArray.slice(0, 2),
           empresas: responseData.empresas,
@@ -346,7 +343,7 @@ const FluxoCaixa = () => {
         
         todosOsDados = dadosArray;
       } else {
-        console.error('❌ Falha ao buscar dados:', result.message);
+        console.error('❌ Falha ao buscar dados de contas a pagar:', result.message);
         setDados([]);
         setDadosCarregados(false);
         return;
@@ -700,70 +697,9 @@ const FluxoCaixa = () => {
   const handleFiltrar = (e) => {
     e.preventDefault();
     buscarDados();
-    buscarRecebimentos();
     buscarSaidas();
+    buscarEntradas();
     buscarSaldoBancario();
-  };
-
-  // Buscar dados de Recebimento (por liquidação) usando rota fluxocaixa-recebimento
-  const buscarRecebimentos = async (inicio = dataInicio, fim = dataFim) => {
-    if (!inicio || !fim) return;
-    if (empresasSelecionadas.length === 0) {
-      alert('Selecione pelo menos uma empresa para consultar!');
-      return;
-    }
-    try {
-      setLoadingReceb(true);
-      
-      // Buscar dados de TODAS as empresas selecionadas
-      const todasEmpresas = empresasSelecionadas.filter(e => e.cd_empresa);
-      if (todasEmpresas.length === 0) {
-        alert('Empresas selecionadas inválidas.');
-        setLoadingReceb(false);
-        return;
-      }
-      
-      // Fazer requisições para todas as empresas em paralelo
-      const promises = todasEmpresas.map(async (empresa) => {
-        const params = new URLSearchParams();
-        params.append('dt_inicio', inicio);
-        params.append('dt_fim', fim);
-        params.append('cd_empresa', empresa.cd_empresa);
-        
-      const url = `https://apigestaocrosby-bw2v.onrender.com/api/financial/fluxocaixa-recebimento?${params.toString()}`;
-      const res = await fetch(url);
-        
-      if (!res.ok) {
-          console.warn(`⚠️ Erro HTTP em fluxocaixa-recebimento para empresa ${empresa.cd_empresa}:`, res.status, res.statusText);
-          return [];
-        }
-        
-      const body = await res.json();
-      // Aceitar tanto array direto quanto estrutura aninhada { data: { data: [...] } }
-      let lista = [];
-      if (Array.isArray(body)) lista = body;
-      else if (Array.isArray(body?.data)) lista = body.data;
-      else if (Array.isArray(body?.data?.data)) lista = body.data.data;
-      else if (Array.isArray(body?.result)) lista = body.result;
-        
-        return lista || [];
-      });
-      
-      // Aguardar todas as requisições e combinar os resultados
-      const resultados = await Promise.all(promises);
-      const todosRecebimentos = resultados.flat();
-      
-      console.log(`📊 Recebimentos carregados: ${todosRecebimentos.length} registros de ${todasEmpresas.length} empresa(s)`);
-      
-      setDadosReceb(todosRecebimentos);
-      setDadosRecebCarregados(true);
-    } catch (err) {
-      console.error('❌ Erro ao buscar fluxocaixa-recebimento:', err);
-      setDadosReceb([]);
-      setDadosRecebCarregados(false);
-    } finally {
-      setLoadingReceb(false);
-    }
   };
 
   // Buscar dados de Saída (por liquidação) usando rota fluxocaixa-saida
@@ -814,9 +750,13 @@ const FluxoCaixa = () => {
       const resultados = await Promise.all(promises);
       const todasSaidas = resultados.flat();
       
-      console.log(`📊 Saídas carregadas: ${todasSaidas.length} registros de ${todasEmpresas.length} empresa(s)`);
+      // Aplicar filtro para mostrar apenas contas com situação NORMAL
+      const todasSaidasFiltradas = todasSaidas.filter(item => item.tp_situacao === 'N');
       
-      setDadosSaida(todasSaidas);
+      console.log(`📊 Saídas carregadas: ${todasSaidas.length} registros de ${todasEmpresas.length} empresa(s)`);
+      console.log(`📊 Saídas filtradas (apenas NORMAL): ${todasSaidasFiltradas.length} registros`);
+      
+      setDadosSaida(todasSaidasFiltradas);
       setDadosSaidaCarregados(true);
     } catch (err) {
       console.error('❌ Erro ao buscar fluxocaixa-saida:', err);
@@ -824,6 +764,129 @@ const FluxoCaixa = () => {
       setDadosSaidaCarregados(false);
     } finally {
       setLoadingSaida(false);
+    }
+  };
+
+  // Buscar dados de Entradas (por liquidação) usando rota fluxocaixa-entradas
+  const buscarEntradas = async (inicio = dataInicio, fim = dataFim) => {
+    if (!inicio || !fim) return;
+    if (empresasSelecionadas.length === 0) {
+      alert('Selecione pelo menos uma empresa para consultar!');
+      return;
+    }
+    try {
+      setLoadingEntradas(true);
+      
+      // Buscar dados de TODAS as empresas selecionadas
+      const todasEmpresas = empresasSelecionadas.filter(e => e.cd_empresa);
+      if (todasEmpresas.length === 0) {
+        alert('Empresas selecionadas inválidas.');
+        setLoadingEntradas(false);
+        return;
+      }
+      
+      // Fazer requisições para todas as empresas em paralelo
+      const promises = todasEmpresas.map(async (empresa) => {
+        const params = new URLSearchParams();
+        params.append('dt_inicio', inicio);
+        params.append('dt_fim', fim);
+        params.append('cd_empresa', empresa.cd_empresa);
+        
+        const url = `https://apigestaocrosby-bw2v.onrender.com/api/financial/fluxocaixa-entradas?${params.toString()}`;
+        const res = await fetch(url);
+        
+        if (!res.ok) {
+          console.warn(`⚠️ Erro HTTP em fluxocaixa-entradas para empresa ${empresa.cd_empresa}:`, res.status, res.statusText);
+          return [];
+        }
+        
+        const body = await res.json();
+        
+        // Debug da estrutura da resposta
+        console.log(`🔍 Resposta da API para empresa ${empresa.cd_empresa}:`, {
+          success: body.success,
+          hasData: !!body.data,
+          dataType: typeof body.data,
+          isDataArray: Array.isArray(body.data),
+          hasNestedData: !!body.data?.data,
+          nestedDataType: typeof body.data?.data,
+          isNestedArray: Array.isArray(body.data?.data),
+          total: body.data?.total,
+          message: body.message
+        });
+        
+        // Log completo da primeira resposta para debug
+        if (empresa.cd_empresa === empresasSelecionadas[0]?.cd_empresa) {
+          console.log(`🔍 Resposta completa da primeira empresa (${empresa.cd_empresa}):`, body);
+        }
+        
+        // Aceitar tanto array direto quanto estrutura aninhada { data: { data: [...] } }
+        let lista = [];
+        if (Array.isArray(body)) {
+          lista = body;
+          console.log(`📊 Empresa ${empresa.cd_empresa}: Array direto com ${lista.length} registros`);
+        } else if (Array.isArray(body?.data)) {
+          lista = body.data;
+          console.log(`📊 Empresa ${empresa.cd_empresa}: data direto com ${lista.length} registros`);
+        } else if (Array.isArray(body?.data?.data)) {
+          lista = body.data.data;
+          console.log(`📊 Empresa ${empresa.cd_empresa}: data.data aninhado com ${lista.length} registros`);
+        } else if (Array.isArray(body?.result)) {
+          lista = body.result;
+          console.log(`📊 Empresa ${empresa.cd_empresa}: result com ${lista.length} registros`);
+        } else {
+          console.warn(`⚠️ Empresa ${empresa.cd_empresa}: Estrutura não reconhecida:`, body);
+        }
+        
+        return lista || [];
+      });
+      
+      // Aguardar todas as requisições e combinar os resultados
+      const resultados = await Promise.all(promises);
+      const todasEntradas = resultados.flat();
+      
+      // Debug dos dados antes do filtro
+      console.log(`📊 Entradas carregadas: ${todasEntradas.length} registros de ${todasEmpresas.length} empresa(s)`);
+      
+      if (todasEntradas.length > 0) {
+        const situacoes = [...new Set(todasEntradas.map(item => item.tp_situacao))];
+        console.log(`📊 Situações encontradas:`, situacoes);
+        
+        // Contar registros por situação
+        const contagemPorSituacao = {};
+        todasEntradas.forEach(item => {
+          const situacao = item.tp_situacao || 'sem_situacao';
+          contagemPorSituacao[situacao] = (contagemPorSituacao[situacao] || 0) + 1;
+        });
+        console.log(`📊 Contagem por situação:`, contagemPorSituacao);
+        
+        console.log(`📊 Amostra de dados:`, todasEntradas.slice(0, 2).map(item => ({
+          cd_cliente: item.cd_cliente,
+          nm_cliente: item.nm_cliente,
+          tp_situacao: item.tp_situacao,
+          vl_pago: item.vl_pago
+        })));
+      }
+      
+      // Aplicar filtro para mostrar apenas contas com situação NORMAL
+      // Na rota fluxocaixa-entradas, tp_situacao = "1" significa normal
+      const todasEntradasFiltradas = todasEntradas.filter(item => {
+        // Se não há tp_situacao, incluir o registro (assumir que é normal)
+        if (!item.tp_situacao) return true;
+        // Se há tp_situacao, incluir apenas os normais (1 = normal, outros = cancelados)
+        return item.tp_situacao === '1' || item.tp_situacao === 'N';
+      });
+      
+      console.log(`📊 Entradas filtradas (apenas NORMAL): ${todasEntradasFiltradas.length} registros`);
+      
+      setDadosEntradas(todasEntradasFiltradas);
+      setDadosEntradasCarregados(true);
+    } catch (err) {
+      console.error('❌ Erro ao buscar fluxocaixa-entradas:', err);
+      setDadosEntradas([]);
+      setDadosEntradasCarregados(false);
+    } finally {
+      setLoadingEntradas(false);
     }
   };
 
@@ -907,6 +970,11 @@ const FluxoCaixa = () => {
 
   // Aplicar filtros adicionais aos dados já filtrados por situação e status
   const dadosComFiltrosAdicionais = dados.filter((item) => {
+    
+    // Filtro fixo para mostrar apenas contas com situação NORMAL
+    if (item.tp_situacao !== 'N') {
+      return false;
+    }
     
     // Filtro por fornecedor (dropdown)
     if (fornecedoresSelecionados.length > 0) {
@@ -1175,7 +1243,7 @@ const FluxoCaixa = () => {
   const dadosOrdenados = sortDadosAgrupados(dadosAgrupados);
 
   // Logs de debug para monitorar dados
-  console.log('🔍 Debug FluxoCaixa:', {
+  console.log('🔍 Debug Contas a Pagar:', {
     dadosOriginais: dados.length,
             dadosFiltrados: dados.length,
     dadosComFiltroMensal: dadosComFiltroMensal.length,
@@ -1234,11 +1302,129 @@ const FluxoCaixa = () => {
   // Cálculo para valor que falta pagar
   const valorFaltaPagar = totalValor - valorContasPagas;
 
-  // Total de Contas a Receber (soma dos valores pagos do detalhamento de contas a receber)
-  const totalRecebimento = (dadosReceb || []).reduce((acc, item) => {
-    const valor = parseFloat(item?.vl_pago) || 0;
-    return acc + valor;
-  }, 0);
+  // Total de Contas a Receber (soma dos valores pagos do detalhamento de entradas)
+  const totalRecebimento = React.useMemo(() => {
+    // Agrupar dados para evitar duplicação (igual à página Contas a Receber)
+    const agruparDadosIdenticos = (dados) => {
+      const grupos = new Map();
+      
+      dados.forEach((item) => {
+        // Criar chave única baseada em CLIENTE, FATURA e outros campos relevantes
+        const chave = `${item.cd_cliente}|${item.nm_cliente}|${item.nr_fatura}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.vl_fatura}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
+        
+        if (!grupos.has(chave)) {
+          grupos.set(chave, {
+            item: item,
+            observacoes: [],
+            situacoes: [],
+            datasEmissao: [],
+            datasVencimento: [],
+            datasEntrada: [],
+            datasLiquidacao: [],
+            quantidade: 0
+          });
+        }
+        
+        const grupo = grupos.get(chave);
+        grupo.quantidade += 1;
+        
+        // Adicionar observação se existir e for diferente
+        if (item.ds_observacao && !grupo.observacoes.includes(item.ds_observacao)) {
+          grupo.observacoes.push(item.ds_observacao);
+        }
+        
+        // Adicionar situação se existir e for diferente
+        if (item.tp_situacao && !grupo.situacoes.includes(item.tp_situacao)) {
+          grupo.situacoes.push(item.tp_situacao);
+        }
+        
+        // Adicionar datas se existirem e forem diferentes
+        if (item.dt_emissao && !grupo.datasEmissao.includes(item.dt_emissao)) {
+          grupo.datasEmissao.push(item.dt_emissao);
+        }
+        if (item.dt_vencimento && !grupo.datasVencimento.includes(item.dt_vencimento)) {
+          grupo.datasVencimento.push(item.dt_vencimento);
+        }
+        if (item.dt_entrada && !grupo.datasEntrada.includes(item.dt_entrada)) {
+          grupo.datasEntrada.push(item.dt_entrada);
+        }
+        if (item.dt_liq && !grupo.datasLiquidacao.includes(item.dt_liq)) {
+          grupo.datasLiquidacao.push(item.dt_liq);
+        }
+      });
+      
+      // Processar os grupos para determinar a situação final e datas mais relevantes
+      return Array.from(grupos.values()).map(grupo => {
+        // Se há múltiplas situações, priorizar CANCELADAS (C) sobre NORMAIS (N)
+        let situacaoFinal = grupo.item.tp_situacao;
+        
+        if (grupo.situacoes.length > 1) {
+          // Se há 'C' entre as situações, usar 'C' (cancelada tem prioridade)
+          if (grupo.situacoes.includes('C')) {
+            situacaoFinal = 'C';
+          } else if (grupo.situacoes.includes('N')) {
+            situacaoFinal = 'N';
+          }
+          // Se não há nem 'C' nem 'N', manter a primeira situação
+        }
+        
+        // Para as datas, usar a mais recente ou a mais relevante
+        const dtEmissaoFinal = grupo.datasEmissao.length > 0 ? 
+          grupo.datasEmissao.sort((a, b) => new Date(b) - new Date(a))[0] : 
+          grupo.item.dt_emissao;
+        
+        const dtVencimentoFinal = grupo.datasVencimento.length > 0 ? 
+          grupo.datasVencimento.sort((a, b) => new Date(b) - new Date(a))[0] : 
+          grupo.item.dt_vencimento;
+        
+        const dtEntradaFinal = grupo.datasEntrada.length > 0 ? 
+          grupo.datasEntrada.sort((a, b) => new Date(b) - new Date(a))[0] : 
+          grupo.item.dt_entrada;
+        
+        const dtLiquidacaoFinal = grupo.datasLiquidacao.length > 0 ? 
+          grupo.datasLiquidacao.sort((a, b) => new Date(b) - new Date(a))[0] : 
+          grupo.item.dt_liq;
+        
+        return {
+          ...grupo,
+          item: {
+            ...grupo.item,
+            tp_situacao: situacaoFinal,
+            dt_emissao: dtEmissaoFinal,
+            dt_vencimento: dtVencimentoFinal,
+            dt_entrada: dtEntradaFinal,
+            dt_liq: dtLiquidacaoFinal
+          }
+        };
+      });
+    };
+
+    const dadosAgrupados = agruparDadosIdenticos(dadosEntradas || []);
+    
+    // Debug dos dados agrupados
+    if (dadosAgrupados.length > 0) {
+      console.log('🔍 Amostra dos dados agrupados:', dadosAgrupados.slice(0, 3).map(grupo => ({
+        cd_cliente: grupo.item.cd_cliente,
+        nm_cliente: grupo.item.nm_cliente,
+        vl_pago: grupo.item.vl_pago,
+        tp_situacao: grupo.item.tp_situacao
+      })));
+    }
+    
+    const totalCalculado = dadosAgrupados.reduce((acc, grupo) => {
+      const valor = parseFloat(grupo.item?.vl_pago) || 0;
+      return acc + valor;
+    }, 0);
+
+    console.log('💰 Total Contas a Receber (fluxocaixa-entradas):', {
+      registrosOriginais: dadosEntradas?.length || 0,
+      registrosAgrupados: dadosAgrupados.length,
+      totalCalculado: totalCalculado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+      amostraValores: dadosAgrupados.slice(0, 5).map(g => parseFloat(g.item?.vl_pago) || 0)
+    });
+
+    return totalCalculado;
+  }, [dadosEntradas]);
 
   // Total de Contas a Pagar (soma dos valores pagos do detalhamento de saídas)
   const totalSaidas = React.useMemo(() => {
@@ -1348,40 +1534,7 @@ const FluxoCaixa = () => {
     }
   };
 
-  // Lista ordenada de recebimentos para o modal
-  const dadosRecebOrdenados = React.useMemo(() => {
-    const lista = Array.isArray(dadosReceb) ? [...dadosReceb] : [];
-    const { key, direction } = sortRecebConfig || {};
-    const dir = direction === 'desc' ? -1 : 1;
-    return lista.sort((a, b) => {
-      let va = a?.[key];
-      let vb = b?.[key];
-      // Normalizar strings para A-Z
-      if (typeof va === 'string') va = va.toLowerCase();
-      if (typeof vb === 'string') vb = vb.toLowerCase();
-      // Converter datas para Date se a chave for data
-      const isDateKey = ['dt_emissao','dt_vencimento','dt_liq'].includes(key);
-      if (isDateKey) {
-        const norm = (s) => {
-          if (!s) return 0;
-          const str = String(s).slice(0,10); // YYYY-MM-DD
-          const ymd = str.replaceAll('-', '');
-          return parseInt(ymd, 10) || 0; // compara como inteiro yyyymmdd
-        };
-        va = norm(va);
-        vb = norm(vb);
-      }
-      // Converter números
-      const isNumberKey = ['vl_fatura','vl_pago','cd_cliente','cd_empresa','nr_parcela'].includes(key);
-      if (isNumberKey) {
-        va = parseFloat(va) || 0;
-        vb = parseFloat(vb) || 0;
-      }
-      if (va < vb) return -1 * dir;
-      if (va > vb) return 1 * dir;
-      return 0;
-    });
-  }, [dadosReceb, sortRecebConfig]);
+
 
   // Saldo: Contas a Receber - Contas a Pagar
   const totalLiquidez = (totalRecebimento || 0) - (totalValor || 0);
@@ -1497,7 +1650,7 @@ const FluxoCaixa = () => {
 
   return (
     <div className="w-full w-8xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
-        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Fluxo de Caixa</h1>
+        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Contas a Pagar - Fluxo de Caixa</h1>
         
         {/* Filtros */}
         <div className="mb-8">
@@ -1646,8 +1799,7 @@ const FluxoCaixa = () => {
           </Card>
 
           <Card 
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer"
-            onClick={() => setModalRecebimentoOpen(true)}
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white"
           >
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
@@ -1657,13 +1809,13 @@ const FluxoCaixa = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-green-600 mb-1 break-words">
-                {loadingReceb ? (
+                {loadingEntradas ? (
                   <Spinner size={24} className="animate-spin text-green-600" />
                 ) : (
                   totalRecebimento.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                 )}
               </div>
-              <CardDescription className="text-xs text-gray-500">Soma dos valores de contas a receber</CardDescription>
+              <CardDescription className="text-xs text-gray-500">Soma dos valores pagos (vl_pago) - fluxocaixa-entradas</CardDescription>
             </CardContent>
           </Card>
 
@@ -1725,69 +1877,7 @@ const FluxoCaixa = () => {
           onClose={fecharModalDetalhes}
         />
 
-        {/* Modal de Detalhamento de Contas a Receber */}
-        <Modal
-          isOpen={modalRecebimentoOpen}
-          onClose={() => setModalRecebimentoOpen(false)}
-          title="Detalhamento de Contas a Receber"
-          size="full"
-        >
-            <div className="p-6">
-              {loadingReceb ? (
-                <div className="flex justify-center items-center py-20">
-                  <div className="flex items-center gap-3">
-                    <Spinner size={32} className="animate-spin text-blue-600" />
-                    <span className="text-gray-600">Carregando contas a receber...</span>
-      </div>
-          </div>
-              ) : !dadosRecebCarregados ? (
-                <div className="flex justify-center items-center py-20">
-                  <div className="text-center">
-                    <div className="text-gray-500 text-lg mb-2">Clique em "Buscar Dados" para carregar as contas a receber</div>
-              </div>
-            </div>
-              ) : dadosReceb.length === 0 ? (
-                <div className="flex justify-center items-center py-20">
-                  <div className="text-center">
-                    <div className="text-gray-500 text-lg mb-2">Nenhuma conta a receber encontrada</div>
-              </div>
-            </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="contas-table w-full border-collapse">
-                    <thead>
-                      <tr className="bg-[#000638] text-white text-[10px]">
-                      <th className="px-2 py-1 text-center cursor-pointer" onClick={() => setSortRecebConfig(prev => ({ key: 'cd_cliente', direction: prev.key==='cd_cliente' && prev.direction==='asc' ? 'desc' : 'asc' }))}>Cliente</th>
-                      <th className="px-2 py-1 text-left cursor-pointer" onClick={() => setSortRecebConfig(prev => ({ key: 'nm_cliente', direction: prev.key==='nm_cliente' && prev.direction==='asc' ? 'desc' : 'asc' }))}>Nome Cliente</th>
-                      <th className="px-2 py-1 text-center cursor-pointer" onClick={() => setSortRecebConfig(prev => ({ key: 'dt_emissao', direction: prev.key==='dt_emissao' && prev.direction==='asc' ? 'desc' : 'asc' }))}>Emissão</th>
-                      <th className="px-2 py-1 text-center cursor-pointer" onClick={() => setSortRecebConfig(prev => ({ key: 'dt_vencimento', direction: prev.key==='dt_vencimento' && prev.direction==='asc' ? 'desc' : 'asc' }))}>Vencimento</th>
-                      <th className="px-2 py-1 text-center cursor-pointer" onClick={() => setSortRecebConfig(prev => ({ key: 'dt_liq', direction: prev.key==='dt_liq' && prev.direction==='asc' ? 'desc' : 'asc' }))}>Liquidação</th>
-                      <th className="px-2 py-1 text-center cursor-pointer" onClick={() => setSortRecebConfig(prev => ({ key: 'vl_fatura', direction: prev.key==='vl_fatura' && prev.direction==='asc' ? 'desc' : 'asc' }))}>Valor Fatura</th>
-                      <th className="px-2 py-1 text-center cursor-pointer" onClick={() => setSortRecebConfig(prev => ({ key: 'vl_pago', direction: prev.key==='vl_pago' && prev.direction==='asc' ? 'desc' : 'asc' }))}>Valor Pago</th>
-                      <th className="px-2 py-1 text-center cursor-pointer" onClick={() => setSortRecebConfig(prev => ({ key: 'cd_empresa', direction: prev.key==='cd_empresa' && prev.direction==='asc' ? 'desc' : 'asc' }))}>Empresa</th>
-                      <th className="px-2 py-1 text-center cursor-pointer" onClick={() => setSortRecebConfig(prev => ({ key: 'nr_parcela', direction: prev.key==='nr_parcela' && prev.direction==='asc' ? 'desc' : 'asc' }))}>Parcela</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                    {dadosRecebOrdenados.map((it, idx) => (
-                        <tr key={idx} className="text-[10px] border-b">
-                          <td className="px-2 py-1 text-center">{it.cd_cliente || ''}</td>
-                          <td className="px-2 py-1 text-left">{it.nm_cliente || ''}</td>
-                        <td className="px-2 py-1 text-center">{formatDatePt(it.dt_emissao)}</td>
-                        <td className="px-2 py-1 text-center">{formatDatePt(it.dt_vencimento)}</td>
-                        <td className="px-2 py-1 text-center">{formatDatePt(it.dt_liq)}</td>
-                          <td className="px-2 py-1 text-right font-medium text-green-600">{(parseFloat(it.vl_fatura) || 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                          <td className="px-2 py-1 text-right font-medium text-blue-600">{(parseFloat(it.vl_pago) || 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                          <td className="px-2 py-1 text-center">{it.cd_empresa || ''}</td>
-                          <td className="px-2 py-1 text-center">{it.nr_parcela || ''}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-          </div>
-              )}
-        </div>
-        </Modal>
+
 
         {/* Modal de Detalhamento de Contas a Pagar */}
         <Modal
