@@ -237,7 +237,7 @@ const AppRoutes = memo(() => {
               <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
                 sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
               }`}>
-                {createPrivateRoute(Varejo, ['owner', 'admin', 'manager'])}
+                {createPrivateRoute(Varejo, ['owner', 'admin', 'manager', 'user'])}
               </main>
             </div>
           </div>
@@ -269,7 +269,7 @@ const AppRoutes = memo(() => {
               <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
                 sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
               }`}>
-                {createPrivateRoute(Multimarcas, ['owner', 'admin', 'manager'])}
+                {createPrivateRoute(Multimarcas, ['owner', 'admin', 'manager', 'user'])}
               </main>
             </div>
           </div>
@@ -285,7 +285,7 @@ const AppRoutes = memo(() => {
               <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
                 sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
               }`}>
-                {createPrivateRoute(Revenda, ['owner', 'admin', 'manager'])}
+                {createPrivateRoute(Revenda, ['owner', 'admin', 'manager', 'user'])}
               </main>
             </div>
           </div>
@@ -352,7 +352,7 @@ const AppRoutes = memo(() => {
               <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
                 sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
               }`}>
-                {createPrivateRoute(Consolidado, ['owner', 'admin', 'manager'])}
+                {createPrivateRoute(Consolidado, ['owner', 'admin', 'manager', 'user'])}
               </main>
             </div>
           </div>
