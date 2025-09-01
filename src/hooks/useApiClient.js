@@ -166,9 +166,11 @@ const useApiClient = () => {
     contasPagar: (params) => apiCall('/api/financial/contas-pagar', params),
     contasReceber: (params) => apiCall('/api/financial/contas-receber', params),
     fluxoCaixa: (params) => apiCall('/api/financial/fluxo-caixa', params),
-    fluxocaixaSaida: (params) => apiCall('/api/financial/fluxocaixa-saida', params),
+    fluxocaixaSaida: (params) => apiCall('/api/financial/fluxo-caixa-saida', params),
     nfManifestacao: (params) => apiCall('/api/financial/nfmanifestacao', params),
     saldoConta: (params) => apiCall('/api/financial/saldo-conta', params),
+    credevAdiantamento: (params) => apiCall('/api/financial/credev-adiantamento', params),
+    auditorCredev: (params) => apiCall('/api/financial/auditor-credev', params),
     fornecedor: (params) => apiCall('/api/financial/fornecedor', params),
     centrocusto: (params) => apiCall('/api/financial/centrocusto', params),
     despesa: (params) => apiCall('/api/financial/despesa', params)

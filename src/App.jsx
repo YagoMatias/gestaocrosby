@@ -27,6 +27,7 @@ const RankingFaturamento = lazy(() => import('./pages/RankingFaturamento'));
 const Consolidado = lazy(() => import('./pages/Consolidado'));
 const AuditoriaCMV = lazy(() => import('./pages/AuditoriaCMV'));
 const ComprasFranquias = lazy(() => import('./pages/ComprasFranquias'));
+const Credev = lazy(() => import('./pages/Credev'));
 const PainelAdmin = lazy(() => import('./pages/PainelAdmin'));
 const UserPanel = lazy(() => import('./pages/UserPanel'));
 const DreDemo = lazy(() => import('./pages/DreDemo'));
@@ -385,6 +386,22 @@ const AppRoutes = memo(() => {
                 sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
               }`}>
                 {createPrivateRoute(ComprasFranquias, ['admin', 'manager', 'guest', 'owner','user'])}
+              </main>
+            </div>
+          </div>
+        } 
+      />
+      <Route 
+        path="/credev" 
+        element={
+          <div className="h-screen flex">
+            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
+            <div className="flex-1 flex flex-col">
+              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
+              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
+                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
+              }`}>
+                {createPrivateRoute(Credev, ['admin', 'manager', 'guest', 'owner','user'])}
               </main>
             </div>
           </div>

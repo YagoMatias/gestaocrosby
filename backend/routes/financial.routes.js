@@ -757,6 +757,69 @@ router.get('/fluxocaixa-entradas',
   })
 );
 
+/**
+ * @route GET /financial/credev-adiantamento
+ * @desc Buscar saldos de adiantamentos e crediários
+ * @access Public
+ */
+router.get('/credev-adiantamento',
+  sanitizeInput,
+  asyncHandler(async (req, res) => {
+    const query = `
+      select
+        b.cd_empresa,
+        b.nr_ctapes,
+        b.cd_pessoa,
+        pp.nm_fantasia,
+        b.ds_titular,
+        case
+          a.tp_documento
+          when 10 then 'ADIANTAMENTO'
+          when 20 then 'CREDEV'
+          else a.tp_documento::text
+        end as tp_documento,
+        SUM(case
+            when a.tp_operacao = 'C' then coalesce(a.vl_lancto, 0)
+            else -coalesce(a.vl_lancto, 0)
+          end) as vl_saldo,
+        MAX(case when a.tp_operacao = 'C' then a.dt_movim end) as dt_ultimocredito
+      from
+        vr_fcc_ctapes b
+      join vr_fcc_mov a
+        on
+        a.nr_ctapes = b.nr_ctapes
+      join pes_pesjuridica pp on
+        b.cd_pessoa = pp.cd_pessoa
+      where
+        a.in_estorno = 'F'
+        and a.dt_movim <= now()
+        and b.tp_manutencao = 2
+        and pp.nm_fantasia like 'F%-%CROSBY%'
+      group by
+        b.cd_empresa,
+        b.nr_ctapes,
+        b.cd_pessoa,
+        b.ds_titular,
+        a.tp_documento,
+        pp.nm_fantasia
+      having
+        SUM(case
+            when a.tp_operacao = 'C' then coalesce(a.vl_lancto, 0)
+            else -coalesce(a.vl_lancto, 0)
+          end) > 0
+      order by
+        vl_saldo desc
+    `;
+
+    const { rows } = await pool.query(query);
+
+    successResponse(res, {
+      count: rows.length,
+      data: rows
+    }, 'Adiantamentos e crediários obtidos com sucesso');
+  })
+);
+
 
 
 /**
@@ -1112,6 +1175,52 @@ router.get('/infopessoa',
       count: rows.length,
       data: rows
     }, 'Informações de pessoas obtidas com sucesso');
+  })
+);
+
+/**
+ * @route GET /financial/auditor-credev
+ * @desc Buscar movimentações financeiras para auditoria de crédito e débito
+ * @access Public
+ * @query {nr_ctapes, dt_movim_ini, dt_movim_fim}
+ */
+router.get('/auditor-credev',
+  sanitizeInput,
+  validateRequired(['nr_ctapes', 'dt_movim_ini', 'dt_movim_fim']),
+  validateDateFormat(['dt_movim_ini', 'dt_movim_fim']),
+  asyncHandler(async (req, res) => {
+    const { nr_ctapes, dt_movim_ini, dt_movim_fim } = req.query;
+
+    const query = `
+      SELECT
+        fm.cd_empresa,
+        fm.nr_ctapes,
+        fm.dt_movim,
+        fm.ds_doc,
+        fm.dt_liq,
+        fm.in_estorno,
+        fm.tp_operacao,
+        fm.ds_aux,
+        fm.vl_lancto,
+        fm.dt_movim,
+        fm.cd_operador,
+        au.nm_usuario
+      FROM
+        fcc_mov fm
+      LEFT JOIN adm_usuario au ON fm.cd_operador = au.cd_usuario
+      WHERE
+        fm.nr_ctapes = $1
+        AND fm.dt_movim BETWEEN $2 AND $3
+      ORDER BY fm.dt_movim DESC, fm.nr_ctapes
+    `;
+
+    const { rows } = await pool.query(query, [nr_ctapes, dt_movim_ini, dt_movim_fim]);
+
+    successResponse(res, {
+      filtros: { nr_ctapes, dt_movim_ini, dt_movim_fim },
+      count: rows.length,
+      data: rows
+    }, 'Dados de auditoria de crédito e débito obtidos com sucesso');
   })
 );
 

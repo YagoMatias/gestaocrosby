@@ -58,6 +58,7 @@ const faturamento = [
 
 const franquias = [
   { name: 'Compras Franquias', href: '/compras-franquias', icon: ShoppingCart, color: 'text-emerald-600' },
+  { name: 'CREDEV', href: '/credev', icon: Buildings, color: 'text-blue-600' },
 ];
 
 const Sidebar = ({ isOpen, onClose, onToggle }) => {
