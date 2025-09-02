@@ -9,8 +9,10 @@ export const useComprasFranquias = () => {
   // Estados principais
   const [dados, setDados] = useState([]);
   const [dadosVendas, setDadosVendas] = useState([]);
+  const [dadosCredev, setDadosCredev] = useState([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
+  const [filtrosAtuais, setFiltrosAtuais] = useState({});
 
   /**
    * Busca dados de compras das franquias
@@ -29,17 +31,18 @@ export const useComprasFranquias = () => {
       }
       
       // Define datas padrão se estiverem vazias
-      const dt_inicio = params.dt_inicio || '2025-01-01';
-      const dt_fim = params.dt_fim || '2025-12-31';
+      // Datas padrão: primeiro dia do mês até hoje
+      const today = new Date();
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      const fmt = (d) => d.toISOString().split('T')[0];
+      const dt_inicio = params.dt_inicio || fmt(firstDay);
+      const dt_fim = params.dt_fim || fmt(today);
       
       // Adiciona filtros de data
       urlParams.append('dt_inicio', dt_inicio);
       urlParams.append('dt_fim', dt_fim);
       
-      // Adiciona filtro de nome fantasia
-      if (params.nmFantasiaSelecionados?.length > 0) {
-        urlParams.append('nm_fantasia', params.nmFantasiaSelecionados[0]);
-      }
+      // Não filtra por nome fantasia no backend; filtro será apenas no cliente
 
       const url = `${API_BASE_URL}/api/sales/faturamento-franquia?${urlParams.toString()}`;
       console.log('🔍 URL Compras:', url);
@@ -87,6 +90,57 @@ export const useComprasFranquias = () => {
   }, []);
 
   /**
+   * Busca dados de crédito/débito (CREDEV) das franquias
+   * @param {Object} params - Parâmetros de filtro
+   * @returns {Promise<Array>} Dados de credev (linhas da API)
+   */
+  const buscarDadosCredev = useCallback(async (params) => {
+    try {
+      const urlParams = new URLSearchParams();
+
+      // Define datas padrão se estiverem vazias
+      const today = new Date();
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      const fmt = (d) => d.toISOString().split('T')[0];
+      const dt_inicio = params.dt_inicio || fmt(firstDay);
+      const dt_fim = params.dt_fim || fmt(today);
+
+      urlParams.append('dt_inicio', dt_inicio);
+      urlParams.append('dt_fim', dt_fim);
+
+      // Não enviar cd_cliente; filtro será aplicado no cliente
+
+      const url = `${API_BASE_URL}/api/franchise/franquias-credev?${urlParams.toString()}`;
+      console.log('🔍 URL Credev:', url);
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.warn('⚠️ Erro ao buscar dados de CREDEV:', response.status);
+        return [];
+      }
+
+      const data = await response.json();
+      console.log('📊 Dados CREDEV Recebidos:', data);
+
+      // Nova API padronizada: { success, data: { data: rows } } ou { success, data: rows }
+      if (data && data.success) {
+        if (data.data && Array.isArray(data.data)) return data.data;
+        if (data.data && Array.isArray(data.data.data)) return data.data.data;
+      }
+
+      // Fallbacks
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.data)) return data.data;
+
+      console.log('⚠️ Estrutura de CREDEV inesperada:', data);
+      return [];
+    } catch (error) {
+      console.error('❌ Erro ao buscar dados de CREDEV:', error);
+      return [];
+    }
+  }, []);
+
+  /**
    * Busca dados de vendas das franquias
    * @param {Object} params - Parâmetros de filtro
    * @returns {Promise<Array>} Dados de vendas
@@ -98,8 +152,11 @@ export const useComprasFranquias = () => {
       urlParams.append('cd_grupoempresa_fim', '8000');
       
       // Define datas padrão se estiverem vazias
-      const dt_inicio = params.dt_inicio || '2025-01-01';
-      const dt_fim = params.dt_fim || '2025-12-31';
+      const today = new Date();
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      const fmt = (d) => d.toISOString().split('T')[0];
+      const dt_inicio = params.dt_inicio || fmt(firstDay);
+      const dt_fim = params.dt_fim || fmt(today);
       
       urlParams.append('dt_inicio', dt_inicio);
       urlParams.append('dt_fim', dt_fim);
@@ -152,28 +209,33 @@ export const useComprasFranquias = () => {
 
     setErro('');
     setLoading(true);
+    setFiltrosAtuais(filtros || {});
 
     try {
       // Busca dados em paralelo para melhor performance
-      const [dadosComprasResult, dadosVendasResult] = await Promise.all([
+      const [dadosComprasResult, dadosVendasResult, dadosCredevResult] = await Promise.all([
         buscarDadosCompras(filtros),
-        buscarDadosVendas(filtros)
+        buscarDadosVendas(filtros),
+        buscarDadosCredev(filtros)
       ]);
 
       console.log('📦 Resultado Compras:', dadosComprasResult);
       console.log('📦 Resultado Vendas:', dadosVendasResult);
+      console.log('📦 Resultado CREDEV:', dadosCredevResult);
 
       setDados(dadosComprasResult);
       setDadosVendas(dadosVendasResult);
+      setDadosCredev(dadosCredevResult);
     } catch (error) {
       console.error('❌ Erro na busca principal:', error);
       setErro('Erro ao buscar dados do servidor. Tente novamente.');
       setDados([]);
       setDadosVendas([]);
+      setDadosCredev([]);
     } finally {
       setLoading(false);
     }
-  }, [buscarDadosCompras, buscarDadosVendas]);
+  }, [buscarDadosCompras, buscarDadosVendas, buscarDadosCredev]);
 
   /**
    * Função para agrupar dados por nome fantasia e calcular totais
@@ -183,6 +245,7 @@ export const useComprasFranquias = () => {
     console.log('🔄 Processando dados agrupados...');
     console.log('📊 Dados compras:', dados);
     console.log('📊 Dados vendas:', dadosVendas);
+    console.log('📊 Dados CREDEV:', dadosCredev);
     
     if (!dados.length && !dadosVendas.length) {
       console.log('⚠️ Nenhum dado para processar');
@@ -212,6 +275,14 @@ export const useComprasFranquias = () => {
       dadosProcessados = Object.values(grupos);
       console.log('✅ Dados agrupados:', dadosProcessados);
     }
+
+    // Mapa de CREDEV por fantasia (soma de vl_pago, considerando sinal)
+    const credevPorFantasia = (dadosCredev || []).reduce((acc, row) => {
+      const fantasia = row.nm_fantasia || 'Sem Fantasia';
+      const valor = Number(row.vl_pago) || 0;
+      acc[fantasia] = (acc[fantasia] || 0) + valor;
+      return acc;
+    }, {});
 
     const resultado = dadosProcessados.map(comprasGrupo => {
       const nm_fantasia = comprasGrupo.nm_fantasia;
@@ -277,7 +348,8 @@ export const useComprasFranquias = () => {
         devolucao,
         compras,
         total: compras - devolucao,
-        vendasTotal: vendasTotalStr
+        vendasTotal: vendasTotalStr,
+        credev: credevPorFantasia[nm_fantasia] || 0
       };
       
       console.log('✅ Resultado para', nm_fantasia, ':', resultadoItem);
@@ -286,12 +358,17 @@ export const useComprasFranquias = () => {
     
     console.log('🎯 Resultado final agrupado:', resultado);
     return resultado;
-  }, [dados, dadosVendas]);
+  }, [dados, dadosVendas, dadosCredev, filtrosAtuais]);
+
+  // Opções de nomes fantasia disponíveis (geradas do que já foi carregado)
+  // Removido nomesFantasiaDisponiveis e qualquer lógica associada
 
   return {
     // Estados
     dados,
     dadosVendas,
+    dadosCredev,
+    filtrosAtuais,
     dadosAgrupados,
     loading,
     erro,

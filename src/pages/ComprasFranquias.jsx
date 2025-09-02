@@ -31,9 +31,12 @@ const ComprasFranquias = memo(() => {
   } = useResponsive();
 
   // Valores iniciais dos filtros (empresas pré-selecionadas)
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+  const fmt = (d) => d.toISOString().split('T')[0];
   const initialFilterValues = {
-    dt_inicio: '2025-01-01',
-    dt_fim: '2025-12-31',
+    dt_inicio: fmt(firstDay),
+    dt_fim: fmt(today),
     empresasSelecionadas: [
     { cd_empresa: '2' },
     { cd_empresa: '75' },

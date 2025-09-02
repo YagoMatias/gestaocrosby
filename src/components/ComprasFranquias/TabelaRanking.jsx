@@ -1,9 +1,9 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo, useState } from 'react';
 import LoadingSpinner from '../LoadingSpinner';
 import { ERROR_MESSAGES } from '../../config/constants';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-import { FileArrowDown } from '@phosphor-icons/react';
+import { FileArrowDown, CaretDown, CaretUp } from '@phosphor-icons/react';
 
 /**
  * Componente de tabela para ranking de compras franquias
@@ -15,6 +15,47 @@ const TabelaRanking = memo(({
   erro = '',
   className = "" 
 }) => {
+  const [sortConfig, setSortConfig] = useState({ key: 'nm_fantasia', direction: 'asc' });
+
+  const handleSort = (key) => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) return <CaretDown size={14} className="ml-1 opacity-50" />;
+    return sortConfig.direction === 'asc' ? (
+      <CaretUp size={14} className="ml-1" />
+    ) : (
+      <CaretDown size={14} className="ml-1" />
+    );
+  };
+
+  const dadosOrdenados = useMemo(() => {
+    if (!dados || dados.length === 0) return dados;
+    const arr = [...dados];
+    const { key, direction } = sortConfig;
+    const numericKeys = new Set(['devolucao', 'credev', 'compras', 'total']);
+    arr.sort((a, b) => {
+      let aVal = a[key];
+      let bVal = b[key];
+      if (numericKeys.has(key)) {
+        aVal = Number(aVal) || 0;
+        bVal = Number(bVal) || 0;
+      } else {
+        aVal = (aVal ?? '').toString().toLowerCase();
+        bVal = (bVal ?? '').toString().toLowerCase();
+      }
+      if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+      if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+      return 0;
+    });
+    return arr;
+  }, [dados, sortConfig]);
   // Função para formatar valores monetários
   const formatarMoeda = (valor) => {
     const numero = Number(valor);
@@ -35,12 +76,14 @@ const TabelaRanking = memo(({
     switch (tipo) {
       case 'devolucao':
         return 'text-red-600';
+      case 'credev':
+        return 'text-yellow-600';
       case 'compras':
         return 'text-green-600';
       case 'total':
-        return numero >= 0 ? 'text-blue-700' : 'text-red-600';
+        return 'text-purple-700';
       case 'vendas':
-        return 'text-indigo-700';
+        return 'text-blue-700';
       default:
         return 'text-gray-700';
     }
@@ -57,11 +100,15 @@ const TabelaRanking = memo(({
           style: 'currency',
           currency: 'BRL'
         }),
+        'Credev': parseFloat(item.credev || 0).toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL'
+        }),
         'Compras': parseFloat(item.compras || 0).toLocaleString('pt-BR', {
           style: 'currency',
           currency: 'BRL'
         }),
-        'Líquido': parseFloat(item.total || 0).toLocaleString('pt-BR', {
+        'COMPRAS - DEVOLUÇÃO': parseFloat(item.total || 0).toLocaleString('pt-BR', {
           style: 'currency',
           currency: 'BRL'
         }),
@@ -78,6 +125,7 @@ const TabelaRanking = memo(({
         { wch: 20 }, // Grupo Empresa
         { wch: 30 }, // Nome Fantasia
         { wch: 15 }, // Devolução
+        { wch: 15 }, // Credev
         { wch: 15 }, // Compras
         { wch: 15 }, // Líquido
         { wch: 20 }  // Vendas Franquias
@@ -170,55 +218,75 @@ const TabelaRanking = memo(({
 
       {/* Container da tabela com scroll responsivo */}
       <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
+        <table className="min-w-full text-xs">
           {/* Cabeçalho da tabela */}
           <thead className="bg-[#000638] text-white sticky top-0 z-10">
             <tr>
               <th 
-                className="px-4 py-3 text-left font-semibold uppercase tracking-wider"
+                className="px-4 py-3 text-left font-semibold uppercase tracking-wider cursor-pointer select-none"
                 scope="col"
+                onClick={() => handleSort('nm_grupoempresa')}
+                title="Ordenar A-Z"
               >
-                Grupo Empresa
+                <span className="inline-flex items-center">Grupo Empresa {getSortIcon('nm_grupoempresa')}</span>
               </th>
               <th 
-                className="px-4 py-3 text-left font-semibold uppercase tracking-wider"
+                className="px-4 py-3 text-left font-semibold uppercase tracking-wider cursor-pointer select-none"
                 scope="col"
+                onClick={() => handleSort('nm_fantasia')}
+                title="Ordenar A-Z"
               >
-                Nome Fantasia
+                <span className="inline-flex items-center">Nome Fantasia {getSortIcon('nm_fantasia')}</span>
               </th>
               <th 
-                className="px-4 py-3 text-right font-semibold uppercase tracking-wider"
+                className="px-4 py-3 text-right font-semibold uppercase tracking-wider cursor-pointer select-none"
                 scope="col"
+                onClick={() => handleSort('devolucao')}
+                title="Ordenar A-Z"
               >
-                Devolução
+                <span className="inline-flex items-center justify-end w-full">Devolução {getSortIcon('devolucao')}</span>
               </th>
               <th 
-                className="px-4 py-3 text-right font-semibold uppercase tracking-wider"
+                className="px-4 py-3 text-right font-semibold uppercase tracking-wider cursor-pointer select-none"
                 scope="col"
+                onClick={() => handleSort('credev')}
+                title="Ordenar A-Z"
               >
-                Compras
+                <span className="inline-flex items-center justify-end w-full">Credev {getSortIcon('credev')}</span>
               </th>
               <th 
-                className="px-4 py-3 text-right font-semibold uppercase tracking-wider"
+                className="px-4 py-3 text-right font-semibold uppercase tracking-wider cursor-pointer select-none"
                 scope="col"
+                onClick={() => handleSort('compras')}
+                title="Ordenar A-Z"
               >
-                Líquido
+                <span className="inline-flex items-center justify-end w-full">Compras {getSortIcon('compras')}</span>
               </th>
               <th 
-                className="px-4 py-3 text-right font-semibold uppercase tracking-wider"
+                className="px-4 py-3 text-right font-semibold uppercase tracking-wider cursor-pointer select-none"
                 scope="col"
+                onClick={() => handleSort('total')}
+                title="Ordenar A-Z"
               >
-                Vendas Franquias
+                <span className="inline-flex items-center justify-end w-full">COMPRAS - DEVOLUÇÃO {getSortIcon('total')}</span>
+              </th>
+              <th 
+                className="px-4 py-3 text-right font-semibold uppercase tracking-wider cursor-pointer select-none"
+                scope="col"
+                onClick={() => handleSort('vendasTotal')}
+                title="Ordenar A-Z"
+              >
+                <span className="inline-flex items-center justify-end w-full">Vendas Franquias {getSortIcon('vendasTotal')}</span>
               </th>
             </tr>
           </thead>
 
           {/* Corpo da tabela */}
           <tbody className="divide-y divide-gray-200">
-            {dados.length === 0 ? (
+            {dadosOrdenados.length === 0 ? (
               <tr>
                 <td 
-                  colSpan={6} 
+                  colSpan={7} 
                   className="text-center py-12 text-gray-500"
                 >
                   <div className="flex flex-col items-center">
@@ -229,7 +297,7 @@ const TabelaRanking = memo(({
                 </td>
               </tr>
             ) : (
-              dados.map((row, index) => (
+              dadosOrdenados.map((row, index) => (
                 <tr 
                   key={`${row.nm_fantasia}-${index}`}
                   className={`
@@ -252,6 +320,10 @@ const TabelaRanking = memo(({
                   {/* Devolução */}
                   <td className={`px-4 py-3 text-right font-bold ${getCorValor(row.devolucao, 'devolucao')}`}>
                     {formatarMoeda(row.devolucao)}
+                  </td>
+                  {/* Credev */}
+                  <td className={`px-4 py-3 text-right font-bold ${getCorValor(row.credev, 'credev')}`}>
+                    {formatarMoeda(row.credev)}
                   </td>
                   
                   {/* Compras */}
@@ -280,7 +352,7 @@ const TabelaRanking = memo(({
       {/* Resumo da tabela */}
       {dados.length > 0 && (
         <div className="p-4 border-t border-gray-200 bg-gray-50/50">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
             <div className="text-center">
               <div className="font-semibold text-gray-700">Total Compras</div>
               <div className="text-green-600 font-bold">
@@ -294,7 +366,13 @@ const TabelaRanking = memo(({
               </div>
             </div>
             <div className="text-center">
-              <div className="font-semibold text-gray-700">Líquido Total</div>
+              <div className="font-semibold text-gray-700">Total Credev</div>
+              <div className="text-yellow-600 font-bold">
+                {formatarMoeda(dados.reduce((acc, row) => acc + (Number(row.credev) || 0), 0))}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="font-semibold text-gray-700">COMPRAS - DEVOLUÇÃO Total</div>
               <div className="text-blue-700 font-bold">
                 {formatarMoeda(dados.reduce((acc, row) => acc + (Number(row.total) || 0), 0))}
               </div>

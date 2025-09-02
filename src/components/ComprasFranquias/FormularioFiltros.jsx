@@ -1,7 +1,6 @@
-import React, { memo, useState, useCallback } from 'react';
+import React, { memo, useState, useCallback, useEffect } from 'react';
 import { ArrowsClockwise, CurrencyDollar } from '@phosphor-icons/react';
 import FiltroEmpresa from '../FiltroEmpresa';
-import AutocompleteFantasia from './AutocompleteFantasia';
 import { THEME_COLORS, ERROR_MESSAGES } from '../../config/constants';
 
 /**
@@ -20,7 +19,21 @@ const FormularioFiltros = memo(({
 }) => {
   // Estados locais do formulário
   const [filtros, setFiltros] = useState(initialValues);
-  const [nmFantasiaSelecionados, setNmFantasiaSelecionados] = useState([]);
+
+  // Preenche datas padrão do mês atual caso não venham definidas
+  useEffect(() => {
+    setFiltros(prev => {
+      const today = new Date();
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      const fmt = (d) => d.toISOString().split('T')[0];
+      return {
+        ...prev,
+        dt_inicio: prev.dt_inicio || fmt(firstDay),
+        dt_fim: prev.dt_fim || fmt(today)
+      };
+    });
+  }, []);
+  // Removido filtro de nome fantasia
 
   // Validação de data
   const validateDates = useCallback((dtInicio, dtFim) => {
@@ -65,9 +78,7 @@ const FormularioFiltros = memo(({
   }, []);
 
   // Handler para mudança na seleção de franquias
-  const handleFantasiaChange = useCallback((fantasias) => {
-    setNmFantasiaSelecionados(fantasias);
-  }, []);
+  // Removido filtro de nome fantasia
 
   // Handler do submit do formulário
   const handleSubmit = useCallback((e) => {
@@ -88,10 +99,9 @@ const FormularioFiltros = memo(({
     
     // Chama callback do componente pai
     onSubmit?.({
-      ...filtros,
-      nmFantasiaSelecionados
+      ...filtros
     });
-  }, [filtros, nmFantasiaSelecionados, validateDates, onSubmit]);
+  }, [filtros, validateDates, onSubmit]);
 
   // Função para resetar filtros
   const handleReset = useCallback(() => {
@@ -135,14 +145,7 @@ const FormularioFiltros = memo(({
             />
           </div>
 
-          {/* Autocomplete de Franquias */}
-          <div className="lg:col-span-4">
-            <AutocompleteFantasia
-              onSelectionChange={handleFantasiaChange}
-              disabled={loading}
-              placeholder="Buscar franquia..."
-            />
-          </div>
+          {/* Removido filtro Nome Fantasia */}
 
           {/* Filtros de Data */}
           <div className="lg:col-span-2">
@@ -193,9 +196,7 @@ const FormularioFiltros = memo(({
           <div className="text-gray-600">
             <strong>Empresas:</strong> {filtros.empresasSelecionadas?.length || 0} selecionada(s)
           </div>
-          <div className="text-gray-600">
-            <strong>Franquias:</strong> {nmFantasiaSelecionados.length} selecionada(s)
-          </div>
+          {/* Removido resumo de franquias */}
         </div>
 
         {/* Botões de ação */}
