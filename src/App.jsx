@@ -35,6 +35,7 @@ const ManifestacaoNF = lazy(() => import('./pages/ManifestacaoNF'));
 const SaldoBancario = lazy(() => import('./pages/SaldoBancario'));
 const ImportacaoRet = lazy(() => import('./pages/ImportacaoRet'));
 const AuthTest = lazy(() => import('./components/AuthTest'));
+const FinanceiroPorCanal = lazy(() => import('./pages/FinanceiroPorCanal'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -67,6 +68,23 @@ const AppRoutes = memo(() => {
       <Route path="/" element={<LoginForm />} />
       
       {/* Rotas protegidas com layout completo */}
+      <Route 
+        path="/financeiro-por-canal" 
+        element={
+          <div className="h-screen flex">
+            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
+            <div className="flex-1 flex flex-col">
+              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
+              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
+                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
+              }`}>
+                {createPrivateRoute(FinanceiroPorCanal, ['owner', 'admin', 'manager','user'])}
+              </main>
+            </div>
+          </div>
+        } 
+      />
+
       <Route 
         path="/conciliacao" 
         element={

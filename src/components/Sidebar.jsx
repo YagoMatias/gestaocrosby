@@ -24,7 +24,8 @@ import {
   Shield,
   House,
   Bank,
-  Eye
+  Eye,
+  ChartBar
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -61,10 +62,16 @@ const franquias = [
   { name: 'CREDEV', href: '/credev', icon: Buildings, color: 'text-blue-600' },
 ];
 
+// Sub-seção: Dashboard Financeiro (itens internos)
+const dashboardFinanceiro = [
+  { name: 'Financeiro por Canal', href: '/financeiro-por-canal', icon: ChartBar, color: 'text-purple-600' },
+];
+
 const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [financeiroOpen, setFinanceiroOpen] = useState(false);
+  const [dashboardFinanceiroOpen, setDashboardFinanceiroOpen] = useState(false);
   const [faturamentoOpen, setFaturamentoOpen] = useState(false);
   const [franquiasOpen, setFranquiasOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
@@ -195,6 +202,20 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               icon={Money}
               color="text-emerald-600"
             />
+            {financeiroOpen && (
+              <div className="ml-4">
+                <MenuSection
+                  title="Dashboard Financeiro"
+                  items={dashboardFinanceiro}
+                  isOpen={dashboardFinanceiroOpen}
+                  onToggle={() => setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)}
+                  icon={ChartBar}
+                  color="text-purple-600"
+                />
+              </div>
+            )}
+
+            
 
             <MenuSection 
               title="CMV"
@@ -299,6 +320,20 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               icon={Money}
               color="text-emerald-600"
             />
+            {financeiroOpen && (
+              <div className="ml-4">
+                <MenuSection
+                  title="Dashboard Financeiro"
+                  items={dashboardFinanceiro}
+                  isOpen={dashboardFinanceiroOpen}
+                  onToggle={() => setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)}
+                  icon={ChartBar}
+                  color="text-purple-600"
+                />
+              </div>
+            )}
+
+            
 
             <MenuSection 
               title="CMV"
@@ -401,6 +436,20 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               icon={Money}
               color="text-emerald-600"
             />
+            {financeiroOpen && (
+              <div className="ml-4">
+                <MenuSection
+                  title="Dashboard Financeiro"
+                  items={dashboardFinanceiro}
+                  isOpen={dashboardFinanceiroOpen}
+                  onToggle={() => setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)}
+                  icon={ChartBar}
+                  color="text-purple-600"
+                />
+              </div>
+            )}
+
+            
 
             <MenuSection 
               title="CMV"
