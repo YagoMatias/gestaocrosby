@@ -76,18 +76,23 @@ function buildAggregates({
       custoMap[item.Codigo.trim()] = item.Custo;
     }
   });
-  const calcCusto = (dados) => (dados || [])
-    .filter(r => r.tp_operacao === 'S')
+  const calcCusto = (dados, compensaEntrada = false) => (dados || [])
     .reduce((acc, r) => {
       const q = Number(r.qt_faturado) || 1;
       const c = custoMap[r.cd_nivel?.trim()];
-      return acc + (c !== undefined ? q * c : 0);
+      if (r.tp_operacao === 'S') {
+        return acc + (c !== undefined ? q * c : 0);
+      }
+      if (compensaEntrada && r.tp_operacao === 'E') {
+        return acc - (c !== undefined ? q * c : 0);
+      }
+      return acc;
     }, 0);
 
   const custoBrutoRevenda = calcCusto(dadosRevenda);
   const custoBrutoVarejo = calcCusto(dadosVarejo);
-  const custoBrutoFranquia = calcCusto(dadosFranquia);
-  const custoBrutoMultimarcas = calcCusto(dadosMultimarcas);
+  const custoBrutoFranquia = calcCusto(dadosFranquia, true);
+  const custoBrutoMultimarcas = calcCusto(dadosMultimarcas, true);
   const custoTotalBruto = custoBrutoRevenda + custoBrutoVarejo + custoBrutoFranquia + custoBrutoMultimarcas;
 
   const somaFaturamentos = (faturamento.revenda || 0) + (faturamento.varejo || 0) + (faturamento.franquia || 0) + (faturamento.multimarcas || 0);
@@ -106,8 +111,8 @@ function buildAggregates({
   };
   const precoTabelaRevenda = somaBrutoSaida(dadosRevenda);
   const precoTabelaVarejo = somaBrutoSaida(dadosVarejo, true);
-  const precoTabelaFranquia = somaBrutoSaida(dadosFranquia);
-  const precoTabelaMultimarcas = somaBrutoSaida(dadosMultimarcas);
+  const precoTabelaFranquia = somaBrutoSaida(dadosFranquia, true);
+  const precoTabelaMultimarcas = somaBrutoSaida(dadosMultimarcas, true);
   const precoTabelaTotal = precoTabelaRevenda + precoTabelaVarejo + precoTabelaFranquia + precoTabelaMultimarcas;
 
   const totalGeral = somaFaturamentos;
@@ -149,7 +154,7 @@ const Consolidado = () => {
   const [modalContent, setModalContent] = useState({ title: '', description: '', calculation: '' });
 
   // Empresas fixas para Revenda e Franquia
-  const empresasFixas = ['2', '200', '75', '31', '6', '85', '11','99','85','92'];
+  const empresasFixas = ['1','2', '200', '75', '31', '6', '85', '11','99','85','92'];
   // Empresas fixas para Varejo
   const empresasVarejoFixas = ['2', '5', '500', '55', '550', '65', '650', '93', '930', '94', '940', '95', '950', '96', '960', '97', '970','90','91','92','890','910','920'];
 
@@ -164,7 +169,7 @@ const Consolidado = () => {
   const [cacheInfo, setCacheInfo] = useState(null); // { fromCache: boolean, at?: number }
 
   // ---- Suas funções de cálculo (reaproveitadas pelos cards quando não há agg)
-  function calcularCustoBruto(dados) {
+  function calcularCustoBruto(dados, compensaEntrada = false) {
     if (!Array.isArray(dados) || dados.length === 0) return 0;
     const custoMap = {};
     (custoProdutos || []).forEach(item => {
@@ -172,13 +177,17 @@ const Consolidado = () => {
         custoMap[item.Codigo.trim()] = item.Custo;
       }
     });
-    const saidas = dados.filter(row => row.tp_operacao === 'S');
     let custoTotal = 0;
-    saidas.forEach(row => {
+    dados.forEach(row => {
       const qtFaturado = Number(row.qt_faturado) || 1;
       const custoUnit = custoMap[row.cd_nivel?.trim()];
       if (custoUnit !== undefined) {
-        custoTotal += qtFaturado * custoUnit;
+        if (row.tp_operacao === 'S') {
+          custoTotal += qtFaturado * custoUnit;
+        }
+        if (compensaEntrada && row.tp_operacao === 'E') {
+          custoTotal -= qtFaturado * custoUnit;
+        }
       }
     });
     return custoTotal;
@@ -285,7 +294,11 @@ const Consolidado = () => {
         const somaSaidasFranquia = resultFranquia.data
         .filter(r => r.tp_operacao === 'S')
         .reduce((acc, r) => acc + ((Number(r.vl_unitliquido) || 0) * (Number(r.qt_faturado) || 1)), 0);
-        setFaturamento(fat => ({ ...fat, franquia: somaSaidasFranquia }));
+        const somaEntradasFranquia = resultFranquia.data
+        .filter(r => r.tp_operacao === 'E')
+        .reduce((acc, r) => acc + ((Number(r.vl_unitliquido) || 0) * (Number(r.qt_faturado) || 1)), 0);
+        const totalFranquia = somaSaidasFranquia - somaEntradasFranquia;
+        setFaturamento(fat => ({ ...fat, franquia: totalFranquia }));
         setDadosFranquia(resultFranquia.data);
       setLoadingFranquia(false);
 
@@ -296,7 +309,11 @@ const Consolidado = () => {
         const somaSaidasMultimarcas = resultMultimarcas.data
         .filter(r => r.tp_operacao === 'S')
         .reduce((acc, r) => acc + ((Number(r.vl_unitliquido) || 0) * (Number(r.qt_faturado) || 1)), 0);
-        setFaturamento(fat => ({ ...fat, multimarcas: somaSaidasMultimarcas }));
+        const somaEntradasMultimarcas = resultMultimarcas.data
+        .filter(r => r.tp_operacao === 'E')
+        .reduce((acc, r) => acc + ((Number(r.vl_unitliquido) || 0) * (Number(r.qt_faturado) || 1)), 0);
+        const totalMultimarcas = somaSaidasMultimarcas - somaEntradasMultimarcas;
+        setFaturamento(fat => ({ ...fat, multimarcas: totalMultimarcas }));
         setDadosMultimarcas(resultMultimarcas.data);
       setLoadingMultimarcas(false);
 
@@ -332,8 +349,8 @@ const Consolidado = () => {
 
   const custoBrutoRevenda = agg?.custos.custoBrutoRevenda ?? calcularCustoBruto(dadosRevenda);
   const custoBrutoVarejo = agg?.custos.custoBrutoVarejo ?? calcularCustoBruto(dadosVarejo);
-  const custoBrutoFranquia = agg?.custos.custoBrutoFranquia ?? calcularCustoBruto(dadosFranquia);
-  const custoBrutoMultimarcas = agg?.custos.custoBrutoMultimarcas ?? calcularCustoBruto(dadosMultimarcas);
+          const custoBrutoFranquia = agg?.custos.custoBrutoFranquia ?? calcularCustoBruto(dadosFranquia, true);
+        const custoBrutoMultimarcas = agg?.custos.custoBrutoMultimarcas ?? calcularCustoBruto(dadosMultimarcas, true);
   const custoTotalBrutoUI = agg?.custos.custoTotalBruto ?? (custoBrutoRevenda + custoBrutoVarejo + custoBrutoFranquia + custoBrutoMultimarcas);
 
   const cmvRevenda = calcularCMV(dadosRevenda);
