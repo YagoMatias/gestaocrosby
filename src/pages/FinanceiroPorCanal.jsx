@@ -24,6 +24,8 @@ const FinanceiroPorCanal = memo(() => {
   const [dadosFranquia, setDadosFranquia] = useState([]);
   const [dadosMultimarcas, setDadosMultimarcas] = useState([]);
   const [dadosRevenda, setDadosRevenda] = useState([]);
+  const [dadosContasPagar, setDadosContasPagar] = useState([]);
+  const [valorTotalContasPagar, setValorTotalContasPagar] = useState(0);
 
   const calcularVendasAposDesconto = useCallback((rows) => {
     if (!Array.isArray(rows)) return 0;
@@ -70,16 +72,112 @@ const FinanceiroPorCanal = memo(() => {
     setLoading(true);
     try {
       const paramsBase = { dt_inicio: dtInicio, dt_fim: dtFim, cd_empresa: empresas };
-      const [resVarejo, resFranquia, resMtm, resRev] = await Promise.all([
+      const [resVarejo, resFranquia, resMtm, resRev, resCp] = await Promise.all([
         api.sales.faturamento(paramsBase),
         api.sales.faturamentoFranquia(paramsBase),
         api.sales.faturamentoMtm(paramsBase),
-        api.sales.faturamentoRevenda(paramsBase)
+        api.sales.faturamentoRevenda(paramsBase),
+        api.financial.contasPagar(paramsBase)
       ]);
       setDadosVarejo(resVarejo?.data || []);
       setDadosFranquia(resFranquia?.data || []);
       setDadosMultimarcas(resMtm?.data || []);
       setDadosRevenda(resRev?.data || []);
+      const linhasCp = resCp?.data || [];
+      setDadosContasPagar(linhasCp);
+
+      // ===== Lógica de agrupamento igual à página Contas a Pagar =====
+      const agruparDadosIdenticos = (dados) => {
+        const grupos = new Map();
+        dados.forEach((item) => {
+          const chave = `${item.cd_fornecedor}|${item.nm_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.tp_previsaoreal}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
+          if (!grupos.has(chave)) {
+            grupos.set(chave, {
+              item: item,
+              observacoes: [],
+              situacoes: [],
+              datasEmissao: [],
+              datasVencimento: [],
+              datasEntrada: [],
+              datasLiquidacao: [],
+              rateios: [],
+              quantidade: 0
+            });
+          }
+          const grupo = grupos.get(chave);
+          grupo.quantidade += 1;
+          if (item.vl_rateio && !grupo.rateios.includes(item.vl_rateio)) {
+            grupo.rateios.push(item.vl_rateio);
+          }
+          if (item.ds_observacao && !grupo.observacoes.includes(item.ds_observacao)) {
+            grupo.observacoes.push(item.ds_observacao);
+          }
+          if (item.tp_situacao && !grupo.situacoes.includes(item.tp_situacao)) {
+            grupo.situacoes.push(item.tp_situacao);
+          }
+          if (item.tp_previsaoreal && !grupo.previsoes) {
+            grupo.previsoes = [];
+          }
+          if (item.tp_previsaoreal && !grupo.previsoes.includes(item.tp_previsaoreal)) {
+            grupo.previsoes.push(item.tp_previsaoreal);
+          }
+          if (item.dt_emissao && !grupo.datasEmissao.includes(item.dt_emissao)) {
+            grupo.datasEmissao.push(item.dt_emissao);
+          }
+          if (item.dt_vencimento && !grupo.datasVencimento.includes(item.dt_vencimento)) {
+            grupo.datasVencimento.push(item.dt_vencimento);
+          }
+          if (item.dt_entrada && !grupo.datasEntrada.includes(item.dt_entrada)) {
+            grupo.datasEntrada.push(item.dt_entrada);
+          }
+          if (item.dt_liq && !grupo.datasLiquidacao.includes(item.dt_liq)) {
+            grupo.datasLiquidacao.push(item.dt_liq);
+          }
+        });
+
+        return Array.from(grupos.values()).map(grupo => {
+          let situacaoFinal = grupo.item.tp_situacao;
+          if (grupo.situacoes && grupo.situacoes.length > 1) {
+            if (grupo.situacoes.includes('C')) situacaoFinal = 'C';
+            else if (grupo.situacoes.includes('N')) situacaoFinal = 'N';
+          }
+          return { ...grupo, item: { ...grupo.item, tp_situacao: situacaoFinal } };
+        });
+      };
+
+      // Filtros locais para replicar lógica da página Contas a Pagar
+      const criarDataSemFusoHorario = (isoDate) => {
+        if (!isoDate) return null;
+        try {
+          const [datePart] = String(isoDate).split('T');
+          const [y, m, d] = datePart.split('-').map(n => parseInt(n, 10));
+          if (!y || !m || !d) return null;
+          return new Date(y, m - 1, d);
+        } catch {
+          return null;
+        }
+      };
+
+      // 1) Situação NORMAIS: excluir canceladas
+      // Considera normal quando tp_situacao === 'N' OU (sem cancelamento e sem indicador de cancelada)
+      const somenteNormais = (linhasCp || []).filter(item => {
+        const situacao = (item.tp_situacao || '').toUpperCase();
+        const normal = situacao === 'N';
+        return normal; // apenas NORMAIS
+      });
+
+      // 2) Filtrar por período usando dt_vencimento (mesma base da tela)
+      const ini = criarDataSemFusoHorario(dtInicio);
+      const fim = criarDataSemFusoHorario(dtFim);
+      const noPeriodo = somenteNormais.filter(item => {
+        const dv = criarDataSemFusoHorario(item.dt_vencimento);
+        if (!dv) return false;
+        return dv >= ini && dv <= fim;
+      });
+
+      const agrupados = agruparDadosIdenticos(noPeriodo);
+      const totalValor = agrupados.reduce((acc, g) => acc + (parseFloat(g?.item?.vl_duplicata) || 0), 0);
+      setValorTotalContasPagar(totalValor);
     } catch (err) {
       console.error('Erro ao buscar dados por canal:', err);
       setErro('Erro ao buscar dados. Tente novamente.');
@@ -87,6 +185,8 @@ const FinanceiroPorCanal = memo(() => {
       setDadosFranquia([]);
       setDadosMultimarcas([]);
       setDadosRevenda([]);
+      setDadosContasPagar([]);
+      setValorTotalContasPagar(0);
     } finally {
       setLoading(false);
     }
@@ -180,6 +280,22 @@ const FinanceiroPorCanal = memo(() => {
               </PieChart>
             </ResponsiveContainer>
           </div>
+        </div>
+      </div>
+
+      {/* Seção: Contas a Pagar por Canal */}
+      <div className="mt-8 mb-3">
+        <h2 className="text-sm font-bold tracking-wide text-gray-700">CONTAS A PAGAR POR CANAL</h2>
+      </div>
+
+      {/* Cards principais (inicialmente trazendo o Valor Total da página Contas a Pagar) */}
+      <div className="grid grid-cols-1 gap-4">
+        <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-md">
+          <div className="text-sm font-semibold text-gray-600">Valor Total (R$)</div>
+          <div className="text-2xl font-extrabold text-green-700 mt-2">
+            {formatBRL(valorTotalContasPagar)}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">Mesmo cálculo e agrupamento da página Contas a Pagar</div>
         </div>
       </div>
 
