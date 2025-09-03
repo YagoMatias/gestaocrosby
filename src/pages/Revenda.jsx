@@ -53,10 +53,31 @@ const Revenda = () => {
     return map;
   }, []);
 
-  // Filtrar apenas dados com cd_classificacao == 3
-  const dadosFiltrados = dados.filter(row => row.cd_classificacao == 3);
+  // Filtrar por classificação 1 e 3, priorizando classificação 3
+  const dadosFiltrados = dados.filter(row => {
+    const cls = String(row.cd_classificacao ?? '').trim();
+    return cls === '1' || cls === '3';
+  }).filter((row, index, array) => {
+    const currentPessoa = row.cd_pessoa;
+    const currentClass = String(row.cd_classificacao ?? '').trim();
+    
+    // Se a classificação atual é 3, sempre mantém
+    if (currentClass === '3') return true;
+    
+    // Se a classificação atual é 1, verifica se existe classificação 3 para o mesmo cd_pessoa
+    if (currentClass === '1') {
+      const hasClass3 = array.some(item => 
+        item.cd_pessoa === currentPessoa && 
+        String(item.cd_classificacao ?? '').trim() === '3'
+      );
+      // Só mantém se NÃO existir classificação 3 para este cd_pessoa
+      return !hasClass3;
+    }
+    
+    return false;
+  });
 
-  // Cálculos para os cards (baseados no Consolidado)
+  // Cálculos para os cards (usando lógica de saídas - entradas, igual ao Consolidado)
   const calcularMargemCanal = (faturamento, custo) => {
     if (faturamento > 0 && custo > 0) {
       return ((faturamento - custo) / faturamento) * 100;
@@ -80,11 +101,13 @@ const Revenda = () => {
 
   const custoBrutoRevenda = React.useMemo(() => {
     return dadosFiltrados.reduce((acc, row) => {
-      if (row.tp_operacao === 'S') {
-        const qtFaturado = Number(row.qt_faturado) || 1;
-        const custoUnit = custoMap[row.cd_nivel?.trim()];
-        if (custoUnit !== undefined) {
+      const qtFaturado = Number(row.qt_faturado) || 1;
+      const custoUnit = custoMap[row.cd_nivel?.trim()];
+      if (custoUnit !== undefined) {
+        if (row.tp_operacao === 'S') {
           acc += qtFaturado * custoUnit;
+        } else if (row.tp_operacao === 'E') {
+          acc -= qtFaturado * custoUnit;
         }
       }
       return acc;
@@ -97,6 +120,8 @@ const Revenda = () => {
       const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
       if (row.tp_operacao === 'S') {
         acc += valorBruto;
+      } else if (row.tp_operacao === 'E') {
+        acc -= valorBruto;
       }
       return acc;
     }, 0);
@@ -375,6 +400,30 @@ const Revenda = () => {
     }
     setSortConfigTransacoes({ key, direction });
   };
+
+  // Estatísticas da tabela de transações
+  const estatisticasTransacoes = React.useMemo(() => {
+    if (!dadosFiltrados || dadosFiltrados.length === 0) {
+      return {
+        totalTransacoes: 0,
+        produtosEntrada: 0,
+        produtosSaida: 0
+      };
+    }
+
+    // Conta transações únicas (nr_transacao diferentes)
+    const transacoesUnicas = new Set(dadosFiltrados.map(row => row.nr_transacao)).size;
+    
+    // Conta produtos de entrada e saída
+    const produtosEntrada = dadosFiltrados.filter(row => row.tp_operacao === 'E').length;
+    const produtosSaida = dadosFiltrados.filter(row => row.tp_operacao === 'S').length;
+
+    return {
+      totalTransacoes: transacoesUnicas,
+      produtosEntrada,
+      produtosSaida
+    };
+  }, [dadosFiltrados]);
 
   // Função para ordenar os dados de transações
   const sortDadosTransacoes = (dados) => {
@@ -872,6 +921,25 @@ const Revenda = () => {
                     })
                   )}
                 </tbody>
+                <tfoot className="bg-gray-50 border-t border-gray-200">
+                  <tr>
+                    <td colSpan={11} className="px-4 py-3">
+                      <div className="flex justify-between items-center text-sm text-gray-600">
+                        <div className="flex items-center gap-6">
+                          <span className="font-medium">
+                            Total de Transações: <span className="text-blue-600 font-bold">{estatisticasTransacoes.totalTransacoes}</span>
+                          </span>
+                          <span className="font-medium">
+                            Produtos de Entrada: <span className="text-red-600 font-bold">{estatisticasTransacoes.produtosEntrada}</span>
+                          </span>
+                          <span className="font-medium">
+                            Produtos de Saída: <span className="text-green-600 font-bold">{estatisticasTransacoes.produtosSaida}</span>
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           )}

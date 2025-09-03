@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
-import { CurrencyDollar, Percent, TrendUp, Question, Spinner } from '@phosphor-icons/react';
+import { CurrencyDollar, Percent, TrendUp, Question, Spinner, Truck } from '@phosphor-icons/react';
 import custoProdutos from '../custoprodutos.json';
 import { Bar } from 'react-chartjs-2';
 import useApiClient from '../hooks/useApiClient';
@@ -89,7 +89,7 @@ function buildAggregates({
       return acc;
     }, 0);
 
-  const custoBrutoRevenda = calcCusto(dadosRevenda);
+  const custoBrutoRevenda = calcCusto(dadosRevenda, true);
   const custoBrutoVarejo = calcCusto(dadosVarejo);
   const custoBrutoFranquia = calcCusto(dadosFranquia, true);
   const custoBrutoMultimarcas = calcCusto(dadosMultimarcas, true);
@@ -109,7 +109,16 @@ function buildAggregates({
     });
     return total;
   };
-  const precoTabelaRevenda = somaBrutoSaida(dadosRevenda);
+  const somaFrete = (dados, compensaEntrada = true) => {
+    let total = 0;
+    (dados || []).forEach(row => {
+      const frete = Number(row.vl_freterat) || 0;
+      if (row.tp_operacao === 'S') total += frete;
+      if (compensaEntrada && row.tp_operacao === 'E') total -= frete;
+    });
+    return total;
+  };
+  const precoTabelaRevenda = somaBrutoSaida(dadosRevenda, true);
   const precoTabelaVarejo = somaBrutoSaida(dadosVarejo, true);
   const precoTabelaFranquia = somaBrutoSaida(dadosFranquia, true);
   const precoTabelaMultimarcas = somaBrutoSaida(dadosMultimarcas, true);
@@ -117,6 +126,12 @@ function buildAggregates({
 
   const totalGeral = somaFaturamentos;
   const descontoTotal = precoTabelaTotal - totalGeral;
+
+  const freteRevenda = somaFrete(dadosRevenda, true);
+  const freteVarejo = somaFrete(dadosVarejo, true);
+  const freteFranquia = somaFrete(dadosFranquia, true);
+  const freteMultimarcas = somaFrete(dadosMultimarcas, true);
+  const freteTotal = freteRevenda + freteVarejo + freteFranquia + freteMultimarcas;
 
   return {
     faturamento: { ...faturamento, totalGeral },
@@ -127,6 +142,9 @@ function buildAggregates({
     markupTotal,
     precos: {
       precoTabelaRevenda, precoTabelaVarejo, precoTabelaFranquia, precoTabelaMultimarcas, precoTabelaTotal, descontoTotal
+    },
+    fretes: {
+      freteRevenda, freteVarejo, freteFranquia, freteMultimarcas, freteTotal
     }
   };
 }
@@ -196,21 +214,30 @@ const Consolidado = () => {
     if (fat > 0 && custo > 0) return ((fat - custo) / fat) * 100;
     return null;
   }
-  function calcularCMV(dados) {
+  function calcularCMV(dados, compensaEntrada = false) {
     if (!Array.isArray(dados) || dados.length === 0) return null;
     const custoMap = {};
     (custoProdutos || []).forEach(item => {
       if (item?.Codigo && item?.Custo !== undefined) custoMap[item.Codigo.trim()] = item.Custo;
     });
-    const saidas = dados.filter(row => row.tp_operacao === 'S');
+    
     let custoTotal = 0;
     let valorTotal = 0;
-    saidas.forEach(row => {
+    
+    dados.forEach(row => {
       const qt = Number(row.qt_faturado) || 1;
       const custoUnit = custoMap[row.cd_nivel?.trim()];
-      if (custoUnit !== undefined) custoTotal += qt * custoUnit;
-      valorTotal += (Number(row.vl_unitliquido) || 0) * qt;
+      const valor = (Number(row.vl_unitliquido) || 0) * qt;
+      
+      if (row.tp_operacao === 'S') {
+        if (custoUnit !== undefined) custoTotal += qt * custoUnit;
+        valorTotal += valor;
+      } else if (compensaEntrada && row.tp_operacao === 'E') {
+        if (custoUnit !== undefined) custoTotal -= qt * custoUnit;
+        valorTotal -= valor;
+      }
     });
+    
     if (valorTotal > 0) return (custoTotal / valorTotal) * 100;
     return null;
   }
@@ -264,11 +291,37 @@ const Consolidado = () => {
       const paramsRevenda = { dt_inicio: filtros.dt_inicio, dt_fim: filtros.dt_fim, cd_empresa: empresasFixas };
       const resultRevenda = await apiClient.sales.faturamentoRevenda(paramsRevenda);
       if (!resultRevenda.success) throw new Error(resultRevenda.message || 'Erro ao buscar faturamento de revenda');
-        const filtradosRevenda = resultRevenda.data.filter(row => row.cd_classificacao == 3);
+        // Filtra por classificação 1 e 3, priorizando classificação 3
+        const filtradosRevenda = resultRevenda.data.filter(row => {
+          const cls = String(row.cd_classificacao ?? '').trim();
+          return cls === '1' || cls === '3';
+        }).filter((row, index, array) => {
+          const currentPessoa = row.cd_pessoa;
+          const currentClass = String(row.cd_classificacao ?? '').trim();
+          
+          // Se a classificação atual é 3, sempre mantém
+          if (currentClass === '3') return true;
+          
+          // Se a classificação atual é 1, verifica se existe classificação 3 para o mesmo cd_pessoa
+          if (currentClass === '1') {
+            const hasClass3 = array.some(item => 
+              item.cd_pessoa === currentPessoa && 
+              String(item.cd_classificacao ?? '').trim() === '3'
+            );
+            // Só mantém se NÃO existir classificação 3 para este cd_pessoa
+            return !hasClass3;
+          }
+          
+          return false;
+        });
         const somaSaidasRevenda = filtradosRevenda
           .filter(row => row.tp_operacao === 'S')
           .reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-        setFaturamento(fat => ({ ...fat, revenda: somaSaidasRevenda }));
+        const somaEntradasRevenda = filtradosRevenda
+          .filter(row => row.tp_operacao === 'E')
+          .reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
+        const totalRevenda = somaSaidasRevenda - somaEntradasRevenda;
+        setFaturamento(fat => ({ ...fat, revenda: totalRevenda }));
         setDadosRevenda(filtradosRevenda);
       setLoadingRevenda(false);
 
@@ -324,10 +377,10 @@ const Consolidado = () => {
         dadosFranquia: resultFranquia.data,
         dadosMultimarcas: resultMultimarcas.data,
         faturamento: {
-          revenda: somaSaidasRevenda,
+          revenda: totalRevenda,
           varejo: totalVarejo,
-          franquia: somaSaidasFranquia,
-          multimarcas: somaSaidasMultimarcas,
+          franquia: totalFranquia,
+          multimarcas: totalMultimarcas,
         }
       });
       setAgg(aggregates);
@@ -345,18 +398,63 @@ const Consolidado = () => {
   };
 
   // ======= DERIVADOS PARA UI (preferindo agg quando existir) =======
-  const totalGeralUI = agg?.faturamento.totalGeral ?? (faturamento.revenda + faturamento.varejo + faturamento.franquia + faturamento.multimarcas);
+  // Calcula o total baseado nos valores dos cards individuais para garantir consistência
+  const totalGeralUI = agg?.faturamento.totalGeral ?? (() => {
+    // Usa os mesmos cálculos dos cards individuais
+    const revendaCard = dadosRevenda.reduce((acc, row) => {
+      const qtFaturado = Number(row.qt_faturado) || 1;
+      const valor = (Number(row.vl_unitliquido) || 0) * qtFaturado;
+      if (row.tp_operacao === 'S') acc += valor;
+      else if (row.tp_operacao === 'E') acc -= valor;
+      return acc;
+    }, 0);
+    
+    const varejoCard = dadosVarejo.reduce((acc, row) => {
+      const qtFaturado = Number(row.qt_faturado) || 1;
+      const valor = (Number(row.vl_unitliquido) || 0) * qtFaturado;
+      if (row.tp_operacao === 'S') acc += valor;
+      return acc;
+    }, 0);
+    
+    const franquiaCard = dadosFranquia.reduce((acc, row) => {
+      const qtFaturado = Number(row.qt_faturado) || 1;
+      const valor = (Number(row.vl_unitliquido) || 0) * qtFaturado;
+      if (row.tp_operacao === 'S') acc += valor;
+      else if (row.tp_operacao === 'E') acc -= valor;
+      return acc;
+    }, 0);
+    
+    const multimarcasCard = dadosMultimarcas.reduce((acc, row) => {
+      const qtFaturado = Number(row.qt_faturado) || 1;
+      const valor = (Number(row.vl_unitliquido) || 0) * qtFaturado;
+      if (row.tp_operacao === 'S') acc += valor;
+      else if (row.tp_operacao === 'E') acc -= valor;
+      return acc;
+    }, 0);
+    
+    // Debug: mostra os valores calculados
+    console.log('🔍 Debug - Valores calculados:', {
+      revendaCard: revendaCard.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+      varejoCard: varejoCard.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+      franquiaCard: franquiaCard.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+      multimarcasCard: multimarcasCard.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+      totalCalculado: (revendaCard + varejoCard + multimarcasCard + franquiaCard).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+      totalEstado: (faturamento.revenda + faturamento.varejo + faturamento.franquia + faturamento.multimarcas).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    });
+    
+    return revendaCard + varejoCard + franquiaCard + multimarcasCard;
+  })();
 
-  const custoBrutoRevenda = agg?.custos.custoBrutoRevenda ?? calcularCustoBruto(dadosRevenda);
+          const custoBrutoRevenda = agg?.custos.custoBrutoRevenda ?? calcularCustoBruto(dadosRevenda, true);
   const custoBrutoVarejo = agg?.custos.custoBrutoVarejo ?? calcularCustoBruto(dadosVarejo);
           const custoBrutoFranquia = agg?.custos.custoBrutoFranquia ?? calcularCustoBruto(dadosFranquia, true);
         const custoBrutoMultimarcas = agg?.custos.custoBrutoMultimarcas ?? calcularCustoBruto(dadosMultimarcas, true);
   const custoTotalBrutoUI = agg?.custos.custoTotalBruto ?? (custoBrutoRevenda + custoBrutoVarejo + custoBrutoFranquia + custoBrutoMultimarcas);
 
-  const cmvRevenda = calcularCMV(dadosRevenda);
+  const cmvRevenda = calcularCMV(dadosRevenda, true);
   const cmvVarejo = calcularCMV(dadosVarejo);
-  const cmvFranquia = calcularCMV(dadosFranquia);
-  const cmvMultimarcas = calcularCMV(dadosMultimarcas);
+  const cmvFranquia = calcularCMV(dadosFranquia, true);
+  const cmvMultimarcas = calcularCMV(dadosMultimarcas, true);
 
   const cmvTotalUI = agg?.cmvTotal ?? (
     totalGeralUI > 0 && custoTotalBrutoUI > 0 ? (custoTotalBrutoUI / totalGeralUI) * 100 : null
@@ -371,7 +469,8 @@ const Consolidado = () => {
         const q = Number(row.qt_faturado) || 1;
         const bruto = (Number(row.vl_unitbruto) || 0) * q;
         if (row.tp_operacao === 'S') total += bruto;
-        if (idx === 1 && row.tp_operacao === 'E') total -= bruto; // varejo compensa entrada
+        // Revenda (idx 0), Franquia (idx 2) e Multimarcas (idx 3) compensam entrada
+        if ((idx === 0 || idx === 2 || idx === 3) && row.tp_operacao === 'E') total -= bruto;
       });
     });
     return total;
@@ -379,13 +478,36 @@ const Consolidado = () => {
 
   const descontoTotalUI = agg?.precos.descontoTotal ?? (precoTabelaTotalUI - totalGeralUI);
 
+  // Fretes derivados para UI
+  function calcularFrete(dados, compensaEntrada = true) {
+    if (!Array.isArray(dados) || dados.length === 0) return 0;
+    let total = 0;
+    dados.forEach(row => {
+      const frete = Number(row.vl_freterat) || 0;
+      if (row.tp_operacao === 'S') total += frete;
+      if (compensaEntrada && row.tp_operacao === 'E') total -= frete;
+    });
+    return total;
+  }
+  const freteRevendaUI = agg?.fretes?.freteRevenda ?? calcularFrete(dadosRevenda, true);
+  const freteVarejoUI = agg?.fretes?.freteVarejo ?? calcularFrete(dadosVarejo, true);
+  const freteFranquiaUI = agg?.fretes?.freteFranquia ?? calcularFrete(dadosFranquia, true);
+  const freteMultimarcasUI = agg?.fretes?.freteMultimarcas ?? calcularFrete(dadosMultimarcas, true);
+
+  // Vendas após desconto somadas ao frete (S - E de frete)
+  const vendasRevendaComFrete = (faturamento.revenda || 0) + (freteRevendaUI || 0);
+  const vendasVarejoComFrete = (faturamento.varejo || 0) + (freteVarejoUI || 0);
+  const vendasFranquiaComFrete = (faturamento.franquia || 0) + (freteFranquiaUI || 0);
+  const vendasMultimarcasComFrete = (faturamento.multimarcas || 0) + (freteMultimarcasUI || 0);
+  const totalGeralComFreteUI = vendasRevendaComFrete + vendasVarejoComFrete + vendasFranquiaComFrete + vendasMultimarcasComFrete;
+
   // Gráficos (usam estados atuais)
   const dataGraficoFaturamento = {
     labels: ['Revenda', 'Varejo', 'Franquia', 'Multimarcas'],
     datasets: [
       {
         label: 'Vendas após Desconto',
-        data: [faturamento.revenda, faturamento.varejo, faturamento.franquia, faturamento.multimarcas],
+        data: [vendasRevendaComFrete, vendasVarejoComFrete, vendasFranquiaComFrete, vendasMultimarcasComFrete],
         backgroundColor: ['rgba(59,130,246,0.8)','rgba(34,197,94,0.8)','rgba(251,191,36,0.8)','rgba(249,115,22,0.8)'],
         borderColor: ['#3b82f6','#22c55e','#fbbf24','#f97316'],
         borderWidth: 2
@@ -450,13 +572,13 @@ const Consolidado = () => {
   };
 
   // Representatividade (sua lógica original)
-  const totalGeral = totalGeralUI;
+  const totalGeral = totalGeralComFreteUI;
   const getPercent = (valor, canalIndex = 0) => {
     if (totalGeral > 0) {
-      const percentRevenda = (faturamento.revenda / totalGeral) * 100;
-      const percentVarejo = (faturamento.varejo / totalGeral) * 100;
-      const percentFranquia = (faturamento.franquia / totalGeral) * 100;
-      const percentMultimarcas = (faturamento.multimarcas / totalGeral) * 100;
+      const percentRevenda = (vendasRevendaComFrete / totalGeral) * 100;
+      const percentVarejo = (vendasVarejoComFrete / totalGeral) * 100;
+      const percentFranquia = (vendasFranquiaComFrete / totalGeral) * 100;
+      const percentMultimarcas = (vendasMultimarcasComFrete / totalGeral) * 100;
       const r = Math.round(percentRevenda * 100) / 100;
       const v = Math.round(percentVarejo * 100) / 100;
       const f = Math.round(percentFranquia * 100) / 100;
@@ -746,6 +868,32 @@ const Consolidado = () => {
               </div>
             </CardContent>
           </Card>
+
+          {/* Frete Total */}
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex flex-row items-center gap-2">
+                <Truck size={18} className="text-gray-700" />
+                <CardTitle className="text-sm font-bold text-gray-700">Frete Total</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-gray-800 mb-1">
+                {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
+                  ? <Spinner size={24} className="text-gray-600 animate-spin" />
+                : (freteRevendaUI + freteVarejoUI + freteFranquiaUI + freteMultimarcasUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <div className="flex justify-between items-center">
+                <CardDescription className="text-xs text-gray-500">Soma dos fretes de todos os canais</CardDescription>
+                <button
+                onClick={() => showHelpModal('Frete Total','Soma dos valores de frete rateado de todos os canais (S - E).','Frete Total = Σ Frete por canal')}
+                  className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={12} className="text-gray-600" />
+                </button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
       {/* ====== SEÇÕES POR CANAL (mantidas, agora com custos podendo vir do agg) ====== */}
@@ -857,6 +1005,7 @@ const Consolidado = () => {
                         const q = Number(row.qt_faturado) || 1;
                         const bruto = (Number(row.vl_unitbruto) || 0) * q;
                         if (row.tp_operacao === 'S') total += bruto;
+                        else if (row.tp_operacao === 'E') total -= bruto;
                       });
                       return total;
                     })()) || 0
@@ -884,6 +1033,7 @@ const Consolidado = () => {
                           const q = Number(row.qt_faturado) || 1;
                           const bruto = (Number(row.vl_unitbruto) || 0) * q;
                           if (row.tp_operacao === 'S') total += bruto;
+                          else if (row.tp_operacao === 'E') total -= bruto;
                         });
                         return total;
                       })();
@@ -913,6 +1063,20 @@ const Consolidado = () => {
                   )}
                 </div>
                 <CardDescription className="text-xs text-gray-500">% das vendas após desconto total da rede</CardDescription>
+              </CardContent>
+            </Card>
+            <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex items-center gap-2">
+                  <Truck size={18} className="text-gray-700" />
+                  <CardTitle className="text-sm font-bold text-gray-700">Frete Revenda</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-gray-800 mb-1">
+                  {loadingRevenda ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteRevendaUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Frete rateado (S - E)</CardDescription>
               </CardContent>
             </Card>
           </div>
@@ -1086,6 +1250,20 @@ const Consolidado = () => {
                 <CardDescription className="text-xs text-gray-500">% das vendas após desconto total da rede</CardDescription>
               </CardContent>
             </Card>
+            <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex items-center gap-2">
+                  <Truck size={18} className="text-gray-700" />
+                  <CardTitle className="text-sm font-bold text-gray-700">Frete Varejo</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-gray-800 mb-1">
+                  {loadingVarejo ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteVarejoUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Frete rateado (S - E)</CardDescription>
+              </CardContent>
+            </Card>
           </div>
         </div>
         
@@ -1255,6 +1433,20 @@ const Consolidado = () => {
                 <CardDescription className="text-xs text-gray-500">% das vendas após desconto total da rede</CardDescription>
               </CardContent>
             </Card>
+            <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex items-center gap-2">
+                  <Truck size={18} className="text-gray-700" />
+                  <CardTitle className="text-sm font-bold text-gray-700">Frete Franquia</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-gray-800 mb-1">
+                  {loadingFranquia ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteFranquiaUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Frete rateado (S - E)</CardDescription>
+              </CardContent>
+            </Card>
           </div>
         </div>
         
@@ -1422,6 +1614,20 @@ const Consolidado = () => {
                   )}
                 </div>
                 <CardDescription className="text-xs text-gray-500">% das vendas após desconto total da rede</CardDescription>
+              </CardContent>
+            </Card>
+            <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+                <div className="flex items-center gap-2">
+                  <Truck size={18} className="text-gray-700" />
+                  <CardTitle className="text-sm font-bold text-gray-700">Frete Multimarcas</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-gray-800 mb-1">
+                  {loadingMultimarcas ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteMultimarcasUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Frete rateado (S - E)</CardDescription>
               </CardContent>
             </Card>
           </div>
