@@ -30,6 +30,7 @@ const FinanceiroPorCanal = memo(() => {
   const [totaisPorCentroCusto, setTotaisPorCentroCusto] = useState([]);
   const [ccTotaisPorCanal, setCcTotaisPorCanal] = useState({ varejo: 0, multimarcas: 0, franquiasRevenda: 0, matriz: 0, diversos: 0 });
   const [modalAberto, setModalAberto] = useState(null); // 'VAREJO' | 'MULTIMARCAS' | 'FRANQUIAS_REVENDA' | 'MATRIZ' | 'DIVERSOS'
+  const [modalDadosCpDiversos, setModalDadosCpDiversos] = useState([]);
 
   const calcularVendasAposDesconto = useCallback((rows) => {
     if (!Array.isArray(rows)) return 0;
@@ -316,6 +317,13 @@ const FinanceiroPorCanal = memo(() => {
         else bucket.diversos += cc.valor;
       });
       setCcTotaisPorCanal(bucket);
+      // Filtrar e setar os dados detalhados para o modal de Diversos
+      const dadosDiversosCp = agrupados.filter(g => {
+        const code = (g?.item?.cd_ccusto || '').trim();
+        return !FRANQUIAS_REVENDA.has(code) && !VAREJO.has(code) && !MULTIMARCAS.has(code) && !MATRIZ.has(code);
+      }).map(g => g.item); // Pega apenas o item detalhado
+      setModalDadosCpDiversos(dadosDiversosCp);
+
     } catch (err) {
       console.error('Erro ao buscar dados por canal:', err);
       setErro('Erro ao buscar dados. Tente novamente.');
@@ -499,7 +507,7 @@ const FinanceiroPorCanal = memo(() => {
             <div className="text-sm font-semibold text-gray-600">MATRIZ</div>
             <div className="text-2xl font-extrabold text-indigo-700 mt-2">{formatBRL(ccTotaisPorCanal.matriz)}</div>
           </button>
-          <button onClick={() => setModalAberto('DIVERSOS')} className="text-left rounded-xl bg-white border border-gray-200 p-4 shadow-md">
+          <button onClick={() => setModalAberto('DIVERSOS')} className="text-left rounded-xl bg-white border border-gray-200 p-4 shadow-md cursor">
             <div className="text-sm font-semibold text-gray-600">DIVERSOS</div>
             <div className="text-2xl font-extrabold text-orange-700 mt-2">{formatBRL(ccTotaisPorCanal.diversos)}</div>
           </button>
@@ -532,43 +540,6 @@ const FinanceiroPorCanal = memo(() => {
           <div className="text-xs text-gray-500 mt-1">Mesmo cálculo e agrupamento da página Contas a Pagar</div>
         </div>
       </div>
-
-      {/* Gráfico de Barras - Detalhamento DIVERSOS */}
-      <div className="mt-6">
-        <div className="rounded-2xl bg-white border border-gray-200 p-8 shadow-md">
-          <div className="text-base font-semibold text-gray-700 mb-4 text-center">Detalhamento DIVERSOS - Centros de Custo</div>
-          <div style={{ width: '100%', height: 400, padding: '20px' }}>
-            <ResponsiveContainer>
-              <BarChart data={totaisPorCentroCusto.filter(cc => {
-                const FR = new Set(['2','3','4','6','7','8','9','12','13','14','18']);
-                const VR = new Set(['5','15','16','19','30','31','32','33','34','35','36','37']);
-                const MM = new Set(['17']);
-                const MT = new Set(['26','20','28','22','27','1','23','24','29','25','10']);
-                return !FR.has(cc.code) && !VR.has(cc.code) && !MM.has(cc.code) && !MT.has(cc.code);
-              }).sort((a, b) => b.valor - a.valor)} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="label" angle={-45} textAnchor="end" height={80} fontSize={11} />
-                <YAxis tickFormatter={(value) => formatBRL(value)} fontSize={11} />
-                <RechartsTooltip formatter={(value) => formatBRL(value)} />
-                <Bar dataKey="valor" name="Valor (R$)" fill="#ea580c">
-                  {totaisPorCentroCusto.filter(cc => {
-                    const FR = new Set(['2','3','4','6','7','8','9','12','13','14','18']);
-                    const VR = new Set(['5','15','16','19','30','31','32','33','34','35','36','37']);
-                    const MM = new Set(['17']);
-                    const MT = new Set(['26','20','28','22','27','1','23','24','29','25','10']);
-                    return !FR.has(cc.code) && !VR.has(cc.code) && !MM.has(cc.code) && !MT.has(cc.code);
-                  }).map((entry, index) => (
-                    <text x={entry.valor > 0 ? entry.valor : 0} y={entry.valor > 0 ? entry.valor : 0} textAnchor="middle" fill="#ea580c" fontSize="9">
-                      {formatBRL(entry.valor)}
-                    </text>
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
 
       {/* Gráfico de Barras - Detalhamento MATRIZ */}
       <div className="mt-6">
@@ -640,38 +611,63 @@ const FinanceiroPorCanal = memo(() => {
         size="4xl"
       >
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-[#000638] text-white">
-              <tr>
-                <th className="px-3 py-2 text-left">Código CC</th>
-                <th className="px-3 py-2 text-left">Centro de Custo</th>
-                <th className="px-3 py-2 text-right">Valor</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {totaisPorCentroCusto
-                .filter(cc => {
-                  const FR = new Set(['2','3','4','6','7','8','9','12','13','14','18']);
-                  const VR = new Set(['5','15','16','19','30','31','32','33','34','35','36','37']);
-                  const MM = new Set(['17']);
-                  const MT = new Set(['26','20','28','22','27','1','23','24','29','25','10']);
-                  const code = (cc.code || '').trim();
-                  if (modalAberto === 'FRANQUIAS_REVENDA') return FR.has(code);
-                  if (modalAberto === 'VAREJO') return VR.has(code);
-                  if (modalAberto === 'MULTIMARCAS') return MM.has(code);
-                  if (modalAberto === 'MATRIZ') return MT.has(code);
-                  if (modalAberto === 'DIVERSOS') return !FR.has(code) && !VR.has(code) && !MM.has(code) && !MT.has(code);
-                  return true;
-                })
-                .map((cc, idx) => (
-                  <tr key={`${cc.code}-${idx}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-3 py-2 text-gray-900">{cc.code}</td>
-                    <td className="px-3 py-2 text-gray-900">{cc.name || '-'}</td>
-                    <td className="px-3 py-2 text-right font-semibold">{formatBRL(cc.valor)}</td>
+          {modalAberto === 'DIVERSOS' ? (
+            <table className="min-w-full text-sm">
+              <thead className="bg-[#000638] text-white">
+                <tr>
+                  <th className="px-3 py-2 text-left">Duplicata</th>
+                  <th className="px-3 py-2 text-left">Fornecedor</th>
+                  <th className="px-3 py-2 text-right">Valor</th>
+                  <th className="px-3 py-2 text-left">Vencimento</th>
+                  <th className="px-3 py-2 text-left">Situação</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {modalDadosCpDiversos.map((item, idx) => (
+                  <tr key={`${item.nr_duplicata}-${idx}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-3 py-2 text-gray-900">{item.nr_duplicata}</td>
+                    <td className="px-3 py-2 text-gray-900">{item.nm_fornecedor}</td>
+                    <td className="px-3 py-2 text-right font-semibold">{formatBRL(item.vl_duplicata)}</td>
+                    <td className="px-3 py-2 text-gray-900">{new Date(item.dt_vencimento).toLocaleDateString('pt-BR')}</td>
+                    <td className="px-3 py-2 text-gray-900">{item.tp_situacao}</td>
                   </tr>
                 ))}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          ) : (
+            <table className="min-w-full text-sm">
+              <thead className="bg-[#000638] text-white">
+                <tr>
+                  <th className="px-3 py-2 text-left">Código CC</th>
+                  <th className="px-3 py-2 text-left">Centro de Custo</th>
+                  <th className="px-3 py-2 text-right">Valor</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {totaisPorCentroCusto
+                  .filter(cc => {
+                    const FR = new Set(['2','3','4','6','7','8','9','12','13','14','18']);
+                    const VR = new Set(['5','15','16','19','30','31','32','33','34','35','36','37']);
+                    const MM = new Set(['17']);
+                    const MT = new Set(['26','20','28','22','27','1','23','24','29','25','10']);
+                    const code = (cc.code || '').trim();
+                    if (modalAberto === 'FRANQUIAS_REVENDA') return FR.has(code);
+                    if (modalAberto === 'VAREJO') return VR.has(code);
+                    if (modalAberto === 'MULTIMARCAS') return MM.has(code);
+                    if (modalAberto === 'MATRIZ') return MT.has(code);
+                    if (modalAberto === 'DIVERSOS') return !FR.has(code) && !VR.has(code) && !MM.has(code) && !MT.has(code);
+                    return true;
+                  })
+                  .map((cc, idx) => (
+                    <tr key={`${cc.code}-${idx}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-3 py-2 text-gray-900">{cc.code}</td>
+                      <td className="px-3 py-2 text-gray-900">{cc.name || '-'}</td>
+                      <td className="px-3 py-2 text-right font-semibold">{formatBRL(cc.valor)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </Modal>
 
