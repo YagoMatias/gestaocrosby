@@ -323,6 +323,7 @@ const FinanceiroPorCanal = memo(() => {
         return !FRANQUIAS_REVENDA.has(code) && !VAREJO.has(code) && !MULTIMARCAS.has(code) && !MATRIZ.has(code);
       }).map(g => g.item); // Pega apenas o item detalhado
       setModalDadosCpDiversos(dadosDiversosCp);
+      console.log('Dados Diversos CP:', dadosDiversosCp);
 
     } catch (err) {
       console.error('Erro ao buscar dados por canal:', err);
@@ -503,18 +504,25 @@ const FinanceiroPorCanal = memo(() => {
             <div className="text-sm font-semibold text-gray-600">FRANQUIAS + REVENDA</div>
             <div className="text-2xl font-extrabold text-blue-700 mt-2">{formatBRL(ccTotaisPorCanal.franquiasRevenda)}</div>
           </button>
-          <button onClick={() => setModalAberto('MATRIZ')} className="text-left rounded-xl bg-white border border-gray-200 p-4 shadow-md">
+          <button onClick={() => {setModalAberto('MATRIZ'); console.log('Modal Aberto (Matriz):', 'MATRIZ');}} className="text-left rounded-xl bg-white border border-gray-200 p-4 shadow-md">
             <div className="text-sm font-semibold text-gray-600">MATRIZ</div>
             <div className="text-2xl font-extrabold text-indigo-700 mt-2">{formatBRL(ccTotaisPorCanal.matriz)}</div>
           </button>
-          <button onClick={() => setModalAberto('DIVERSOS')} className="text-left rounded-xl bg-white border border-gray-200 p-4 shadow-md cursor">
+          <button onClick={() => { setModalAberto('DIVERSOS'); console.log('Modal Aberto (Diversos):', 'DIVERSOS'); }} className="text-left rounded-xl bg-white border border-gray-200 p-4 shadow-md cursor-pointer">
             <div className="text-sm font-semibold text-gray-600">DIVERSOS</div>
             <div className="text-2xl font-extrabold text-orange-700 mt-2">{formatBRL(ccTotaisPorCanal.diversos)}</div>
           </button>
+           {/* Valor Total*/}
+          <div className="text-left rounded-xl bg-white border border-gray-200 p-4 shadow-md">
+             <div className="text-sm font-semibold text-gray-600">Valor Total (R$)</div>
+             <div className="text-2xl font-extrabold text-green-700 mt-2">{formatBRL(valorTotalContasPagar)}</div>
+             <div className="text-xs text-gray-500 mt-1">Mesmo cálculo e agrupamento da página Contas a Pagar</div>
+          </div>
         </div>
-        <div className="rounded-2xl bg-white border border-gray-200 p-4 shadow-md">
-          <div className="text-sm font-semibold text-gray-700 mb-2">Contas a Pagar por Canal</div>
-          <div style={{ width: '100%', height: 360 }}>
+        
+        <div className="flex flex-col items-center justify-around rounded-2xl bg-white border border-gray-200 p-4 shadow-md h-full">
+          <div className="text-sm font-semibold text-gray-700">Contas a Pagar por Canal</div>
+          <div style={{ width: '100%', height: 360}}>
             <ResponsiveContainer>
               <PieChart>
                 <Pie data={cpPieData} dataKey="value" nameKey="name" outerRadius={110} label={({ value }) => formatBRL(value)}>
@@ -529,18 +537,8 @@ const FinanceiroPorCanal = memo(() => {
           </div>
         </div>
       </div>
-
-      
-      {/* Valor Total*/}
-      <div className="-mt-24 grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div></div> {/* Espaçador */}
-        <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-md">
-          <div className="text-sm font-semibold text-gray-600">Valor Total (R$)</div>
-          <div className="text-2xl font-extrabold text-green-700 mt-2">{formatBRL(valorTotalContasPagar)}</div>
-          <div className="text-xs text-gray-500 mt-1">Mesmo cálculo e agrupamento da página Contas a Pagar</div>
-        </div>
-      </div>
-
+     
+            
       {/* Gráfico de Barras - Detalhamento MATRIZ */}
       <div className="mt-6">
         <div className="rounded-2xl bg-white border border-gray-200 p-8 shadow-md">
