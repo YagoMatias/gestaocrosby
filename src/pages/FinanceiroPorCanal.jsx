@@ -49,12 +49,38 @@ const FinanceiroPorCanal = memo(() => {
     revenda: calcularVendasAposDesconto(dadosRevenda)
   }), [dadosVarejo, dadosFranquia, dadosMultimarcas, dadosRevenda, calcularVendasAposDesconto]);
 
+  // Mesma lógica do Consolidado: Frete por canal (S - E)
+  const calcularFrete = useCallback((rows) => {
+    if (!Array.isArray(rows)) return 0;
+    return rows.reduce((acc, row) => {
+      const frete = Number(row.vl_freterat) || 0;
+      if (row.tp_operacao === 'S') return acc + frete;
+      if (row.tp_operacao === 'E') return acc - frete;
+      return acc;
+    }, 0);
+  }, []);
+
+  const fretePorCanal = useMemo(() => ({
+    varejo: calcularFrete(dadosVarejo),
+    franquia: calcularFrete(dadosFranquia),
+    multimarcas: calcularFrete(dadosMultimarcas),
+    revenda: calcularFrete(dadosRevenda)
+  }), [dadosVarejo, dadosFranquia, dadosMultimarcas, dadosRevenda, calcularFrete]);
+
+  // Vendas após desconto + frete (S - E de frete) – igual ao Consolidado
+  const vendasComFrete = useMemo(() => ({
+    varejo: (totais.varejo || 0) + (fretePorCanal.varejo || 0),
+    franquia: (totais.franquia || 0) + (fretePorCanal.franquia || 0),
+    multimarcas: (totais.multimarcas || 0) + (fretePorCanal.multimarcas || 0),
+    revenda: (totais.revenda || 0) + (fretePorCanal.revenda || 0)
+  }), [totais, fretePorCanal]);
+
   const pieData = useMemo(() => ([
-    { name: 'Varejo', value: Math.max(0, totais.varejo) },
-    { name: 'Franquias', value: Math.max(0, totais.franquia) },
-    { name: 'Multimarcas', value: Math.max(0, totais.multimarcas) },
-    { name: 'Revenda', value: Math.max(0, totais.revenda) },
-  ]), [totais]);
+    { name: 'Varejo', value: Math.max(0, vendasComFrete.varejo) },
+    { name: 'Franquias', value: Math.max(0, vendasComFrete.franquia) },
+    { name: 'Multimarcas', value: Math.max(0, vendasComFrete.multimarcas) },
+    { name: 'Revenda', value: Math.max(0, vendasComFrete.revenda) },
+  ]), [vendasComFrete]);
 
   const PIE_COLORS = ['#16a34a', '#1d4ed8', '#7e22ce', '#ea580c'];
   const formatBRL = useCallback((v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), []);
@@ -100,18 +126,47 @@ const FinanceiroPorCanal = memo(() => {
     }
     setLoading(true);
     try {
-      const paramsBase = { dt_inicio: dtInicio, dt_fim: dtFim, cd_empresa: empresas };
+      // Mesmas listas do Consolidado
+      const empresasFixas = ['1','2','200','75','31','6','85','11','99','85','92'];
+      const empresasVarejoFixas = ['2','5','500','55','550','65','650','93','930','94','940','95','950','96','960','97','970','90','91','92','890','910','920'];
+
+      const paramsRevenda = { dt_inicio: dtInicio, dt_fim: dtFim, cd_empresa: empresasFixas };
+      const paramsFranquia = { dt_inicio: dtInicio, dt_fim: dtFim, cd_empresa: empresasFixas };
+      const paramsVarejo = { dt_inicio: dtInicio, dt_fim: dtFim, cd_empresa: empresasVarejoFixas };
+      const paramsMtm = { dt_inicio: dtInicio, dt_fim: dtFim, cd_empresa: empresasFixas };
+      const paramsCp = { dt_inicio: dtInicio, dt_fim: dtFim, cd_empresa: empresas };
+
       const [resVarejo, resFranquia, resMtm, resRev, resCp] = await Promise.all([
-        api.sales.faturamento(paramsBase),
-        api.sales.faturamentoFranquia(paramsBase),
-        api.sales.faturamentoMtm(paramsBase),
-        api.sales.faturamentoRevenda(paramsBase),
-        api.financial.contasPagar(paramsBase)
+        api.sales.faturamento(paramsVarejo),
+        api.sales.faturamentoFranquia(paramsFranquia),
+        api.sales.faturamentoMtm(paramsMtm),
+        api.sales.faturamentoRevenda(paramsRevenda),
+        api.financial.contasPagar(paramsCp)
       ]);
       setDadosVarejo(resVarejo?.data || []);
       setDadosFranquia(resFranquia?.data || []);
       setDadosMultimarcas(resMtm?.data || []);
-      setDadosRevenda(resRev?.data || []);
+      // Aplica a mesma lógica do Consolidado para Revenda (classificação 1 e 3, priorizando 3)
+      const dadosRevRaw = Array.isArray(resRev?.data) ? resRev.data : [];
+      const dadosRevFiltrados = dadosRevRaw
+        .filter(row => {
+          const cls = String(row.cd_classificacao ?? '').trim();
+          return cls === '1' || cls === '3';
+        })
+        .filter((row, index, array) => {
+          const currentPessoa = row.cd_pessoa;
+          const currentClass = String(row.cd_classificacao ?? '').trim();
+          if (currentClass === '3') return true;
+          if (currentClass === '1') {
+            const hasClass3 = array.some(item => 
+              item.cd_pessoa === currentPessoa && 
+              String(item.cd_classificacao ?? '').trim() === '3'
+            );
+            return !hasClass3;
+          }
+          return false;
+        });
+      setDadosRevenda(dadosRevFiltrados);
       const linhasCp = resCp?.data || [];
       setDadosContasPagar(linhasCp);
 
@@ -384,19 +439,19 @@ const FinanceiroPorCanal = memo(() => {
         <div className="grid grid-cols-1 gap-4">
           <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-md">
             <div className="text-sm font-semibold text-gray-600">Varejo (R$)</div>
-            <div className="text-2xl font-extrabold text-green-700 mt-2">{totais.varejo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+            <div className="text-2xl font-extrabold text-green-700 mt-2">{vendasComFrete.varejo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
           </div>
           <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-md">
             <div className="text-sm font-semibold text-gray-600">Franquias (R$)</div>
-            <div className="text-2xl font-extrabold text-blue-700 mt-2">{totais.franquia.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+            <div className="text-2xl font-extrabold text-blue-700 mt-2">{vendasComFrete.franquia.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
           </div>
           <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-md">
             <div className="text-sm font-semibold text-gray-600">Multimarcas (R$)</div>
-            <div className="text-2xl font-extrabold text-purple-700 mt-2">{totais.multimarcas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+            <div className="text-2xl font-extrabold text-purple-700 mt-2">{vendasComFrete.multimarcas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
           </div>
           <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-md">
             <div className="text-sm font-semibold text-gray-600">Revenda (R$)</div>
-            <div className="text-2xl font-extrabold text-orange-700 mt-2">{totais.revenda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+            <div className="text-2xl font-extrabold text-orange-700 mt-2">{vendasComFrete.revenda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
           </div>
         </div>
 

@@ -4,7 +4,7 @@ import useApiClient from '../hooks/useApiClient';
 import custoProdutos from '../custoprodutos.json';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, CurrencyDollar, ShoppingCart, Package, CaretLeft, Spinner, Percent, TrendUp } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, CurrencyDollar, ShoppingCart, Package, CaretLeft, Spinner, Percent, TrendUp, Truck } from '@phosphor-icons/react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
 
 
@@ -68,6 +68,30 @@ const Varejo = () => {
       const bruto = (Number(row.vl_unitbruto) || 0) * q;
       if (row.tp_operacao === 'S') total += bruto;
       if (row.tp_operacao === 'E') total -= bruto; // Compensação de entrada para varejo
+    });
+    return total;
+  }, [dados]);
+
+  // Frete Varejo (S - E)
+  const freteVarejo = React.useMemo(() => {
+    let total = 0;
+    dados.forEach(row => {
+      const frete = Number(row.vl_freterat) || 0;
+      if (row.tp_operacao === 'S') total += frete;
+      if (row.tp_operacao === 'E') total -= frete;
+    });
+    return total;
+  }, [dados]);
+
+  // Devoluções Varejo (entradas E)
+  const devolucoesVarejo = React.useMemo(() => {
+    let total = 0;
+    dados.forEach(row => {
+      if (row.tp_operacao === 'E') {
+        const q = Number(row.qt_faturado) || 1;
+        const valor = (Number(row.vl_unitliquido) || 0) * q;
+        total += valor;
+      }
     });
     return total;
   }, [dados]);
@@ -742,6 +766,38 @@ const Varejo = () => {
                 {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : ((precoTabelaVarejo - faturamentoVarejo) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Desconto do Varejo</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Devoluções Varejo */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-gray-800" />
+                <CardTitle className="text-sm font-bold text-gray-800">Devoluções Varejo</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-gray-900 mb-1">
+                {loading ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (devolucoesVarejo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Entradas (E) no Varejo</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Frete Varejo */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-gray-700" />
+                <CardTitle className="text-sm font-bold text-gray-700">Frete Varejo</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-gray-800 mb-1">
+                {loading ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteVarejo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Frete rateado (S - E)</CardDescription>
             </CardContent>
           </Card>
         </div>

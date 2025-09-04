@@ -127,6 +127,28 @@ const Revenda = () => {
     }, 0);
   }, [dadosFiltrados]);
 
+  // Frete Revenda (S - E)
+  const freteRevenda = React.useMemo(() => {
+    return dadosFiltrados.reduce((acc, row) => {
+      const frete = Number(row.vl_freterat) || 0;
+      if (row.tp_operacao === 'S') acc += frete;
+      if (row.tp_operacao === 'E') acc -= frete;
+      return acc;
+    }, 0);
+  }, [dadosFiltrados]);
+
+  // Devoluções Revenda (somatório de entradas E)
+  const devolucoesRevenda = React.useMemo(() => {
+    return dadosFiltrados.reduce((acc, row) => {
+      if (row.tp_operacao === 'E') {
+        const qt = Number(row.qt_faturado) || 1;
+        const valor = (Number(row.vl_unitliquido) || 0) * qt;
+        acc += valor;
+      }
+      return acc;
+    }, 0);
+  }, [dadosFiltrados]);
+
   // Função para exportar o ranking para Excel
   const exportarRankParaExcel = () => {
     const rankProdutos = dados.reduce((acc, row) => {
@@ -756,6 +778,22 @@ const Revenda = () => {
             </CardContent>
           </Card>
 
+          {/* Devoluções Revenda */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-gray-800" />
+                <CardTitle className="text-sm font-bold text-gray-800">Devoluções Revenda</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-gray-900 mb-1">
+                {loading ? <Spinner size={24} className="text-gray-700 animate-spin" /> : (devolucoesRevenda || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Entradas (E) na Revenda</CardDescription>
+            </CardContent>
+          </Card>
+
           {/* Representatividade Revenda */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
             <CardHeader className="pb-0">
@@ -774,6 +812,22 @@ const Revenda = () => {
                 )}
               </div>
               <CardDescription className="text-xs text-gray-500">% das vendas após desconto total da rede</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Frete Revenda */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-gray-700" />
+                <CardTitle className="text-sm font-bold text-gray-700">Frete Revenda</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-gray-800 mb-1">
+                {loading ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteRevenda || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Frete rateado (S - E)</CardDescription>
             </CardContent>
           </Card>
         </div>

@@ -118,6 +118,17 @@ function buildAggregates({
     });
     return total;
   };
+  const somaEntradas = (dados) => {
+    let total = 0;
+    (dados || []).forEach(row => {
+      if (row.tp_operacao === 'E') {
+        const q = Number(row.qt_faturado) || 1;
+        const valor = (Number(row.vl_unitliquido) || 0) * q;
+        total += valor;
+      }
+    });
+    return total;
+  };
   const precoTabelaRevenda = somaBrutoSaida(dadosRevenda, true);
   const precoTabelaVarejo = somaBrutoSaida(dadosVarejo, true);
   const precoTabelaFranquia = somaBrutoSaida(dadosFranquia, true);
@@ -133,6 +144,12 @@ function buildAggregates({
   const freteMultimarcas = somaFrete(dadosMultimarcas, true);
   const freteTotal = freteRevenda + freteVarejo + freteFranquia + freteMultimarcas;
 
+  const entradasRevenda = somaEntradas(dadosRevenda);
+  const entradasVarejo = somaEntradas(dadosVarejo);
+  const entradasFranquia = somaEntradas(dadosFranquia);
+  const entradasMultimarcas = somaEntradas(dadosMultimarcas);
+  const entradasTotal = entradasRevenda + entradasVarejo + entradasFranquia + entradasMultimarcas;
+
   return {
     faturamento: { ...faturamento, totalGeral },
     custos: {
@@ -145,6 +162,9 @@ function buildAggregates({
     },
     fretes: {
       freteRevenda, freteVarejo, freteFranquia, freteMultimarcas, freteTotal
+    },
+    devolucoes: {
+      entradasRevenda, entradasVarejo, entradasFranquia, entradasMultimarcas, entradasTotal
     }
   };
 }
@@ -494,6 +514,24 @@ const Consolidado = () => {
   const freteFranquiaUI = agg?.fretes?.freteFranquia ?? calcularFrete(dadosFranquia, true);
   const freteMultimarcasUI = agg?.fretes?.freteMultimarcas ?? calcularFrete(dadosMultimarcas, true);
 
+  // Devoluções (entradas 'E') derivados para UI
+  const calcularEntradas = (dados) => {
+    if (!Array.isArray(dados) || dados.length === 0) return 0;
+    return dados.reduce((acc, row) => {
+      if (row.tp_operacao === 'E') {
+        const q = Number(row.qt_faturado) || 1;
+        const valor = (Number(row.vl_unitliquido) || 0) * q;
+        return acc + valor;
+      }
+      return acc;
+    }, 0);
+  };
+  const entradasRevendaUI = agg?.devolucoes?.entradasRevenda ?? calcularEntradas(dadosRevenda);
+  const entradasVarejoUI = agg?.devolucoes?.entradasVarejo ?? calcularEntradas(dadosVarejo);
+  const entradasFranquiaUI = agg?.devolucoes?.entradasFranquia ?? calcularEntradas(dadosFranquia);
+  const entradasMultimarcasUI = agg?.devolucoes?.entradasMultimarcas ?? calcularEntradas(dadosMultimarcas);
+  const entradasTotalUI = agg?.devolucoes?.entradasTotal ?? (entradasRevendaUI + entradasVarejoUI + entradasFranquiaUI + entradasMultimarcasUI);
+
   // Vendas após desconto somadas ao frete (S - E de frete)
   const vendasRevendaComFrete = (faturamento.revenda || 0) + (freteRevendaUI || 0);
   const vendasVarejoComFrete = (faturamento.varejo || 0) + (freteVarejoUI || 0);
@@ -501,75 +539,7 @@ const Consolidado = () => {
   const vendasMultimarcasComFrete = (faturamento.multimarcas || 0) + (freteMultimarcasUI || 0);
   const totalGeralComFreteUI = vendasRevendaComFrete + vendasVarejoComFrete + vendasFranquiaComFrete + vendasMultimarcasComFrete;
 
-  // Gráficos (usam estados atuais)
-  const dataGraficoFaturamento = {
-    labels: ['Revenda', 'Varejo', 'Franquia', 'Multimarcas'],
-    datasets: [
-      {
-        label: 'Vendas após Desconto',
-        data: [vendasRevendaComFrete, vendasVarejoComFrete, vendasFranquiaComFrete, vendasMultimarcasComFrete],
-        backgroundColor: ['rgba(59,130,246,0.8)','rgba(34,197,94,0.8)','rgba(251,191,36,0.8)','rgba(249,115,22,0.8)'],
-        borderColor: ['#3b82f6','#22c55e','#fbbf24','#f97316'],
-        borderWidth: 2
-      }
-    ]
-  };
-  const dataGraficoCMV = {
-    labels: ['Revenda', 'Varejo', 'Franquia', 'Multimarcas'],
-    datasets: [
-      {
-        label: 'CMV',
-        data: [cmvRevenda, cmvVarejo, cmvFranquia, cmvMultimarcas],
-        backgroundColor: ['rgba(59,130,246,0.8)','rgba(34,197,94,0.8)','rgba(251,191,36,0.8)','rgba(249,115,22,0.8)'],
-        borderColor: ['#3b82f6','#22c55e','#fbbf24','#f97316'],
-        borderWidth: 2
-      }
-    ]
-  };
-  const dataGraficoMarkup = {
-    labels: ['Revenda', 'Varejo', 'Franquia', 'Multimarcas'],
-    datasets: [
-      {
-        label: 'Markup',
-        data: [
-          custoBrutoRevenda > 0 ? faturamento.revenda / custoBrutoRevenda : 0,
-          custoBrutoVarejo > 0 ? faturamento.varejo / custoBrutoVarejo : 0,
-          custoBrutoFranquia > 0 ? faturamento.franquia / custoBrutoFranquia : 0,
-          custoBrutoMultimarcas > 0 ? faturamento.multimarcas / custoBrutoMultimarcas : 0
-        ],
-        backgroundColor: ['rgba(59,130,246,0.8)','rgba(34,197,94,0.8)','rgba(251,191,36,0.8)','rgba(249,115,22,0.8)'],
-        borderColor: ['#3b82f6','#22c55e','#fbbf24','#f97316'],
-        borderWidth: 2
-      }
-    ]
-  };
-  const dataGraficoCusto = {
-    labels: ['Revenda', 'Varejo', 'Franquia', 'Multimarcas'],
-    datasets: [
-      {
-        label: 'Custo',
-        data: [custoBrutoRevenda, custoBrutoVarejo, custoBrutoFranquia, custoBrutoMultimarcas],
-        backgroundColor: ['rgba(59,130,246,0.8)','rgba(34,197,94,0.8)','rgba(251,191,36,0.8)','rgba(249,115,22,0.8)'],
-        borderColor: ['#3b82f6','#22c55e','#fbbf24','#f97316'],
-        borderWidth: 2
-      }
-    ]
-  };
-
-  const optionsGraficoMonetario = {
-    responsive: true,
-    plugins: { legend: { position: 'top' }, title: { display: true, text: 'Comparativo por Canal' } },
-    scales: {
-      y: { beginAtZero: true, ticks: { callback: (value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) } }
-    }
-  };
-  const optionsGraficoPercentual = {
-    responsive: true,
-    plugins: { legend: { position: 'top' }, title: { display: true, text: 'Comparativo por Canal' } },
-    scales: {
-      y: { beginAtZero: true, ticks: { callback: (value) => Number(value).toFixed(2) + '%' } }
-    }
-  };
+  
 
   // Representatividade (sua lógica original)
   const totalGeral = totalGeralComFreteUI;
@@ -894,6 +864,32 @@ const Consolidado = () => {
               </div>
             </CardContent>
           </Card>
+
+          {/* Devoluções Total */}
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex flex-row items-center gap-2">
+                <CurrencyDollar size={18} className="text-gray-800" />
+                <CardTitle className="text-sm font-bold text-gray-800">Devoluções</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-gray-900 mb-1">
+                {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
+                  ? <Spinner size={24} className="text-gray-700 animate-spin" />
+                : (entradasTotalUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <div className="flex justify-between items-center">
+                <CardDescription className="text-xs text-gray-500">Soma das entradas (E) de todos os canais</CardDescription>
+                <button
+                  onClick={() => showHelpModal('Devoluções','Soma dos valores de transações de entrada (E) de todos os canais.','Devoluções = Σ Entradas (E) por canal')}
+                  className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Question size={12} className="text-gray-600" />
+                </button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
       {/* ====== SEÇÕES POR CANAL (mantidas, agora com custos podendo vir do agg) ====== */}
@@ -1042,6 +1038,22 @@ const Consolidado = () => {
                   ).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Desconto da Revenda</CardDescription>
+              </CardContent>
+            </Card>
+
+            {/* Devoluções Revenda */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                  <CurrencyDollar size={18} className="text-gray-800" />
+                  <CardTitle className="text-sm font-bold text-gray-800">Devoluções Revenda</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-gray-900 mb-1">
+                  {loadingRevenda ? <Spinner size={24} className="text-gray-700 animate-spin" /> : (entradasRevendaUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Entradas (E) na Revenda</CardDescription>
               </CardContent>
             </Card>
 
@@ -1230,6 +1242,22 @@ const Consolidado = () => {
               </CardContent>
             </Card>
 
+            {/* Devoluções Varejo */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                  <CurrencyDollar size={18} className="text-gray-800" />
+                  <CardTitle className="text-sm font-bold text-gray-800">Devoluções Varejo</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-gray-900 mb-1">
+                  {loadingVarejo ? <Spinner size={24} className="text-gray-700 animate-spin" /> : (entradasVarejoUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Entradas (E) no Varejo</CardDescription>
+              </CardContent>
+            </Card>
+
             {/* Representatividade Varejo */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
@@ -1410,6 +1438,22 @@ const Consolidado = () => {
                   ).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Desconto da Franquia</CardDescription>
+              </CardContent>
+            </Card>
+
+            {/* Devoluções Franquia */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                  <CurrencyDollar size={18} className="text-gray-800" />
+                  <CardTitle className="text-sm font-bold text-gray-800">Devoluções Franquia</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-gray-900 mb-1">
+                  {loadingFranquia ? <Spinner size={24} className="text-gray-700 animate-spin" /> : (entradasFranquiaUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Entradas (E) na Franquia</CardDescription>
               </CardContent>
             </Card>
 
@@ -1596,6 +1640,22 @@ const Consolidado = () => {
               </CardContent>
             </Card>
 
+            {/* Devoluções Multimarcas */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+              <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                  <CurrencyDollar size={18} className="text-gray-800" />
+                  <CardTitle className="text-sm font-bold text-gray-800">Devoluções Multimarcas</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-gray-900 mb-1">
+                  {loadingMultimarcas ? <Spinner size={24} className="text-gray-700 animate-spin" /> : (entradasMultimarcasUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Entradas (E) na Multimarcas</CardDescription>
+              </CardContent>
+            </Card>
+
             {/* Representatividade Multimarcas */}
           <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
               <CardHeader className="pb-0">
@@ -1633,29 +1693,6 @@ const Consolidado = () => {
           </div>
         </div>
 
-      {/* Gráficos */}
-      <div className="mt-12 w-full max-w-7xl mx-auto">
-        <h2 className="text-3xl font-bold text-center mb-8 text-[#000638]">Gráficos Comparativos</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-white rounded-2xl shadow-2xl p-6">
-            <h3 className="text-xl font-bold text-center mb-4 text-[#000638]">Vendas após Desconto por Canal</h3>
-            <Bar data={dataGraficoFaturamento} options={{...optionsGraficoMonetario, plugins: {...optionsGraficoMonetario.plugins, title: {...optionsGraficoMonetario.plugins.title, text: 'Vendas após Desconto por Canal'}}}} />
-          </div>
-          <div className="bg-white rounded-2xl shadow-2xl p-6">
-            <h3 className="text-xl font-bold text-center mb-4 text-[#000638]">CMV por Canal</h3>
-            <Bar data={dataGraficoCMV} options={{...optionsGraficoMonetario, plugins: {...optionsGraficoMonetario.plugins, title: {...optionsGraficoMonetario.plugins.title, text: 'CMV por Canal'}}}} />
-          </div>
-          <div className="bg-white rounded-2xl shadow-2xl p-6">
-            <h3 className="text-xl font-bold text-center mb-4 text-[#000638]">Markup por Canal</h3>
-            <Bar data={dataGraficoMarkup} options={{...optionsGraficoPercentual, plugins: {...optionsGraficoPercentual.plugins, title: {...optionsGraficoPercentual.plugins.title, text: 'Markup por Canal (%)'}}}} />
-          </div>
-          <div className="bg-white rounded-2xl shadow-2xl p-6">
-            <h3 className="text-xl font-bold text-center mb-4 text-[#000638]">Custo por Canal</h3>
-            <Bar data={dataGraficoCusto} options={{...optionsGraficoMonetario, plugins: {...optionsGraficoMonetario.plugins, title: {...optionsGraficoMonetario.plugins.title, text: 'Custo por Canal'}}}} />
-        </div>
-      </div>
-    </div>
-    
     {/* Modal de Ajuda */}
     {showModal && (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

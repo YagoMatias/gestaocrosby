@@ -347,6 +347,30 @@ const Franquias = () => {
     return total;
   }, [dados]);
 
+  // Frete Franquias (S - E)
+  const freteFranquias = React.useMemo(() => {
+    let total = 0;
+    dados.forEach(row => {
+      const frete = Number(row.vl_freterat) || 0;
+      if (row.tp_operacao === 'S') total += frete;
+      if (row.tp_operacao === 'E') total -= frete;
+    });
+    return total;
+  }, [dados]);
+
+  // Devoluções Franquias (entradas E)
+  const devolucoesFranquias = React.useMemo(() => {
+    let total = 0;
+    dados.forEach(row => {
+      if (row.tp_operacao === 'E') {
+        const q = Number(row.qt_faturado) || 1;
+        const valor = (Number(row.vl_unitliquido) || 0) * q;
+        total += valor;
+      }
+    });
+    return total;
+  }, [dados]);
+
   // Função para ordenar os dados
   const handleSort = (key) => {
     let direction = 'asc';
@@ -709,6 +733,38 @@ const Franquias = () => {
                 {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : ((precoTabelaFranquias - faturamentoFranquias) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Desconto das Franquias</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Devoluções Franquias */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-gray-800" />
+                <CardTitle className="text-sm font-bold text-gray-800">Devoluções Franquias</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-gray-900 mb-1">
+                {loading ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (devolucoesFranquias || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Entradas (E) nas Franquias</CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Frete Franquias */}
+          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+            <CardHeader className="pb-0">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-gray-700" />
+                <CardTitle className="text-sm font-bold text-gray-700">Frete Franquias</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-2xl font-extrabold text-gray-800 mb-1">
+                {loading ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteFranquias || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <CardDescription className="text-xs text-gray-500">Frete rateado (S - E)</CardDescription>
             </CardContent>
           </Card>
         </div>
