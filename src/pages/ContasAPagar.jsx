@@ -8,11 +8,13 @@ import FiltroFornecedor from '../components/FiltroFornecedor';
 import useApiClient from '../hooks/useApiClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
+import FilterDropdown from '../components/ui/FilterDropdown';
 import ModalDetalhesConta from '../components/ModalDetalhesConta';
 import { 
   Receipt, 
   Calendar, 
   Funnel, 
+  FunnelSimple,
   Spinner,
   CurrencyDollar,
   Clock,
@@ -471,6 +473,10 @@ const ContasAPagar = () => {
     key: 'dt_vencimento',
     direction: 'asc'
   });
+
+  // Estados para filtros de coluna (FilterDropdown)
+  const [columnFilters, setColumnFilters] = useState({}); // { colKey: { sortDirection: 'asc', searchTerm: '', selected: ['val1', 'val2'] } }
+  const [openFilterDropdown, setOpenFilterDropdown] = useState(null); // colKey of the open dropdown
 
   // Função para filtrar dados por situação
   const filtrarDadosPorSituacao = (dadosOriginais) => {
@@ -1455,6 +1461,30 @@ const ContasAPagar = () => {
   const handleFiltrar = (e) => {
     e.preventDefault();
     buscarDados();
+  };
+
+  // Funções para controle do FilterDropdown
+  const toggleFilterDropdown = (colKey) => {
+    console.log('🔍 toggleFilterDropdown chamado com colKey:', colKey);
+    console.log('🔍 openFilterDropdown atual:', openFilterDropdown);
+    setOpenFilterDropdown((prev) => {
+      const newValue = prev === colKey ? null : colKey;
+      console.log('🔍 novo valor openFilterDropdown:', newValue);
+      return newValue;
+    });
+  };
+
+  const handleApplyFilter = (columnKey, filterConfig) => {
+    setColumnFilters((prev) => {
+      if (filterConfig) {
+        return { ...prev, [columnKey]: filterConfig };
+      } else {
+        const newState = { ...prev };
+        delete newState[columnKey];
+        return newState;
+      }
+    });
+    setOpenFilterDropdown(null); // Fechar o dropdown após aplicar o filtro
   };
 
   // Função para fechar modal
@@ -2887,7 +2917,34 @@ const ContasAPagar = () => {
 											<th className="px-2 py-1 text-center text-[10px]">Ações</th>
 										)}
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_situacao')}>
-											<div className="flex items-center justify-center">Status {getSortIcon('tp_situacao')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Status {getSortIcon('tp_situacao')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('tp_situacao');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['tp_situacao'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Status"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'tp_situacao' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="tp_situacao"
+															columnTitle="Status"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['tp_situacao']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-2 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_vencimento')}>
 											<div className="flex items-center justify-center">Vencimento {getSortIcon('dt_vencimento')}</div>
@@ -2896,13 +2953,94 @@ const ContasAPagar = () => {
 											<div className="flex items-center justify-center">Valor {getSortIcon('vl_duplicata')}</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_fornecedor')}>
-											<div className="flex items-center justify-center">Fornecedor {getSortIcon('cd_fornecedor')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Fornecedor {getSortIcon('cd_fornecedor')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('cd_fornecedor');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['cd_fornecedor'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Fornecedor"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'cd_fornecedor' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="cd_fornecedor"
+															columnTitle="Fornecedor"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['cd_fornecedor']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nm_fornecedor')}>
-											<div className="flex items-center justify-center">NM Fornecedor {getSortIcon('nm_fornecedor')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												NM Fornecedor {getSortIcon('nm_fornecedor')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('nm_fornecedor');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['nm_fornecedor'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Nome Fornecedor"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'nm_fornecedor' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="nm_fornecedor"
+															columnTitle="Nome Fornecedor"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['nm_fornecedor']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_despesaitem')}>
-											<div className="flex items-center justify-center">Despesa {getSortIcon('ds_despesaitem')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Despesa {getSortIcon('ds_despesaitem')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('ds_despesaitem');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['ds_despesaitem'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Despesa"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'ds_despesaitem' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="ds_despesaitem"
+															columnTitle="Despesa"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['ds_despesaitem']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_ccusto')}>
 											<div className="flex items-center justify-center">NM CUSTO {getSortIcon('ds_ccusto')}</div>

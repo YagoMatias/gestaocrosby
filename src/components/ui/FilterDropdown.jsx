@@ -68,7 +68,7 @@ const FilterDropdown = ({
   return (
     <div
       ref={dropdownRef}
-      className="fixed z-50 mt-96 w-60 rounded-lg shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none p-3"
+      className="w-60 rounded-lg shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none p-3"
     >
       {/* Título do Filtro */}
       <h2 className="text-sm font-semibold text-gray-700 mb-3">Filtro coluna ({columnTitle})</h2>
