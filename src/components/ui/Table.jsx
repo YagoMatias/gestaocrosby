@@ -204,21 +204,23 @@ const Table = memo(({
               <th
                 key={column.key}
                 className={`
-                  px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider
-                  ${column.sortable !== false && sortable ? 'cursor-pointer hover:bg-gray-100' : ''}
+                  px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider overflow-visible text-nowrap
+                  ${column.sortable !== false && sortable && !column.headerRender ? 'cursor-pointer hover:bg-gray-100' : ''}
                   ${column.className || ''}
                 `}
-                onClick={() => column.sortable !== false && handleSort(column.key)}
+                onClick={column.headerRender ? undefined : () => column.sortable !== false && handleSort(column.key)}
                 aria-sort={
                   sortConfig.key === column.key 
                     ? sortConfig.direction === 'asc' ? 'ascending' : 'descending'
                     : 'none'
                 }
               >
-                <div className="flex items-center space-x-1">
-                  <span>{column.title}</span>
-                  {column.sortable !== false && getSortIcon(column.key)}
-                </div>
+                {column.headerRender ? column.headerRender({ column, sortConfig, handleSort, getSortIcon }) : (
+                  <div className="flex items-center space-x-1 text-nowrap">
+                    <span>{column.title}</span>
+                    {column.sortable !== false && getSortIcon(column.key)}
+                  </div>
+                )}
               </th>
             ))}
           </tr>
@@ -247,14 +249,14 @@ const Table = memo(({
                   key={row[rowKey] || index}
                   className={`
                     transition-colors duration-150
-                    ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}
+                    ${isSelected ? 'bg-blue-50' : index % 2 === 0 ? 'bg-white hover:bg-gray-100' : 'bg-gray-100 hover:bg-gray-200'}
                     ${onRowClick ? 'cursor-pointer' : ''}
                   `}
                   onClick={() => onRowClick?.(row, index)}
                 >
                   {/* Checkbox para seleção */}
                   {onRowSelect && (
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-nowrap">
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -273,7 +275,7 @@ const Table = memo(({
                     <td
                       key={column.key}
                       className={`
-                        px-4 py-3 text-sm text-gray-900
+                        px-4 py-3 text-sm text-gray-900 text-nowrap
                         ${column.cellClassName || ''}
                       `}
                     >
