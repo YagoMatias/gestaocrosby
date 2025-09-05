@@ -159,6 +159,18 @@ export async function listEndividamentos() {
   return (data || []).map(mapDbToUi);
 }
 
+export async function deleteAllEndividamentos() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Usuário não autenticado');
+  // Remove todos os registros do usuário atual
+  const { error } = await supabase
+    .from('endividamentos')
+    .delete()
+    .eq('user_id', user.id);
+  if (error) throw error;
+  return true;
+}
+
 // -------- Importação de Excel (frontend) --------
 function excelDate(v) {
   if (typeof v === 'number') {
@@ -201,12 +213,21 @@ function mapExcelRowToDb(row, userId) {
 
   const money = (val) => {
     if (val === undefined || val === null || val === '') return null;
-    const num = Number(String(val).replace(/[\sR$\.]/g, '').replace(',', '.'));
+    if (typeof val === 'number') return val; // já é número decimal
+    const s = String(val).trim();
+    // remove R$ e espaços
+    let t = s.replace(/R\$\s?/gi, '');
+    // se tem vírgula, assume formato BR: milhar com ponto e decimal com vírgula
+    if (t.includes(',')) {
+      t = t.replace(/\./g, '').replace(',', '.');
+    }
+    const num = Number(t);
     if (Number.isNaN(num)) return null;
     return num;
   };
   const toInt = (val) => {
     if (val === undefined || val === null || val === '') return null;
+    if (typeof val === 'number') return Math.trunc(val);
     const n = Number(String(val).replace(/\D/g, ''));
     return Number.isNaN(n) ? null : n;
   };

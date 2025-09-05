@@ -122,7 +122,7 @@ const FiltroNomeFantasia = ({ nomesFantasiaSelecionados = [], onSelectNomesFanta
                 return (
                   <div
                     key={`fantasia-${fantasia.cd_cliente}`}
-                    className={`px-2 py-2 hover:bg-gray-50 cursor-pointer flex items-center justify-left ${
+                    className={`px-2 py-2 hover:bg-gray-50 cursor-pointer flex items-start mb-1 ${
                       isSelected ? 'bg-blue-50' : ''
                     }`}
                     onClick={() => handleToggleNomeFantasia(fantasia)}
@@ -136,7 +136,7 @@ const FiltroNomeFantasia = ({ nomesFantasiaSelecionados = [], onSelectNomesFanta
                       type="checkbox"
                       checked={isSelected}
                       readOnly
-                      className="accent-[#000638]"
+                      className="rounded border-gray-300 text-[#000638] focus:ring-[#000638] mr-1 w-4 h-4"
                       onClick={(e) => e.stopPropagation()}
                     />
                   </div>

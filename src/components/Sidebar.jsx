@@ -66,6 +66,7 @@ const franquias = [
 const dashboardFinanceiro = [
   { name: 'Financeiro por Canal', href: '/financeiro-por-canal', icon: ChartBar, color: 'text-purple-600' },
   { name: 'Endividamento', href: '/endividamento', icon: ChartBar, color: 'text-purple-600' },
+  { name: 'Dash Contas a Receber', href: '/dash-contas-a-receber', icon: ChartBar, color: 'text-purple-600' },
 ];
 
 const Sidebar = ({ isOpen, onClose, onToggle }) => {

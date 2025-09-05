@@ -72,7 +72,7 @@ const FiltroFormaPagamento = ({ formasPagamentoSelecionadas = [], onSelectFormas
 
       {/* Dropdown */}
       {showDropdown && (
-        <div className="w-full absolute top-full left-0 right-0 z-50 bg-white border border-gray-300 rounded-lg shadow-lg mt-1 max-h-100 overflow-hidden">
+        <div className="w-60 absolute top-full left-0 right-0 z-50 bg-white border border-gray-300 rounded-lg shadow-lg mt-1 max-h-100 overflow-hidden">
           {/* Campo de busca */}
           <div className="p-3 border-b border-gray-200">
             <input
@@ -122,7 +122,7 @@ const FiltroFormaPagamento = ({ formasPagamentoSelecionadas = [], onSelectFormas
                 return (
                   <div
                     key={`forma-${forma.codigo}`}
-                    className={`px-2 py-2 hover:bg-gray-50 cursor-pointer flex items-center justify-left ${
+                    className={`px-2 py-2 hover:bg-gray-50 cursor-pointer flex items-start mb-1 ${
                       isSelected ? 'bg-blue-50' : ''
                     }`}
                     onClick={() => handleToggleFormaPagamento(forma)}
@@ -136,7 +136,7 @@ const FiltroFormaPagamento = ({ formasPagamentoSelecionadas = [], onSelectFormas
                       type="checkbox"
                       checked={isSelected}
                       readOnly
-                      className="accent-[#000638]"
+                      className="rounded border-gray-300 text-[#000638] focus:ring-[#000638] mr-1 w-4 h-4"
                       onClick={(e) => e.stopPropagation()}
                     />
                   </div>
