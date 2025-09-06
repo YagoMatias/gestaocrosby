@@ -14,6 +14,11 @@ const FilterDropdown = ({
   const [tempSortDirection, setTempSortDirection] = useState(currentFilter?.sortDirection || null);
   const [tempSearchTerm, setTempSearchTerm] = useState(currentFilter?.searchTerm || '');
   const [tempSelectedItems, setTempSelectedItems] = useState(currentFilter?.selected || []);
+
+  // Debug log para verificar mudanças no tempSearchTerm
+  React.useEffect(() => {
+    console.log('🔍 tempSearchTerm mudou para:', tempSearchTerm);
+  }, [tempSearchTerm]);
   const dropdownRef = useRef(null);
 
   // Obter valores únicos para seleção
@@ -76,14 +81,27 @@ const FilterDropdown = ({
       {/* Filtrar por texto */}
       <div className="mb-3 pt-0 border-t-0">
         <h3 className="text-xs font-semibold text-gray-500 uppercase mb-1">Filtrar por Texto</h3>
-        <Input
-          placeholder="Pesquisar..."
-          value={tempSearchTerm}
-          onChange={(e) => setTempSearchTerm(e.target.value)}
-          leftIcon={<FunnelSimple size={14} className="text-gray-400" />}
-          className="mb-1 text-xs"
-          size="sm"
-        />
+        <div className="relative">
+          <FunnelSimple size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Pesquisar..."
+            value={tempSearchTerm}
+            onChange={(e) => {
+              console.log('🔍 Input onChange chamado, valor:', e.target.value);
+              setTempSearchTerm(e.target.value);
+            }}
+            className="w-full pl-10 pr-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638] focus:border-[#000638] bg-white text-gray-900"
+            style={{ 
+              color: '#111827 !important', 
+              backgroundColor: '#ffffff !important',
+              fontSize: '12px !important',
+              lineHeight: '1.25 !important',
+              opacity: '1 !important',
+              visibility: 'visible !important'
+            }}
+          />
+        </div>
       </div>
 
       {/* Filtro por seleção */}

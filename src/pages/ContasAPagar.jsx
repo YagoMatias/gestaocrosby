@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../components/AuthContext';
 
 import FiltroEmpresa from '../components/FiltroEmpresa';
@@ -1372,14 +1372,57 @@ const ContasAPagar = () => {
   // Usar dados filtrados diretamente (sem ordenação personalizada)
   const dadosOrdenadosComFiltroMensal = dadosComFiltroMensal;
 
+  // Função para aplicar filtros de coluna aos dados
+  const aplicarFiltrosColuna = useCallback((dadosOriginais) => {
+    if (!dadosOriginais || dadosOriginais.length === 0) return [];
+    if (Object.keys(columnFilters).length === 0) return dadosOriginais;
+
+    console.log('🔍 Aplicando filtros de coluna:', columnFilters);
+    console.log('📊 Dados originais:', dadosOriginais.length);
+
+    const dadosFiltrados = dadosOriginais.filter((grupo) => {
+      const item = grupo.item;
+      
+      // Verificar cada filtro de coluna ativo
+      for (const [columnKey, filterConfig] of Object.entries(columnFilters)) {
+        if (!filterConfig) continue;
+
+        const valorItem = String(item[columnKey] || '');
+        
+        // Filtro por texto (searchTerm)
+        if (filterConfig.searchTerm && filterConfig.searchTerm.trim() !== '') {
+          if (!valorItem.toLowerCase().includes(filterConfig.searchTerm.toLowerCase())) {
+            console.log(`❌ Item rejeitado por searchTerm - ${columnKey}: "${valorItem}" não contém "${filterConfig.searchTerm}"`);
+            return false;
+          }
+        }
+
+        // Filtro por seleção (selected)
+        if (filterConfig.selected && filterConfig.selected.length > 0) {
+          if (!filterConfig.selected.includes(valorItem)) {
+            console.log(`❌ Item rejeitado por seleção - ${columnKey}: "${valorItem}" não está em [${filterConfig.selected.join(', ')}]`);
+            return false;
+          }
+        }
+      }
+
+      return true;
+    });
+
+    console.log('✅ Dados filtrados:', dadosFiltrados.length);
+    return dadosFiltrados;
+  }, [columnFilters]);
+
   // ===== LÓGICA SEPARADA PARA OS CARDS (igual ao Fluxo de Caixa) =====
   // Agrupar dados APENAS para os cards (não afeta a tabela)
   const dadosAgrupadosParaCards = agruparDadosIdenticos(dadosComFiltroMensal);
   
   // Ordenar dados para cards usando useMemo para re-calcular quando sortConfig mudar
   const dadosOrdenadosParaCards = useMemo(() => {
-    return sortDadosAgrupados(dadosAgrupadosParaCards);
-  }, [dadosAgrupadosParaCards, sortConfig]);
+    const dadosOrdenados = sortDadosAgrupados(dadosAgrupadosParaCards);
+    // Aplicar filtros de coluna aos dados ordenados
+    return aplicarFiltrosColuna(dadosOrdenados);
+  }, [dadosAgrupadosParaCards, sortConfig, aplicarFiltrosColuna]);
 
   // Cálculos dos cards (baseados em dados agrupados - igual ao Fluxo de Caixa)
   const totalContasCards = dadosOrdenadosParaCards.length;
@@ -1465,13 +1508,7 @@ const ContasAPagar = () => {
 
   // Funções para controle do FilterDropdown
   const toggleFilterDropdown = (colKey) => {
-    console.log('🔍 toggleFilterDropdown chamado com colKey:', colKey);
-    console.log('🔍 openFilterDropdown atual:', openFilterDropdown);
-    setOpenFilterDropdown((prev) => {
-      const newValue = prev === colKey ? null : colKey;
-      console.log('🔍 novo valor openFilterDropdown:', newValue);
-      return newValue;
-    });
+    setOpenFilterDropdown((prev) => (prev === colKey ? null : colKey));
   };
 
   const handleApplyFilter = (columnKey, filterConfig) => {
@@ -2947,10 +2984,64 @@ const ContasAPagar = () => {
 											</div>
 										</th>
 										<th className="px-2 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_vencimento')}>
-											<div className="flex items-center justify-center">Vencimento {getSortIcon('dt_vencimento')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Vencimento {getSortIcon('dt_vencimento')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('dt_vencimento');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['dt_vencimento'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Vencimento"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'dt_vencimento' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="dt_vencimento"
+															columnTitle="Vencimento"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['dt_vencimento']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-2 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_duplicata')}>
-											<div className="flex items-center justify-center">Valor {getSortIcon('vl_duplicata')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Valor {getSortIcon('vl_duplicata')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('vl_duplicata');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['vl_duplicata'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Valor"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'vl_duplicata' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="vl_duplicata"
+															columnTitle="Valor"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['vl_duplicata']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_fornecedor')}>
 											<div className="flex items-center justify-center gap-1 relative">
@@ -3043,54 +3134,486 @@ const ContasAPagar = () => {
 											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_ccusto')}>
-											<div className="flex items-center justify-center">NM CUSTO {getSortIcon('ds_ccusto')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												NM CUSTO {getSortIcon('ds_ccusto')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('ds_ccusto');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['ds_ccusto'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Centro de Custo"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'ds_ccusto' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="ds_ccusto"
+															columnTitle="Centro de Custo"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['ds_ccusto']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_empresa')}>
-											<div className="flex items-center justify-center">Empresa {getSortIcon('cd_empresa')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Empresa {getSortIcon('cd_empresa')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('cd_empresa');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['cd_empresa'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Empresa"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'cd_empresa' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="cd_empresa"
+															columnTitle="Empresa"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['cd_empresa']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_duplicata')}>
-											<div className="flex items-center justify-center">Duplicata {getSortIcon('nr_duplicata')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Duplicata {getSortIcon('nr_duplicata')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('nr_duplicata');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['nr_duplicata'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Duplicata"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'nr_duplicata' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="nr_duplicata"
+															columnTitle="Duplicata"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['nr_duplicata']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_parcela')}>
-											<div className="flex items-center justify-center">Parcela {getSortIcon('nr_parcela')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Parcela {getSortIcon('nr_parcela')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('nr_parcela');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['nr_parcela'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Parcela"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'nr_parcela' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="nr_parcela"
+															columnTitle="Parcela"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['nr_parcela']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_portador')}>
-											<div className="flex items-center justify-center">Portador {getSortIcon('nr_portador')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Portador {getSortIcon('nr_portador')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('nr_portador');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['nr_portador'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Portador"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'nr_portador' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="nr_portador"
+															columnTitle="Portador"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['nr_portador']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_emissao')}>
-											<div className="flex items-center justify-center">Emissão {getSortIcon('dt_emissao')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Emissão {getSortIcon('dt_emissao')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('dt_emissao');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['dt_emissao'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Emissão"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'dt_emissao' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="dt_emissao"
+															columnTitle="Emissão"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['dt_emissao']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_entrada')}>
-											<div className="flex items-center justify-center">Entrada {getSortIcon('dt_entrada')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Entrada {getSortIcon('dt_entrada')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('dt_entrada');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['dt_entrada'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Entrada"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'dt_entrada' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="dt_entrada"
+															columnTitle="Entrada"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['dt_entrada']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_liq')}>
-											<div className="flex items-center justify-center">Liquidação {getSortIcon('dt_liq')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Liquidação {getSortIcon('dt_liq')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('dt_liq');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['dt_liq'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Liquidação"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'dt_liq' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="dt_liq"
+															columnTitle="Liquidação"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['dt_liq']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_situacao')}>
-											<div className="flex items-center justify-center">Situação {getSortIcon('tp_situacao')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Situação {getSortIcon('tp_situacao')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('tp_situacao_col');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['tp_situacao_col'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Situação"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'tp_situacao_col' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="tp_situacao_col"
+															columnTitle="Situação"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['tp_situacao_col']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_estagio')}>
-											<div className="flex items-center justify-center">Estágio {getSortIcon('tp_estagio')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Estágio {getSortIcon('tp_estagio')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('tp_estagio');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['tp_estagio'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Estágio"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'tp_estagio' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="tp_estagio"
+															columnTitle="Estágio"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['tp_estagio']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_juros')}>
-											<div className="flex items-center justify-center">Juros {getSortIcon('vl_juros')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Juros {getSortIcon('vl_juros')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('vl_juros');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['vl_juros'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Juros"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'vl_juros' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="vl_juros"
+															columnTitle="Juros"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['vl_juros']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_acrescimo')}>
-											<div className="flex items-center justify-center">Acréscimo {getSortIcon('vl_acrescimo')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Acréscimo {getSortIcon('vl_acrescimo')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('vl_acrescimo');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['vl_acrescimo'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Acréscimo"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'vl_acrescimo' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="vl_acrescimo"
+															columnTitle="Acréscimo"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['vl_acrescimo']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_desconto')}>
-											<div className="flex items-center justify-center">Desconto {getSortIcon('vl_desconto')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Desconto {getSortIcon('vl_desconto')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('vl_desconto');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['vl_desconto'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Desconto"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'vl_desconto' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="vl_desconto"
+															columnTitle="Desconto"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['vl_desconto']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_pago')}>
-											<div className="flex items-center justify-center">Pago {getSortIcon('vl_pago')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Pago {getSortIcon('vl_pago')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('vl_pago');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['vl_pago'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Valor Pago"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'vl_pago' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="vl_pago"
+															columnTitle="Valor Pago"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['vl_pago']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('in_aceite')}>
-											<div className="flex items-center justify-center">Aceite {getSortIcon('in_aceite')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Aceite {getSortIcon('in_aceite')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('in_aceite');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['in_aceite'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Aceite"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'in_aceite' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="in_aceite"
+															columnTitle="Aceite"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['in_aceite']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 										<th className="px-1 py-1 text-center text-[10px]">Rateio(s)</th>
 										<th className="px-1 py-1 text-center text-[10px]">Observação</th>
 										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_previsaoreal')}>
-											<div className="flex items-center justify-center">Previsão {getSortIcon('tp_previsaoreal')}</div>
+											<div className="flex items-center justify-center gap-1 relative">
+												Previsão {getSortIcon('tp_previsaoreal')}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleFilterDropdown('tp_previsaoreal');
+													}}
+													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+														columnFilters['tp_previsaoreal'] ? 'text-yellow-400' : 'text-gray-400'
+													}`}
+													aria-label="Filtrar por Previsão"
+												>
+													<FunnelSimple size={12} />
+												</button>
+												{openFilterDropdown === 'tp_previsaoreal' && (
+													<div className="absolute top-full left-0 z-50 mt-1">
+														<FilterDropdown
+															columnKey="tp_previsaoreal"
+															columnTitle="Previsão"
+															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
+															currentFilter={columnFilters['tp_previsaoreal']}
+															onApplyFilter={handleApplyFilter}
+															onClose={() => toggleFilterDropdown(null)}
+														/>
+													</div>
+												)}
+											</div>
 										</th>
 									</tr>
 								</thead>
