@@ -57,14 +57,12 @@ function normEmpresas(arr) {
   if (!arr || !arr.length) return 'default';
   return [...arr].sort().join(',');
 }
-function makeCacheKey(dt_inicio, dt_fim, empresasVarejoFixas, empresasFixas, empresasSelecionadas) {
+function makeCacheKey(dt_inicio, dt_fim, empresasSelecionadas) {
   return [
     'consolidado', CACHE_VERSION,
     toISO(dt_inicio || '1970-01-01'),
     toISO(dt_fim || '1970-01-01'),
-    `empSel:${normEmpresas(empresasSelecionadas)}`,
-    `empFix:${normEmpresas(empresasFixas)}`,
-    `empVarFix:${normEmpresas(empresasVarejoFixas)}`
+    `emp:${normEmpresas(empresasSelecionadas)}`
   ].join('|');
 }
 
@@ -271,11 +269,6 @@ const Consolidado = () => {
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({ title: '', description: '', calculation: '' });
 
-  // Empresas fixas para Revenda e Franquia
-  const empresasFixas = ['1','2', '200', '75', '31', '6', '85', '11','99','85','92'];
-  // Empresas fixas para Varejo
-  const empresasVarejoFixas = ['2', '5', '500', '55', '550', '65', '650', '93', '930', '94', '940', '95', '950', '96', '960', '97', '970','90','91','92','890','910','920'];
-
   // Estados para armazenar os dados brutos de cada segmento
   const [dadosRevenda, setDadosRevenda] = useState([]);
   const [dadosVarejo, setDadosVarejo] = useState([]);
@@ -389,6 +382,12 @@ const Consolidado = () => {
   const handleFiltrar = useCallback(async (e) => {
     e?.preventDefault?.();
     
+    // Validação obrigatória de empresas
+    if (!empresasSelecionadas?.length) {
+      console.warn('⚠️ Nenhuma empresa selecionada');
+      return;
+    }
+    
     // Previne sobrecarga de requisições
     if (activeRequestsRef.current >= MAX_CONCURRENT_REQUESTS) {
       console.warn('⚠️ Muitas requisições ativas, aguardando...');
@@ -411,9 +410,7 @@ const Consolidado = () => {
       const key = makeCacheKey(
         filtros.dt_inicio,
         filtros.dt_fim,
-        empresasVarejoFixas,
-        empresasFixas,
-        empresasSelecionadas
+        empresasSelecionadas.map(emp => emp.cd_empresa || emp)
       );
       const ttl = ttlForRange(filtros.dt_fim);
       const cached = readCache(key);
@@ -441,52 +438,81 @@ const Consolidado = () => {
 
       // 2) MISS de cache → chama todas as APIs em paralelo
       console.log('🚀 Iniciando chamadas paralelas das APIs...');
+      // Extrair códigos das empresas do formato de objeto
+      const codigosEmpresas = empresasSelecionadas.map(emp => emp.cd_empresa || emp);
+
+      // Helper: dividir empresas em lotes menores para evitar 500 no backend
+      const chunkArray = (arr, size) => {
+        const chunks = [];
+        for (let i = 0; i < arr.length; i += size) {
+          chunks.push(arr.slice(i, i + size));
+        }
+        return chunks;
+      };
+
+      // Tamanho do lote: 12 empresas por requisição (ajustável)
+      const companyChunks = chunkArray(codigosEmpresas, 12);
+
+      // Helper: buscar todos os lotes para uma rota e concatenar resultados
+      const fetchAllChunks = async (routeFn) => {
+        const results = await Promise.allSettled(
+          companyChunks.map(chunk => routeFn({ dt_inicio: filtros.dt_inicio, dt_fim: filtros.dt_fim, cd_empresa: chunk }))
+        );
+        const okResults = results.filter(r => r.status === 'fulfilled' && r.value?.success).map(r => r.value);
+        const dataConcat = okResults.flatMap(r => Array.isArray(r.data) ? r.data : []);
+        const totalsSum = okResults.reduce((acc, r) => {
+          const t = r.totals || r.metadata?.totals || {};
+          acc.totalBruto += Number(t.totalBruto || 0);
+          acc.totalLiquido += Number(t.totalLiquido || 0);
+          acc.totalQuantidade += Number(t.totalQuantidade || 0);
+          return acc;
+        }, { totalBruto: 0, totalLiquido: 0, totalQuantidade: 0 });
+        const anyFailure = results.some(r => r.status === 'rejected' || (r.value && !r.value.success));
+        return { success: !anyFailure, data: dataConcat, totals: totalsSum };
+      };
+      
+      console.log('📊 Parâmetros:', {
+        periodo: { dt_inicio: filtros.dt_inicio, dt_fim: filtros.dt_fim },
+        empresasSelecionadas: empresasSelecionadas.length,
+        codigosEmpresas: codigosEmpresas
+      });
       const startTime = Date.now();
 
       const [resultRevenda, resultVarejo, resultFranquia, resultMultimarcas] = await Promise.all([
-        apiClient.sales.faturamentoRevenda({ 
-          dt_inicio: filtros.dt_inicio, 
-          dt_fim: filtros.dt_fim, 
-          cd_empresa: empresasFixas 
-        }).then(result => {
-          setLoadingProgress(prev => prev + 25);
-          return result;
-        }),
-        apiClient.sales.faturamento({ 
-          dt_inicio: filtros.dt_inicio, 
-          dt_fim: filtros.dt_fim, 
-          cd_empresa: empresasVarejoFixas 
-        }).then(result => {
-          setLoadingProgress(prev => prev + 25);
-          return result;
-        }),
-        apiClient.sales.faturamentoFranquia({ 
-          dt_inicio: filtros.dt_inicio, 
-          dt_fim: filtros.dt_fim, 
-          cd_empresa: empresasFixas 
-        }).then(result => {
-          setLoadingProgress(prev => prev + 25);
-          return result;
-        }),
-        apiClient.sales.faturamentoMtm({ 
-          dt_inicio: filtros.dt_inicio, 
-          dt_fim: filtros.dt_fim, 
-          cd_empresa: empresasFixas 
-        }).then(result => {
-          setLoadingProgress(prev => prev + 25);
-          return result;
-        })
+        fetchAllChunks(apiClient.sales.faturamentoRevenda).then(r => { setLoadingProgress(prev => prev + 25); return r; }),
+        fetchAllChunks(apiClient.sales.faturamento).then(r => { setLoadingProgress(prev => prev + 25); return r; }),
+        fetchAllChunks(apiClient.sales.faturamentoFranquia).then(r => { setLoadingProgress(prev => prev + 25); return r; }),
+        fetchAllChunks(apiClient.sales.faturamentoMtm).then(r => { setLoadingProgress(prev => prev + 25); return r; })
       ]);
 
       const endTime = Date.now();
       const totalTime = endTime - startTime;
       console.log(`⚡ Performance: ${totalTime}ms (${totalTime < 2000 ? 'EXCELENTE' : totalTime < 5000 ? 'BOM' : 'LENTO'})`);
 
-      // Validar respostas
-      if (!resultRevenda.success) throw new Error('Erro ao buscar faturamento de revenda');
-      if (!resultVarejo.success) throw new Error('Erro ao buscar faturamento de varejo');
-      if (!resultFranquia.success) throw new Error('Erro ao buscar faturamento de franquia');
-      if (!resultMultimarcas.success) throw new Error('Erro ao buscar faturamento de multimarcas');
+      // Validar respostas com logs detalhados
+      console.log('📋 Resultados das APIs:', {
+        revenda: { success: resultRevenda.success, dataLength: resultRevenda.data?.length || 0 },
+        varejo: { success: resultVarejo.success, dataLength: resultVarejo.data?.length || 0 },
+        franquia: { success: resultFranquia.success, dataLength: resultFranquia.data?.length || 0 },
+        multimarcas: { success: resultMultimarcas.success, dataLength: resultMultimarcas.data?.length || 0 }
+      });
+
+      if (!resultRevenda.success) {
+        console.error('❌ Erro em faturamento-revenda:', resultRevenda);
+        throw new Error(`Erro ao buscar faturamento de revenda: ${resultRevenda.message || 'Erro desconhecido'}`);
+      }
+      if (!resultVarejo.success) {
+        console.error('❌ Erro em faturamento:', resultVarejo);
+        throw new Error(`Erro ao buscar faturamento de varejo: ${resultVarejo.message || 'Erro desconhecido'}`);
+      }
+      if (!resultFranquia.success) {
+        console.error('❌ Erro em faturamento-franquia:', resultFranquia);
+        throw new Error(`Erro ao buscar faturamento de franquia: ${resultFranquia.message || 'Erro desconhecido'}`);
+      }
+      if (!resultMultimarcas.success) {
+        console.error('❌ Erro em faturamento-mtm:', resultMultimarcas);
+        throw new Error(`Erro ao buscar faturamento de multimarcas: ${resultMultimarcas.message || 'Erro desconhecido'}`);
+      }
 
       // Processar dados
       const { filtrados: filtradosRevenda, total: totalRevenda } = processRevendaData(resultRevenda.data);
@@ -503,9 +529,9 @@ const Consolidado = () => {
       });
 
       setDadosRevenda(filtradosRevenda);
-      setDadosVarejo(resultVarejo.data);
-      setDadosFranquia(resultFranquia.data);
-      setDadosMultimarcas(resultMultimarcas.data);
+        setDadosVarejo(resultVarejo.data);
+        setDadosFranquia(resultFranquia.data);
+        setDadosMultimarcas(resultMultimarcas.data);
 
       // 3) Monta agregados e grava no cache
       const aggregates = buildAggregates({
@@ -541,7 +567,7 @@ const Consolidado = () => {
       activeRequestsRef.current--;
       setLoading(false);
     }
-  }, [filtros, empresasSelecionadas, empresasFixas, empresasVarejoFixas, processRevendaData, processGeneralData, apiClient]);
+  }, [filtros, empresasSelecionadas, processRevendaData, processGeneralData, apiClient]);
 
   // Debounced handleFiltrar
   const debouncedFiltrar = useCallback((e) => {
@@ -562,7 +588,7 @@ const Consolidado = () => {
       dt_fim: new Date(hoje.getFullYear(), hoje.getMonth(), 0).toISOString().slice(0, 10)
     };
 
-    const key = makeCacheKey(mesAnterior.dt_inicio, mesAnterior.dt_fim, empresasVarejoFixas, empresasFixas, empresasSelecionadas);
+    const key = makeCacheKey(mesAnterior.dt_inicio, mesAnterior.dt_fim, empresasSelecionadas.map(emp => emp.cd_empresa || emp));
     const cached = readCache(key);
     const ttl = ttlForRange(mesAnterior.dt_fim);
     
@@ -580,9 +606,9 @@ const Consolidado = () => {
         }
       }, 5000); // 5 segundos de delay
     }
-  }, [empresasSelecionadas, empresasFixas, empresasVarejoFixas, filtros, handleFiltrar]);
+  }, [empresasSelecionadas, filtros, handleFiltrar]);
 
-  // Inicialização apenas com datas padrão (sem carregar dados)
+  // Inicialização com datas e empresas pré-selecionadas (sem carregar dados)
   useEffect(() => {
     const hoje = new Date();
     const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
@@ -592,6 +618,18 @@ const Consolidado = () => {
       dt_inicio: primeiroDia.toISOString().slice(0, 10),
       dt_fim: ultimoDia.toISOString().slice(0, 10)
     });
+
+    // Pré-selecionar empresas principais (usuário pode alterar)
+    setEmpresasSelecionadas([
+      { cd_empresa: '1' }, { cd_empresa: '2' }, { cd_empresa: '200' }, { cd_empresa: '75' }, 
+      { cd_empresa: '31' }, { cd_empresa: '6' }, { cd_empresa: '85' }, { cd_empresa: '11' }, 
+      { cd_empresa: '99' }, { cd_empresa: '92' }, { cd_empresa: '5' }, { cd_empresa: '500' }, 
+      { cd_empresa: '55' }, { cd_empresa: '550' }, { cd_empresa: '65' }, { cd_empresa: '650' }, 
+      { cd_empresa: '93' }, { cd_empresa: '930' }, { cd_empresa: '94' }, { cd_empresa: '940' }, 
+      { cd_empresa: '95' }, { cd_empresa: '950' }, { cd_empresa: '96' }, { cd_empresa: '960' }, 
+      { cd_empresa: '97' }, { cd_empresa: '970' }, { cd_empresa: '90' }, { cd_empresa: '91' }, 
+      { cd_empresa: '890' }, { cd_empresa: '910' }, { cd_empresa: '920' }
+    ]);
     
     // Dados só serão carregados quando o usuário clicar em "Filtrar"
   }, []);
@@ -785,26 +823,26 @@ const Consolidado = () => {
       {/* Badge de cache + botão Atualizar + Progress */}
       <div className="flex flex-col items-center justify-center gap-3 mb-6">
         <div className="flex items-center gap-3">
-          {cacheInfo && (
-            <span className="text-xs px-2 py-1 rounded-full border border-gray-300 text-gray-700 bg-gray-100">
+        {cacheInfo && (
+          <span className="text-xs px-2 py-1 rounded-full border border-gray-300 text-gray-700 bg-gray-100">
               {cacheInfo.fromCache ? '⚡ Cache' : '🔄 Atualizado'} • {cacheInfo.at ? new Date(cacheInfo.at).toLocaleString('pt-BR') : ''}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={() => {
-              const key = makeCacheKey(
-                filtros.dt_inicio, filtros.dt_fim,
-                empresasVarejoFixas, empresasFixas, empresasSelecionadas
-              );
-              try { localStorage.removeItem(key); } catch {}
-              handleFiltrar({ preventDefault: () => {} });
-            }}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            const key = makeCacheKey(
+              filtros.dt_inicio, filtros.dt_fim,
+                empresasSelecionadas.map(emp => emp.cd_empresa || emp)
+            );
+            try { localStorage.removeItem(key); } catch {}
+            handleFiltrar({ preventDefault: () => {} });
+          }}
             disabled={loading}
             className="text-xs px-3 py-1 rounded-md bg-[#000638] text-white hover:bg-[#fe0000] disabled:opacity-50 transition"
-          >
-            Atualizar
-          </button>
+        >
+          Atualizar
+        </button>
         </div>
         
         {/* Barra de Progresso */}
@@ -830,6 +868,7 @@ const Consolidado = () => {
                 <FiltroEmpresa
                   empresasSelecionadas={empresasSelecionadas}
                   onSelectEmpresas={setEmpresasSelecionadas}
+                  apenasEmpresa101={false}
                 />
               </div>
               <div className="flex flex-col">
@@ -856,7 +895,7 @@ const Consolidado = () => {
             <div className="flex justify-end w-full">
               <button 
                 type="submit" 
-                disabled={loading}
+                disabled={loading || !empresasSelecionadas?.length}
                 className="flex items-center gap-2 bg-[#000638] text-white px-4 py-2 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition h-10 text-sm font-bold shadow-md tracking-wide uppercase"
               >
                 {loading ? (
@@ -879,7 +918,7 @@ const Consolidado = () => {
 
         {/* Cards Totais */}
         {dadosCarregados && (
-          <div className="flex flex-wrap gap-4 mb-8 justify-center">
+        <div className="flex flex-wrap gap-4 mb-8 justify-center">
           {/* Vendas após Desconto */}
           <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
             <CardHeader className="pb-0">
@@ -1115,7 +1154,7 @@ const Consolidado = () => {
               </div>
             </CardContent>
           </Card>
-          </div>
+        </div>
         )}
 
       {/* ====== SEÇÕES POR CANAL (mantidas, agora com custos podendo vir do agg) ====== */}
