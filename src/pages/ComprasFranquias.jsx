@@ -43,6 +43,10 @@ const ComprasFranquias = memo(() => {
     { cd_empresa: '31' },
     { cd_empresa: '6' },
     { cd_empresa: '11' },
+    { cd_empresa: '1' },
+    { cd_empresa: '85' },
+    { cd_empresa: '99' },
+    { cd_empresa: '92' },
     ]
   };
 

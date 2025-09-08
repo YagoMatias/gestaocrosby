@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
 import { CurrencyDollar, Percent, TrendUp, Question, Spinner, Truck } from '@phosphor-icons/react';
@@ -25,10 +25,31 @@ ChartJS.register(
 );
 
 /* =========================
-   CACHE HELPERS (localStorage)
+   OTIMIZAÇÕES DE PERFORMANCE
    ========================= */
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
+const MAX_CACHE_SIZE = 50; // Máximo de entradas no cache
+const DEBOUNCE_DELAY = 300; // ms para debounce
+const MAX_CONCURRENT_REQUESTS = 4; // Máximo de requisições simultâneas
 
+// Compressão simples para cache
+function compressData(data) {
+  try {
+    return btoa(JSON.stringify(data));
+  } catch {
+    return JSON.stringify(data);
+  }
+}
+
+function decompressData(compressed) {
+  try {
+    return JSON.parse(atob(compressed));
+  } catch {
+    return JSON.parse(compressed);
+  }
+}
+
+// Cache helpers otimizados
 function toISO(d) {
   return new Date(d).toISOString().slice(0, 10);
 }
@@ -46,24 +67,80 @@ function makeCacheKey(dt_inicio, dt_fim, empresasVarejoFixas, empresasFixas, emp
     `empVarFix:${normEmpresas(empresasVarejoFixas)}`
   ].join('|');
 }
+
 function writeCache(key, data) {
-  try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch {}
+  try {
+    // Limpa cache antigo se necessário
+    cleanOldCache();
+    
+    const compressed = compressData(data);
+    const entry = { ts: Date.now(), data: compressed, size: JSON.stringify(data).length };
+    localStorage.setItem(key, JSON.stringify(entry));
+    
+    // Atualiza índice de cache
+    updateCacheIndex(key, entry.size);
+  } catch (e) {
+    console.warn('Cache write failed:', e);
+  }
 }
+
 function readCache(key) {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
-    return JSON.parse(raw);
+    
+    const entry = JSON.parse(raw);
+    const data = decompressData(entry.data);
+    
+    return { ts: entry.ts, data };
   } catch { return null; }
 }
+
+function cleanOldCache() {
+  try {
+    const cacheKeys = Object.keys(localStorage).filter(k => k.startsWith('consolidado|'));
+    if (cacheKeys.length > MAX_CACHE_SIZE) {
+      // Remove os mais antigos
+      const entries = cacheKeys.map(key => ({
+        key,
+        ts: JSON.parse(localStorage.getItem(key) || '{}').ts || 0
+      })).sort((a, b) => a.ts - b.ts);
+      
+      const toRemove = entries.slice(0, entries.length - MAX_CACHE_SIZE + 5);
+      toRemove.forEach(entry => localStorage.removeItem(entry.key));
+    }
+  } catch (e) {
+    console.warn('Cache cleanup failed:', e);
+  }
+}
+
+function updateCacheIndex(key, size) {
+  try {
+    const index = JSON.parse(localStorage.getItem('cache_index') || '{}');
+    index[key] = { ts: Date.now(), size };
+    localStorage.setItem('cache_index', JSON.stringify(index));
+  } catch {}
+}
+
 function isExpired(ts, ttlMs) {
   return (Date.now() - ts) > ttlMs;
 }
+
+// TTL dinâmico baseado no período e horário
 function ttlForRange(dt_fim) {
   const end = new Date(toISO(dt_fim || new Date().toISOString().slice(0, 10)));
   const today = new Date(new Date().toISOString().slice(0, 10));
   const isCurrentOrFuture = end >= today;
-  return isCurrentOrFuture ? (30 * 60 * 1000) : (7 * 24 * 60 * 60 * 1000);
+  const currentHour = new Date().getHours();
+  
+  // Horário comercial: cache mais curto
+  const isBusinessHours = currentHour >= 8 && currentHour <= 18;
+  
+  if (isCurrentOrFuture) {
+    return isBusinessHours ? (15 * 60 * 1000) : (45 * 60 * 1000); // 15min ou 45min
+  }
+  
+  return (4 * 60 * 60 * 1000); // 4 horas para dados históricos
 }
 // Build dos agregados usados nos cards (leve)
 function buildAggregates({
@@ -172,6 +249,9 @@ function buildAggregates({
 
 const Consolidado = () => {
   const apiClient = useApiClient();
+  const debounceRef = useRef(null);
+  const abortControllerRef = useRef(null);
+  const activeRequestsRef = useRef(0);
 
   const [filtros, setFiltros] = useState({ dt_inicio: '', dt_fim: '' });
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
@@ -183,10 +263,9 @@ const Consolidado = () => {
     multimarcas: 0,
   });
 
-  const [loadingRevenda, setLoadingRevenda] = useState(false);
-  const [loadingVarejo, setLoadingVarejo] = useState(false);
-  const [loadingFranquia, setLoadingFranquia] = useState(false);
-  const [loadingMultimarcas, setLoadingMultimarcas] = useState(false);
+  // Loading unificado para melhor UX
+  const [loading, setLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
 
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({ title: '', description: '', calculation: '' });
@@ -268,12 +347,62 @@ const Consolidado = () => {
   };
   const closeModal = () => setShowModal(false);
 
-  const handleFiltrar = async (e) => {
-    e.preventDefault();
-    setLoadingRevenda(true);
-    setLoadingVarejo(true);
-    setLoadingFranquia(true);
-    setLoadingMultimarcas(true);
+  // Função auxiliar para processar dados de revenda
+  const processRevendaData = useCallback((data) => {
+    const filtrados = data.filter(row => {
+      const cls = String(row.cd_classificacao ?? '').trim();
+      return cls === '1' || cls === '3';
+    }).filter((row, index, array) => {
+      const currentPessoa = row.cd_pessoa;
+      const currentClass = String(row.cd_classificacao ?? '').trim();
+      
+      if (currentClass === '3') return true;
+      if (currentClass === '1') {
+        const hasClass3 = array.some(item => 
+          item.cd_pessoa === currentPessoa && 
+          String(item.cd_classificacao ?? '').trim() === '3'
+        );
+        return !hasClass3;
+      }
+      return false;
+    });
+
+    const saidas = filtrados.filter(r => r.tp_operacao === 'S')
+      .reduce((acc, r) => acc + ((Number(r.vl_unitliquido) || 0) * (Number(r.qt_faturado) || 1)), 0);
+    const entradas = filtrados.filter(r => r.tp_operacao === 'E')
+      .reduce((acc, r) => acc + ((Number(r.vl_unitliquido) || 0) * (Number(r.qt_faturado) || 1)), 0);
+    
+    return { filtrados, total: saidas - entradas };
+  }, []);
+
+  // Função auxiliar para processar dados gerais
+  const processGeneralData = useCallback((data) => {
+    const saidas = data.filter(r => r.tp_operacao === 'S')
+      .reduce((acc, r) => acc + ((Number(r.vl_unitliquido) || 0) * (Number(r.qt_faturado) || 1)), 0);
+    const entradas = data.filter(r => r.tp_operacao === 'E')
+      .reduce((acc, r) => acc + ((Number(r.vl_unitliquido) || 0) * (Number(r.qt_faturado) || 1)), 0);
+    
+    return { total: saidas - entradas };
+  }, []);
+
+  const handleFiltrar = useCallback(async (e) => {
+    e?.preventDefault?.();
+    
+    // Previne sobrecarga de requisições
+    if (activeRequestsRef.current >= MAX_CONCURRENT_REQUESTS) {
+      console.warn('⚠️ Muitas requisições ativas, aguardando...');
+      return;
+    }
+    
+    // Cancela requisições anteriores
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
+    activeRequestsRef.current++;
+    setLoading(true);
+    setLoadingProgress(0);
     setCacheInfo(null);
     setAgg(null);
 
@@ -298,97 +427,83 @@ const Consolidado = () => {
           franquia: a.faturamento.franquia,
           multimarcas: a.faturamento.multimarcas,
         });
-        // Não precisamos dos brutos pra exibir cards
-        setDadosRevenda([]); setDadosVarejo([]); setDadosFranquia([]); setDadosMultimarcas([]);
-
-        setLoadingRevenda(false); setLoadingVarejo(false); setLoadingFranquia(false); setLoadingMultimarcas(false);
+        setDadosRevenda([]); 
+        setDadosVarejo([]); 
+        setDadosFranquia([]); 
+        setDadosMultimarcas([]);
+        setLoading(false);
+        setLoadingProgress(100);
         setCacheInfo({ fromCache: true, at: cached.ts });
         return;
       }
 
-      // 2) MISS de cache → chama APIs
-      // Revenda
-      const paramsRevenda = { dt_inicio: filtros.dt_inicio, dt_fim: filtros.dt_fim, cd_empresa: empresasFixas };
-      const resultRevenda = await apiClient.sales.faturamentoRevenda(paramsRevenda);
-      if (!resultRevenda.success) throw new Error(resultRevenda.message || 'Erro ao buscar faturamento de revenda');
-        // Filtra por classificação 1 e 3, priorizando classificação 3
-        const filtradosRevenda = resultRevenda.data.filter(row => {
-          const cls = String(row.cd_classificacao ?? '').trim();
-          return cls === '1' || cls === '3';
-        }).filter((row, index, array) => {
-          const currentPessoa = row.cd_pessoa;
-          const currentClass = String(row.cd_classificacao ?? '').trim();
-          
-          // Se a classificação atual é 3, sempre mantém
-          if (currentClass === '3') return true;
-          
-          // Se a classificação atual é 1, verifica se existe classificação 3 para o mesmo cd_pessoa
-          if (currentClass === '1') {
-            const hasClass3 = array.some(item => 
-              item.cd_pessoa === currentPessoa && 
-              String(item.cd_classificacao ?? '').trim() === '3'
-            );
-            // Só mantém se NÃO existir classificação 3 para este cd_pessoa
-            return !hasClass3;
-          }
-          
-          return false;
-        });
-        const somaSaidasRevenda = filtradosRevenda
-          .filter(row => row.tp_operacao === 'S')
-          .reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-        const somaEntradasRevenda = filtradosRevenda
-          .filter(row => row.tp_operacao === 'E')
-          .reduce((acc, row) => acc + ((Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1)), 0);
-        const totalRevenda = somaSaidasRevenda - somaEntradasRevenda;
-        setFaturamento(fat => ({ ...fat, revenda: totalRevenda }));
-        setDadosRevenda(filtradosRevenda);
-      setLoadingRevenda(false);
+      // 2) MISS de cache → chama todas as APIs em paralelo
+      console.log('🚀 Iniciando chamadas paralelas das APIs...');
+      const startTime = Date.now();
 
-      // Varejo
-      const paramsVarejo = { dt_inicio: filtros.dt_inicio, dt_fim: filtros.dt_fim, cd_empresa: empresasVarejoFixas };
-      const resultVarejo = await apiClient.sales.faturamento(paramsVarejo);
-      if (!resultVarejo.success) throw new Error(resultVarejo.message || 'Erro ao buscar faturamento de varejo');
-        const somaSaidasVarejo = resultVarejo.data
-        .filter(r => r.tp_operacao === 'S')
-        .reduce((acc, r) => acc + ((Number(r.vl_unitliquido) || 0) * (Number(r.qt_faturado) || 1)), 0);
-        const somaEntradasVarejo = resultVarejo.data
-        .filter(r => r.tp_operacao === 'E')
-        .reduce((acc, r) => acc + ((Number(r.vl_unitliquido) || 0) * (Number(r.qt_faturado) || 1)), 0);
-        const totalVarejo = somaSaidasVarejo - somaEntradasVarejo;
-        setFaturamento(fat => ({ ...fat, varejo: totalVarejo }));
-        setDadosVarejo(resultVarejo.data);
-      setLoadingVarejo(false);
+      const [resultRevenda, resultVarejo, resultFranquia, resultMultimarcas] = await Promise.all([
+        apiClient.sales.faturamentoRevenda({ 
+          dt_inicio: filtros.dt_inicio, 
+          dt_fim: filtros.dt_fim, 
+          cd_empresa: empresasFixas 
+        }).then(result => {
+          setLoadingProgress(prev => prev + 25);
+          return result;
+        }),
+        apiClient.sales.faturamento({ 
+          dt_inicio: filtros.dt_inicio, 
+          dt_fim: filtros.dt_fim, 
+          cd_empresa: empresasVarejoFixas 
+        }).then(result => {
+          setLoadingProgress(prev => prev + 25);
+          return result;
+        }),
+        apiClient.sales.faturamentoFranquia({ 
+          dt_inicio: filtros.dt_inicio, 
+          dt_fim: filtros.dt_fim, 
+          cd_empresa: empresasFixas 
+        }).then(result => {
+          setLoadingProgress(prev => prev + 25);
+          return result;
+        }),
+        apiClient.sales.faturamentoMtm({ 
+          dt_inicio: filtros.dt_inicio, 
+          dt_fim: filtros.dt_fim, 
+          cd_empresa: empresasFixas 
+        }).then(result => {
+          setLoadingProgress(prev => prev + 25);
+          return result;
+        })
+      ]);
 
-      // Franquia
-      const paramsFranquia = { dt_inicio: filtros.dt_inicio, dt_fim: filtros.dt_fim, cd_empresa: empresasFixas };
-      const resultFranquia = await apiClient.sales.faturamentoFranquia(paramsFranquia);
-      if (!resultFranquia.success) throw new Error(resultFranquia.message || 'Erro ao buscar faturamento de franquia');
-        const somaSaidasFranquia = resultFranquia.data
-        .filter(r => r.tp_operacao === 'S')
-        .reduce((acc, r) => acc + ((Number(r.vl_unitliquido) || 0) * (Number(r.qt_faturado) || 1)), 0);
-        const somaEntradasFranquia = resultFranquia.data
-        .filter(r => r.tp_operacao === 'E')
-        .reduce((acc, r) => acc + ((Number(r.vl_unitliquido) || 0) * (Number(r.qt_faturado) || 1)), 0);
-        const totalFranquia = somaSaidasFranquia - somaEntradasFranquia;
-        setFaturamento(fat => ({ ...fat, franquia: totalFranquia }));
-        setDadosFranquia(resultFranquia.data);
-      setLoadingFranquia(false);
+      const endTime = Date.now();
+      const totalTime = endTime - startTime;
+      console.log(`⚡ Performance: ${totalTime}ms (${totalTime < 2000 ? 'EXCELENTE' : totalTime < 5000 ? 'BOM' : 'LENTO'})`);
 
-      // Multimarcas
-      const paramsMultimarcas = { dt_inicio: filtros.dt_inicio, dt_fim: filtros.dt_fim, cd_empresa: empresasFixas };
-      const resultMultimarcas = await apiClient.sales.faturamentoMtm(paramsMultimarcas);
-      if (!resultMultimarcas.success) throw new Error(resultMultimarcas.message || 'Erro ao buscar faturamento de multimarcas');
-        const somaSaidasMultimarcas = resultMultimarcas.data
-        .filter(r => r.tp_operacao === 'S')
-        .reduce((acc, r) => acc + ((Number(r.vl_unitliquido) || 0) * (Number(r.qt_faturado) || 1)), 0);
-        const somaEntradasMultimarcas = resultMultimarcas.data
-        .filter(r => r.tp_operacao === 'E')
-        .reduce((acc, r) => acc + ((Number(r.vl_unitliquido) || 0) * (Number(r.qt_faturado) || 1)), 0);
-        const totalMultimarcas = somaSaidasMultimarcas - somaEntradasMultimarcas;
-        setFaturamento(fat => ({ ...fat, multimarcas: totalMultimarcas }));
-        setDadosMultimarcas(resultMultimarcas.data);
-      setLoadingMultimarcas(false);
+      // Validar respostas
+      if (!resultRevenda.success) throw new Error('Erro ao buscar faturamento de revenda');
+      if (!resultVarejo.success) throw new Error('Erro ao buscar faturamento de varejo');
+      if (!resultFranquia.success) throw new Error('Erro ao buscar faturamento de franquia');
+      if (!resultMultimarcas.success) throw new Error('Erro ao buscar faturamento de multimarcas');
+
+      // Processar dados
+      const { filtrados: filtradosRevenda, total: totalRevenda } = processRevendaData(resultRevenda.data);
+      const { total: totalVarejo } = processGeneralData(resultVarejo.data);
+      const { total: totalFranquia } = processGeneralData(resultFranquia.data);
+      const { total: totalMultimarcas } = processGeneralData(resultMultimarcas.data);
+
+      // Atualizar estados
+      setFaturamento({
+        revenda: totalRevenda,
+        varejo: totalVarejo,
+        franquia: totalFranquia,
+        multimarcas: totalMultimarcas,
+      });
+
+      setDadosRevenda(filtradosRevenda);
+      setDadosVarejo(resultVarejo.data);
+      setDadosFranquia(resultFranquia.data);
+      setDadosMultimarcas(resultMultimarcas.data);
 
       // 3) Monta agregados e grava no cache
       const aggregates = buildAggregates({
@@ -403,24 +518,101 @@ const Consolidado = () => {
           multimarcas: totalMultimarcas,
         }
       });
+      
       setAgg(aggregates);
       writeCache(key, aggregates);
       setCacheInfo({ fromCache: false, at: Date.now() });
+      setLoadingProgress(100);
 
     } catch (error) {
       console.error('❌ Erro ao buscar dados:', error);
       setFaturamento({ revenda: 0, varejo: 0, franquia: 0, multimarcas: 0 });
-      setDadosRevenda([]); setDadosVarejo([]); setDadosFranquia([]); setDadosMultimarcas([]);
-      setLoadingRevenda(false); setLoadingVarejo(false); setLoadingFranquia(false); setLoadingMultimarcas(false);
+      setDadosRevenda([]); 
+      setDadosVarejo([]); 
+      setDadosFranquia([]); 
+      setDadosMultimarcas([]);
       setAgg(null);
       setCacheInfo(null);
+    } finally {
+      activeRequestsRef.current--;
+      setLoading(false);
     }
-  };
+  }, [filtros, empresasSelecionadas, empresasFixas, empresasVarejoFixas, processRevendaData, processGeneralData, apiClient]);
 
-  // ======= DERIVADOS PARA UI (preferindo agg quando existir) =======
-  // Calcula o total baseado nos valores dos cards individuais para garantir consistência
-  const totalGeralUI = agg?.faturamento.totalGeral ?? (() => {
-    // Usa os mesmos cálculos dos cards individuais
+  // Debounced handleFiltrar
+  const debouncedFiltrar = useCallback((e) => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    
+    debounceRef.current = setTimeout(() => {
+      handleFiltrar(e);
+    }, DEBOUNCE_DELAY);
+  }, [handleFiltrar]);
+
+  // Pré-carregamento simplificado (apenas mês anterior se não estiver em cache)
+  const preloadPreviousMonth = useCallback(async () => {
+    const hoje = new Date();
+    const mesAnterior = {
+      dt_inicio: new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1).toISOString().slice(0, 10),
+      dt_fim: new Date(hoje.getFullYear(), hoje.getMonth(), 0).toISOString().slice(0, 10)
+    };
+
+    const key = makeCacheKey(mesAnterior.dt_inicio, mesAnterior.dt_fim, empresasVarejoFixas, empresasFixas, empresasSelecionadas);
+    const cached = readCache(key);
+    const ttl = ttlForRange(mesAnterior.dt_fim);
+    
+    // Só faz preload se não estiver em cache e após um delay maior
+    if (!cached || isExpired(cached.ts, ttl)) {
+      setTimeout(async () => {
+        try {
+          console.log('🔄 Preload: carregando mês anterior em background...');
+          const tempFiltros = { ...filtros, ...mesAnterior };
+          
+          // Chama handleFiltrar com os filtros temporários sem alterar o estado
+          await handleFiltrar({ preventDefault: () => {} });
+        } catch (error) {
+          console.warn('Preload do mês anterior falhou:', error);
+        }
+      }, 5000); // 5 segundos de delay
+    }
+  }, [empresasSelecionadas, empresasFixas, empresasVarejoFixas, filtros, handleFiltrar]);
+
+  // Inicialização com dados do mês atual
+  useEffect(() => {
+    const hoje = new Date();
+    const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+    
+    setFiltros({
+      dt_inicio: primeiroDia.toISOString().slice(0, 10),
+      dt_fim: ultimoDia.toISOString().slice(0, 10)
+    });
+    
+    // Executa após um delay para não bloquear o render inicial
+    setTimeout(() => {
+      handleFiltrar({ preventDefault: () => {} });
+      // Preload desabilitado temporariamente para evitar sobrecarga
+      // setTimeout(() => preloadPreviousMonth(), 10000);
+    }, 500);
+  }, []); // Removido dependências para evitar loops
+
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  // ======= DERIVADOS PARA UI COM MEMOIZAÇÃO =======
+  const totalGeralUI = useMemo(() => {
+    if (agg?.faturamento.totalGeral) return agg.faturamento.totalGeral;
+    
     const revendaCard = dadosRevenda.reduce((acc, row) => {
       const qtFaturado = Number(row.qt_faturado) || 1;
       const valor = (Number(row.vl_unitliquido) || 0) * qtFaturado;
@@ -452,24 +644,29 @@ const Consolidado = () => {
       return acc;
     }, 0);
     
-    // Debug: mostra os valores calculados
-    console.log('🔍 Debug - Valores calculados:', {
-      revendaCard: revendaCard.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-      varejoCard: varejoCard.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-      franquiaCard: franquiaCard.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-      multimarcasCard: multimarcasCard.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-      totalCalculado: (revendaCard + varejoCard + multimarcasCard + franquiaCard).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-      totalEstado: (faturamento.revenda + faturamento.varejo + faturamento.franquia + faturamento.multimarcas).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-    });
-    
     return revendaCard + varejoCard + franquiaCard + multimarcasCard;
-  })();
+  }, [agg, dadosRevenda, dadosVarejo, dadosFranquia, dadosMultimarcas]);
 
-          const custoBrutoRevenda = agg?.custos.custoBrutoRevenda ?? calcularCustoBruto(dadosRevenda, true);
-  const custoBrutoVarejo = agg?.custos.custoBrutoVarejo ?? calcularCustoBruto(dadosVarejo);
-          const custoBrutoFranquia = agg?.custos.custoBrutoFranquia ?? calcularCustoBruto(dadosFranquia, true);
-        const custoBrutoMultimarcas = agg?.custos.custoBrutoMultimarcas ?? calcularCustoBruto(dadosMultimarcas, true);
-  const custoTotalBrutoUI = agg?.custos.custoTotalBruto ?? (custoBrutoRevenda + custoBrutoVarejo + custoBrutoFranquia + custoBrutoMultimarcas);
+  const custoBrutoRevenda = useMemo(() => 
+    agg?.custos.custoBrutoRevenda ?? calcularCustoBruto(dadosRevenda, true), 
+    [agg, dadosRevenda]
+  );
+  const custoBrutoVarejo = useMemo(() => 
+    agg?.custos.custoBrutoVarejo ?? calcularCustoBruto(dadosVarejo), 
+    [agg, dadosVarejo]
+  );
+  const custoBrutoFranquia = useMemo(() => 
+    agg?.custos.custoBrutoFranquia ?? calcularCustoBruto(dadosFranquia, true), 
+    [agg, dadosFranquia]
+  );
+  const custoBrutoMultimarcas = useMemo(() => 
+    agg?.custos.custoBrutoMultimarcas ?? calcularCustoBruto(dadosMultimarcas, true), 
+    [agg, dadosMultimarcas]
+  );
+  const custoTotalBrutoUI = useMemo(() => 
+    agg?.custos.custoTotalBruto ?? (custoBrutoRevenda + custoBrutoVarejo + custoBrutoFranquia + custoBrutoMultimarcas),
+    [agg, custoBrutoRevenda, custoBrutoVarejo, custoBrutoFranquia, custoBrutoMultimarcas]
+  );
 
   const cmvRevenda = calcularCMV(dadosRevenda, true);
   const cmvVarejo = calcularCMV(dadosVarejo);
@@ -586,28 +783,40 @@ const Consolidado = () => {
       <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start mt-10">
       <h1 className="text-3xl font-bold mb-2 text-center text-[#000638]">Consolidado</h1>
 
-      {/* Badge de cache + botão Atualizar */}
-      <div className="flex items-center justify-center gap-3 mb-6">
-        {cacheInfo && (
-          <span className="text-xs px-2 py-1 rounded-full border border-gray-300 text-gray-700 bg-gray-100">
-            {cacheInfo.fromCache ? 'Em cache' : 'Atualizado agora'} • {cacheInfo.at ? new Date(cacheInfo.at).toLocaleString('pt-BR') : ''}
-          </span>
+      {/* Badge de cache + botão Atualizar + Progress */}
+      <div className="flex flex-col items-center justify-center gap-3 mb-6">
+        <div className="flex items-center gap-3">
+          {cacheInfo && (
+            <span className="text-xs px-2 py-1 rounded-full border border-gray-300 text-gray-700 bg-gray-100">
+              {cacheInfo.fromCache ? '⚡ Cache' : '🔄 Atualizado'} • {cacheInfo.at ? new Date(cacheInfo.at).toLocaleString('pt-BR') : ''}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              const key = makeCacheKey(
+                filtros.dt_inicio, filtros.dt_fim,
+                empresasVarejoFixas, empresasFixas, empresasSelecionadas
+              );
+              try { localStorage.removeItem(key); } catch {}
+              handleFiltrar({ preventDefault: () => {} });
+            }}
+            disabled={loading}
+            className="text-xs px-3 py-1 rounded-md bg-[#000638] text-white hover:bg-[#fe0000] disabled:opacity-50 transition"
+          >
+            Atualizar
+          </button>
+        </div>
+        
+        {/* Barra de Progresso */}
+        {loading && loadingProgress > 0 && (
+          <div className="w-64 bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-[#000638] h-2 rounded-full transition-all duration-300 ease-out"
+              style={{ width: `${loadingProgress}%` }}
+            ></div>
+          </div>
         )}
-        <button
-          type="button"
-          onClick={() => {
-            const key = makeCacheKey(
-              filtros.dt_inicio, filtros.dt_fim,
-              empresasVarejoFixas, empresasFixas, empresasSelecionadas
-            );
-            try { localStorage.removeItem(key); } catch {}
-            // força refresh
-            handleFiltrar({ preventDefault: () => {} });
-          }}
-          className="text-xs px-3 py-1 rounded-md bg-[#000638] text-white hover:bg-[#fe0000] transition"
-        >
-          Atualizar
-        </button>
       </div>
 
         {/* Filtros */}
@@ -646,8 +855,24 @@ const Consolidado = () => {
               </div>
             </div>
             <div className="flex justify-end w-full">
-              <button type="submit" className="flex items-center gap-2 bg-[#000638] text-white px-4 py-2 rounded-lg hover:bg-[#fe0000] transition h-10 text-sm font-bold shadow-md tracking-wide uppercase">
-                <CurrencyDollar size={18} weight="bold" /> Filtrar
+              <button 
+                type="submit" 
+                disabled={loading}
+                className="flex items-center gap-2 bg-[#000638] text-white px-4 py-2 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition h-10 text-sm font-bold shadow-md tracking-wide uppercase"
+              >
+                {loading ? (
+                  <>
+                    <Spinner size={18} className="animate-spin" />
+                    {loadingProgress > 0 && loadingProgress < 100 && (
+                      <span className="text-xs">{Math.round(loadingProgress)}%</span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <CurrencyDollar size={18} weight="bold" />
+                    Filtrar
+                  </>
+                )}
               </button>
             </div>
           </form>
@@ -665,7 +890,7 @@ const Consolidado = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-green-700 mb-1">
-                {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
+                {loading
                   ? <Spinner size={24} className="text-green-600 animate-spin" />
                 : totalGeralUI.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
@@ -691,7 +916,7 @@ const Consolidado = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-red-700 mb-1">
-                {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
+                {loading
                   ? <Spinner size={24} className="text-red-600 animate-spin" />
                 : (custoTotalBrutoUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
@@ -717,7 +942,7 @@ const Consolidado = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
+                {loading
                   ? <Spinner size={24} className="text-orange-600 animate-spin" />
                 : (cmvTotalUI !== null ? cmvTotalUI.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--')}
               </div>
@@ -743,7 +968,7 @@ const Consolidado = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-yellow-700 mb-1">
-                {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
+                {loading
                   ? <Spinner size={24} className="text-yellow-600 animate-spin" />
                 : (totalGeralUI > 0 && custoTotalBrutoUI > 0
                     ? (((totalGeralUI - custoTotalBrutoUI) / totalGeralUI) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
@@ -771,7 +996,7 @@ const Consolidado = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
+                {loading
                   ? <Spinner size={24} className="text-blue-600 animate-spin" />
                 : (markupTotalUI !== null ? markupTotalUI.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--')}
               </div>
@@ -797,7 +1022,7 @@ const Consolidado = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-purple-700 mb-1">
-                {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
+                {loading
                   ? <Spinner size={24} className="text-purple-600 animate-spin" />
                 : (precoTabelaTotalUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
@@ -823,7 +1048,7 @@ const Consolidado = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-orange-600 mb-1">
-                {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
+                {loading
                   ? <Spinner size={24} className="text-orange-600 animate-spin" />
                 : (descontoTotalUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
@@ -849,7 +1074,7 @@ const Consolidado = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-gray-800 mb-1">
-                {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
+                {loading
                   ? <Spinner size={24} className="text-gray-600 animate-spin" />
                 : (freteRevendaUI + freteVarejoUI + freteFranquiaUI + freteMultimarcasUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
@@ -875,7 +1100,7 @@ const Consolidado = () => {
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
               <div className="text-2xl font-extrabold text-gray-900 mb-1">
-                {(loadingRevenda || loadingVarejo || loadingFranquia || loadingMultimarcas)
+                {loading
                   ? <Spinner size={24} className="text-gray-700 animate-spin" />
                 : (entradasTotalUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
@@ -907,7 +1132,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-green-600 mb-1">
-                {loadingRevenda ? <Spinner size={24} className="text-green-600 animate-spin" /> : (faturamento.revenda || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {loading ? <Spinner size={24} className="text-green-600 animate-spin" /> : (faturamento.revenda || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Total Revenda</CardDescription>
               </CardContent>
@@ -922,7 +1147,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-red-700 mb-1">
-                {loadingRevenda ? <Spinner size={24} className="text-red-600 animate-spin" /> : (custoBrutoRevenda || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {loading ? <Spinner size={24} className="text-red-600 animate-spin" /> : (custoBrutoRevenda || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">CMV da Revenda</CardDescription>
               </CardContent>
@@ -937,7 +1162,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingRevenda ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
                   (faturamento.revenda > 0 && custoBrutoRevenda > 0)
                       ? ((custoBrutoRevenda / faturamento.revenda) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
                       : '--'
@@ -956,7 +1181,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-yellow-700 mb-1">
-                {loadingRevenda ? <Spinner size={24} className="text-yellow-600 animate-spin" /> : (
+                {loading ? <Spinner size={24} className="text-yellow-600 animate-spin" /> : (
                   (() => {
                     const margem = calcularMargemCanal(faturamento.revenda, custoBrutoRevenda);
                     return margem !== null ? margem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
@@ -976,7 +1201,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingRevenda ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
                   custoBrutoRevenda > 0 ? (faturamento.revenda / custoBrutoRevenda).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'
                   )}
                 </div>
@@ -994,7 +1219,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-purple-700 mb-1">
-                  {loadingRevenda ? <Spinner size={24} className="text-purple-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-purple-600 animate-spin" /> : (
                     (agg?.precos?.precoTabelaRevenda ?? (() => {
                       let total = 0;
                       (dadosRevenda || []).forEach(row => {
@@ -1021,7 +1246,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingRevenda ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
                     (() => {
                       const precoTabela = agg?.precos?.precoTabelaRevenda ?? (() => {
                         let total = 0;
@@ -1051,7 +1276,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-gray-900 mb-1">
-                  {loadingRevenda ? <Spinner size={24} className="text-gray-700 animate-spin" /> : (entradasRevendaUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  {loading ? <Spinner size={24} className="text-gray-700 animate-spin" /> : (entradasRevendaUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Entradas (E) na Revenda</CardDescription>
               </CardContent>
@@ -1067,7 +1292,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingRevenda ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
                     (() => {
                       const totalGeral = (faturamento.revenda || 0) + (faturamento.varejo || 0) + (faturamento.franquia || 0) + (faturamento.multimarcas || 0);
                       return totalGeral > 0 ? ((faturamento.revenda / totalGeral) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
@@ -1086,7 +1311,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-gray-800 mb-1">
-                  {loadingRevenda ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteRevendaUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  {loading ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteRevendaUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Frete rateado (S - E)</CardDescription>
               </CardContent>
@@ -1108,7 +1333,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-green-600 mb-1">
-                {loadingVarejo ? <Spinner size={24} className="text-green-600 animate-spin" /> : (faturamento.varejo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {loading ? <Spinner size={24} className="text-green-600 animate-spin" /> : (faturamento.varejo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Total Varejo</CardDescription>
               </CardContent>
@@ -1123,7 +1348,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-red-700 mb-1">
-                {loadingVarejo ? <Spinner size={24} className="text-red-600 animate-spin" /> : (custoBrutoVarejo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {loading ? <Spinner size={24} className="text-red-600 animate-spin" /> : (custoBrutoVarejo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">CMV do Varejo</CardDescription>
               </CardContent>
@@ -1138,7 +1363,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingVarejo ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
                   (faturamento.varejo > 0 && custoBrutoVarejo > 0)
                       ? ((custoBrutoVarejo / faturamento.varejo) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
                       : '--'
@@ -1157,7 +1382,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-yellow-700 mb-1">
-                {loadingVarejo ? <Spinner size={24} className="text-yellow-600 animate-spin" /> : (
+                {loading ? <Spinner size={24} className="text-yellow-600 animate-spin" /> : (
                   (() => {
                     const margem = calcularMargemCanal(faturamento.varejo, custoBrutoVarejo);
                     return margem !== null ? margem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
@@ -1177,7 +1402,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingVarejo ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
                   custoBrutoVarejo > 0 ? (faturamento.varejo / custoBrutoVarejo).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'
                   )}
                 </div>
@@ -1195,7 +1420,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-purple-700 mb-1">
-                  {loadingVarejo ? <Spinner size={24} className="text-purple-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-purple-600 animate-spin" /> : (
                     (agg?.precos?.precoTabelaVarejo ?? (() => {
                       let total = 0;
                       (dadosVarejo || []).forEach(row => {
@@ -1222,7 +1447,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingVarejo ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
                     (() => {
                       const precoTabela = agg?.precos?.precoTabelaVarejo ?? (() => {
                         let total = 0;
@@ -1252,7 +1477,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-gray-900 mb-1">
-                  {loadingVarejo ? <Spinner size={24} className="text-gray-700 animate-spin" /> : (entradasVarejoUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  {loading ? <Spinner size={24} className="text-gray-700 animate-spin" /> : (entradasVarejoUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Entradas (E) no Varejo</CardDescription>
               </CardContent>
@@ -1268,7 +1493,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingVarejo ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
                     (() => {
                       const totalGeral = (faturamento.revenda || 0) + (faturamento.varejo || 0) + (faturamento.franquia || 0) + (faturamento.multimarcas || 0);
                       return totalGeral > 0 ? ((faturamento.varejo / totalGeral) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
@@ -1287,7 +1512,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-gray-800 mb-1">
-                  {loadingVarejo ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteVarejoUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  {loading ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteVarejoUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Frete rateado (S - E)</CardDescription>
               </CardContent>
@@ -1309,7 +1534,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-green-600 mb-1">
-                {loadingFranquia ? <Spinner size={24} className="text-green-600 animate-spin" /> : (faturamento.franquia || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {loading ? <Spinner size={24} className="text-green-600 animate-spin" /> : (faturamento.franquia || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Total Franquia</CardDescription>
               </CardContent>
@@ -1324,7 +1549,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-red-700 mb-1">
-                {loadingFranquia ? <Spinner size={24} className="text-red-600 animate-spin" /> : (custoBrutoFranquia || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {loading ? <Spinner size={24} className="text-red-600 animate-spin" /> : (custoBrutoFranquia || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">CMV da Franquia</CardDescription>
               </CardContent>
@@ -1339,7 +1564,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingFranquia ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
                   (faturamento.franquia > 0 && custoBrutoFranquia > 0)
                       ? ((custoBrutoFranquia / faturamento.franquia) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
                       : '--'
@@ -1358,7 +1583,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-yellow-700 mb-1">
-                {loadingFranquia ? <Spinner size={24} className="text-yellow-600 animate-spin" /> : (
+                {loading ? <Spinner size={24} className="text-yellow-600 animate-spin" /> : (
                   (() => {
                     const margem = calcularMargemCanal(faturamento.franquia, custoBrutoFranquia);
                     return margem !== null ? margem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
@@ -1378,7 +1603,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingFranquia ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
                   custoBrutoFranquia > 0 ? (faturamento.franquia / custoBrutoFranquia).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'
                   )}
                 </div>
@@ -1396,7 +1621,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-purple-700 mb-1">
-                  {loadingFranquia ? <Spinner size={24} className="text-purple-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-purple-600 animate-spin" /> : (
                     (agg?.precos?.precoTabelaFranquia ?? (() => {
                       let total = 0;
                       (dadosFranquia || []).forEach(row => {
@@ -1422,7 +1647,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingFranquia ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
                     (() => {
                       const precoTabela = agg?.precos?.precoTabelaFranquia ?? (() => {
                         let total = 0;
@@ -1451,7 +1676,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-gray-900 mb-1">
-                  {loadingFranquia ? <Spinner size={24} className="text-gray-700 animate-spin" /> : (entradasFranquiaUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  {loading ? <Spinner size={24} className="text-gray-700 animate-spin" /> : (entradasFranquiaUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Entradas (E) na Franquia</CardDescription>
               </CardContent>
@@ -1467,7 +1692,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingFranquia ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
                     (() => {
                       const totalGeral = (faturamento.revenda || 0) + (faturamento.varejo || 0) + (faturamento.franquia || 0) + (faturamento.multimarcas || 0);
                       return totalGeral > 0 ? ((faturamento.franquia / totalGeral) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
@@ -1486,7 +1711,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-gray-800 mb-1">
-                  {loadingFranquia ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteFranquiaUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  {loading ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteFranquiaUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Frete rateado (S - E)</CardDescription>
               </CardContent>
@@ -1508,7 +1733,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-green-600 mb-1">
-                {loadingMultimarcas ? <Spinner size={24} className="text-green-600 animate-spin" /> : (faturamento.multimarcas || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {loading ? <Spinner size={24} className="text-green-600 animate-spin" /> : (faturamento.multimarcas || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Total Multimarcas</CardDescription>
               </CardContent>
@@ -1523,7 +1748,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-red-700 mb-1">
-                {loadingMultimarcas ? <Spinner size={24} className="text-red-600 animate-spin" /> : (custoBrutoMultimarcas || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {loading ? <Spinner size={24} className="text-red-600 animate-spin" /> : (custoBrutoMultimarcas || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">CMV da Multimarcas</CardDescription>
               </CardContent>
@@ -1538,7 +1763,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingMultimarcas ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
                   (faturamento.multimarcas > 0 && custoBrutoMultimarcas > 0)
                       ? ((custoBrutoMultimarcas / faturamento.multimarcas) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
                       : '--'
@@ -1557,7 +1782,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-yellow-700 mb-1">
-                {loadingMultimarcas ? <Spinner size={24} className="text-yellow-600 animate-spin" /> : (
+                {loading ? <Spinner size={24} className="text-yellow-600 animate-spin" /> : (
                   (() => {
                     const margem = calcularMargemCanal(faturamento.multimarcas, custoBrutoMultimarcas);
                     return margem !== null ? margem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
@@ -1577,7 +1802,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingMultimarcas ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
                   custoBrutoMultimarcas > 0 ? (faturamento.multimarcas / custoBrutoMultimarcas).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'
                   )}
                 </div>
@@ -1595,7 +1820,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-purple-700 mb-1">
-                  {loadingMultimarcas ? <Spinner size={24} className="text-purple-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-purple-600 animate-spin" /> : (
                     (agg?.precos?.precoTabelaMultimarcas ?? (() => {
                       let total = 0;
                       (dadosMultimarcas || []).forEach(row => {
@@ -1621,7 +1846,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-orange-700 mb-1">
-                  {loadingMultimarcas ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
                     (() => {
                       const precoTabela = agg?.precos?.precoTabelaMultimarcas ?? (() => {
                         let total = 0;
@@ -1650,7 +1875,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-gray-900 mb-1">
-                  {loadingMultimarcas ? <Spinner size={24} className="text-gray-700 animate-spin" /> : (entradasMultimarcasUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  {loading ? <Spinner size={24} className="text-gray-700 animate-spin" /> : (entradasMultimarcasUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Entradas (E) na Multimarcas</CardDescription>
               </CardContent>
@@ -1666,7 +1891,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-blue-700 mb-1">
-                  {loadingMultimarcas ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
+                  {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
                     (() => {
                       const totalGeral = (faturamento.revenda || 0) + (faturamento.varejo || 0) + (faturamento.franquia || 0) + (faturamento.multimarcas || 0);
                       return totalGeral > 0 ? ((faturamento.multimarcas / totalGeral) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '--';
@@ -1685,7 +1910,7 @@ const Consolidado = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-2xl font-extrabold text-gray-800 mb-1">
-                  {loadingMultimarcas ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteMultimarcasUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  {loading ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteMultimarcasUI || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </div>
                 <CardDescription className="text-xs text-gray-500">Frete rateado (S - E)</CardDescription>
               </CardContent>

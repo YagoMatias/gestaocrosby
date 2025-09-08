@@ -18,7 +18,13 @@ const EXCLUDED_OPERATIONS = [
   1552, 51, 1556, 2500, 1126, 1127, 8160, 1122, 1102, 9986, 1128, 1553, 
   1556, 9200, 8002, 2551, 1557, 8160, 2004, 5912, 1410, 5914, 1407, 5102, 
   520, 300, 200, 512, 1402, 1405, 1409, 5110, 5113, 17, 21, 401, 1201, 
-  1202, 1204, 1206, 1950, 1999, 2203
+  1202, 1204, 1206, 1950, 1999, 2203,522, 9001, 9009, 9027, 9017, 2, 1, 548, 555, 521, 599, 1152, 9200, 
+  2008, 536, 1153, 599, 5920, 5930, 1711, 7111, 2009, 5152, 6029, 530, 
+  5152, 5930, 650, 5010, 600, 620, 40, 1557, 2505, 8600, 590, 5153, 660, 
+  5910, 3336, 9003, 9052, 662, 5909, 5153, 5910, 3336, 9003, 530, 36, 536, 
+  1552, 51, 1556, 2500, 1126, 1127, 8160, 1122, 1102, 9986, 1128, 1553, 
+  1556, 9200, 8002, 2551, 1557, 8160, 2004, 5912, 1410,1926,1903,1122,1128,1913,
+  8160
 ];
 
 /**
@@ -287,6 +293,7 @@ router.get('/faturamento-mtm',
         vfn.dt_transacao,
         vfn.vl_unitliquido,
         vfn.vl_unitbruto,
+        vfn.vl_icms,
         vfn.nr_transacao,
         vfn.qt_faturado,
         vfn.vl_freterat
@@ -314,6 +321,7 @@ router.get('/faturamento-mtm',
         vfn.dt_transacao,
         vfn.vl_unitliquido,
         vfn.vl_unitbruto,
+        vfn.vl_icms,
         vfn.nr_transacao,
         vfn.qt_faturado,
         vfn.vl_freterat
@@ -388,7 +396,7 @@ router.get('/faturamento-revenda',
       5152, 5930, 650, 5010, 600, 620, 40, 1557, 2505, 8600, 590, 5153, 660, 
       5910, 3336, 9003, 9052, 662, 5909, 5153, 5910, 3336, 9003, 530, 36, 536, 
       1552, 51, 1556, 2500, 1126, 1127, 8160, 1122, 1102, 9986, 1128, 1553, 
-      1556, 9200, 8002, 2551, 1557, 8160, 2004, 5912, 1410
+      1556, 9200, 8002, 2551, 1557, 8160, 2004, 5912, 1410,1926,1903,1122,1128,1913,8160,10
     ];
 
     // Otimização baseada no número de empresas e período
@@ -410,6 +418,7 @@ router.get('/faturamento-revenda',
         vfn.tp_situacao,
         vfn.vl_unitliquido,
         vfn.vl_unitbruto,
+        vfn.vl_icms,
         vfn.tp_operacao,
         vfn.nr_transacao,
         vfn.qt_faturado,
@@ -421,6 +430,7 @@ router.get('/faturamento-revenda',
         AND vfn.cd_empresa IN (${empresaPlaceholders})
         AND vfn.cd_operacao NOT IN (${excludedOperationsRevenda.slice(0, 30).join(',')})
         AND pc.cd_tipoclas in (20,7)
+        AND pc.cd_classificacao::integer in (3,1)
         AND vfn.tp_situacao NOT IN ('C', 'X')
       ORDER BY vfn.dt_transacao DESC
       LIMIT 50000
@@ -439,6 +449,7 @@ router.get('/faturamento-revenda',
         vfn.tp_situacao,
         vfn.vl_unitliquido,
         vfn.vl_unitbruto,
+        vfn.vl_icms,
         vfn.tp_operacao,
         vfn.nr_transacao,
         vfn.qt_faturado,
@@ -450,6 +461,7 @@ router.get('/faturamento-revenda',
         AND vfn.cd_empresa IN (${empresaPlaceholders})
         AND vfn.cd_operacao NOT IN (${excludedOperationsRevenda.join(',')})
         AND pc.cd_tipoclas in (20,7)
+        AND pc.cd_classificacao::integer in (3,1)
         AND vfn.tp_situacao NOT IN ('C', 'X')
       ORDER BY vfn.dt_transacao DESC
       ${isHeavyQuery ? 'LIMIT 100000' : ''}
@@ -730,33 +742,48 @@ router.get('/fatuvalor-revenda',
 
     const query = `
       SELECT
-        SUM(vfn.vl_unitbruto) as total_bruto,
-        SUM(vfn.vl_unitliquido) as total_liquido,
-        SUM(vfn.qt_faturado) as total_quantidade,
-        COUNT(*) as total_transacoes
+        vfn.tp_operacao,
+        SUM(vfn.vl_totalbruto) AS vlbruto,
+        SUM(vfn.vl_totalliquido) AS vlliquido,
+        SUM(vfn.vl_freterat) AS frete,
+        SUM(vfn.vl_icms) AS icms
       FROM vr_fis_nfitemprod vfn
       LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
       LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
       WHERE vfn.dt_transacao BETWEEN $1 AND $2
         AND vfn.cd_empresa IN (${empresaPlaceholders})
         AND vfn.cd_operacao NOT IN (${excludedOperationsRevenda.join(',')})
-        AND pc.cd_tipoclas = 20
+        AND pc.cd_tipoclas in (20)
+        AND pc.cd_classificacao::integer in (3)
         AND vfn.tp_situacao NOT IN ('C', 'X')
+      GROUP BY vfn.tp_operacao
     `;
 
     console.log(`🔍 Fatuvalor-revenda: ${empresas.length} empresas, período: ${dt_inicio} a ${dt_fim}`);
 
     const { rows } = await pool.query(query, params);
-    const result = rows[0];
+    const breakdown = rows.map(r => ({
+      tp_operacao: r.tp_operacao,
+      vlbruto: parseFloat(r.vlbruto || 0),
+      vlliquido: parseFloat(r.vlliquido || 0),
+      frete: parseFloat(r.frete || 0),
+      icms: parseFloat(r.icms || 0)
+    }));
+
+    const totals = breakdown.reduce((acc, r) => {
+      acc.total_bruto += r.vlbruto;
+      acc.total_liquido += r.vlliquido;
+      acc.total_frete += r.frete;
+      acc.total_icms += r.icms;
+      return acc;
+    }, { total_bruto: 0, total_liquido: 0, total_frete: 0, total_icms: 0 });
 
     successResponse(res, {
       periodo: { dt_inicio, dt_fim },
       empresas,
       tipo: 'Revenda',
-      total_bruto: parseFloat(result.total_bruto || 0),
-      total_liquido: parseFloat(result.total_liquido || 0),
-      total_quantidade: parseFloat(result.total_quantidade || 0),
-      total_transacoes: parseInt(result.total_transacoes || 0)
+      ...totals,
+      breakdown
     }, 'Valores de faturamento de revenda obtidos com sucesso');
   })
 );
@@ -783,10 +810,11 @@ router.get('/fatuvalor-mtm',
 
     const query = `
       SELECT
-        SUM(vfn.vl_unitbruto) as total_bruto,
-        SUM(vfn.vl_unitliquido) as total_liquido,
-        SUM(vfn.qt_faturado) as total_quantidade,
-        COUNT(*) as total_transacoes
+        vfn.tp_operacao,
+        SUM(vfn.vl_totalbruto) AS vlbruto,
+        SUM(vfn.vl_totalliquido) AS vlliquido,
+        SUM(vfn.vl_freterat) AS frete,
+        SUM(vfn.vl_icms) AS icms
       FROM vr_fis_nfitemprod vfn
       LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
       LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
@@ -794,22 +822,36 @@ router.get('/fatuvalor-mtm',
         AND vfn.cd_empresa IN (${empresaPlaceholders})
         AND vfn.cd_operacao NOT IN (${EXCLUDED_OPERATIONS.join(',')})
         AND vfn.tp_situacao NOT IN ('C', 'X')
-        AND pc.cd_tipoclas = 5
+        AND pc.cd_tipoclas in (20)
+        AND pc.cd_classificacao::integer in (2)
+      GROUP BY vfn.tp_operacao
     `;
 
     console.log(`🔍 Fatuvalor-mtm: ${empresas.length} empresas, período: ${dt_inicio} a ${dt_fim}`);
 
     const { rows } = await pool.query(query, params);
-    const result = rows[0];
+    const breakdown = rows.map(r => ({
+      tp_operacao: r.tp_operacao,
+      vlbruto: parseFloat(r.vlbruto || 0),
+      vlliquido: parseFloat(r.vlliquido || 0),
+      frete: parseFloat(r.frete || 0),
+      icms: parseFloat(r.icms || 0)
+    }));
+
+    const totals = breakdown.reduce((acc, r) => {
+      acc.total_bruto += r.vlbruto;
+      acc.total_liquido += r.vlliquido;
+      acc.total_frete += r.frete;
+      acc.total_icms += r.icms;
+      return acc;
+    }, { total_bruto: 0, total_liquido: 0, total_frete: 0, total_icms: 0 });
 
     successResponse(res, {
       periodo: { dt_inicio, dt_fim },
       empresas,
       tipo: 'MTM',
-      total_bruto: parseFloat(result.total_bruto || 0),
-      total_liquido: parseFloat(result.total_liquido || 0),
-      total_quantidade: parseFloat(result.total_quantidade || 0),
-      total_transacoes: parseInt(result.total_transacoes || 0)
+      ...totals,
+      breakdown
     }, 'Valores de faturamento MTM obtidos com sucesso');
   })
 );
@@ -844,33 +886,47 @@ router.get('/fatuvalor-franquia',
 
     const query = `
       SELECT
-        SUM(vfn.vl_unitbruto) as total_bruto,
-        SUM(vfn.vl_unitliquido) as total_liquido,
-        SUM(vfn.qt_faturado) as total_quantidade,
-        COUNT(*) as total_transacoes
+        vfn.tp_operacao,
+        SUM(vfn.vl_totalbruto) AS vlbruto,
+        SUM(vfn.vl_totalliquido) AS vlliquido,
+        SUM(vfn.vl_freterat) AS frete,
+        SUM(vfn.vl_icms) AS icms
       FROM vr_fis_nfitemprod vfn
-      LEFT JOIN pes_pesjuridica p ON p.cd_pessoa = vfn.cd_pessoa   
+      LEFT JOIN pes_pesjuridica p ON p.cd_pessoa = vfn.cd_pessoa
       WHERE vfn.dt_transacao BETWEEN $1 AND $2
         AND vfn.cd_empresa IN (${empresaPlaceholders})
         AND vfn.cd_operacao NOT IN (${EXCLUDED_OPERATIONS.join(',')})
         AND vfn.tp_situacao NOT IN ('C', 'X')
         ${fantasiaWhere}
+      GROUP BY vfn.tp_operacao
     `;
 
     console.log(`🔍 Fatuvalor-franquia: ${empresas.length} empresas, período: ${dt_inicio} a ${dt_fim}`);
 
     const { rows } = await pool.query(query, params);
-    const result = rows[0];
+    const breakdown = rows.map(r => ({
+      tp_operacao: r.tp_operacao,
+      vlbruto: parseFloat(r.vlbruto || 0),
+      vlliquido: parseFloat(r.vlliquido || 0),
+      frete: parseFloat(r.frete || 0),
+      icms: parseFloat(r.icms || 0)
+    }));
+
+    const totals = breakdown.reduce((acc, r) => {
+      acc.total_bruto += r.vlbruto;
+      acc.total_liquido += r.vlliquido;
+      acc.total_frete += r.frete;
+      acc.total_icms += r.icms;
+      return acc;
+    }, { total_bruto: 0, total_liquido: 0, total_frete: 0, total_icms: 0 });
 
     successResponse(res, {
       periodo: { dt_inicio, dt_fim },
       empresas,
       tipo: 'Franquia',
       operacoes_excluidas: EXCLUDED_OPERATIONS,
-      total_bruto: parseFloat(result.total_bruto || 0),
-      total_liquido: parseFloat(result.total_liquido || 0),
-      total_quantidade: parseFloat(result.total_quantidade || 0),
-      total_transacoes: parseInt(result.total_transacoes || 0)
+      ...totals,
+      breakdown
     }, 'Valores de faturamento de franquias obtidos com sucesso');
   })
 );
@@ -897,10 +953,10 @@ router.get('/fatuvalor-lojas',
 
     const query = `
       SELECT
+        SUM(vfn.vl_freterat) as total_frete,
         SUM(vfn.vl_unitbruto) as total_bruto,
         SUM(vfn.vl_unitliquido) as total_liquido,
-        SUM(vfn.qt_faturado) as total_quantidade,
-        COUNT(*) as total_transacoes
+        SUM(vfn.vl_icms) as total_icms
       FROM vr_fis_nfitemprod vfn
       LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
       LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
@@ -924,6 +980,7 @@ router.get('/fatuvalor-lojas',
       operacoes_permitidas: ALLOWED_OPERATIONS,
       total_bruto: parseFloat(result.total_bruto || 0),
       total_liquido: parseFloat(result.total_liquido || 0),
+      total_icms: parseFloat(result.total_icms || 0),
       total_quantidade: parseFloat(result.total_quantidade || 0),
       total_transacoes: parseInt(result.total_transacoes || 0)
     }, 'Valores de faturamento de lojas obtidos com sucesso');

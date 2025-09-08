@@ -37,6 +37,7 @@ const ImportacaoRet = lazy(() => import('./pages/ImportacaoRet'));
 const AuthTest = lazy(() => import('./components/AuthTest'));
 const FinanceiroPorCanal = lazy(() => import('./pages/FinanceiroPorCanal'));
 const Endividamento = lazy(() => import('./pages/Endividamento'));
+const ReceitaLiquida = lazy(() => import('./pages/ReceitaLiquida'));
 const DashContasAReceber = lazy(() => import('./pages/DashContasAReceber'));
 
 // Componente de fallback para loading
@@ -276,6 +277,23 @@ const AppRoutes = memo(() => {
                 sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
               }`}>
                 {createPrivateRoute(ExtratoFinanceiro, ['owner', 'admin', 'manager', 'user'])}
+              </main>
+            </div>
+          </div>
+        } 
+      />
+
+      <Route 
+        path="/receita-liquida" 
+        element={
+          <div className="h-screen flex">
+            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
+            <div className="flex-1 flex flex-col">
+              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
+              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
+                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
+              }`}>
+                {createPrivateRoute(ReceitaLiquida, ['owner', 'admin', 'manager','user'])}
               </main>
             </div>
           </div>
