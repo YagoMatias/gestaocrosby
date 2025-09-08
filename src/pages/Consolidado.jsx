@@ -266,6 +266,7 @@ const Consolidado = () => {
   // Loading unificado para melhor UX
   const [loading, setLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [dadosCarregados, setDadosCarregados] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({ title: '', description: '', calculation: '' });
@@ -433,6 +434,7 @@ const Consolidado = () => {
         setDadosMultimarcas([]);
         setLoading(false);
         setLoadingProgress(100);
+        setDadosCarregados(true);
         setCacheInfo({ fromCache: true, at: cached.ts });
         return;
       }
@@ -523,6 +525,7 @@ const Consolidado = () => {
       writeCache(key, aggregates);
       setCacheInfo({ fromCache: false, at: Date.now() });
       setLoadingProgress(100);
+      setDadosCarregados(true);
 
     } catch (error) {
       console.error('❌ Erro ao buscar dados:', error);
@@ -533,6 +536,7 @@ const Consolidado = () => {
       setDadosMultimarcas([]);
       setAgg(null);
       setCacheInfo(null);
+      setDadosCarregados(false);
     } finally {
       activeRequestsRef.current--;
       setLoading(false);
@@ -578,7 +582,7 @@ const Consolidado = () => {
     }
   }, [empresasSelecionadas, empresasFixas, empresasVarejoFixas, filtros, handleFiltrar]);
 
-  // Inicialização com dados do mês atual
+  // Inicialização apenas com datas padrão (sem carregar dados)
   useEffect(() => {
     const hoje = new Date();
     const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
@@ -589,13 +593,8 @@ const Consolidado = () => {
       dt_fim: ultimoDia.toISOString().slice(0, 10)
     });
     
-    // Executa após um delay para não bloquear o render inicial
-    setTimeout(() => {
-      handleFiltrar({ preventDefault: () => {} });
-      // Preload desabilitado temporariamente para evitar sobrecarga
-      // setTimeout(() => preloadPreviousMonth(), 10000);
-    }, 500);
-  }, []); // Removido dependências para evitar loops
+    // Dados só serão carregados quando o usuário clicar em "Filtrar"
+  }, []);
 
   // Cleanup
   useEffect(() => {
@@ -878,8 +877,9 @@ const Consolidado = () => {
           </form>
         </div>
 
-        {/* Cards Totais no topo */}
-        <div className="flex flex-wrap gap-4 mb-8 justify-center">
+        {/* Cards Totais */}
+        {dadosCarregados && (
+          <div className="flex flex-wrap gap-4 mb-8 justify-center">
           {/* Vendas após Desconto */}
           <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer">
             <CardHeader className="pb-0">
@@ -1115,7 +1115,8 @@ const Consolidado = () => {
               </div>
             </CardContent>
           </Card>
-        </div>
+          </div>
+        )}
 
       {/* ====== SEÇÕES POR CANAL (mantidas, agora com custos podendo vir do agg) ====== */}
       {/* Revenda */}
