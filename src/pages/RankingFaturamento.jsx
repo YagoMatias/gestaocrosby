@@ -422,7 +422,7 @@ const RankingFaturamento = () => {
     }
     
     if (tipoLoja === 'Proprias') {
-      const isFranquia = nomeFantasia.includes('F') || nomeFantasia.includes('- CROSBY');
+      const isFranquia = nomeFantasia.includes('-') || nomeFantasia.includes('- CROSBY');
       console.log('É própria?', !isFranquia);
       return !isFranquia;
     }
