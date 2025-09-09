@@ -181,6 +181,10 @@ const useApiClient = () => {
     faturamentoFranquia: (params) => apiCall('/api/sales/faturamento-franquia', params),
     faturamentoMtm: (params) => apiCall('/api/sales/faturamento-mtm', params),
     faturamentoRevenda: (params) => apiCall('/api/sales/faturamento-revenda', params),
+    receitaliquidaFaturamento: (params) => apiCall('/api/sales/receitaliquida-faturamento', params),
+    receitaliquidaFranquias: (params) => apiCall('/api/sales/receitaliquida-franquias', params),
+    receitaliquidaMtm: (params) => apiCall('/api/sales/receitaliquida-mtm', params),
+    receitaliquidaRevenda: (params) => apiCall('/api/sales/receitaliquida-revenda', params),
     rankingVendedores: (params) => apiCall('/api/sales/ranking-vendedores', params)
   };
 
