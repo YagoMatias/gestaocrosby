@@ -23,7 +23,7 @@ const EXCLUDED_OPERATIONS = [
   5152, 5930, 650, 5010, 600, 620, 40, 1557, 2505, 8600, 590, 5153, 660, 
   5910, 3336, 9003, 9052, 662, 5909, 5153, 5910, 3336, 9003, 530, 36, 536, 
   1552, 51, 1556, 2500, 1126, 1127, 8160, 1122, 1102, 9986, 1128, 1553, 
-  1556, 9200, 8002, 2551, 1557, 8160, 2004, 5912, 1410,1926,1903,1122,1128,1913,
+  1556, 9200, 8002, 2551, 1557, 8160, 2004, 5912, 1410,1926,1903,1122,1128,1913,529,
   8160
 ];
 
@@ -394,7 +394,7 @@ router.get('/faturamento-revenda',
       5152, 5930, 650, 5010, 600, 620, 40, 1557, 2505, 8600, 590, 5153, 660, 
       5910, 3336, 9003, 9052, 662, 5909, 5153, 5910, 3336, 9003, 530, 36, 536, 
       1552, 51, 1556, 2500, 1126, 1127, 8160, 1122, 1102, 9986, 1128, 1553, 
-      1556, 9200, 8002, 2551, 1557, 8160, 2004, 5912, 1410,1926,1903,1122,1128,1913,8160,10
+      1556, 9200, 8002, 2551, 1557, 8160, 2004, 5912, 1410,1926,1903,1122,1128,1913,8160,10,529
     ];
 
     // Otimização baseada no número de empresas e período
@@ -870,7 +870,7 @@ router.get('/receitaliquida-revenda',
       5152, 5930, 650, 5010, 600, 620, 40, 1557, 2505, 8600, 590, 5153, 660, 
       5910, 3336, 9003, 9052, 662, 5909, 5153, 5910, 3336, 9003, 530, 36, 536, 
       1552, 51, 1556, 2500, 1126, 1127, 8160, 1122, 1102, 9986, 1128, 1553, 
-      1556, 9200, 8002, 2551, 1557, 8160, 2004, 5912, 1410,1926,1903,1122,1128,1913,8160,10
+      1556, 9200, 8002, 2551, 1557, 8160, 2004, 5912, 1410,1926,1903,1122,1128,1913,8160,10,529
     ];
 
     const query = `
@@ -901,5 +901,37 @@ router.get('/receitaliquida-revenda',
   })
 );
 
+
+/**
+ * @route GET /sales/vlicms
+ * @desc Buscar ICMS por transação original
+ * @access Public
+ * @query {nr_transacaoori}
+ */
+router.get('/vlicms',
+  sanitizeInput,
+  validateRequired(['nr_transacaoori']),
+  asyncHandler(async (req, res) => {
+    const { nr_transacaoori } = req.query;
+
+    const query = `
+      SELECT
+        fn.nr_transacaoori,
+        fn.tp_operacao,
+        fn.vl_icms
+      FROM fis_nf fn
+      WHERE fn.nr_transacaoori = $1
+        AND fn.tp_operacao = 'S'
+    `;
+
+    const { rows } = await pool.query(query, [nr_transacaoori]);
+
+    successResponse(res, {
+      nr_transacaoori,
+      count: rows.length,
+      data: rows
+    }, 'ICMS por transação obtido com sucesso');
+  })
+);
 
 export default router;

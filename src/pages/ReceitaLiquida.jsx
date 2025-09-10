@@ -123,6 +123,15 @@ const ReceitaLiquida = () => {
     return acc;
   }, 0), []);
 
+  // Variante: permite escolher se entradas devem ser subtraídas
+  const sumFieldWithMode = useCallback((arr, field, subtractEntries) => (arr || []).reduce((acc, r) => {
+    const q = Number(r.qt_faturado) || 1;
+    const value = (Number(r[field]) || 0) * q;
+    if (r.tp_operacao === 'S') return acc + value;
+    if (subtractEntries && r.tp_operacao === 'E') return acc - value;
+    return acc;
+  }, 0), []);
+
   const handleBuscar = useCallback(async () => {
     setErro('');
     if (!empresasSelecionadas.length || !dataInicio || !dataFim) return;
@@ -176,25 +185,37 @@ const ReceitaLiquida = () => {
       };
 
       const [rFat, rRev, rFrq, rMtm] = await Promise.all([
-        fetchAllChunks(apiClient.sales.receitaliquidaFaturamento).then(r => { setLoadingProgress(p => p + 25); return r; }),
-        fetchAllChunks(apiClient.sales.receitaliquidaRevenda).then(r => { setLoadingProgress(p => p + 25); return r; }),
-        fetchAllChunks(apiClient.sales.receitaliquidaFranquias).then(r => { setLoadingProgress(p => p + 25); return r; }),
-        fetchAllChunks(apiClient.sales.receitaliquidaMtm).then(r => { setLoadingProgress(p => p + 25); return r; })
+        fetchAllChunks(apiClient.sales.faturamento).then(r => { setLoadingProgress(p => p + 25); return r; }),
+        fetchAllChunks(apiClient.sales.faturamentoRevenda).then(r => { setLoadingProgress(p => p + 25); return r; }),
+        fetchAllChunks(apiClient.sales.faturamentoFranquia).then(r => { setLoadingProgress(p => p + 25); return r; }),
+        fetchAllChunks(apiClient.sales.faturamentoMtm).then(r => { setLoadingProgress(p => p + 25); return r; })
       ]);
 
       if (!rFat.success || !rRev.success || !rFrq.success || !rMtm.success) throw new Error('Falha em alguma rota');
 
-      const all = [
-        ...(Array.isArray(rFat.data) ? rFat.data : []),
-        ...(Array.isArray(rRev.data) ? rRev.data : []),
-        ...(Array.isArray(rFrq.data) ? rFrq.data : []),
-        ...(Array.isArray(rMtm.data) ? rMtm.data : [])
-      ];
+      const fatVarejo = Array.isArray(rFat.data) ? rFat.data : [];
+      const revenda = Array.isArray(rRev.data) ? rRev.data : [];
+      const franquia = Array.isArray(rFrq.data) ? rFrq.data : [];
+      const multimarcas = Array.isArray(rMtm.data) ? rMtm.data : [];
 
-      const allAdjusted = applyRevendaRule(all);
-      const bruto = sumField(allAdjusted, 'vl_unitbruto');
-      const liquido = sumField(allAdjusted, 'vl_unitliquido');
-      const icms = sumField(allAdjusted, 'vl_icms');
+      // Bruto por canal (Preço de Tabela):
+      // Revenda e Varejo: S - E; Franquia e Multimarcas: apenas S (igual Consolidado)
+      const brutoVarejo = sumFieldWithMode(fatVarejo, 'vl_unitbruto', true);
+      const brutoRevenda = sumFieldWithMode(revenda, 'vl_unitbruto', true);
+      const brutoFranquia = sumFieldWithMode(franquia, 'vl_unitbruto', false);
+      const brutoMultimarcas = sumFieldWithMode(multimarcas, 'vl_unitbruto', false);
+      const bruto = brutoVarejo + brutoRevenda + brutoFranquia + brutoMultimarcas;
+
+      // Líquido conforme Consolidado (Vendas após Desconto):
+      // Revenda: aplicar regra 1/3 e S - E
+      // Varejo: apenas S
+      // Franquia e Multimarcas: S - E
+      const liquidoRevenda = sumField(applyRevendaRule(revenda), 'vl_unitliquido');
+      const liquidoVarejo = sumFieldWithMode(fatVarejo, 'vl_unitliquido', false);
+      const liquidoFranquia = sumField(franquia, 'vl_unitliquido');
+      const liquidoMultimarcas = sumField(multimarcas, 'vl_unitliquido');
+      const liquido = liquidoRevenda + liquidoVarejo + liquidoFranquia + liquidoMultimarcas;
+      const icms = sumField([...fatVarejo, ...applyRevendaRule(revenda), ...franquia, ...multimarcas], 'vl_icms');
       const desconto = bruto - liquido;
 
       setTotalBruto(bruto);
@@ -202,22 +223,33 @@ const ReceitaLiquida = () => {
       setTotalIcms(icms);
       setTotalDesconto(desconto);
 
-      const mkRow = (canal, arr, applyRev = false) => {
+      const mkRow = (canal, arr, options = {}) => {
+        const { applyRev = false, subtractEntries = true, mode } = options;
         const base = applyRev ? applyRevendaRule(arr) : arr;
+        if (mode === 'varejo') {
+          const b = sumFieldWithMode(base, 'vl_unitbruto', true); // S - E
+          const lSE = sumField(base, 'vl_unitliquido'); // S - E
+          const d = b - lSE; // igual Consolidado: Tabela - Vendas (S-E)
+          const i = sumField(base, 'vl_icms');
+          const pis = lSE * 0.0065;
+          const cofins = lSE * 0.03;
+          const rl = b - d - i - pis - cofins;
+          return { canal, bruto: b, desconto: d, vendasAposDesconto: lSE, icms: i, pis, cofins, receitaLiquida: rl };
+        }
         const b = sumField(base, 'vl_unitbruto');
-        const l = sumField(base, 'vl_unitliquido');
+        const l = sumFieldWithMode(base, 'vl_unitliquido', subtractEntries);
         const i = sumField(base, 'vl_icms');
         const d = b - l;
         const pis = l * 0.0065;
         const cofins = l * 0.03;
         const rl = b - d - i - pis - cofins;
-        return { canal, bruto: b, desconto: d, icms: i, pis, cofins, receitaLiquida: rl };
+        return { canal, bruto: b, desconto: d, vendasAposDesconto: l, icms: i, pis, cofins, receitaLiquida: rl };
       };
       const rows = [
-        mkRow('Faturamento', Array.isArray(rFat.data) ? rFat.data : []),
-        mkRow('Franquia', Array.isArray(rFrq.data) ? rFrq.data : []),
-        mkRow('Multimarca', Array.isArray(rMtm.data) ? rMtm.data : []),
-        mkRow('Revenda', Array.isArray(rRev.data) ? rRev.data : [], true)
+        mkRow('Varejo', fatVarejo, { mode: 'varejo' }),
+        mkRow('Franquia', franquia, { subtractEntries: true }),
+        mkRow('Multimarca', multimarcas, { subtractEntries: true }),
+        mkRow('Revenda', revenda, { applyRev: true, subtractEntries: true })
       ];
       setLinhasTabela(rows);
 
@@ -382,6 +414,7 @@ const ReceitaLiquida = () => {
                 <th className="px-4 py-3 border-b">Canal</th>
                 <th className="px-4 py-3 border-b">Faturamento Bruto</th>
                 <th className="px-4 py-3 border-b">Desconto</th>
+                <th className="px-4 py-3 border-b">Vendas após Desconto</th>
                 <th className="px-4 py-3 border-b">ICMS</th>
                 <th className="px-4 py-3 border-b">PIS</th>
                 <th className="px-4 py-3 border-b">COFINS</th>
@@ -392,12 +425,13 @@ const ReceitaLiquida = () => {
               {linhasTabela.map((row, idx) => (
                 <tr key={idx} className="text-sm text-gray-700 hover:bg-gray-50">
                   <td className="px-4 py-2 border-b font-medium">{row.canal}</td>
-                  <td className="px-4 py-2 border-b">{row.bruto.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                  <td className="px-4 py-2 border-b">{row.desconto.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                  <td className="px-4 py-2 border-b">{row.icms.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                  <td className="px-4 py-2 border-b">{row.pis.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                  <td className="px-4 py-2 border-b">{row.cofins.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                  <td className="px-4 py-2 border-b font-semibold text-[#000638]">{row.receitaLiquida.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                  <td className="px-4 py-2 border-b">{(row.bruto ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                  <td className="px-4 py-2 border-b">{(row.desconto ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                  <td className="px-4 py-2 border-b">{(row.vendasAposDesconto ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                  <td className="px-4 py-2 border-b">{(row.icms ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                  <td className="px-4 py-2 border-b">{(row.pis ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                  <td className="px-4 py-2 border-b">{(row.cofins ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                  <td className="px-4 py-2 border-b font-semibold text-[#000638]">{(row.receitaLiquida ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
                 </tr>
               ))}
             </tbody>
