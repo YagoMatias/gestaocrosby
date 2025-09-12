@@ -20,7 +20,6 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../co
 import LoadingCircle from '../components/LoadingCircle';
 import useApiClient from '../hooks/useApiClient';
 import ExtratoTotvsTable from '../components/ExtratoTotvsTable';
-import { useApi } from '../hooks/useApi';
 import ErrorBoundary from '../components/ui/ErrorBoundary';
 
 const PAGE_SIZE = 20; // Paginação client-side com 20 itens por página
