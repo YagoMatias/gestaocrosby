@@ -37,14 +37,14 @@ const FiltroCliente = ({ clientesSelecionados = [], onSelectClientes, dadosClien
 
   return (
     <div className="flex flex-col relative" ref={dropdownRef}>
-      <label className="block text-xs font-semibold mb-1 text-[#000638]">Cliente</label>
+      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Cliente</label>
       
       {/* Botão do dropdown */}
       <button
         type="button"
         onClick={() => setShowDropdown(!showDropdown)}
         disabled={dadosClientes.length === 0}
-        className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-left flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
+        className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-left flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed text-xs"
       >
         <span className="truncate">
           {dadosClientes.length === 0 
@@ -135,7 +135,7 @@ const FiltroCliente = ({ clientesSelecionados = [], onSelectClientes, dadosClien
                       onClick={(e) => e.stopPropagation()}
                     />
                     <div className="flex flex-row w-full">
-                      <span className="text-sm font-medium text-gray-900 truncate whitespace-nowrap">
+                      <span className="text-xs font-medium text-gray-900 truncate whitespace-nowrap">
                         {(cliente.cd_cliente + ' - ' + (cliente.nm_cliente || '')).replace(/\s+/g, ' ').trim()}
                       </span>
                     </div>

@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import LoginForm from './components/LoginForm';
 import PrivateRoute from './components/PrivateRoute';
 import LoadingSpinner from './components/LoadingSpinner';
+import ErrorBoundary from './components/ui/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import { TrendUp } from '@phosphor-icons/react';
@@ -60,473 +61,75 @@ const createPrivateRoute = (Component, allowedRoles) => (
 
 // Componente memoizado para evitar re-renderizações desnecessárias
 const AppRoutes = memo(() => {
-  const [sidebarOpen, setSidebarOpen] = useState(); // Começa visível por padrão
+  const [sidebarOpen, setSidebarOpen] = useState(''); // Começa visível por padrão
 
   const handleToggleSidebar = () => setSidebarOpen((open) => !open);
-  const handleCloseSidebar = () => setSidebarOpen(true);
+  const handleCloseSidebar = () => setSidebarOpen('');
+
+  // Lista de rotas protegidas (evita centenas de blocos repetidos)
+  const protectedRoutes = [
+    { path: '/financeiro-por-canal', component: FinanceiroPorCanal, roles: ['owner','admin','manager','user'] },
+    { path: '/endividamento', component: Endividamento, roles: ['owner','admin','manager','user'] },
+    { path: '/dash-contas-a-receber', component: DashContasAReceber, roles: ['owner','admin','manager','user'] },
+    { path: '/conciliacao', component: Conciliacao, roles: ['owner','admin','manager','user'] },
+    { path: '/saldo-bancario-totvs', component: SaldoBancarioTotvs, roles: ['owner','admin','manager','user'] },
+    { path: '/home', component: Home, roles: ['admin','manager','user','guest','owner'] },
+    { path: '/dashboard', component: Dashboard, roles: ['admin','manager','user','guest','owner'] },
+    { path: '/contas-a-pagar', component: ContasAPagar, roles: ['owner','admin','manager','user'] },
+    { path: '/contas-a-receber', component: ContasAReceber, roles: ['owner','admin','manager','user'] },
+    { path: '/fluxo-caixa', component: FluxoCaixa, roles: ['owner','admin','manager','user'] },
+    { path: '/saldo-bancario', component: SaldoBancario, roles: ['owner','admin','manager','user'] },
+    { path: '/importacao-ret', component: ImportacaoRet, roles: ['owner','admin','manager','user'] },
+    { path: '/extrato-financeiro', component: ExtratoFinanceiro, roles: ['owner','admin','manager','user'] },
+    { path: '/receita-liquida', component: ReceitaLiquida, roles: ['owner','admin','manager','user'] },
+    { path: '/varejo', component: Varejo, roles: ['owner','admin','manager','user'] },
+    { path: '/franquias', component: Franquias, roles: ['owner','admin','manager','user'] },
+    { path: '/multimarcas', component: Multimarcas, roles: ['owner','admin','manager','user'] },
+    { path: '/revenda', component: Revenda, roles: ['owner','admin','manager','user'] },
+    { path: '/dre-demo', component: DreDemo, roles: ['owner','admin','manager'] },
+    { path: '/manifestacao-nf', component: ManifestacaoNF, roles: ['owner','admin','manager','user'] },
+    { path: '/ranking-faturamento', component: RankingFaturamento, roles: ['admin','manager','guest','owner','user'] },
+    { path: '/consolidado', component: Consolidado, roles: ['owner','admin','manager','user'] },
+    { path: '/auditoria-cmv', component: AuditoriaCMV, roles: ['owner','admin','manager','user'] },
+    { path: '/compras-franquias', component: ComprasFranquias, roles: ['admin','manager','guest','owner','user'] },
+    { path: '/credev', component: Credev, roles: ['admin','manager','guest','owner','user'] },
+    { path: '/painel-admin', component: PainelAdmin, roles: ['owner'] },
+    { path: '/user-panel', component: UserPanel, roles: ['admin','manager','user','guest','owner'] },
+    { path: '/auth-test', component: AuthTest, roles: ['owner'] },
+  ];
+
+  // Componente de layout para rotas protegidas
+  const ProtectedLayout = ({ Component, allowedRoles }) => (
+          <div className="h-screen flex">
+            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
+            <div className="flex-1 flex flex-col">
+              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
+        <main
+          className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
+                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
+          }`}
+        >
+          <ErrorBoundary>
+            {createPrivateRoute(Component, allowedRoles)}
+          </ErrorBoundary>
+              </main>
+            </div>
+          </div>
+  );
 
   return (
     <Routes>
-      {/* Rota de login - sem layout (Sidebar/Header) */}
+      {/* Rota de login - sem layout */}
       <Route path="/" element={<LoginForm />} />
-      
-      {/* Rotas protegidas com layout completo */}
-      <Route 
-        path="/financeiro-por-canal" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(FinanceiroPorCanal, ['owner', 'admin', 'manager','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
 
+      {/* Gera rotas protegidas dinamicamente */}
+      {protectedRoutes.map(({ path, component, roles }) => (
       <Route 
-        path="/endividamento" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(Endividamento, ['owner', 'admin', 'manager','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-
-      <Route 
-        path="/dash-contas-a-receber" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(DashContasAReceber, ['owner', 'admin', 'manager','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-
-      <Route 
-        path="/conciliacao" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(Conciliacao, ['owner', 'admin', 'manager','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/saldo-bancario-totvs" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(SaldoBancarioTotvs, ['owner', 'admin', 'manager','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/home" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(Home, ['admin', 'manager', 'user', 'guest', 'owner'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/dashboard" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(Dashboard, ['admin', 'manager', 'user', 'guest', 'owner'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/contas-a-pagar" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(ContasAPagar, ['owner', 'admin', 'manager','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/contas-a-receber" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(ContasAReceber, ['owner', 'admin', 'manager','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/fluxo-caixa" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(FluxoCaixa, ['owner', 'admin', 'manager','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/saldo-bancario" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(SaldoBancario, ['owner', 'admin', 'manager','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/importacao-ret" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(ImportacaoRet, ['owner', 'admin', 'manager','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/extrato-financeiro" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(ExtratoFinanceiro, ['owner', 'admin', 'manager', 'user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-
-      <Route 
-        path="/receita-liquida" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(ReceitaLiquida, ['owner', 'admin', 'manager','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      
-      <Route 
-        path="/varejo" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(Varejo, ['owner', 'admin', 'manager', 'user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/franquias" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(Franquias, ['owner', 'admin', 'manager', 'user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/multimarcas" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(Multimarcas, ['owner', 'admin', 'manager', 'user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/revenda" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(Revenda, ['owner', 'admin', 'manager', 'user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-
-      
-      <Route 
-        path="/dre-demo" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(DreDemo, ['owner', 'admin', 'manager'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/manifestacao-nf" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(ManifestacaoNF, ['owner', 'admin', 'manager','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/ranking-faturamento" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(RankingFaturamento, ['admin', 'manager', 'guest', 'owner','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      {/* Rota removida: /ranking-vendedores */}
-      <Route 
-        path="/consolidado" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(Consolidado, ['owner', 'admin', 'manager', 'user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/auditoria-cmv" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(AuditoriaCMV, ['owner', 'admin', 'manager', 'user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/compras-franquias" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(ComprasFranquias, ['admin', 'manager', 'guest', 'owner','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/credev" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(Credev, ['admin', 'manager', 'guest', 'owner','user'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/painel-admin" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(PainelAdmin, ['owner'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/user-panel" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(UserPanel, ['admin', 'manager', 'user', 'guest', 'owner'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
-      <Route 
-        path="/auth-test" 
-        element={
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
-              <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
-              }`}>
-                {createPrivateRoute(AuthTest, ['owner'])}
-              </main>
-            </div>
-          </div>
-        } 
-      />
+          key={path}
+          path={path}
+          element={<ProtectedLayout Component={component} allowedRoles={roles} />}
+        />
+      ))}
     </Routes>
   );
 });

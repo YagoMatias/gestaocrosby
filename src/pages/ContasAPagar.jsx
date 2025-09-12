@@ -607,11 +607,11 @@ const ContasAPagar = () => {
   // Função para obter o ícone de ordenação
   const getSortIcon = (key) => {
     if (sortConfig.key !== key) {
-      return <CaretDown size={12} className="ml-1 opacity-50" />;
+      return <CaretDown size={10} className="ml-1 opacity-50" />;
     }
     return sortConfig.direction === 'asc' 
-      ? <CaretUp size={12} className="ml-1" />
-      : <CaretDown size={12} className="ml-1" />;
+      ? <CaretUp size={10} className="ml-1" />
+      : <CaretDown size={10} className="ml-1" />;
   };
 
   // Função para obter dias do mês
@@ -1296,17 +1296,17 @@ const ContasAPagar = () => {
     switch (status?.toLowerCase()) {
       case 'pago':
       case 'liquidado':
-        return <CheckCircle size={16} className="text-green-600" />;
+        return <CheckCircle size={14} className="text-green-600" />;
       case 'vencido':
       case 'atrasado':
-        return <Warning size={16} className="text-red-600" />;
+        return <Warning size={14} className="text-red-600" />;
       case 'a vencer':
       case 'vencendo':
-        return <Clock size={16} className="text-yellow-600" />;
+        return <Clock size={14} className="text-yellow-600" />;
       case 'pendente':
-        return <ArrowUp size={16} className="text-blue-600" />;
+        return <ArrowUp size={14} className="text-blue-600" />;
       default:
-        return <ArrowDown size={16} className="text-gray-600" />;
+        return <ArrowDown size={14} className="text-gray-600" />;
     }
   };
 
@@ -2416,21 +2416,21 @@ const ContasAPagar = () => {
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
-        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Contas a Pagar</h1>
+    <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+        <h1 className="text-lg font-bold mb-3 text-center text-[#000638]">Contas a Pagar</h1>
         
         {/* Filtros */}
-        <div className="mb-8">
-          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
-            <div className="mb-6">
-              <span className="text-lg font-bold text-[#000638] flex items-center gap-2">
-                <Funnel size={22} weight="bold" />
+        <div className="mb-4">
+          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-3 rounded-lg shadow-lg w-full max-w-4xl mx-auto border border-[#000638]/10">
+            <div className="mb-2">
+              <span className="text-xs font-bold text-[#000638] flex items-center gap-1">
+                <Funnel size={10} weight="bold" />
                 Filtros
               </span>
-              <span className="text-sm text-gray-500 mt-1">Selecione o período e empresa para análise</span>
+              <span className="text-xs text-gray-500 mt-1">Selecione o período e empresa para análise</span>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-1 mb-3">
               <div className="lg:col-span-2">
                 <FiltroEmpresa
                   empresasSelecionadas={empresasSelecionadas}
@@ -2438,33 +2438,33 @@ const ContasAPagar = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                   Data Início
                 </label>
                 <input
                   type="date"
                   value={dataInicio}
                   onChange={(e) => setDataInicio(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                   Data Fim
                 </label>
                 <input
                   type="date"
                   value={dataFim}
                   onChange={(e) => setDataFim(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Status</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Status</label>
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
                 >
                   <option value="Todos">TODOS</option>
                   <option value="Pago">PAGO</option>
@@ -2476,11 +2476,11 @@ const ContasAPagar = () => {
             
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Situação</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Situação</label>
                 <select
                   value={situacao}
                   onChange={(e) => setSituacao(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
                 >
                   <option value="NORMAIS">NORMAIS</option>
                   <option value="CANCELADAS">CANCELADAS</option>
@@ -2488,11 +2488,11 @@ const ContasAPagar = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Previsão</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Previsão</label>
                 <select
                   value={previsao}
                   onChange={(e) => setPrevisao(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
                 >
                   <option value="TODOS">TODOS</option>
                   <option value="PREVISÃO">PREVISÃO</option>
@@ -2501,11 +2501,11 @@ const ContasAPagar = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Autorização</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Autorização</label>
                 <select
                   value={filtroAutorizacao}
                   onChange={(e) => setFiltroAutorizacao(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
                 >
                   <option value="TODOS">TODOS</option>
                   <option value="AUTORIZADOS">AUTORIZADOS</option>
@@ -2528,13 +2528,13 @@ const ContasAPagar = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Duplicata</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Duplicata</label>
                 <input
                   type="text"
                   value={duplicata}
                   onChange={(e) => setDuplicata(e.target.value)}
                   placeholder="Buscar duplicata..."
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
                 />
               </div>
               <div>
@@ -2547,17 +2547,17 @@ const ContasAPagar = () => {
               <div className="flex items-center">
                 <button 
                   type="submit"
-                  className="flex items-center gap-2 bg-[#000638] text-white px-6 py-2 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-10 text-sm font-bold shadow-md tracking-wide uppercase"
+                  className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
                   disabled={loading || !dataInicio || !dataFim}
                 >
                   {loading ? (
                     <>
-                      <Spinner size={18} className="animate-spin" />
+                      <Spinner size={10} className="animate-spin" />
                       <span>Buscando...</span>
                     </>
                   ) : (
                     <>
-                      <Calendar size={18} />
+                      <Calendar size={10} />
                       <span>Buscar Dados</span>
                     </>
                   )}
@@ -2578,7 +2578,7 @@ const ContasAPagar = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-blue-600 mb-1">
+              <div className="text-base font-extrabold text-blue-600 mb-0.5">
                   {loading ? <Spinner size={24} className="animate-spin text-blue-600" /> : totalContasCards}
               </div>
               <CardDescription className="text-xs text-gray-500">Contas no período</CardDescription>
@@ -2594,7 +2594,7 @@ const ContasAPagar = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-lg font-extrabold text-green-600 mb-1 break-words">
+              <div className="text-base font-extrabold text-green-600 mb-0.5 break-words">
                 {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : 
                                      totalValorCards.toLocaleString('pt-BR', {
                   style: 'currency',
@@ -2618,7 +2618,7 @@ const ContasAPagar = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-purple-600 mb-1">
+              <div className="text-base font-extrabold text-purple-600 mb-0.5">
                 {loading ? <Spinner size={24} className="animate-spin text-purple-600" /> : 
                                      valorFaltaPagarCards.toLocaleString('pt-BR', {
                   style: 'currency',
@@ -2626,7 +2626,7 @@ const ContasAPagar = () => {
                 })
                 }
               </div>
-              <div className="text-xs font-medium text-purple-500">
+              <div className="text-base font-medium text-purple-500">
                 {loading ? '...' : 
                                      `${totalContasCards - totalContasPagasCards} contas`
                 }
@@ -2647,17 +2647,17 @@ const ContasAPagar = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-red-600 mb-1">
+              <div className="text-base font-extrabold text-red-600 mb-0.5">
                 {loading ? <Spinner size={24} className="animate-spin text-red-600" /> : 
-                                     totalContasVencidasCards
-                }
-              </div>
-              <div className="text-xs font-medium text-red-500">
-                {loading ? '...' : 
                                      valorContasVencidasCards.toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
                     })
+                }
+              </div>
+              <div className="text-base font-medium text-red-500">
+                {loading ? '...' : 
+                                     `${totalContasVencidasCards} contas`
                 }
               </div>
               <CardDescription className="text-xs text-gray-500">Contas em atraso</CardDescription>
@@ -2676,17 +2676,17 @@ const ContasAPagar = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-yellow-600 mb-1">
+              <div className="text-base font-extrabold text-yellow-600 mb-0.5">
                 {loading ? <Spinner size={24} className="animate-spin text-yellow-600" /> : 
-                                     totalContasAVencerCards
-                }
-              </div>
-              <div className="text-xs font-medium text-yellow-500">
-                {loading ? '...' : 
                                      valorContasAVencerCards.toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
                     })
+                }
+              </div>
+              <div className="text-base font-medium text-yellow-500">
+                {loading ? '...' : 
+                                     `${totalContasAVencerCards} contas`
                 }
               </div>
               <CardDescription className="text-xs text-gray-500">Contas futuras</CardDescription>
@@ -2705,17 +2705,17 @@ const ContasAPagar = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-orange-600 mb-1">
+              <div className="text-base font-extrabold text-orange-600 mb-0.5">
                 {loading ? <Spinner size={24} className="animate-spin text-orange-600" /> : 
-                                     totalContasProximasVencerCards
-                }
-              </div>
-              <div className="text-xs font-medium text-orange-500">
-                                {loading ? '...' : 
                                      valorContasProximasVencerCards.toLocaleString('pt-BR', {
                   style: 'currency',
                   currency: 'BRL',
                     })
+                }
+              </div>
+              <div className="text-base font-medium text-orange-500">
+                                {loading ? '...' : 
+                                     `${totalContasProximasVencerCards} contas`
                 }
               </div>
               <CardDescription className="text-xs text-gray-500">Próximos 7 dias</CardDescription>
@@ -2734,17 +2734,17 @@ const ContasAPagar = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-green-600 mb-1">
+              <div className="text-base font-extrabold text-green-600 mb-0.5">
                 {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : 
-                                     totalContasPagasCards
-                }
-              </div>
-              <div className="text-xs font-medium text-green-500">
-                {loading ? '...' : 
                                       valorContasPagasCards.toLocaleString('pt-BR', {
                   style: 'currency',
                   currency: 'BRL',
                     })
+                }
+              </div>
+              <div className="text-base font-medium text-green-500">
+                {loading ? '...' : 
+                                     `${totalContasPagasCards} contas`
                 }
               </div>
               <CardDescription className="text-xs text-gray-500">Contas liquidadas</CardDescription>
@@ -2763,17 +2763,17 @@ const ContasAPagar = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-emerald-600 mb-1">
+              <div className="text-base font-extrabold text-emerald-600 mb-0.5">
                 {loading ? <Spinner size={24} className="animate-spin text-emerald-600" /> : 
-                                     dadosOrdenadosParaCards.filter(grupo => parseFloat(grupo.item.vl_desconto || 0) > 0).length
-                }
-              </div>
-              <div className="text-xs font-medium text-emerald-500">
-                {loading ? '...' : 
                                       totalDescontosCards.toLocaleString('pt-BR', {
                   style: 'currency',
                   currency: 'BRL',
                     })
+                }
+              </div>
+              <div className="text-base font-medium text-emerald-500">
+                {loading ? '...' : 
+                                     `${dadosOrdenadosParaCards.filter(grupo => parseFloat(grupo.item.vl_desconto || 0) > 0).length} contas`
                 }
               </div>
               <CardDescription className="text-xs text-gray-500">Total de descontos obtidos</CardDescription>
@@ -2782,39 +2782,39 @@ const ContasAPagar = () => {
           </div>
           
         {/* Conteúdo principal */}
-        <div className="flex flex-col gap-6 justify-center bg-white rounded-2xl shadow-lg border border-[#000638]/10">
-          <div className="p-6">
+        <div className="flex flex-col gap-3 justify-center bg-white rounded-lg shadow-lg border border-[#000638]/10">
+          <div className="p-3">
             {loading ? (
-              <div className="flex justify-center items-center py-20">
-                <div className="flex items-center gap-3">
-                  <Spinner size={32} className="animate-spin text-blue-600" />
-                  <span className="text-gray-600">Carregando dados...</span>
+              <div className="flex justify-center items-center py-12">
+                <div className="flex items-center gap-1">
+                  <Spinner size={18} className="animate-spin text-blue-600" />
+                  <span className="text-sm text-gray-600">Carregando dados...</span>
                 </div>
               </div>
             ) : !dadosCarregados ? (
-              <div className="flex justify-center items-center py-20">
+              <div className="flex justify-center items-center py-12">
                 <div className="text-center">
-                  <div className="text-gray-500 text-lg mb-2">Clique em "Buscar Dados" para carregar as informações</div>
-                  <div className="text-gray-400 text-sm">Selecione o período e empresa desejados</div>
+                  <div className="text-gray-500 text-sm mb-0.5">Clique em "Buscar Dados" para carregar as informações</div>
+                  <div className="text-gray-400 text-xs">Selecione o período e empresa desejados</div>
                 </div>
               </div>
             ) : dados.length === 0 ? (
-              <div className="flex justify-center items-center py-20">
+              <div className="flex justify-center items-center py-12">
                 <div className="text-center">
-                  <div className="text-gray-500 text-lg mb-2">Nenhum dado encontrado</div>
-                  <div className="text-gray-400 text-sm">Verifique o período selecionado ou tente novamente</div>
+                  <div className="text-gray-500 text-sm mb-0.5">Nenhum dado encontrado</div>
+                  <div className="text-gray-400 text-xs">Verifique o período selecionado ou tente novamente</div>
                 </div>
               </div>
             ) : (
               <>
                 {/* Plano de Contas (dropdown) */}
-                <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 w-full mb-6">
-                  <button className="w-full p-6 flex items-center justify-between" onClick={() => setPlanoOpen(!planoOpen)}>
-                    <h2 className="text-xl font-bold text-[#000638]">Plano de Contas</h2>
-                    <span className="text-sm text-gray-500">{planoOpen ? 'Ocultar' : 'Mostrar'}</span>
+                <div className="bg-white rounded-lg shadow-lg border border-[#000638]/10 w-full mb-3">
+                  <button className="w-full p-3 flex items-center justify-between" onClick={() => setPlanoOpen(!planoOpen)}>
+                    <h2 className="text-sm font-bold text-[#000638]">Plano de Contas</h2>
+                    <span className="text-xs text-gray-500">{planoOpen ? 'Ocultar' : 'Mostrar'}</span>
                   </button>
                   {planoOpen && (
-                    <div className="p-6 border-t border-[#000638]/10">
+                    <div className="p-3 border-t border-[#000638]/10">
                       <DespesasPorCategoria 
                         dados={dadosOrdenadosComFiltroMensal}
                         totalContas={dadosOrdenadosComFiltroMensal.length}
@@ -2836,22 +2836,22 @@ const ContasAPagar = () => {
                 </div>
 
 					{/* Detalhamento de Contas */}
-					<div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10  w-full mb-6">
-						<div className="p-6 border-b border-[#000638]/10">
-							<h2 className="text-xl font-bold text-[#000638]">Detalhamento de Contas</h2>
+					<div className="bg-white rounded-lg shadow-lg border border-[#000638]/10  w-full mb-3">
+						<div className="p-3 border-b border-[#000638]/10">
+							<h2 className="text-sm font-bold text-[#000638]">Detalhamento de Contas</h2>
 							<p className="text-xs text-gray-500 mt-1">Registros consolidados por duplicata/parcela/fornecedor, unificando situações, previsões e datas como nos cards.</p>
 							{carregandoAutorizacoes && (
-								<div className="mt-2 flex items-center gap-2 text-xs text-blue-600">
-									<Spinner size={12} className="animate-spin" />
+								<div className="mt-2 flex items-center gap-1 text-xs text-blue-600">
+									<Spinner size={10} className="animate-spin" />
 									<span>Carregando autorizações...</span>
 								</div>
 							)}
-							<div className="mt-3 flex items-center gap-2">
+							<div className="mt-3 flex items-center gap-1">
 								{(() => {
 									const allSelected = linhasSelecionadasAgrupadas.size === dadosOrdenadosParaCards.length && dadosOrdenadosParaCards.length > 0;
 									const cls = allSelected
-										? 'text-xs px-2 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors'
-										: 'text-xs px-2 py-1 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors';
+										? 'text-xs px-0.5 py-0.5 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors'
+										: 'text-xs px-0.5 py-0.5 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors';
 									return (
 										<button
 											onClick={() => {
@@ -2868,24 +2868,24 @@ const ContasAPagar = () => {
 									<>
 										<button
 											onClick={() => handleAutorizarTodos()}
-											className="text-xs px-2 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors"
+											className="text-xs px-0.5 py-0.5 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors"
 										>
 											Autorizar Todos
 										</button>
 										<button
 											onClick={() => handleRemoverTodos()}
-											className="text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+											className="text-xs px-0.5 py-0.5 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
 										>
 											Remover Todos
 										</button>
 										<button
 											onClick={() => handleAutorizarSelecionados()}
 											disabled={linhasSelecionadasAgrupadas.size === 0}
-											className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+											className="text-xs px-0.5 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 										>
 											Autorizar Selecionados ({linhasSelecionadasAgrupadas.size})
 										</button>
-										<button onClick={() => handleRemoverSelecionados()} disabled={linhasSelecionadasAgrupadas.size === 0} className="text-xs px-2 py-1 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+										<button onClick={() => handleRemoverSelecionados()} disabled={linhasSelecionadasAgrupadas.size === 0} className="text-xs px-0.5 py-0.5 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
 											Remover Selecionados ({linhasSelecionadasAgrupadas.size})
 										</button>
 									</>
@@ -2894,27 +2894,27 @@ const ContasAPagar = () => {
 									<>
 										<button
 											onClick={() => handlePagarTodos()}
-											className="text-xs px-2 py-1 bg-yellow-500 text-black font-bold rounded hover:bg-yellow-600 transition-colors"
+											className="text-xs px-0.5 py-0.5 bg-yellow-500 text-black font-bold rounded hover:bg-yellow-600 transition-colors"
 										>
 											PAGAR TODOS
 										</button>
 										<button
 											onClick={() => handleRemoverPagamentoTodos()}
-											className="text-xs px-2 py-1 bg-red-500 text-white font-bold rounded hover:bg-red-600 transition-colors"
+											className="text-xs px-0.5 py-0.5 bg-red-500 text-white font-bold rounded hover:bg-red-600 transition-colors"
 										>
 											REMOVER TODOS
 										</button>
 										<button
 											onClick={() => handlePagarSelecionados()}
 											disabled={linhasSelecionadasAgrupadas.size === 0}
-											className="text-xs px-2 py-1 bg-yellow-500 text-black font-bold rounded hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+											className="text-xs px-0.5 py-0.5 bg-yellow-500 text-black font-bold rounded hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 										>
 											PAGAR SELECIONADOS ({linhasSelecionadasAgrupadas.size})
 										</button>
 										<button
 											onClick={() => handleRemoverPagamentoSelecionados()}
 											disabled={linhasSelecionadasAgrupadas.size === 0}
-											className="text-xs px-2 py-1 bg-red-500 text-white font-bold rounded hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+											className="text-xs px-0.5 py-0.5 bg-red-500 text-white font-bold rounded hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 										>
 											REMOVER SELECIONADOS ({linhasSelecionadasAgrupadas.size})
 										</button>
@@ -2922,7 +2922,7 @@ const ContasAPagar = () => {
 								)}
 								<button
 									onClick={exportarExcelDetalhamento}
-									className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+									className="text-xs px-0.5 py-0.5 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
 								>
 									Baixar Excel
 								</button>
@@ -2930,7 +2930,7 @@ const ContasAPagar = () => {
 									<button
 										onClick={carregarAutorizacoesSupabase}
 										disabled={carregandoAutorizacoes}
-										className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+										className="text-xs px-0.5 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 									>
 										{carregandoAutorizacoes ? (
 											<div className="flex items-center gap-1">
@@ -2945,15 +2945,15 @@ const ContasAPagar = () => {
 
 							</div>
 						</div>
-						<div className="p-6 overflow-x-auto">
+						<div className="p-3 overflow-x-auto">
 							<table className="contas-table w-full border-collapse">
 								<thead className="min-w-full border border-gray-200 rounded-lg">
-									<tr className="bg-[#000638] text-white text-[10px]">
-										<th className="px-2 py-1 text-center text-[10px]" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10 }}>Selecionar</th>
+									<tr className="bg-[#000638] text-white text-[8px]">
+										<th className="px-0.5 py-0.5 text-center text-[8px]" style={{ width: '30px', minWidth: '30px', position: 'sticky', left: 0, zIndex: 10 }}>Selecionar</th>
 										{(hasRole(['owner', 'admin', 'manager']) || hasRole(['user'])) && (
-											<th className="px-2 py-1 text-center text-[10px]">Ações</th>
+											<th className="px-0.5 py-0.5 text-center text-[8px]">Ações</th>
 										)}
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_situacao')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_situacao')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Status {getSortIcon('tp_situacao')}
 												<button
@@ -2967,7 +2967,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Status"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'tp_situacao' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -2983,7 +2983,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-2 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_vencimento')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_vencimento')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Vencimento {getSortIcon('dt_vencimento')}
 												<button
@@ -2997,7 +2997,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Vencimento"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'dt_vencimento' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3013,7 +3013,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-2 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_duplicata')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_duplicata')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Valor {getSortIcon('vl_duplicata')}
 												<button
@@ -3027,7 +3027,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Valor"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'vl_duplicata' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3043,7 +3043,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_fornecedor')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_fornecedor')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Fornecedor {getSortIcon('cd_fornecedor')}
 												<button
@@ -3057,7 +3057,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Fornecedor"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'cd_fornecedor' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3073,7 +3073,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nm_fornecedor')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nm_fornecedor')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												NM Fornecedor {getSortIcon('nm_fornecedor')}
 												<button
@@ -3087,7 +3087,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Nome Fornecedor"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'nm_fornecedor' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3103,7 +3103,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_despesaitem')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_despesaitem')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Despesa {getSortIcon('ds_despesaitem')}
 												<button
@@ -3117,7 +3117,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Despesa"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'ds_despesaitem' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3133,7 +3133,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_ccusto')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_ccusto')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												NM CUSTO {getSortIcon('ds_ccusto')}
 												<button
@@ -3147,7 +3147,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Centro de Custo"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'ds_ccusto' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3163,7 +3163,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_empresa')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_empresa')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Empresa {getSortIcon('cd_empresa')}
 												<button
@@ -3177,7 +3177,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Empresa"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'cd_empresa' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3193,7 +3193,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_duplicata')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_duplicata')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Duplicata {getSortIcon('nr_duplicata')}
 												<button
@@ -3207,7 +3207,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Duplicata"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'nr_duplicata' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3223,7 +3223,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_parcela')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_parcela')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Parcela {getSortIcon('nr_parcela')}
 												<button
@@ -3237,7 +3237,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Parcela"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'nr_parcela' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3253,7 +3253,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_portador')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_portador')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Portador {getSortIcon('nr_portador')}
 												<button
@@ -3267,7 +3267,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Portador"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'nr_portador' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3283,7 +3283,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_emissao')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_emissao')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Emissão {getSortIcon('dt_emissao')}
 												<button
@@ -3297,7 +3297,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Emissão"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'dt_emissao' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3313,7 +3313,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_entrada')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_entrada')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Entrada {getSortIcon('dt_entrada')}
 												<button
@@ -3327,7 +3327,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Entrada"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'dt_entrada' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3343,7 +3343,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_liq')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_liq')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Liquidação {getSortIcon('dt_liq')}
 												<button
@@ -3357,7 +3357,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Liquidação"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'dt_liq' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3373,7 +3373,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_situacao')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_situacao')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Situação {getSortIcon('tp_situacao')}
 												<button
@@ -3387,7 +3387,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Situação"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'tp_situacao_col' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3403,7 +3403,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_estagio')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_estagio')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Estágio {getSortIcon('tp_estagio')}
 												<button
@@ -3417,7 +3417,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Estágio"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'tp_estagio' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3433,7 +3433,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_juros')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_juros')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Juros {getSortIcon('vl_juros')}
 												<button
@@ -3447,7 +3447,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Juros"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'vl_juros' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3463,7 +3463,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_acrescimo')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_acrescimo')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Acréscimo {getSortIcon('vl_acrescimo')}
 												<button
@@ -3477,7 +3477,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Acréscimo"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'vl_acrescimo' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3493,7 +3493,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_desconto')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_desconto')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Desconto {getSortIcon('vl_desconto')}
 												<button
@@ -3507,7 +3507,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Desconto"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'vl_desconto' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3523,7 +3523,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_pago')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_pago')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Pago {getSortIcon('vl_pago')}
 												<button
@@ -3537,7 +3537,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Valor Pago"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'vl_pago' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3553,7 +3553,7 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('in_aceite')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('in_aceite')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Aceite {getSortIcon('in_aceite')}
 												<button
@@ -3567,7 +3567,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Aceite"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'in_aceite' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3583,9 +3583,9 @@ const ContasAPagar = () => {
 												)}
 											</div>
 										</th>
-										<th className="px-1 py-1 text-center text-[10px]">Rateio(s)</th>
-										<th className="px-1 py-1 text-center text-[10px]">Observação</th>
-										<th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_previsaoreal')}>
+										<th className="px-0.5 py-0.5 text-center text-[8px]">Rateio(s)</th>
+										<th className="px-0.5 py-0.5 text-center text-[8px]">Observação</th>
+										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_previsaoreal')}>
 											<div className="flex items-center justify-center gap-1 relative">
 												Previsão {getSortIcon('tp_previsaoreal')}
 												<button
@@ -3599,7 +3599,7 @@ const ContasAPagar = () => {
 													}`}
 													aria-label="Filtrar por Previsão"
 												>
-													<FunnelSimple size={12} />
+													<FunnelSimple size={10} />
 												</button>
 												{openFilterDropdown === 'tp_previsaoreal' && (
 													<div className="absolute top-full left-0 z-50 mt-1">
@@ -3638,14 +3638,14 @@ const ContasAPagar = () => {
 										}
 										
 										return (
-										<tr key={`grp-${index}`} className={`text-[10px] border-b transition-colors cursor-pointer ${isSelected ? 'bg-blue-100 hover:bg-blue-200' : index % 2 === 0 ? 'bg-white hover:bg-gray-100' : 'bg-gray-50 hover:bg-gray-100'}`} onClick={() => abrirModalDetalhes(grupo.item)} title="Clique para ver detalhes da conta">
-											<td className="px-2 py-1 text-center" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
-												<input type="checkbox" checked={isSelected} onChange={(e) => { e.stopPropagation(); toggleLinhaSelecionadaAgrupada(index); }} className="rounded" onClick={(e) => e.stopPropagation()} />
+										<tr key={`grp-${index}`} className={`text-[8px] border-b transition-colors cursor-pointer ${isSelected ? 'bg-blue-100 hover:bg-blue-200' : index % 2 === 0 ? 'bg-white hover:bg-gray-100' : 'bg-gray-50 hover:bg-gray-100'}`} onClick={() => abrirModalDetalhes(grupo.item)} title="Clique para ver detalhes da conta">
+											<td className="px-0.5 py-0.5 text-center" style={{ width: '30px', minWidth: '30px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
+												<input type="checkbox" checked={isSelected} onChange={(e) => { e.stopPropagation(); toggleLinhaSelecionadaAgrupada(index); }} className="rounded w-3 h-3" onClick={(e) => e.stopPropagation()} />
 											</td>
 											{(hasRole(['owner', 'admin', 'manager']) || hasRole(['user'])) && (
-												<td className="px-2 py-1 text-center">
+												<td className="px-0.5 py-0.5 text-center">
 													{contaPaga ? (
-														<span className="text-[10px] text-red-700 font-semibold">PAGO</span>
+														<span className="text-[8px] text-red-700 font-semibold">PAGO</span>
 													) : (
 														<>
 															{podeAutorizar ? (
@@ -3665,7 +3665,7 @@ const ContasAPagar = () => {
 																			handleAutorizarConta(grupo.item, chaveUnica);
 																		}
 																	}}
-																	className={`text-[10px] px-2 py-1 rounded ${autorizadoPor ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
+																	className={`text-[8px] px-0.5 py-0.5 rounded ${autorizadoPor ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
 																>
 																	{autorizadoPor ? 'REMOVER' : 'AUTORIZAR'}
 																</button>
@@ -3680,7 +3680,7 @@ const ContasAPagar = () => {
 																			console.log('🔑 Chave única:', chaveUnica);
 																			handleEnviarParaPagamento(grupo.item, chaveUnica);
 																		}}
-																		className="text-[10px] px-2 py-1 rounded bg-yellow-500 hover:bg-yellow-600 text-black font-bold w-full"
+																		className="text-[8px] px-0.5 py-0.5 rounded bg-yellow-500 hover:bg-yellow-600 text-black font-bold w-full"
 																	>
 																		PAGAR
 																	</button>
@@ -3696,7 +3696,7 @@ const ContasAPagar = () => {
 																			console.log('🔑 Chave única:', chaveUnica);
 																			handleRemoverEnviadoParaPagamento(grupo.item, chaveUnica);
 																		}}
-																		className="text-[10px] px-2 py-1 rounded bg-red-500 hover:bg-red-600 text-white font-bold w-full"
+																		className="text-[8px] px-0.5 py-0.5 rounded bg-red-500 hover:bg-red-600 text-white font-bold w-full"
 																	>
 																		REMOVER PAGAMENTO
 																	</button>
@@ -3706,7 +3706,7 @@ const ContasAPagar = () => {
 													)}
 												</td>
 											)}
-											<td className="px-1 py-1 text-center text-[10px]">
+											<td className="px-0.5 py-0.5 text-center text-[8px]">
 												{contaPaga ? (
 													<div className="flex items-center justify-center gap-1">
 														<span className="w-2 h-2 bg-red-500 rounded-full"></span>
@@ -3735,31 +3735,31 @@ const ContasAPagar = () => {
 													</div>
 												)}
 											</td>
-											<td className="px-2 py-1 text-center">{formatarData(grupo.item.dt_vencimento)}</td>
-											<td className="px-2 py-1 text-right font-medium text-green-600">{parseFloat(grupo.item.vl_duplicata || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-											<td className="px-1 py-1 text-center">{grupo.item.cd_fornecedor || ''}</td>
-											<td className="px-3 py-1 text-left max-w-32 truncate" title={grupo.item.nm_fornecedor}>{grupo.item.nm_fornecedor || ''}</td>
-											<td className="px-1 py-1 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_despesaitem}>{grupo.item.ds_despesaitem || ''}</td>
-											<td className="px-1 py-1 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_ccusto}>{grupo.item.ds_ccusto || ''}</td>
-											<td className="px-1 py-1 text-center">{grupo.item.cd_empresa || ''}</td>
-											<td className="px-1 py-1 text-center">{grupo.item.nr_duplicata || ''}</td>
-											<td className="px-1 py-1 text-center">{grupo.item.nr_parcela || ''}</td>
-											<td className="px-1 py-1 text-center">{grupo.item.nr_portador || ''}</td>
-											<td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_emissao)}</td>
-											<td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_entrada)}</td>
-											<td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_liq)}</td>
-											<td className="px-1 py-1 text-center">{grupo.item.tp_situacao || ''}</td>
-											<td className="px-1 py-1 text-center">{grupo.item.tp_estagio || ''}</td>
-											<td className="px-1 py-1 text-right">{parseFloat(grupo.item.vl_juros || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-											<td className="px-1 py-1 text-right">{parseFloat(grupo.item.vl_acrescimo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-											<td className="px-1 py-1 text-right">{parseFloat(grupo.item.vl_desconto || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-											<td className="px-1 py-1 text-right">{parseFloat(grupo.item.vl_pago || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-											<td className="px-1 py-1 text-center">{grupo.item.in_aceite || ''}</td>
-											<td className="px-1 py-1 text-right" title={grupo.rateios && grupo.rateios.length > 0 ? grupo.rateios.join(' | ') : ''}>
+											<td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_vencimento)}</td>
+											<td className="px-0.5 py-0.5 text-right font-medium text-green-600">{parseFloat(grupo.item.vl_duplicata || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+											<td className="px-0.5 py-0.5 text-center">{grupo.item.cd_fornecedor || ''}</td>
+											<td className="px-0.5 py-0.5 text-left max-w-32 truncate" title={grupo.item.nm_fornecedor}>{grupo.item.nm_fornecedor || ''}</td>
+											<td className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_despesaitem}>{grupo.item.ds_despesaitem || ''}</td>
+											<td className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_ccusto}>{grupo.item.ds_ccusto || ''}</td>
+											<td className="px-0.5 py-0.5 text-center">{grupo.item.cd_empresa || ''}</td>
+											<td className="px-0.5 py-0.5 text-center">{grupo.item.nr_duplicata || ''}</td>
+											<td className="px-0.5 py-0.5 text-center">{grupo.item.nr_parcela || ''}</td>
+											<td className="px-0.5 py-0.5 text-center">{grupo.item.nr_portador || ''}</td>
+											<td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_emissao)}</td>
+											<td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_entrada)}</td>
+											<td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_liq)}</td>
+											<td className="px-0.5 py-0.5 text-center">{grupo.item.tp_situacao || ''}</td>
+											<td className="px-0.5 py-0.5 text-center">{grupo.item.tp_estagio || ''}</td>
+											<td className="px-0.5 py-0.5 text-right">{parseFloat(grupo.item.vl_juros || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+											<td className="px-0.5 py-0.5 text-right">{parseFloat(grupo.item.vl_acrescimo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+											<td className="px-0.5 py-0.5 text-right">{parseFloat(grupo.item.vl_desconto || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+											<td className="px-0.5 py-0.5 text-right">{parseFloat(grupo.item.vl_pago || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+											<td className="px-0.5 py-0.5 text-center">{grupo.item.in_aceite || ''}</td>
+											<td className="px-0.5 py-0.5 text-right" title={grupo.rateios && grupo.rateios.length > 0 ? grupo.rateios.join(' | ') : ''}>
 												{(grupo.rateios && grupo.rateios.length > 0) ? grupo.rateios.map(r => parseFloat(r || 0)).reduce((a,b)=>a+b,0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : ''}
 											</td>
-											<td className="px-1 py-1 text-left max-w-32 truncate" title={(grupo.observacoes||[]).join(' | ')}>{grupo.item.ds_observacao || ''}</td>
-											<td className="px-1 py-1 text-center">{grupo.item.tp_previsaoreal || ''}</td>
+											<td className="px-0.5 py-0.5 text-left max-w-32 truncate" title={(grupo.observacoes||[]).join(' | ')}>{grupo.item.ds_observacao || ''}</td>
+											<td className="px-0.5 py-0.5 text-center">{grupo.item.tp_previsaoreal || ''}</td>
 										</tr>
 									)})}
 								</tbody>
@@ -3769,12 +3769,12 @@ const ContasAPagar = () => {
 									<div>
 										Selecionadas: <span className="font-semibold">{linhasSelecionadasAgrupadas.size}</span>
 									</div>
-									<div className="flex items-center gap-2">
+									<div className="flex items-center gap-1">
 										<span className="text-green-600">✓</span>
 										                <span>Dados de fornecedor, centro de custo e despesa das rotas refeitas (/fornecedor, /centrocusto e /despesa)</span>
 									</div>
 								</div>
-								<div className="flex items-center gap-6">
+								<div className="flex items-center gap-3">
 									<div>
 										Valor total: <span className="font-semibold text-green-700">{Array.from(linhasSelecionadasAgrupadas).reduce((acc, idx) => acc + (parseFloat(dadosOrdenadosParaCards[idx]?.item?.vl_duplicata || 0)), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
 									</div>
@@ -3801,15 +3801,15 @@ const ContasAPagar = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] flex flex-col">
             {/* Header do Modal */}
-            <div className="bg-[#000638] text-white p-6 rounded-t-lg">
-              <h2 className="text-xl font-bold">Observações</h2>
-              <p className="text-sm opacity-90 mt-1">
+            <div className="bg-[#000638] text-white p-3 rounded-t-lg">
+              <h2 className="text-sm font-bold">Observações</h2>
+              <p className="text-xs opacity-90 mt-1">
                 Detalhes das observações para a conta selecionada
               </p>
                           </div>
 
             {/* Conteúdo do Modal */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-3">
               {dadosModal && dadosModal.observacoes && dadosModal.observacoes.length > 0 ? (
                 <div className="space-y-3">
                   {dadosModal.observacoes.map((obs, index) => (
@@ -3846,15 +3846,15 @@ const ContasAPagar = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] flex flex-col">
             {/* Header do Modal */}
-            <div className="bg-[#000638] text-white p-6 rounded-t-lg">
-              <h2 className="text-xl font-bold">{getTituloModal(tipoCardSelecionado)}</h2>
-              <p className="text-sm opacity-90 mt-1">
+            <div className="bg-[#000638] text-white p-3 rounded-t-lg">
+              <h2 className="text-sm font-bold">{getTituloModal(tipoCardSelecionado)}</h2>
+              <p className="text-xs opacity-90 mt-1">
                 {dadosCardModal.length} registro{dadosCardModal.length !== 1 ? 's' : ''} encontrado{dadosCardModal.length !== 1 ? 's' : ''}
               </p>
                           </div>
 
             {/* Conteúdo do Modal */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-3">
               {dadosCardModal.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -3894,7 +3894,7 @@ const ContasAPagar = () => {
                             {item.nr_duplicata || ''}
                           </td>
                           <td className="px-2 py-2 text-center">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(getStatusFromData(item))}`}>
+                            <span className={`inline-flex items-center px-0.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(getStatusFromData(item))}`}>
                               {getStatusIcon(getStatusFromData(item))}
                               <span className="ml-1">{getStatusFromData(item)}</span>
                                   </span>
@@ -3952,7 +3952,7 @@ const ContasAPagar = () => {
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
           onClick={handleModalClose}
         >
-          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6 relative animate-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-3 relative animate-in zoom-in-95 duration-200">
             {/* Botão de fechar */}
             <button
               onClick={handleCancelRemoveAuthorization}
@@ -3978,11 +3978,11 @@ const ContasAPagar = () => {
                 Detalhes da autorização:
               </h4>
               <div className="space-y-1">
-                <div className="text-sm text-gray-600 flex items-center gap-2">
+                <div className="text-sm text-gray-600 flex items-center gap-1">
                   <div className="w-2 h-2 bg-red-500 rounded-full"></div>
                   Autorizado por: <strong>{autorizacaoToRemove?.autorizadoPor}</strong>
                 </div>
-                <div className="text-sm text-gray-600 flex items-center gap-2">
+                <div className="text-sm text-gray-600 flex items-center gap-1">
                   <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                   Esta ação não pode ser desfeita
                 </div>
@@ -4013,7 +4013,7 @@ const ContasAPagar = () => {
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
           onClick={handleAutorizarTodosModalClose}
         >
-          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6 relative animate-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-3 relative animate-in zoom-in-95 duration-200">
             {/* Botão de fechar */}
             <button
               onClick={handleCancelAutorizarTodos}
@@ -4058,7 +4058,7 @@ const ContasAPagar = () => {
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
           onClick={handleRemoverTodosModalClose}
         >
-          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6 relative animate-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-3 relative animate-in zoom-in-95 duration-200">
             {/* Botão de fechar */}
             <button
               onClick={handleCancelRemoverTodos}
@@ -4619,16 +4619,16 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
     <div className="space-y-4">
       {/* Filtros Mensais */}
       <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-        <div className="flex items-center gap-2 mb-3">
-          <Calendar size={18} className="text-[#000638]" />
+        <div className="flex items-center gap-1 mb-3">
+          <Calendar size={10} className="text-[#000638]" />
           <h3 className="font-bold text-sm text-[#000638]">Filtro por Período (Data Vencimento)</h3>
                     </div>
                     
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1">
           {/* Botão ANO */}
                       <button
             onClick={() => handleFiltroMensalChange('ANO')}
-            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            className={`px-4 py-2 text-[0.7rem] font-medium rounded-md transition-colors ${
               filtroMensal === 'ANO'
                 ? 'bg-[#000638] text-white'
                 : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
@@ -4642,7 +4642,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                           <button
               key={mes}
               onClick={() => handleFiltroMensalChange(mes)}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+              className={`px-2 py-2 text-[0.7rem] font-medium rounded-md transition-colors ${
                 filtroMensal === mes
                                 ? 'bg-[#000638] text-white'
                   : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
@@ -4663,8 +4663,8 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
         {/* Filtro por Dia - aparece apenas quando um mês está selecionado */}
         {filtroMensal !== 'ANO' && (
           <div className="mt-4 pt-4 border-t border-gray-200">
-            <div className="flex items-center gap-2 mb-3">
-              <Calendar size={16} className="text-[#000638]" />
+            <div className="flex items-center gap-1 mb-3">
+              <Calendar size={14} className="text-[#000638]" />
               <h4 className="font-bold text-sm text-[#000638]">Filtro por Dia - {filtroMensal}</h4>
             </div>
             
@@ -4672,7 +4672,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
               {/* Botão "Todos os Dias" */}
                       <button
                 onClick={() => setFiltroDia(null)}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                className={`px-0.5 py-0.5 text-xs font-medium rounded-md transition-colors ${
                   filtroDia === null
                     ? 'bg-[#000638] text-white'
                     : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
@@ -4686,7 +4686,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                 <button
                   key={dia}
                   onClick={() => setFiltroDia(dia)}
-                  className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                  className={`px-0.5 py-0.5 text-xs font-medium rounded-md transition-colors ${
                     filtroDia === dia
                       ? 'bg-[#000638] text-white'
                       : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
@@ -4708,7 +4708,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
             {/* Botão discreto para expandir/colapsar todos */}
             <button
               onClick={toggleTodosTopicos}
-              className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded transition-colors flex items-center gap-1"
+              className="text-xs text-gray-500 hover:text-gray-700 px-0.5 py-0.5 rounded transition-colors flex items-center gap-1"
               title={todosExpandidos ? "Colapsar todos os tópicos" : "Expandir todos os tópicos"}
             >
               {todosExpandidos ? (
@@ -4727,10 +4727,10 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
             {/* Botão para baixar Excel */}
             <button
               onClick={exportarDadosUltimaLinha}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium"
+              className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-medium"
               title="Exportar todos os dados da última linha de hierarquia para Excel"
             >
-              <FileArrowDown size={16} />
+              <FileArrowDown size={14} />
               BAIXAR EXCEL
             </button>
           </div>
@@ -4743,17 +4743,17 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
             <div key={`categoria-${categoriaIndex}-${categoria.nome}`} className="border border-gray-200 rounded-lg overflow-hidden">
               {/* Cabeçalho da categoria principal */}
               <div
-                className="bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors px-3 py-2 flex items-center justify-between"
+                className="bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors px-2 py-1.5 flex items-center justify-between"
                 onClick={() => toggleCategoria(categoria.nome)}
               >
                 <div className="flex items-center space-x-2">
                   {isCategoriaExpanded ? (
-                    <CaretDown size={16} className="text-gray-600" />
+                    <CaretDown size={10} className="text-gray-600" />
                   ) : (
-                    <CaretRight size={16} className="text-gray-600" />
+                    <CaretRight size={10} className="text-gray-600" />
                   )}
                 <div>
-                    <h3 className="font-medium text-sm text-gray-800">{categoria.nome}</h3>
+                    <h3 className="font-medium text-xs text-gray-800">{categoria.nome}</h3>
                     <div className="flex items-center space-x-3 text-xs text-gray-600">
                       <span>{categoria.quantidade} conta(s)</span>
                       <span>{categoria.despesasArray.length} despesa(s)</span>
@@ -4779,14 +4779,14 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                       <div key={`despesa-${categoriaIndex}-${despesaIndex}-${despesa.nome}`} className="border-b border-gray-100 last:border-b-0">
                         {/* Cabeçalho da despesa específica */}
                         <div
-                          className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-6 py-2 flex items-center justify-between"
+                          className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-4 py-1.5 flex items-center justify-between"
                           onClick={() => toggleDespesa(categoria.nome, despesa.nome)}
                         >
                           <div className="flex items-center space-x-2">
                             {isDespesaExpanded ? (
-                              <CaretDown size={14} className="text-gray-500" />
+                              <CaretDown size={10} className="text-gray-500" />
                             ) : (
-                              <CaretRight size={14} className="text-gray-500" />
+                              <CaretRight size={10} className="text-gray-500" />
                             )}
                 <div>
                               <h4 className="font-medium text-xs text-gray-700">{despesa.nome}</h4>
@@ -4815,14 +4815,14 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                             <div key={`fornecedor-${categoriaIndex}-${despesaIndex}-${fornecedorIndex}-${fornecedor.nome}-${fornecedor.nrDuplicata}-${fornecedor.nrParcela}`} className="border-b border-gray-50 last:border-b-0">
                                   {/* Cabeçalho do fornecedor */}
                                   <div
-                                    className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-9 py-2 flex items-center justify-between"
+                                    className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-6 py-1.5 flex items-center justify-between"
                                     onClick={() => toggleFornecedor(categoria.nome, despesa.nome, fornecedor.nome, fornecedor.nrDuplicata, fornecedor.nrParcela, fornecedor.vlRateio)}
                                   >
                                     <div className="flex items-center space-x-2">
                                       {isFornecedorExpanded ? (
-                                        <CaretDown size={12} className="text-gray-400" />
+                                        <CaretDown size={10} className="text-gray-400" />
                                       ) : (
-                                        <CaretRight size={12} className="text-gray-400" />
+                                        <CaretRight size={10} className="text-gray-400" />
                                       )}
                 <div>
                                         <h5 className="font-medium text-xs text-gray-600">
@@ -4858,73 +4858,73 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                       <div className="overflow-x-auto">
                                         <table className="contas-table w-full border-collapse">
                                           <thead>
-                                            <tr className="bg-[#000638] text-white text-[10px]">
-                                              <th className="px-2 py-1 text-center text-[10px]" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: '#000638' }}>
+                                            <tr className="bg-[#000638] text-white text-[8px]">
+                                              <th className="px-0.5 py-0.5 text-center text-[8px]" style={{ width: '30px', minWidth: '30px', position: 'sticky', left: 0, zIndex: 10, background: '#000638' }}>
                                                 Selecionar
                                               </th>
-                                              <th className="px-2 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_vencimento')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_vencimento')}>
                                                 <div className="flex items-center justify-center">Vencimento {getSortIcon('dt_vencimento')}</div>
                                               </th>
-                                              <th className="px-2 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_duplicata')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_duplicata')}>
                                                 <div className="flex items-center justify-center">Valor {getSortIcon('vl_duplicata')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_fornecedor')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_fornecedor')}>
                                                 <div className="flex items-center justify-center">Fornecedor {getSortIcon('cd_fornecedor')}</div>
                                               </th>
-                                              <th className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nm_fornecedor')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nm_fornecedor')}>
                                                 <div className="flex items-center justify-center">NM Fornecedor {getSortIcon('nm_fornecedor')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_despesaitem')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_despesaitem')}>
                                                 <div className="flex items-center justify-center">Despesa {getSortIcon('ds_despesaitem')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_ccusto')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_ccusto')}>
                                                 <div className="flex items-center justify-center">NM CUSTO {getSortIcon('ds_ccusto')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_empresa')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_empresa')}>
                                                 <div className="flex items-center justify-center">Empresa {getSortIcon('cd_empresa')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_duplicata')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_duplicata')}>
                                                 <div className="flex items-center justify-center">Duplicata {getSortIcon('nr_duplicata')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_portador')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_portador')}>
                                                 <div className="flex items-center justify-center">Portador {getSortIcon('nr_portador')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_emissao')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_emissao')}>
                                                 <div className="flex items-center justify-center">Emissão {getSortIcon('dt_emissao')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_entrada')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_entrada')}>
                                                 <div className="flex items-center justify-center">Entrada {getSortIcon('dt_entrada')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_liq')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_liq')}>
                                                 <div className="flex items-center justify-center">Liquidação {getSortIcon('dt_liq')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_situacao')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_situacao')}>
                                                 <div className="flex items-center justify-center">Situação {getSortIcon('tp_situacao')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_estagio')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_estagio')}>
                                                 <div className="flex items-center justify-center">Estágio {getSortIcon('tp_estagio')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_juros')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_juros')}>
                                                 <div className="flex items-center justify-center">Juros {getSortIcon('vl_juros')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_acrescimo')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_acrescimo')}>
                                                 <div className="flex items-center justify-center">Acréscimo {getSortIcon('vl_acrescimo')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_desconto')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_desconto')}>
                                                 <div className="flex items-center justify-center">Desconto {getSortIcon('vl_desconto')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_pago')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_pago')}>
                                                 <div className="flex items-center justify-center">Pago {getSortIcon('vl_pago')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('in_aceite')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('in_aceite')}>
                                                 <div className="flex items-center justify-center">Aceite {getSortIcon('in_aceite')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_parcela')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_parcela')}>
                                                 <div className="flex items-center justify-center">Parcela {getSortIcon('nr_parcela')}</div>
                                               </th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Rateio</th>
-                                              <th className="px-1 py-1 text-center text-[10px]">Observação</th>
-                                              <th className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_previsaoreal')}>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px]">Rateio</th>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px]">Observação</th>
+                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_previsaoreal')}>
                                                 <div className="flex items-center justify-center">Previsão {getSortIcon('tp_previsaoreal')}</div>
                                               </th>
                                             </tr>
@@ -4937,7 +4937,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                               return (
                                                 <tr
                                                   key={`${grupo.item.cd_empresa}-${grupo.item.nr_duplicata}-${index}`}
-                                                  className={`text-[10px] border-b transition-colors cursor-pointer ${
+                                                  className={`text-[8px] border-b transition-colors cursor-pointer ${
                                                     isSelected
                                                       ? 'bg-blue-100 hover:bg-blue-200'
                                                       : index % 2 === 0
@@ -4947,7 +4947,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                                   onClick={() => abrirModalDetalhes(grupo.item)}
                                                   title="Clique para ver detalhes da conta"
                                                 >
-                                                  <td className="px-2 py-1 text-center" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
+                                                  <td className="px-0.5 py-0.5 text-center" style={{ width: '30px', minWidth: '30px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
                                                     <input
                                                       type="checkbox"
                                                       checked={isSelected}
@@ -4955,71 +4955,71 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                                         e.stopPropagation();
                                                         toggleLinhaSelecionada(indiceReal);
                                                       }}
-                                                      className="rounded"
+                                                      className="rounded w-3 h-3"
                                                       onClick={(e) => e.stopPropagation()}
                                                     />
                                                   </td>
-                                                  <td className="px-2 py-1 text-center">{formatarData(grupo.item.dt_vencimento)}</td>
-                                                  <td className="px-2 py-1 text-right font-medium text-green-600">
+                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_vencimento)}</td>
+                                                  <td className="px-0.5 py-0.5 text-right font-medium text-green-600">
                                                     {parseFloat(grupo.item.vl_duplicata || 0).toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
                     })}
                                                   </td>
-                                                  <td className="px-1 py-1 text-center">{grupo.item.cd_fornecedor || ''}</td>
-                                                  <td className="px-3 py-1 text-left max-w-32 truncate" title={grupo.item.nm_fornecedor}>
+                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.cd_fornecedor || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-left max-w-32 truncate" title={grupo.item.nm_fornecedor}>
                                                     {grupo.item.nm_fornecedor || ''}
                                                   </td>
-                                                  <td className="px-1 py-1 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_despesaitem}>
+                                                  <td className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_despesaitem}>
                                                     {grupo.item.ds_despesaitem || ''}
                                                   </td>
-                                                  <td className="px-1 py-1 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_ccusto}>
+                                                  <td className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_ccusto}>
                                                     {grupo.item.ds_ccusto || ''}
                                                   </td>
-                                                  <td className="px-1 py-1 text-center">{grupo.item.cd_empresa || ''}</td>
-                                                  <td className="px-1 py-1 text-center">{grupo.item.nr_duplicata || ''}</td>
-                                                  <td className="px-1 py-1 text-center">{grupo.item.nr_portador || ''}</td>
-                                                  <td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_emissao)}</td>
-                                                  <td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_entrada)}</td>
-                                                  <td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_liq)}</td>
-                                                  <td className="px-1 py-1 text-center">{grupo.item.tp_situacao || ''}</td>
-                                                  <td className="px-1 py-1 text-center">{grupo.item.tp_estagio || ''}</td>
-                                                  <td className="px-1 py-1 text-right">
+                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.cd_empresa || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.nr_duplicata || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.nr_portador || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_emissao)}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_entrada)}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_liq)}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.tp_situacao || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.tp_estagio || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-right">
                                                     {parseFloat(grupo.item.vl_juros || 0).toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
                     })}
                                                   </td>
-                                                  <td className="px-1 py-1 text-right">
+                                                  <td className="px-0.5 py-0.5 text-right">
                                                     {parseFloat(grupo.item.vl_acrescimo || 0).toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
                     })}
                                                   </td>
-                                                  <td className="px-1 py-1 text-right">
+                                                  <td className="px-0.5 py-0.5 text-right">
                                                     {parseFloat(grupo.item.vl_desconto || 0).toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
                     })}
                                                   </td>
-                                                  <td className="px-1 py-1 text-right">
+                                                  <td className="px-0.5 py-0.5 text-right">
                                                     {parseFloat(grupo.item.vl_pago || 0).toLocaleString('pt-BR', {
                                                       style: 'currency',
                                                       currency: 'BRL',
                                                     })}
                                                   </td>
-                                                  <td className="px-1 py-1 text-center">{grupo.item.in_aceite || ''}</td>
-                                                  <td className="px-1 py-1 text-center">{grupo.item.nr_parcela || ''}</td>
-                                                  <td className="px-1 py-1 text-right">
+                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.in_aceite || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.nr_parcela || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-right">
                                                     {parseFloat(grupo.item.vl_rateio || 0).toLocaleString('pt-BR', {
                                                       style: 'currency',
                                                       currency: 'BRL',
                                                     })}
                                                   </td>
-                                                  <td className="px-1 py-1 text-left max-w-32 truncate" title={grupo.item.ds_observacao}>
+                                                  <td className="px-0.5 py-0.5 text-left max-w-32 truncate" title={grupo.item.ds_observacao}>
                                                     {grupo.item.ds_observacao || ''}
                                                   </td>
-                                                  <td className="px-1 py-1 text-center">{grupo.item.tp_previsaoreal || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.tp_previsaoreal || ''}</td>
                                                 </tr>
                                               );
                                             })}

@@ -116,12 +116,12 @@ const ContasAReceber = () => {
       }
       .extrato-table th,
       .extrato-table td {
-        padding: 6px 8px !important;
+        padding: 3px 4px !important;
         border-right: 1px solid #f3f4f6;
         word-wrap: break-word;
         white-space: normal;
-        font-size: 11px;
-        line-height: 1.3;
+        font-size: 9px;
+        line-height: 1.2;
       }
       .extrato-table th:last-child,
       .extrato-table td:last-child {
@@ -132,7 +132,7 @@ const ContasAReceber = () => {
         color: white;
         font-weight: 600;
         text-transform: uppercase;
-        font-size: 10px;
+        font-size: 8px;
         letter-spacing: 0.05em;
       }
       .extrato-table tbody tr:nth-child(odd) {
@@ -1248,23 +1248,23 @@ const ContasAReceber = () => {
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
-        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638] font-barlow">Contas a Receber</h1>
+    <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+        <h1 className="text-lg font-bold mb-3 text-center text-[#000638] font-barlow">Contas a Receber</h1>
 
 
 
         {/* Formulário de Filtros */}
-        <div className="mb-8">
-          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
-            <div className="mb-6">
-              <span className="text-lg font-bold text-[#000638] flex items-center gap-2">
-                <Funnel size={22} weight="bold" />
+        <div className="mb-4">
+          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full max-w-4xl mx-auto border border-[#000638]/10">
+            <div className="mb-2">
+              <span className="text-xs font-bold text-[#000638] flex items-center gap-1">
+                <Funnel size={10} weight="bold" />
                 Filtros
               </span>
-              <span className="text-sm text-gray-500 mt-1">Selecione o período e empresa para análise</span>
+              <span className="text-xs text-gray-500 mt-1">Selecione o período e empresa para análise</span>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 mb-3">
               <div className="lg:col-span-2">
                 <FiltroEmpresa
                   empresasSelecionadas={empresasSelecionadas}
@@ -1273,33 +1273,33 @@ const ContasAReceber = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                   Data Início
                 </label>
                 <input
                   type="date"
                   value={dataInicio}
                   onChange={(e) => setDataInicio(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                   Data Fim
                 </label>
                 <input
                   type="date"
                   value={dataFim}
                   onChange={(e) => setDataFim(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Status</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Status</label>
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
                 >
                   <option value="Todos">TODOS</option>
                   <option value="Pago">PAGO</option>
@@ -1309,13 +1309,13 @@ const ContasAReceber = () => {
               </div>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2 mb-3">
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Situação</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Situação</label>
                 <select
                   value={situacao}
                   onChange={(e) => setSituacao(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
                 >
                   <option value="NORMAIS">NORMAIS</option>
                   <option value="CANCELADAS">CANCELADAS</option>
@@ -1323,11 +1323,11 @@ const ContasAReceber = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Cobrança</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Cobrança</label>
                 <select
                   value={filtroCobranca}
                   onChange={(e) => setFiltroCobranca(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
                 >
                   <option value="TODOS">TODOS</option>
                   <option value="DESCONTADA">DESCONTADA</option>
@@ -1336,11 +1336,11 @@ const ContasAReceber = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Tipo Cliente</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Tipo Cliente</label>
                 <select
                   value={filtroTipoCliente}
                   onChange={(e) => setFiltroTipoCliente(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
                 >
                   <option value="TODOS">TODOS</option>
                   <option value="FRANQUIAS">FRANQUIAS</option>
@@ -1349,23 +1349,23 @@ const ContasAReceber = () => {
               </div>
             
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Fatura</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Fatura</label>
                 <input
                   type="text"
                   value={filtroFatura}
                   onChange={(e) => setFiltroFatura(e.target.value)}
                   placeholder="Buscar fatura..."
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Portador</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Portador</label>
                 <input
                   type="text"
                   value={filtroPortador}
                   onChange={(e) => setFiltroPortador(e.target.value)}
                   placeholder="Buscar portador..."
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
                 />
               </div>
               <div className="lg:col-span-1">
@@ -1392,17 +1392,17 @@ const ContasAReceber = () => {
               <div className="flex items-end">
                 <button 
                   type="submit"
-                  className="flex items-center gap-2 bg-[#000638] text-white px-6 py-4 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-10 text-sm font-bold shadow-md tracking-wide uppercase"
+                  className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
                   disabled={loading || !dataInicio || !dataFim}
                 >
                   {loading ? (
                     <>
-                      <Spinner size={18} className="animate-spin" />
+                      <Spinner size={10} className="animate-spin" />
                       <span></span>
                     </>
                   ) : (
                     <>
-                      <Calendar size={18} />
+                      <Calendar size={10} />
                       <span>Buscar</span>
                     </>
                   )}
@@ -1413,17 +1413,17 @@ const ContasAReceber = () => {
         </div>
 
                   {/* Painel de Filtro Mensal */}
-          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
-            <div className="flex items-center gap-2 mb-3">
-              <Calendar size={18} className="text-[#000638]" />
-                              <h3 className="font-bold text-sm text-[#000638] font-barlow">Filtro por Período (Data Vencimento)</h3>
+          <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 mb-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Calendar size={14} className="text-[#000638]" />
+                              <h3 className="font-bold text-xs text-[#000638] font-barlow">Filtro por Período (Data Vencimento)</h3>
             </div>
             
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1">
               {/* Botão ANO */}
               <button
                 onClick={() => handleFiltroMensalChange('ANO')}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                   filtroMensal === 'ANO'
                     ? 'bg-[#000638] text-white'
                     : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
@@ -1437,7 +1437,7 @@ const ContasAReceber = () => {
                 <button
                   key={mes}
                   onClick={() => handleFiltroMensalChange(mes)}
-                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                     filtroMensal === mes
                       ? 'bg-[#000638] text-white'
                       : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
@@ -1449,7 +1449,7 @@ const ContasAReceber = () => {
             </div>
 
             {/* Informação do filtro ativo */}
-            <div className="mt-3 text-xs text-gray-500">
+            <div className="mt-2 text-xs text-gray-500">
               <span className="font-medium">Filtro ativo:</span> {filtroMensal} 
               {filtroDia && <span className="ml-1">- Dia {filtroDia}</span>}
               <span className="ml-2">({dadosProcessados.length} registro{dadosProcessados.length !== 1 ? 's' : ''})</span>
@@ -1457,17 +1457,17 @@ const ContasAReceber = () => {
 
             {/* Filtro por Dia - aparece apenas quando um mês está selecionado */}
             {filtroMensal !== 'ANO' && (
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <div className="flex items-center gap-2 mb-3">
-                  <Calendar size={16} className="text-[#000638]" />
-                  <h4 className="font-bold text-sm text-[#000638] font-barlow">Filtro por Dia - {filtroMensal}</h4>
+              <div className="mt-3 pt-3 border-t border-gray-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Calendar size={12} className="text-[#000638]" />
+                  <h4 className="font-bold text-xs text-[#000638] font-barlow">Filtro por Dia - {filtroMensal}</h4>
                 </div>
                 
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-0.5">
                   {/* Botão "Todos os Dias" */}
                   <button
                     onClick={() => setFiltroDia(null)}
-                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    className={`px-2 py-0.5 text-xs font-medium rounded-md transition-colors ${
                       filtroDia === null
                         ? 'bg-[#000638] text-white'
                         : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
@@ -1481,7 +1481,7 @@ const ContasAReceber = () => {
                     <button
                       key={dia}
                       onClick={() => setFiltroDia(dia)}
-                      className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                      className={`px-1.5 py-0.5 text-xs font-medium rounded-md transition-colors ${
                         filtroDia === dia
                           ? 'bg-[#000638] text-white'
                           : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
@@ -1497,18 +1497,18 @@ const ContasAReceber = () => {
 
           {/* Cards de Resumo */}
           {dadosProcessados.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8 max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-6 max-w-4xl mx-auto">
             {/* Valor Total Faturado */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
-                  <CurrencyDollar size={18} className="text-blue-600" />
+                  <CurrencyDollar size={14} className="text-blue-600" />
                   <CardTitle className="text-sm font-bold text-blue-700">Valor Total</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-lg font-extrabold text-blue-600 mb-1 break-words">
-                  {loading ? <Spinner size={24} className="animate-spin text-blue-600" /> : 
+              <CardContent className="pt-0 px-3 pb-3">
+                <div className="text-base font-extrabold text-blue-600 mb-0.5 break-words">
+                  {loading ? <Spinner size={18} className="animate-spin text-blue-600" /> : 
                     totais.valorFaturado.toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
@@ -1523,13 +1523,13 @@ const ContasAReceber = () => {
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
-                  <CheckCircle size={18} className="text-green-600" />
+                  <CheckCircle size={14} className="text-green-600" />
                   <CardTitle className="text-sm font-bold text-green-700">Valor Recebido</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-lg font-extrabold text-green-600 mb-1 break-words">
-                  {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : 
+              <CardContent className="pt-0 px-3 pb-3">
+                <div className="text-base font-extrabold text-green-600 mb-0.5 break-words">
+                  {loading ? <Spinner size={18} className="animate-spin text-green-600" /> : 
                     totais.valorPago.toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
@@ -1544,13 +1544,13 @@ const ContasAReceber = () => {
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
-                  <Receipt size={18} className="text-purple-600" />
+                  <Receipt size={14} className="text-purple-600" />
                   <CardTitle className="text-sm font-bold text-purple-700">Valor Corrigido</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-lg font-extrabold text-purple-600 mb-1 break-words">
-                  {loading ? <Spinner size={24} className="animate-spin text-purple-600" /> : 
+              <CardContent className="pt-0 px-3 pb-3">
+                <div className="text-base font-extrabold text-purple-600 mb-0.5 break-words">
+                  {loading ? <Spinner size={18} className="animate-spin text-purple-600" /> : 
                     totais.valorCorrigido.toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
@@ -1565,13 +1565,13 @@ const ContasAReceber = () => {
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
-                  <Warning size={18} className="text-red-600" />
+                  <Warning size={14} className="text-red-600" />
                   <CardTitle className="text-sm font-bold text-red-700">Valor a Receber</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-lg font-extrabold text-red-600 mb-1 break-words">
-                  {loading ? <Spinner size={24} className="animate-spin text-red-600" /> : 
+              <CardContent className="pt-0 px-3 pb-3">
+                <div className="text-base font-extrabold text-red-600 mb-0.5 break-words">
+                  {loading ? <Spinner size={18} className="animate-spin text-red-600" /> : 
                     totais.valorAPagar.toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
@@ -1586,13 +1586,13 @@ const ContasAReceber = () => {
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
-                  <Percent size={18} className="text-orange-600" />
+                  <Percent size={14} className="text-orange-600" />
                   <CardTitle className="text-sm font-bold text-orange-700">Valor de Descontos</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-lg font-extrabold text-orange-600 mb-1 break-words">
-                  {loading ? <Spinner size={24} className="animate-spin text-orange-600" /> : 
+              <CardContent className="pt-0 px-3 pb-3">
+                <div className="text-base font-extrabold text-orange-600 mb-0.5 break-words">
+                  {loading ? <Spinner size={18} className="animate-spin text-orange-600" /> : 
                     totais.valorDescontos.toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
@@ -1607,13 +1607,13 @@ const ContasAReceber = () => {
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
-                  <Calendar size={18} className="text-purple-600" />
+                  <Calendar size={14} className="text-purple-600" />
                   <CardTitle className="text-sm font-bold text-purple-700">A Receber no Período</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-lg font-extrabold text-purple-600 mb-1 break-words">
-                  {loading ? <Spinner size={24} className="animate-spin text-purple-600" /> : 
+              <CardContent className="pt-0 px-3 pb-3">
+                <div className="text-base font-extrabold text-purple-600 mb-0.5 break-words">
+                  {loading ? <Spinner size={18} className="animate-spin text-purple-600" /> : 
                     totais.valorFaturado.toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
@@ -1629,45 +1629,45 @@ const ContasAReceber = () => {
         )}
 
         {/* Tabela */}
-        <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full">
-          <div className="p-6 border-b border-[#000638]/10 flex justify-between items-center">
-            <h2 className="text-xl font-bold text-[#000638] font-barlow">Detalhamento de Contas a Receber</h2>
-            <div className="flex items-center gap-4">
-              <div className="text-sm text-gray-600">
+        <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 max-w-4xl mx-auto w-full">
+          <div className="p-3 border-b border-[#000638]/10 flex justify-between items-center">
+            <h2 className="text-sm font-bold text-[#000638] font-barlow">Detalhamento de Contas a Receber</h2>
+            <div className="flex items-center gap-2">
+              <div className="text-xs text-gray-600">
                 {dadosCarregados ? `${dadosProcessados.length} registros encontrados` : 'Nenhum dado carregado'}
               </div>
               {dadosProcessados.length > 0 && (
                 <button
                   onClick={handleExportExcel}
-                  className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
+                  className="flex items-center gap-1 bg-green-600 text-white px-2 py-1 rounded-lg hover:bg-green-700 transition-colors font-medium text-xs"
                 >
-                  <FileArrowDown size={16} />
+                  <FileArrowDown size={12} />
                   BAIXAR EXCEL
                 </button>
               )}
             </div>
           </div>
           
-          <div className="p-6">
+          <div className="p-3">
             {loading ? (
-              <div className="flex justify-center items-center py-20">
+              <div className="flex justify-center items-center py-12">
                 <div className="flex items-center gap-3">
-                  <Spinner size={32} className="animate-spin text-blue-600" />
-                  <span className="text-gray-600">Carregando dados...</span>
+                  <Spinner size={18} className="animate-spin text-blue-600" />
+                  <span className="text-sm text-gray-600">Carregando dados...</span>
                 </div>
               </div>
             ) : !dadosCarregados ? (
-              <div className="flex justify-center items-center py-20">
+              <div className="flex justify-center items-center py-12">
                 <div className="text-center">
-                  <div className="text-gray-500 text-lg mb-2">Clique em "Buscar Dados" para carregar as informações</div>
-                  <div className="text-gray-400 text-sm">Selecione o período e empresa desejados</div>
+                  <div className="text-gray-500 text-sm mb-2">Clique em "Buscar Dados" para carregar as informações</div>
+                  <div className="text-gray-400 text-xs">Selecione o período e empresa desejados</div>
                 </div>
               </div>
             ) : dados.length === 0 ? (
-              <div className="flex justify-center items-center py-20">
+              <div className="flex justify-center items-center py-12">
                 <div className="text-center">
-                  <div className="text-gray-500 text-lg mb-2">Nenhum dado encontrado</div>
-                  <div className="text-gray-400 text-sm">Verifique o período selecionado ou tente novamente</div>
+                  <div className="text-gray-500 text-sm mb-2">Nenhum dado encontrado</div>
+                  <div className="text-gray-400 text-xs">Verifique o período selecionado ou tente novamente</div>
                 </div>
               </div>
             ) : (
@@ -1679,7 +1679,7 @@ const ContasAReceber = () => {
                   <thead className="bg-[#000638] text-white text-xs uppercase tracking-wider">
                     <tr>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('cd_cliente')}
                       >
                         <div className="flex items-center justify-center">
@@ -1688,7 +1688,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-left text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-left text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('nm_cliente')}
                       >
                         <div className="flex items-center">
@@ -1697,7 +1697,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('nm_fantasia')}
                       >
                         <div className="flex items-center justify-center">
@@ -1706,7 +1706,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('ds_siglaest')}
                       >
                         <div className="flex items-center justify-center">
@@ -1715,7 +1715,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('dt_emissao')}
                       >
                         <div className="flex items-center justify-center">
@@ -1724,7 +1724,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('dt_vencimento')}
                       >
                         <div className="flex items-center justify-center">
@@ -1733,7 +1733,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('vl_fatura')}
                       >
                         <div className="flex items-center justify-center">
@@ -1742,7 +1742,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('vl_pago')}
                       >
                         <div className="flex items-center justify-center">
@@ -1751,7 +1751,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('vl_desconto')}
                       >
                         <div className="flex items-center justify-center">
@@ -1760,7 +1760,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('vl_corrigido')}
                       >
                         <div className="flex items-center justify-center">
@@ -1769,7 +1769,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('tp_documento')}
                       >
                         <div className="flex items-center justify-center">
@@ -1778,7 +1778,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('dt_liq')}
                       >
                         <div className="flex items-center justify-center">
@@ -1787,7 +1787,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('tp_cobranca')}
                       >
                         <div className="flex items-center justify-center">
@@ -1796,7 +1796,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('cd_empresa')}
                       >
                         <div className="flex items-center justify-center">
@@ -1805,7 +1805,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('nr_parcela')}
                       >
                         <div className="flex items-center justify-center">
@@ -1814,7 +1814,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('dt_cancelamento')}
                       >
                         <div className="flex items-center justify-center">
@@ -1823,7 +1823,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('tp_faturamento')}
                       >
                         <div className="flex items-center justify-center">
@@ -1832,7 +1832,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('tp_inclusao')}
                       >
                         <div className="flex items-center justify-center">
@@ -1841,7 +1841,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('tp_baixa')}
                       >
                         <div className="flex items-center justify-center">
@@ -1850,7 +1850,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('tp_situacao')}
                       >
                         <div className="flex items-center justify-center">
@@ -1859,7 +1859,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('vl_original')}
                       >
                         <div className="flex items-center justify-center">
@@ -1868,7 +1868,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('vl_abatimento')}
                       >
                         <div className="flex items-center justify-center">
@@ -1877,7 +1877,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('vl_liquido')}
                       >
                         <div className="flex items-center justify-center">
@@ -1886,7 +1886,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('vl_acrescimo')}
                       >
                         <div className="flex items-center justify-center">
@@ -1895,7 +1895,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('vl_multa')}
                       >
                         <div className="flex items-center justify-center">
@@ -1904,7 +1904,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('nr_portador')}
                       >
                         <div className="flex items-center justify-center">
@@ -1913,7 +1913,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('vl_renegociacao')}
                       >
                         <div className="flex items-center justify-center">
@@ -1922,7 +1922,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('vl_juros')}
                       >
                         <div className="flex items-center justify-center">
@@ -1931,7 +1931,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('pr_juromes')}
                       >
                         <div className="flex items-center justify-center">
@@ -1940,7 +1940,7 @@ const ContasAReceber = () => {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                        className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                         onClick={() => handleSort('pr_multa')}
                       >
                         <div className="flex items-center justify-center">
@@ -1952,14 +1952,14 @@ const ContasAReceber = () => {
                   </thead>
                   <tbody className="bg-white">
                     {dadosPaginados.map((item, index) => (
-                      <tr key={index} className="text-[10px] transition-colors">
-                        <td className="text-center text-gray-900">
+                      <tr key={index} className="text-[8px] transition-colors">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {item.cd_cliente || '--'}
                         </td>
-                        <td className="text-left text-gray-900">
+                        <td className="text-left text-gray-900 px-0.5 py-0.5">
                           {item.nm_cliente || '--'}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {(() => {
                             const key = String(item.cd_cliente).trim();
                             const fantasia = infoPessoas[key]?.nm_fantasia || '';
@@ -1968,7 +1968,7 @@ const ContasAReceber = () => {
                               <div className="flex items-center justify-center gap-2">
                                 <span>{fantasia || '--'}</span>
                                 {ehFranquia && (
-                                  <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-blue-100 text-blue-700 border border-blue-300">
+                                  <span className="px-1 py-0.5 text-[8px] font-bold rounded bg-blue-100 text-blue-700 border border-blue-300">
                                     FRANQUIA
                                   </span>
                                 )}
@@ -1976,46 +1976,46 @@ const ContasAReceber = () => {
                             );
                           })()}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {infoPessoas[String(item.cd_cliente).trim()]?.ds_siglaest || '--'}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {formatDateBR(item.dt_emissao)}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {formatDateBR(item.dt_vencimento)}
                         </td>
-                        <td className="text-center font-semibold text-green-600">
+                        <td className="text-center font-semibold text-green-600 px-0.5 py-0.5">
                           {(parseFloat(item.vl_fatura) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="text-center font-semibold text-blue-600">
+                        <td className="text-center font-semibold text-blue-600 px-0.5 py-0.5">
                           {(parseFloat(item.vl_pago) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {(parseFloat(item.vl_desconto) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {(parseFloat(item.vl_corrigido) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {converterTipoDocumento(item.tp_documento)}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {formatDateBR(item.dt_liq)}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {(() => {
                             const tipo = item.tp_cobranca;
                             if (tipo === '2') return 'DESCONTADA';
@@ -2024,76 +2024,76 @@ const ContasAReceber = () => {
                             return tipo || '--';
                           })()}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {item.cd_empresa || '--'}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {item.nr_parcela || '--'}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {formatDateBR(item.dt_cancelamento)}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {item.tp_faturamento || '--'}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {item.tp_inclusao || '--'}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {item.tp_baixa || '--'}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {item.tp_situacao || '--'}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {(parseFloat(item.vl_original) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {(parseFloat(item.vl_abatimento) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {(parseFloat(item.vl_liquido) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {(parseFloat(item.vl_acrescimo) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {(parseFloat(item.vl_multa) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {item.nr_portador || '--'}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {(parseFloat(item.vl_renegociacao) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {(parseFloat(item.vl_juros) || 0).toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {item.pr_juromes ? `${parseFloat(item.pr_juromes).toFixed(2)}%` : '--'}
                         </td>
-                        <td className="text-center text-gray-900">
+                        <td className="text-center text-gray-900 px-0.5 py-0.5">
                           {item.pr_multa ? `${parseFloat(item.pr_multa).toFixed(2)}%` : '--'}
                         </td>
                       </tr>

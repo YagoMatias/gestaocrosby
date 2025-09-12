@@ -132,22 +132,22 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
   // Componente para renderizar itens de menu
   const MenuItem = ({ item, isActive, level = 0 }) => {
     const IconComponent = item.icon;
-    const paddingLeft = level === 0 ? 'pl-4' : 'pl-8';
+    const paddingLeft = level === 0 ? 'pl-3' : 'pl-6';
     
     return (
       <button 
         onClick={() => handleNavigation(item.href, item.external)}
         className={`
-          w-full flex items-center gap-3 ${paddingLeft} pr-4 py-3 
-          text-sm font-medium rounded-lg transition-all duration-200 font-barlow
+          w-full flex items-center gap-2 ${paddingLeft} pr-3 py-2 
+          text-xs font-medium rounded-lg transition-all duration-200 font-barlow
           ${isActive 
             ? 'bg-gradient-to-r from-blue-50 to-blue-100 text-blue-700 border-r-2 border-blue-600' 
-            : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+            : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900'
           }
         `}
       >
         <IconComponent 
-          size={18} 
+          size={14} 
           weight={isActive ? "fill" : "regular"}
           className="text-gray-500"
         />
@@ -165,12 +165,12 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
 
   // Componente para seções colapsáveis
   const MenuSection = ({ title, items, isOpen, onToggle, icon: SectionIcon, color = "text-gray-600" }) => (
-    <div className="mb-3">
-      <button 
+    <div className="mb-2">
+        <button 
         onClick={onToggle}
-        className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold rounded-lg transition-all duration-200 hover:bg-gray-50 group font-barlow"
+        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 hover:bg-gray-200 group font-barlow"
       >
-        <SectionIcon size={18} className="text-gray-500" />
+        <SectionIcon size={14} className="text-gray-500" />
         <span className="flex-1 text-left text-gray-800">{title}</span>
         <ChevronIcon open={isOpen} />
       </button>
@@ -208,11 +208,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     // Owner: acesso total
     if (user.role === 'owner') {
       return (
-        <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
+        <div className="w-60 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
           {/* Header com logo e close button */}
-          <div className="h-20 px-6 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
+          <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-3">
-              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-10 w-auto" />
+              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
             </div>
             <button
               onClick={onClose}
@@ -223,7 +223,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto overflow-x-hidden">
+          <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
             {/* Dashboard/Home */}
             <MenuItem 
               item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
@@ -326,11 +326,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     // Admin: acesso total (igual ao owner)
     if (user.role === 'admin') {
       return (
-        <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
+        <div className="w-60 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
           {/* Header com logo e close button */}
-          <div className="h-20 px-6 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
+          <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-3">
-              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-10 w-auto" />
+              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
             </div>
             <button
               onClick={onClose}
@@ -341,7 +341,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto overflow-x-hidden">
+          <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
             {/* Dashboard/Home */}
             <MenuItem 
               item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
@@ -442,11 +442,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     // Manager: acesso total exceto administração
     if (user.role === 'manager') {
       return (
-        <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
+        <div className="w-60 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
           {/* Header com logo e close button */}
-          <div className="h-20 px-6 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
+          <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-3">
-              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-10 w-auto" />
+              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
             </div>
             <button
               onClick={onClose}
@@ -457,7 +457,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto overflow-x-hidden">
+          <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
             {/* Dashboard/Home */}
             <MenuItem 
               item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
@@ -546,11 +546,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     // User: acesso ao financeiro e franquias
     if (user.role === 'user') {
       return (
-        <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
+        <div className="w-60 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
           {/* Header com logo e close button */}
-          <div className="h-20 px-6 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
+          <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-3">
-              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-10 w-auto" />
+              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
             </div>
             <button
               onClick={onClose}
@@ -561,7 +561,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto overflow-x-hidden">
+          <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
             {/* Dashboard/Home */}
             <MenuItem 
               item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
@@ -624,11 +624,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     // Guest (Varejo): acesso a franquias e ranking faturamento
     if (user.role === 'guest') {
       return (
-        <div className="w-72 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
+        <div className="w-60 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
           {/* Header com logo e close button */}
-          <div className="h-20 px-6 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
+          <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-3">
-              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-10 w-auto" />
+              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
             </div>
             <button
               onClick={onClose}
@@ -639,7 +639,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto overflow-x-hidden">
+          <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
             {/* Dashboard/Home */}
             <MenuItem 
               item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
@@ -701,19 +701,19 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     <>
       {/* Mobile overlay */}
       {isOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden animate-in fade-in duration-500">
           <div 
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-all duration-300"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-all duration-500 ease-in-out"
             onClick={onClose}
           />
-          <div className="fixed inset-y-0 left-0 z-50 transform transition-all duration-300 ease-out">
+          <div className="fixed inset-y-0 left-0 z-50 transform transition-all duration-500 ease-in-out animate-in slide-in-from-left">
             <SidebarContent />
           </div>
         </div>
       )}
 
       {/* Desktop sidebar - sempre visível em lg+ */}
-      <div className={`hidden lg:block lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 transform transition-all duration-300 ease-out ${
+      <div className={`hidden lg:block lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 transform transition-all duration-500 ease-in-out ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <SidebarContent />

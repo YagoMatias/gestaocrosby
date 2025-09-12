@@ -37,14 +37,14 @@ const FiltroFornecedor = ({ fornecedoresSelecionados = [], onSelectFornecedores,
 
   return (
     <div className="flex flex-col relative" ref={dropdownRef}>
-      <label className="block text-xs font-semibold mb-1 text-[#000638]">Fornecedor</label>
+      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Fornecedor</label>
       
       {/* Botão do dropdown */}
       <button
         type="button"
         onClick={() => setShowDropdown(!showDropdown)}
         disabled={dadosFornecedor.length === 0}
-        className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-left flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
+        className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-left flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed text-xs"
       >
         <span className="truncate">
           {dadosFornecedor.length === 0 
@@ -128,7 +128,7 @@ const FiltroFornecedor = ({ fornecedoresSelecionados = [], onSelectFornecedores,
                     onClick={() => handleToggleFornecedor(fornecedor)}
                   >
                     <div className="flex flex-col flex-1">
-                      <span className="text-sm font-medium text-gray-900">
+                      <span className="text-xs font-medium text-gray-900">
                         {fornecedor.cd_fornecedor} - {fornecedor.nm_fornecedor}
                       </span>
                     </div>

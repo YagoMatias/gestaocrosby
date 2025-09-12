@@ -60,7 +60,13 @@ const Dashboard = () => {
       id: 6,
       title: 'Looker Studio Rafael',
       description: 'Relatórios avançados de Rafael',
-      url: 'https://lookerstudio.google.com/u/0/reporting/fa465a90-1e72-4284-aa8a-2f5ba9cbf86b'
+      url: 'https://lookerstudio.google.com/embed/reporting/fa465a90-1e72-4284-aa8a-2f5ba9cbf86b/page/ghwBE'
+    },
+    {
+      id: 7,
+      title: 'AÇÕES DOS CARTÕES',
+      description: 'Painel de ações dos cartões',
+      url: 'https://app.clickup.com/9011116713/v/db/8chnen9-886151'
     }
   ];
 
@@ -237,7 +243,7 @@ const Dashboard = () => {
       title: 'Looker Studio',
       description: 'Relatórios avançados do Google',
       icon: ChartLineUp,
-      href: 'https://lookerstudio.google.com/u/0/reporting/fa465a90-1e72-4284-aa8a-2f5ba9cbf86b',
+      href: 'https://lookerstudio.google.com/embed/reporting/fa465a90-1e72-4284-aa8a-2f5ba9cbf86b/page/ghwBE',
       color: 'text-purple-600',
       bgColor: 'bg-purple-50',
       external: true
@@ -245,31 +251,31 @@ const Dashboard = () => {
   ];
 
   return (
-      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
-        <div className="max-w-7xl mx-auto">
+      <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+        <div className="max-w-5xl mx-auto">
           {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 font-barlow">
+          <div className="mb-3">
+            <h1 className="text-xl font-bold text-gray-900 font-barlow">
               Dashboard
             </h1>
-            <p className="text-gray-600 mt-2 font-barlow">
+            <p className="text-gray-600 mt-1 text-xs font-barlow">
               Bem-vindo, {user?.name}. Aqui está um resumo das principais métricas.
             </p>
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
             {loading ? (
               // Loading state
               Array.from({ length: 2 }).map((_, index) => (
-                <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <div className="h-4 bg-gray-200 rounded mb-2 animate-pulse"></div>
                       <div className="h-8 bg-gray-200 rounded animate-pulse"></div>
                     </div>
-                    <div className="p-3 rounded-lg bg-gray-100">
-                      <Spinner size={24} className="text-gray-400 animate-spin" />
+                    <div className="p-2 rounded-lg bg-gray-100">
+                      <Spinner size={20} className="text-gray-400 animate-spin" />
                     </div>
                   </div>
                   <div className="mt-4 flex items-center">
@@ -283,21 +289,21 @@ const Dashboard = () => {
               statsCards.map((stat, index) => {
                 const IconComponent = stat.icon;
                 return (
-                  <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-medium text-gray-600 font-barlow">
                           {stat.title}
                         </p>
-                        <p className="text-2xl font-bold text-gray-900 mt-1 font-barlow">
+                        <p className="text-lg font-bold text-gray-900 mt-1 font-barlow">
                           {stat.value}
                         </p>
                       </div>
-                      <div className={`p-3 rounded-lg ${stat.bgColor}`}>
-                        <IconComponent size={24} className={stat.color} />
+                      <div className={`p-1.5 rounded-lg ${stat.bgColor}`}>
+                        <IconComponent size={18} className={stat.color} />
                       </div>
                     </div>
-                    <div className="mt-4 flex items-center">
+                    <div className="mt-2 flex items-center">
                       <span className={`text-sm font-medium ${
                         stat.changeType === 'positive' ? 'text-green-600' : 
                         stat.changeType === 'negative' ? 'text-red-600' : 'text-gray-600'
@@ -315,11 +321,11 @@ const Dashboard = () => {
           </div>
 
                     {/* Quick Actions */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-6 font-barlow">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+            <h2 className="text-base font-semibold text-gray-900 mb-3 font-barlow">
               Ações Rápidas
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
               {quickActions.map((action, index) => {
                 const IconComponent = action.icon;
                 return (
@@ -328,15 +334,15 @@ const Dashboard = () => {
                     href={action.href}
                     target={action.external ? "_blank" : undefined}
                     rel={action.external ? "noopener noreferrer" : undefined}
-                    className="group block p-4 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200"
+                    className="group block p-2 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200"
                   >
-                    <div className={`p-3 rounded-lg ${action.bgColor} w-fit mb-3`}>
-                      <IconComponent size={20} className={action.color} />
+                    <div className={`p-1.5 rounded-lg ${action.bgColor} w-fit mb-1.5`}>
+                      <IconComponent size={14} className={action.color} />
                     </div>
-                    <h3 className="font-semibold text-gray-900 mb-1 font-barlow">
+                    <h3 className="font-semibold text-gray-900 mb-1 text-xs font-barlow">
                       {action.title}
                     </h3>
-                    <p className="text-sm text-gray-600 font-barlow">
+                    <p className="text-xs text-gray-600 font-barlow leading-tight">
                       {action.description}
                     </p>
                   </a>
@@ -346,15 +352,15 @@ const Dashboard = () => {
           </div>
 
           {/* Painel BI */}
-          <div className="mt-8 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-gray-900 font-barlow">
+          <div className="mt-4 bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-semibold text-gray-900 font-barlow">
                 Painel BI
               </h2>
             </div>
             
             {/* Filtro de seleção do painel */}
-            <div className="mb-6">
+            <div className="mb-3">
               <label htmlFor="bi-panel-select" className="block text-sm font-medium text-gray-700 mb-2 font-barlow">
                 Selecione o Painel BI
               </label>
@@ -374,42 +380,40 @@ const Dashboard = () => {
             </div>
             
             {/* Título do painel atual */}
-            <div className="mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 font-barlow">
+            <div className="mb-2">
+              <h3 className="text-sm font-semibold text-gray-900 font-barlow">
                 {biPanels[selectedBiPanel].title}
               </h3>
-              <p className="text-sm text-gray-600 font-barlow">
+              <p className="text-xs text-gray-600 font-barlow">
                 {biPanels[selectedBiPanel].description}
               </p>
             </div>
             
-            {/* Iframe do Power BI ou Botão para Looker Studio */}
+            {/* Iframe do Power BI ou Botão para ClickUp */}
             <div className="w-full">
-              {biPanels[selectedBiPanel].title.includes('Looker Studio') ? (
-                // Para Looker Studio, mostrar botão para abrir em nova aba
-                <div className="flex flex-col items-center justify-center" style={{ height: '600px' }}>
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <ChartLineUp size={32} className="text-purple-600" />
-                    </div>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2 font-barlow">
-                      {biPanels[selectedBiPanel].title}
+              {biPanels[selectedBiPanel].title === 'AÇÕES DOS CARTÕES' ? (
+                // Botão para ClickUp
+                <div className="flex flex-col items-center justify-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="text-center mb-4">
+                    <h3 className="text-base font-semibold text-gray-900 mb-1 font-barlow">
+                      Acessar ClickUp - Ações dos Cartões
                     </h3>
-                    <p className="text-gray-600 mb-6 font-barlow max-w-md">
-                      Clique no botão abaixo para acessar o relatório no Looker Studio
+                    <p className="text-xs text-gray-600 font-barlow">
+                      Clique no botão abaixo para abrir o painel no ClickUp em uma nova aba
                     </p>
-                    <a
-                      href={biPanels[selectedBiPanel].url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-barlow font-semibold"
-                    >
-                      ABRIR LOOKER STUDIO
-                    </a>
                   </div>
+                  <a
+                    href={biPanels[selectedBiPanel].url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors duration-200 font-barlow"
+                  >
+                    <ShoppingCart size={20} className="mr-2" />
+                    IR ATÉ O LINK
+                  </a>
                 </div>
               ) : (
-                // Para Power BI, usar iframe normalmente
+                // Iframe para Power BI/Looker Studio
                 <>
                   <div className="relative w-full" style={{ height: '600px' }}>
                     <iframe
@@ -421,8 +425,8 @@ const Dashboard = () => {
                       loading="lazy"
                     />
                   </div>
-                  <div className="mt-4 text-center">
-                    <p className="text-sm text-gray-600 font-barlow">
+                  <div className="mt-2 text-center">
+                    <p className="text-xs text-gray-600 font-barlow">
                       Painel de Business Intelligence integrado - Visualize dados em tempo real
                     </p>
                   </div>

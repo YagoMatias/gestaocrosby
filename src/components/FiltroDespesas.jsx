@@ -34,12 +34,12 @@ const FiltroDespesas = ({ despesasSelecionadas = [], onSelectDespesas, dadosDesp
 
   return (
     <div className="flex flex-col relative" ref={dropdownRef}>
-      <label className="block text-xs font-semibold mb-1 text-[#000638]">Despesas</label>
+      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Despesas</label>
       <button
         type="button"
         onClick={() => setShowDropdown(!showDropdown)}
         disabled={dadosDespesa.length === 0}
-        className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-left flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
+        className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-left flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed text-xs"
       >
         <span className="truncate">
           {dadosDespesa.length === 0
@@ -106,7 +106,7 @@ const FiltroDespesas = ({ despesasSelecionadas = [], onSelectDespesas, dadosDesp
                     onClick={() => handleToggleDespesa(despesa)}
                   >
                     <div className="flex flex-col flex-1">
-                      <span className="text-sm font-medium text-gray-900">
+                      <span className="text-xs font-medium text-gray-900">
                         {despesa.cd_despesaitem} - {despesa.ds_despesaitem}
                       </span>
                     </div>

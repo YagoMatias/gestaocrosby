@@ -150,12 +150,12 @@ const FluxoCaixa = () => {
       
       .contas-table th,
       .contas-table td {
-        padding: 6px 8px !important;
+        padding: 3px 4px !important;
         border-right: 1px solid #f3f4f6;
         word-wrap: break-word;
         white-space: normal;
-        font-size: 11px;
-        line-height: 1.3;
+        font-size: 9px;
+        line-height: 1.2;
       }
       
       .contas-table th:last-child,
@@ -1473,21 +1473,21 @@ const FluxoCaixa = () => {
   };
 
   return (
-    <div className="w-full w-8xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
-        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Fluxo de Caixa</h1>
+    <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+        <h1 className="text-lg font-bold mb-3 text-center text-[#000638]">Fluxo de Caixa</h1>
         
         {/* Filtros */}
-        <div className="mb-8">
-          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
-            <div className="mb-6">
-              <span className="text-lg font-bold text-[#000638] flex items-center gap-2">
-                <Funnel size={22} weight="bold" />
+        <div className="mb-4">
+          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full max-w-4xl mx-auto border border-[#000638]/10">
+            <div className="mb-2">
+              <span className="text-xs font-bold text-[#000638] flex items-center gap-1">
+                <Funnel size={10} weight="bold" />
                 Filtros
               </span>
-              <span className="text-sm text-gray-500 mt-1">Selecione o período e empresa para análise</span>
+              <span className="text-xs text-gray-500 mt-1">Selecione o período e empresa para análise</span>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
               <div className="lg:col-span-2">
                 <FiltroEmpresa
                   empresasSelecionadas={empresasSelecionadas}
@@ -1495,25 +1495,25 @@ const FluxoCaixa = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                   Data Liquidação Início
                 </label>
                 <input
                   type="date"
                   value={dataInicio}
                   onChange={(e) => setDataInicio(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                   Data Liquidação Fim
                 </label>
                 <input
                   type="date"
                   value={dataFim}
                   onChange={(e) => setDataFim(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
                 />
               </div>
             </div>
@@ -1534,13 +1534,13 @@ const FluxoCaixa = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Duplicata</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Duplicata</label>
                 <input
                   type="text"
                   value={duplicata}
                   onChange={(e) => setDuplicata(e.target.value)}
                   placeholder="Buscar duplicata..."
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
                 />
               </div>
               <div>
@@ -1551,7 +1551,7 @@ const FluxoCaixa = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Contas (Saldo Bancário)</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Contas (Saldo Bancário)</label>
                 <DropdownContas 
                   contas={contas} 
                   contasSelecionadas={contasSelecionadasSaldo} 
@@ -1564,28 +1564,28 @@ const FluxoCaixa = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Final do Saldo</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Data Final do Saldo</label>
                 <input
                   type="date"
                   value={dataFinalSaldo}
                   onChange={(e) => setDataFinalSaldo(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
                 />
               </div>
               <div className="flex items-center">
                 <button 
                   type="submit"
-                  className="flex items-center gap-2 bg-[#000638] text-white px-6 py-2 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-10 text-sm font-bold shadow-md tracking-wide uppercase"
+                  className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
                   disabled={loading || !dataInicio || !dataFim}
                 >
                   {loading ? (
                     <>
-                      <Spinner size={18} className="animate-spin" />
+                      <Spinner size={10} className="animate-spin" />
                       <span>Buscando...</span>
                     </>
                   ) : (
                     <>
-                      <Calendar size={18} />
+                      <Calendar size={10} />
                       <span>Buscar Dados</span>
                     </>
                   )}
@@ -1698,26 +1698,26 @@ const FluxoCaixa = () => {
           title="Detalhamento de Contas a Pagar"
           size="full"
         >
-          <div className="p-6">
+          <div className="p-3">
             {loadingSaida ? (
-              <div className="flex justify-center items-center py-20">
+              <div className="flex justify-center items-center py-12">
                 <div className="flex items-center gap-3">
-                  <Spinner size={32} className="animate-spin text-blue-600" />
-                  <span className="text-gray-600">Carregando saídas...</span>
+                  <Spinner size={18} className="animate-spin text-blue-600" />
+                  <span className="text-sm text-gray-600">Carregando saídas...</span>
                 </div>
               </div>
             ) : !dadosSaidaCarregados ? (
-              <div className="flex justify-center items-center py-20">
+              <div className="flex justify-center items-center py-12">
                 <div className="text-center">
-                  <div className="text-gray-500 text-lg mb-2">Clique em "Buscar Dados" para carregar as saídas</div>
-                  <div className="text-gray-400 text-sm">Selecione o período e empresa desejados</div>
+                  <div className="text-gray-500 text-sm mb-2">Clique em "Buscar Dados" para carregar as saídas</div>
+                  <div className="text-gray-400 text-xs">Selecione o período e empresa desejados</div>
                 </div>
               </div>
             ) : dadosSaida.length === 0 ? (
-              <div className="flex justify-center items-center py-20">
+              <div className="flex justify-center items-center py-12">
                 <div className="text-center">
-                  <div className="text-gray-500 text-lg mb-2">Nenhuma saída encontrada</div>
-                  <div className="text-gray-400 text-sm">Verifique o período selecionado ou tente novamente</div>
+                  <div className="text-gray-500 text-sm mb-2">Nenhuma saída encontrada</div>
+                  <div className="text-gray-400 text-xs">Verifique o período selecionado ou tente novamente</div>
                 </div>
               </div>
             ) : (
@@ -1738,19 +1738,19 @@ const FluxoCaixa = () => {
           title="Detalhamento de Contas a Receber"
           size="full"
         >
-          <div className="p-6">
+          <div className="p-3">
             {loadingContasReceber ? (
-              <div className="flex justify-center items-center py-20">
+              <div className="flex justify-center items-center py-12">
                 <div className="flex items-center gap-3">
-                  <Spinner size={32} className="animate-spin text-green-600" />
-                  <span className="text-gray-600">Carregando contas a receber...</span>
+                  <Spinner size={18} className="animate-spin text-green-600" />
+                  <span className="text-sm text-gray-600">Carregando contas a receber...</span>
                 </div>
               </div>
             ) : dadosContasReceber.length === 0 ? (
-              <div className="flex justify-center items-center py-20">
+              <div className="flex justify-center items-center py-12">
                 <div className="text-center">
-                  <div className="text-gray-500 text-lg mb-2">Clique em "Buscar Dados" para carregar as contas a receber</div>
-                  <div className="text-gray-400 text-sm">Selecione o período e empresa desejados</div>
+                  <div className="text-gray-500 text-sm mb-2">Clique em "Buscar Dados" para carregar as contas a receber</div>
+                  <div className="text-gray-400 text-xs">Selecione o período e empresa desejados</div>
                 </div>
               </div>
             ) : (
@@ -2028,17 +2028,17 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
   return (
     <div className="space-y-4">
       {/* Filtros Mensais */}
-      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-        <div className="flex items-center gap-2 mb-3">
-          <Calendar size={18} className="text-[#000638]" />
-          <h3 className="font-bold text-sm text-[#000638]">Filtro por Período (Data Liquidação)</h3>
+      <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+        <div className="flex items-center gap-2 mb-2">
+          <Calendar size={14} className="text-[#000638]" />
+          <h3 className="font-bold text-xs text-[#000638]">Filtro por Período (Data Liquidação)</h3>
         </div>
         
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1">
           {/* Botão ANO */}
           <button
             onClick={() => setFiltroMensal('ANO')}
-            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
               filtroMensal === 'ANO'
                 ? 'bg-[#000638] text-white'
                 : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
@@ -2052,7 +2052,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
             <button
               key={mes}
               onClick={() => setFiltroMensal(mes)}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                 filtroMensal === mes
                   ? 'bg-[#000638] text-white'
                   : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'

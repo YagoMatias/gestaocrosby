@@ -95,7 +95,7 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
 
   return (
     <header className="w-screen bg-white shadow-sm border-b border-gray-200">
-      <div className="w-full flex items-center justify-between gap-10 px-6 py-4">
+      <div className="w-full flex items-center justify-between gap-10 px-6 py-1">
         <div className="flex items-center gap-4">
           {/* Botão de menu hambúrguer */}
           <button
@@ -109,10 +109,10 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
           <div className={`flex items-center transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-4'}`}>
             
             {/* Container com altura fixa e largura mínima para evitar layout shift */}
-            <div className="h-8 w-48 flex items-center justify-start">
+            <div className="h-5 w-48 flex items-center justify-start">
               {/* Texto HEADCOACH CROSBY */}
               {currentDisplay === 'text' && (
-                <h1 className={`text-2xl font-bold text-blue-950 font-barlow whitespace-nowrap ${!isTransitioning ? 'animate-fade-in-smooth' : ''}`}>
+                <h1 className={`text-lg font-bold text-blue-950 font-barlow whitespace-nowrap ${!isTransitioning ? 'animate-fade-in-smooth' : ''}`}>
                   HEADCOACH CROSBY
                 </h1>
               )}
@@ -122,7 +122,7 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
                 <img 
                   src="/hokey.gif" 
                   alt="HEADCOACH" 
-                  className="w-10 h-10 rounded-full animate-slide-right-bounce shadow-lg" 
+                  className="w-8 h-8 rounded-full animate-slide-right-bounce shadow-lg" 
                 />
               )}
             </div>
@@ -133,7 +133,7 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
           {/* Dropdown do usuário */}
           <div className="relative" ref={dropdownRef}>
             <button
-              className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+              className="flex items-center gap-2 px-3 py-1 rounded-lg hover:bg-gray-100 transition-colors"
               onClick={() => setShowDropdown(!showDropdown)}
             >
               <User size={20} className="text-gray-500" />
