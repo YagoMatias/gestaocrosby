@@ -185,7 +185,8 @@ const useApiClient = () => {
     receitaliquidaFranquias: (params) => apiCall('/api/sales/receitaliquida-franquias', params),
     receitaliquidaMtm: (params) => apiCall('/api/sales/receitaliquida-mtm', params),
     receitaliquidaRevenda: (params) => apiCall('/api/sales/receitaliquida-revenda', params),
-    rankingVendedores: (params) => apiCall('/api/sales/ranking-vendedores', params)
+    rankingVendedores: (params) => apiCall('/api/sales/ranking-vendedores', params),
+    vlimposto: (params) => apiCall('/api/sales/vlimposto', params)
   };
 
   const company = {

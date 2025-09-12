@@ -51,12 +51,6 @@ const Dashboard = () => {
       url: 'https://app.powerbi.com/view?r=eyJrIjoiZDcxODA0OTMtYWY3ZC00MzY2LWFmODAtZGRiMzY4MTYwMzE3IiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9'
     },
     {
-      id: 7,
-      title: 'Vendas vs Estoque',
-      description: 'Análise comparativa entre vendas e estoque',
-      url: 'https://app.powerbi.com/view?r=eyJrIjoiZDcxODA0OTMtYWY3ZC00MzY2LWFmODAtZGRiMzY4MTYwMzE3IiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9'
-    },
-    {
       id: 5,
       title: 'Indicadores do Vigia',
       description: 'Análise detalhada do Vigia',

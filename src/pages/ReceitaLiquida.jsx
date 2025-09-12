@@ -15,6 +15,8 @@ const ReceitaLiquida = () => {
   const [totalLiquido, setTotalLiquido] = useState(0);
   const [totalIcms, setTotalIcms] = useState(0);
   const [totalDesconto, setTotalDesconto] = useState(0);
+  const [totalPis, setTotalPis] = useState(0);
+  const [totalCofins, setTotalCofins] = useState(0);
   const [linhasTabela, setLinhasTabela] = useState([]);
 
   // =========================
@@ -30,6 +32,7 @@ const ReceitaLiquida = () => {
   const activeRequestsRef = useRef(0);
 
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingImpostos, setLoadingImpostos] = useState(false);
   const [cacheInfo, setCacheInfo] = useState(null); // { fromCache, at }
   const initializedRef = useRef(false);
 
@@ -132,6 +135,63 @@ const ReceitaLiquida = () => {
     return acc;
   }, 0), []);
 
+  // Função para buscar dados de impostos da rota VLIMPOSTO com lotes
+  // Retorna um mapa por transação e totais gerais (padrão centro de custo)
+  const buscarImpostos = useCallback(async (nrTransacoes, onProgress) => {
+    if (!nrTransacoes || nrTransacoes.length === 0) return { byTransacao: {}, totals: { icms: 0, pis: 0, cofins: 0 } };
+    
+    setLoadingImpostos(true);
+    
+    try {
+      const TAMANHO_LOTE = 500;
+      const lotes = [];
+      for (let i = 0; i < nrTransacoes.length; i += TAMANHO_LOTE) lotes.push(nrTransacoes.slice(i, i + TAMANHO_LOTE));
+
+      console.log(`🔍 Buscando impostos reais em ${lotes.length} lotes de até ${TAMANHO_LOTE} transações cada`);
+
+      const MAX_CONCURRENT_BATCHES = 3;
+      const resultados = [];
+      for (let i = 0; i < lotes.length; i += MAX_CONCURRENT_BATCHES) {
+        const batchGroup = lotes.slice(i, i + MAX_CONCURRENT_BATCHES);
+        const batchPromises = batchGroup.map(async (lote) => {
+          const response = await apiClient.sales.vlimposto({ nr_transacao: lote });
+          if (response.success && response.data) return response.data;
+          console.warn('Resposta inválida para lote:', response);
+          return [];
+        });
+        try {
+          const batchResults = await Promise.all(batchPromises);
+          resultados.push(...batchResults.flat());
+        } catch (error) {
+          console.error(`Erro em lote ${i}-${i + MAX_CONCURRENT_BATCHES}:`, error);
+        }
+        const progress = Math.round(((i + MAX_CONCURRENT_BATCHES) / lotes.length) * 100);
+        if (onProgress) onProgress(Math.min(progress, 100));
+      }
+
+      // Montar mapa por transação e totais gerais
+      const byTransacao = {};
+      const totals = { icms: 0, pis: 0, cofins: 0 };
+      for (const item of resultados) {
+        const nr = String(item.nr_transacao);
+        const valor = parseFloat(item.valorimposto || 0) || 0;
+        const cd = Number(item.cd_imposto);
+        if (!byTransacao[nr]) byTransacao[nr] = { icms: 0, pis: 0, cofins: 0 };
+        if (cd === 1) { byTransacao[nr].icms += valor; totals.icms += valor; }
+        else if (cd === 5) { byTransacao[nr].cofins += valor; totals.cofins += valor; }
+        else if (cd === 6) { byTransacao[nr].pis += valor; totals.pis += valor; }
+      }
+
+      console.log('✅ Impostos reais agregados:', { totals, sample: Object.entries(byTransacao).slice(0,2) });
+      return { byTransacao, totals };
+    } catch (error) {
+      console.error('Erro crítico ao buscar impostos:', error);
+      throw error;
+    } finally {
+      setLoadingImpostos(false);
+    }
+  }, [apiClient]);
+
   const handleBuscar = useCallback(async () => {
     setErro('');
     if (!empresasSelecionadas.length || !dataInicio || !dataFim) return;
@@ -158,6 +218,8 @@ const ReceitaLiquida = () => {
         setTotalLiquido(c.totals.totalLiquido || 0);
         setTotalIcms(c.totals.totalIcms || 0);
         setTotalDesconto(c.totals.totalDesconto || 0);
+        setTotalPis(c.totals.totalPis || 0);
+        setTotalCofins(c.totals.totalCofins || 0);
         setLinhasTabela(c.rows || []);
         setLoading(false);
         setLoadingProgress(100);
@@ -198,6 +260,26 @@ const ReceitaLiquida = () => {
       const franquia = Array.isArray(rFrq.data) ? rFrq.data : [];
       const multimarcas = Array.isArray(rMtm.data) ? rMtm.data : [];
 
+      // Coletar todos os nr_transacao para buscar impostos
+      const todasTransacoes = [
+        ...fatVarejo.filter(r => r.tp_operacao === 'S').map(r => r.nr_transacao),
+        ...revenda.filter(r => r.tp_operacao === 'S').map(r => r.nr_transacao),
+        ...franquia.filter(r => r.tp_operacao === 'S').map(r => r.nr_transacao),
+        ...multimarcas.filter(r => r.tp_operacao === 'S').map(r => r.nr_transacao)
+      ].filter((nr, index, arr) => nr && arr.indexOf(nr) === index); // Remove duplicatas
+
+      // Buscar dados de impostos reais da rota VLIMPOSTO
+      let impostosData;
+      try {
+        impostosData = await buscarImpostos(todasTransacoes, (progress) => {
+          setLoadingProgress(80 + (progress * 0.2)); // 80% base + 20% para impostos
+        });
+      } catch (error) {
+        console.error('Falha crítica ao buscar impostos reais:', error);
+        setErro('Erro ao buscar dados de impostos. Verifique a conexão e tente novamente.');
+        return;
+      }
+
       // Bruto por canal (Preço de Tabela):
       // Revenda e Varejo: S - E; Franquia e Multimarcas: apenas S (igual Consolidado)
       const brutoVarejo = sumFieldWithMode(fatVarejo, 'vl_unitbruto', true);
@@ -215,45 +297,67 @@ const ReceitaLiquida = () => {
       const liquidoFranquia = sumField(franquia, 'vl_unitliquido');
       const liquidoMultimarcas = sumField(multimarcas, 'vl_unitliquido');
       const liquido = liquidoRevenda + liquidoVarejo + liquidoFranquia + liquidoMultimarcas;
-      const icms = sumField([...fatVarejo, ...applyRevendaRule(revenda), ...franquia, ...multimarcas], 'vl_icms');
+      
+      // Usar dados reais de impostos da rota VLIMPOSTO (totais agregados)
+      const icms = impostosData.totals.icms;
+      const pis = impostosData.totals.pis;
+      const cofins = impostosData.totals.cofins;
       const desconto = bruto - liquido;
 
       setTotalBruto(bruto);
       setTotalLiquido(liquido);
       setTotalIcms(icms);
       setTotalDesconto(desconto);
+      setTotalPis(pis);
+      setTotalCofins(cofins);
 
-      const mkRow = (canal, arr, options = {}) => {
+      const mkRow = async (canal, arr, options = {}) => {
         const { applyRev = false, subtractEntries = true, mode } = options;
         const base = applyRev ? applyRevendaRule(arr) : arr;
+        
+        // Somar impostos do canal usando o mapa por transação já obtido
+        const transacoesCanal = base
+          .filter(r => r.tp_operacao === 'S')
+          .map(r => String(r.nr_transacao))
+          .filter((nr, index, arr) => nr && arr.indexOf(nr) === index);
+        let iCanal = 0, pisCanal = 0, cofinsCanal = 0;
+        transacoesCanal.forEach(nr => {
+          const imp = impostosData.byTransacao[nr];
+          if (imp) {
+            iCanal += imp.icms || 0;
+            pisCanal += imp.pis || 0;
+            cofinsCanal += imp.cofins || 0;
+          }
+        });
+        
         if (mode === 'varejo') {
           const b = sumFieldWithMode(base, 'vl_unitbruto', true); // S - E
           const lSE = sumField(base, 'vl_unitliquido'); // S - E
           const d = b - lSE; // igual Consolidado: Tabela - Vendas (S-E)
-          const i = sumField(base, 'vl_icms');
-          const pis = lSE * 0.0065;
-          const cofins = lSE * 0.03;
+          const i = iCanal;
+          const pis = pisCanal;
+          const cofins = cofinsCanal;
           const rl = b - d - i - pis - cofins;
           return { canal, bruto: b, desconto: d, vendasAposDesconto: lSE, icms: i, pis, cofins, receitaLiquida: rl };
         }
         const b = sumField(base, 'vl_unitbruto');
         const l = sumFieldWithMode(base, 'vl_unitliquido', subtractEntries);
-        const i = sumField(base, 'vl_icms');
+        const i = iCanal;
         const d = b - l;
-        const pis = l * 0.0065;
-        const cofins = l * 0.03;
+        const pis = pisCanal;
+        const cofins = cofinsCanal;
         const rl = b - d - i - pis - cofins;
         return { canal, bruto: b, desconto: d, vendasAposDesconto: l, icms: i, pis, cofins, receitaLiquida: rl };
       };
-      const rows = [
+      const rows = await Promise.all([
         mkRow('Varejo', fatVarejo, { mode: 'varejo' }),
         mkRow('Franquia', franquia, { subtractEntries: true }),
         mkRow('Multimarca', multimarcas, { subtractEntries: true }),
         mkRow('Revenda', revenda, { applyRev: true, subtractEntries: true })
-      ];
+      ]);
       setLinhasTabela(rows);
 
-      writeCache(key, { totals: { totalBruto: bruto, totalLiquido: liquido, totalIcms: icms, totalDesconto: desconto }, rows });
+      writeCache(key, { totals: { totalBruto: bruto, totalLiquido: liquido, totalIcms: icms, totalDesconto: desconto, totalPis: pis, totalCofins: cofins }, rows });
       setCacheInfo({ fromCache: false, at: Date.now() });
       setLoadingProgress(100);
     } catch (err) {
@@ -333,6 +437,11 @@ const ReceitaLiquida = () => {
               <div className="bg-[#000638] h-2 rounded-full transition-all duration-300" style={{ width: `${loadingProgress}%` }}></div>
             </div>
           )}
+          {loadingImpostos && (
+            <div className="text-center text-sm text-blue-600 mb-2">
+              🔍 Buscando dados de impostos...
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-2">
             <div className="lg:col-span-2">
               <FiltroEmpresa
@@ -372,8 +481,8 @@ const ReceitaLiquida = () => {
         </form>
       </div>
 
-      {/* Cards Totais (Bruto, Líquido, ICMS, Desconto) */}
-      {!!(totalBruto || totalLiquido || totalIcms || totalDesconto) && (
+      {/* Cards Totais (Bruto, Líquido, ICMS, Desconto, PIS, COFINS) */}
+      {!!(totalBruto || totalLiquido || totalIcms || totalDesconto || totalPis || totalCofins) && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
           <div className="shadow rounded-lg bg-white p-3 border border-[#000638]/10">
             <div className="text-[11px] text-gray-500">Faturamento Bruto</div>
@@ -392,12 +501,12 @@ const ReceitaLiquida = () => {
             <div className="text-lg font-extrabold text-orange-700">{totalDesconto.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
           </div>
           <div className="shadow rounded-lg bg-white p-3 border border-[#000638]/10">
-            <div className="text-[11px] text-gray-500">PIS (0,65%)</div>
-            <div className="text-lg font-extrabold text-blue-700">{(totalLiquido * 0.0065).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+            <div className="text-[11px] text-gray-500">PIS</div>
+            <div className="text-lg font-extrabold text-blue-700">{totalPis.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
           </div>
           <div className="shadow rounded-lg bg-white p-3 border border-[#000638]/10">
-            <div className="text-[11px] text-gray-500">COFINS (3,0%)</div>
-            <div className="text-lg font-extrabold text-pink-700">{(totalLiquido * 0.03).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+            <div className="text-[11px] text-gray-500">COFINS</div>
+            <div className="text-lg font-extrabold text-pink-700">{totalCofins.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
           </div>
         </div>
       )}

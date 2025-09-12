@@ -80,6 +80,46 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const [adminOpen, setAdminOpen] = useState(false);
   const { user } = useAuth();
 
+  // Garante que ao abrir uma seção, as demais sejam fechadas
+  const handleSectionToggle = (section) => {
+    if (section === 'financeiro') {
+      const next = !financeiroOpen;
+      setFinanceiroOpen(next);
+      setFaturamentoOpen(false);
+      setFranquiasOpen(false);
+      setAdminOpen(false);
+      if (!next) setDashboardFinanceiroOpen(false);
+      return;
+    }
+    if (section === 'faturamento') {
+      const next = !faturamentoOpen;
+      setFaturamentoOpen(next);
+      setFinanceiroOpen(false);
+      setDashboardFinanceiroOpen(false);
+      setFranquiasOpen(false);
+      setAdminOpen(false);
+      return;
+    }
+    if (section === 'franquias') {
+      const next = !franquiasOpen;
+      setFranquiasOpen(next);
+      setFinanceiroOpen(false);
+      setDashboardFinanceiroOpen(false);
+      setFaturamentoOpen(false);
+      setAdminOpen(false);
+      return;
+    }
+    if (section === 'admin') {
+      const next = !adminOpen;
+      setAdminOpen(next);
+      setFinanceiroOpen(false);
+      setDashboardFinanceiroOpen(false);
+      setFaturamentoOpen(false);
+      setFranquiasOpen(false);
+      return;
+    }
+  };
+
   const handleNavigation = (href, external = false) => {
     onClose();
     if (external) {
@@ -201,7 +241,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               title="Financeiro"
               items={financeiro}
               isOpen={financeiroOpen}
-              onToggle={() => setFinanceiroOpen(!financeiroOpen)}
+              onToggle={() => handleSectionToggle('financeiro')}
               icon={Money}
               color="text-emerald-600"
             />
@@ -224,7 +264,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               title="CMV"
               items={faturamento}
               isOpen={faturamentoOpen}
-              onToggle={() => setFaturamentoOpen(!faturamentoOpen)}
+              onToggle={() => handleSectionToggle('faturamento')}
               icon={ChartLineUp}
               color="text-blue-600"
             />
@@ -233,7 +273,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               title="Franquias"
               items={franquias}
               isOpen={franquiasOpen}
-              onToggle={() => setFranquiasOpen(!franquiasOpen)}
+              onToggle={() => handleSectionToggle('franquias')}
               icon={Buildings}
               color="text-purple-600"
             />
@@ -259,7 +299,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                   title="Administração"
                   items={[{ name: 'Painel Admin', href: '/painel-admin', icon: UserGear, color: 'text-red-600' }]}
                   isOpen={adminOpen}
-                  onToggle={() => setAdminOpen(!adminOpen)}
+                  onToggle={() => handleSectionToggle('admin')}
                   icon={Shield}
                   color="text-red-600"
                 />
