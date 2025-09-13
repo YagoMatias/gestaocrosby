@@ -25,7 +25,8 @@ import {
   House,
   Bank,
   Eye,
-  ChartBar
+  ChartBar,
+  Target
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -59,6 +60,7 @@ const faturamento = [
 ];
 
 const franquias = [
+  { name: 'Metas Varejo', href: '/metas-varejo', icon: Target, color: 'text-orange-600' },
   { name: 'Compras Franquias', href: '/compras-franquias', icon: ShoppingCart, color: 'text-emerald-600' },
   { name: 'CREDEV', href: '/credev', icon: Buildings, color: 'text-blue-600' },
 ];
@@ -270,7 +272,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             />
 
             <MenuSection 
-              title="Franquias"
+              title="Varejo"
               items={franquias}
               isOpen={franquiasOpen}
               onToggle={() => handleSectionToggle('franquias')}
@@ -388,7 +390,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             />
 
             <MenuSection 
-              title="Franquias"
+              title="Varejo"
               items={franquias}
               isOpen={franquiasOpen}
               onToggle={() => setFranquiasOpen(!franquiasOpen)}
@@ -504,7 +506,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             />
 
             <MenuSection 
-              title="Franquias"
+              title="Varejo"
               items={franquias}
               isOpen={franquiasOpen}
               onToggle={() => setFranquiasOpen(!franquiasOpen)}
@@ -594,9 +596,9 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               color="text-blue-600"
             />
 
-            {/* Seção Franquias */}
+            {/* Seção Varejo */}
             <MenuSection 
-              title="Franquias"
+              title="Varejo"
               items={franquias}
               isOpen={franquiasOpen}
               onToggle={() => setFranquiasOpen(!franquiasOpen)}
@@ -652,9 +654,9 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               isActive={location.pathname === '/dashboard'}
             />
 
-            {/* Seção Franquias */}
+            {/* Seção Varejo */}
             <MenuSection 
-              title="Franquias"
+              title="Varejo"
               items={franquias}
               isOpen={franquiasOpen}
               onToggle={() => setFranquiasOpen(!franquiasOpen)}

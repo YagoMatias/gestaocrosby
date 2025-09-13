@@ -1,8 +1,62 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import useApiClient from '../hooks/useApiClient';
+import PageTitle from '../components/ui/PageTitle';
+import { ChartLineUp } from '@phosphor-icons/react';
 
 const ReceitaLiquida = () => {
+  // CSS para a tabela
+  React.useEffect(() => {
+    const styleElement = document.createElement('style');
+    styleElement.textContent = `
+      .receita-table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      
+      .receita-table th,
+      .receita-table td {
+        padding: 3px 4px !important;
+        border-right: 1px solid #f3f4f6;
+        word-wrap: break-word;
+        white-space: normal;
+        font-size: 9px;
+        line-height: 1.2;
+      }
+      
+      .receita-table th:last-child,
+      .receita-table td:last-child {
+        border-right: none;
+      }
+      
+      .receita-table th {
+        background-color: #000638;
+        color: white;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 8px;
+        letter-spacing: 0.05em;
+      }
+      
+      .receita-table tbody tr:nth-child(odd) {
+        background-color: white;
+      }
+      
+      .receita-table tbody tr:nth-child(even) {
+        background-color: #fafafa;
+      }
+      
+      .receita-table tbody tr:hover {
+        background-color: #f0f9ff;
+        transition: background-color 0.2s ease;
+      }
+    `;
+    document.head.appendChild(styleElement);
+
+    return () => {
+      document.head.removeChild(styleElement);
+    };
+  }, []);
   const apiClient = useApiClient();
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
   const [dataInicio, setDataInicio] = useState('');
@@ -419,12 +473,17 @@ const ReceitaLiquida = () => {
   }, [empresasSelecionadas]);
 
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
-      <h1 className="text-3xl font-bold mb-6 text-center text-[#000638] font-barlow">Receita Líquida</h1>
+    <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+      <PageTitle 
+        title="Receita Líquida" 
+        subtitle="Análise detalhada da receita líquida por empresa e período"
+        icon={ChartLineUp}
+        iconColor="text-blue-600"
+      />
 
-      <div className="mb-8">
-        <form onSubmit={(e)=>{ e.preventDefault(); if (debounceRef.current) clearTimeout(debounceRef.current); debounceRef.current = setTimeout(()=>handleBuscar(), DEBOUNCE_DELAY); }} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
-          <div className="flex items-center justify-center gap-3 mb-4">{
+      <div className="mb-4">
+        <form onSubmit={(e)=>{ e.preventDefault(); if (debounceRef.current) clearTimeout(debounceRef.current); debounceRef.current = setTimeout(()=>handleBuscar(), DEBOUNCE_DELAY); }} className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full max-w-4xl mx-auto border border-[#000638]/10">
+          <div className="flex items-center justify-center gap-2 mb-2">{
             cacheInfo && (
               <span className="text-xs px-2 py-1 rounded-full border border-gray-300 text-gray-700 bg-gray-100">
                 {cacheInfo.fromCache ? '⚡ Cache' : '🔄 Atualizado'} • {cacheInfo.at ? new Date(cacheInfo.at).toLocaleString('pt-BR') : ''}
@@ -451,28 +510,28 @@ const ReceitaLiquida = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Início</label>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Data Início</label>
               <input
                 type="date"
                 value={dataInicio}
                 onChange={(e) => setDataInicio(e.target.value)}
-                className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Fim</label>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Data Fim</label>
               <input
                 type="date"
                 value={dataFim}
                 onChange={(e) => setDataFim(e.target.value)}
-                className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
               />
             </div>
             <div className="flex items-center">
               <button
                 type="submit"
                 disabled={loading || !dataInicio || !dataFim || !empresasSelecionadas.length}
-                className="flex items-center gap-2 bg-[#000638] text-white px-6 py-3 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-10 text-sm font-bold shadow-md tracking-wide uppercase"
+                className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
               >
                 {loading ? 'Buscando...' : 'Buscar'}
               </button>
@@ -483,30 +542,30 @@ const ReceitaLiquida = () => {
 
       {/* Cards Totais (Bruto, Líquido, ICMS, Desconto, PIS, COFINS) */}
       {!!(totalBruto || totalLiquido || totalIcms || totalDesconto || totalPis || totalCofins) && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
-          <div className="shadow rounded-lg bg-white p-3 border border-[#000638]/10">
-            <div className="text-[11px] text-gray-500">Faturamento Bruto</div>
-            <div className="text-lg font-extrabold text-purple-700">{totalBruto.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          <div className="shadow rounded-lg bg-white px-3 pb-3 border border-[#000638]/10">
+            <div className="text-[10px] text-gray-500">Faturamento Bruto</div>
+            <div className="text-base font-extrabold text-purple-700">{totalBruto.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
           </div>
-          <div className="shadow rounded-lg bg-white p-3 border border-[#000638]/10">
-            <div className="text-[11px] text-gray-500">Faturamento Líquido</div>
-            <div className="text-lg font-extrabold text-green-700">{totalLiquido.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+          <div className="shadow rounded-lg bg-white px-3 pb-3 border border-[#000638]/10">
+            <div className="text-[10px] text-gray-500">Faturamento Líquido</div>
+            <div className="text-base font-extrabold text-green-700">{totalLiquido.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
           </div>
-          <div className="shadow rounded-lg bg-white p-3 border border-[#000638]/10">
-            <div className="text-[11px] text-gray-500">ICMS Total</div>
-            <div className="text-lg font-extrabold text-teal-700">{totalIcms.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+          <div className="shadow rounded-lg bg-white px-3 pb-3 border border-[#000638]/10">
+            <div className="text-[10px] text-gray-500">ICMS Total</div>
+            <div className="text-base font-extrabold text-teal-700">{totalIcms.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
           </div>
-          <div className="shadow rounded-lg bg-white p-3 border border-[#000638]/10">
-            <div className="text-[11px] text-gray-500">Desconto Total</div>
-            <div className="text-lg font-extrabold text-orange-700">{totalDesconto.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+          <div className="shadow rounded-lg bg-white px-3 pb-3 border border-[#000638]/10">
+            <div className="text-[10px] text-gray-500">Desconto Total</div>
+            <div className="text-base font-extrabold text-orange-700">{totalDesconto.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
           </div>
-          <div className="shadow rounded-lg bg-white p-3 border border-[#000638]/10">
-            <div className="text-[11px] text-gray-500">PIS</div>
-            <div className="text-lg font-extrabold text-blue-700">{totalPis.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+          <div className="shadow rounded-lg bg-white px-3 pb-3 border border-[#000638]/10">
+            <div className="text-[10px] text-gray-500">PIS</div>
+            <div className="text-base font-extrabold text-blue-700">{totalPis.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
           </div>
-          <div className="shadow rounded-lg bg-white p-3 border border-[#000638]/10">
-            <div className="text-[11px] text-gray-500">COFINS</div>
-            <div className="text-lg font-extrabold text-pink-700">{totalCofins.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+          <div className="shadow rounded-lg bg-white px-3 pb-3 border border-[#000638]/10">
+            <div className="text-[10px] text-gray-500">COFINS</div>
+            <div className="text-base font-extrabold text-pink-700">{totalCofins.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
           </div>
         </div>
       )}
@@ -516,31 +575,31 @@ const ReceitaLiquida = () => {
 
       {/* Tabela por canal (modelo semelhante às tabelas do app) */}
       {linhasTabela.length > 0 && (
-        <div className="mt-6 overflow-x-auto">
-          <table className="min-w-full bg-white border border-[#000638]/10 rounded-lg overflow-hidden">
-            <thead className="bg-[#f8f9fb]">
-              <tr className="text-left text-xs font-semibold text-[#000638]">
-                <th className="px-4 py-3 border-b">Canal</th>
-                <th className="px-4 py-3 border-b">Faturamento Bruto</th>
-                <th className="px-4 py-3 border-b">Desconto</th>
-                <th className="px-4 py-3 border-b">Vendas após Desconto</th>
-                <th className="px-4 py-3 border-b">ICMS</th>
-                <th className="px-4 py-3 border-b">PIS</th>
-                <th className="px-4 py-3 border-b">COFINS</th>
-                <th className="px-4 py-3 border-b">Receita Líquida</th>
+        <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200">
+          <table className="receita-table min-w-full text-sm">
+            <thead>
+              <tr>
+                <th className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors">Canal</th>
+                <th className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors">Faturamento Bruto</th>
+                <th className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors">Desconto</th>
+                <th className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors">Vendas após Desconto</th>
+                <th className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors">ICMS</th>
+                <th className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors">PIS</th>
+                <th className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors">COFINS</th>
+                <th className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors">Receita Líquida</th>
               </tr>
             </thead>
             <tbody>
               {linhasTabela.map((row, idx) => (
-                <tr key={idx} className="text-sm text-gray-700 hover:bg-gray-50">
-                  <td className="px-4 py-2 border-b font-medium">{row.canal}</td>
-                  <td className="px-4 py-2 border-b">{(row.bruto ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                  <td className="px-4 py-2 border-b">{(row.desconto ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                  <td className="px-4 py-2 border-b">{(row.vendasAposDesconto ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                  <td className="px-4 py-2 border-b">{(row.icms ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                  <td className="px-4 py-2 border-b">{(row.pis ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                  <td className="px-4 py-2 border-b">{(row.cofins ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                  <td className="px-4 py-2 border-b font-semibold text-[#000638]">{(row.receitaLiquida ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                <tr key={idx} className="text-gray-700 hover:bg-gray-50">
+                  <td className="px-0.5 py-0.5 text-center text-[8px] font-medium">{row.canal}</td>
+                  <td className="px-0.5 py-0.5 text-center text-[8px]">{(row.bruto ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                  <td className="px-0.5 py-0.5 text-center text-[8px]">{(row.desconto ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                  <td className="px-0.5 py-0.5 text-center text-[8px]">{(row.vendasAposDesconto ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                  <td className="px-0.5 py-0.5 text-center text-[8px]">{(row.icms ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                  <td className="px-0.5 py-0.5 text-center text-[8px]">{(row.pis ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                  <td className="px-0.5 py-0.5 text-center text-[8px]">{(row.cofins ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                  <td className="px-0.5 py-0.5 text-center text-[8px] font-semibold text-[#000638]">{(row.receitaLiquida ?? 0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
                 </tr>
               ))}
             </tbody>

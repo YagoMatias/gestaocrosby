@@ -22,6 +22,7 @@ const Varejo = lazy(() => import('./pages/Varejo'));
 const Franquias = lazy(() => import('./pages/Franquias'));
 const Multimarcas = lazy(() => import('./pages/Multimarcas'));
 const Revenda = lazy(() => import('./pages/Revenda'));
+const MetasVarejo = lazy(() => import('./pages/MetasVarejo'));
 
 
 const RankingFaturamento = lazy(() => import('./pages/RankingFaturamento'));
@@ -83,6 +84,7 @@ const AppRoutes = memo(() => {
     { path: '/extrato-financeiro', component: ExtratoFinanceiro, roles: ['owner','admin','manager','user'] },
     { path: '/receita-liquida', component: ReceitaLiquida, roles: ['owner','admin','manager','user'] },
     { path: '/varejo', component: Varejo, roles: ['owner','admin','manager','user'] },
+    { path: '/metas-varejo', component: MetasVarejo, roles: ['owner','admin','manager','user'] },
     { path: '/franquias', component: Franquias, roles: ['owner','admin','manager','user'] },
     { path: '/multimarcas', component: Multimarcas, roles: ['owner','admin','manager','user'] },
     { path: '/revenda', component: Revenda, roles: ['owner','admin','manager','user'] },

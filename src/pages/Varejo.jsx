@@ -4,8 +4,9 @@ import useApiClient from '../hooks/useApiClient';
 import custoProdutos from '../custoprodutos.json';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, CurrencyDollar, ShoppingCart, Package, CaretLeft, Spinner, Percent, TrendUp, Truck } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, CurrencyDollar, ShoppingCart, Package, CaretLeft, Spinner, Percent, TrendUp, Truck, Storefront } from '@phosphor-icons/react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
+import PageTitle from '../components/ui/PageTitle';
 
 
 
@@ -117,12 +118,12 @@ const Varejo = () => {
       
       .varejo-table th,
       .varejo-table td {
-        padding: 6px 8px !important;
+        padding: 3px 4px !important;
         border-right: 1px solid #f3f4f6;
         word-wrap: break-word;
         white-space: normal;
-        font-size: 11px;
-        line-height: 1.3;
+        font-size: 9px;
+        line-height: 1.2;
       }
       
       .varejo-table th:last-child,
@@ -135,7 +136,7 @@ const Varejo = () => {
         color: white;
         font-weight: 600;
         text-transform: uppercase;
-        font-size: 10px;
+        font-size: 8px;
         letter-spacing: 0.05em;
       }
       
@@ -566,22 +567,27 @@ const Varejo = () => {
 
 
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
-        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Faturamento - Varejo</h1>
+    <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+        <PageTitle 
+          title="Faturamento - Varejo"
+          subtitle="Análise detalhada do faturamento e performance do canal varejo"
+          icon={Storefront}
+          iconColor="text-blue-600"
+        />
         {/* Filtros */}
-        <div className="mb-8">
-          <form onSubmit={handleFiltrar} className="bg-white p-6 rounded-2xl shadow-lg w-full max-w-6xl mx-auto border border-[#000638]/10">
+        <div className="mb-4">
+          <form onSubmit={handleFiltrar} className="bg-white p-3 rounded-lg shadow-md w-full max-w-4xl mx-auto border border-[#000638]/10">
             {/* Header do Filtro */}
-            <div className="mb-6">
-              <div className="flex items-center gap-3 mb-2">
-                <CurrencyDollar size={24} className="text-[#000638]" />
-                <h2 className="text-xl font-bold text-[#000638]">Filtros</h2>
+            <div className="mb-2">
+              <div className="flex items-center gap-1 mb-2">
+                <CurrencyDollar size={10} className="text-[#000638]" />
+                <h2 className="text-xs font-bold text-[#000638]">Filtros</h2>
               </div>
               <p className="text-sm text-gray-600">Selecione o período e empresas para análise</p>
             </div>
 
             {/* Campos do Filtro */}
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-2 mb-3">
               {/* Empresas */}
               <div className="lg:col-span-2">
                 <FiltroEmpresa
@@ -592,7 +598,7 @@ const Varejo = () => {
 
               {/* Data Inicial */}
               <div className="flex flex-col">
-                <label className="block text-sm font-semibold mb-2 text-[#000638]">
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                   Data Inicial
                 </label>
                 <input 
@@ -600,14 +606,14 @@ const Varejo = () => {
                   name="dt_inicio" 
                   value={filtros.dt_inicio} 
                   onChange={e => setFiltros({ ...filtros, dt_inicio: e.target.value })} 
-                  className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] focus:border-[#000638] bg-white text-[#000638] placeholder:text-gray-400 transition-all duration-200" 
+                  className="border border-gray-300 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] focus:border-[#000638] bg-white text-[#000638] placeholder:text-gray-400 transition-all duration-200 text-xs" 
                   placeholder="Data inicial"
                 />
               </div>
 
               {/* Data Final */}
               <div className="flex flex-col">
-                <label className="block text-sm font-semibold mb-2 text-[#000638]">
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                   Data Final
                 </label>
                 <input 
@@ -615,7 +621,7 @@ const Varejo = () => {
                   name="dt_fim" 
                   value={filtros.dt_fim} 
                   onChange={e => setFiltros({ ...filtros, dt_fim: e.target.value })} 
-                  className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] focus:border-[#000638] bg-white text-[#000638] placeholder:text-gray-400 transition-all duration-200" 
+                  className="border border-gray-300 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] focus:border-[#000638] bg-white text-[#000638] placeholder:text-gray-400 transition-all duration-200 text-xs" 
                   placeholder="Data final"
                 />
               </div>
@@ -625,9 +631,9 @@ const Varejo = () => {
             <div className="flex justify-end">
               <button 
                 type="submit" 
-                className="flex items-center gap-3 bg-[#000638] text-white px-6 py-3 rounded-lg hover:bg-[#001060] transition-all duration-200 text-sm font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#001060] transition-all duration-200 text-xs font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
               >
-                <ArrowsClockwise size={20} weight="bold" /> 
+                <ArrowsClockwise size={10} weight="bold" /> 
                 Filtrar Dados
               </button>
             </div>
@@ -635,7 +641,7 @@ const Varejo = () => {
           
           {/* Mensagem de Erro */}
           {erro && (
-            <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-center max-w-6xl mx-auto">
+            <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-center max-w-4xl mx-auto">
               <div className="flex items-center justify-center gap-2">
                 <span className="text-red-500">⚠️</span>
                 {erro}
@@ -645,17 +651,17 @@ const Varejo = () => {
         </div>
 
         {/* Cards de Resumo */}
-        <div className="flex flex-wrap gap-4 mb-8 justify-center">
+        <div className="flex flex-wrap gap-3 mb-6 justify-center">
           {/* Vendas após Desconto Varejo */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-green-700" />
-                <CardTitle className="text-sm font-bold text-green-700">Vendas após Desconto Varejo</CardTitle>
+                <CurrencyDollar size={14} className="text-green-700" />
+                <CardTitle className="text-xs font-bold text-green-700">Vendas após Desconto Varejo</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-green-600 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-green-600 mb-0.5">
                 {loading ? <Spinner size={24} className="text-green-600 animate-spin" /> : (faturamentoVarejo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Total Varejo</CardDescription>
@@ -663,15 +669,15 @@ const Varejo = () => {
           </Card>
 
           {/* CMV Varejo */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-red-700" />
-                <CardTitle className="text-sm font-bold text-red-700">CMV Varejo</CardTitle>
+                <CurrencyDollar size={14} className="text-red-700" />
+                <CardTitle className="text-xs font-bold text-red-700">CMV Varejo</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-red-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-red-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-red-600 animate-spin" /> : (custoBrutoVarejo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">CMV do Varejo</CardDescription>
@@ -679,15 +685,15 @@ const Varejo = () => {
           </Card>
 
           {/* CMV Varejo (%) */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <Percent size={18} className="text-orange-600" />
-                <CardTitle className="text-sm font-bold text-orange-600">CMV Varejo</CardTitle>
+                <Percent size={14} className="text-orange-600" />
+                <CardTitle className="text-xs font-bold text-orange-600">CMV Varejo</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-orange-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-orange-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
                   (faturamentoVarejo > 0 && custoBrutoVarejo > 0)
                     ? ((custoBrutoVarejo / faturamentoVarejo) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
@@ -699,15 +705,15 @@ const Varejo = () => {
           </Card>
 
           {/* Margem Varejo */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <Percent size={18} className="text-yellow-700" />
-                <CardTitle className="text-sm font-bold text-yellow-700">Margem Varejo</CardTitle>
+                <Percent size={14} className="text-yellow-700" />
+                <CardTitle className="text-xs font-bold text-yellow-700">Margem Varejo</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-yellow-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-yellow-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-yellow-600 animate-spin" /> : (
                   (() => {
                     const margem = calcularMargemCanal(faturamentoVarejo, custoBrutoVarejo);
@@ -720,15 +726,15 @@ const Varejo = () => {
           </Card>
 
           {/* Markup Varejo */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <TrendUp size={18} className="text-blue-600" />
-                <CardTitle className="text-sm font-bold text-blue-600">Markup Varejo</CardTitle>
+                <TrendUp size={14} className="text-blue-600" />
+                <CardTitle className="text-xs font-bold text-blue-600">Markup Varejo</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-blue-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-blue-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
                   custoBrutoVarejo > 0 ? (faturamentoVarejo / custoBrutoVarejo).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'
                 )}
@@ -738,15 +744,15 @@ const Varejo = () => {
           </Card>
 
           {/* Preço de Tabela Varejo */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-purple-600" />
-                <CardTitle className="text-sm font-bold text-purple-600">Preço de Tabela Varejo</CardTitle>
+                <CurrencyDollar size={14} className="text-purple-600" />
+                <CardTitle className="text-xs font-bold text-purple-600">Preço de Tabela Varejo</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-purple-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-purple-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-purple-600 animate-spin" /> : (precoTabelaVarejo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Preço de Tabela do Varejo</CardDescription>
@@ -754,15 +760,15 @@ const Varejo = () => {
           </Card>
 
           {/* Desconto Varejo */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-orange-600" />
-                <CardTitle className="text-sm font-bold text-orange-600">Desconto Varejo</CardTitle>
+                <CurrencyDollar size={14} className="text-orange-600" />
+                <CardTitle className="text-xs font-bold text-orange-600">Desconto Varejo</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-orange-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-orange-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : ((precoTabelaVarejo - faturamentoVarejo) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Desconto do Varejo</CardDescription>
@@ -770,15 +776,15 @@ const Varejo = () => {
           </Card>
 
           {/* Devoluções Varejo */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-gray-800" />
-                <CardTitle className="text-sm font-bold text-gray-800">Devoluções Varejo</CardTitle>
+                <CurrencyDollar size={14} className="text-gray-800" />
+                <CardTitle className="text-xs font-bold text-gray-800">Devoluções Varejo</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-gray-900 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-gray-900 mb-0.5">
                 {loading ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (devolucoesVarejo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Entradas (E) no Varejo</CardDescription>
@@ -786,15 +792,15 @@ const Varejo = () => {
           </Card>
 
           {/* Frete Varejo */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-gray-700" />
-                <CardTitle className="text-sm font-bold text-gray-700">Frete Varejo</CardTitle>
+                <CurrencyDollar size={14} className="text-gray-700" />
+                <CardTitle className="text-xs font-bold text-gray-700">Frete Varejo</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-gray-800 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-gray-800 mb-0.5">
                 {loading ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteVarejo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Frete rateado (S - E)</CardDescription>
@@ -803,9 +809,9 @@ const Varejo = () => {
         </div>
 
         {/* Tabela de Transações */}
-        <div className="rounded-2xl shadow-lg bg-white mt-8 border border-[#000638]/10">
-          <div className="p-4 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandTabela(e => !e)}>
-            <h2 className="text-xl font-bold text-[#000638]">Transações</h2>
+        <div className="rounded-lg shadow-md bg-white mt-4 border border-[#000638]/10">
+          <div className="p-3 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandTabela(e => !e)}>
+            <h2 className="text-xs font-bold text-[#000638]">Transações</h2>
             <span className="flex items-center">
               {expandTabela ? <CaretDown size={20} color="#9ca3af" /> : <CaretRight size={20} color="#9ca3af" />}
             </span>
@@ -816,7 +822,7 @@ const Varejo = () => {
                 <thead>
                   <tr>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('nr_transacao')}
                     >
                       <div className="flex items-center justify-center">
@@ -825,7 +831,7 @@ const Varejo = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('nm_grupoempresa')}
                     >
                       <div className="flex items-center justify-center">
@@ -834,7 +840,7 @@ const Varejo = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('dt_transacao')}
                     >
                       <div className="flex items-center justify-center">
@@ -843,7 +849,7 @@ const Varejo = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('tp_situacao')}
                     >
                       <div className="flex items-center justify-center">
@@ -852,7 +858,7 @@ const Varejo = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('tp_operacao')}
                     >
                       <div className="flex items-center justify-center">
@@ -861,7 +867,7 @@ const Varejo = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('ds_nivel')}
                     >
                       <div className="flex items-center justify-center">
@@ -870,7 +876,7 @@ const Varejo = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('qt_faturado')}
                     >
                       <div className="flex items-center justify-center">
@@ -879,7 +885,7 @@ const Varejo = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('vl_unitliquido')}
                     >
                       <div className="flex items-center justify-center">
@@ -888,7 +894,7 @@ const Varejo = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('vl_unitbruto')}
                     >
                       <div className="flex items-center justify-center">
@@ -897,7 +903,7 @@ const Varejo = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('desconto')}
                     >
                       <div className="flex items-center justify-center">
@@ -920,13 +926,13 @@ const Varejo = () => {
                       const desconto = valorBrutoTotal - valorTotal;
                       return (
                         <tr key={i} className="border-b hover:bg-[#f8f9fb]">
-                          <td className="px-0.5 py-0.5 text-center">{row.nr_transacao || 'N/A'}</td>
-                          <td className="px-0.5 py-0.5 text-center">{row.nm_grupoempresa || 'N/A'}</td>
-                          <td className="px-0.5 py-0.5 text-center">{formatarDataBR(row.dt_transacao)}</td>
-                          <td className="px-0.5 py-0.5 text-center">{row.tp_situacao || 'N/A'}</td>
-                          <td className="px-0.5 py-0.5 text-center">{row.tp_operacao || 'N/A'}</td>
-                          <td className="px-0.5 py-0.5 text-center">{row.ds_nivel || 'N/A'}</td>
-                          <td className="px-0.5 py-0.5 text-center">{qtFaturado.toLocaleString('pt-BR')}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{row.nr_transacao || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{row.nm_grupoempresa || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{formatarDataBR(row.dt_transacao)}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{row.tp_situacao || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{row.tp_operacao || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{row.ds_nivel || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{qtFaturado.toLocaleString('pt-BR')}</td>
                           <td className={`px-0.5 py-0.5 text-right font-semibold ${row.tp_operacao === 'E' ? 'text-[#fe0000]' : row.tp_operacao === 'S' ? 'text-green-600' : ''}`}>{valorTotal !== null && valorTotal !== undefined ? valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
                           <td className={`px-0.5 py-0.5 text-right font-semibold ${row.tp_operacao === 'E' ? 'text-[#fe0000]' : row.tp_operacao === 'S' ? 'text-green-600' : ''}`}>{valorBrutoTotal !== null && valorBrutoTotal !== undefined ? valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
                           <td className="px-0.5 py-0.5 text-right font-semibold text-orange-600">{desconto !== null && desconto !== undefined ? desconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
@@ -940,28 +946,28 @@ const Varejo = () => {
           )}
         </div>
         {/* Card Rank Produtos */}
-        <div className="mt-8 rounded-2xl shadow-lg bg-white border border-[#000638]/10">
-          <div className="flex items-center justify-between p-6 border-b border-[#000638]/10">
-            <div className="flex items-center gap-3">
-              <Package size={24} className="text-[#000638]" />
-              <h2 className="text-xl font-bold text-[#000638]">Rank Produtos</h2>
+        <div className="mt-4 rounded-lg shadow-md bg-white border border-[#000638]/10">
+          <div className="flex items-center justify-between p-3 border-b border-[#000638]/10">
+            <div className="flex items-center gap-2">
+              <Package size={14} className="text-[#000638]" />
+              <h2 className="text-xs font-bold text-[#000638]">Rank Produtos</h2>
             </div>
             <button
-              className="px-4 py-2 bg-[#000638] text-white rounded-lg text-sm font-semibold hover:bg-[#001060] transition-all duration-200 shadow-md hover:shadow-lg flex items-center gap-2"
+              className="px-2 py-1 bg-[#000638] text-white rounded-lg text-xs font-semibold hover:bg-[#001060] transition-all duration-200 shadow-md hover:shadow-lg flex items-center gap-1"
               onClick={exportarRankParaExcel}
               type="button"
             >
-              <ArrowsClockwise size={16} />
+              <ArrowsClockwise size={12} />
               Baixar Excel
             </button>
           </div>
-          <div className="p-6">
+          <div className="p-3">
             <div className="varejo-table-container overflow-x-auto rounded-lg border border-gray-200">
               <table className="varejo-table min-w-full text-sm">
                 <thead>
                   <tr>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSort('rank')}
                     >
                       <div className="flex items-center justify-center gap-1">
@@ -969,7 +975,7 @@ const Varejo = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSort('cd_nivel')}
                     >
                       <div className="flex items-center justify-center gap-1">
@@ -985,7 +991,7 @@ const Varejo = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSort('quantidade')}
                     >
                       <div className="flex items-center justify-center gap-1">
@@ -1108,9 +1114,9 @@ const Varejo = () => {
                         return (
                           <tr key={index} className="border-b hover:bg-gray-50 transition-colors">
                             <td className="px-0.5 py-0.5 text-center text-blue-600 font-semibold">#{index + 1}</td>
-                            <td className="px-0.5 py-0.5 text-center">{produto.cd_nivel || 'N/A'}</td>
-                            <td className="px-0.5 py-0.5 text-center">{produto.modelo || 'N/A'}</td>
-                            <td className="px-0.5 py-0.5 text-center">{produto.quantidade.toLocaleString('pt-BR')}</td>
+                            <td className="px-0.5 py-0.5 text-center text-[8px]">{produto.cd_nivel || 'N/A'}</td>
+                            <td className="px-0.5 py-0.5 text-center text-[8px]">{produto.modelo || 'N/A'}</td>
+                            <td className="px-0.5 py-0.5 text-center text-[8px]">{produto.quantidade.toLocaleString('pt-BR')}</td>
                             <td className="px-0.5 py-0.5 text-right font-semibold">{produto.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                             <td className="px-0.5 py-0.5 text-right font-semibold">{produto.valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                             <td className="px-0.5 py-0.5 text-right font-semibold text-orange-600">{descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>

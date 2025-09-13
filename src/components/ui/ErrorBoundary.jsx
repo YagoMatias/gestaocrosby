@@ -55,7 +55,7 @@ class ErrorBoundary extends React.Component {
 
       // UI de fallback padrão
       return (
-        <div className="min-h-[400px] flex flex-col items-center justify-center p-8 bg-red-50 border border-red-200 rounded-lg">
+        <div className="min-h-[400px] min-w-[400px] mt-20 mx-auto flex flex-col items-center justify-center p-8 bg-red-50 border border-red-200 rounded-lg">
           <div className="text-center max-w-md">
             {/* Ícone de erro */}
             <div className="text-6xl mb-4">⚠️</div>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../components/AuthContext';
 import useApiClient from '../hooks/useApiClient';
+import PageTitle from '../components/ui/PageTitle';
 import { 
   ChartLineUp, 
   Money, 
@@ -254,14 +255,12 @@ const Dashboard = () => {
       <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
         <div className="max-w-5xl mx-auto">
           {/* Header */}
-          <div className="mb-3">
-            <h1 className="text-xl font-bold text-gray-900 font-barlow">
-              Dashboard
-            </h1>
-            <p className="text-gray-600 mt-1 text-xs font-barlow">
-              Bem-vindo, {user?.name}. Aqui está um resumo das principais métricas.
-            </p>
-          </div>
+          <PageTitle 
+            title="Dashboard"
+            subtitle={`Bem-vindo, ${user?.name}. Aqui está um resumo das principais métricas.`}
+            icon={ChartLineUp}
+            iconColor="text-indigo-600"
+          />
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">

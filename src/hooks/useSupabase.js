@@ -122,61 +122,61 @@ export const useSupabaseCrud = (table) => {
   }
 }
 
-// Hook para autenticação
-export const useAuth = () => {
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
+// Hook para autenticação (DEPRECATED - usar AuthContext)
+// export const useAuth = () => {
+//   const [user, setUser] = useState(null)
+//   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    // Verificar sessão atual
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      setUser(session?.user ?? null)
-      setLoading(false)
-    }
+//   useEffect(() => {
+//     // Verificar sessão atual
+//     const getSession = async () => {
+//       const { data: { session } } = await supabase.auth.getSession()
+//       setUser(session?.user ?? null)
+//       setLoading(false)
+//     }
 
-    getSession()
+//     getSession()
 
-    // Escutar mudanças na autenticação
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setUser(session?.user ?? null)
-        setLoading(false)
-      }
-    )
+//     // Escutar mudanças na autenticação
+//     const { data: { subscription } } = supabase.auth.onAuthStateChange(
+//       async (event, session) => {
+//         setUser(session?.user ?? null)
+//         setLoading(false)
+//       }
+//     )
 
-    return () => subscription.unsubscribe()
-  }, [])
+//     return () => subscription.unsubscribe()
+//   }, [])
 
-  const signIn = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    })
-    return { data, error }
-  }
+//   const signIn = async (email, password) => {
+//     const { data, error } = await supabase.auth.signInWithPassword({
+//       email,
+//       password
+//     })
+//     return { data, error }
+//   }
 
-  const signUp = async (email, password) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password
-    })
-    return { data, error }
-  }
+//   const signUp = async (email, password) => {
+//     const { data, error } = await supabase.auth.signUp({
+//       email,
+//       password
+//     })
+//     return { data, error }
+//   }
 
-  const signOut = async () => {
-    const { error } = await supabase.auth.signOut()
-    return { error }
-  }
+//   const signOut = async () => {
+//     const { error } = await supabase.auth.signOut()
+//     return { error }
+//   }
 
-  return {
-    user,
-    loading,
-    signIn,
-    signUp,
-    signOut
-  }
-}
+//   return {
+//     user,
+//     loading,
+//     signIn,
+//     signUp,
+//     signOut
+//   }
+// }
 
 // Hook para real-time subscriptions
 export const useRealtimeSubscription = (table, callback) => {

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
 import { CurrencyDollar, Percent, TrendUp, Question, Spinner, Truck } from '@phosphor-icons/react';
+import PageTitle from '../components/ui/PageTitle';
 import custoProdutos from '../custoprodutos.json';
 import { Bar } from 'react-chartjs-2';
 import useApiClient from '../hooks/useApiClient';
@@ -817,12 +818,17 @@ const Consolidado = () => {
   };
 
   return (
-      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start mt-10">
-      <h1 className="text-3xl font-bold mb-2 text-center text-[#000638]">Consolidado</h1>
+      <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+      <PageTitle 
+        title="Consolidado" 
+        subtitle="Visão consolidada de vendas e performance por período e empresa"
+        icon={CurrencyDollar}
+        iconColor="text-green-600"
+      />
 
       {/* Badge de cache + botão Atualizar + Progress */}
-      <div className="flex flex-col items-center justify-center gap-3 mb-6">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col items-center justify-center gap-2 mb-3">
+        <div className="flex items-center gap-2">
         {cacheInfo && (
           <span className="text-xs px-2 py-1 rounded-full border border-gray-300 text-gray-700 bg-gray-100">
               {cacheInfo.fromCache ? '⚡ Cache' : '🔄 Atualizado'} • {cacheInfo.at ? new Date(cacheInfo.at).toLocaleString('pt-BR') : ''}
@@ -857,11 +863,11 @@ const Consolidado = () => {
       </div>
 
         {/* Filtros */}
-        <div className="mb-8">
-          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
-            <div className="mb-6">
-              <span className="text-lg font-bold text-[#000638] flex items-center gap-2"><CurrencyDollar size={22} weight="bold" />Filtros</span>
-              <span className="text-sm text-gray-500 mt-1">Selecione o período, empresa ou data para análise</span>
+        <div className="mb-4">
+          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full max-w-4xl mx-auto border border-[#000638]/10">
+            <div className="mb-2">
+              <span className="text-xs font-bold text-[#000638] flex items-center gap-1"><CurrencyDollar size={10} weight="bold" />Filtros</span>
+              <span className="text-xs text-gray-500 mt-1">Selecione o período, empresa ou data para análise</span>
             </div>
             <div className="flex flex-row gap-x-6 w-full">
               <div className="w-full">
@@ -872,23 +878,23 @@ const Consolidado = () => {
                 />
               </div>
               <div className="flex flex-col">
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Inicial</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Data Inicial</label>
                 <input
                   type="date"
                   name="dt_inicio"
                   value={filtros.dt_inicio}
                   onChange={e => setFiltros({ ...filtros, dt_inicio: e.target.value })}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
                 />
               </div>
               <div className="flex flex-col">
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Final</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Data Final</label>
                 <input
                   type="date"
                   name="dt_fim"
                   value={filtros.dt_fim}
                   onChange={e => setFiltros({ ...filtros, dt_fim: e.target.value })}
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
                 />
               </div>
             </div>
@@ -896,11 +902,11 @@ const Consolidado = () => {
               <button 
                 type="submit" 
                 disabled={loading || !empresasSelecionadas?.length}
-                className="flex items-center gap-2 bg-[#000638] text-white px-4 py-2 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition h-10 text-sm font-bold shadow-md tracking-wide uppercase"
+                className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition h-7 text-xs font-bold shadow-md tracking-wide uppercase"
               >
                 {loading ? (
                   <>
-                    <Spinner size={18} className="animate-spin" />
+                    <Spinner size={10} className="animate-spin" />
                     {loadingProgress > 0 && loadingProgress < 100 && (
                       <span className="text-xs">{Math.round(loadingProgress)}%</span>
                     )}

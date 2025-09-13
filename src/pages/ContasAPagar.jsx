@@ -6,6 +6,7 @@ import FiltroCentroCusto from '../components/FiltroCentroCusto';
 import FiltroDespesas from '../components/FiltroDespesas';
 import FiltroFornecedor from '../components/FiltroFornecedor';
 import useApiClient from '../hooks/useApiClient';
+import PageTitle from '../components/ui/PageTitle';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import FilterDropdown from '../components/ui/FilterDropdown';
@@ -2417,14 +2418,19 @@ const ContasAPagar = () => {
 
   return (
     <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
-        <h1 className="text-lg font-bold mb-3 text-center text-[#000638]">Contas a Pagar</h1>
+        <PageTitle 
+          title="Contas a Pagar"
+          subtitle="Gerencie e acompanhe todas as contas a pagar da empresa"
+          icon={Receipt}
+          iconColor="text-red-600"
+        />
         
         {/* Filtros */}
         <div className="mb-4">
           <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-3 rounded-lg shadow-lg w-full max-w-4xl mx-auto border border-[#000638]/10">
             <div className="mb-2">
-              <span className="text-xs font-bold text-[#000638] flex items-center gap-1">
-                <Funnel size={10} weight="bold" />
+              <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
+                <Funnel size={18} weight="bold" />
                 Filtros
               </span>
               <span className="text-xs text-gray-500 mt-1">Selecione o período e empresa para análise</span>

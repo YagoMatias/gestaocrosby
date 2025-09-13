@@ -4,6 +4,7 @@ import FiltroCliente from '../components/FiltroCliente';
 import FiltroFormaPagamento from '../components/FiltroFormaPagamento';
 import FiltroNomeFantasia from '../components/FiltroNomeFantasia';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
+import PageTitle from '../components/ui/PageTitle';
 import { 
   Receipt, 
   Calendar, 
@@ -1249,7 +1250,12 @@ const ContasAReceber = () => {
 
   return (
     <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
-        <h1 className="text-lg font-bold mb-3 text-center text-[#000638] font-barlow">Contas a Receber</h1>
+        <PageTitle 
+          title="Contas a Receber"
+          subtitle="Acompanhe e gerencie todas as contas a receber da empresa"
+          icon={Receipt}
+          iconColor="text-green-600"
+        />
 
 
 
@@ -1257,8 +1263,8 @@ const ContasAReceber = () => {
         <div className="mb-4">
           <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full max-w-4xl mx-auto border border-[#000638]/10">
             <div className="mb-2">
-              <span className="text-xs font-bold text-[#000638] flex items-center gap-1">
-                <Funnel size={10} weight="bold" />
+              <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
+                <Funnel size={18} weight="bold" />
                 Filtros
               </span>
               <span className="text-xs text-gray-500 mt-1">Selecione o período e empresa para análise</span>

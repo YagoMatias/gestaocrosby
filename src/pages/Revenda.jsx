@@ -4,8 +4,9 @@ import useApiClient from '../hooks/useApiClient';
 import custoProdutos from '../custoprodutos.json';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, CurrencyDollar, Package, Spinner, Percent, TrendUp } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, CurrencyDollar, Package, Spinner, Percent, TrendUp, ShoppingCart } from '@phosphor-icons/react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
+import PageTitle from '../components/ui/PageTitle';
 
 
 const Revenda = () => {
@@ -607,14 +608,19 @@ const Revenda = () => {
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4 pb-8">
-        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Faturamento - Revenda</h1>
+    <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+        <PageTitle 
+          title="Faturamento - Revenda"
+          subtitle="Análise detalhada do faturamento e performance do canal revenda"
+          icon={ShoppingCart}
+          iconColor="text-orange-600"
+        />
         {/* Filtros */}
-        <div className="mb-8">
-          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
-            <div className="mb-6">
-              <span className="text-lg font-bold text-[#000638] flex items-center gap-2"><CurrencyDollar size={22} weight="bold" />Filtros</span>
-              <span className="text-sm text-gray-500 mt-1">Selecione o período, grupo empresa ou data para análise</span>
+        <div className="mb-4">
+          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full max-w-4xl mx-auto border border-[#000638]/10">
+            <div className="mb-2">
+              <span className="text-xs font-bold text-[#000638] flex items-center gap-1"><CurrencyDollar size={10} weight="bold" />Filtros</span>
+              <span className="text-xs text-gray-500 mt-1">Selecione o período, grupo empresa ou data para análise</span>
             </div>
             <div className="flex flex-row gap-x-6 w-full">
               <div className="w-full">
@@ -646,7 +652,7 @@ const Revenda = () => {
             </div>
             <div className="flex justify-end w-full">
               <button type="submit" className="flex items-center gap-2 bg-[#000638] text-white px-4 py-2 rounded-lg hover:bg-[#fe0000] transition h-10 text-sm font-bold shadow-md tracking-wide uppercase">
-                <ArrowsClockwise size={18} weight="bold" /> Filtrar
+                <ArrowsClockwise size={14} weight="bold" /> Filtrar
               </button>
             </div>
           </form>
@@ -654,17 +660,17 @@ const Revenda = () => {
         </div>
 
         {/* Cards de Resumo */}
-        <div className="flex flex-wrap gap-4 mb-8 justify-center">
+        <div className="flex flex-wrap gap-3 mb-6 justify-center">
           {/* Vendas após Desconto Revenda */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-green-700" />
-                <CardTitle className="text-sm font-bold text-green-700">Vendas após Desconto Revenda</CardTitle>
+                <CurrencyDollar size={14} className="text-green-700" />
+                <CardTitle className="text-xs font-bold text-green-700">Vendas após Desconto Revenda</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-green-600 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-green-600 mb-0.5">
                 {loading ? <Spinner size={24} className="text-green-600 animate-spin" /> : (faturamentoRevenda || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Total Revenda</CardDescription>
@@ -672,15 +678,15 @@ const Revenda = () => {
           </Card>
 
           {/* CMV Revenda */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-red-700" />
-                <CardTitle className="text-sm font-bold text-red-700">CMV Revenda</CardTitle>
+                <CurrencyDollar size={14} className="text-red-700" />
+                <CardTitle className="text-xs font-bold text-red-700">CMV Revenda</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-red-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-red-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-red-600 animate-spin" /> : (custoBrutoRevenda || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">CMV da Revenda</CardDescription>
@@ -688,15 +694,15 @@ const Revenda = () => {
           </Card>
 
           {/* CMV Revenda (%) */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <Percent size={18} className="text-orange-600" />
-                <CardTitle className="text-sm font-bold text-orange-600">CMV Revenda</CardTitle>
+                <Percent size={14} className="text-orange-600" />
+                <CardTitle className="text-xs font-bold text-orange-600">CMV Revenda</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-orange-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-orange-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
                   (faturamentoRevenda > 0 && custoBrutoRevenda > 0)
                     ? ((custoBrutoRevenda / faturamentoRevenda) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
@@ -708,15 +714,15 @@ const Revenda = () => {
           </Card>
 
           {/* Margem Revenda */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <Percent size={18} className="text-yellow-700" />
-                <CardTitle className="text-sm font-bold text-yellow-700">Margem Revenda</CardTitle>
+                <Percent size={14} className="text-yellow-700" />
+                <CardTitle className="text-xs font-bold text-yellow-700">Margem Revenda</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-yellow-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-yellow-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-yellow-600 animate-spin" /> : (
                   (() => {
                     const margem = calcularMargemCanal(faturamentoRevenda, custoBrutoRevenda);
@@ -729,15 +735,15 @@ const Revenda = () => {
           </Card>
 
           {/* Markup Revenda */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <TrendUp size={18} className="text-blue-600" />
-                <CardTitle className="text-sm font-bold text-blue-600">Markup Revenda</CardTitle>
+                <TrendUp size={14} className="text-blue-600" />
+                <CardTitle className="text-xs font-bold text-blue-600">Markup Revenda</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-blue-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-blue-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
                   custoBrutoRevenda > 0 ? (faturamentoRevenda / custoBrutoRevenda).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'
                 )}
@@ -747,15 +753,15 @@ const Revenda = () => {
           </Card>
 
           {/* Preço de Tabela Revenda */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-purple-600" />
-                <CardTitle className="text-sm font-bold text-purple-600">Preço de Tabela Revenda</CardTitle>
+                <CurrencyDollar size={14} className="text-purple-600" />
+                <CardTitle className="text-xs font-bold text-purple-600">Preço de Tabela Revenda</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-purple-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-purple-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-purple-600 animate-spin" /> : (precoTabelaRevenda || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Preço de Tabela da Revenda</CardDescription>
@@ -763,15 +769,15 @@ const Revenda = () => {
           </Card>
 
           {/* Desconto Revenda */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-orange-600" />
-                <CardTitle className="text-sm font-bold text-orange-600">Desconto Revenda</CardTitle>
+                <CurrencyDollar size={14} className="text-orange-600" />
+                <CardTitle className="text-xs font-bold text-orange-600">Desconto Revenda</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-orange-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-orange-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : ((precoTabelaRevenda - faturamentoRevenda) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Desconto da Revenda</CardDescription>
@@ -779,15 +785,15 @@ const Revenda = () => {
           </Card>
 
           {/* Devoluções Revenda */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-gray-800" />
-                <CardTitle className="text-sm font-bold text-gray-800">Devoluções Revenda</CardTitle>
+                <CurrencyDollar size={14} className="text-gray-800" />
+                <CardTitle className="text-xs font-bold text-gray-800">Devoluções Revenda</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-gray-900 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-gray-900 mb-0.5">
                 {loading ? <Spinner size={24} className="text-gray-700 animate-spin" /> : (devolucoesRevenda || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Entradas (E) na Revenda</CardDescription>
@@ -795,15 +801,15 @@ const Revenda = () => {
           </Card>
 
           {/* Representatividade Revenda */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <Percent size={18} className="text-blue-600" />
-                <CardTitle className="text-sm font-bold text-blue-600">Representatividade Revenda</CardTitle>
+                <Percent size={14} className="text-blue-600" />
+                <CardTitle className="text-xs font-bold text-blue-600">Representatividade Revenda</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-blue-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-blue-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
                   (() => {
                     // Como estamos na página Revenda, a representatividade será sempre 100%
@@ -816,15 +822,15 @@ const Revenda = () => {
           </Card>
 
           {/* Frete Revenda */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-gray-700" />
-                <CardTitle className="text-sm font-bold text-gray-700">Frete Revenda</CardTitle>
+                <CurrencyDollar size={14} className="text-gray-700" />
+                <CardTitle className="text-xs font-bold text-gray-700">Frete Revenda</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-gray-800 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-gray-800 mb-0.5">
                 {loading ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteRevenda || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Frete rateado (S - E)</CardDescription>

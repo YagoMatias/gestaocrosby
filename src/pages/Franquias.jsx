@@ -4,8 +4,9 @@ import useApiClient from '../hooks/useApiClient';
 import custoProdutos from '../custoprodutos.json';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, CurrencyDollar, Package, Spinner, Percent, TrendUp } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretDown, CaretRight, CaretUp, CurrencyDollar, Package, Spinner, Percent, TrendUp, Buildings } from '@phosphor-icons/react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
+import PageTitle from '../components/ui/PageTitle';
 
 
 const Franquias = () => {
@@ -41,12 +42,12 @@ const Franquias = () => {
       
       .franquias-table th,
       .franquias-table td {
-        padding: 6px 8px !important;
+        padding: 3px 4px !important;
         border-right: 1px solid #f3f4f6;
         word-wrap: break-word;
         white-space: normal;
-        font-size: 11px;
-        line-height: 1.3;
+        font-size: 9px;
+        line-height: 1.2;
       }
       
       .franquias-table th:last-child,
@@ -59,7 +60,7 @@ const Franquias = () => {
         color: white;
         font-weight: 600;
         text-transform: uppercase;
-        font-size: 10px;
+        font-size: 8px;
         letter-spacing: 0.05em;
       }
       
@@ -565,11 +566,16 @@ const Franquias = () => {
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
-        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Faturamento - Franquias</h1>
+    <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+        <PageTitle 
+          title="Faturamento - Franquias"
+          subtitle="Análise detalhada do faturamento e performance das franquias"
+          icon={Buildings}
+          iconColor="text-green-600"
+        />
         {/* Filtros */}
-        <div className="mb-8">
-          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
+        <div className="mb-4">
+          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full max-w-4xl mx-auto border border-[#000638]/10">
             <div className="mb-6">
               <span className="text-lg font-bold text-[#000638] flex items-center gap-2"><CurrencyDollar size={22} weight="bold" />Filtros</span>
               <span className="text-sm text-gray-500 mt-1">Selecione o período, grupo empresa ou data para análise</span>
@@ -582,29 +588,29 @@ const Franquias = () => {
               />
               </div>
               <div className="flex flex-col">
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Inicial</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Data Inicial</label>
                 <input 
                   type="date" 
                   name="dt_inicio" 
                   value={filtros.dt_inicio} 
                   onChange={e => setFiltros({ ...filtros, dt_inicio: e.target.value })} 
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" 
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs" 
                 />
               </div>
               <div className="flex flex-col">
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Final</label>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Data Final</label>
                 <input 
                   type="date" 
                   name="dt_fim" 
                   value={filtros.dt_fim} 
                   onChange={e => setFiltros({ ...filtros, dt_fim: e.target.value })} 
-                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" 
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs" 
                 />
               </div>
             </div>
             <div className="flex justify-end w-full">
-              <button type="submit" className="flex items-center gap-2 bg-[#000638] text-white px-4 py-2 rounded-lg hover:bg-[#fe0000] transition h-10 text-sm font-bold shadow-md tracking-wide uppercase">
-                <ArrowsClockwise size={18} weight="bold" /> Filtrar
+              <button type="submit" className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] transition h-7 text-xs font-bold shadow-md tracking-wide uppercase">
+                <ArrowsClockwise size={10} weight="bold" /> Filtrar
               </button>
             </div>
           </form>
@@ -612,17 +618,17 @@ const Franquias = () => {
         </div>
 
         {/* Cards de Resumo */}
-        <div className="flex flex-wrap gap-4 mb-8 justify-center">
+        <div className="flex flex-wrap gap-3 mb-6 justify-center">
           {/* Vendas após Desconto Franquias */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-green-700" />
-                <CardTitle className="text-sm font-bold text-green-700">Vendas após Desconto Franquias</CardTitle>
+                <CurrencyDollar size={14} className="text-green-700" />
+                <CardTitle className="text-xs font-bold text-green-700">Vendas após Desconto Franquias</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-green-600 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-green-600 mb-0.5">
                 {loading ? <Spinner size={24} className="text-green-600 animate-spin" /> : (faturamentoFranquias || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Total Franquias</CardDescription>
@@ -630,15 +636,15 @@ const Franquias = () => {
           </Card>
 
           {/* CMV Franquias */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-red-700" />
-                <CardTitle className="text-sm font-bold text-red-700">CMV Franquias</CardTitle>
+                <CurrencyDollar size={14} className="text-red-700" />
+                <CardTitle className="text-xs font-bold text-red-700">CMV Franquias</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-red-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-red-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-red-600 animate-spin" /> : (custoBrutoFranquias || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">CMV das Franquias</CardDescription>
@@ -646,15 +652,15 @@ const Franquias = () => {
           </Card>
 
           {/* CMV Franquias (%) */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <Percent size={18} className="text-orange-600" />
-                <CardTitle className="text-sm font-bold text-orange-600">CMV Franquias</CardTitle>
+                <Percent size={14} className="text-orange-600" />
+                <CardTitle className="text-xs font-bold text-orange-600">CMV Franquias</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-orange-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-orange-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : (
                   (faturamentoFranquias > 0 && custoBrutoFranquias > 0)
                     ? ((custoBrutoFranquias / faturamentoFranquias) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
@@ -666,15 +672,15 @@ const Franquias = () => {
           </Card>
 
           {/* Margem Franquias */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <Percent size={18} className="text-yellow-700" />
-                <CardTitle className="text-sm font-bold text-yellow-700">Margem Franquias</CardTitle>
+                <Percent size={14} className="text-yellow-700" />
+                <CardTitle className="text-xs font-bold text-yellow-700">Margem Franquias</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-yellow-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-yellow-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-yellow-600 animate-spin" /> : (
                   (() => {
                     const margem = calcularMargemCanal(faturamentoFranquias, custoBrutoFranquias);
@@ -687,15 +693,15 @@ const Franquias = () => {
           </Card>
 
           {/* Markup Franquias */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <TrendUp size={18} className="text-blue-600" />
-                <CardTitle className="text-sm font-bold text-blue-600">Markup Franquias</CardTitle>
+                <TrendUp size={14} className="text-blue-600" />
+                <CardTitle className="text-xs font-bold text-blue-600">Markup Franquias</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-blue-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-blue-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-blue-600 animate-spin" /> : (
                   custoBrutoFranquias > 0 ? (faturamentoFranquias / custoBrutoFranquias).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'
                 )}
@@ -705,15 +711,15 @@ const Franquias = () => {
           </Card>
 
           {/* Preço de Tabela Franquias */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-purple-600" />
-                <CardTitle className="text-sm font-bold text-purple-600">Preço de Tabela Franquias</CardTitle>
+                <CurrencyDollar size={14} className="text-purple-600" />
+                <CardTitle className="text-xs font-bold text-purple-600">Preço de Tabela Franquias</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-purple-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-purple-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-purple-600 animate-spin" /> : (precoTabelaFranquias || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Preço de Tabela das Franquias</CardDescription>
@@ -721,15 +727,15 @@ const Franquias = () => {
           </Card>
 
           {/* Desconto Franquias */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-orange-600" />
-                <CardTitle className="text-sm font-bold text-orange-600">Desconto Franquias</CardTitle>
+                <CurrencyDollar size={14} className="text-orange-600" />
+                <CardTitle className="text-xs font-bold text-orange-600">Desconto Franquias</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-orange-700 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-orange-700 mb-0.5">
                 {loading ? <Spinner size={24} className="text-orange-600 animate-spin" /> : ((precoTabelaFranquias - faturamentoFranquias) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Desconto das Franquias</CardDescription>
@@ -737,15 +743,15 @@ const Franquias = () => {
           </Card>
 
           {/* Devoluções Franquias */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-gray-800" />
-                <CardTitle className="text-sm font-bold text-gray-800">Devoluções Franquias</CardTitle>
+                <CurrencyDollar size={14} className="text-gray-800" />
+                <CardTitle className="text-xs font-bold text-gray-800">Devoluções Franquias</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-gray-900 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-gray-900 mb-0.5">
                 {loading ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (devolucoesFranquias || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Entradas (E) nas Franquias</CardDescription>
@@ -753,15 +759,15 @@ const Franquias = () => {
           </Card>
 
           {/* Frete Franquias */}
-          <Card className="shadow-lg rounded-xl w-64 bg-white cursor-pointer">
+          <Card className="shadow-lg rounded-xl w-45 bg-white cursor-pointer">
             <CardHeader className="pb-0">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-gray-700" />
-                <CardTitle className="text-sm font-bold text-gray-700">Frete Franquias</CardTitle>
+                <CurrencyDollar size={14} className="text-gray-700" />
+                <CardTitle className="text-xs font-bold text-gray-700">Frete Franquias</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-gray-800 mb-1">
+            <CardContent className="pt-0 px-3 pb-3">
+              <div className="text-lg font-extrabold text-gray-800 mb-0.5">
                 {loading ? <Spinner size={24} className="text-gray-600 animate-spin" /> : (freteFranquias || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </div>
               <CardDescription className="text-xs text-gray-500">Frete rateado (S - E)</CardDescription>
@@ -770,9 +776,9 @@ const Franquias = () => {
         </div>
 
         {/* Tabela de Transações */}
-        <div className="rounded-2xl shadow-lg bg-white mt-8 border border-[#000638]/10">
-          <div className="p-4 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandTabela(e => !e)}>
-            <h2 className="text-xl font-bold text-[#000638]">Transações</h2>
+        <div className="rounded-lg shadow-md bg-white mt-4 border border-[#000638]/10">
+          <div className="p-3 border-b border-[#000638]/10 cursor-pointer select-none flex items-center justify-between" onClick={() => setExpandTabela(e => !e)}>
+            <h2 className="text-sm font-bold text-[#000638]">Transações</h2>
             <span className="flex items-center">
               {expandTabela ? <CaretDown size={20} color="#9ca3af" /> : <CaretRight size={20} color="#9ca3af" />}
             </span>
@@ -783,7 +789,7 @@ const Franquias = () => {
                 <thead>
                   <tr>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('nr_transacao')}
                     >
                       <div className="flex items-center justify-center">
@@ -792,7 +798,7 @@ const Franquias = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('cd_empresa')}
                     >
                       <div className="flex items-center justify-center">
@@ -801,7 +807,7 @@ const Franquias = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('nm_grupoempresa')}
                     >
                       <div className="flex items-center justify-center">
@@ -810,7 +816,7 @@ const Franquias = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('dt_transacao')}
                     >
                       <div className="flex items-center justify-center">
@@ -819,7 +825,7 @@ const Franquias = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('tp_situacao')}
                     >
                       <div className="flex items-center justify-center">
@@ -828,7 +834,7 @@ const Franquias = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('tp_operacao')}
                     >
                       <div className="flex items-center justify-center">
@@ -837,7 +843,7 @@ const Franquias = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('ds_nivel')}
                     >
                       <div className="flex items-center justify-center">
@@ -846,7 +852,7 @@ const Franquias = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('qt_faturado')}
                     >
                       <div className="flex items-center justify-center">
@@ -855,7 +861,7 @@ const Franquias = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('vl_unitliquido')}
                     >
                       <div className="flex items-center justify-center">
@@ -864,7 +870,7 @@ const Franquias = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('vl_unitbruto')}
                     >
                       <div className="flex items-center justify-center">
@@ -873,7 +879,7 @@ const Franquias = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSortTransacoes('desconto')}
                     >
                       <div className="flex items-center justify-center">
@@ -896,14 +902,14 @@ const Franquias = () => {
                       const desconto = valorBrutoTotal - valorTotal;
                       return (
                         <tr key={i} className="border-b hover:bg-[#f8f9fb]">
-                          <td className="px-0.5 py-0.5 text-center">{row.nr_transacao || 'N/A'}</td>
-                          <td className="px-0.5 py-0.5 text-center">{row.cd_empresa || 'N/A'}</td>
-                          <td className="px-0.5 py-0.5 text-center">{row.nm_fantasia || 'N/A'}</td>
-                          <td className="px-0.5 py-0.5 text-center">{formatarDataBR(row.dt_transacao)}</td>
-                          <td className="px-0.5 py-0.5 text-center">{row.tp_situacao || 'N/A'}</td>
-                          <td className="px-0.5 py-0.5 text-center">{row.tp_operacao || 'N/A'}</td>
-                          <td className="px-0.5 py-0.5 text-center">{row.ds_nivel || 'N/A'}</td>
-                          <td className="px-0.5 py-0.5 text-center">{qtFaturado.toLocaleString('pt-BR')}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{row.nr_transacao || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{row.cd_empresa || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{row.nm_fantasia || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{formatarDataBR(row.dt_transacao)}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{row.tp_situacao || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{row.tp_operacao || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{row.ds_nivel || 'N/A'}</td>
+                          <td className="px-0.5 py-0.5 text-center text-[8px]">{qtFaturado.toLocaleString('pt-BR')}</td>
                           <td className={`px-0.5 py-0.5 text-right font-semibold ${row.tp_operacao === 'E' ? 'text-[#fe0000]' : row.tp_operacao === 'S' ? 'text-green-600' : ''}`}>{valorTotal !== null && valorTotal !== undefined ? valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
                           <td className={`px-0.5 py-0.5 text-right font-semibold ${row.tp_operacao === 'E' ? 'text-[#fe0000]' : row.tp_operacao === 'S' ? 'text-green-600' : ''}`}>{valorBrutoTotal !== null && valorBrutoTotal !== undefined ? valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
                           <td className="px-0.5 py-0.5 text-right font-semibold text-orange-600">{desconto !== null && desconto !== undefined ? desconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
@@ -917,11 +923,11 @@ const Franquias = () => {
           )}
         </div>
         {/* Card Rank Produtos */}
-        <div className="mt-8 rounded-2xl shadow-lg bg-white border border-[#000638]/10">
-          <div className="flex items-center justify-between p-6 border-b border-[#000638]/10">
+        <div className="mt-4 rounded-lg shadow-md bg-white border border-[#000638]/10">
+          <div className="flex items-center justify-between p-3 border-b border-[#000638]/10">
             <div className="flex items-center gap-3">
               <Package size={24} className="text-[#000638]" />
-              <h2 className="text-xl font-bold text-[#000638]">Rank Produtos</h2>
+              <h2 className="text-sm font-bold text-[#000638]">Rank Produtos</h2>
             </div>
             <button
               className="px-4 py-2 bg-[#000638] text-white rounded-lg text-sm font-semibold hover:bg-[#001060] transition-all duration-200 shadow-md hover:shadow-lg flex items-center gap-2"
@@ -933,13 +939,13 @@ const Franquias = () => {
             </button>
           </div>
           {expandRankProdutos && (
-            <div className="p-6">
+            <div className="p-3">
                           <div className="franquias-table-container overflow-x-auto rounded-lg border border-gray-200">
               <table className="franquias-table min-w-full text-sm">
                                   <thead>
                   <tr>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSort('rank')}
                     >
                       <div className="flex items-center justify-center gap-1">
@@ -947,7 +953,7 @@ const Franquias = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSort('cd_nivel')}
                     >
                       <div className="flex items-center justify-center gap-1">
@@ -963,7 +969,7 @@ const Franquias = () => {
                       </div>
                     </th>
                     <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSort('quantidade')}
                     >
                       <div className="flex items-center justify-center gap-1">
@@ -1084,9 +1090,9 @@ const Franquias = () => {
                         rankArray.map((produto, index) => (
                           <tr key={index} className="border-b hover:bg-gray-50 transition-colors">
                             <td className="px-0.5 py-0.5 text-center text-blue-600 font-semibold">#{index + 1}</td>
-                            <td className="px-0.5 py-0.5 text-center">{produto.cd_nivel || 'N/A'}</td>
-                            <td className="px-0.5 py-0.5 text-center">{produto.modelo || 'N/A'}</td>
-                            <td className="px-0.5 py-0.5 text-center">{produto.quantidade.toLocaleString('pt-BR')}</td>
+                            <td className="px-0.5 py-0.5 text-center text-[8px]">{produto.cd_nivel || 'N/A'}</td>
+                            <td className="px-0.5 py-0.5 text-center text-[8px]">{produto.modelo || 'N/A'}</td>
+                            <td className="px-0.5 py-0.5 text-center text-[8px]">{produto.quantidade.toLocaleString('pt-BR')}</td>
                             <td className="px-0.5 py-0.5 text-right font-semibold">{produto.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                             <td className="px-0.5 py-0.5 text-right font-semibold">{produto.valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                             <td className="px-0.5 py-0.5 text-right font-semibold text-orange-600">{(produto.valorBrutoTotal - produto.valorTotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
