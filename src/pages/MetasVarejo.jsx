@@ -48,6 +48,15 @@ const MetasVarejo = () => {
     vendedorDetalhes: []
   });
   const [tabelaAtiva, setTabelaAtiva] = useState('lojas'); // 'lojas' ou 'vendedores'
+  const [detalheSelecionado, setDetalheSelecionado] = useState(null); // Para o modal de detalhes
+  const [showDetalheModal, setShowDetalheModal] = useState(false); // Controla a exibição do modal de detalhes
+  
+  // Função para abrir o modal de detalhes
+  const abrirModalDetalhes = (detalhes) => {
+    console.log("Função abrirModalDetalhes chamada com:", detalhes);
+    setDetalheSelecionado(detalhes);
+    setShowDetalheModal(true);
+  };
 
   const formatBRL = (num) => {
     const n = Number(num);
@@ -1290,6 +1299,8 @@ const MetasVarejo = () => {
         </div>
       )}
 
+      
+      
       {/* Modal de Log de Alterações */}
       {showLogModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -1558,7 +1569,28 @@ const MetasVarejo = () => {
                           })
                           .sort((a, b) => b.faturamento - a.faturamento) // Ordenar por faturamento
                           .map((loja, index) => (
-                            <tr key={index} className="hover:bg-gray-50">
+                            <tr 
+                              key={index} 
+                              className="hover:bg-gray-50 cursor-pointer"
+                              onClick={() => {
+                                console.log("Clique na linha da loja:", loja.nome);
+                                // Encontrar dados completos da loja nos dadosLojas
+                                const lojaCompleta = dadosLojas.find(l => {
+                                  const nomeLoja = l.nome_fantasia || l.nome_loja || l.loja || l.nm_loja || l.nome || '';
+                                  return nomeLoja === loja.nome;
+                                });
+                                console.log("Dados completos da loja:", lojaCompleta);
+                                
+                                // Combinar dados da loja com detalhes de metas
+                                const detalhes = {
+                                  ...loja,
+                                  tipo: 'loja',
+                                  dadosCompletos: lojaCompleta || {},
+                                };
+                                console.log("Detalhes a serem enviados:", detalhes);
+                                abrirModalDetalhes(detalhes);
+                              }}
+                            >
                               <td className="px-3 py-2 whitespace-nowrap text-xs">{loja.nome}</td>
                               <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-green-600">{formatBRL(loja.faturamento)}</td>
                               <td className="px-3 py-2 whitespace-nowrap">
@@ -1672,7 +1704,28 @@ const MetasVarejo = () => {
                           })
                           .sort((a, b) => b.faturamento - a.faturamento) // Ordenar por faturamento
                           .map((vendedor, index) => (
-                            <tr key={index} className="hover:bg-gray-50">
+                            <tr 
+                              key={index} 
+                              className="hover:bg-gray-50 cursor-pointer"
+                              onClick={() => {
+                                console.log("Clique na linha do vendedor:", vendedor.nome);
+                                // Encontrar dados completos do vendedor nos dadosVendedores
+                                const vendedorCompleto = dadosVendedores.find(v => {
+                                  const nomeVendedor = v.nome_vendedor || v.vendedor || v.nm_vendedor || v.nome || '';
+                                  return nomeVendedor === vendedor.nome;
+                                });
+                                console.log("Dados completos do vendedor:", vendedorCompleto);
+                                
+                                // Combinar dados do vendedor com detalhes de metas
+                                const detalhes = {
+                                  ...vendedor,
+                                  tipo: 'vendedor',
+                                  dadosCompletos: vendedorCompleto || {},
+                                };
+                                console.log("Detalhes a serem enviados:", detalhes);
+                                abrirModalDetalhes(detalhes);
+                              }}
+                            >
                               <td className="px-3 py-2 whitespace-nowrap text-xs">{vendedor.nome}</td>
                               <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-green-600">{formatBRL(vendedor.faturamento)}</td>
                               <td className="px-3 py-2 whitespace-nowrap">
