@@ -39,6 +39,15 @@ const MetasVarejo = () => {
   const [logAlteracoesReal, setLogAlteracoesReal] = useState([]);
   const [salvandoMeta, setSalvandoMeta] = useState(null); // Para controlar qual meta está sendo salva
   const [viewMode, setViewMode] = useState('tabela'); // 'tabela' ou 'dashboard'
+  const [dashboardStats, setDashboardStats] = useState({
+    bronze: { lojas: 0, vendedores: 0 },
+    prata: { lojas: 0, vendedores: 0 },
+    ouro: { lojas: 0, vendedores: 0 },
+    diamante: { lojas: 0, vendedores: 0 },
+    lojaDetalhes: [],
+    vendedorDetalhes: []
+  });
+  const [tabelaAtiva, setTabelaAtiva] = useState('lojas'); // 'lojas' ou 'vendedores'
 
   const formatBRL = (num) => {
     const n = Number(num);
@@ -51,10 +60,16 @@ const MetasVarejo = () => {
     return String(value ?? '').replace(/[^0-9,\.]/g, '');
   };
 
-  // Converte string para número em reais ("1.234,56" -> 1234.56)
+  // Converte string para número em reais ("R$ 1.234,56" -> 1234.56)
   const toNumber = (value) => {
     if (value === '' || value === null || value === undefined) return 0;
-    const normalized = String(value).replace(/\./g, '').replace(',', '.');
+    
+    // Remover R$ e espaços
+    const withoutCurrency = String(value).replace(/R\$\s*/g, '');
+    
+    // Remover pontos de milhar e substituir vírgula por ponto
+    const normalized = withoutCurrency.replace(/\./g, '').replace(',', '.');
+    
     const n = parseFloat(normalized);
     return isNaN(n) ? 0 : n;
   };
@@ -370,6 +385,14 @@ const MetasVarejo = () => {
   useEffect(() => {
     // Componente inicializado
   }, []);
+  
+  // Recalcular estatísticas quando metas, dados ou filtros mudarem
+  useEffect(() => {
+    if (viewMode === 'dashboard' && (dadosLojas.length > 0 || dadosVendedores.length > 0)) {
+      calcularStatsDashboard();
+    }
+  }, [metaValores, dadosLojas, dadosVendedores, viewMode, tipoLoja, lojasSelecionadas, vendedoresSelecionados]);
+  
 
   const handleBuscar = async () => {
     setLoading(true);
@@ -385,7 +408,9 @@ const MetasVarejo = () => {
       // Buscar metas existentes para o período
       await carregarMetasExistentes();
       
+      // Calcular estatísticas do dashboard
       setTimeout(() => {
+        calcularStatsDashboard();
         setLoading(false);
         setLoadingRanking(false);
       }, 1000);
@@ -414,6 +439,250 @@ const MetasVarejo = () => {
       
       setMetaValores(metasExistentes);
     }
+  };
+  
+
+  const calcularStatsDashboard = () => {
+    if (!filtros.dt_inicio || !filtros.dt_fim) return;
+    
+    // Inicializar estatísticas
+    
+    const stats = {
+      bronze: { lojas: 0, vendedores: 0 },
+      prata: { lojas: 0, vendedores: 0 },
+      ouro: { lojas: 0, vendedores: 0 },
+      diamante: { lojas: 0, vendedores: 0 },
+      // Dados detalhados para as tabelas de progresso
+      lojaDetalhes: [],
+      vendedorDetalhes: []
+    };
+    
+    // Calcular para lojas
+    dadosLojas.forEach((loja, index) => {
+      const nomeLoja = loja.nome_fantasia || loja.nome_loja || loja.loja || loja.nm_loja || loja.nome || '';
+      const faturamento = Number(loja.faturamento) || 0;
+      
+      // Procurar metas para esta loja
+      let metaBronze = 0;
+      let metaPrata = 0;
+      let metaOuro = 0;
+      let metaDiamante = 0;
+      
+      // Procurar em todas as chaves de metaValores
+      Object.keys(metaValores).forEach(chave => {
+        if (chave.startsWith('lojas-') && chave.includes(nomeLoja)) {
+          if (chave.endsWith('-bronze')) {
+            metaBronze = toNumber(metaValores[chave]);
+          } else if (chave.endsWith('-prata')) {
+            metaPrata = toNumber(metaValores[chave]);
+          } else if (chave.endsWith('-ouro')) {
+            metaOuro = toNumber(metaValores[chave]);
+          } else if (chave.endsWith('-diamante')) {
+            metaDiamante = toNumber(metaValores[chave]);
+          }
+        }
+      });
+      
+      // Verificar cada tipo de meta
+      ['bronze', 'prata', 'ouro', 'diamante'].forEach(tipoMeta => {
+        // Procurar a meta para esta loja em todas as chaves que contêm o nome da loja
+        let metaEncontrada = null;
+        let chaveEncontrada = null;
+        
+        // Procurar em todas as chaves de metaValores
+        Object.keys(metaValores).forEach(chave => {
+          if (chave.startsWith('lojas-') && 
+              chave.endsWith(`-${tipoMeta}`) && 
+              chave.includes(nomeLoja)) {
+            metaEncontrada = metaValores[chave];
+            chaveEncontrada = chave;
+          }
+        });
+        
+        if (metaEncontrada && metaEncontrada !== 'R$ 0,00') {
+          // Converter meta para número (remover formatação R$)
+          const metaNumero = toNumber(metaEncontrada);
+          
+          // Se faturamento >= meta, atingiu a meta
+          if (faturamento >= metaNumero && metaNumero > 0) {
+            stats[tipoMeta].lojas++;
+          }
+        }
+      });
+      
+      // Determinar meta atual e próxima meta
+      let metaAtual = 'Sem meta';
+      let proximaMeta = 'Bronze';
+      let valorProximaMeta = metaBronze;
+      let percentualAtingido = 0;
+      let valorFaltante = 0;
+      
+      // Calcular a meta atual e a próxima meta
+      if (metaDiamante > 0 && faturamento >= metaDiamante) {
+        metaAtual = 'Diamante';
+        proximaMeta = 'Meta máxima atingida';
+        valorProximaMeta = 0;
+        percentualAtingido = 100;
+        valorFaltante = 0;
+      } else if (metaOuro > 0 && faturamento >= metaOuro) {
+        metaAtual = 'Ouro';
+        proximaMeta = 'Diamante';
+        valorProximaMeta = metaDiamante;
+        percentualAtingido = metaDiamante > 0 ? Math.min(100, Math.round((faturamento / metaDiamante) * 100)) : 0;
+        valorFaltante = metaDiamante > 0 ? Math.max(0, metaDiamante - faturamento) : 0;
+      } else if (metaPrata > 0 && faturamento >= metaPrata) {
+        metaAtual = 'Prata';
+        proximaMeta = 'Ouro';
+        valorProximaMeta = metaOuro;
+        percentualAtingido = metaOuro > 0 ? Math.min(100, Math.round((faturamento / metaOuro) * 100)) : 0;
+        valorFaltante = metaOuro > 0 ? Math.max(0, metaOuro - faturamento) : 0;
+      } else if (metaBronze > 0 && faturamento >= metaBronze) {
+        metaAtual = 'Bronze';
+        proximaMeta = 'Prata';
+        valorProximaMeta = metaPrata;
+        percentualAtingido = metaPrata > 0 ? Math.min(100, Math.round((faturamento / metaPrata) * 100)) : 0;
+        valorFaltante = metaPrata > 0 ? Math.max(0, metaPrata - faturamento) : 0;
+      } else {
+        metaAtual = 'Abaixo de Bronze';
+        proximaMeta = 'Bronze';
+        valorProximaMeta = metaBronze;
+        percentualAtingido = metaBronze > 0 ? Math.min(100, Math.round((faturamento / metaBronze) * 100)) : 0;
+        valorFaltante = metaBronze > 0 ? Math.max(0, metaBronze - faturamento) : 0;
+      }
+      
+      // Adicionar aos detalhes para a tabela
+      stats.lojaDetalhes.push({
+        nome: nomeLoja,
+        faturamento,
+        metaAtual,
+        proximaMeta,
+        valorProximaMeta,
+        percentualAtingido,
+        valorFaltante,
+        // Valores de todas as metas para referência
+        metas: {
+          bronze: metaBronze,
+          prata: metaPrata,
+          ouro: metaOuro,
+          diamante: metaDiamante
+        }
+      });
+    });
+    
+    // Calcular para vendedores
+    dadosVendedores.forEach((vendedor, index) => {
+      const nomeVendedor = vendedor.nome_vendedor || vendedor.vendedor || vendedor.nm_vendedor || vendedor.nome || '';
+      const faturamento = Number(vendedor.faturamento) || 0;
+      
+      // Procurar metas para este vendedor
+      let metaBronze = 0;
+      let metaPrata = 0;
+      let metaOuro = 0;
+      let metaDiamante = 0;
+      
+      // Procurar em todas as chaves de metaValores
+      Object.keys(metaValores).forEach(chave => {
+        if (chave.startsWith('vendedores-') && chave.includes(nomeVendedor)) {
+          if (chave.endsWith('-bronze')) {
+            metaBronze = toNumber(metaValores[chave]);
+          } else if (chave.endsWith('-prata')) {
+            metaPrata = toNumber(metaValores[chave]);
+          } else if (chave.endsWith('-ouro')) {
+            metaOuro = toNumber(metaValores[chave]);
+          } else if (chave.endsWith('-diamante')) {
+            metaDiamante = toNumber(metaValores[chave]);
+          }
+        }
+      });
+      
+      // Verificar cada tipo de meta
+      ['bronze', 'prata', 'ouro', 'diamante'].forEach(tipoMeta => {
+        // Procurar a meta para este vendedor em todas as chaves que contêm o nome do vendedor
+        let metaEncontrada = null;
+        let chaveEncontrada = null;
+        
+        // Procurar em todas as chaves de metaValores
+        Object.keys(metaValores).forEach(chave => {
+          if (chave.startsWith('vendedores-') && 
+              chave.endsWith(`-${tipoMeta}`) && 
+              chave.includes(nomeVendedor)) {
+            metaEncontrada = metaValores[chave];
+            chaveEncontrada = chave;
+          }
+        });
+        
+        if (metaEncontrada && metaEncontrada !== 'R$ 0,00') {
+          // Converter meta para número (remover formatação R$)
+          const metaNumero = toNumber(metaEncontrada);
+          
+          // Se faturamento >= meta, atingiu a meta
+          if (faturamento >= metaNumero && metaNumero > 0) {
+            stats[tipoMeta].vendedores++;
+          }
+        }
+      });
+      
+      // Determinar meta atual e próxima meta
+      let metaAtual = 'Sem meta';
+      let proximaMeta = 'Bronze';
+      let valorProximaMeta = metaBronze;
+      let percentualAtingido = 0;
+      let valorFaltante = 0;
+      
+      // Calcular a meta atual e a próxima meta
+      if (metaDiamante > 0 && faturamento >= metaDiamante) {
+        metaAtual = 'Diamante';
+        proximaMeta = 'Meta máxima atingida';
+        valorProximaMeta = 0;
+        percentualAtingido = 100;
+        valorFaltante = 0;
+      } else if (metaOuro > 0 && faturamento >= metaOuro) {
+        metaAtual = 'Ouro';
+        proximaMeta = 'Diamante';
+        valorProximaMeta = metaDiamante;
+        percentualAtingido = metaDiamante > 0 ? Math.min(100, Math.round((faturamento / metaDiamante) * 100)) : 0;
+        valorFaltante = metaDiamante > 0 ? Math.max(0, metaDiamante - faturamento) : 0;
+      } else if (metaPrata > 0 && faturamento >= metaPrata) {
+        metaAtual = 'Prata';
+        proximaMeta = 'Ouro';
+        valorProximaMeta = metaOuro;
+        percentualAtingido = metaOuro > 0 ? Math.min(100, Math.round((faturamento / metaOuro) * 100)) : 0;
+        valorFaltante = metaOuro > 0 ? Math.max(0, metaOuro - faturamento) : 0;
+      } else if (metaBronze > 0 && faturamento >= metaBronze) {
+        metaAtual = 'Bronze';
+        proximaMeta = 'Prata';
+        valorProximaMeta = metaPrata;
+        percentualAtingido = metaPrata > 0 ? Math.min(100, Math.round((faturamento / metaPrata) * 100)) : 0;
+        valorFaltante = metaPrata > 0 ? Math.max(0, metaPrata - faturamento) : 0;
+      } else {
+        metaAtual = 'Abaixo de Bronze';
+        proximaMeta = 'Bronze';
+        valorProximaMeta = metaBronze;
+        percentualAtingido = metaBronze > 0 ? Math.min(100, Math.round((faturamento / metaBronze) * 100)) : 0;
+        valorFaltante = metaBronze > 0 ? Math.max(0, metaBronze - faturamento) : 0;
+      }
+      
+      // Adicionar aos detalhes para a tabela
+      stats.vendedorDetalhes = stats.vendedorDetalhes || [];
+      stats.vendedorDetalhes.push({
+        nome: nomeVendedor,
+        faturamento,
+        metaAtual,
+        proximaMeta,
+        valorProximaMeta,
+        percentualAtingido,
+        valorFaltante,
+        // Valores de todas as metas para referência
+        metas: {
+          bronze: metaBronze,
+          prata: metaPrata,
+          ouro: metaOuro,
+          diamante: metaDiamante
+        }
+      });
+    });
+    
+    setDashboardStats(stats);
   };
 
   const buscarDadosLojas = async (inicio, fim) => {
@@ -1106,14 +1375,367 @@ const MetasVarejo = () => {
 
       {viewMode === 'dashboard' && (
         <div className="bg-white p-4 rounded-lg shadow-md border border-[#000638]/10">
-          <div className="mb-4">
-            <h3 className="text-lg font-bold text-[#000638] mb-2">Dashboard de Metas</h3>
-            <p className="text-sm text-gray-600">Visualização consolidada das metas e performance</p>
+          <div className="mb-4 flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-bold text-[#000638] mb-2">Dashboard de Metas</h3>
+              <p className="text-sm text-gray-600">Acompanhamento de metas atingidas por lojas e vendedores</p>
+            </div>
+            <button
+              type="button"
+              onClick={calcularStatsDashboard}
+              className="text-xs bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] transition-colors"
+            >
+              Recalcular Estatísticas
+            </button>
           </div>
           
-          <div className="p-8 bg-gray-50 rounded-lg">
-            <p className="text-sm text-gray-500 text-center">
-              Dashboard em desenvolvimento - gráficos e análises serão adicionados aqui
+          {/* Cards de Metas */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {/* Card Bronze */}
+            <div className="bg-white p-4 rounded-lg shadow border border-amber-200">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-sm font-bold text-amber-700">Meta Bronze</p>
+                  <p className="text-xs text-amber-600">Faturamento atingido</p>
+                </div>
+                <div className="text-2xl">🥉</div>
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-sm text-gray-700">
+                  <span>Lojas:</span>
+                  <span className="font-bold text-amber-700">{dashboardStats.bronze.lojas}</span>
+                </div>
+                <div className="flex justify-between text-sm text-gray-700">
+                  <span>Vendedores:</span>
+                  <span className="font-bold text-amber-700">{dashboardStats.bronze.vendedores}</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Card Prata */}
+            <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-sm font-bold text-gray-700">Meta Prata</p>
+                  <p className="text-xs text-gray-600">Faturamento atingido</p>
+                </div>
+                <div className="text-2xl">🥈</div>
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-sm text-gray-700">
+                  <span>Lojas:</span>
+                  <span className="font-bold text-gray-700">{dashboardStats.prata.lojas}</span>
+                </div>
+                <div className="flex justify-between text-sm text-gray-700">
+                  <span>Vendedores:</span>
+                  <span className="font-bold text-gray-700">{dashboardStats.prata.vendedores}</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Card Ouro */}
+            <div className="bg-white p-4 rounded-lg shadow border border-yellow-200">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-sm font-bold text-yellow-700">Meta Ouro</p>
+                  <p className="text-xs text-yellow-600">Faturamento atingido</p>
+                </div>
+                <div className="text-2xl">🥇</div>
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-sm text-gray-700">
+                  <span>Lojas:</span>
+                  <span className="font-bold text-yellow-700">{dashboardStats.ouro.lojas}</span>
+                </div>
+                <div className="flex justify-between text-sm text-gray-700">
+                  <span>Vendedores:</span>
+                  <span className="font-bold text-yellow-700">{dashboardStats.ouro.vendedores}</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Card Diamante */}
+            <div className="bg-white p-4 rounded-lg shadow border border-blue-200">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-sm font-bold text-blue-700">Meta Diamante</p>
+                  <p className="text-xs text-blue-600">Faturamento atingido</p>
+                </div>
+                <div className="text-2xl">💎</div>
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-sm text-gray-700">
+                  <span>Lojas:</span>
+                  <span className="font-bold text-blue-700">{dashboardStats.diamante.lojas}</span>
+                </div>
+                <div className="flex justify-between text-sm text-gray-700">
+                  <span>Vendedores:</span>
+                  <span className="font-bold text-blue-700">{dashboardStats.diamante.vendedores}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Botões para alternar entre tabelas */}
+          <div className="mb-4">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setTabelaAtiva('lojas')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors text-sm font-medium ${
+                  tabelaAtiva === 'lojas'
+                    ? 'bg-[#000638] border-[#000638] text-white'
+                    : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Lojas
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setTabelaAtiva('vendedores')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors text-sm font-medium ${
+                  tabelaAtiva === 'vendedores'
+                    ? 'bg-[#000638] border-[#000638] text-white'
+                    : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Vendedores
+              </button>
+            </div>
+          </div>
+          
+          {/* Tabela de Progresso de Metas - LOJAS */}
+          {tabelaAtiva === 'lojas' && (
+            <div className="mb-6">
+              <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-bold text-[#000638]">Progresso de Metas por Loja</p>
+                    <p className="text-xs text-gray-600">Acompanhamento detalhado do progresso para a próxima meta</p>
+                  </div>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Loja</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Faturamento</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Meta Atual</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Próxima Meta</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progresso</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Falta</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {dashboardStats.lojaDetalhes && dashboardStats.lojaDetalhes.length > 0 ? (
+                        dashboardStats.lojaDetalhes
+                          .filter(loja => {
+                            // Filtrar por lojas selecionadas se houver
+                            if (lojasSelecionadas.length > 0) {
+                              return lojasSelecionadas.some(l => 
+                                (l.nome_fantasia || l.nome_loja || l.loja || l.nm_loja || l.nome || '').includes(loja.nome)
+                              );
+                            }
+                            return true;
+                          })
+                          // Filtrar por tipo de loja
+                          .filter(loja => {
+                            const nomeLoja = loja.nome;
+                            
+                            if (tipoLoja === 'Franquias') {
+                              // Considerar franquia se o nome contém "F0" (padrão de código de franquia)
+                              return nomeLoja.includes('F0');
+                            }
+                            
+                            if (tipoLoja === 'Proprias') {
+                              // Considerar própria se o nome NÃO contém "F0"
+                              return !nomeLoja.includes('F0');
+                            }
+                            
+                            return true; // 'Todos'
+                          })
+                          .sort((a, b) => b.faturamento - a.faturamento) // Ordenar por faturamento
+                          .map((loja, index) => (
+                            <tr key={index} className="hover:bg-gray-50">
+                              <td className="px-3 py-2 whitespace-nowrap text-xs">{loja.nome}</td>
+                              <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-green-600">{formatBRL(loja.faturamento)}</td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                  ${loja.metaAtual === 'Diamante' ? 'bg-blue-100 text-blue-800' : 
+                                    loja.metaAtual === 'Ouro' ? 'bg-yellow-100 text-yellow-800' :
+                                    loja.metaAtual === 'Prata' ? 'bg-gray-100 text-gray-800' :
+                                    loja.metaAtual === 'Bronze' ? 'bg-amber-100 text-amber-800' :
+                                    'bg-gray-100 text-gray-800'}`}>
+                                  {loja.metaAtual}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                <div className="flex flex-col">
+                                  <span className="text-xs font-medium">
+                                    {loja.proximaMeta}
+                                  </span>
+                                  {loja.valorProximaMeta > 0 && (
+                                    <span className="text-xs text-gray-500">
+                                      {formatBRL(loja.valorProximaMeta)}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                <div className="flex items-center">
+                                  <div className="w-full bg-gray-200 rounded-full h-2.5 mr-2">
+                                    <div 
+                                      className={`h-2.5 rounded-full ${
+                                        loja.metaAtual === 'Diamante' ? 'bg-blue-600' : 
+                                        loja.metaAtual === 'Ouro' ? 'bg-yellow-500' :
+                                        loja.metaAtual === 'Prata' ? 'bg-gray-500' :
+                                        loja.metaAtual === 'Bronze' ? 'bg-amber-500' :
+                                        'bg-blue-600'
+                                      }`} 
+                                      style={{ width: `${loja.percentualAtingido}%` }}
+                                    ></div>
+                                  </div>
+                                  <span className="text-xs font-medium">{loja.percentualAtingido}%</span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap text-xs">
+                                {loja.valorFaltante > 0 ? formatBRL(loja.valorFaltante) : 'Meta atingida'}
+                              </td>
+                            </tr>
+                          ))
+                      ) : (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-4 text-center text-sm text-gray-500">
+                            Nenhum dado disponível. Verifique se existem metas cadastradas e faturamento no período.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Tabela de Progresso de Metas - VENDEDORES */}
+          {tabelaAtiva === 'vendedores' && (
+            <div className="mb-6">
+              <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-bold text-[#000638]">Progresso de Metas por Vendedor</p>
+                    <p className="text-xs text-gray-600">Acompanhamento detalhado do progresso para a próxima meta</p>
+                  </div>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendedor</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Faturamento</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Meta Atual</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Próxima Meta</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progresso</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Falta</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {dashboardStats.vendedorDetalhes && dashboardStats.vendedorDetalhes.length > 0 ? (
+                        dashboardStats.vendedorDetalhes
+                          .filter(vendedor => {
+                            // Filtrar por vendedores selecionados se houver
+                            if (vendedoresSelecionados.length > 0) {
+                              return vendedoresSelecionados.some(v => 
+                                (v.nome_vendedor || v.vendedor || v.nm_vendedor || v.nome || '').includes(vendedor.nome)
+                              );
+                            }
+                            return true;
+                          })
+                          // Filtrar por tipo de loja (para vendedores)
+                          .filter(vendedor => {
+                            const nomeVendedor = vendedor.nome;
+                            
+                            if (tipoLoja === 'Franquias') {
+                              // Vendedores de franquias não têm "- INT" no nome
+                              return !nomeVendedor.includes('- INT');
+                            }
+                            
+                            if (tipoLoja === 'Proprias') {
+                              // Vendedores de lojas próprias têm "- INT" no nome
+                              return nomeVendedor.includes('- INT');
+                            }
+                            
+                            return true; // 'Todos'
+                          })
+                          .sort((a, b) => b.faturamento - a.faturamento) // Ordenar por faturamento
+                          .map((vendedor, index) => (
+                            <tr key={index} className="hover:bg-gray-50">
+                              <td className="px-3 py-2 whitespace-nowrap text-xs">{vendedor.nome}</td>
+                              <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-green-600">{formatBRL(vendedor.faturamento)}</td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                  ${vendedor.metaAtual === 'Diamante' ? 'bg-blue-100 text-blue-800' : 
+                                    vendedor.metaAtual === 'Ouro' ? 'bg-yellow-100 text-yellow-800' :
+                                    vendedor.metaAtual === 'Prata' ? 'bg-gray-100 text-gray-800' :
+                                    vendedor.metaAtual === 'Bronze' ? 'bg-amber-100 text-amber-800' :
+                                    'bg-gray-100 text-gray-800'}`}>
+                                  {vendedor.metaAtual}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                <div className="flex flex-col">
+                                  <span className="text-xs font-medium">
+                                    {vendedor.proximaMeta}
+                                  </span>
+                                  {vendedor.valorProximaMeta > 0 && (
+                                    <span className="text-xs text-gray-500">
+                                      {formatBRL(vendedor.valorProximaMeta)}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                <div className="flex items-center">
+                                  <div className="w-full bg-gray-200 rounded-full h-2.5 mr-2">
+                                    <div 
+                                      className={`h-2.5 rounded-full ${
+                                        vendedor.metaAtual === 'Diamante' ? 'bg-blue-600' : 
+                                        vendedor.metaAtual === 'Ouro' ? 'bg-yellow-500' :
+                                        vendedor.metaAtual === 'Prata' ? 'bg-gray-500' :
+                                        vendedor.metaAtual === 'Bronze' ? 'bg-amber-500' :
+                                        'bg-blue-600'
+                                      }`} 
+                                      style={{ width: `${vendedor.percentualAtingido}%` }}
+                                    ></div>
+                                  </div>
+                                  <span className="text-xs font-medium">{vendedor.percentualAtingido}%</span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap text-xs">
+                                {vendedor.valorFaltante > 0 ? formatBRL(vendedor.valorFaltante) : 'Meta atingida'}
+                              </td>
+                            </tr>
+                          ))
+                      ) : (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-4 text-center text-sm text-gray-500">
+                            Nenhum dado disponível. Verifique se existem metas cadastradas e faturamento no período.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div className="p-4 bg-gray-50 rounded-lg">
+            <p className="text-xs text-gray-500 text-center">
+              * Dados baseados nas metas definidas e faturamento do período selecionado ({filtros.dt_inicio} a {filtros.dt_fim})
             </p>
           </div>
         </div>
