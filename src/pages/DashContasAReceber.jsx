@@ -4,6 +4,7 @@ import FiltroCliente from '../components/FiltroCliente';
 import FiltroFormaPagamento from '../components/FiltroFormaPagamento';
 import FiltroNomeFantasia from '../components/FiltroNomeFantasia';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
+import PageTitle from '../components/ui/PageTitle';
 import { Calendar, Clock, Funnel, Spinner } from '@phosphor-icons/react';
 
 const DashContasAReceber = () => {
@@ -279,7 +280,12 @@ const DashContasAReceber = () => {
 
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
-      <h1 className="text-3xl font-bold mb-6 text-center text-[#000638] font-barlow">Dash Contas a Receber</h1>
+      <PageTitle 
+        title="Dash de Inadimplência"
+        subtitle="Análise de inadimplência e prazo médio de recebimento"
+        icon={Clock}
+        iconColor="text-green-600"
+      />
 
       {/* Filtros (espelhados) */}
       <div className="mb-8">

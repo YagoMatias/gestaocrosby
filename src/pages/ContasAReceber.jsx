@@ -769,6 +769,27 @@ const ContasAReceber = () => {
     }
   };
 
+  // Cálculo do PMCR (média ponderada): diferença em dias entre emissão e liquidação (ou hoje se não pago), ponderado por valor
+  const pmcrDias = useMemo(() => {
+    if (!dadosProcessados || dadosProcessados.length === 0) return 0;
+    let somaPonderadaDias = 0;
+    let somaPesos = 0;
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    dadosProcessados.forEach((item) => {
+      const emissao = parseDateNoTZ(item.dt_emissao);
+      const liquidacao = item.dt_liq ? parseDateNoTZ(item.dt_liq) : hoje;
+      if (!emissao) return;
+      const dias = Math.max(0, Math.floor((liquidacao - emissao) / (1000 * 60 * 60 * 24)));
+      const valorBase = parseFloat(item.vl_fatura) || 0;
+      if (valorBase > 0) {
+        somaPonderadaDias += dias * valorBase;
+        somaPesos += valorBase;
+      }
+    });
+    if (somaPesos === 0) return 0;
+    return somaPonderadaDias / somaPesos;
+  }, [dadosProcessados]);
+
   // Calcular totais para os cards
   const calcularTotais = () => {
     const totais = dadosProcessados.reduce((acc, item) => {
@@ -1503,17 +1524,17 @@ const ContasAReceber = () => {
 
           {/* Cards de Resumo */}
           {dadosProcessados.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-6 max-w-4xl mx-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2 mb-6 max-w-6xl mx-auto">
             {/* Valor Total Faturado */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
                   <CurrencyDollar size={14} className="text-blue-600" />
-                  <CardTitle className="text-sm font-bold text-blue-700">Valor Total</CardTitle>
+                  <CardTitle className="text-xs font-bold text-blue-700">Valor Total</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-3 pb-3">
-                <div className="text-base font-extrabold text-blue-600 mb-0.5 break-words">
+              <CardContent className="pt-0 px-2 pb-2">
+                <div className="text-sm font-extrabold text-blue-600 mb-0.5 break-words">
                   {loading ? <Spinner size={18} className="animate-spin text-blue-600" /> : 
                     totais.valorFaturado.toLocaleString('pt-BR', {
                       style: 'currency',
@@ -1521,7 +1542,7 @@ const ContasAReceber = () => {
                     })
                   }
                 </div>
-                <CardDescription className="text-xs text-gray-500">Valor total faturado no período</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Valor total faturado </CardDescription>
               </CardContent>
             </Card>
 
@@ -1530,11 +1551,11 @@ const ContasAReceber = () => {
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
                   <CheckCircle size={14} className="text-green-600" />
-                  <CardTitle className="text-sm font-bold text-green-700">Valor Recebido</CardTitle>
+                  <CardTitle className="text-xs font-bold text-green-700">Valor Recebido</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-3 pb-3">
-                <div className="text-base font-extrabold text-green-600 mb-0.5 break-words">
+              <CardContent className="pt-0 px-2 pb-2">
+                <div className="text-sm font-extrabold text-green-600 mb-0.5 break-words">
                   {loading ? <Spinner size={18} className="animate-spin text-green-600" /> : 
                     totais.valorPago.toLocaleString('pt-BR', {
                       style: 'currency',
@@ -1542,7 +1563,7 @@ const ContasAReceber = () => {
                     })
                   }
                 </div>
-                <CardDescription className="text-xs text-gray-500">Valor total pago no período</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Valor total pago </CardDescription>
               </CardContent>
             </Card>
 
@@ -1551,11 +1572,11 @@ const ContasAReceber = () => {
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
                   <Receipt size={14} className="text-purple-600" />
-                  <CardTitle className="text-sm font-bold text-purple-700">Valor Corrigido</CardTitle>
+                  <CardTitle className="text-xs font-bold text-purple-700">Valor Corrigido</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-3 pb-3">
-                <div className="text-base font-extrabold text-purple-600 mb-0.5 break-words">
+              <CardContent className="pt-0 px-2 pb-2">
+                <div className="text-sm font-extrabold text-purple-600 mb-0.5 break-words">
                   {loading ? <Spinner size={18} className="animate-spin text-purple-600" /> : 
                     totais.valorCorrigido.toLocaleString('pt-BR', {
                       style: 'currency',
@@ -1563,7 +1584,7 @@ const ContasAReceber = () => {
                     })
                   }
                 </div>
-                <CardDescription className="text-xs text-gray-500">Valor total corrigido no período</CardDescription>
+                <CardDescription className="text-xs text-gray-500">Valor total corrigido </CardDescription>
               </CardContent>
             </Card>
 
@@ -1572,11 +1593,11 @@ const ContasAReceber = () => {
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
                   <Warning size={14} className="text-red-600" />
-                  <CardTitle className="text-sm font-bold text-red-700">Valor a Receber</CardTitle>
+                  <CardTitle className="text-xs font-bold text-red-700">Valor a Receber</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-3 pb-3">
-                <div className="text-base font-extrabold text-red-600 mb-0.5 break-words">
+              <CardContent className="pt-0 px-2 pb-2">
+                <div className="text-sm font-extrabold text-red-600 mb-0.5 break-words">
                   {loading ? <Spinner size={18} className="animate-spin text-red-600" /> : 
                     totais.valorAPagar.toLocaleString('pt-BR', {
                       style: 'currency',
@@ -1593,11 +1614,11 @@ const ContasAReceber = () => {
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
                   <Percent size={14} className="text-orange-600" />
-                  <CardTitle className="text-sm font-bold text-orange-700">Valor de Descontos</CardTitle>
+                  <CardTitle className="text-xs font-bold text-orange-700">Valor de Descontos</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-3 pb-3">
-                <div className="text-base font-extrabold text-orange-600 mb-0.5 break-words">
+              <CardContent className="pt-0 px-2 pb-2">
+                <div className="text-sm font-extrabold text-orange-600 mb-0.5 break-words">
                   {loading ? <Spinner size={18} className="animate-spin text-orange-600" /> : 
                     totais.valorDescontos.toLocaleString('pt-BR', {
                       style: 'currency',
@@ -1609,16 +1630,16 @@ const ContasAReceber = () => {
               </CardContent>
             </Card>
 
-            {/* Valor a Receber no Período */}
+            {/* Valor a Receber  */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
                   <Calendar size={14} className="text-purple-600" />
-                  <CardTitle className="text-sm font-bold text-purple-700">A Receber no Período</CardTitle>
+                  <CardTitle className="text-xs font-bold text-purple-700">A Receber </CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-3 pb-3">
-                <div className="text-base font-extrabold text-purple-600 mb-0.5 break-words">
+              <CardContent className="pt-0 px-2 pb-2">
+                <div className="text-sm font-extrabold text-purple-600 mb-0.5 break-words">
                   {loading ? <Spinner size={18} className="animate-spin text-purple-600" /> : 
                     totais.valorFaturado.toLocaleString('pt-BR', {
                       style: 'currency',
@@ -1629,6 +1650,24 @@ const ContasAReceber = () => {
                 <CardDescription className="text-xs text-gray-500">
                   {filtroMensal === 'ANO' ? 'Ano atual' : `${filtroMensal}${filtroDia ? ` - Dia ${filtroDia}` : ''}`}
                 </CardDescription>
+              </CardContent>
+            </Card>
+
+            {/* Prazo Médio de Recebimento */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <Clock size={14} className="text-green-600" />
+                  <CardTitle className="text-xs font-bold text-green-700">PMR</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-2 pb-2">
+                <div className="text-sm font-extrabold text-green-600 mb-0.5 break-words">
+                  {loading ? <Spinner size={18} className="animate-spin text-green-600" /> : 
+                    `${pmcrDias.toFixed(1)} dias`
+                  }
+                </div>
+                <CardDescription className="text-xs text-gray-500">Valor entre emissão e recebimento</CardDescription>
               </CardContent>
             </Card>
           </div>
