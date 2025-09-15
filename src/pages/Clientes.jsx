@@ -1,786 +1,851 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import useApiClient from '../hooks/useApiClient';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import PageTitle from '../components/ui/PageTitle';
+import { Clock, ArrowsClockwise, Calendar, FunnelSimple } from '@phosphor-icons/react';
+import useApiClient from '../hooks/useApiClient';
 import Table from '../components/ui/Table';
-import { Users, Calendar, Funnel, Spinner } from '@phosphor-icons/react';
-import FiltroNomeFantasia from '../components/FiltroNomeFantasia';
-import FiltroOperacao from '../components/FiltroOperacao';
-import FiltroTipoClassificacao from '../components/FiltroTipoClassificacao';
-import FiltroClassificacao from '../components/FiltroClassificacao';
-import LoadingSpinner from '../components/LoadingSpinner';
+import FilterDropdown from '../components/ui/FilterDropdown';
 
 const Clientes = () => {
-  // Estados para armazenar os dados e o estado da requisição
-  const [clientes, setClientes] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [pagination, setPagination] = useState({
-    limit: 50,
-    offset: 0,
-    total: 0,
-    hasMore: false
-  });
-  
-  // Estados para filtros
+  const apiClient = useApiClient();
   const [filtros, setFiltros] = useState({
-    dt_inicio: new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0],
-    dt_fim: new Date().toISOString().split('T')[0]
+    dataInicio: '',
+    dataFim: ''
   });
+  const [dados, setDados] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState('');
 
-  // Filtro Nome Fantasia
-  const [nomesFantasiaSelecionados, setNomesFantasiaSelecionados] = useState([]);
-  const [dadosNomesFantasia, setDadosNomesFantasia] = useState([]);
+  // Estados para filtros e ordenação da tabela
+  const [columnFilters, setColumnFilters] = useState({});
+  const [openFilterDropdown, setOpenFilterDropdown] = useState(null);
+  
+  // Estados para paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(50);
+  
+  // Estado para alternar entre visualizações
+  const [viewMode, setViewMode] = useState('dados'); // 'dados' ou 'classificacao'
 
-  // Filtros de classificação (seleção múltipla)
-  const [tiposClassSelecionados, setTiposClassSelecionados] = useState([]);
-  const [classificacoesSelecionadas, setClassificacoesSelecionadas] = useState([]);
-  
-  // Filtro de operação (seleção múltipla)
-  const [operacoesSelecionadas, setOperacoesSelecionadas] = useState([]);
-  
-  // Estado para controlar a visualização ativa
-  const [visualizacaoAtiva, setVisualizacaoAtiva] = useState('clienteGeral'); // 'clienteGeral' ou 'detalhamentoClassificacao'
-  
-  // Filtro de status para detalhamento de classificação
-  const [filtroStatus, setFiltroStatus] = useState(''); // '', 'unico', 'multiplas'
-  
-  // Hook personalizado para fazer chamadas à API
-  const { utils } = useApiClient();
+  // Definir datas padrão (mês atual)
+  useEffect(() => {
+    const hoje = new Date();
+    const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+    
+    setFiltros({
+      dataInicio: primeiroDia.toISOString().split('T')[0],
+      dataFim: ultimoDia.toISOString().split('T')[0]
+    });
+  }, []);
 
-  // Função para carregar os dados
-  const carregarDados = async () => {
+  // Função para buscar dados da API
+  const buscarDados = useCallback(async () => {
+    if (!filtros.dataInicio || !filtros.dataFim) return;
+    
     setLoading(true);
+    setErro('');
+    
     try {
-      const response = await utils.cadastroPessoa({
-        ...filtros,
+      const response = await apiClient.utils.cadastroPessoa({
+        dt_inicio: filtros.dataInicio,
+        dt_fim: filtros.dataFim
       });
-
+      
       if (response.success) {
-        // Verificar se os dados incluem ds_tipoclas e ds_classificacao
-        if (response.data && response.data.length > 0) {
-          console.log('Amostra de dados recebidos:', response.data.slice(0, 3));
-        }
-        
-        setClientes(response.data);
-        // Como o backend não está mais paginando, controlamos apenas no front
-        setPagination(prev => ({
-          ...prev,
-          total: response.data?.length || 0,
-          hasMore: false
-        }));
+        setDados(response.data || []);
       } else {
-        setError('Erro ao carregar dados de clientes');
+        setErro(response.message || 'Erro ao buscar dados');
       }
-    } catch (err) {
-      console.error('Erro ao buscar clientes:', err);
-      setError(`Erro ao carregar dados: ${err.message}`);
+    } catch (error) {
+      console.error('Erro ao buscar dados:', error);
+      setErro('Erro ao conectar com o servidor');
     } finally {
       setLoading(false);
     }
-  };
+  }, [filtros.dataInicio, filtros.dataFim, apiClient]);
 
-  // Removido o carregamento automático de dados quando os filtros mudam
-  // Os dados só serão carregados quando o usuário clicar no botão "Buscar"
-
-
-  // Atualiza lista de nomes fantasia disponíveis quando dados carregam
-  useEffect(() => {
-    if (!Array.isArray(clientes)) return;
-    const unicos = [...new Map(
-      clientes
-        .filter((c) => c && (c.nm_fantasia || c.cd_pessoa))
-        .map((c) => [String(c.cd_pessoa), { cd_cliente: String(c.cd_pessoa), nm_fantasia: c.nm_fantasia || '' }])
-    ).values()];
-    setDadosNomesFantasia(unicos);
-  }, [clientes]);
-
-  // Função para lidar com a mudança de página
-  const handlePageChange = (newPage) => {
-    const newOffset = (newPage - 1) * pagination.limit;
-    setPagination(prev => ({
-      ...prev,
-      offset: newOffset
-    }));
-  };
-
-  // Função para lidar com a mudança nos filtros
-  const handleFiltroChange = (e) => {
-    const { name, value } = e.target;
-    setFiltros(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
-
-  // Função para aplicar os filtros
-  const aplicarFiltros = (e) => {
+  // Função para aplicar filtros
+  const handleFiltrar = (e) => {
     e.preventDefault();
-    setPagination(prev => ({
-      ...prev,
-      offset: 0 // Volta para a primeira página ao aplicar filtros
-    }));
-    carregarDados();
+    buscarDados();
   };
 
-  // Dados filtrados por Nome Fantasia
-  const clientesFiltrados = useMemo(() => {
-    if (!nomesFantasiaSelecionados || nomesFantasiaSelecionados.length === 0) return clientes;
-    const selecionadosSet = new Set(
-      nomesFantasiaSelecionados.map((f) => String(f.cd_cliente))
-    );
-    return clientes.filter((c) => selecionadosSet.has(String(c.cd_pessoa)));
-  }, [clientes, nomesFantasiaSelecionados]);
+  // Função para toggle do dropdown de filtros
+  const toggleFilterDropdown = useCallback((colKey) => {
+    setOpenFilterDropdown((prev) => (prev === colKey ? null : colKey));
+  }, []);
 
-  // Opções dinâmicas com base nos dados já filtrados por Nome Fantasia
-  const opcoesTipoClass = useMemo(() => {
-    const set = new Set(
-      clientesFiltrados
-        .map((c) => c.cd_tipoclas)
-        .filter((v) => v !== null && v !== undefined && v !== '')
-    );
-    return Array.from(set).sort((a, b) => String(a).localeCompare(String(b)));
-  }, [clientesFiltrados]);
-
-  const opcoesClassificacao = useMemo(() => {
-    // Se não há tipos selecionados, retorna todas as classificações disponíveis
-    if (tiposClassSelecionados.length === 0) {
-      const set = new Set(
-        clientesFiltrados
-          .map((c) => c.cd_classificacao)
-          .filter((v) => v !== null && v !== undefined && v !== '')
-      );
-      return Array.from(set).sort((a, b) => String(a).localeCompare(String(b)));
-    }
-
-    // Verifica se o tipo 20 está selecionado
-    const temTipo20 = tiposClassSelecionados.includes('20');
-    const temOutrosTipos = tiposClassSelecionados.some(tipo => tipo !== '20');
-
-    if (temTipo20 && !temOutrosTipos) {
-      // Se apenas tipo 20 está selecionado, mostra classificações específicas
-      return ['1', '2', '3', '4', '5', '6'];
-    } else if (!temTipo20 && temOutrosTipos) {
-      // Se apenas outros tipos estão selecionados, mostra SIM/NÃO
-      return ['1', '2'];
-    } else if (temTipo20 && temOutrosTipos) {
-      // Se tipo 20 e outros estão selecionados, mostra todas as classificações possíveis
-      return ['1', '2', '3', '4', '5', '6'];
-    }
-
-    // Fallback: retorna todas as classificações disponíveis
-    const set = new Set(
-      clientesFiltrados
-        .map((c) => c.cd_classificacao)
-        .filter((v) => v !== null && v !== undefined && v !== '')
-    );
-    return Array.from(set).sort((a, b) => String(a).localeCompare(String(b)));
-  }, [clientesFiltrados, tiposClassSelecionados]);
-
-  // Opções dinâmicas de operações
-  const opcoesOperacao = useMemo(() => {
-    const set = new Set(
-      clientesFiltrados
-        .map((c) => c.cd_operacao)
-        .filter((v) => v !== null && v !== undefined && v !== '')
-    );
-    return Array.from(set).sort((a, b) => String(a).localeCompare(String(b)));
-  }, [clientesFiltrados]);
-
-
-  // Aplicar filtros de Tipo Classificação, Classificação e Operação
-  const clientesFiltradosFinais = useMemo(() => {
-    let data = clientesFiltrados;
-    
-    if (tiposClassSelecionados.length > 0) {
-      data = data.filter((c) => {
-        // Se 'VAZIO' está selecionado, filtra registros sem tipo de classificação
-        if (tiposClassSelecionados.includes('VAZIO')) {
-          return !c.cd_tipoclas || c.cd_tipoclas === null || c.cd_tipoclas === undefined || c.cd_tipoclas === '';
-        }
-        // Caso contrário, filtra pelos tipos selecionados
-        return tiposClassSelecionados.includes(String(c.cd_tipoclas));
-      });
-    }
-    
-    if (classificacoesSelecionadas.length > 0) {
-      data = data.filter((c) => {
-        // Se 'VAZIO' está selecionado, filtra registros sem classificação
-        if (classificacoesSelecionadas.includes('VAZIO')) {
-          return !c.cd_classificacao || c.cd_classificacao === null || c.cd_classificacao === undefined || c.cd_classificacao === '';
-        }
-        
-        const tipoCliente = String(c.cd_tipoclas);
-        const classificacaoCliente = String(c.cd_classificacao);
-        
-        // Se tipo 20 está selecionado, permite classificações 1-6
-        if (tiposClassSelecionados.includes('20')) {
-          if (tipoCliente === '20') {
-            // Para tipo 20, permite classificações 1-6
-            return classificacoesSelecionadas.includes(classificacaoCliente);
-          } else {
-            // Para outros tipos quando tipo 20 também está selecionado
-            // Verifica se a classificação está nas selecionadas E é válida para o tipo
-            if (['1', '2'].includes(classificacaoCliente)) {
-              return classificacoesSelecionadas.includes(classificacaoCliente);
-            }
-          }
-        } else {
-          // Se apenas outros tipos (não 20) estão selecionados, permite apenas 1-2
-          if (['1', '2'].includes(classificacaoCliente)) {
-            return classificacoesSelecionadas.includes(classificacaoCliente);
-          }
-        }
-        
-        return false;
-      });
-    }
-    
-    if (operacoesSelecionadas.length > 0) {
-      data = data.filter((c) => operacoesSelecionadas.includes(String(c.cd_operacao)));
-    }
-    
-    return data;
-  }, [clientesFiltrados, tiposClassSelecionados, classificacoesSelecionadas, operacoesSelecionadas]);
-
-  // Agrupar registros duplicados baseado nos campos especificados
-  const clientesAgrupados = useMemo(() => {
-    const chaveAgrupamento = (cliente) => {
-      return `${cliente.cd_pessoa || ''}-${cliente.nm_pessoa || ''}-${cliente.nm_fantasia || ''}-${cliente.nr_cpfcnpj || ''}-${cliente.nr_telefone || ''}-${cliente.cd_tipoclas || ''}-${cliente.cd_classificacao || ''}`;
-    };
-
-    const mapa = new Map();
-    
-    clientesFiltradosFinais.forEach(cliente => {
-      const chave = chaveAgrupamento(cliente);
-      
-      if (!mapa.has(chave)) {
-        // Se não existe, adiciona o primeiro registro
-        mapa.set(chave, cliente);
+  // Função para aplicar filtros da tabela
+  const handleApplyFilter = useCallback((columnKey, filterConfig) => {
+    setColumnFilters((prev) => {
+      if (filterConfig) {
+        return { ...prev, [columnKey]: filterConfig };
       } else {
-        // Se já existe, mantém o primeiro (ou pode implementar lógica para escolher o melhor)
-        // Por exemplo, manter o que tem dt_transacao mais recente
-        const existente = mapa.get(chave);
-        if (cliente.dt_transacao && (!existente.dt_transacao || cliente.dt_transacao > existente.dt_transacao)) {
-          mapa.set(chave, cliente);
-        }
+        const newState = { ...prev };
+        delete newState[columnKey];
+        return newState;
+      }
+    });
+  }, []);
+
+  // Dados filtrados e ordenados
+  const dadosFiltrados = useMemo(() => {
+    let currentData = [...dados];
+
+    // Aplicar filtros
+    Object.keys(columnFilters).forEach((key) => {
+      const filter = columnFilters[key];
+      if (filter.searchTerm) {
+        currentData = currentData.filter((row) =>
+          String(row[key]).toLowerCase().includes(filter.searchTerm.toLowerCase())
+        );
+      }
+      if (filter.selected && filter.selected.length > 0) {
+        currentData = currentData.filter((row) => filter.selected.includes(String(row[key])))
       }
     });
 
-    return Array.from(mapa.values());
-  }, [clientesFiltradosFinais]);
+    // Aplicar ordenação
+    const activeSortKey = Object.keys(columnFilters).find(key => columnFilters[key]?.sortDirection);
+    if (activeSortKey) {
+      const { sortDirection } = columnFilters[activeSortKey];
+      currentData.sort((a, b) => {
+        const aValue = String(a[activeSortKey]).toLowerCase();
+        const bValue = String(b[activeSortKey]).toLowerCase();
 
-  // Dados para detalhamento de classificação
-  const dadosDetalhamentoClassificacao = useMemo(() => {
-    const mapaClientes = new Map();
+        if (sortDirection === 'asc') {
+          return aValue.localeCompare(bValue);
+        } else {
+          return bValue.localeCompare(aValue);
+        }
+      });
+    }
+
+    return currentData;
+  }, [dados, columnFilters]);
+
+  // Dados de classificação - uma linha por cliente com badges das classificações
+  const dadosClassificacao = useMemo(() => {
+    const clientesMap = new Map();
     
-    clientesFiltradosFinais.forEach(cliente => {
-      const chaveCliente = `${cliente.cd_pessoa || ''}-${cliente.nm_pessoa || ''}-${cliente.nm_fantasia || ''}`;
+    dados.forEach(item => {
+      const chaveCliente = `${item.cd_empresa}-${item.nr_cpfcnpj}`;
       
-      if (!mapaClientes.has(chaveCliente)) {
-        mapaClientes.set(chaveCliente, {
-          cd_pessoa: cliente.cd_pessoa,
-          nm_pessoa: cliente.nm_pessoa,
-          nm_fantasia: cliente.nm_fantasia,
-          tiposClassificacao: new Set(),
-          classificacoes: new Set()
+      if (!clientesMap.has(chaveCliente)) {
+        clientesMap.set(chaveCliente, {
+          cd_empresa: item.cd_empresa,
+          nr_cpfcnpj: item.nr_cpfcnpj,
+          nm_pessoa: item.nm_pessoa,
+          nm_fantasia: item.nm_fantasia,
+          classificacoes: []
         });
       }
       
-      const dadosCliente = mapaClientes.get(chaveCliente);
+      const cliente = clientesMap.get(chaveCliente);
+      const chaveClassificacao = `${item.ds_tipoclas}-${item.ds_classificacao}`;
       
-      // Adiciona tipo de classificação se existir
-      if (cliente.cd_tipoclas) {
-        dadosCliente.tiposClassificacao.add(cliente.cd_tipoclas);
-      }
-      
-      // Adiciona classificação se existir
-      if (cliente.cd_classificacao) {
-        dadosCliente.classificacoes.add(cliente.cd_classificacao);
+      // Evitar duplicatas da mesma classificação
+      if (!cliente.classificacoes.some(c => c.key === chaveClassificacao)) {
+        cliente.classificacoes.push({
+          key: chaveClassificacao,
+          tipo: item.ds_tipoclas,
+          classificacao: item.ds_classificacao,
+          dt_transacao: item.dt_transacao
+        });
       }
     });
     
-    const dados = Array.from(mapaClientes.values()).map((cliente, i) => ({
-      id: `det-${cliente.cd_pessoa}-${i}`,
-      cd_pessoa: cliente.cd_pessoa,
-      nm_pessoa: cliente.nm_pessoa,
-      nm_fantasia: cliente.nm_fantasia,
-      tiposClassificacao: Array.from(cliente.tiposClassificacao).sort(),
-      classificacoes: Array.from(cliente.classificacoes).sort(),
-      temMultiplasClassificacoes: cliente.tiposClassificacao.size > 1 || cliente.classificacoes.size > 1
+    return Array.from(clientesMap.values()).map(cliente => ({
+      ...cliente,
+      totalClassificacoes: cliente.classificacoes.length
     }));
-    
-    // Aplicar filtro de status se especificado
-    if (filtroStatus) {
-      return dados.filter(cliente => {
-        if (filtroStatus === 'multiplas') {
-          return cliente.temMultiplasClassificacoes;
-        } else if (filtroStatus === 'unico') {
-          return !cliente.temMultiplasClassificacoes;
+  }, [dados]);
+
+  // Dados de classificação filtrados
+  const dadosClassificacaoFiltrados = useMemo(() => {
+    let currentData = [...dadosClassificacao];
+
+    // Aplicar filtros
+    Object.keys(columnFilters).forEach((key) => {
+      const filter = columnFilters[key];
+      if (filter.searchTerm) {
+        currentData = currentData.filter((row) =>
+          String(row[key]).toLowerCase().includes(filter.searchTerm.toLowerCase())
+        );
+      }
+      if (filter.selected && filter.selected.length > 0) {
+        currentData = currentData.filter((row) => filter.selected.includes(String(row[key])))
+      }
+    });
+
+    // Aplicar ordenação
+    const activeSortKey = Object.keys(columnFilters).find(key => columnFilters[key]?.sortDirection);
+    if (activeSortKey) {
+      const { sortDirection } = columnFilters[activeSortKey];
+      currentData.sort((a, b) => {
+        const aValue = String(a[activeSortKey]).toLowerCase();
+        const bValue = String(b[activeSortKey]).toLowerCase();
+
+        if (sortDirection === 'asc') {
+          return aValue.localeCompare(bValue);
+        } else {
+          return bValue.localeCompare(aValue);
         }
-        return true;
       });
     }
+
+    return currentData;
+  }, [dadosClassificacao, columnFilters]);
+
+  // Dados paginados baseados no modo de visualização
+  const dadosPaginados = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const dadosAtuais = viewMode === 'dados' ? dadosFiltrados : dadosClassificacaoFiltrados;
+    return dadosAtuais.slice(startIndex, endIndex);
+  }, [dadosFiltrados, dadosClassificacaoFiltrados, currentPage, itemsPerPage, viewMode]);
+
+  // Cálculos de paginação baseados no modo de visualização
+  const dadosAtuais = viewMode === 'dados' ? dadosFiltrados : dadosClassificacaoFiltrados;
+  const totalPages = Math.ceil(dadosAtuais.length / itemsPerPage);
+  const startRecord = (currentPage - 1) * itemsPerPage + 1;
+  const endRecord = Math.min(currentPage * itemsPerPage, dadosAtuais.length);
+
+  // Resetar página quando filtros mudarem
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [columnFilters, dados]);
+
+  // CSS customizado para tabela com fonte pequena
+  useEffect(() => {
+    const styleElement = document.createElement('style');
+    styleElement.textContent = `
+      .clientes-table {
+        font-size: 10px !important;
+      }
+      .clientes-table th,
+      .clientes-table td {
+        font-size: 10px !important;
+        padding: 4px 6px !important;
+        line-height: 1.2 !important;
+      }
+      .clientes-table th {
+        font-weight: 600 !important;
+      }
+    `;
+    document.head.appendChild(styleElement);
     
-    return dados;
-  }, [clientesFiltradosFinais, filtroStatus]);
+    return () => {
+      document.head.removeChild(styleElement);
+    };
+  }, []);
 
-  // Garantir chave única por linha na tabela (evita warnings de keys duplicadas)
-  const clientesParaTabela = useMemo(() => {
-    return clientesAgrupados.map((c, i) => ({
-      id: `${c.cd_pessoa ?? 'p'}-${c.cd_operacao ?? 'op'}-${c.dt_transacao ?? 'dt'}-${i}`,
-      ...c
-    }));
-  }, [clientesAgrupados]);
+  // Formatação de data
+  const formatDate = (value) => {
+    if (!value) return '-';
+    try {
+      return new Date(value).toLocaleDateString('pt-BR');
+    } catch {
+      return value;
+    }
+  };
 
-  // Definição das colunas da tabela
-  const colunas = useMemo(() => [
+  // Definição das colunas da tabela de dados
+  const tableColumnsDados = [
     {
-      key: 'cd_pessoa',
-      title: 'Código',
-      sortable: true,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]',
-      render: (value) => <span className="font-medium">{value}</span>
-    },
-    {
-      key: 'nm_pessoa',
-      title: 'Nome',
-      sortable: true,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]'
-    },
-    {
-      key: 'nm_fantasia',
-      title: 'Nome Fantasia',
-      sortable: true,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]'
+      key: 'cd_empresa',
+      title: 'Código Empresa',
+      headerRender: ({ column }) => (
+        <div className="flex items-center space-x-1">
+          <span>{column.title}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFilterDropdown(column.key);
+            }}
+            className="text-gray-400 hover:text-gray-700 focus:outline-none focus:text-gray-700"
+            aria-label={`Filtrar por ${column.title}`}
+          >
+            <FunnelSimple size={16} />
+          </button>
+        </div>
+      )
     },
     {
       key: 'nr_cpfcnpj',
       title: 'CPF/CNPJ',
-      sortable: true,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]',
-      render: (value) => {
-        if (!value) return '-';
-        // Formatar CPF ou CNPJ
-        if (value.length <= 11) {
-          return value.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
-        } else {
-          return value.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
-        }
-      }
-    },
-    {
-      key: 'nr_telefone',
-      title: 'Telefone',
-      sortable: true,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]',
-      render: (value) => {
-        if (!value) return '-';
-        // Formatar telefone
-        return value.replace(/(\d{2})(\d{4,5})(\d{4})/, '($1) $2-$3');
-      }
-    },
-    {
-      key: 'cd_tipoclas',
-      title: 'Tp. Class',
-      sortable: true,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]',
-      render: (value, row) => {
-        if (!value) return <span className="text-gray-500 italic">Não classificado</span>;
-        return <span className="font-medium">{value} - {row.ds_tipoclas || value}</span>;
-      }
-    },
-    {
-      key: 'cd_classificacao',
-      title: 'Classificação',
-      sortable: true,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]',
-      render: (value, row) => {
-        if (!value) return <span className="text-gray-500 italic">Não classificado</span>;
-        return <span className="font-medium">{value} - {row.ds_classificacao || value}</span>;
-      }
-    },
-    {
-      key: 'dt_transacao',
-      title: 'Dt Trans',
-      sortable: true,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]',
-      render: (value) => {
-        if (!value) return '-';
-        // Formatar data
-        const data = new Date(value);
-        return data.toLocaleDateString('pt-BR');
-      }
-    },
-    {
-      key: 'cd_operacao',
-      title: 'Operação',
-      sortable: true,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]'
-    },
-    {
-      key: 'cd_empresa',
-      title: 'Emp',
-      sortable: true,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]'
-    }
-  ], []);
-
-  // Definição das colunas para detalhamento de classificação
-  const colunasDetalhamentoClassificacao = useMemo(() => [
-    {
-      key: 'cd_pessoa',
-      title: 'Código',
-      sortable: true,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]',
-      render: (value) => <span className="font-medium">{value}</span>
+      headerRender: ({ column }) => (
+        <div className="flex items-center space-x-1">
+          <span>{column.title}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFilterDropdown(column.key);
+            }}
+            className="text-gray-400 hover:text-gray-700 focus:outline-none focus:text-gray-700"
+            aria-label={`Filtrar por ${column.title}`}
+          >
+            <FunnelSimple size={16} />
+          </button>
+        </div>
+      )
     },
     {
       key: 'nm_pessoa',
-      title: 'Nome',
-      sortable: true,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]'
+      title: 'Nome da Pessoa',
+      headerRender: ({ column }) => (
+        <div className="flex items-center space-x-1">
+          <span>{column.title}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFilterDropdown(column.key);
+            }}
+            className="text-gray-400 hover:text-gray-700 focus:outline-none focus:text-gray-700"
+            aria-label={`Filtrar por ${column.title}`}
+          >
+            <FunnelSimple size={16} />
+          </button>
+        </div>
+      )
     },
     {
       key: 'nm_fantasia',
       title: 'Nome Fantasia',
-      sortable: true,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]'
+      headerRender: ({ column }) => (
+        <div className="flex items-center space-x-1">
+          <span>{column.title}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFilterDropdown(column.key);
+            }}
+            className="text-gray-400 hover:text-gray-700 focus:outline-none focus:text-gray-700"
+            aria-label={`Filtrar por ${column.title}`}
+          >
+            <FunnelSimple size={16} />
+          </button>
+        </div>
+      )
+    },
+    {
+      key: 'cd_operacao',
+      title: 'Código Operação',
+      headerRender: ({ column }) => (
+        <div className="flex items-center space-x-1">
+          <span>{column.title}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFilterDropdown(column.key);
+            }}
+            className="text-gray-400 hover:text-gray-700 focus:outline-none focus:text-gray-700"
+            aria-label={`Filtrar por ${column.title}`}
+          >
+            <FunnelSimple size={16} />
+          </button>
+        </div>
+      )
+    },
+    {
+      key: 'ds_tipoclas',
+      title: 'Descrição Tipo Classificação',
+      headerRender: ({ column }) => (
+        <div className="flex items-center space-x-1">
+          <span>{column.title}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFilterDropdown(column.key);
+            }}
+            className="text-gray-400 hover:text-gray-700 focus:outline-none focus:text-gray-700"
+            aria-label={`Filtrar por ${column.title}`}
+          >
+            <FunnelSimple size={16} />
+          </button>
+        </div>
+      )
+    },
+    {
+      key: 'ds_classificacao',
+      title: 'Descrição Classificação',
+      headerRender: ({ column }) => (
+        <div className="flex items-center space-x-1">
+          <span>{column.title}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFilterDropdown(column.key);
+            }}
+            className="text-gray-400 hover:text-gray-700 focus:outline-none focus:text-gray-700"
+            aria-label={`Filtrar por ${column.title}`}
+          >
+            <FunnelSimple size={16} />
+          </button>
+        </div>
+      )
+    },
+    {
+      key: 'dt_transacao',
+      title: 'Data Transação',
+      render: (v) => formatDate(v),
+      headerRender: ({ column }) => (
+        <div className="flex items-center space-x-1">
+          <span>{column.title}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFilterDropdown(column.key);
+            }}
+            className="text-gray-400 hover:text-gray-700 focus:outline-none focus:text-gray-700"
+            aria-label={`Filtrar por ${column.title}`}
+          >
+            <FunnelSimple size={16} />
+          </button>
+        </div>
+      )
+    }
+  ];
+
+  // Definição das colunas da tabela de classificação
+  const tableColumnsClassificacao = [
+    {
+      key: 'cd_empresa',
+      title: 'Código Cliente',
+      headerRender: ({ column }) => (
+        <div className="flex items-center space-x-1">
+          <span>{column.title}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFilterDropdown(column.key);
+            }}
+            className="text-gray-400 hover:text-gray-700 focus:outline-none focus:text-gray-700"
+            aria-label={`Filtrar por ${column.title}`}
+          >
+            <FunnelSimple size={16} />
+          </button>
+        </div>
+      )
+    },
+    {
+      key: 'nm_pessoa',
+      title: 'Nome Pessoa',
+      headerRender: ({ column }) => (
+        <div className="flex items-center space-x-1">
+          <span>{column.title}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFilterDropdown(column.key);
+            }}
+            className="text-gray-400 hover:text-gray-700 focus:outline-none focus:text-gray-700"
+            aria-label={`Filtrar por ${column.title}`}
+          >
+            <FunnelSimple size={16} />
+          </button>
+        </div>
+      )
+    },
+    {
+      key: 'nm_fantasia',
+      title: 'Nome Fantasia',
+      headerRender: ({ column }) => (
+        <div className="flex items-center space-x-1">
+          <span>{column.title}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFilterDropdown(column.key);
+            }}
+            className="text-gray-400 hover:text-gray-700 focus:outline-none focus:text-gray-700"
+            aria-label={`Filtrar por ${column.title}`}
+          >
+            <FunnelSimple size={16} />
+          </button>
+        </div>
+      )
+    },
+    {
+      key: 'totalClassificacoes',
+      title: 'Total',
+      render: (v) => v || 0,
+      headerRender: ({ column }) => (
+        <div className="flex items-center space-x-1">
+          <span>{column.title}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFilterDropdown(column.key);
+            }}
+            className="text-gray-400 hover:text-gray-700 focus:outline-none focus:text-gray-700"
+            aria-label={`Filtrar por ${column.title}`}
+          >
+            <FunnelSimple size={16} />
+          </button>
+        </div>
+      )
     },
     {
       key: 'tiposClassificacao',
-      title: 'Tipos de Classificação',
-      sortable: false,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]',
-      render: (value, row) => (
-        <div className="flex flex-wrap gap-1">
-          {value.length === 0 ? (
-            <span className="text-gray-400">-</span>
-          ) : (
-            value.map((tipo, index) => {
-              // Buscar o tipo correspondente nos clientes filtrados
-              const clienteComTipo = clientesFiltradosFinais.find(c => 
-                String(c.cd_tipoclas) === String(tipo) && c.ds_tipoclas
-              );
-              
-              const nomeTipo = clienteComTipo?.ds_tipoclas || tipo;
-              
-              return (
-                <span
-                  key={index}
-                  className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full"
-                >
-                  {tipo} - {nomeTipo}
-                </span>
-              );
-            })
-          )}
+      title: 'Tipo Classificação',
+      render: (_, row) => {
+        const classificacoes = row.classificacoes || [];
+        if (classificacoes.length === 0) {
+          return (
+            <span className="bg-gray-50 text-gray-500 text-xs font-medium me-2 px-2.5 py-0.5 rounded-sm dark:bg-gray-800 dark:text-gray-400">
+              Nenhum
+            </span>
+          );
+        }
+        
+        return (
+          <div className="flex flex-wrap gap-1">
+            {classificacoes.map((c, index) => (
+              <span key={index} className="bg-green-50 text-green-700 text-xs font-medium me-2 px-2.5 py-0.5 rounded-sm dark:bg-green-900/20 dark:text-green-400">
+                {c.tipo}
+              </span>
+            ))}
+          </div>
+        );
+      },
+      headerRender: ({ column }) => (
+        <div className="flex items-center space-x-1">
+          <span>{column.title}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFilterDropdown(column.key);
+            }}
+            className="text-gray-400 hover:text-gray-700 focus:outline-none focus:text-gray-700"
+            aria-label={`Filtrar por ${column.title}`}
+          >
+            <FunnelSimple size={16} />
+          </button>
         </div>
       )
     },
     {
       key: 'classificacoes',
-      title: 'Classificações',
-      sortable: false,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]',
-      render: (value, row) => {
+      title: 'Classificação',
+      render: (_, row) => {
+        const classificacoes = row.classificacoes || [];
+        if (classificacoes.length === 0) {
+          return (
+            <span className="bg-gray-50 text-gray-500 text-xs font-medium me-2 px-2.5 py-0.5 rounded-sm dark:bg-gray-800 dark:text-gray-400">
+              Nenhuma
+            </span>
+          );
+        }
+        
         return (
           <div className="flex flex-wrap gap-1">
-            {value.length === 0 ? (
-              <span className="text-gray-400">-</span>
-            ) : (
-              value.map((classificacao, index) => {
-                // Encontrar um cliente com esta classificação
-                const clienteComClassificacao = clientesFiltradosFinais.find(c => 
-                  String(c.cd_classificacao) === String(classificacao) && c.ds_classificacao
-                );
-                
-                const nomeClassificacao = clienteComClassificacao?.ds_classificacao || classificacao;
-                
-                return (
-                  <span
-                    key={index}
-                    className="inline-block bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full"
-                  >
-                    {classificacao} - {nomeClassificacao}
-                  </span>
-                );
-              })
-            )}
+            {classificacoes.map((c, index) => (
+              <span key={index} className="bg-purple-50 text-purple-700 text-xs font-medium me-2 px-2.5 py-0.5 rounded-sm dark:bg-purple-900/20 dark:text-purple-400">
+                {c.classificacao}
+              </span>
+            ))}
           </div>
         );
-      }
-    },
-    {
-      key: 'temMultiplasClassificacoes',
-      title: 'Status',
-      sortable: true,
-      className: 'px-2 py-1 text-[0.68rem] font-bold',
-      cellClassName: 'px-2 py-1 text-[0.67rem]',
-      render: (value) => (
-        <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
-          value 
-            ? 'bg-orange-100 text-orange-800' 
-            : 'bg-gray-100 text-gray-800'
-        }`}>
-          {value ? 'Múltiplas' : 'Única'}
-        </span>
+      },
+      headerRender: ({ column }) => (
+        <div className="flex items-center space-x-1">
+          <span>{column.title}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFilterDropdown(column.key);
+            }}
+            className="text-gray-400 hover:text-gray-700 focus:outline-none focus:text-gray-700"
+            aria-label={`Filtrar por ${column.title}`}
+          >
+            <FunnelSimple size={16} />
+          </button>
+        </div>
       )
     }
-  ], []);
+  ];
 
-  // Cálculo da página atual com base no total filtrado e agrupado (front-end)
-  const currentPage = Math.floor(pagination.offset / pagination.limit) + 1;
-  const totalPages = Math.ceil(clientesAgrupados.length / pagination.limit) || 1;
-  
-  // Cálculo da página atual para detalhamento de classificação
-  const currentPageDetalhamento = Math.floor(pagination.offset / pagination.limit) + 1;
-  const totalPagesDetalhamento = Math.ceil(dadosDetalhamentoClassificacao.length / pagination.limit) || 1;
 
   return (
-      <div className="p-6 max-w-7xl mx-auto w-full">
-        <PageTitle 
-          title="Cadastro de Clientes" 
-          subtitle="Consulte informações sobre os clientes cadastrados no sistema"
-          icon={Users}
-        />
+    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
+      <PageTitle 
+        title="Classificação de Clientes"
+        subtitle="Análise da classificação de clientes baseado nas transações por período"
+        icon={Clock}
+        iconColor="text-green-600"
+      />
 
-        {/* Filtros - estilo alinhado com Contas a Receber */}
-        <div className="mb-4">
-          <form onSubmit={aplicarFiltros} className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full max-w-4xl mx-auto border border-[#000638]/10">
-            <div className="mb-2">
-              <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
-                <Funnel size={18} weight="bold" />
-                Filtros
-              </span>
-              <span className="text-xs text-gray-500 mt-1">Selecione o período de análise</span>
+      {/* Filtros */}
+      <div className="mb-6">
+        <form onSubmit={handleFiltrar} className="bg-white p-4 rounded-lg shadow-md w-full max-w-4xl mx-auto border border-[#000638]/10">
+          {/* Header do Filtro */}
+          <div className="mb-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Calendar size={16} className="text-[#000638]" />
+              <h2 className="text-lg font-bold text-[#000638]">Filtros de Período</h2>
             </div>
-
-            {/* Primeira linha - Período e Nome Fantasia */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]" htmlFor="dt_inicio">
-                  Data Início
-                </label>
-                <input
-                  type="date"
-                  id="dt_inicio"
-                  name="dt_inicio"
-                  value={filtros.dt_inicio}
-                  onChange={handleFiltroChange}
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]" htmlFor="dt_fim">
-                  Data Fim
-                </label>
-                <input
-                  type="date"
-                  id="dt_fim"
-                  name="dt_fim"
-                  value={filtros.dt_fim}
-                  onChange={handleFiltroChange}
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
-                  required
-                />
-              </div>
-              <div className="lg:col-span-2">
-                <FiltroNomeFantasia
-                  nomesFantasiaSelecionados={nomesFantasiaSelecionados}
-                  onSelectNomesFantasia={setNomesFantasiaSelecionados}
-                  dadosNomesFantasia={dadosNomesFantasia}
-                />
-              </div>
-            </div>
-
-            {/* Segunda linha - Filtros de Classificação e Operação */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
-              <div>
-                <FiltroOperacao
-                  operacoesSelecionadas={operacoesSelecionadas}
-                  onSelectOperacoes={setOperacoesSelecionadas}
-                  dadosOperacoes={opcoesOperacao}
-                />
-              </div>
-              <div>
-                <FiltroTipoClassificacao
-                  tiposSelecionados={tiposClassSelecionados}
-                  onSelectTipos={(novosTipos) => {
-                    setTiposClassSelecionados(novosTipos);
-                    // Reset classificações se não existirem nos novos tipos selecionados
-                    const classificacoesValidas = opcoesClassificacao.filter(c => 
-                      novosTipos.length === 0 || 
-                      clientesFiltrados.some(cliente => 
-                        novosTipos.includes(String(cliente.cd_tipoclas)) && 
-                        String(cliente.cd_classificacao) === c
-                      )
-                    );
-                    setClassificacoesSelecionadas(
-                      classificacoesSelecionadas.filter(c => classificacoesValidas.includes(c))
-                    );
-                  }}
-                  dadosTipos={opcoesTipoClass}
-                />
-              </div>
-              <div>
-                <FiltroClassificacao
-                  classificacoesSelecionadas={classificacoesSelecionadas}
-                  onSelectClassificacoes={setClassificacoesSelecionadas}
-                  dadosClassificacoes={opcoesClassificacao}
-                />
-              </div>
-              <div className="flex items-end">
-                <button 
-                  type="submit"
-                  className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase w-full justify-center"
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <>
-                      <Spinner size={10} className="animate-spin" />
-                      <span></span>
-                    </>
-                  ) : (
-                    <>
-                      <Calendar size={10} />
-                      <span>Buscar</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Terceira linha - Filtro de Status (apenas para detalhamento) */}
-            {visualizacaoAtiva === 'detalhamentoClassificacao' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
-                <div>
-                  <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Status</label>
-                  <select
-                    value={filtroStatus}
-                    onChange={(e) => setFiltroStatus(e.target.value)}
-                    className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-                  >
-                    <option value="">TODOS</option>
-                    <option value="unico">ÚNICO</option>
-                    <option value="multiplas">MÚLTIPLAS</option>
-                  </select>
-                </div>
-                <div></div>
-                <div></div>
-                <div></div>
-              </div>
-            )}
-          </form>
-        </div>
-
-        {/* Botões de visualização */}
-        <div className="mb-4 flex gap-2 justify-center">
-          <button
-            onClick={() => setVisualizacaoAtiva('clienteGeral')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
-              visualizacaoAtiva === 'clienteGeral'
-                ? 'bg-[#000638] text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            CLIENTE GERAL
-          </button>
-          <button
-            onClick={() => setVisualizacaoAtiva('detalhamentoClassificacao')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
-              visualizacaoAtiva === 'detalhamentoClassificacao'
-                ? 'bg-[#000638] text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            DETALHAMENTO DE CLASSIFICAÇÃO
-          </button>
-        </div>
-
-        {/* Tabela de dados */}
-        {error ? (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg">
-            <p>{error}</p>
+            <p className="text-sm text-gray-600">Selecione o período para análise das transações dos clientes</p>
           </div>
-        ) : (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            {visualizacaoAtiva === 'clienteGeral' ? (
-              <>
-            <Table
-              data={clientesParaTabela}
-              columns={colunas}
-              loading={loading}
-              pagination={true}
-              pageSize={pagination.limit}
-              currentPage={currentPage}
-              onPageChange={handlePageChange}
-              emptyMessage="Nenhum cliente encontrado para o período selecionado"
-              rowKey="id"
-                  className="text-[0.67rem]"
-                  containerClassName="text-[0.67rem]"
-            />
-            
-                {!loading && clientesAgrupados.length > 0 && (
-              <div className="p-4 bg-gray-50 border-t border-gray-200">
-                <p className="text-xs text-gray-600">
-                  {(() => {
-                    const start = (currentPage - 1) * pagination.limit + 1;
-                        const end = Math.min(currentPage * pagination.limit, clientesAgrupados.length);
-                        return `Mostrando ${clientesAgrupados.length === 0 ? 0 : start} a ${end} de ${clientesAgrupados.length} registros únicos`;
-                      })()}
-                    </p>
-                  </div>
+
+          {/* Campos do Filtro */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            {/* Data Inicial */}
+            <div className="flex flex-col">
+              <label className="block text-sm font-semibold mb-2 text-[#000638]">
+                Data Transação Inicial
+              </label>
+              <input 
+                type="date" 
+                name="dataInicio" 
+                value={filtros.dataInicio} 
+                onChange={e => setFiltros({ ...filtros, dataInicio: e.target.value })} 
+                className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] focus:border-[#000638] bg-white text-[#000638] placeholder:text-gray-400 transition-all duration-200 text-sm" 
+                placeholder="Data inicial"
+              />
+            </div>
+
+            {/* Data Final */}
+            <div className="flex flex-col">
+              <label className="block text-sm font-semibold mb-2 text-[#000638]">
+                Data Transação Final
+              </label>
+              <input 
+                type="date" 
+                name="dataFim" 
+                value={filtros.dataFim} 
+                onChange={e => setFiltros({ ...filtros, dataFim: e.target.value })} 
+                className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] focus:border-[#000638] bg-white text-[#000638] placeholder:text-gray-400 transition-all duration-200 text-sm" 
+                placeholder="Data final"
+              />
+            </div>
+
+            {/* Botão de Ação */}
+            <div className="flex flex-col justify-center">
+              <button 
+                type="submit" 
+                disabled={loading}
+                className="flex items-center justify-center gap-2 bg-[#000638] text-white px-4 py-2 rounded-lg hover:bg-[#001060] transition-all duration-200 text-sm font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Filtrando...
+                  </>
+                ) : (
+                  <>
+                    <ArrowsClockwise size={16} weight="bold" /> 
+                    Filtrar Dados
+                  </>
                 )}
-              </>
-            ) : (
-              <>
-                <Table
-                  data={dadosDetalhamentoClassificacao}
-                  columns={colunasDetalhamentoClassificacao}
-                  loading={loading}
-                  pagination={true}
-                  pageSize={pagination.limit}
-                  currentPage={currentPageDetalhamento}
-                  onPageChange={handlePageChange}
-                  emptyMessage="Nenhum cliente encontrado para o período selecionado"
-                  rowKey="id"
-                  className="text-[0.67rem]"
-                  containerClassName="text-[0.67rem]"
-                />
-                
-                {!loading && dadosDetalhamentoClassificacao.length > 0 && (
-                  <div className="p-4 bg-gray-50 border-t border-gray-200">
-                    <p className="text-xs text-gray-600">
-                      {(() => {
-                        const start = (currentPageDetalhamento - 1) * pagination.limit + 1;
-                        const end = Math.min(currentPageDetalhamento * pagination.limit, dadosDetalhamentoClassificacao.length);
-                        const clientesMultiplas = dadosDetalhamentoClassificacao.filter(c => c.temMultiplasClassificacoes).length;
-                        return `Mostrando ${dadosDetalhamentoClassificacao.length === 0 ? 0 : start} a ${end} de ${dadosDetalhamentoClassificacao.length} clientes únicos (${clientesMultiplas} com múltiplas classificações)`;
-                  })()}
-                </p>
-              </div>
-                )}
-              </>
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      {/* Botão Limpar Filtros */}
+      {Object.keys(columnFilters).length > 0 && (
+        <div className="mb-4 text-right">
+          <button 
+            onClick={() => setColumnFilters({})}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            <FunnelSimple size={14} />
+            Limpar Filtros
+          </button>
+        </div>
+      )}
+
+      {/* Botões de alternância */}
+      <div className="mb-4 flex justify-center">
+        <div className="bg-gray-100 rounded-lg p-1 flex">
+          <button
+            onClick={() => setViewMode('dados')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+              viewMode === 'dados'
+                ? 'bg-white text-[#000638] shadow-sm'
+                : 'text-gray-600 hover:text-[#000638]'
+            }`}
+          >
+            DADOS CLIENTES
+          </button>
+          <button
+            onClick={() => setViewMode('classificacao')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+              viewMode === 'classificacao'
+                ? 'bg-white text-[#000638] shadow-sm'
+                : 'text-gray-600 hover:text-[#000638]'
+            }`}
+          >
+            CLASSIFICAÇÃO CLIENTES
+          </button>
+        </div>
+      </div>
+
+      {/* Área de conteúdo */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-[#000638]">
+            {viewMode === 'dados' ? 'Dados dos Clientes' : 'Classificação dos Clientes'}
+          </h3>
+          <div className="text-sm text-gray-600">
+            Período: {filtros.dataInicio} até {filtros.dataFim}
+            {dados.length > 0 && (
+              <span className="ml-2 text-blue-600 font-medium">
+                Mostrando {startRecord}-{endRecord} de {dadosAtuais.length} registros
+                {dadosAtuais.length !== dados.length && ` (${dados.length} total)`}
+              </span>
             )}
+          </div>
+        </div>
+
+        {/* Mensagem de erro */}
+        {erro && (
+          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+            {erro}
+          </div>
+        )}
+
+        {/* Tabela */}
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#000638]"></div>
+            <span className="ml-2 text-gray-600">Carregando dados...</span>
+          </div>
+        ) : dadosAtuais.length > 0 ? (
+          <>
+            <Table
+              data={dadosPaginados}
+              rowKey={(row, index) => `${row.cd_empresa}-${row.nr_cpfcnpj}-${index}`}
+              containerClassName="clientes-table"
+              className="clientes-table"
+              columns={(viewMode === 'dados' ? tableColumnsDados : tableColumnsClassificacao).map(col => ({
+                ...col,
+                headerRender: ({ column }) => (
+                  <div className="relative flex items-center space-x-1">
+                    <span>{column.title}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleFilterDropdown(column.key);
+                      }}
+                      className={`hover:text-gray-700 focus:outline-none focus:text-gray-700 ${
+                        columnFilters[column.key] ? 'text-blue-600' : 'text-gray-400'
+                      }`}
+                      aria-label={`Filtrar por ${column.title}`}
+                    >
+                      <FunnelSimple size={16} />
+                    </button>
+                    {openFilterDropdown === column.key && (
+                      <FilterDropdown
+                        columnKey={column.key}
+                        columnTitle={column.title}
+                        data={dadosFiltrados}
+                        currentFilter={columnFilters[column.key]}
+                        onApplyFilter={handleApplyFilter}
+                        onClose={() => toggleFilterDropdown(null)}
+                      />
+                    )}
+                  </div>
+                )
+              }))}
+              emptyMessage="Nenhum cliente encontrado para o período selecionado"
+            />
+
+            {/* Controles de Paginação */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-4 px-4 py-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Primeira
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Anterior
+                  </button>
+                </div>
+
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNumber;
+                    if (totalPages <= 5) {
+                      pageNumber = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNumber = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNumber = totalPages - 4 + i;
+                    } else {
+                      pageNumber = currentPage - 2 + i;
+                    }
+
+                    return (
+                      <button
+                        key={pageNumber}
+                        onClick={() => setCurrentPage(pageNumber)}
+                        className={`px-3 py-1 text-sm border rounded ${
+                          currentPage === pageNumber
+                            ? 'bg-[#000638] text-white border-[#000638]'
+                            : 'border-gray-300 hover:bg-gray-100'
+                        }`}
+                      >
+                        {pageNumber}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setCurrentPage(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Próxima
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Última
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            {dados.length === 0 
+              ? 'Nenhum cliente encontrado para o período selecionado' 
+              : 'Nenhum cliente corresponde aos filtros aplicados'
+            }
           </div>
         )}
       </div>
+    </div>
   );
 };
 
