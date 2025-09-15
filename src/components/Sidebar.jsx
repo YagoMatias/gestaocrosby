@@ -26,7 +26,8 @@ import {
   Bank,
   Eye,
   ChartBar,
-  Target
+  Target,
+  IdentificationCard
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -69,7 +70,7 @@ const franquias = [
 const dashboardFinanceiro = [
   { name: 'Financeiro por Canal', href: '/financeiro-por-canal', icon: ChartBar, color: 'text-purple-600' },
   { name: 'Endividamento', href: '/endividamento', icon: ChartBar, color: 'text-purple-600' },
-  { name: 'Dash de Inadimplência', href: '/dash-contas-a-receber', icon: ChartBar, color: 'text-purple-600' },
+  { name: 'PMR', href: '/dash-contas-a-receber', icon: ChartBar, color: 'text-purple-600' },
 ];
 
 const Sidebar = ({ isOpen, onClose, onToggle }) => {
@@ -285,6 +286,12 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               item={{ name: 'Vigia', href: 'https://vigia.crosbytech.com.br/', icon: Eye, color: 'text-blue-600', external: true }}
               isActive={false}
             />
+            
+            {/* Clientes - item independente */}
+            <MenuItem 
+              item={{ name: 'Clientes', href: '/clientes', icon: IdentificationCard, color: 'text-blue-600' }}
+              isActive={location.pathname === '/clientes'}
+            />
 
             {/* Ranking Faturamento - fora de seção */}
             <div className="pt-4 border-t border-gray-100">
@@ -403,6 +410,12 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               item={{ name: 'VIGIA', href: 'https://vigia.crosbytech.com.br/', icon: Eye, color: 'text-blue-600', external: true }}
               isActive={false}
             />
+            
+            {/* Clientes - item independente */}
+            <MenuItem 
+              item={{ name: 'Clientes', href: '/clientes', icon: IdentificationCard, color: 'text-blue-600' }}
+              isActive={location.pathname === '/clientes'}
+            />
 
             {/* Ranking Faturamento - fora de seção */}
             <div className="pt-4 border-t border-gray-100">
@@ -519,6 +532,12 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               item={{ name: 'VIGIA', href: 'https://vigia.crosbytech.com.br/', icon: Eye, color: 'text-blue-600', external: true }}
               isActive={false}
             />
+            
+            {/* Clientes - item independente */}
+            <MenuItem 
+              item={{ name: 'Clientes', href: '/clientes', icon: IdentificationCard, color: 'text-blue-600' }}
+              isActive={location.pathname === '/clientes'}
+            />
 
             {/* Ranking Faturamento - fora de seção */}
             <div className="pt-4 border-t border-gray-100">
@@ -585,6 +604,18 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               icon={Money}
               color="text-emerald-600"
             />
+            {financeiroOpen && (
+              <div className="ml-4">
+                <MenuSection
+                  title="Dashboard Financeiro"
+                  items={dashboardFinanceiro}
+                  isOpen={dashboardFinanceiroOpen}
+                  onToggle={() => setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)}
+                  icon={ChartBar}
+                  color="text-purple-600"
+                />
+              </div>
+            )}
 
             {/* Seção CMV */}
             <MenuSection 

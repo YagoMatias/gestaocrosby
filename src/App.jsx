@@ -17,6 +17,7 @@ const FluxoCaixa = lazy(() => import('./pages/FluxoCaixa'));
 const ExtratoFinanceiro = lazy(() => import('./pages/ExtratoFinanceiro'));
 const Conciliacao = lazy(() => import('./pages/Conciliacao'));
 const SaldoBancarioTotvs = lazy(() => import('./pages/SaldoBancarioTotvs'));
+const Clientes = lazy(() => import('./pages/Clientes'));
 
 const Varejo = lazy(() => import('./pages/Varejo'));
 const Franquias = lazy(() => import('./pages/Franquias'));
@@ -40,7 +41,7 @@ const AuthTest = lazy(() => import('./components/AuthTest'));
 const FinanceiroPorCanal = lazy(() => import('./pages/FinanceiroPorCanal'));
 const Endividamento = lazy(() => import('./pages/Endividamento'));
 const ReceitaLiquida = lazy(() => import('./pages/ReceitaLiquida'));
-const DashContasAReceber = lazy(() => import('./pages/DashContasAReceber'));
+const PMR = lazy(() => import('./pages/pmr'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -69,9 +70,10 @@ const AppRoutes = memo(() => {
 
   // Lista de rotas protegidas (evita centenas de blocos repetidos)
   const protectedRoutes = [
+    { path: '/clientes', component: Clientes, roles: ['owner','admin','manager','user'] },
     { path: '/financeiro-por-canal', component: FinanceiroPorCanal, roles: ['owner','admin','manager','user'] },
     { path: '/endividamento', component: Endividamento, roles: ['owner','admin','manager','user'] },
-    { path: '/dash-contas-a-receber', component: DashContasAReceber, roles: ['owner','admin','manager','user'] },
+    { path: '/dash-contas-a-receber', component: PMR, roles: ['owner','admin','manager','user'] },
     { path: '/conciliacao', component: Conciliacao, roles: ['owner','admin','manager','user'] },
     { path: '/saldo-bancario-totvs', component: SaldoBancarioTotvs, roles: ['owner','admin','manager','user'] },
     { path: '/home', component: Home, roles: ['admin','manager','user','guest','owner'] },

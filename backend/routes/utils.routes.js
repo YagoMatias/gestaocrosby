@@ -1,7 +1,7 @@
 import express from 'express';
 import axios from 'axios';
 import pool from '../config/database.js';
-import { sanitizeInput } from '../middlewares/validation.middleware.js';
+import { sanitizeInput, validateRequired, validateDateFormat } from '../middlewares/validation.middleware.js';
 import { asyncHandler, successResponse, errorResponse } from '../utils/errorHandler.js';
 
 const router = express.Router();
@@ -184,6 +184,61 @@ router.get('/stats',
     } catch (error) {
       throw new Error(`Erro ao obter estatísticas: ${error.message}`);
     }
+  })
+);
+
+/**
+ * @route GET /utils/cadastropessoa
+ * @desc Consulta de clientes e suas classificações, paginada e indexável
+ * @access Public
+ * @query {dt_inicio, dt_fim, limit, offset}
+ */
+router.get('/cadastropessoa',
+  sanitizeInput,
+  validateRequired(['dt_inicio', 'dt_fim']),
+  validateDateFormat(['dt_inicio', 'dt_fim']),
+  asyncHandler(async (req, res) => {
+    const { dt_inicio, dt_fim } = req.query;
+
+    // Observação de performance:
+    // - Usa BETWEEN com parâmetros para permitir uso de índices em dt_transacao
+    // - Usa filtros exatos em tp_operacao e tp_situacao (bons candidatos a índice composto)
+    // Índices sugeridos (criar no banco conforme necessário):
+    //   CREATE INDEX IF NOT EXISTS idx_tra_transacao_dt_tp ON tra_transacao(dt_transacao, tp_operacao, tp_situacao);
+
+    const query = `
+      SELECT
+        tt.cd_operacao,
+        p.cd_pessoa,
+        p.nm_pessoa,
+        pp.nm_fantasia,
+        p.nr_cpfcnpj,
+        pt.nr_telefone,
+        pc.cd_tipoclas,
+        pc.cd_classificacao,
+        tt.dt_transacao,
+        tt.cd_empresa
+      FROM tra_transacao tt
+      LEFT JOIN pes_pessoa p ON p.cd_pessoa = tt.cd_pessoa
+      LEFT JOIN pes_pesjuridica pp ON p.cd_pessoa = pp.cd_pessoa
+      LEFT JOIN pes_telefone pt ON p.cd_pessoa = pt.cd_pessoa
+      LEFT JOIN pes_pessoaclas pc ON p.cd_pessoa = pc.cd_pessoa
+      WHERE tt.dt_transacao BETWEEN $1 AND $2
+        AND tt.tp_operacao = 'S'
+        AND tt.tp_situacao = 4
+        AND tt.cd_empresa < 6000
+      ORDER BY tt.dt_transacao DESC
+    `;
+
+    const params = [dt_inicio, dt_fim];
+
+    const result = await pool.query(query, params);
+
+    successResponse(res, {
+      periodo: { dt_inicio, dt_fim },
+      count: result.rows.length,
+      data: result.rows
+    }, 'Cadastro de pessoas consultado com sucesso');
   })
 );
 

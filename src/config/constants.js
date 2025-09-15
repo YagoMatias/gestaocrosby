@@ -36,6 +36,7 @@ export const API_ENDPOINTS = {
   // Utils
   AUTOCOMPLETE_FANTASIA: '/api/utils/autocomplete/nm_fantasia',
   AUTOCOMPLETE_GRUPOEMPRESA: '/api/utils/autocomplete/nm_grupoempresa',
+  CADASTRO_PESSOA: '/api/utils/cadastropessoa',
   HEALTH: '/api/utils/health',
   STATS: '/api/utils/stats',
   DOCS: '/api/docs'

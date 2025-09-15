@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import PageTitle from '../components/ui/PageTitle';
 import { Calendar, Clock, Funnel, Spinner } from '@phosphor-icons/react';
 
-const DashContasAReceber = () => {
+const PMR = () => {
   const [dados, setDados] = useState([]);
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
@@ -273,6 +273,106 @@ const DashContasAReceber = () => {
     return somaPonderadaDias / somaPesos;
   }, [dadosFiltrados]);
 
+  // Cálculo do PMR por forma de pagamento
+  const pmrPorFormaPagamento = useMemo(() => {
+    if (!dadosFiltrados || dadosFiltrados.length === 0) return [];
+    
+    const formasPagamento = {};
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    
+    dadosFiltrados.forEach((item) => {
+      const tipoDocumento = item.tp_documento?.toString();
+      const formaPagamento = converterTipoDocumento(tipoDocumento);
+      
+      if (!formasPagamento[formaPagamento]) {
+        formasPagamento[formaPagamento] = {
+          nome: formaPagamento,
+          somaPonderadaDias: 0,
+          somaPesos: 0,
+          quantidade: 0
+        };
+      }
+      
+      const emissao = parseDateNoTZ(item.dt_emissao);
+      const liquidacao = item.dt_liq ? parseDateNoTZ(item.dt_liq) : hoje;
+      
+      if (!emissao) return;
+      
+      const dias = Math.max(0, Math.floor((liquidacao - emissao) / (1000 * 60 * 60 * 24)));
+      const valorBase = parseFloat(item.vl_fatura) || 0;
+      
+      if (valorBase > 0) {
+        formasPagamento[formaPagamento].somaPonderadaDias += dias * valorBase;
+        formasPagamento[formaPagamento].somaPesos += valorBase;
+        formasPagamento[formaPagamento].quantidade += 1;
+      }
+    });
+    
+    return Object.values(formasPagamento)
+      .filter(forma => forma.somaPesos > 0)
+      .map(forma => ({
+        ...forma,
+        pmrDias: forma.somaPesos > 0 ? forma.somaPonderadaDias / forma.somaPesos : 0
+      }))
+      .sort((a, b) => b.somaPesos - a.somaPesos); // Ordenar por valor total
+  }, [dadosFiltrados]);
+
+  // Cálculo das faturas pagas em mais de 15 dias e menos de 15 dias com PMR
+  const faturasPagasPorPrazo = useMemo(() => {
+    if (!dadosFiltrados || dadosFiltrados.length === 0) return { 
+      mais15Dias: 0, 
+      menos15Dias: 0, 
+      valorMais15Dias: 0, 
+      valorMenos15Dias: 0,
+      pmrMais15Dias: 0,
+      pmrMenos15Dias: 0
+    };
+    
+    let mais15Dias = 0;
+    let menos15Dias = 0;
+    let valorMais15Dias = 0;
+    let valorMenos15Dias = 0;
+    let somaPonderadaMais15Dias = 0;
+    let somaPonderadaMenos15Dias = 0;
+    
+    dadosFiltrados.forEach((item) => {
+      // Só considera itens que foram pagos (tem data de liquidação)
+      if (!item.dt_liq) return;
+      
+      const emissao = parseDateNoTZ(item.dt_emissao);
+      const liquidacao = parseDateNoTZ(item.dt_liq);
+      
+      if (!emissao || !liquidacao) return;
+      
+      const dias = Math.floor((liquidacao - emissao) / (1000 * 60 * 60 * 24));
+      const valor = parseFloat(item.vl_fatura) || 0;
+      
+      if (valor > 0) {
+        if (dias > 15) {
+          mais15Dias += 1;
+          valorMais15Dias += valor;
+          somaPonderadaMais15Dias += dias * valor;
+        } else if (dias <= 15) {
+          menos15Dias += 1;
+          valorMenos15Dias += valor;
+          somaPonderadaMenos15Dias += dias * valor;
+        }
+      }
+    });
+    
+    const pmrMais15Dias = valorMais15Dias > 0 ? somaPonderadaMais15Dias / valorMais15Dias : 0;
+    const pmrMenos15Dias = valorMenos15Dias > 0 ? somaPonderadaMenos15Dias / valorMenos15Dias : 0;
+    
+    return { 
+      mais15Dias, 
+      menos15Dias, 
+      valorMais15Dias, 
+      valorMenos15Dias,
+      pmrMais15Dias,
+      pmrMenos15Dias
+    };
+  }, [dadosFiltrados]);
+
   const handleFiltrar = (e) => {
     e.preventDefault();
     buscarDados();
@@ -281,24 +381,24 @@ const DashContasAReceber = () => {
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
       <PageTitle 
-        title="Dash de Inadimplência"
-        subtitle="Análise de inadimplência e prazo médio de recebimento"
+        title="PMR - Prazo Médio de Recebimento"
+        subtitle="Análise do prazo médio de recebimento baseado nos dados de contas a receber"
         icon={Clock}
         iconColor="text-green-600"
       />
 
-      {/* Filtros (espelhados) */}
-      <div className="mb-8">
-        <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
-          <div className="mb-6">
-            <span className="text-lg font-bold text-[#000638] flex items-center gap-2">
-              <Funnel size={22} weight="bold" />
+      {/* Formulário de Filtros */}
+      <div className="mb-4">
+        <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full max-w-4xl mx-auto border border-[#000638]/10">
+          <div className="mb-2">
+            <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
+              <Funnel size={18} weight="bold" />
               Filtros
             </span>
-            <span className="text-sm text-gray-500 mt-1">Selecione o período e empresa para análise</span>
+            <span className="text-xs text-gray-500 mt-1">Selecione o período e empresa para análise</span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 mb-3">
             <div className="lg:col-span-2">
               <FiltroEmpresa
                 empresasSelecionadas={empresasSelecionadas}
@@ -307,16 +407,16 @@ const DashContasAReceber = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Início</label>
-              <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" />
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Data Início</label>
+              <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs" />
             </div>
             <div>
-              <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Fim</label>
-              <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" />
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Data Fim</label>
+              <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs" />
             </div>
             <div>
-              <label className="block text-xs font-semibold mb-1 text-[#000638]">Status</label>
-              <select value={status} onChange={(e) => setStatus(e.target.value)} className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]">
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Status</label>
+              <select value={status} onChange={(e) => setStatus(e.target.value)} className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs">
                 <option value="Todos">TODOS</option>
                 <option value="Pago">PAGO</option>
                 <option value="Vencido">VENCIDO</option>
@@ -325,18 +425,18 @@ const DashContasAReceber = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2 mb-3">
             <div>
-              <label className="block text-xs font-semibold mb-1 text-[#000638]">Situação</label>
-              <select value={situacao} onChange={(e) => setSituacao(e.target.value)} className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]">
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Situação</label>
+              <select value={situacao} onChange={(e) => setSituacao(e.target.value)} className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs">
                 <option value="NORMAIS">NORMAIS</option>
                 <option value="CANCELADAS">CANCELADAS</option>
                 <option value="TODAS">TODAS</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold mb-1 text-[#000638]">Cobrança</label>
-              <select value={filtroCobranca} onChange={(e) => setFiltroCobranca(e.target.value)} className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]">
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Cobrança</label>
+              <select value={filtroCobranca} onChange={(e) => setFiltroCobranca(e.target.value)} className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs">
                 <option value="TODOS">TODOS</option>
                 <option value="DESCONTADA">DESCONTADA</option>
                 <option value="NÃO ESTÁ EM COBRANÇA">NÃO ESTÁ EM COBRANÇA</option>
@@ -344,20 +444,20 @@ const DashContasAReceber = () => {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold mb-1 text-[#000638]">Tipo Cliente</label>
-              <select value={filtroTipoCliente} onChange={(e) => setFiltroTipoCliente(e.target.value)} className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]">
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Tipo Cliente</label>
+              <select value={filtroTipoCliente} onChange={(e) => setFiltroTipoCliente(e.target.value)} className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs">
                 <option value="TODOS">TODOS</option>
                 <option value="FRANQUIAS">FRANQUIAS</option>
                 <option value="OUTROS">OUTROS</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold mb-1 text-[#000638]">Fatura</label>
-              <input type="text" value={filtroFatura} onChange={(e) => setFiltroFatura(e.target.value)} placeholder="Buscar fatura..." className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" />
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Fatura</label>
+              <input type="text" value={filtroFatura} onChange={(e) => setFiltroFatura(e.target.value)} placeholder="Buscar fatura..." className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs" />
             </div>
             <div>
-              <label className="block text-xs font-semibold mb-1 text-[#000638]">Portador</label>
-              <input type="text" value={filtroPortador} onChange={(e) => setFiltroPortador(e.target.value)} placeholder="Buscar portador..." className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" />
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Portador</label>
+              <input type="text" value={filtroPortador} onChange={(e) => setFiltroPortador(e.target.value)} placeholder="Buscar portador..." className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs" />
             </div>
             <div className="lg:col-span-1">
               <FiltroCliente clientesSelecionados={clientesSelecionados} onSelectClientes={setClientesSelecionados} dadosClientes={dadosClientes} />
@@ -369,15 +469,15 @@ const DashContasAReceber = () => {
               <FiltroNomeFantasia nomesFantasiaSelecionados={nomesFantasiaSelecionados} onSelectNomesFantasia={setNomesFantasiaSelecionados} dadosNomesFantasia={dadosNomesFantasia} />
             </div>
             <div className="flex items-end">
-              <button type="submit" className="flex items-center gap-2 bg-[#000638] text-white px-6 py-4 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-10 text-sm font-bold shadow-md tracking-wide uppercase" disabled={loading || !dataInicio || !dataFim}>
+              <button type="submit" className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase" disabled={loading || !dataInicio || !dataFim}>
                 {loading ? (
                   <>
-                    <Spinner size={18} className="animate-spin" />
+                    <Spinner size={10} className="animate-spin" />
                     <span></span>
                   </>
                 ) : (
                   <>
-                    <Calendar size={18} />
+                    <Calendar size={10} />
                     <span>Buscar</span>
                   </>
                 )}
@@ -389,27 +489,97 @@ const DashContasAReceber = () => {
 
       {/* Cards principais: PMCR */}
       {dadosCarregados && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 max-w-7xl mx-auto">
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Clock size={18} className="text-green-700" />
-                <CardTitle className="text-sm font-bold text-green-700">Prazo Médio de Recebimento</CardTitle>
+        <div className="mb-8">
+          {/* Card PMR Geral */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6 max-w-7xl mx-auto">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <Clock size={18} className="text-green-700" />
+                  <CardTitle className="text-sm font-bold text-green-700">Prazo Médio de Recebimento</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-3xl font-extrabold text-green-700 mb-1 break-words">
+                  {loading ? <Spinner size={24} className="animate-spin text-green-700" /> : `${pmcrDias.toFixed(1)} dias`}
+                </div>
+                <CardDescription className="text-xs text-gray-500">Média ponderada por valor entre emissão e recebimento</CardDescription>
+              </CardContent>
+            </Card>
+
+            {/* Faturas Pagas em Mais de 15 Dias */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <Clock size={18} className="text-red-600" />
+                  <CardTitle className="text-sm font-bold text-red-700">Faturas Pagas a + de 15 Dias</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-red-600 mb-1 break-words">
+                  {loading ? <Spinner size={24} className="animate-spin text-red-600" /> : `${faturasPagasPorPrazo.pmrMais15Dias.toFixed(1)} dias`}
+                </div>
+                <div className="text-sm font-medium text-red-500 mb-1">
+                  {loading ? '...' : `${faturasPagasPorPrazo.mais15Dias} faturas • R$ ${faturasPagasPorPrazo.valorMais15Dias.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                </div>
+                <CardDescription className="text-xs text-gray-500">PMR das faturas pagas após 15 dias da emissão</CardDescription>
+              </CardContent>
+            </Card>
+
+            {/* Faturas Pagas em Menos de 15 Dias */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <Clock size={18} className="text-green-600" />
+                  <CardTitle className="text-sm font-bold text-green-700">Faturas Pagas a - de 15 Dias</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-green-600 mb-1 break-words">
+                  {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : `${faturasPagasPorPrazo.pmrMenos15Dias.toFixed(1)} dias`}
+                </div>
+                <div className="text-sm font-medium text-green-500 mb-1">
+                  {loading ? '...' : `${faturasPagasPorPrazo.menos15Dias} faturas • R$ ${faturasPagasPorPrazo.valorMenos15Dias.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                </div>
+                <CardDescription className="text-xs text-gray-500">PMR das faturas pagas em até 15 dias da emissão</CardDescription>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Cards PMR por Forma de Pagamento */}
+          {pmrPorFormaPagamento.length > 0 && (
+            <div className="max-w-7xl mx-auto">
+              <h3 className="text-lg font-bold text-[#000638] mb-4 text-center">PMR por Forma de Pagamento</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {pmrPorFormaPagamento.map((forma, index) => (
+                  <Card key={index} className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center gap-2">
+                        <Clock size={14} className="text-blue-600" />
+                        <CardTitle className="text-xs font-bold text-blue-700 truncate" title={forma.nome}>
+                          {forma.nome}
+                        </CardTitle>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-0 px-2 pb-2">
+                      <div className="text-sm font-extrabold text-blue-600 mb-0.5 break-words">
+                        {loading ? <Spinner size={18} className="animate-spin text-blue-600" /> : `${forma.pmrDias.toFixed(1)} dias`}
+                      </div>
+                      <CardDescription className="text-xs text-gray-500">
+                        {forma.quantidade} transação{forma.quantidade !== 1 ? 'ões' : ''} • R$ {forma.somaPesos.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </CardDescription>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-3xl font-extrabold text-green-700 mb-1 break-words">
-                {loading ? <Spinner size={24} className="animate-spin text-green-700" /> : `${pmcrDias.toFixed(1)} dias`}
-              </div>
-              <CardDescription className="text-xs text-gray-500">Média ponderada por valor entre emissão e recebimento</CardDescription>
-            </CardContent>
-          </Card>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 };
 
-export default DashContasAReceber;
+export default PMR;
 
 

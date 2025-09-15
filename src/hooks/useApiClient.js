@@ -207,7 +207,8 @@ const useApiClient = () => {
     health: () => apiCall('/api/utils/health'),
     stats: () => apiCall('/api/utils/stats'),
     autocompleteFantasia: (q) => apiCall('/api/utils/autocomplete/nm_fantasia', { q }),
-    autocompleteGrupoEmpresa: (q) => apiCall('/api/utils/autocomplete/nm_grupoempresa', { q })
+    autocompleteGrupoEmpresa: (q) => apiCall('/api/utils/autocomplete/nm_grupoempresa', { q }),
+    cadastroPessoa: (params) => apiCall('/api/utils/cadastropessoa', params)
   };
 
   return {
