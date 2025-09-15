@@ -187,6 +187,8 @@ router.get('/stats',
   })
 );
 
+// Rota /utils/classcliente removida a pedido
+
 /**
  * @route GET /utils/cadastropessoa
  * @desc Consulta de clientes e suas classificações, paginada e indexável
@@ -215,19 +217,31 @@ router.get('/cadastropessoa',
         p.nr_cpfcnpj,
         pt.nr_telefone,
         pc.cd_tipoclas,
+        tc.ds_tipoclas,
         pc.cd_classificacao,
+        pcc.ds_classificacao,
         tt.dt_transacao,
         tt.cd_empresa
-      FROM tra_transacao tt
-      LEFT JOIN pes_pessoa p ON p.cd_pessoa = tt.cd_pessoa
-      LEFT JOIN pes_pesjuridica pp ON p.cd_pessoa = pp.cd_pessoa
-      LEFT JOIN pes_telefone pt ON p.cd_pessoa = pt.cd_pessoa
-      LEFT JOIN pes_pessoaclas pc ON p.cd_pessoa = pc.cd_pessoa
-      WHERE tt.dt_transacao BETWEEN $1 AND $2
+      FROM
+        tra_transacao tt
+      LEFT JOIN pes_pessoa p ON
+        p.cd_pessoa = tt.cd_pessoa
+      LEFT JOIN pes_pesjuridica pp ON
+        p.cd_pessoa = pp.cd_pessoa
+      LEFT JOIN pes_telefone pt ON
+        p.cd_pessoa = pt.cd_pessoa
+      LEFT JOIN pes_pessoaclas pc ON
+        p.cd_pessoa = pc.cd_pessoa
+      LEFT JOIN pes_tipoclas tc ON
+        tc.cd_tipoclas = pc.cd_tipoclas
+      LEFT JOIN pes_classificacao pcc ON
+        tc.cd_tipoclas = pcc.cd_tipoclas
+      WHERE
+        tt.dt_transacao BETWEEN $1 AND $2
         AND tt.tp_operacao = 'S'
         AND tt.tp_situacao = 4
-        AND tt.cd_empresa < 6000
-      ORDER BY tt.dt_transacao DESC
+      ORDER BY
+        tt.dt_transacao DESC
     `;
 
     const params = [dt_inicio, dt_fim];

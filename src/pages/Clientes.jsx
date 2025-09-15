@@ -4,6 +4,9 @@ import PageTitle from '../components/ui/PageTitle';
 import Table from '../components/ui/Table';
 import { Users, Calendar, Funnel, Spinner } from '@phosphor-icons/react';
 import FiltroNomeFantasia from '../components/FiltroNomeFantasia';
+import FiltroOperacao from '../components/FiltroOperacao';
+import FiltroTipoClassificacao from '../components/FiltroTipoClassificacao';
+import FiltroClassificacao from '../components/FiltroClassificacao';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 const Clientes = () => {
@@ -28,10 +31,19 @@ const Clientes = () => {
   const [nomesFantasiaSelecionados, setNomesFantasiaSelecionados] = useState([]);
   const [dadosNomesFantasia, setDadosNomesFantasia] = useState([]);
 
-  // Filtros de classificação
-  const [filtroTipoClass, setFiltroTipoClass] = useState('');
-  const [filtroClassificacao, setFiltroClassificacao] = useState('');
-
+  // Filtros de classificação (seleção múltipla)
+  const [tiposClassSelecionados, setTiposClassSelecionados] = useState([]);
+  const [classificacoesSelecionadas, setClassificacoesSelecionadas] = useState([]);
+  
+  // Filtro de operação (seleção múltipla)
+  const [operacoesSelecionadas, setOperacoesSelecionadas] = useState([]);
+  
+  // Estado para controlar a visualização ativa
+  const [visualizacaoAtiva, setVisualizacaoAtiva] = useState('clienteGeral'); // 'clienteGeral' ou 'detalhamentoClassificacao'
+  
+  // Filtro de status para detalhamento de classificação
+  const [filtroStatus, setFiltroStatus] = useState(''); // '', 'unico', 'multiplas'
+  
   // Hook personalizado para fazer chamadas à API
   const { utils } = useApiClient();
 
@@ -44,6 +56,11 @@ const Clientes = () => {
       });
 
       if (response.success) {
+        // Verificar se os dados incluem ds_tipoclas e ds_classificacao
+        if (response.data && response.data.length > 0) {
+          console.log('Amostra de dados recebidos:', response.data.slice(0, 3));
+        }
+        
         setClientes(response.data);
         // Como o backend não está mais paginando, controlamos apenas no front
         setPagination(prev => ({
@@ -64,6 +81,7 @@ const Clientes = () => {
 
   // Removido o carregamento automático de dados quando os filtros mudam
   // Os dados só serão carregados quando o usuário clicar no botão "Buscar"
+
 
   // Atualiza lista de nomes fantasia disponíveis quando dados carregam
   useEffect(() => {
@@ -124,36 +142,195 @@ const Clientes = () => {
   }, [clientesFiltrados]);
 
   const opcoesClassificacao = useMemo(() => {
-    const base = filtroTipoClass
-      ? clientesFiltrados.filter((c) => String(c.cd_tipoclas) === String(filtroTipoClass))
-      : clientesFiltrados;
+    // Se não há tipos selecionados, retorna todas as classificações disponíveis
+    if (tiposClassSelecionados.length === 0) {
+      const set = new Set(
+        clientesFiltrados
+          .map((c) => c.cd_classificacao)
+          .filter((v) => v !== null && v !== undefined && v !== '')
+      );
+      return Array.from(set).sort((a, b) => String(a).localeCompare(String(b)));
+    }
+
+    // Verifica se o tipo 20 está selecionado
+    const temTipo20 = tiposClassSelecionados.includes('20');
+    const temOutrosTipos = tiposClassSelecionados.some(tipo => tipo !== '20');
+
+    if (temTipo20 && !temOutrosTipos) {
+      // Se apenas tipo 20 está selecionado, mostra classificações específicas
+      return ['1', '2', '3', '4', '5', '6'];
+    } else if (!temTipo20 && temOutrosTipos) {
+      // Se apenas outros tipos estão selecionados, mostra SIM/NÃO
+      return ['1', '2'];
+    } else if (temTipo20 && temOutrosTipos) {
+      // Se tipo 20 e outros estão selecionados, mostra todas as classificações possíveis
+      return ['1', '2', '3', '4', '5', '6'];
+    }
+
+    // Fallback: retorna todas as classificações disponíveis
     const set = new Set(
-      base
+      clientesFiltrados
         .map((c) => c.cd_classificacao)
         .filter((v) => v !== null && v !== undefined && v !== '')
     );
     return Array.from(set).sort((a, b) => String(a).localeCompare(String(b)));
-  }, [clientesFiltrados, filtroTipoClass]);
+  }, [clientesFiltrados, tiposClassSelecionados]);
 
-  // Aplicar filtros de Tipo Classificação e Classificação
+  // Opções dinâmicas de operações
+  const opcoesOperacao = useMemo(() => {
+    const set = new Set(
+      clientesFiltrados
+        .map((c) => c.cd_operacao)
+        .filter((v) => v !== null && v !== undefined && v !== '')
+    );
+    return Array.from(set).sort((a, b) => String(a).localeCompare(String(b)));
+  }, [clientesFiltrados]);
+
+
+  // Aplicar filtros de Tipo Classificação, Classificação e Operação
   const clientesFiltradosFinais = useMemo(() => {
     let data = clientesFiltrados;
-    if (filtroTipoClass) {
-      data = data.filter((c) => String(c.cd_tipoclas) === String(filtroTipoClass));
+    
+    if (tiposClassSelecionados.length > 0) {
+      data = data.filter((c) => {
+        // Se 'VAZIO' está selecionado, filtra registros sem tipo de classificação
+        if (tiposClassSelecionados.includes('VAZIO')) {
+          return !c.cd_tipoclas || c.cd_tipoclas === null || c.cd_tipoclas === undefined || c.cd_tipoclas === '';
+        }
+        // Caso contrário, filtra pelos tipos selecionados
+        return tiposClassSelecionados.includes(String(c.cd_tipoclas));
+      });
     }
-    if (filtroClassificacao) {
-      data = data.filter((c) => String(c.cd_classificacao) === String(filtroClassificacao));
+    
+    if (classificacoesSelecionadas.length > 0) {
+      data = data.filter((c) => {
+        // Se 'VAZIO' está selecionado, filtra registros sem classificação
+        if (classificacoesSelecionadas.includes('VAZIO')) {
+          return !c.cd_classificacao || c.cd_classificacao === null || c.cd_classificacao === undefined || c.cd_classificacao === '';
+        }
+        
+        const tipoCliente = String(c.cd_tipoclas);
+        const classificacaoCliente = String(c.cd_classificacao);
+        
+        // Se tipo 20 está selecionado, permite classificações 1-6
+        if (tiposClassSelecionados.includes('20')) {
+          if (tipoCliente === '20') {
+            // Para tipo 20, permite classificações 1-6
+            return classificacoesSelecionadas.includes(classificacaoCliente);
+          } else {
+            // Para outros tipos quando tipo 20 também está selecionado
+            // Verifica se a classificação está nas selecionadas E é válida para o tipo
+            if (['1', '2'].includes(classificacaoCliente)) {
+              return classificacoesSelecionadas.includes(classificacaoCliente);
+            }
+          }
+        } else {
+          // Se apenas outros tipos (não 20) estão selecionados, permite apenas 1-2
+          if (['1', '2'].includes(classificacaoCliente)) {
+            return classificacoesSelecionadas.includes(classificacaoCliente);
+          }
+        }
+        
+        return false;
+      });
     }
+    
+    if (operacoesSelecionadas.length > 0) {
+      data = data.filter((c) => operacoesSelecionadas.includes(String(c.cd_operacao)));
+    }
+    
     return data;
-  }, [clientesFiltrados, filtroTipoClass, filtroClassificacao]);
+  }, [clientesFiltrados, tiposClassSelecionados, classificacoesSelecionadas, operacoesSelecionadas]);
+
+  // Agrupar registros duplicados baseado nos campos especificados
+  const clientesAgrupados = useMemo(() => {
+    const chaveAgrupamento = (cliente) => {
+      return `${cliente.cd_pessoa || ''}-${cliente.nm_pessoa || ''}-${cliente.nm_fantasia || ''}-${cliente.nr_cpfcnpj || ''}-${cliente.nr_telefone || ''}-${cliente.cd_tipoclas || ''}-${cliente.cd_classificacao || ''}`;
+    };
+
+    const mapa = new Map();
+    
+    clientesFiltradosFinais.forEach(cliente => {
+      const chave = chaveAgrupamento(cliente);
+      
+      if (!mapa.has(chave)) {
+        // Se não existe, adiciona o primeiro registro
+        mapa.set(chave, cliente);
+      } else {
+        // Se já existe, mantém o primeiro (ou pode implementar lógica para escolher o melhor)
+        // Por exemplo, manter o que tem dt_transacao mais recente
+        const existente = mapa.get(chave);
+        if (cliente.dt_transacao && (!existente.dt_transacao || cliente.dt_transacao > existente.dt_transacao)) {
+          mapa.set(chave, cliente);
+        }
+      }
+    });
+
+    return Array.from(mapa.values());
+  }, [clientesFiltradosFinais]);
+
+  // Dados para detalhamento de classificação
+  const dadosDetalhamentoClassificacao = useMemo(() => {
+    const mapaClientes = new Map();
+    
+    clientesFiltradosFinais.forEach(cliente => {
+      const chaveCliente = `${cliente.cd_pessoa || ''}-${cliente.nm_pessoa || ''}-${cliente.nm_fantasia || ''}`;
+      
+      if (!mapaClientes.has(chaveCliente)) {
+        mapaClientes.set(chaveCliente, {
+          cd_pessoa: cliente.cd_pessoa,
+          nm_pessoa: cliente.nm_pessoa,
+          nm_fantasia: cliente.nm_fantasia,
+          tiposClassificacao: new Set(),
+          classificacoes: new Set()
+        });
+      }
+      
+      const dadosCliente = mapaClientes.get(chaveCliente);
+      
+      // Adiciona tipo de classificação se existir
+      if (cliente.cd_tipoclas) {
+        dadosCliente.tiposClassificacao.add(cliente.cd_tipoclas);
+      }
+      
+      // Adiciona classificação se existir
+      if (cliente.cd_classificacao) {
+        dadosCliente.classificacoes.add(cliente.cd_classificacao);
+      }
+    });
+    
+    const dados = Array.from(mapaClientes.values()).map((cliente, i) => ({
+      id: `det-${cliente.cd_pessoa}-${i}`,
+      cd_pessoa: cliente.cd_pessoa,
+      nm_pessoa: cliente.nm_pessoa,
+      nm_fantasia: cliente.nm_fantasia,
+      tiposClassificacao: Array.from(cliente.tiposClassificacao).sort(),
+      classificacoes: Array.from(cliente.classificacoes).sort(),
+      temMultiplasClassificacoes: cliente.tiposClassificacao.size > 1 || cliente.classificacoes.size > 1
+    }));
+    
+    // Aplicar filtro de status se especificado
+    if (filtroStatus) {
+      return dados.filter(cliente => {
+        if (filtroStatus === 'multiplas') {
+          return cliente.temMultiplasClassificacoes;
+        } else if (filtroStatus === 'unico') {
+          return !cliente.temMultiplasClassificacoes;
+        }
+        return true;
+      });
+    }
+    
+    return dados;
+  }, [clientesFiltradosFinais, filtroStatus]);
 
   // Garantir chave única por linha na tabela (evita warnings de keys duplicadas)
   const clientesParaTabela = useMemo(() => {
-    return clientesFiltradosFinais.map((c, i) => ({
+    return clientesAgrupados.map((c, i) => ({
       id: `${c.cd_pessoa ?? 'p'}-${c.cd_operacao ?? 'op'}-${c.dt_transacao ?? 'dt'}-${i}`,
       ...c
     }));
-  }, [clientesFiltradosFinais]);
+  }, [clientesAgrupados]);
 
   // Definição das colunas da tabela
   const colunas = useMemo(() => [
@@ -161,30 +338,30 @@ const Clientes = () => {
       key: 'cd_pessoa',
       title: 'Código',
       sortable: true,
-      className: 'px-2 py-1 text-[0.7rem]',
-      cellClassName: 'px-2 py-1 text-[0.69rem]',
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]',
       render: (value) => <span className="font-medium">{value}</span>
     },
     {
       key: 'nm_pessoa',
       title: 'Nome',
       sortable: true,
-      className: 'px-2 py-1 text-[0.7rem]',
-      cellClassName: 'px-2 py-1 text-[0.69rem]'
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]'
     },
     {
       key: 'nm_fantasia',
       title: 'Nome Fantasia',
       sortable: true,
-      className: 'px-2 py-1 text-[0.7rem]',
-      cellClassName: 'px-2 py-1 text-[0.69rem]'
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]'
     },
     {
       key: 'nr_cpfcnpj',
       title: 'CPF/CNPJ',
       sortable: true,
-      className: 'px-2 py-1 text-[0.7rem]',
-      cellClassName: 'px-2 py-1 text-[0.69rem]',
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]',
       render: (value) => {
         if (!value) return '-';
         // Formatar CPF ou CNPJ
@@ -199,8 +376,8 @@ const Clientes = () => {
       key: 'nr_telefone',
       title: 'Telefone',
       sortable: true,
-      className: 'px-2 py-1 text-[0.7rem]',
-      cellClassName: 'px-2 py-1 text-[0.69rem]',
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]',
       render: (value) => {
         if (!value) return '-';
         // Formatar telefone
@@ -211,22 +388,30 @@ const Clientes = () => {
       key: 'cd_tipoclas',
       title: 'Tp. Class',
       sortable: true,
-      className: 'px-2 py-1 text-[0.7rem]',
-      cellClassName: 'px-2 py-1 text-[0.69rem]'
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]',
+      render: (value, row) => {
+        if (!value) return <span className="text-gray-500 italic">Não classificado</span>;
+        return <span className="font-medium">{value} - {row.ds_tipoclas || value}</span>;
+      }
     },
     {
       key: 'cd_classificacao',
-      title: 'Class',
+      title: 'Classificação',
       sortable: true,
-      className: 'px-2 py-1 text-[0.7rem]',
-      cellClassName: 'px-2 py-1 text-[0.69rem]'
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]',
+      render: (value, row) => {
+        if (!value) return <span className="text-gray-500 italic">Não classificado</span>;
+        return <span className="font-medium">{value} - {row.ds_classificacao || value}</span>;
+      }
     },
     {
       key: 'dt_transacao',
       title: 'Dt Trans',
       sortable: true,
-      className: 'px-2 py-1 text-[0.7rem]',
-      cellClassName: 'px-2 py-1 text-[0.69rem]',
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]',
       render: (value) => {
         if (!value) return '-';
         // Formatar data
@@ -235,17 +420,136 @@ const Clientes = () => {
       }
     },
     {
+      key: 'cd_operacao',
+      title: 'Operação',
+      sortable: true,
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]'
+    },
+    {
       key: 'cd_empresa',
       title: 'Emp',
       sortable: true,
-      className: 'px-2 py-1 text-[0.7rem]',
-      cellClassName: 'px-2 py-1 text-[0.69rem]'
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]'
     }
   ], []);
 
-  // Cálculo da página atual com base no total filtrado (front-end)
+  // Definição das colunas para detalhamento de classificação
+  const colunasDetalhamentoClassificacao = useMemo(() => [
+    {
+      key: 'cd_pessoa',
+      title: 'Código',
+      sortable: true,
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]',
+      render: (value) => <span className="font-medium">{value}</span>
+    },
+    {
+      key: 'nm_pessoa',
+      title: 'Nome',
+      sortable: true,
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]'
+    },
+    {
+      key: 'nm_fantasia',
+      title: 'Nome Fantasia',
+      sortable: true,
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]'
+    },
+    {
+      key: 'tiposClassificacao',
+      title: 'Tipos de Classificação',
+      sortable: false,
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]',
+      render: (value, row) => (
+        <div className="flex flex-wrap gap-1">
+          {value.length === 0 ? (
+            <span className="text-gray-400">-</span>
+          ) : (
+            value.map((tipo, index) => {
+              // Buscar o tipo correspondente nos clientes filtrados
+              const clienteComTipo = clientesFiltradosFinais.find(c => 
+                String(c.cd_tipoclas) === String(tipo) && c.ds_tipoclas
+              );
+              
+              const nomeTipo = clienteComTipo?.ds_tipoclas || tipo;
+              
+              return (
+                <span
+                  key={index}
+                  className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full"
+                >
+                  {tipo} - {nomeTipo}
+                </span>
+              );
+            })
+          )}
+        </div>
+      )
+    },
+    {
+      key: 'classificacoes',
+      title: 'Classificações',
+      sortable: false,
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]',
+      render: (value, row) => {
+        return (
+          <div className="flex flex-wrap gap-1">
+            {value.length === 0 ? (
+              <span className="text-gray-400">-</span>
+            ) : (
+              value.map((classificacao, index) => {
+                // Encontrar um cliente com esta classificação
+                const clienteComClassificacao = clientesFiltradosFinais.find(c => 
+                  String(c.cd_classificacao) === String(classificacao) && c.ds_classificacao
+                );
+                
+                const nomeClassificacao = clienteComClassificacao?.ds_classificacao || classificacao;
+                
+                return (
+                  <span
+                    key={index}
+                    className="inline-block bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full"
+                  >
+                    {classificacao} - {nomeClassificacao}
+                  </span>
+                );
+              })
+            )}
+          </div>
+        );
+      }
+    },
+    {
+      key: 'temMultiplasClassificacoes',
+      title: 'Status',
+      sortable: true,
+      className: 'px-2 py-1 text-[0.68rem] font-bold',
+      cellClassName: 'px-2 py-1 text-[0.67rem]',
+      render: (value) => (
+        <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
+          value 
+            ? 'bg-orange-100 text-orange-800' 
+            : 'bg-gray-100 text-gray-800'
+        }`}>
+          {value ? 'Múltiplas' : 'Única'}
+        </span>
+      )
+    }
+  ], []);
+
+  // Cálculo da página atual com base no total filtrado e agrupado (front-end)
   const currentPage = Math.floor(pagination.offset / pagination.limit) + 1;
-  const totalPages = Math.ceil(clientesFiltradosFinais.length / pagination.limit) || 1;
+  const totalPages = Math.ceil(clientesAgrupados.length / pagination.limit) || 1;
+  
+  // Cálculo da página atual para detalhamento de classificação
+  const currentPageDetalhamento = Math.floor(pagination.offset / pagination.limit) + 1;
+  const totalPagesDetalhamento = Math.ceil(dadosDetalhamentoClassificacao.length / pagination.limit) || 1;
 
   return (
       <div className="p-6 max-w-7xl mx-auto w-full">
@@ -266,7 +570,8 @@ const Clientes = () => {
               <span className="text-xs text-gray-500 mt-1">Selecione o período de análise</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-2 mb-3">
+            {/* Primeira linha - Período e Nome Fantasia */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
               <div>
                 <label className="block text-xs font-semibold mb-0.5 text-[#000638]" htmlFor="dt_inicio">
                   Data Início
@@ -295,49 +600,55 @@ const Clientes = () => {
                   required
                 />
               </div>
-              <div className="lg:col-span-3">
+              <div className="lg:col-span-2">
                 <FiltroNomeFantasia
                   nomesFantasiaSelecionados={nomesFantasiaSelecionados}
                   onSelectNomesFantasia={setNomesFantasiaSelecionados}
                   dadosNomesFantasia={dadosNomesFantasia}
                 />
               </div>
+            </div>
+
+            {/* Segunda linha - Filtros de Classificação e Operação */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
               <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Tipo Classificação</label>
-                <select
-                  value={filtroTipoClass}
-                  onChange={(e) => {
-                    setFiltroTipoClass(e.target.value);
-                    // Reset classificação se não existir dentro do novo tipo
-                    if (e.target.value === '' || !opcoesClassificacao.includes(filtroClassificacao)) {
-                      setFiltroClassificacao('');
-                    }
+                <FiltroOperacao
+                  operacoesSelecionadas={operacoesSelecionadas}
+                  onSelectOperacoes={setOperacoesSelecionadas}
+                  dadosOperacoes={opcoesOperacao}
+                />
+              </div>
+              <div>
+                <FiltroTipoClassificacao
+                  tiposSelecionados={tiposClassSelecionados}
+                  onSelectTipos={(novosTipos) => {
+                    setTiposClassSelecionados(novosTipos);
+                    // Reset classificações se não existirem nos novos tipos selecionados
+                    const classificacoesValidas = opcoesClassificacao.filter(c => 
+                      novosTipos.length === 0 || 
+                      clientesFiltrados.some(cliente => 
+                        novosTipos.includes(String(cliente.cd_tipoclas)) && 
+                        String(cliente.cd_classificacao) === c
+                      )
+                    );
+                    setClassificacoesSelecionadas(
+                      classificacoesSelecionadas.filter(c => classificacoesValidas.includes(c))
+                    );
                   }}
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-                >
-                  <option value="">TODOS</option>
-                  {opcoesTipoClass.map((opt) => (
-                    <option key={`tp-${opt}`} value={opt}>{opt}</option>
-                  ))}
-                </select>
+                  dadosTipos={opcoesTipoClass}
+                />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Classificação</label>
-                <select
-                  value={filtroClassificacao}
-                  onChange={(e) => setFiltroClassificacao(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-                >
-                  <option value="">TODAS</option>
-                  {opcoesClassificacao.map((opt) => (
-                    <option key={`clas-${opt}`} value={opt}>{opt}</option>
-                  ))}
-                </select>
+                <FiltroClassificacao
+                  classificacoesSelecionadas={classificacoesSelecionadas}
+                  onSelectClassificacoes={setClassificacoesSelecionadas}
+                  dadosClassificacoes={opcoesClassificacao}
+                />
               </div>
-              <div className="flex items-center">
+              <div className="flex items-end">
                 <button 
                   type="submit"
-                  className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
+                  className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase w-full justify-center"
                   disabled={loading}
                 >
                   {loading ? (
@@ -354,7 +665,52 @@ const Clientes = () => {
                 </button>
               </div>
             </div>
+
+            {/* Terceira linha - Filtro de Status (apenas para detalhamento) */}
+            {visualizacaoAtiva === 'detalhamentoClassificacao' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+                <div>
+                  <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Status</label>
+                  <select
+                    value={filtroStatus}
+                    onChange={(e) => setFiltroStatus(e.target.value)}
+                    className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                  >
+                    <option value="">TODOS</option>
+                    <option value="unico">ÚNICO</option>
+                    <option value="multiplas">MÚLTIPLAS</option>
+                  </select>
+                </div>
+                <div></div>
+                <div></div>
+                <div></div>
+              </div>
+            )}
           </form>
+        </div>
+
+        {/* Botões de visualização */}
+        <div className="mb-4 flex gap-2 justify-center">
+          <button
+            onClick={() => setVisualizacaoAtiva('clienteGeral')}
+            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+              visualizacaoAtiva === 'clienteGeral'
+                ? 'bg-[#000638] text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            CLIENTE GERAL
+          </button>
+          <button
+            onClick={() => setVisualizacaoAtiva('detalhamentoClassificacao')}
+            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+              visualizacaoAtiva === 'detalhamentoClassificacao'
+                ? 'bg-[#000638] text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            DETALHAMENTO DE CLASSIFICAÇÃO
+          </button>
         </div>
 
         {/* Tabela de dados */}
@@ -364,6 +720,8 @@ const Clientes = () => {
           </div>
         ) : (
           <div className="bg-white rounded-lg shadow overflow-hidden">
+            {visualizacaoAtiva === 'clienteGeral' ? (
+              <>
             <Table
               data={clientesParaTabela}
               columns={colunas}
@@ -374,20 +732,51 @@ const Clientes = () => {
               onPageChange={handlePageChange}
               emptyMessage="Nenhum cliente encontrado para o período selecionado"
               rowKey="id"
-              className="text-[0.69rem]"
-              containerClassName="text-[0.69rem]"
+                  className="text-[0.67rem]"
+                  containerClassName="text-[0.67rem]"
             />
             
-            {!loading && clientesFiltradosFinais.length > 0 && (
+                {!loading && clientesAgrupados.length > 0 && (
               <div className="p-4 bg-gray-50 border-t border-gray-200">
                 <p className="text-xs text-gray-600">
                   {(() => {
                     const start = (currentPage - 1) * pagination.limit + 1;
-                    const end = Math.min(currentPage * pagination.limit, clientesFiltradosFinais.length);
-                    return `Mostrando ${clientesFiltradosFinais.length === 0 ? 0 : start} a ${end} de ${clientesFiltradosFinais.length} registros`;
+                        const end = Math.min(currentPage * pagination.limit, clientesAgrupados.length);
+                        return `Mostrando ${clientesAgrupados.length === 0 ? 0 : start} a ${end} de ${clientesAgrupados.length} registros únicos`;
+                      })()}
+                    </p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <Table
+                  data={dadosDetalhamentoClassificacao}
+                  columns={colunasDetalhamentoClassificacao}
+                  loading={loading}
+                  pagination={true}
+                  pageSize={pagination.limit}
+                  currentPage={currentPageDetalhamento}
+                  onPageChange={handlePageChange}
+                  emptyMessage="Nenhum cliente encontrado para o período selecionado"
+                  rowKey="id"
+                  className="text-[0.67rem]"
+                  containerClassName="text-[0.67rem]"
+                />
+                
+                {!loading && dadosDetalhamentoClassificacao.length > 0 && (
+                  <div className="p-4 bg-gray-50 border-t border-gray-200">
+                    <p className="text-xs text-gray-600">
+                      {(() => {
+                        const start = (currentPageDetalhamento - 1) * pagination.limit + 1;
+                        const end = Math.min(currentPageDetalhamento * pagination.limit, dadosDetalhamentoClassificacao.length);
+                        const clientesMultiplas = dadosDetalhamentoClassificacao.filter(c => c.temMultiplasClassificacoes).length;
+                        return `Mostrando ${dadosDetalhamentoClassificacao.length === 0 ? 0 : start} a ${end} de ${dadosDetalhamentoClassificacao.length} clientes únicos (${clientesMultiplas} com múltiplas classificações)`;
                   })()}
                 </p>
               </div>
+                )}
+              </>
             )}
           </div>
         )}
