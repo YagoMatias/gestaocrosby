@@ -263,7 +263,7 @@ const ContasAPagar = () => {
 
   // Estados para paginação
   const [paginaAtual, setPaginaAtual] = useState(1);
-  const [registrosPorPagina] = useState(50);
+  const [registrosPorPagina] = useState(20);
 
   // Função para lidar com mudança de filtro mensal
   const handleFiltroMensalChange = (novoFiltro) => {
