@@ -1,20 +1,31 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { useAuth } from '../components/AuthContext';
+import React, { useEffect, useState, useMemo, useCallback } from "react";
+import { useAuth } from "../components/AuthContext";
 
-import FiltroEmpresa from '../components/FiltroEmpresa';
-import FiltroCentroCusto from '../components/FiltroCentroCusto';
-import FiltroDespesas from '../components/FiltroDespesas';
-import FiltroFornecedor from '../components/FiltroFornecedor';
-import useApiClient from '../hooks/useApiClient';
-import PageTitle from '../components/ui/PageTitle';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
-import FilterDropdown from '../components/ui/FilterDropdown';
-import ModalDetalhesConta from '../components/ModalDetalhesConta';
-import { 
-  Receipt, 
-  Calendar, 
-  Funnel, 
+import FiltroEmpresa from "../components/FiltroEmpresa";
+import FiltroCentroCusto from "../components/FiltroCentroCusto";
+import FiltroDespesas from "../components/FiltroDespesas";
+import FiltroFornecedor from "../components/FiltroFornecedor";
+import useApiClient from "../hooks/useApiClient";
+import PageTitle from "../components/ui/PageTitle";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/cards";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../components/ui/tooltip";
+import FilterDropdown from "../components/ui/FilterDropdown";
+import ModalDetalhesConta from "../components/ModalDetalhesConta";
+import {
+  Receipt,
+  Calendar,
+  Funnel,
   FunnelSimple,
   Spinner,
   CurrencyDollar,
@@ -30,25 +41,28 @@ import {
   TrendDown,
   FileArrowDown,
   XCircle,
-  Trash
-} from '@phosphor-icons/react';
-import * as XLSX from 'xlsx';
-import { saveAs } from 'file-saver';
-import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
-import { autorizacoesSupabase, STATUS_AUTORIZACAO } from '../lib/autorizacoesSupabase';
+  Trash,
+} from "@phosphor-icons/react";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+import { getCategoriaPorCodigo } from "../config/categoriasDespesas";
+import {
+  autorizacoesSupabase,
+  STATUS_AUTORIZACAO,
+} from "../lib/autorizacoesSupabase";
 
 // Função para criar Date object sem problemas de fuso horário
 const criarDataSemFusoHorario = (dataString) => {
   if (!dataString) return null;
-  if (dataString.includes('T')) {
+  if (dataString.includes("T")) {
     // Para datas ISO, usar apenas a parte da data
-    const dataPart = dataString.split('T')[0];
-    const [ano, mes, dia] = dataPart.split('-');
+    const dataPart = dataString.split("T")[0];
+    const [ano, mes, dia] = dataPart.split("-");
     return new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia));
   }
   // Para datas já no formato DD/MM/YYYY
-  if (dataString.includes('/')) {
-    const [dia, mes, ano] = dataString.split('/');
+  if (dataString.includes("/")) {
+    const [dia, mes, ano] = dataString.split("/");
     return new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia));
   }
   return new Date(dataString);
@@ -56,11 +70,11 @@ const criarDataSemFusoHorario = (dataString) => {
 
 // Função para formatar data
 const formatarData = (data) => {
-  if (!data) return '';
-  if (data.includes('T')) {
+  if (!data) return "";
+  if (data.includes("T")) {
     // Para datas ISO, criar a data considerando apenas a parte da data (YYYY-MM-DD)
-    const dataPart = data.split('T')[0];
-    const [ano, mes, dia] = dataPart.split('-');
+    const dataPart = data.split("T")[0];
+    const [ano, mes, dia] = dataPart.split("-");
     return `${dia}/${mes}/${ano}`;
   }
   return data;
@@ -72,183 +86,184 @@ const ContasAPagar = () => {
 
   // Debug logs para verificar o status do usuário
   useEffect(() => {
-    console.log('🔍 DEBUG - Usuário atual:', user);
-    console.log('🔍 DEBUG - Role do usuário:', user?.role);
-    console.log('🔍 DEBUG - hasRole owner:', hasRole(['owner', 'admin', 'manager']));
-    console.log('🔍 DEBUG - hasRole user:', hasRole(['user']));
+    console.log("🔍 DEBUG - Usuário atual:", user);
+    console.log("🔍 DEBUG - Role do usuário:", user?.role);
+    console.log(
+      "🔍 DEBUG - hasRole owner:",
+      hasRole(["owner", "admin", "manager"])
+    );
+    console.log("🔍 DEBUG - hasRole user:", hasRole(["user"]));
   }, [user, hasRole]);
 
   const [dados, setDados] = useState([]);
   const [dadosFornecedor, setDadosFornecedor] = useState([]);
   const [dadosCentroCusto, setDadosCentroCusto] = useState([]);
   const [dadosDespesa, setDadosDespesa] = useState([]);
-  const [dataInicio, setDataInicio] = useState('');
-  const [modalDetalhes, setModalDetalhes] = useState({ isOpen: false, conta: null });
-  
-
+  const [dataInicio, setDataInicio] = useState("");
+  const [modalDetalhes, setModalDetalhes] = useState({
+    isOpen: false,
+    conta: null,
+  });
 
   // Injetar CSS customizado para a tabela
   useEffect(() => {
-    const styleElement = document.createElement('style');
+    const styleElement = document.createElement("style");
     styleElement.textContent = `
-      .table-container {
-        overflow-x: auto;
-        position: relative;
-      }
-      
-      .table-container table {
-        position: relative;
-      }
-      
-      .contas-table {
-        border-collapse: collapse;
-        width: 100%;
-      }
-      
-      .contas-table th,
-      .contas-table td {
-        padding: !important;
-        border-right: 1px solid #f3f4f6;
-        word-wrap: break-word;
-        white-space: normal;
-        font-size: 11px;
-        line-height: 1.3;
-      }
-      
-      .contas-table th:last-child,
-      .contas-table td:last-child {
-        border-right: none;
-      }
-      
-      .contas-table th {
-        background-color: #000638;
-        color: white;
-        font-weight: 600;
-        text-transform: uppercase;
-        font-size: 10px;
-        letter-spacing: 0.05em;
-      }
-      
-      .contas-table tbody tr:nth-child(odd) {
-        background-color: white;
-      }
-      
-      .contas-table tbody tr:nth-child(even) {
-        background-color: #fafafa;
-      }
-      
-      .contas-table tbody tr:hover {
-        background-color: #f0f9ff;
-        transition: background-color 0.2s ease;
-      }
-      
-      /* CSS para coluna fixa */
-      .contas-table thead th:first-child,
-      .contas-table tbody td:first-child {
-        position: sticky !important;
-        left: 0 !important;
-        z-index: 10 !important;
-        border-right: 2px solid #e5e7eb !important;
-        box-shadow: 2px 0 4px rgba(0,0,0,0.1) !important;
-      }
-      
-      .contas-table thead th:first-child {
-        background: #000638 !important;
-        z-index: 20 !important;
-        border-right: 2px solid #374151 !important;
-      }
-      
-      .contas-table tbody tr:nth-child(even) td:first-child {
-        background: #fafafa !important;
-      }
-      
-      .contas-table tbody tr:nth-child(odd) td:first-child {
-        background: #ffffff !important;
-      }
-      
-      .contas-table tbody tr:hover td:first-child {
-        background: #f0f9ff !important;
-      }
-      
-      .contas-table tbody tr.bg-blue-100 td:first-child {
-        background: #dbeafe !important;
-      }
-      
-      .contas-table tbody tr.bg-blue-100:hover td:first-child {
-        background: #bfdbfe !important;
-      }
-      
-      .contas-table th:first-child input[type="checkbox"] {
-        transform: scale(1.1);
-      }
-      
-      .contas-table td:first-child input[type="checkbox"] {
-        transform: scale(1.1);
-      }
-      
+        .table-container {
+          overflow-x: auto;
+          position: relative;
+        }
+        
+        .table-container table {
+          position: relative;
+        }
+        
+        .contas-table {
+          border-collapse: collapse;
+          width: 100%;
+        }
+        
+        .contas-table th,
+        .contas-table td {
+          padding: !important;
+          border-right: 1px solid #f3f4f6;
+          word-wrap: break-word;
+          white-space: normal;
+          font-size: 11px;
+          line-height: 1.3;
+        }
+        
+        .contas-table th:last-child,
+        .contas-table td:last-child {
+          border-right: none;
+        }
+        
+        .contas-table th {
+          background-color: #000638;
+          color: white;
+          font-weight: 600;
+          text-transform: uppercase;
+          font-size: 10px;
+          letter-spacing: 0.05em;
+        }
+        
+        .contas-table tbody tr:nth-child(odd) {
+          background-color: white;
+        }
+        
+        .contas-table tbody tr:nth-child(even) {
+          background-color: #fafafa;
+        }
+        
+        .contas-table tbody tr:hover {
+          background-color: #f0f9ff;
+          transition: background-color 0.2s ease;
+        }
+        
+        /* CSS para coluna fixa */
+        .contas-table thead th:first-child,
+        .contas-table tbody td:first-child {
+          position: sticky !important;
+          left: 0 !important;
+          z-index: 10 !important;
+          border-right: 2px solid #e5e7eb !important;
+          box-shadow: 2px 0 4px rgba(0,0,0,0.1) !important;
+        }
+        
+        .contas-table thead th:first-child {
+          background: #000638 !important;
+          z-index: 20 !important;
+          border-right: 2px solid #374151 !important;
+        }
+        
+        .contas-table tbody tr:nth-child(even) td:first-child {
+          background: #fafafa !important;
+        }
+        
+        .contas-table tbody tr:nth-child(odd) td:first-child {
+          background: #ffffff !important;
+        }
+        
+        .contas-table tbody tr:hover td:first-child {
+          background: #f0f9ff !important;
+        }
+        
+        .contas-table tbody tr.bg-blue-100 td:first-child {
+          background: #dbeafe !important;
+        }
+        
+        .contas-table tbody tr.bg-blue-100:hover td:first-child {
+          background: #bfdbfe !important;
+        }
+        
+        .contas-table th:first-child input[type="checkbox"] {
+          transform: scale(1.1);
+        }
+        
+        .contas-table td:first-child input[type="checkbox"] {
+          transform: scale(1.1);
+        }
+        
 
-    `;
+      `;
     document.head.appendChild(styleElement);
 
     return () => {
       document.head.removeChild(styleElement);
     };
   }, []);
-  
-  const [dataFim, setDataFim] = useState('');
+
+  const [dataFim, setDataFim] = useState("");
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
-  const [status, setStatus] = useState('Todos');
-  const [situacao, setSituacao] = useState('NORMAIS');
-  const [previsao, setPrevisao] = useState('TODOS');
-  const [filtroAutorizacao, setFiltroAutorizacao] = useState('TODOS'); // 'AUTORIZADOS' | 'NAO_AUTORIZADOS' | 'ENVIADO_PAGAMENTO' | 'TODOS'
+  const [status, setStatus] = useState("Todos");
+  const [situacao, setSituacao] = useState("NORMAIS");
+  const [previsao, setPrevisao] = useState("TODOS");
+  const [filtroAutorizacao, setFiltroAutorizacao] = useState("TODOS");
 
-  const [duplicata, setDuplicata] = useState('');
+  const [duplicata, setDuplicata] = useState("");
 
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
-  const [linhasSelecionadasAgrupadas, setLinhasSelecionadasAgrupadas] = useState(new Set());
-  
-
+  const [linhasSelecionadasAgrupadas, setLinhasSelecionadasAgrupadas] =
+    useState(new Set());
 
   // Estados para filtro mensal
-  const [filtroMensal, setFiltroMensal] = useState('ANO');
+  const [filtroMensal, setFiltroMensal] = useState("ANO");
   const [filtroDia, setFiltroDia] = useState(null);
-
-
 
   // Estados para modais dos cards
   const [modalCardAberto, setModalCardAberto] = useState(false);
-  const [tipoCardSelecionado, setTipoCardSelecionado] = useState('');
+  const [tipoCardSelecionado, setTipoCardSelecionado] = useState("");
   const [dadosCardModal, setDadosCardModal] = useState([]);
-  // Mapa local de autorizações: chave única -> nome do autorizador
-  const [autorizacoes, setAutorizacoes] = useState({});
+  // Estado para exibição do plano de contas
   const [planoOpen, setPlanoOpen] = useState(true);
-  
-  // Estados para modal de confirmação de remoção de autorização
+
+  // Estados para modais (mantidos para compatibilidade)
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [autorizacaoToRemove, setAutorizacaoToRemove] = useState(null);
-  
-  // Estados para modais de confirmação em massa
   const [showAutorizarTodosModal, setShowAutorizarTodosModal] = useState(false);
   const [showRemoverTodosModal, setShowRemoverTodosModal] = useState(false);
-  const [contasParaAutorizar, setContasParaAutorizar] = useState([]);
-  const [contasParaRemover, setContasParaRemover] = useState([]);
-  
-  // Estados para envio para pagamento
-  const [showEnviarPagamentoModal, setShowEnviarPagamentoModal] = useState(false);
-  const [showRemoverPagamentoModal, setShowRemoverPagamentoModal] = useState(false);
+  const [showEnviarPagamentoModal, setShowEnviarPagamentoModal] =
+    useState(false);
+  const [showRemoverPagamentoModal, setShowRemoverPagamentoModal] =
+    useState(false);
   const [contaParaEnviar, setContaParaEnviar] = useState(null);
-  
-  // Estado para modal de acesso restrito
-  const [showAcessoRestritoModal, setShowAcessoRestritoModal] = useState(false);
   const [dadosAcessoRestrito, setDadosAcessoRestrito] = useState(null);
-  
-  // Estado para controle de carregamento das autorizações
+  const [showAcessoRestritoModal, setShowAcessoRestritoModal] = useState(false);
   const [carregandoAutorizacoes, setCarregandoAutorizacoes] = useState(false);
 
+  // Objeto vazio para compatibilidade
+  const autorizacoes = {};
 
+  // Constantes para compatibilidade
+  const STATUS_AUTORIZACAO = {
+    AUTORIZADO: "AUTORIZADO",
+    NAO_AUTORIZADO: "NAO_AUTORIZADO",
+    ENVIADO_PAGAMENTO: "ENVIADO_PAGAMENTO",
+  };
 
-
+  // Estados para paginação
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const [registrosPorPagina] = useState(50);
 
   // Função para lidar com mudança de filtro mensal
   const handleFiltroMensalChange = (novoFiltro) => {
@@ -258,54 +273,69 @@ const ContasAPagar = () => {
 
   // Função para abrir modal do card
   const abrirModalCard = (tipo) => {
-    console.log('🔍 Abrindo modal do card:', tipo);
-    console.log('📊 Total de dados disponíveis:', dadosOrdenadosParaCards.length);
-    
+    console.log("🔍 Abrindo modal do card:", tipo);
+    console.log(
+      "📊 Total de dados disponíveis:",
+      dadosOrdenadosParaCards.length
+    );
+
     let dadosFiltrados = [];
-    
+
     switch (tipo) {
-      case 'vencidas':
-        dadosFiltrados = dadosOrdenadosParaCards.filter(grupo => {
-          const status = getStatusFromData(grupo.item);
-          return status === 'Vencido';
-        }).map(grupo => grupo.item);
+      case "vencidas":
+        dadosFiltrados = dadosOrdenadosParaCards
+          .filter((grupo) => {
+            const status = getStatusFromData(grupo.item);
+            return status === "Vencido";
+          })
+          .map((grupo) => grupo.item);
         break;
-      case 'aVencer':
-        dadosFiltrados = dadosOrdenadosParaCards.filter(grupo => {
-          const status = getStatusFromData(grupo.item);
-          return status === 'A Vencer';
-        }).map(grupo => grupo.item);
+      case "aVencer":
+        dadosFiltrados = dadosOrdenadosParaCards
+          .filter((grupo) => {
+            const status = getStatusFromData(grupo.item);
+            return status === "A Vencer";
+          })
+          .map((grupo) => grupo.item);
         break;
-      case 'proximasVencer':
-        dadosFiltrados = dadosOrdenadosParaCards.filter(grupo => {
-          const status = getStatusFromData(grupo.item);
-          return status === 'Próxima a Vencer';
-        }).map(grupo => grupo.item);
+      case "proximasVencer":
+        dadosFiltrados = dadosOrdenadosParaCards
+          .filter((grupo) => {
+            const status = getStatusFromData(grupo.item);
+            return status === "Próxima a Vencer";
+          })
+          .map((grupo) => grupo.item);
         break;
-      case 'pagas':
-        dadosFiltrados = dadosOrdenadosParaCards.filter(grupo => {
-          const status = getStatusFromData(grupo.item);
-          return status === 'Pago';
-        }).map(grupo => grupo.item);
+      case "pagas":
+        dadosFiltrados = dadosOrdenadosParaCards
+          .filter((grupo) => {
+            const status = getStatusFromData(grupo.item);
+            return status === "Pago";
+          })
+          .map((grupo) => grupo.item);
         break;
-      case 'faltaPagar':
-        dadosFiltrados = dadosOrdenadosParaCards.filter(grupo => {
-          const status = getStatusFromData(grupo.item);
-          return status !== 'Pago';
-        }).map(grupo => grupo.item);
+      case "faltaPagar":
+        dadosFiltrados = dadosOrdenadosParaCards
+          .filter((grupo) => {
+            const status = getStatusFromData(grupo.item);
+            return status !== "Pago";
+          })
+          .map((grupo) => grupo.item);
         break;
-      case 'descontos':
-        dadosFiltrados = dadosOrdenadosParaCards.filter(grupo => {
-          return parseFloat(grupo.item.vl_desconto || 0) > 0;
-        }).map(grupo => grupo.item);
+      case "descontos":
+        dadosFiltrados = dadosOrdenadosParaCards
+          .filter((grupo) => {
+            return parseFloat(grupo.item.vl_desconto || 0) > 0;
+          })
+          .map((grupo) => grupo.item);
         break;
       default:
         dadosFiltrados = [];
     }
-    
-    console.log('✅ Dados filtrados encontrados:', dadosFiltrados.length);
-    console.log('📋 Amostra dos dados filtrados:', dadosFiltrados.slice(0, 2));
-    
+
+    console.log("✅ Dados filtrados encontrados:", dadosFiltrados.length);
+    console.log("📋 Amostra dos dados filtrados:", dadosFiltrados.slice(0, 2));
+
     setDadosCardModal(dadosFiltrados);
     setTipoCardSelecionado(tipo);
     setModalCardAberto(true);
@@ -314,33 +344,33 @@ const ContasAPagar = () => {
   // Função para fechar modal do card
   const fecharModalCard = () => {
     setModalCardAberto(false);
-    setTipoCardSelecionado('');
+    setTipoCardSelecionado("");
     setDadosCardModal([]);
   };
 
   // Função para obter título do modal
   const getTituloModal = (tipo) => {
     switch (tipo) {
-      case 'vencidas':
-        return 'Contas Vencidas';
-      case 'aVencer':
-        return 'Contas a Vencer';
-      case 'proximasVencer':
-        return 'Próximas a Vencer';
-      case 'pagas':
-        return 'Contas Pagas';
-      case 'faltaPagar':
-        return 'Falta Pagar';
-      case 'descontos':
-        return 'Descontos Ganhos';
+      case "vencidas":
+        return "Contas Vencidas";
+      case "aVencer":
+        return "Contas a Vencer";
+      case "proximasVencer":
+        return "Próximas a Vencer";
+      case "pagas":
+        return "Contas Pagas";
+      case "faltaPagar":
+        return "Falta Pagar";
+      case "descontos":
+        return "Descontos Ganhos";
       default:
-        return 'Detalhes';
+        return "Detalhes";
     }
   };
-  
+
   // Funções para seleção de linhas
   const toggleLinhaSelecionada = (index) => {
-    setLinhasSelecionadas(prev => {
+    setLinhasSelecionadas((prev) => {
       const novoSet = new Set(prev);
       if (novoSet.has(index)) {
         novoSet.delete(index);
@@ -368,7 +398,7 @@ const ContasAPagar = () => {
 
   // Funções seleção agrupada
   const toggleLinhaSelecionadaAgrupada = (index) => {
-    setLinhasSelecionadasAgrupadas(prev => {
+    setLinhasSelecionadasAgrupadas((prev) => {
       const novoSet = new Set(prev);
       if (novoSet.has(index)) {
         novoSet.delete(index);
@@ -382,45 +412,48 @@ const ContasAPagar = () => {
   // Exportar Excel do Detalhamento de Contas (agrupado)
   const exportarExcelDetalhamento = () => {
     if (!dadosOrdenadosParaCards || dadosOrdenadosParaCards.length === 0) {
-      alert('Nenhum dado para exportar');
+      alert("Nenhum dado para exportar");
       return;
     }
 
     const dadosParaExportar = dadosOrdenadosParaCards.map((grupo) => {
-      const rateioTotal = (grupo.rateios && grupo.rateios.length > 0)
-        ? grupo.rateios.map(r => parseFloat(r || 0)).reduce((a, b) => a + b, 0)
-        : 0;
+      const rateioTotal =
+        grupo.rateios && grupo.rateios.length > 0
+          ? grupo.rateios
+              .map((r) => parseFloat(r || 0))
+              .reduce((a, b) => a + b, 0)
+          : 0;
 
       return {
-        'Vencimento': formatarData(grupo.item.dt_vencimento),
-        'Valor': parseFloat(grupo.item.vl_duplicata || 0),
-        'Fornecedor': grupo.item.cd_fornecedor || '',
-        'Nome Fornecedor': grupo.item.nm_fornecedor || '',
-        'Despesa': grupo.item.ds_despesaitem || '',
-        'Centro de Custo': grupo.item.ds_ccusto || '',
-        'Empresa': grupo.item.cd_empresa || '',
-        'Duplicata': grupo.item.nr_duplicata || '',
-        'Parcela': grupo.item.nr_parcela || '',
-        'Portador': grupo.item.nr_portador || '',
-        'Emissão': formatarData(grupo.item.dt_emissao),
-        'Entrada': formatarData(grupo.item.dt_entrada),
-        'Liquidação': formatarData(grupo.item.dt_liq),
-        'Situação': grupo.item.tp_situacao || '',
-        'Estágio': grupo.item.tp_estagio || '',
-        'Juros': parseFloat(grupo.item.vl_juros || 0),
-        'Acréscimo': parseFloat(grupo.item.vl_acrescimo || 0),
-        'Desconto': parseFloat(grupo.item.vl_desconto || 0),
-        'Pago': parseFloat(grupo.item.vl_pago || 0),
-        'Aceite': grupo.item.in_aceite || '',
-        'Rateio Total': rateioTotal,
-        'Observação': grupo.item.ds_observacao || '',
-        'Previsão': grupo.item.tp_previsaoreal || ''
+        Vencimento: formatarData(grupo.item.dt_vencimento),
+        Valor: parseFloat(grupo.item.vl_duplicata || 0),
+        Fornecedor: grupo.item.cd_fornecedor || "",
+        "Nome Fornecedor": grupo.item.nm_fornecedor || "",
+        Despesa: grupo.item.ds_despesaitem || "",
+        "Centro de Custo": grupo.item.ds_ccusto || "",
+        Empresa: grupo.item.cd_empresa || "",
+        Duplicata: grupo.item.nr_duplicata || "",
+        Parcela: grupo.item.nr_parcela || "",
+        Portador: grupo.item.nr_portador || "",
+        Emissão: formatarData(grupo.item.dt_emissao),
+        Entrada: formatarData(grupo.item.dt_entrada),
+        Liquidação: formatarData(grupo.item.dt_liq),
+        Situação: grupo.item.tp_situacao || "",
+        Estágio: grupo.item.tp_estagio || "",
+        Juros: parseFloat(grupo.item.vl_juros || 0),
+        Acréscimo: parseFloat(grupo.item.vl_acrescimo || 0),
+        Desconto: parseFloat(grupo.item.vl_desconto || 0),
+        Pago: parseFloat(grupo.item.vl_pago || 0),
+        Aceite: grupo.item.in_aceite || "",
+        "Rateio Total": rateioTotal,
+        Observação: grupo.item.ds_observacao || "",
+        Previsão: grupo.item.tp_previsaoreal || "",
       };
     });
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
-    ws['!cols'] = [
+    ws["!cols"] = [
       { wch: 12 }, // Vencimento
       { wch: 14 }, // Valor
       { wch: 12 }, // Fornecedor
@@ -429,7 +462,7 @@ const ContasAPagar = () => {
       { wch: 24 }, // Centro de Custo
       { wch: 10 }, // Empresa
       { wch: 12 }, // Duplicata
-      { wch: 8 },  // Parcela
+      { wch: 8 }, // Parcela
       { wch: 10 }, // Portador
       { wch: 12 }, // Emissão
       { wch: 12 }, // Entrada
@@ -443,12 +476,16 @@ const ContasAPagar = () => {
       { wch: 10 }, // Aceite
       { wch: 14 }, // Rateio Total
       { wch: 30 }, // Observação
-      { wch: 10 }  // Previsão
+      { wch: 10 }, // Previsão
     ];
-    XLSX.utils.book_append_sheet(wb, ws, 'Detalhamento');
-    const fileName = `detalhamento_contas_${new Date().toISOString().split('T')[0]}.xlsx`;
-    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    const dataBlob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    XLSX.utils.book_append_sheet(wb, ws, "Detalhamento");
+    const fileName = `detalhamento_contas_${
+      new Date().toISOString().split("T")[0]
+    }.xlsx`;
+    const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const dataBlob = new Blob([excelBuffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
     saveAs(dataBlob, fileName);
   };
 
@@ -459,20 +496,20 @@ const ContasAPagar = () => {
 
   // Empresas pré-selecionadas (serão carregadas do banco de dados)
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
-  
+
   // Centros de custo selecionados (carregados dos dados filtrados)
   const [centrosCustoSelecionados, setCentrosCustoSelecionados] = useState([]);
   const [despesasSelecionadas, setDespesasSelecionadas] = useState([]);
   const [fornecedoresSelecionados, setFornecedoresSelecionados] = useState([]);
-  
+
   // Estados para o modal de observações
   const [modalAberto, setModalAberto] = useState(false);
   const [dadosModal, setDadosModal] = useState(null);
 
   // Estados para ordenação
   const [sortConfig, setSortConfig] = useState({
-    key: 'dt_vencimento',
-    direction: 'asc'
+    key: "dt_vencimento",
+    direction: "asc",
   });
 
   // Estados para filtros de coluna (FilterDropdown)
@@ -482,15 +519,15 @@ const ContasAPagar = () => {
   // Função para filtrar dados por situação
   const filtrarDadosPorSituacao = (dadosOriginais) => {
     if (!dadosOriginais || dadosOriginais.length === 0) return [];
-    
+
     switch (situacao) {
-      case 'NORMAIS':
+      case "NORMAIS":
         // Mostra apenas itens com tp_situacao = 'N' (Normais)
-        return dadosOriginais.filter(item => item.tp_situacao === 'N');
-      case 'CANCELADAS':
+        return dadosOriginais.filter((item) => item.tp_situacao === "N");
+      case "CANCELADAS":
         // Mostra apenas itens com tp_situacao = 'C' (Canceladas)
-        return dadosOriginais.filter(item => item.tp_situacao === 'C');
-      case 'TODAS':
+        return dadosOriginais.filter((item) => item.tp_situacao === "C");
+      case "TODAS":
         // Mostra todos os itens
         return dadosOriginais;
       default:
@@ -504,26 +541,26 @@ const ContasAPagar = () => {
   // Função para filtrar dados por status
   const filtrarDadosPorStatus = (dadosOriginais) => {
     if (!dadosOriginais || dadosOriginais.length === 0) return [];
-    
+
     switch (status) {
-      case 'Todos':
+      case "Todos":
         // Mostra todos os itens
         return dadosOriginais;
-      case 'Pago':
+      case "Pago":
         // Mostra apenas itens pagos
-        return dadosOriginais.filter(item => parseFloat(item.vl_pago) > 0);
-      case 'Vencido':
+        return dadosOriginais.filter((item) => parseFloat(item.vl_pago) > 0);
+      case "Vencido":
         // Mostra apenas itens vencidos (data de vencimento menor que hoje)
-        return dadosOriginais.filter(item => {
+        return dadosOriginais.filter((item) => {
           if (!item.dt_vencimento) return false;
           const dataVencimento = criarDataSemFusoHorario(item.dt_vencimento);
           const hoje = new Date();
           hoje.setHours(0, 0, 0, 0);
           return dataVencimento < hoje;
         });
-      case 'A Vencer':
+      case "A Vencer":
         // Mostra apenas itens a vencer (data de vencimento maior ou igual a hoje)
-        return dadosOriginais.filter(item => {
+        return dadosOriginais.filter((item) => {
           if (!item.dt_vencimento) return true;
           const dataVencimento = criarDataSemFusoHorario(item.dt_vencimento);
           const hoje = new Date();
@@ -538,69 +575,40 @@ const ContasAPagar = () => {
   // Função para filtrar dados por previsão
   const filtrarDadosPorPrevisao = (dadosOriginais) => {
     if (!dadosOriginais || dadosOriginais.length === 0) return [];
-    
+
     switch (previsao) {
-      case 'TODOS':
+      case "TODOS":
         // Mostra todos os itens
         return dadosOriginais;
-      case 'PREVISÃO':
+      case "PREVISÃO":
         // Mostra apenas itens com tp_previsaoreal = 'P' (Previsão)
-        return dadosOriginais.filter(item => item.tp_previsaoreal === '1');
-      case 'REAL':
+        return dadosOriginais.filter((item) => item.tp_previsaoreal === "1");
+      case "REAL":
         // Mostra apenas itens com tp_previsaoreal = 'R' (Real)
-        return dadosOriginais.filter(item => item.tp_previsaoreal === '2');
-      case 'CONSIGNADO':
+        return dadosOriginais.filter((item) => item.tp_previsaoreal === "2");
+      case "CONSIGNADO":
         // Mostra apenas itens com tp_previsaoreal = 'C' (Consignado)
-        return dadosOriginais.filter(item => item.tp_previsaoreal === '3');
+        return dadosOriginais.filter((item) => item.tp_previsaoreal === "3");
       default:
         return dadosOriginais;
     }
   };
 
   const dadosFiltradosPorAutorizacao = useMemo(() => {
-    if (filtroAutorizacao === 'TODOS') return dadosFiltrados;
-    
-    return dadosFiltrados.filter((item) => {
-      const chave = `${item.cd_fornecedor}|${item.nr_duplicata}|${item.cd_empresa}|${item.nr_parcela}`;
-      const autorizacao = autorizacoes[chave];
-      const status = autorizacao?.status || STATUS_AUTORIZACAO.NAO_AUTORIZADO;
-      
-      if (filtroAutorizacao === 'AUTORIZADOS') {
-        return status === STATUS_AUTORIZACAO.AUTORIZADO;
-      } else if (filtroAutorizacao === 'NAO_AUTORIZADOS') {
-        return status === STATUS_AUTORIZACAO.NAO_AUTORIZADO;
-      } else if (filtroAutorizacao === 'ENVIADO_PAGAMENTO') {
-        return status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO;
-      }
-      return true;
-    });
-  }, [dadosFiltrados, filtroAutorizacao, autorizacoes]);
+    // Simplificado - retorna todos os dados já que removemos a lógica de autorização
+    return dadosFiltrados;
+  }, [dadosFiltrados]);
 
-  // Dados filtrados por situação, status, previsão e autorização
+  // Dados filtrados por situação, status e previsão
   const dadosFiltradosCompletos = useMemo(() => {
-    const base = filtrarDadosPorPrevisao(filtrarDadosPorStatus(dadosFiltrados));
-    if (filtroAutorizacao === 'TODOS') return base;
-    return base.filter((item) => {
-      const chave = `${item.cd_fornecedor}|${item.nr_duplicata}|${item.cd_empresa}|${item.nr_parcela}`;
-      const autorizacao = autorizacoes[chave];
-      const status = autorizacao?.status || STATUS_AUTORIZACAO.NAO_AUTORIZADO;
-      
-      if (filtroAutorizacao === 'AUTORIZADOS') {
-        return status === STATUS_AUTORIZACAO.AUTORIZADO;
-      } else if (filtroAutorizacao === 'NAO_AUTORIZADOS') {
-        return status === STATUS_AUTORIZACAO.NAO_AUTORIZADO;
-      } else if (filtroAutorizacao === 'ENVIADO_PAGAMENTO') {
-        return status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO;
-      }
-      return true;
-    });
-  }, [dadosFiltrados, filtroAutorizacao, autorizacoes]);
+    return filtrarDadosPorPrevisao(filtrarDadosPorStatus(dadosFiltrados));
+  }, [dadosFiltrados]);
 
   // Função para ordenar os dados
   const handleSort = (key) => {
-    let direction = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
+    let direction = "asc";
+    if (sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
     }
     setSortConfig({ key, direction });
   };
@@ -610,16 +618,28 @@ const ContasAPagar = () => {
     if (sortConfig.key !== key) {
       return <CaretDown size={10} className="ml-1 opacity-50" />;
     }
-    return sortConfig.direction === 'asc' 
-      ? <CaretUp size={10} className="ml-1" />
-      : <CaretDown size={10} className="ml-1" />;
+    return sortConfig.direction === "asc" ? (
+      <CaretUp size={10} className="ml-1" />
+    ) : (
+      <CaretDown size={10} className="ml-1" />
+    );
   };
 
   // Função para obter dias do mês
   const obterDiasDoMes = (mes) => {
     const meses = {
-      'JAN': 31, 'FEV': 28, 'MAR': 31, 'ABR': 30, 'MAI': 31, 'JUN': 30,
-      'JUL': 31, 'AGO': 31, 'SET': 30, 'OUT': 31, 'NOV': 30, 'DEZ': 31
+      JAN: 31,
+      FEV: 28,
+      MAR: 31,
+      ABR: 30,
+      MAI: 31,
+      JUN: 30,
+      JUL: 31,
+      AGO: 31,
+      SET: 30,
+      OUT: 31,
+      NOV: 30,
+      DEZ: 31,
     };
     return meses[mes] || 0;
   };
@@ -630,27 +650,36 @@ const ContasAPagar = () => {
       // Usar dt_vencimento como base para o filtro mensal (data de vencimento)
       const dataVencimento = item.dt_vencimento;
       if (!dataVencimento) return false;
-      
+
       const data = criarDataSemFusoHorario(dataVencimento);
       if (!data) return false;
-      
+
       const ano = data.getFullYear();
       const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
       const dia = data.getDate();
-      
-      if (filtro === 'ANO') {
+
+      if (filtro === "ANO") {
         // Mostrar dados do ano atual
         const anoAtual = new Date().getFullYear();
         return ano === anoAtual;
       }
-      
+
       // Filtros por mês específico
       const mesesMap = {
-        'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4,
-        'MAI': 5, 'JUN': 6, 'JUL': 7, 'AGO': 8,
-        'SET': 9, 'OUT': 10, 'NOV': 11, 'DEZ': 12
+        JAN: 1,
+        FEV: 2,
+        MAR: 3,
+        ABR: 4,
+        MAI: 5,
+        JUN: 6,
+        JUL: 7,
+        AGO: 8,
+        SET: 9,
+        OUT: 10,
+        NOV: 11,
+        DEZ: 12,
       };
-      
+
       const mesDoFiltro = mesesMap[filtro];
       if (mesDoFiltro) {
         // Se há filtro por dia, verificar também o dia
@@ -659,7 +688,7 @@ const ContasAPagar = () => {
         }
         return mes === mesDoFiltro;
       }
-      
+
       return true;
     });
   };
@@ -667,12 +696,12 @@ const ContasAPagar = () => {
   // Função para agrupar dados idênticos (igual ao FluxoCaixa)
   const agruparDadosIdenticos = (dados) => {
     const grupos = new Map();
-    
+
     dados.forEach((item) => {
       // Criar chave única SEM vl_rateio para manter totais corretos
       // O vl_rateio será usado apenas para separação visual no componente
       const chave = `${item.cd_fornecedor}|${item.nm_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.tp_previsaoreal}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
-      
+
       if (!grupos.has(chave)) {
         grupos.set(chave, {
           item: item,
@@ -683,41 +712,50 @@ const ContasAPagar = () => {
           datasEntrada: [],
           datasLiquidacao: [],
           rateios: [], // Array para armazenar diferentes rateios
-          quantidade: 0
+          quantidade: 0,
         });
       }
-      
+
       const grupo = grupos.get(chave);
       grupo.quantidade += 1;
-      
+
       // Adicionar rateio se não existir
       if (item.vl_rateio && !grupo.rateios.includes(item.vl_rateio)) {
         grupo.rateios.push(item.vl_rateio);
       }
-      
+
       // Adicionar observação se existir e for diferente
-      if (item.ds_observacao && !grupo.observacoes.includes(item.ds_observacao)) {
+      if (
+        item.ds_observacao &&
+        !grupo.observacoes.includes(item.ds_observacao)
+      ) {
         grupo.observacoes.push(item.ds_observacao);
       }
-      
+
       // Adicionar situação se existir e for diferente
       if (item.tp_situacao && !grupo.situacoes.includes(item.tp_situacao)) {
         grupo.situacoes.push(item.tp_situacao);
       }
-      
+
       // Adicionar previsão se existir e for diferente
       if (item.tp_previsaoreal && !grupo.previsoes) {
         grupo.previsoes = [];
       }
-      if (item.tp_previsaoreal && !grupo.previsoes.includes(item.tp_previsaoreal)) {
+      if (
+        item.tp_previsaoreal &&
+        !grupo.previsoes.includes(item.tp_previsaoreal)
+      ) {
         grupo.previsoes.push(item.tp_previsaoreal);
       }
-      
+
       // Adicionar datas se existirem e forem diferentes
       if (item.dt_emissao && !grupo.datasEmissao.includes(item.dt_emissao)) {
         grupo.datasEmissao.push(item.dt_emissao);
       }
-      if (item.dt_vencimento && !grupo.datasVencimento.includes(item.dt_vencimento)) {
+      if (
+        item.dt_vencimento &&
+        !grupo.datasVencimento.includes(item.dt_vencimento)
+      ) {
         grupo.datasVencimento.push(item.dt_vencimento);
       }
       if (item.dt_entrada && !grupo.datasEntrada.includes(item.dt_entrada)) {
@@ -727,54 +765,58 @@ const ContasAPagar = () => {
         grupo.datasLiquidacao.push(item.dt_liq);
       }
     });
-    
+
     // Processar os grupos para determinar a situação final e datas mais relevantes
-    return Array.from(grupos.values()).map(grupo => {
+    return Array.from(grupos.values()).map((grupo) => {
       // Se há múltiplas situações, priorizar CANCELADAS (C) sobre NORMAIS (N)
       let situacaoFinal = grupo.item.tp_situacao;
-      
+
       if (grupo.situacoes.length > 1) {
         // Se há 'C' entre as situações, usar 'C' (cancelada tem prioridade)
-        if (grupo.situacoes.includes('C')) {
-          situacaoFinal = 'C';
-        } else if (grupo.situacoes.includes('N')) {
-          situacaoFinal = 'N';
+        if (grupo.situacoes.includes("C")) {
+          situacaoFinal = "C";
+        } else if (grupo.situacoes.includes("N")) {
+          situacaoFinal = "N";
         }
         // Se não há nem 'C' nem 'N', manter a primeira situação
       }
-      
+
       // Se há múltiplas previsões, priorizar REAL (R) sobre PREVISÃO (P) sobre CONSIGNADO (C)
       let previsaoFinal = grupo.item.tp_previsaoreal;
-      
+
       if (grupo.previsoes && grupo.previsoes.length > 1) {
         // Prioridade: REAL > PREVISÃO > CONSIGNADO
-        if (grupo.previsoes.includes('R')) {
-          previsaoFinal = 'R';
-        } else if (grupo.previsoes.includes('P')) {
-          previsaoFinal = 'P';
-        } else if (grupo.previsoes.includes('C')) {
-          previsaoFinal = 'C';
+        if (grupo.previsoes.includes("R")) {
+          previsaoFinal = "R";
+        } else if (grupo.previsoes.includes("P")) {
+          previsaoFinal = "P";
+        } else if (grupo.previsoes.includes("C")) {
+          previsaoFinal = "C";
         }
         // Se não há nenhum dos valores esperados, manter o primeiro
       }
-      
+
       // Para as datas, usar a mais recente ou a mais relevante
-      const dtEmissaoFinal = grupo.datasEmissao.length > 0 ? 
-        grupo.datasEmissao.sort((a, b) => new Date(b) - new Date(a))[0] : 
-        grupo.item.dt_emissao;
-      
-      const dtVencimentoFinal = grupo.datasVencimento.length > 0 ? 
-        grupo.datasVencimento.sort((a, b) => new Date(b) - new Date(a))[0] : 
-        grupo.item.dt_vencimento;
-      
-      const dtEntradaFinal = grupo.datasEntrada.length > 0 ? 
-        grupo.datasEntrada.sort((a, b) => new Date(b) - new Date(a))[0] : 
-        grupo.item.dt_entrada;
-      
-      const dtLiquidacaoFinal = grupo.datasLiquidacao.length > 0 ? 
-        grupo.datasLiquidacao.sort((a, b) => new Date(b) - new Date(a))[0] : 
-        grupo.item.dt_liq;
-      
+      const dtEmissaoFinal =
+        grupo.datasEmissao.length > 0
+          ? grupo.datasEmissao.sort((a, b) => new Date(b) - new Date(a))[0]
+          : grupo.item.dt_emissao;
+
+      const dtVencimentoFinal =
+        grupo.datasVencimento.length > 0
+          ? grupo.datasVencimento.sort((a, b) => new Date(b) - new Date(a))[0]
+          : grupo.item.dt_vencimento;
+
+      const dtEntradaFinal =
+        grupo.datasEntrada.length > 0
+          ? grupo.datasEntrada.sort((a, b) => new Date(b) - new Date(a))[0]
+          : grupo.item.dt_entrada;
+
+      const dtLiquidacaoFinal =
+        grupo.datasLiquidacao.length > 0
+          ? grupo.datasLiquidacao.sort((a, b) => new Date(b) - new Date(a))[0]
+          : grupo.item.dt_liq;
+
       return {
         ...grupo,
         item: {
@@ -784,8 +826,8 @@ const ContasAPagar = () => {
           dt_emissao: dtEmissaoFinal,
           dt_vencimento: dtVencimentoFinal,
           dt_entrada: dtEntradaFinal,
-          dt_liq: dtLiquidacaoFinal
-        }
+          dt_liq: dtLiquidacaoFinal,
+        },
       };
     });
   };
@@ -798,101 +840,117 @@ const ContasAPagar = () => {
       let aValue, bValue;
 
       switch (sortConfig.key) {
-        case 'cd_empresa':
-          aValue = a.item?.cd_empresa || '';
-          bValue = b.item?.cd_empresa || '';
+        case "cd_empresa":
+          aValue = a.item?.cd_empresa || "";
+          bValue = b.item?.cd_empresa || "";
           break;
-        case 'cd_fornecedor':
-          aValue = a.item?.cd_fornecedor || '';
-          bValue = b.item?.cd_fornecedor || '';
+        case "cd_fornecedor":
+          aValue = a.item?.cd_fornecedor || "";
+          bValue = b.item?.cd_fornecedor || "";
           break;
-        case 'nm_fornecedor':
-          aValue = a.item?.nm_fornecedor || '';
-          bValue = b.item?.nm_fornecedor || '';
+        case "nm_fornecedor":
+          aValue = a.item?.nm_fornecedor || "";
+          bValue = b.item?.nm_fornecedor || "";
           break;
-        case 'ds_despesaitem':
-          aValue = a.item?.ds_despesaitem || '';
-          bValue = b.item?.ds_despesaitem || '';
+        case "ds_despesaitem":
+          aValue = a.item?.ds_despesaitem || "";
+          bValue = b.item?.ds_despesaitem || "";
           break;
-        case 'ds_ccusto':
-          aValue = a.item?.ds_ccusto || '';
-          bValue = b.item?.ds_ccusto || '';
+        case "ds_ccusto":
+          aValue = a.item?.ds_ccusto || "";
+          bValue = b.item?.ds_ccusto || "";
           break;
-        case 'nr_duplicata':
-          aValue = a.item?.nr_duplicata || '';
-          bValue = b.item?.nr_duplicata || '';
+        case "nr_duplicata":
+          aValue = a.item?.nr_duplicata || "";
+          bValue = b.item?.nr_duplicata || "";
           break;
-        case 'nr_portador':
-          aValue = a.item?.nr_portador || '';
-          bValue = b.item?.nr_portador || '';
+        case "nr_portador":
+          aValue = a.item?.nr_portador || "";
+          bValue = b.item?.nr_portador || "";
           break;
-        case 'dt_emissao':
-          aValue = a.item?.dt_emissao ? criarDataSemFusoHorario(a.item.dt_emissao) : new Date(0);
-          bValue = b.item?.dt_emissao ? criarDataSemFusoHorario(b.item.dt_emissao) : new Date(0);
+        case "dt_emissao":
+          aValue = a.item?.dt_emissao
+            ? criarDataSemFusoHorario(a.item.dt_emissao)
+            : new Date(0);
+          bValue = b.item?.dt_emissao
+            ? criarDataSemFusoHorario(b.item.dt_emissao)
+            : new Date(0);
           break;
-        case 'dt_vencimento':
-          aValue = a.item?.dt_vencimento ? criarDataSemFusoHorario(a.item.dt_vencimento) : new Date(0);
-          bValue = b.item?.dt_vencimento ? criarDataSemFusoHorario(b.item.dt_vencimento) : new Date(0);
+        case "dt_vencimento":
+          aValue = a.item?.dt_vencimento
+            ? criarDataSemFusoHorario(a.item.dt_vencimento)
+            : new Date(0);
+          bValue = b.item?.dt_vencimento
+            ? criarDataSemFusoHorario(b.item.dt_vencimento)
+            : new Date(0);
           break;
-        case 'dt_entrada':
-          aValue = a.item?.dt_entrada ? criarDataSemFusoHorario(a.item.dt_entrada) : new Date(0);
-          bValue = b.item?.dt_entrada ? criarDataSemFusoHorario(b.item.dt_entrada) : new Date(0);
+        case "dt_entrada":
+          aValue = a.item?.dt_entrada
+            ? criarDataSemFusoHorario(a.item.dt_entrada)
+            : new Date(0);
+          bValue = b.item?.dt_entrada
+            ? criarDataSemFusoHorario(b.item.dt_entrada)
+            : new Date(0);
           break;
-        case 'dt_liq':
-          aValue = a.item?.dt_liq ? criarDataSemFusoHorario(a.item.dt_liq) : new Date(0);
-          bValue = b.item?.dt_liq ? criarDataSemFusoHorario(b.item.dt_liq) : new Date(0);
+        case "dt_liq":
+          aValue = a.item?.dt_liq
+            ? criarDataSemFusoHorario(a.item.dt_liq)
+            : new Date(0);
+          bValue = b.item?.dt_liq
+            ? criarDataSemFusoHorario(b.item.dt_liq)
+            : new Date(0);
           break;
-        case 'tp_situacao':
-          aValue = a.item?.tp_situacao || '';
-          bValue = b.item?.tp_situacao || '';
+        case "tp_situacao":
+          aValue = a.item?.tp_situacao || "";
+          bValue = b.item?.tp_situacao || "";
           break;
-        case 'tp_estagio':
-          aValue = a.item?.tp_estagio || '';
-          bValue = b.item?.tp_estagio || '';
+        case "tp_estagio":
+          aValue = a.item?.tp_estagio || "";
+          bValue = b.item?.tp_estagio || "";
           break;
-        case 'tp_previsaoreal':
-          aValue = a.item?.tp_previsaoreal || '';
-          bValue = b.item?.tp_previsaoreal || '';
+        case "tp_previsaoreal":
+          aValue = a.item?.tp_previsaoreal || "";
+          bValue = b.item?.tp_previsaoreal || "";
           break;
-        case 'vl_duplicata':
+        case "vl_duplicata":
           aValue = parseFloat(a.item?.vl_duplicata) || 0;
           bValue = parseFloat(b.item?.vl_duplicata) || 0;
           break;
-        case 'vl_juros':
+        case "vl_juros":
           aValue = parseFloat(a.item?.vl_juros) || 0;
           bValue = parseFloat(b.item?.vl_juros) || 0;
           break;
-        case 'vl_acrescimo':
+        case "vl_acrescimo":
           aValue = parseFloat(a.item?.vl_acrescimo) || 0;
           bValue = parseFloat(b.item?.vl_acrescimo) || 0;
           break;
-        case 'vl_desconto':
+        case "vl_desconto":
           aValue = parseFloat(a.item?.vl_desconto) || 0;
           bValue = parseFloat(b.item?.vl_desconto) || 0;
           break;
-        case 'vl_pago':
+        case "vl_pago":
           aValue = parseFloat(a.item?.vl_pago) || 0;
           bValue = parseFloat(b.item?.vl_pago) || 0;
           break;
-        case 'in_aceite':
-          aValue = a.item?.in_aceite || '';
-          bValue = b.item?.in_aceite || '';
+        case "in_aceite":
+          aValue = a.item?.in_aceite || "";
+          bValue = b.item?.in_aceite || "";
           break;
-        case 'nr_parcela':
+        case "nr_parcela":
           aValue = parseInt(a.item?.nr_parcela) || 0;
           bValue = parseInt(b.item?.nr_parcela) || 0;
           break;
         default:
-          aValue = a.item?.[sortConfig.key] || '';
-          bValue = b.item?.[sortConfig.key] || '';
+          aValue = a.item?.[sortConfig.key] || "";
+          bValue = b.item?.[sortConfig.key] || "";
       }
 
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
+      if (typeof aValue === "string" && typeof bValue === "string") {
         aValue = aValue.toLowerCase();
         bValue = bValue.toLowerCase();
       }
 
-      if (sortConfig.direction === 'asc') {
+      if (sortConfig.direction === "asc") {
         return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
       } else {
         return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
@@ -902,58 +960,60 @@ const ContasAPagar = () => {
 
   const buscarDados = async (inicio = dataInicio, fim = dataFim) => {
     if (!inicio || !fim) return;
-    
+
     if (empresasSelecionadas.length === 0) {
-      alert('Selecione pelo menos uma empresa para consultar!');
+      alert("Selecione pelo menos uma empresa para consultar!");
       return;
     }
-    
+
     setLoading(true);
-    
+
     // Declarar variáveis com valores padrão para evitar ReferenceError
     let resultFornecedor = { success: true, data: [] };
     let resultCentroCusto = { success: true, data: [] };
-    
+
     try {
-      console.log('🔍 Iniciando busca de contas a pagar...');
-      console.log('📅 Período:', { inicio, fim });
-      console.log('🏢 Empresas selecionadas:', empresasSelecionadas);
-      
+      console.log("🔍 Iniciando busca de contas a pagar...");
+      console.log("📅 Período:", { inicio, fim });
+      console.log("🏢 Empresas selecionadas:", empresasSelecionadas);
+
       // Buscar dados usando a nova rota que aceita múltiplas empresas
       const params = {
         dt_inicio: inicio,
-        dt_fim: fim
+        dt_fim: fim,
       };
 
       // Adicionar códigos das empresas selecionadas como array
       const codigosEmpresas = empresasSelecionadas
-        .filter(empresa => empresa.cd_empresa)
-        .map(empresa => empresa.cd_empresa);
-      
+        .filter((empresa) => empresa.cd_empresa)
+        .map((empresa) => empresa.cd_empresa);
+
       if (codigosEmpresas.length > 0) {
         params.cd_empresa = codigosEmpresas;
       }
-      
-      console.log('📋 Parâmetros da requisição:', params);
-      console.log('🏢 Códigos das empresas:', codigosEmpresas);
-      
+
+      console.log("📋 Parâmetros da requisição:", params);
+      console.log("🏢 Códigos das empresas:", codigosEmpresas);
+
       // Buscar dados principais de contas a pagar
       const result = await apiClient.financial.contasPagar(params);
-      
-      console.log('🔍 Resultado da API:', {
+
+      console.log("🔍 Resultado da API:", {
         success: result.success,
         dataLength: result.data?.length,
         message: result.message,
         metadata: result.metadata,
-        estrutura: result.metadata?.periodo ? 'Nova estrutura' : 'Estrutura antiga',
+        estrutura: result.metadata?.periodo
+          ? "Nova estrutura"
+          : "Estrutura antiga",
         performance: result.performance,
-        queryType: result.queryType
+        queryType: result.queryType,
       });
-      
+
       if (result.success) {
         // Verificar se os dados estão na estrutura correta
         let dadosArray = [];
-        
+
         if (Array.isArray(result.data)) {
           dadosArray = result.data;
         } else if (result.metadata && Array.isArray(result.metadata.data)) {
@@ -961,97 +1021,149 @@ const ContasAPagar = () => {
         } else if (result.data && Array.isArray(result.data.data)) {
           dadosArray = result.data.data;
         } else {
-          console.warn('⚠️ Estrutura de dados não reconhecida:', result);
+          console.warn("⚠️ Estrutura de dados não reconhecida:", result);
           dadosArray = [];
         }
-        
+
         // Verificar se todos os campos necessários estão presentes
         if (dadosArray.length > 0) {
           const primeiroItem = dadosArray[0];
-          console.log('🔍 Campos disponíveis no primeiro item:', Object.keys(primeiroItem));
-          
-                  // Verificar campos obrigatórios
-        const camposObrigatorios = ['cd_empresa', 'cd_fornecedor', 'nr_duplicata', 'dt_vencimento', 'vl_duplicata'];
-        const camposFaltando = camposObrigatorios.filter(campo => !(campo in primeiroItem));
-        
-        if (camposFaltando.length > 0) {
-          console.warn('⚠️ Campos faltando na resposta da API:', camposFaltando);
+          console.log(
+            "🔍 Campos disponíveis no primeiro item:",
+            Object.keys(primeiroItem)
+          );
+
+          // Verificar campos obrigatórios
+          const camposObrigatorios = [
+            "cd_empresa",
+            "cd_fornecedor",
+            "nr_duplicata",
+            "dt_vencimento",
+            "vl_duplicata",
+          ];
+          const camposFaltando = camposObrigatorios.filter(
+            (campo) => !(campo in primeiroItem)
+          );
+
+          if (camposFaltando.length > 0) {
+            console.warn(
+              "⚠️ Campos faltando na resposta da API:",
+              camposFaltando
+            );
+          }
+
+          // Verificar campos opcionais que podem estar faltando
+          const camposOpcionais = ["in_aceite", "vl_rateio"];
+          const camposOpcionaisFaltando = camposOpcionais.filter(
+            (campo) => !(campo in primeiroItem)
+          );
+
+          if (camposOpcionaisFaltando.length > 0) {
+            console.log(
+              "ℹ️ Campos opcionais não presentes:",
+              camposOpcionaisFaltando
+            );
+          }
         }
-        
-        // Verificar campos opcionais que podem estar faltando
-        const camposOpcionais = ['in_aceite', 'vl_rateio'];
-        const camposOpcionaisFaltando = camposOpcionais.filter(campo => !(campo in primeiroItem));
-        
-        if (camposOpcionaisFaltando.length > 0) {
-          console.log('ℹ️ Campos opcionais não presentes:', camposOpcionaisFaltando);
-        }
-        }
-        
-        console.log('✅ Dados obtidos:', {
+
+        console.log("✅ Dados obtidos:", {
           total: dadosArray.length,
           amostra: dadosArray.slice(0, 2),
           empresas: codigosEmpresas,
           metadata: result.metadata,
-          estrutura: result.metadata?.periodo ? 'Nova estrutura' : 'Estrutura antiga'
+          estrutura: result.metadata?.periodo
+            ? "Nova estrutura"
+            : "Estrutura antiga",
         });
 
         // Extrair códigos únicos de fornecedor, centro de custo e despesa dos dados principais
-        const codigosFornecedor = [...new Set(dadosArray.map(item => item.cd_fornecedor).filter(Boolean))];
-        const codigosCentroCusto = [...new Set(dadosArray.map(item => item.cd_ccusto).filter(Boolean))];
-        const codigosDespesa = [...new Set(dadosArray.map(item => item.cd_despesaitem).filter(Boolean))];
-        
-        console.log('🔍 Debug - Extração de códigos:');
-        console.log('   - Dados originais (primeiros 3):', dadosArray.slice(0, 3).map(item => ({
-          cd_fornecedor: item.cd_fornecedor,
-          cd_ccusto: item.cd_ccusto,
-          cd_despesaitem: item.cd_despesaitem
-        })));
+        const codigosFornecedor = [
+          ...new Set(
+            dadosArray.map((item) => item.cd_fornecedor).filter(Boolean)
+          ),
+        ];
+        const codigosCentroCusto = [
+          ...new Set(dadosArray.map((item) => item.cd_ccusto).filter(Boolean)),
+        ];
+        const codigosDespesa = [
+          ...new Set(
+            dadosArray.map((item) => item.cd_despesaitem).filter(Boolean)
+          ),
+        ];
+
+        console.log("🔍 Debug - Extração de códigos:");
+        console.log(
+          "   - Dados originais (primeiros 3):",
+          dadosArray.slice(0, 3).map((item) => ({
+            cd_fornecedor: item.cd_fornecedor,
+            cd_ccusto: item.cd_ccusto,
+            cd_despesaitem: item.cd_despesaitem,
+          }))
+        );
 
         // Verificar se há códigos válidos antes de fazer as chamadas
         if (codigosCentroCusto.length === 0) {
-          console.log('⚠️ Nenhum código de centro de custo encontrado, pulando chamada da API');
+          console.log(
+            "⚠️ Nenhum código de centro de custo encontrado, pulando chamada da API"
+          );
         }
         if (codigosFornecedor.length === 0) {
-          console.log('⚠️ Nenhum código de fornecedor encontrado, pulando chamada da API');
+          console.log(
+            "⚠️ Nenhum código de fornecedor encontrado, pulando chamada da API"
+          );
         }
         if (codigosDespesa.length === 0) {
-          console.log('⚠️ Nenhum código de despesa encontrado, pulando chamada da API');
+          console.log(
+            "⚠️ Nenhum código de despesa encontrado, pulando chamada da API"
+          );
         }
 
         // Buscar dados de fornecedor, centro de custo e despesa das novas rotas com os códigos extraídos
         const promises = [];
-        
+
         if (codigosFornecedor.length > 0) {
-          promises.push(apiClient.financial.fornecedor({ cd_fornecedor: codigosFornecedor }));
+          promises.push(
+            apiClient.financial.fornecedor({ cd_fornecedor: codigosFornecedor })
+          );
         } else {
           promises.push(Promise.resolve({ success: true, data: [] }));
         }
-        
+
         if (codigosCentroCusto.length > 0) {
-          promises.push(apiClient.financial.centrocusto({ cd_ccusto: codigosCentroCusto }));
+          promises.push(
+            apiClient.financial.centrocusto({ cd_ccusto: codigosCentroCusto })
+          );
         } else {
           promises.push(Promise.resolve({ success: true, data: [] }));
         }
-        
+
         if (codigosDespesa.length > 0) {
-          promises.push(apiClient.financial.despesa({ cd_despesaitem: codigosDespesa }));
+          promises.push(
+            apiClient.financial.despesa({ cd_despesaitem: codigosDespesa })
+          );
         } else {
           promises.push(Promise.resolve({ success: true, data: [] }));
         }
-        
+
         const results = await Promise.all(promises);
         resultFornecedor = results[0];
         resultCentroCusto = results[1];
         let resultDespesa = results[2];
-        
-                // Processar dados de fornecedor
+
+        // Processar dados de fornecedor
         let dadosFornecedorArray = [];
         if (resultFornecedor.success) {
           if (Array.isArray(resultFornecedor.data)) {
             dadosFornecedorArray = resultFornecedor.data;
-          } else if (resultFornecedor.data && Array.isArray(resultFornecedor.data.data)) {
+          } else if (
+            resultFornecedor.data &&
+            Array.isArray(resultFornecedor.data.data)
+          ) {
             dadosFornecedorArray = resultFornecedor.data.data;
-          } else if (resultFornecedor.metadata && Array.isArray(resultFornecedor.metadata.data)) {
+          } else if (
+            resultFornecedor.metadata &&
+            Array.isArray(resultFornecedor.metadata.data)
+          ) {
             dadosFornecedorArray = resultFornecedor.metadata.data;
           }
         }
@@ -1061,9 +1173,15 @@ const ContasAPagar = () => {
         if (resultCentroCusto.success) {
           if (Array.isArray(resultCentroCusto.data)) {
             dadosCentroCustoArray = resultCentroCusto.data;
-          } else if (resultCentroCusto.data && Array.isArray(resultCentroCusto.data.data)) {
+          } else if (
+            resultCentroCusto.data &&
+            Array.isArray(resultCentroCusto.data.data)
+          ) {
             dadosCentroCustoArray = resultCentroCusto.data.data;
-          } else if (resultCentroCusto.metadata && Array.isArray(resultCentroCusto.metadata.data)) {
+          } else if (
+            resultCentroCusto.metadata &&
+            Array.isArray(resultCentroCusto.metadata.data)
+          ) {
             dadosCentroCustoArray = resultCentroCusto.metadata.data;
           }
         }
@@ -1073,96 +1191,121 @@ const ContasAPagar = () => {
         if (resultDespesa.success) {
           if (Array.isArray(resultDespesa.data)) {
             dadosDespesaArray = resultDespesa.data;
-          } else if (resultDespesa.data && Array.isArray(resultDespesa.data.data)) {
+          } else if (
+            resultDespesa.data &&
+            Array.isArray(resultDespesa.data.data)
+          ) {
             dadosDespesaArray = resultDespesa.data.data;
-          } else if (resultDespesa.metadata && Array.isArray(resultDespesa.metadata.data)) {
+          } else if (
+            resultDespesa.metadata &&
+            Array.isArray(resultDespesa.metadata.data)
+          ) {
             dadosDespesaArray = resultDespesa.metadata.data;
           }
         }
-        
-        console.log('🔍 Estrutura completa da resposta de fornecedor:', resultFornecedor);
-        console.log('🔍 Dados de fornecedor obtidos:', {
+
+        console.log(
+          "🔍 Estrutura completa da resposta de fornecedor:",
+          resultFornecedor
+        );
+        console.log("🔍 Dados de fornecedor obtidos:", {
           total: dadosFornecedorArray.length,
-          amostra: dadosFornecedorArray.slice(0, 2)
+          amostra: dadosFornecedorArray.slice(0, 2),
         });
-        
-        console.log('🔍 Estrutura completa da resposta de centro de custo:', resultCentroCusto);
-        console.log('🔍 Dados de centro de custo obtidos:', {
+
+        console.log(
+          "🔍 Estrutura completa da resposta de centro de custo:",
+          resultCentroCusto
+        );
+        console.log("🔍 Dados de centro de custo obtidos:", {
           total: dadosCentroCustoArray.length,
-          amostra: dadosCentroCustoArray.slice(0, 2)
+          amostra: dadosCentroCustoArray.slice(0, 2),
         });
-        
-        console.log('🔍 Estrutura completa da resposta de despesa:', resultDespesa);
-        console.log('🔍 Dados de despesa obtidos:', {
+
+        console.log(
+          "🔍 Estrutura completa da resposta de despesa:",
+          resultDespesa
+        );
+        console.log("🔍 Dados de despesa obtidos:", {
           total: dadosDespesaArray.length,
-          amostra: dadosDespesaArray.slice(0, 2)
+          amostra: dadosDespesaArray.slice(0, 2),
         });
-        
+
         // Criar mapas para busca eficiente de fornecedor, centro de custo e despesa usando apenas os códigos
         const fornecedorMap = new Map();
-        dadosFornecedorArray.forEach(item => {
+        dadosFornecedorArray.forEach((item) => {
           fornecedorMap.set(item.cd_fornecedor, item);
         });
-        
+
         const centroCustoMap = new Map();
-        dadosCentroCustoArray.forEach(item => {
+        dadosCentroCustoArray.forEach((item) => {
           centroCustoMap.set(item.cd_ccusto, item);
         });
-        
+
         const despesaMap = new Map();
-        dadosDespesaArray.forEach(item => {
+        dadosDespesaArray.forEach((item) => {
           despesaMap.set(item.cd_despesaitem, item);
         });
-        
-        console.log('🗺️ Mapas criados:', {
+
+        console.log("🗺️ Mapas criados:", {
           fornecedorMapSize: fornecedorMap.size,
           centroCustoMapSize: centroCustoMap.size,
           despesaMapSize: despesaMap.size,
           amostraFornecedorMap: Array.from(fornecedorMap.entries()).slice(0, 2),
-          amostraCentroCustoMap: Array.from(centroCustoMap.entries()).slice(0, 2),
-          amostraDespesaMap: Array.from(despesaMap.entries()).slice(0, 2)
+          amostraCentroCustoMap: Array.from(centroCustoMap.entries()).slice(
+            0,
+            2
+          ),
+          amostraDespesaMap: Array.from(despesaMap.entries()).slice(0, 2),
         });
-        
+
         // Garantir que todos os campos necessários tenham valores padrão
-        const dadosProcessados = dadosArray.map(item => {
+        const dadosProcessados = dadosArray.map((item) => {
           // Buscar dados de fornecedor, centro de custo e despesa dos mapas usando apenas os códigos
           const dadosFornecedor = fornecedorMap.get(item.cd_fornecedor);
           const dadosCentroCusto = centroCustoMap.get(item.cd_ccusto);
           const dadosDespesa = despesaMap.get(item.cd_despesaitem);
-          
+
           // Debug para os primeiros 3 itens
           if (dadosArray.indexOf(item) < 3) {
-            console.log(`🔍 Processando item ${dadosArray.indexOf(item) + 1}:`, {
-              cd_fornecedor: item.cd_fornecedor,
-              cd_ccusto: item.cd_ccusto,
-              cd_despesaitem: item.cd_despesaitem,
-              encontrouFornecedor: !!dadosFornecedor,
-              encontrouCentroCusto: !!dadosCentroCusto,
-              encontrouDespesa: !!dadosDespesa,
-              dadosFornecedor: dadosFornecedor,
-              dadosCentroCusto: dadosCentroCusto,
-              dadosDespesa: dadosDespesa
-            });
+            console.log(
+              `🔍 Processando item ${dadosArray.indexOf(item) + 1}:`,
+              {
+                cd_fornecedor: item.cd_fornecedor,
+                cd_ccusto: item.cd_ccusto,
+                cd_despesaitem: item.cd_despesaitem,
+                encontrouFornecedor: !!dadosFornecedor,
+                encontrouCentroCusto: !!dadosCentroCusto,
+                encontrouDespesa: !!dadosDespesa,
+                dadosFornecedor: dadosFornecedor,
+                dadosCentroCusto: dadosCentroCusto,
+                dadosDespesa: dadosDespesa,
+              }
+            );
           }
-          
+
           return {
             ...item,
-            ds_observacao: item.ds_observacao || '',
-            in_aceite: item.in_aceite || '',
+            ds_observacao: item.ds_observacao || "",
+            in_aceite: item.in_aceite || "",
             vl_rateio: item.vl_rateio || 0,
-            tp_aceite: item.in_aceite || '', // Mantém compatibilidade
+            tp_aceite: item.in_aceite || "", // Mantém compatibilidade
             // Usar dados das novas rotas separadas
-            ds_ccusto: dadosCentroCusto?.ds_ccusto || item.ds_ccusto || '',
-            nm_fornecedor: dadosFornecedor?.nm_fornecedor || item.nm_fornecedor || '',
-            ds_despesaitem: dadosDespesa?.ds_despesaitem || item.ds_despesaitem || '',
-            cd_despesaitem: item.cd_despesaitem || '',
-            cd_ccusto: dadosCentroCusto?.cd_ccusto || item.cd_ccusto || ''
+            ds_ccusto: dadosCentroCusto?.ds_ccusto || item.ds_ccusto || "",
+            nm_fornecedor:
+              dadosFornecedor?.nm_fornecedor || item.nm_fornecedor || "",
+            ds_despesaitem:
+              dadosDespesa?.ds_despesaitem || item.ds_despesaitem || "",
+            cd_despesaitem: item.cd_despesaitem || "",
+            cd_ccusto: dadosCentroCusto?.cd_ccusto || item.cd_ccusto || "",
           };
         });
-        
+
         // Debug para verificar dados de despesa, centro de custo e fornecedor
         if (dadosProcessados.length > 0) {
-          console.log('🔍 Debug - Primeiros 3 registros com dados das novas rotas:');
+          console.log(
+            "🔍 Debug - Primeiros 3 registros com dados das novas rotas:"
+          );
           dadosProcessados.slice(0, 3).forEach((item, index) => {
             console.log(`📋 Registro ${index + 1}:`, {
               cd_fornecedor: item.cd_fornecedor,
@@ -1174,58 +1317,84 @@ const ContasAPagar = () => {
               temFornecedor: !!item.nm_fornecedor,
               temCentroCusto: !!item.ds_ccusto,
               temDespesa: !!item.ds_despesaitem,
-              fonteFornecedor: item.nm_fornecedor ? 'Nova rota /fornecedor' : 'Dados originais',
-              fonteCentroCusto: item.ds_ccusto ? 'Nova rota /centrocusto' : 'Dados originais',
-              fonteDespesa: item.ds_despesaitem ? 'Nova rota /despesa' : 'Dados originais'
+              fonteFornecedor: item.nm_fornecedor
+                ? "Nova rota /fornecedor"
+                : "Dados originais",
+              fonteCentroCusto: item.ds_ccusto
+                ? "Nova rota /centrocusto"
+                : "Dados originais",
+              fonteDespesa: item.ds_despesaitem
+                ? "Nova rota /despesa"
+                : "Dados originais",
             });
           });
-          
+
           // Verificar se há dados vazios
-          const fornecedoresVazios = dadosProcessados.filter(item => !item.nm_fornecedor).length;
-          const centrosCustoVazios = dadosProcessados.filter(item => !item.ds_ccusto).length;
-          const despesasVazias = dadosProcessados.filter(item => !item.ds_despesaitem).length;
-          
-          console.log('📊 Estatísticas dos dados processados:', {
+          const fornecedoresVazios = dadosProcessados.filter(
+            (item) => !item.nm_fornecedor
+          ).length;
+          const centrosCustoVazios = dadosProcessados.filter(
+            (item) => !item.ds_ccusto
+          ).length;
+          const despesasVazias = dadosProcessados.filter(
+            (item) => !item.ds_despesaitem
+          ).length;
+
+          console.log("📊 Estatísticas dos dados processados:", {
             total: dadosProcessados.length,
             fornecedoresVazios,
             centrosCustoVazios,
             despesasVazias,
-            percentualFornecedoresVazios: ((fornecedoresVazios / dadosProcessados.length) * 100).toFixed(2) + '%',
-            percentualCentrosCustoVazios: ((centrosCustoVazios / dadosProcessados.length) * 100).toFixed(2) + '%',
-            percentualDespesasVazias: ((despesasVazias / dadosProcessados.length) * 100).toFixed(2) + '%'
+            percentualFornecedoresVazios:
+              ((fornecedoresVazios / dadosProcessados.length) * 100).toFixed(
+                2
+              ) + "%",
+            percentualCentrosCustoVazios:
+              ((centrosCustoVazios / dadosProcessados.length) * 100).toFixed(
+                2
+              ) + "%",
+            percentualDespesasVazias:
+              ((despesasVazias / dadosProcessados.length) * 100).toFixed(2) +
+              "%",
           });
         }
-        
+
         setDados(dadosProcessados);
         setDadosFornecedor(dadosFornecedorArray);
         setDadosCentroCusto(dadosCentroCustoArray);
         setDadosDespesa(dadosDespesaArray);
         setDadosCarregados(true);
-        
-        console.log('✅ Resumo das chamadas das novas rotas:', {
+
+        console.log("✅ Resumo das chamadas das novas rotas:", {
           contasPagar: dadosProcessados.length,
           fornecedor: dadosFornecedorArray.length,
           centroCusto: dadosCentroCustoArray.length,
           despesa: dadosDespesaArray.length,
           sucessoFornecedor: resultFornecedor.success,
           sucessoCentroCusto: resultCentroCusto.success,
-          sucessoDespesa: resultDespesa.success
+          sucessoDespesa: resultDespesa.success,
         });
       } else {
-        console.warn('⚠️ Falha ao buscar dados:', result.message);
+        console.warn("⚠️ Falha ao buscar dados:", result.message);
         setDados([]);
         setDadosCarregados(false);
       }
-      
+
       // Log de erros das novas rotas se houver
       if (!resultFornecedor.success) {
-        console.warn('⚠️ Falha ao buscar dados de fornecedor:', resultFornecedor.message);
+        console.warn(
+          "⚠️ Falha ao buscar dados de fornecedor:",
+          resultFornecedor.message
+        );
       }
       if (!resultCentroCusto.success) {
-        console.warn('⚠️ Falha ao buscar dados de centro de custo:', resultCentroCusto.message);
+        console.warn(
+          "⚠️ Falha ao buscar dados de centro de custo:",
+          resultCentroCusto.message
+        );
       }
     } catch (err) {
-      console.error('❌ Erro geral ao buscar dados:', err);
+      console.error("❌ Erro geral ao buscar dados:", err);
       setDados([]);
       setDadosCarregados(false);
     } finally {
@@ -1236,75 +1405,77 @@ const ContasAPagar = () => {
   const getStatusFromData = (item) => {
     // Se tem data de liquidação, está pago
     if (item.dt_liq) {
-      return 'Pago';
+      return "Pago";
     }
-    
+
     // Se tem vencimento, verificar se está vencido
     if (item.dt_vencimento) {
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
       const vencimento = criarDataSemFusoHorario(item.dt_vencimento);
-      const diasParaVencer = Math.ceil((vencimento - hoje) / (1000 * 60 * 60 * 24));
-      
+      const diasParaVencer = Math.ceil(
+        (vencimento - hoje) / (1000 * 60 * 60 * 24)
+      );
+
       if (vencimento < hoje) {
-        return 'Vencido';
+        return "Vencido";
       } else if (diasParaVencer >= 0 && diasParaVencer <= 7) {
-        return 'Próxima a Vencer';
+        return "Próxima a Vencer";
       } else {
-        return 'A Vencer';
+        return "A Vencer";
       }
     }
-    
+
     // Verificar tp_situacao se disponível
     if (item.tp_situacao) {
       switch (item.tp_situacao.toString()) {
-        case '1':
-        case 'P':
-          return 'Pago';
-        case '2':
-        case 'V':
-          return 'Vencido';
-        case '3':
-        case 'A':
-          return 'A Vencer';
+        case "1":
+        case "P":
+          return "Pago";
+        case "2":
+        case "V":
+          return "Vencido";
+        case "3":
+        case "A":
+          return "A Vencer";
         default:
-          return 'Pendente';
+          return "Pendente";
       }
     }
-    
-    return 'Pendente';
+
+    return "Pendente";
   };
 
   const getStatusColor = (status) => {
     switch (status?.toLowerCase()) {
-      case 'pago':
-      case 'liquidado':
-        return 'bg-green-100 text-green-800';
-      case 'vencido':
-      case 'atrasado':
-        return 'bg-red-100 text-red-800';
-      case 'a vencer':
-      case 'vencendo':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'pendente':
-        return 'bg-blue-100 text-blue-800';
+      case "pago":
+      case "liquidado":
+        return "bg-green-100 text-green-800";
+      case "vencido":
+      case "atrasado":
+        return "bg-red-100 text-red-800";
+      case "a vencer":
+      case "vencendo":
+        return "bg-yellow-100 text-yellow-800";
+      case "pendente":
+        return "bg-blue-100 text-blue-800";
       default:
-        return 'bg-gray-100 text-gray-800';
+        return "bg-gray-100 text-gray-800";
     }
   };
 
   const getStatusIcon = (status) => {
     switch (status?.toLowerCase()) {
-      case 'pago':
-      case 'liquidado':
+      case "pago":
+      case "liquidado":
         return <CheckCircle size={14} className="text-green-600" />;
-      case 'vencido':
-      case 'atrasado':
+      case "vencido":
+      case "atrasado":
         return <Warning size={14} className="text-red-600" />;
-      case 'a vencer':
-      case 'vencendo':
+      case "a vencer":
+      case "vencendo":
         return <Clock size={14} className="text-yellow-600" />;
-      case 'pendente':
+      case "pendente":
         return <ArrowUp size={14} className="text-blue-600" />;
       default:
         return <ArrowDown size={14} className="text-gray-600" />;
@@ -1316,39 +1487,42 @@ const ContasAPagar = () => {
     const hoje = new Date();
     const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
     const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
-    
-    setDataInicio(primeiroDia.toISOString().split('T')[0]);
-    setDataFim(ultimoDia.toISOString().split('T')[0]);
+
+    setDataInicio(primeiroDia.toISOString().split("T")[0]);
+    setDataFim(ultimoDia.toISOString().split("T")[0]);
   }, []);
 
   // Aplicar filtros adicionais aos dados já filtrados por situação e status
   const dadosComFiltrosAdicionais = dadosFiltradosCompletos.filter((item) => {
-    
     // Filtro por fornecedor (dropdown)
     if (fornecedoresSelecionados.length > 0) {
-      const cdFornecedor = item.cd_fornecedor || '';
-      const isSelected = fornecedoresSelecionados.some(fornecedor => fornecedor.cd_fornecedor === cdFornecedor);
-      
+      const cdFornecedor = item.cd_fornecedor || "";
+      const isSelected = fornecedoresSelecionados.some(
+        (fornecedor) => fornecedor.cd_fornecedor === cdFornecedor
+      );
+
       if (!isSelected) {
         return false;
       }
     }
 
-
-    
     // Filtro por duplicata
     if (duplicata) {
-      const nrDuplicata = item.nr_duplicata || '';
-      if (!nrDuplicata.toString().toLowerCase().includes(duplicata.toLowerCase())) {
+      const nrDuplicata = item.nr_duplicata || "";
+      if (
+        !nrDuplicata.toString().toLowerCase().includes(duplicata.toLowerCase())
+      ) {
         return false;
       }
     }
 
     // Filtro por centro de custo (dropdown)
     if (centrosCustoSelecionados.length > 0) {
-      const cdCentroCusto = item.cd_ccusto || '';
-      const isSelected = centrosCustoSelecionados.some(centro => centro.cd_ccusto === cdCentroCusto);
-      
+      const cdCentroCusto = item.cd_ccusto || "";
+      const isSelected = centrosCustoSelecionados.some(
+        (centro) => centro.cd_ccusto === cdCentroCusto
+      );
+
       if (!isSelected) {
         return false;
       }
@@ -1356,68 +1530,90 @@ const ContasAPagar = () => {
 
     // Filtro por despesa (dropdown)
     if (despesasSelecionadas.length > 0) {
-      const cdDespesa = item.cd_despesaitem || '';
-      const isSelected = despesasSelecionadas.some(despesa => despesa.cd_despesaitem === cdDespesa);
-      
+      const cdDespesa = item.cd_despesaitem || "";
+      const isSelected = despesasSelecionadas.some(
+        (despesa) => despesa.cd_despesaitem === cdDespesa
+      );
+
       if (!isSelected) {
         return false;
       }
     }
-    
+
     return true;
   });
 
   // Aplicar filtro mensal aos dados filtrados
-  const dadosComFiltroMensal = aplicarFiltroMensal(dadosComFiltrosAdicionais, filtroMensal, filtroDia);
+  const dadosComFiltroMensal = aplicarFiltroMensal(
+    dadosComFiltrosAdicionais,
+    filtroMensal,
+    filtroDia
+  );
 
   // Usar dados filtrados diretamente (sem ordenação personalizada)
   const dadosOrdenadosComFiltroMensal = dadosComFiltroMensal;
 
   // Função para aplicar filtros de coluna aos dados
-  const aplicarFiltrosColuna = useCallback((dadosOriginais) => {
-    if (!dadosOriginais || dadosOriginais.length === 0) return [];
-    if (Object.keys(columnFilters).length === 0) return dadosOriginais;
+  const aplicarFiltrosColuna = useCallback(
+    (dadosOriginais) => {
+      if (!dadosOriginais || dadosOriginais.length === 0) return [];
+      if (Object.keys(columnFilters).length === 0) return dadosOriginais;
 
-    console.log('🔍 Aplicando filtros de coluna:', columnFilters);
-    console.log('📊 Dados originais:', dadosOriginais.length);
+      console.log("🔍 Aplicando filtros de coluna:", columnFilters);
+      console.log("📊 Dados originais:", dadosOriginais.length);
 
-    const dadosFiltrados = dadosOriginais.filter((grupo) => {
-      const item = grupo.item;
-      
-      // Verificar cada filtro de coluna ativo
-      for (const [columnKey, filterConfig] of Object.entries(columnFilters)) {
-        if (!filterConfig) continue;
+      const dadosFiltrados = dadosOriginais.filter((grupo) => {
+        const item = grupo.item;
 
-        const valorItem = String(item[columnKey] || '');
-        
-        // Filtro por texto (searchTerm)
-        if (filterConfig.searchTerm && filterConfig.searchTerm.trim() !== '') {
-          if (!valorItem.toLowerCase().includes(filterConfig.searchTerm.toLowerCase())) {
-            console.log(`❌ Item rejeitado por searchTerm - ${columnKey}: "${valorItem}" não contém "${filterConfig.searchTerm}"`);
-            return false;
+        // Verificar cada filtro de coluna ativo
+        for (const [columnKey, filterConfig] of Object.entries(columnFilters)) {
+          if (!filterConfig) continue;
+
+          const valorItem = String(item[columnKey] || "");
+
+          // Filtro por texto (searchTerm)
+          if (
+            filterConfig.searchTerm &&
+            filterConfig.searchTerm.trim() !== ""
+          ) {
+            if (
+              !valorItem
+                .toLowerCase()
+                .includes(filterConfig.searchTerm.toLowerCase())
+            ) {
+              console.log(
+                `❌ Item rejeitado por searchTerm - ${columnKey}: "${valorItem}" não contém "${filterConfig.searchTerm}"`
+              );
+              return false;
+            }
+          }
+
+          // Filtro por seleção (selected)
+          if (filterConfig.selected && filterConfig.selected.length > 0) {
+            if (!filterConfig.selected.includes(valorItem)) {
+              console.log(
+                `❌ Item rejeitado por seleção - ${columnKey}: "${valorItem}" não está em [${filterConfig.selected.join(
+                  ", "
+                )}]`
+              );
+              return false;
+            }
           }
         }
 
-        // Filtro por seleção (selected)
-        if (filterConfig.selected && filterConfig.selected.length > 0) {
-          if (!filterConfig.selected.includes(valorItem)) {
-            console.log(`❌ Item rejeitado por seleção - ${columnKey}: "${valorItem}" não está em [${filterConfig.selected.join(', ')}]`);
-            return false;
-          }
-        }
-      }
+        return true;
+      });
 
-      return true;
-    });
-
-    console.log('✅ Dados filtrados:', dadosFiltrados.length);
-    return dadosFiltrados;
-  }, [columnFilters]);
+      console.log("✅ Dados filtrados:", dadosFiltrados.length);
+      return dadosFiltrados;
+    },
+    [columnFilters]
+  );
 
   // ===== LÓGICA SEPARADA PARA OS CARDS (igual ao Fluxo de Caixa) =====
   // Agrupar dados APENAS para os cards (não afeta a tabela)
   const dadosAgrupadosParaCards = agruparDadosIdenticos(dadosComFiltroMensal);
-  
+
   // Ordenar dados para cards usando useMemo para re-calcular quando sortConfig mudar
   const dadosOrdenadosParaCards = useMemo(() => {
     const dadosOrdenados = sortDadosAgrupados(dadosAgrupadosParaCards);
@@ -1425,61 +1621,125 @@ const ContasAPagar = () => {
     return aplicarFiltrosColuna(dadosOrdenados);
   }, [dadosAgrupadosParaCards, sortConfig, aplicarFiltrosColuna]);
 
+  // Calcular dados paginados
+  const calcularDadosPaginados = useMemo(() => {
+    const inicio = (paginaAtual - 1) * registrosPorPagina;
+    const fim = inicio + registrosPorPagina;
+    return {
+      dados: dadosOrdenadosParaCards.slice(inicio, fim),
+      totalRegistros: dadosOrdenadosParaCards.length,
+      totalPaginas: Math.ceil(
+        dadosOrdenadosParaCards.length / registrosPorPagina
+      ),
+      paginaAtual,
+      registrosPorPagina,
+    };
+  }, [dadosOrdenadosParaCards, paginaAtual, registrosPorPagina]);
+
+  // Função para mudar de página
+  const mudarPagina = (novaPagina) => {
+    const totalPaginas = Math.ceil(
+      dadosOrdenadosParaCards.length / registrosPorPagina
+    );
+
+    // Verificar se a página é válida
+    if (novaPagina >= 1 && novaPagina <= totalPaginas) {
+      setPaginaAtual(novaPagina);
+      // Limpar seleção ao mudar de página
+      setLinhasSelecionadasAgrupadas(new Set());
+    } else if (totalPaginas > 0) {
+      // Se a página não for válida, ir para a última página disponível
+      setPaginaAtual(totalPaginas);
+      setLinhasSelecionadasAgrupadas(new Set());
+    }
+  };
+
+  // Função para ir para a primeira página
+  const irParaPrimeiraPagina = () => mudarPagina(1);
+
+  // Função para ir para a última página
+  const irParaUltimaPagina = () =>
+    mudarPagina(calcularDadosPaginados.totalPaginas);
+
+  // Função para ir para a página anterior
+  const irParaPaginaAnterior = () => {
+    if (paginaAtual > 1) {
+      mudarPagina(paginaAtual - 1);
+    }
+  };
+
+  // Função para ir para a próxima página
+  const irParaProximaPagina = () => {
+    if (paginaAtual < calcularDadosPaginados.totalPaginas) {
+      mudarPagina(paginaAtual + 1);
+    }
+  };
+
   // Cálculos dos cards (baseados em dados agrupados - igual ao Fluxo de Caixa)
   const totalContasCards = dadosOrdenadosParaCards.length;
-  const totalValorCards = dadosOrdenadosParaCards.reduce((acc, grupo) => acc + parseFloat(grupo.item.vl_duplicata || 0), 0);
-  
-  const contasVencidasCards = dadosOrdenadosParaCards.filter(grupo => {
-    const status = getStatusFromData(grupo.item);
-    return status.toLowerCase().includes('vencido');
-  });
-  
-  const totalContasVencidasCards = contasVencidasCards.length;
-  const valorContasVencidasCards = contasVencidasCards.reduce((acc, grupo) => 
-    acc + (parseFloat(grupo.item.vl_duplicata) || 0), 0
+  const totalValorCards = dadosOrdenadosParaCards.reduce(
+    (acc, grupo) => acc + parseFloat(grupo.item.vl_duplicata || 0),
+    0
   );
-  
-  const contasAVencerCards = dadosOrdenadosParaCards.filter(grupo => {
+
+  const contasVencidasCards = dadosOrdenadosParaCards.filter((grupo) => {
     const status = getStatusFromData(grupo.item);
-    return status.toLowerCase().includes('vencer');
+    return status.toLowerCase().includes("vencido");
   });
-  
+
+  const totalContasVencidasCards = contasVencidasCards.length;
+  const valorContasVencidasCards = contasVencidasCards.reduce(
+    (acc, grupo) => acc + (parseFloat(grupo.item.vl_duplicata) || 0),
+    0
+  );
+
+  const contasAVencerCards = dadosOrdenadosParaCards.filter((grupo) => {
+    const status = getStatusFromData(grupo.item);
+    return status.toLowerCase().includes("vencer");
+  });
+
   const totalContasAVencerCards = contasAVencerCards.length;
-  const valorContasAVencerCards = contasAVencerCards.reduce((acc, grupo) => 
-    acc + (parseFloat(grupo.item.vl_duplicata) || 0), 0
+  const valorContasAVencerCards = contasAVencerCards.reduce(
+    (acc, grupo) => acc + (parseFloat(grupo.item.vl_duplicata) || 0),
+    0
   );
 
   // Cálculo para contas próximas a vencer (próximos 7 dias)
   const hoje = new Date();
-  const contasProximasVencerCards = dadosOrdenadosParaCards.filter(grupo => {
+  const contasProximasVencerCards = dadosOrdenadosParaCards.filter((grupo) => {
     if (!grupo.item.dt_vencimento) return false;
     const dataVencimento = criarDataSemFusoHorario(grupo.item.dt_vencimento);
-    const diasParaVencer = Math.ceil((dataVencimento - hoje) / (1000 * 60 * 60 * 24));
+    const diasParaVencer = Math.ceil(
+      (dataVencimento - hoje) / (1000 * 60 * 60 * 24)
+    );
     return diasParaVencer >= 0 && diasParaVencer <= 7 && !grupo.item.dt_liq;
   });
-  
+
   const totalContasProximasVencerCards = contasProximasVencerCards.length;
-  const valorContasProximasVencerCards = contasProximasVencerCards.reduce((acc, grupo) => 
-    acc + (parseFloat(grupo.item.vl_duplicata) || 0), 0
+  const valorContasProximasVencerCards = contasProximasVencerCards.reduce(
+    (acc, grupo) => acc + (parseFloat(grupo.item.vl_duplicata) || 0),
+    0
   );
 
   // Cálculo para contas pagas
-  const contasPagasCards = dadosOrdenadosParaCards.filter(grupo => {
+  const contasPagasCards = dadosOrdenadosParaCards.filter((grupo) => {
     const status = getStatusFromData(grupo.item);
-    return status.toLowerCase().includes('pago');
+    return status.toLowerCase().includes("pago");
   });
-  
+
   const totalContasPagasCards = contasPagasCards.length;
-  const valorContasPagasCards = contasPagasCards.reduce((acc, grupo) => 
-    acc + (parseFloat(grupo.item.vl_pago) || 0), 0
+  const valorContasPagasCards = contasPagasCards.reduce(
+    (acc, grupo) => acc + (parseFloat(grupo.item.vl_pago) || 0),
+    0
   );
 
   // Cálculo para valor que falta pagar
   const valorFaltaPagarCards = totalValorCards - valorContasPagasCards;
 
   // Cálculo para descontos ganhos
-  const totalDescontosCards = dadosOrdenadosParaCards.reduce((acc, grupo) => 
-    acc + (parseFloat(grupo.item.vl_desconto) || 0), 0
+  const totalDescontosCards = dadosOrdenadosParaCards.reduce(
+    (acc, grupo) => acc + (parseFloat(grupo.item.vl_desconto) || 0),
+    0
   );
 
   // Função para lidar com seleção de empresas
@@ -1543,12 +1803,12 @@ const ContasAPagar = () => {
   // Funções para modal de confirmação de remoção de autorização
   const handleRemoveAuthorization = (chaveUnica, autorizadoPor) => {
     // Verificar se o usuário tem permissão
-    if (!hasRole(['owner', 'admin', 'manager'])) {
-      console.error('❌ Usuário sem permissão para remover autorização');
-      alert('Você não tem permissão para realizar esta ação.');
+    if (!hasRole(["owner", "admin", "manager"])) {
+      console.error("❌ Usuário sem permissão para remover autorização");
+      alert("Você não tem permissão para realizar esta ação.");
       return;
     }
-    
+
     setAutorizacaoToRemove({ chaveUnica, autorizadoPor });
     setShowConfirmModal(true);
   };
@@ -1556,550 +1816,595 @@ const ContasAPagar = () => {
   const handleConfirmRemoveAuthorization = async () => {
     if (autorizacaoToRemove) {
       try {
-        const { error } = await autorizacoesSupabase.removerAutorizacao(autorizacaoToRemove.chaveUnica);
-        
+        const { error } = await autorizacoesSupabase.removerAutorizacao(
+          autorizacaoToRemove.chaveUnica
+        );
+
         if (error) {
-          console.error('Erro ao remover autorização:', error);
-          alert('Erro ao remover autorização. Tente novamente.');
+          console.error("Erro ao remover autorização:", error);
+          alert("Erro ao remover autorização. Tente novamente.");
           return;
         }
-        
+
         // Atualizar estado local
-        setAutorizacoes(prev => {
+        setAutorizacoes((prev) => {
           const novasAutorizacoes = { ...prev };
           delete novasAutorizacoes[autorizacaoToRemove.chaveUnica];
           return novasAutorizacoes;
         });
-        
-        console.log('✅ Autorização removida com sucesso');
+
+        console.log("✅ Autorização removida com sucesso");
       } catch (error) {
-        console.error('Erro ao remover autorização:', error);
-        alert('Erro ao remover autorização. Tente novamente.');
+        console.error("Erro ao remover autorização:", error);
+        alert("Erro ao remover autorização. Tente novamente.");
       }
     }
     setShowConfirmModal(false);
     setAutorizacaoToRemove(null);
   };
 
-  const handleCancelRemoveAuthorization = () => {
-    setShowConfirmModal(false);
-    setAutorizacaoToRemove(null);
-  };
+  /* Funções removidas
+    const handleCancelRemoveAuthorizationOriginal = () => {
+      setShowConfirmModal(false);
+      setAutorizacaoToRemove(null);
+    };
 
-  // Fechar modal ao clicar fora ou pressionar ESC
-  const handleModalClose = (e) => {
-    if (e.target === e.currentTarget) {
-      handleCancelRemoveAuthorization();
-    }
-  };
+    // Fechar modal ao clicar fora ou pressionar ESC
+    const handleModalCloseOriginal = (e) => {
+      if (e.target === e.currentTarget) {
+        handleCancelRemoveAuthorization();
+      }
+    };
+    */
 
   // Adicionar listener para tecla ESC
   useEffect(() => {
     const handleEscKey = (e) => {
-      if (e.key === 'Escape' && showConfirmModal) {
+      if (e.key === "Escape" && showConfirmModal) {
         handleCancelRemoveAuthorization();
       }
-      if (e.key === 'Escape' && showAutorizarTodosModal) {
+      if (e.key === "Escape" && showAutorizarTodosModal) {
         handleCancelAutorizarTodos();
       }
-      if (e.key === 'Escape' && showRemoverTodosModal) {
+      if (e.key === "Escape" && showRemoverTodosModal) {
         handleCancelRemoverTodos();
       }
     };
 
     if (showConfirmModal || showAutorizarTodosModal || showRemoverTodosModal) {
-      document.addEventListener('keydown', handleEscKey);
-      document.body.style.overflow = 'hidden'; // Prevenir scroll
+      document.addEventListener("keydown", handleEscKey);
+      document.body.style.overflow = "hidden"; // Prevenir scroll
     }
 
     return () => {
-      document.removeEventListener('keydown', handleEscKey);
-      document.body.style.overflow = 'unset';
+      document.removeEventListener("keydown", handleEscKey);
+      document.body.style.overflow = "unset";
     };
   }, [showConfirmModal, showAutorizarTodosModal, showRemoverTodosModal]);
 
-  // Função para autorizar uma conta individual
-  const handleAutorizarConta = async (dadosConta, chaveUnica) => {
-    // Verificar se o usuário tem permissão
-    if (!hasRole(['owner', 'admin', 'manager'])) {
-      console.error('❌ Usuário sem permissão para autorizar contas');
-      alert('Você não tem permissão para realizar esta ação.');
-      return;
-    }
-    
-    try {
-      const { error } = await autorizacoesSupabase.autorizarConta(
-        chaveUnica, 
-        dadosConta, 
-        user?.name || 'USUÁRIO'
-      );
+  /* Funções de autorização removidas
+    const handleAutorizarContaRemovida = async (dadosConta, chaveUnica) => {
+      // Verificar se o usuário tem permissão
+      if (!hasRole(['owner', 'admin', 'manager'])) {
+        console.error('❌ Usuário sem permissão para autorizar contas');
+        alert('Você não tem permissão para realizar esta ação.');
+        return;
+      }
       
-      if (error) {
+      try {
+        const { error } = await autorizacoesSupabase.autorizarConta(
+          chaveUnica, 
+          dadosConta, 
+          user?.name || 'USUÁRIO'
+        );
+        
+        if (error) {
+          console.error('Erro ao autorizar conta:', error);
+          alert('Erro ao autorizar conta. Tente novamente.');
+          return;
+        }
+        
+        // Atualizar estado local
+        setAutorizacoes(prev => ({
+          ...prev,
+          [chaveUnica]: {
+            autorizadoPor: user?.name || 'USUÁRIO',
+            status: STATUS_AUTORIZACAO.AUTORIZADO,
+            dataAutorizacao: new Date().toISOString()
+          }
+        }));
+        
+        console.log('✅ Conta autorizada com sucesso');
+      } catch (error) {
         console.error('Erro ao autorizar conta:', error);
         alert('Erro ao autorizar conta. Tente novamente.');
+      }
+    };
+
+    // Função para autorizar contas selecionadas
+    const handleAutorizarSelecionadosRemovido = async () => {
+      // Verificar se o usuário tem permissão
+      if (!hasRole(['owner', 'admin', 'manager'])) {
+        console.error('❌ Usuário sem permissão para autorizar contas selecionadas');
+        alert('Você não tem permissão para realizar esta ação.');
         return;
       }
       
-      // Atualizar estado local
-      setAutorizacoes(prev => ({
-        ...prev,
-        [chaveUnica]: {
-          autorizadoPor: user?.name || 'USUÁRIO',
-          status: STATUS_AUTORIZACAO.AUTORIZADO,
-          dataAutorizacao: new Date().toISOString()
+      if (linhasSelecionadasAgrupadas.size === 0) {
+        alert('Nenhuma conta selecionada para autorizar!');
+        return;
+      }
+
+      const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(index => dadosOrdenadosParaCards[index]);
+      const contasNaoAutorizadas = contasSelecionadas.filter(grupo => {
+        const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+        const autorizacao = autorizacoes[chaveUnica];
+        return !autorizacao || !autorizacao.autorizadoPor;
+      });
+
+      if (contasNaoAutorizadas.length === 0) {
+        alert('Todas as contas selecionadas já estão autorizadas!');
+        return;
+      }
+
+      try {
+        const { error } = await autorizacoesSupabase.autorizarMultiplasContas(
+          contasNaoAutorizadas, 
+          user?.name || 'USUÁRIO'
+        );
+        
+        if (error) {
+          console.error('Erro ao autorizar contas selecionadas:', error);
+          alert('Erro ao autorizar contas. Tente novamente.');
+          return;
         }
-      }));
-      
-      console.log('✅ Conta autorizada com sucesso');
-    } catch (error) {
-      console.error('Erro ao autorizar conta:', error);
-      alert('Erro ao autorizar conta. Tente novamente.');
-    }
-  };
-
-  // Função para autorizar contas selecionadas
-  const handleAutorizarSelecionados = async () => {
-    // Verificar se o usuário tem permissão
-    if (!hasRole(['owner', 'admin', 'manager'])) {
-      console.error('❌ Usuário sem permissão para autorizar contas selecionadas');
-      alert('Você não tem permissão para realizar esta ação.');
-      return;
-    }
-    
-    if (linhasSelecionadasAgrupadas.size === 0) {
-      alert('Nenhuma conta selecionada para autorizar!');
-      return;
-    }
-
-    const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(index => dadosOrdenadosParaCards[index]);
-    const contasNaoAutorizadas = contasSelecionadas.filter(grupo => {
-      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-      const autorizacao = autorizacoes[chaveUnica];
-      return !autorizacao || !autorizacao.autorizadoPor;
-    });
-
-    if (contasNaoAutorizadas.length === 0) {
-      alert('Todas as contas selecionadas já estão autorizadas!');
-      return;
-    }
-
-    try {
-      const { error } = await autorizacoesSupabase.autorizarMultiplasContas(
-        contasNaoAutorizadas, 
-        user?.name || 'USUÁRIO'
-      );
-      
-      if (error) {
+        
+        // Atualizar estado local
+        const novasAutorizacoes = {};
+        contasNaoAutorizadas.forEach(grupo => {
+          const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+          novasAutorizacoes[chaveUnica] = {
+            autorizadoPor: user?.name || 'USUÁRIO',
+            status: STATUS_AUTORIZACAO.AUTORIZADO,
+            dataAutorizacao: new Date().toISOString()
+          };
+        });
+        
+        setAutorizacoes(prev => ({ ...prev, ...novasAutorizacoes }));
+        console.log('✅ Contas selecionadas autorizadas com sucesso');
+        
+        // Limpar seleção
+        setLinhasSelecionadasAgrupadas(new Set());
+      } catch (error) {
         console.error('Erro ao autorizar contas selecionadas:', error);
         alert('Erro ao autorizar contas. Tente novamente.');
+      }
+    };
+
+    // Função para remover autorizações das contas selecionadas
+    const handleRemoverSelecionadosRemovido = async () => {
+      // Verificar se o usuário tem permissão
+      if (!hasRole(['owner', 'admin', 'manager'])) {
+        console.error('❌ Usuário sem permissão para remover autorizações');
+        alert('Você não tem permissão para realizar esta ação.');
         return;
       }
       
-      // Atualizar estado local
-      const novasAutorizacoes = {};
-      contasNaoAutorizadas.forEach(grupo => {
+      if (linhasSelecionadasAgrupadas.size === 0) {
+        alert('Nenhuma conta selecionada para remover autorização!');
+        return;
+      }
+
+      const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(index => dadosOrdenadosParaCards[index]);
+      const contasAutorizadas = contasSelecionadas.filter(grupo => {
         const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-        novasAutorizacoes[chaveUnica] = {
-          autorizadoPor: user?.name || 'USUÁRIO',
-          status: STATUS_AUTORIZACAO.AUTORIZADO,
-          dataAutorizacao: new Date().toISOString()
-        };
+        const autorizacao = autorizacoes[chaveUnica];
+        return autorizacao && autorizacao.autorizadoPor;
       });
-      
-      setAutorizacoes(prev => ({ ...prev, ...novasAutorizacoes }));
-      console.log('✅ Contas selecionadas autorizadas com sucesso');
-      
-      // Limpar seleção
-      setLinhasSelecionadasAgrupadas(new Set());
-    } catch (error) {
-      console.error('Erro ao autorizar contas selecionadas:', error);
-      alert('Erro ao autorizar contas. Tente novamente.');
-    }
-  };
 
-  // Função para remover autorizações das contas selecionadas
-  const handleRemoverSelecionados = async () => {
-    // Verificar se o usuário tem permissão
-    if (!hasRole(['owner', 'admin', 'manager'])) {
-      console.error('❌ Usuário sem permissão para remover autorizações');
-      alert('Você não tem permissão para realizar esta ação.');
-      return;
-    }
-    
-    if (linhasSelecionadasAgrupadas.size === 0) {
-      alert('Nenhuma conta selecionada para remover autorização!');
-      return;
-    }
+      if (contasAutorizadas.length === 0) {
+        alert('Nenhuma das contas selecionadas está autorizada!');
+        return;
+      }
 
-    const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(index => dadosOrdenadosParaCards[index]);
-    const contasAutorizadas = contasSelecionadas.filter(grupo => {
-      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-      const autorizacao = autorizacoes[chaveUnica];
-      return autorizacao && autorizacao.autorizadoPor;
-    });
-
-    if (contasAutorizadas.length === 0) {
-      alert('Nenhuma das contas selecionadas está autorizada!');
-      return;
-    }
-
-    try {
-      const { error } = await autorizacoesSupabase.removerMultiplasAutorizacoes(contasAutorizadas);
-      
-      if (error) {
+      try {
+        const { error } = await autorizacoesSupabase.removerMultiplasAutorizacoes(contasAutorizadas);
+        
+        if (error) {
+          console.error('Erro ao remover autorizações das contas selecionadas:', error);
+          alert('Erro ao remover autorizações. Tente novamente.');
+          return;
+        }
+        
+        // Atualizar estado local
+        const novasAutorizacoes = { ...autorizacoes };
+        contasAutorizadas.forEach(grupo => {
+          const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+          delete novasAutorizacoes[chaveUnica];
+        });
+        
+        setAutorizacoes(novasAutorizacoes);
+        console.log('✅ Autorizações das contas selecionadas removidas com sucesso');
+        
+        // Limpar seleção
+        setLinhasSelecionadasAgrupadas(new Set());
+      } catch (error) {
         console.error('Erro ao remover autorizações das contas selecionadas:', error);
         alert('Erro ao remover autorizações. Tente novamente.');
+      }
+    };
+
+    // Funções para modais de confirmação em massa
+    const handleAutorizarTodosRemovido = () => {
+      // Verificar se o usuário tem permissão
+      if (!hasRole(['owner', 'admin', 'manager'])) {
+        console.error('❌ Usuário sem permissão para autorizar todas as contas');
+        alert('Você não tem permissão para realizar esta ação.');
         return;
       }
       
-      // Atualizar estado local
-      const novasAutorizacoes = { ...autorizacoes };
-      contasAutorizadas.forEach(grupo => {
+      const naoAutorizados = dadosOrdenadosParaCards.filter((grupo, index) => {
         const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-        delete novasAutorizacoes[chaveUnica];
+        const autorizacao = autorizacoes[chaveUnica];
+        return !autorizacao || !autorizacao.autorizadoPor;
       });
       
-      setAutorizacoes(novasAutorizacoes);
-      console.log('✅ Autorizações das contas selecionadas removidas com sucesso');
+      if (naoAutorizados.length === 0) {
+        alert('Todas as contas já estão autorizadas!');
+        return;
+      }
       
-      // Limpar seleção
-      setLinhasSelecionadasAgrupadas(new Set());
-    } catch (error) {
-      console.error('Erro ao remover autorizações das contas selecionadas:', error);
-      alert('Erro ao remover autorizações. Tente novamente.');
-    }
-  };
+      setContasParaAutorizar(naoAutorizados);
+      setShowAutorizarTodosModal(true);
+    };
 
-  // Funções para modais de confirmação em massa
-  const handleAutorizarTodos = () => {
-    // Verificar se o usuário tem permissão
-    if (!hasRole(['owner', 'admin', 'manager'])) {
-      console.error('❌ Usuário sem permissão para autorizar todas as contas');
-      alert('Você não tem permissão para realizar esta ação.');
-      return;
-    }
-    
-    const naoAutorizados = dadosOrdenadosParaCards.filter((grupo, index) => {
-      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-      const autorizacao = autorizacoes[chaveUnica];
-      return !autorizacao || !autorizacao.autorizadoPor;
-    });
-    
-    if (naoAutorizados.length === 0) {
-      alert('Todas as contas já estão autorizadas!');
-      return;
-    }
-    
-    setContasParaAutorizar(naoAutorizados);
-    setShowAutorizarTodosModal(true);
-  };
-
-  const handleConfirmAutorizarTodos = async () => {
-    try {
-      const { error } = await autorizacoesSupabase.autorizarMultiplasContas(
-        contasParaAutorizar, 
-        user?.name || 'USUÁRIO'
-      );
-      
-      if (error) {
+    const handleConfirmAutorizarTodos = async () => {
+      try {
+        const { error } = await autorizacoesSupabase.autorizarMultiplasContas(
+          contasParaAutorizar, 
+          user?.name || 'USUÁRIO'
+        );
+        
+        if (error) {
+          console.error('Erro ao autorizar múltiplas contas:', error);
+          alert('Erro ao autorizar contas. Tente novamente.');
+          return;
+        }
+        
+        // Atualizar estado local
+        const novasAutorizacoes = {};
+        contasParaAutorizar.forEach(grupo => {
+          const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+          novasAutorizacoes[chaveUnica] = {
+            autorizadoPor: user?.name || 'USUÁRIO',
+            status: STATUS_AUTORIZACAO.AUTORIZADO,
+            dataAutorizacao: new Date().toISOString()
+          };
+        });
+        
+        setAutorizacoes(prev => ({ ...prev, ...novasAutorizacoes }));
+        console.log('✅ Múltiplas contas autorizadas com sucesso');
+      } catch (error) {
         console.error('Erro ao autorizar múltiplas contas:', error);
         alert('Erro ao autorizar contas. Tente novamente.');
+      }
+      
+      setShowAutorizarTodosModal(false);
+      setContasParaAutorizar([]);
+    };
+
+    const handleCancelAutorizarTodos = () => {
+      setShowAutorizarTodosModal(false);
+      setContasParaAutorizar([]);
+    };
+
+    const handleRemoverTodosRemovido = () => {
+      // Verificar se o usuário tem permissão
+      if (!hasRole(['owner', 'admin', 'manager'])) {
+        console.error('❌ Usuário sem permissão para remover todas as autorizações');
+        alert('Você não tem permissão para realizar esta ação.');
         return;
       }
       
-      // Atualizar estado local
-      const novasAutorizacoes = {};
-      contasParaAutorizar.forEach(grupo => {
+      const autorizados = dadosOrdenadosParaCards.filter((grupo, index) => {
         const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-        novasAutorizacoes[chaveUnica] = {
-          autorizadoPor: user?.name || 'USUÁRIO',
-          status: STATUS_AUTORIZACAO.AUTORIZADO,
-          dataAutorizacao: new Date().toISOString()
-        };
+        const autorizacao = autorizacoes[chaveUnica];
+        return autorizacao && autorizacao.autorizadoPor;
       });
       
-      setAutorizacoes(prev => ({ ...prev, ...novasAutorizacoes }));
-      console.log('✅ Múltiplas contas autorizadas com sucesso');
-    } catch (error) {
-      console.error('Erro ao autorizar múltiplas contas:', error);
-      alert('Erro ao autorizar contas. Tente novamente.');
-    }
-    
-    setShowAutorizarTodosModal(false);
-    setContasParaAutorizar([]);
-  };
-
-  const handleCancelAutorizarTodos = () => {
-    setShowAutorizarTodosModal(false);
-    setContasParaAutorizar([]);
-  };
-
-  const handleRemoverTodos = () => {
-    // Verificar se o usuário tem permissão
-    if (!hasRole(['owner', 'admin', 'manager'])) {
-      console.error('❌ Usuário sem permissão para remover todas as autorizações');
-      alert('Você não tem permissão para realizar esta ação.');
-      return;
-    }
-    
-    const autorizados = dadosOrdenadosParaCards.filter((grupo, index) => {
-      const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-      const autorizacao = autorizacoes[chaveUnica];
-      return autorizacao && autorizacao.autorizadoPor;
-    });
-    
-    if (autorizados.length === 0) {
-      alert('Nenhuma conta está autorizada para remover!');
-      return;
-    }
-    
-    setContasParaRemover(autorizados);
-    setShowRemoverTodosModal(true);
-  };
-
-  const handleConfirmRemoverTodos = async () => {
-    try {
-      const { error } = await autorizacoesSupabase.removerMultiplasAutorizacoes(contasParaRemover);
+      if (autorizados.length === 0) {
+        alert('Nenhuma conta está autorizada para remover!');
+        return;
+      }
       
-      if (error) {
+      setContasParaRemover(autorizados);
+      setShowRemoverTodosModal(true);
+    };
+
+    const handleConfirmRemoverTodos = async () => {
+      try {
+        const { error } = await autorizacoesSupabase.removerMultiplasAutorizacoes(contasParaRemover);
+        
+        if (error) {
+          console.error('Erro ao remover múltiplas autorizações:', error);
+          alert('Erro ao remover autorizações. Tente novamente.');
+          return;
+        }
+        
+        // Atualizar estado local
+        const novasAutorizacoes = { ...autorizacoes };
+        contasParaRemover.forEach(grupo => {
+          const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+          delete novasAutorizacoes[chaveUnica];
+        });
+        
+        setAutorizacoes(novasAutorizacoes);
+        console.log('✅ Múltiplas autorizações removidas com sucesso');
+      } catch (error) {
         console.error('Erro ao remover múltiplas autorizações:', error);
         alert('Erro ao remover autorizações. Tente novamente.');
+      }
+      
+      setShowRemoverTodosModal(false);
+      setContasParaRemover([]);
+    };
+
+    const handleCancelRemoverTodos = () => {
+      setShowRemoverTodosModal(false);
+      setContasParaRemover([]);
+    };
+
+    // Fechar modais ao clicar fora
+    const handleAutorizarTodosModalCloseRemovido = (e) => {
+      if (e.target === e.currentTarget) {
+        handleCancelAutorizarTodos();
+      }
+    };
+
+    const handleRemoverTodosModalClose = (e) => {
+      if (e.target === e.currentTarget) {
+        handleCancelRemoverTodos();
+      }
+    };
+    */
+
+  /* Função para carregar autorizações removida
+    const carregarAutorizacoesSupabaseRemovida = async () => {
+      // Verificar se o usuário tem permissão
+      if (!hasRole(['owner', 'admin', 'manager'])) {
+        console.error('❌ Usuário sem permissão para carregar autorizações');
+        alert('Você não tem permissão para realizar esta ação.');
         return;
       }
       
-      // Atualizar estado local
-      const novasAutorizacoes = { ...autorizacoes };
-      contasParaRemover.forEach(grupo => {
-        const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-        delete novasAutorizacoes[chaveUnica];
-      });
+      if (!user) return;
       
-      setAutorizacoes(novasAutorizacoes);
-      console.log('✅ Múltiplas autorizações removidas com sucesso');
-    } catch (error) {
-      console.error('Erro ao remover múltiplas autorizações:', error);
-      alert('Erro ao remover autorizações. Tente novamente.');
-    }
-    
-    setShowRemoverTodosModal(false);
-    setContasParaRemover([]);
-  };
-
-  const handleCancelRemoverTodos = () => {
-    setShowRemoverTodosModal(false);
-    setContasParaRemover([]);
-  };
-
-  // Fechar modais ao clicar fora
-  const handleAutorizarTodosModalClose = (e) => {
-    if (e.target === e.currentTarget) {
-      handleCancelAutorizarTodos();
-    }
-  };
-
-  const handleRemoverTodosModalClose = (e) => {
-    if (e.target === e.currentTarget) {
-      handleCancelRemoverTodos();
-    }
-  };
-
-  // Função para carregar autorizações do Supabase
-  const carregarAutorizacoesSupabase = async () => {
-    // Verificar se o usuário tem permissão
-    if (!hasRole(['owner', 'admin', 'manager'])) {
-      console.error('❌ Usuário sem permissão para carregar autorizações');
-      alert('Você não tem permissão para realizar esta ação.');
-      return;
-    }
-    
-    if (!user) return;
-    
-    setCarregandoAutorizacoes(true);
-    try {
-      const { data, error } = await autorizacoesSupabase.buscarAutorizacoes();
-      
-      if (error) {
+      setCarregandoAutorizacoes(true);
+      try {
+        const { data, error } = await autorizacoesSupabase.buscarAutorizacoes();
+        
+        if (error) {
+          console.error('Erro ao carregar autorizações:', error);
+          return;
+        }
+        
+        if (data) {
+          setAutorizacoes(data);
+          console.log('✅ Autorizações carregadas do Supabase:', Object.keys(data).length);
+        }
+      } catch (error) {
         console.error('Erro ao carregar autorizações:', error);
-        return;
+      } finally {
+        setCarregandoAutorizacoes(false);
       }
-      
-      if (data) {
-        setAutorizacoes(data);
-        console.log('✅ Autorizações carregadas do Supabase:', Object.keys(data).length);
-      }
-    } catch (error) {
-      console.error('Erro ao carregar autorizações:', error);
-    } finally {
-      setCarregandoAutorizacoes(false);
-    }
-  };
+    };
 
-  // Carregar autorizações quando o usuário mudar
+    // Carregar autorizações quando o usuário mudar
+    useEffect(() => {
+      if (user && dadosCarregados) {
+        // carregarAutorizacoesSupabase removido
+      }
+    }, [user, dadosCarregados]);
+    */
+
+  // Resetar página apenas quando necessário
   useEffect(() => {
-    if (user && dadosCarregados) {
-      carregarAutorizacoesSupabase();
+    const totalPaginas = Math.ceil(
+      dadosOrdenadosParaCards.length / registrosPorPagina
+    );
+
+    // Se não há dados, ir para página 1
+    if (dadosOrdenadosParaCards.length === 0) {
+      setPaginaAtual(1);
     }
-  }, [user, dadosCarregados]);
+    // Se a página atual é maior que o total de páginas, ir para a última página
+    else if (paginaAtual > totalPaginas && totalPaginas > 0) {
+      setPaginaAtual(totalPaginas);
+    }
+  }, [dadosOrdenadosParaCards.length, paginaAtual, registrosPorPagina]);
+
+  // Funções vazias para compatibilidade (substituindo funções de autorização removidas)
+  const handleCancelRemoveAuthorization = () => setShowConfirmModal(false);
+  const handleModalClose = () => setShowConfirmModal(false);
+  const handleAutorizarTodosModalClose = () =>
+    setShowAutorizarTodosModal(false);
+  const handlePagarTodos = () => console.log("Função removida: Pagar Todos");
+  const handleRemoverPagamentoTodos = () =>
+    console.log("Função removida: Remover Pagamentos");
+  const handlePagarSelecionados = () =>
+    console.log("Função removida: Pagar Selecionados");
+  const handleRemoverPagamentoSelecionados = () =>
+    console.log("Função removida: Remover Pagamentos Selecionados");
+  const handleAutorizarTodos = () =>
+    console.log("Função removida: Autorizar Todos");
+  const handleRemoverTodos = () =>
+    console.log("Função removida: Remover Todos");
+  const handleAutorizarSelecionados = () =>
+    console.log("Função removida: Autorizar Selecionados");
+  const handleRemoverSelecionados = () =>
+    console.log("Função removida: Remover Selecionados");
+  const carregarAutorizacoesSupabase = () =>
+    console.log("Função removida: Carregar Autorizações Supabase");
 
   // Cálculos para autorizações
-  const contasAutorizadas = dadosOrdenadosParaCards.filter(grupo => {
-    const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-    const autorizacao = autorizacoes[chaveUnica];
-    return autorizacao && (autorizacao.status === STATUS_AUTORIZACAO.AUTORIZADO || autorizacao.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO);
-  });
-  const totalContasAutorizadas = contasAutorizadas.length;
-  const valorTotalAutorizado = contasAutorizadas.reduce((acc, grupo) => acc + parseFloat(grupo.item.vl_duplicata || 0), 0);
+  // Simplificado - sem cálculos de autorização
+  const contasAutorizadas = [];
+  const totalContasAutorizadas = 0;
+  const valorTotalAutorizado = 0;
 
-  // Função para enviar conta para pagamento (FINANCEIRO)
-  const handleEnviarParaPagamento = (dadosConta, chaveUnica) => {
-    // Verificar se o usuário tem permissão
-    if (!hasRole(['user'])) {
-      console.error('❌ Usuário sem permissão para enviar para pagamento');
-      alert('Você não tem permissão para realizar esta ação.');
-      return;
-    }
-    
-    console.log('🚀 handleEnviarParaPagamento chamada');
-    console.log('📋 dadosConta:', dadosConta);
-    console.log('🔑 chaveUnica:', chaveUnica);
-    console.log('👤 user:', user);
-    console.log('🔐 hasRole FINANCEIRO:', hasRole(['user']));
-    
-    setContaParaEnviar({ dadosConta, chaveUnica });
-    setShowEnviarPagamentoModal(true);
-    console.log('✅ Modal de envio para pagamento aberto');
-    console.log('📊 showEnviarPagamentoModal definido como true');
-  };
-
-  const handleConfirmEnviarParaPagamento = async () => {
-    console.log('🚀 handleConfirmEnviarParaPagamento chamada');
-    console.log('📋 contaParaEnviar:', contaParaEnviar);
-    console.log('👤 user:', user);
-    
-    if (!contaParaEnviar || !user) {
-      console.error('❌ Dados insuficientes para enviar para pagamento');
-      return;
-    }
-    
-    try {
-      console.log('🔄 Enviando para pagamento no Supabase...');
-      const { error } = await autorizacoesSupabase.enviarParaPagamento(
-        contaParaEnviar.chaveUnica, 
-        user?.name || 'USUÁRIO'
-      );
+  /* Funções de pagamento removidas
+    const handleEnviarParaPagamentoRemovida = (dadosConta, chaveUnica) => {
+      // Verificar se o usuário tem permissão
+      if (!hasRole(['user'])) {
+        console.error('❌ Usuário sem permissão para enviar para pagamento');
+        alert('Você não tem permissão para realizar esta ação.');
+        return;
+      }
       
-      if (error) {
+      console.log('🚀 handleEnviarParaPagamento chamada');
+      console.log('📋 dadosConta:', dadosConta);
+      console.log('🔑 chaveUnica:', chaveUnica);
+      console.log('👤 user:', user);
+      console.log('🔐 hasRole FINANCEIRO:', hasRole(['user']));
+      
+      setContaParaEnviar({ dadosConta, chaveUnica });
+      setShowEnviarPagamentoModal(true);
+      console.log('✅ Modal de envio para pagamento aberto');
+      console.log('📊 showEnviarPagamentoModal definido como true');
+    };
+
+    const handleConfirmEnviarParaPagamento = async () => {
+      console.log('🚀 handleConfirmEnviarParaPagamento chamada');
+      console.log('📋 contaParaEnviar:', contaParaEnviar);
+      console.log('👤 user:', user);
+      
+      if (!contaParaEnviar || !user) {
+        console.error('❌ Dados insuficientes para enviar para pagamento');
+        return;
+      }
+      
+      try {
+        console.log('🔄 Enviando para pagamento no Supabase...');
+        const { error } = await autorizacoesSupabase.enviarParaPagamento(
+          contaParaEnviar.chaveUnica, 
+          user?.name || 'USUÁRIO'
+        );
+        
+        if (error) {
+          console.error('❌ Erro ao enviar para pagamento:', error);
+          alert('Erro ao enviar para pagamento. Tente novamente.');
+          return;
+        }
+        
+        console.log('✅ Envio para pagamento bem-sucedido no Supabase');
+        
+        // Atualizar estado local
+        setAutorizacoes(prev => ({
+          ...prev,
+          [contaParaEnviar.chaveUnica]: {
+            ...prev[contaParaEnviar.chaveUnica],
+            status: STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO,
+            enviadoPor: user?.name || 'USUÁRIO',
+            dataEnvioPagamento: new Date().toISOString()
+          }
+        }));
+        
+        console.log('✅ Estado local atualizado');
+        console.log('✅ Conta enviada para pagamento com sucesso');
+      } catch (error) {
         console.error('❌ Erro ao enviar para pagamento:', error);
         alert('Erro ao enviar para pagamento. Tente novamente.');
-        return;
+      } finally {
+        setShowEnviarPagamentoModal(false);
+        setContaParaEnviar(null);
+        console.log('✅ Modal fechado e estado limpo');
       }
-      
-      console.log('✅ Envio para pagamento bem-sucedido no Supabase');
-      
-      // Atualizar estado local
-      setAutorizacoes(prev => ({
-        ...prev,
-        [contaParaEnviar.chaveUnica]: {
-          ...prev[contaParaEnviar.chaveUnica],
-          status: STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO,
-          enviadoPor: user?.name || 'USUÁRIO',
-          dataEnvioPagamento: new Date().toISOString()
-        }
-      }));
-      
-      console.log('✅ Estado local atualizado');
-      console.log('✅ Conta enviada para pagamento com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao enviar para pagamento:', error);
-      alert('Erro ao enviar para pagamento. Tente novamente.');
-    } finally {
+    };
+
+    const handleCancelEnviarParaPagamento = () => {
+      console.log('🚫 handleCancelEnviarParaPagamento chamada');
       setShowEnviarPagamentoModal(false);
       setContaParaEnviar(null);
-      console.log('✅ Modal fechado e estado limpo');
-    }
-  };
+      console.log('✅ Modal cancelado e estado limpo');
+    };
 
-  const handleCancelEnviarParaPagamento = () => {
-    console.log('🚫 handleCancelEnviarParaPagamento chamada');
-    setShowEnviarPagamentoModal(false);
-    setContaParaEnviar(null);
-    console.log('✅ Modal cancelado e estado limpo');
-  };
-
-  // Função para remover status "enviado para pagamento"
-  const handleRemoverEnviadoParaPagamento = (dadosConta, chaveUnica) => {
-    // Verificar se o usuário tem permissão
-    if (!hasRole(['user'])) {
-      console.error('❌ Usuário sem permissão para remover pagamento');
-      alert('Você não tem permissão para realizar esta ação.');
-      return;
-    }
-    
-    console.log('🚀 handleRemoverEnviadoParaPagamento chamada');
-    console.log('📋 dadosConta:', dadosConta);
-    console.log('🔑 chaveUnica:', chaveUnica);
-    console.log('👤 user:', user);
-    
-    setContaParaEnviar({ dadosConta, chaveUnica });
-    setShowRemoverPagamentoModal(true);
-    console.log('✅ Modal de remoção de pagamento aberto');
-  };
-
-  const handleConfirmRemoverEnviadoParaPagamento = async () => {
-    console.log('🚀 handleConfirmRemoverEnviadoParaPagamento chamada');
-    console.log('📋 contaParaEnviar:', contaParaEnviar);
-    console.log('👤 user:', user);
-    
-    if (!contaParaEnviar || !user) {
-      console.error('❌ Dados insuficientes para remover pagamento');
-      return;
-    }
-    
-    try {
-      console.log('🔄 Removendo status de pagamento no Supabase...');
-      const { error } = await autorizacoesSupabase.removerEnviadoParaPagamento(
-        contaParaEnviar.chaveUnica
-      );
-      
-      if (error) {
-        console.error('❌ Erro ao remover pagamento:', error);
-        alert('Erro ao remover pagamento. Tente novamente.');
+    // Função para remover status "enviado para pagamento"
+    const handleRemoverEnviadoParaPagamento = (dadosConta, chaveUnica) => {
+      // Verificar se o usuário tem permissão
+      if (!hasRole(['user'])) {
+        console.error('❌ Usuário sem permissão para remover pagamento');
+        alert('Você não tem permissão para realizar esta ação.');
         return;
       }
       
-      console.log('✅ Remoção de pagamento bem-sucedida no Supabase');
+      console.log('🚀 handleRemoverEnviadoParaPagamento chamada');
+      console.log('📋 dadosConta:', dadosConta);
+      console.log('🔑 chaveUnica:', chaveUnica);
+      console.log('👤 user:', user);
       
-      // Atualizar estado local
-      setAutorizacoes(prev => ({
-        ...prev,
-        [contaParaEnviar.chaveUnica]: {
-          ...prev[contaParaEnviar.chaveUnica],
-          status: STATUS_AUTORIZACAO.AUTORIZADO,
-          enviadoPor: null,
-          dataEnvioPagamento: null
+      setContaParaEnviar({ dadosConta, chaveUnica });
+      setShowRemoverPagamentoModal(true);
+      console.log('✅ Modal de remoção de pagamento aberto');
+    };
+
+    const handleConfirmRemoverEnviadoParaPagamento = async () => {
+      console.log('🚀 handleConfirmRemoverEnviadoParaPagamento chamada');
+      console.log('📋 contaParaEnviar:', contaParaEnviar);
+      console.log('👤 user:', user);
+      
+      if (!contaParaEnviar || !user) {
+        console.error('❌ Dados insuficientes para remover pagamento');
+        return;
+      }
+      
+      try {
+        console.log('🔄 Removendo status de pagamento no Supabase...');
+        const { error } = await autorizacoesSupabase.removerEnviadoParaPagamento(
+          contaParaEnviar.chaveUnica
+        );
+        
+        if (error) {
+          console.error('❌ Erro ao remover pagamento:', error);
+          alert('Erro ao remover pagamento. Tente novamente.');
+          return;
         }
-      }));
-      
-      console.log('✅ Estado local atualizado');
-      console.log('✅ Status de pagamento removido com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao remover pagamento:', error);
-      alert('Erro ao remover pagamento. Tente novamente.');
-    } finally {
+        
+        console.log('✅ Remoção de pagamento bem-sucedida no Supabase');
+        
+        // Atualizar estado local
+        setAutorizacoes(prev => ({
+          ...prev,
+          [contaParaEnviar.chaveUnica]: {
+            ...prev[contaParaEnviar.chaveUnica],
+            status: STATUS_AUTORIZACAO.AUTORIZADO,
+            enviadoPor: null,
+            dataEnvioPagamento: null
+          }
+        }));
+        
+        console.log('✅ Estado local atualizado');
+        console.log('✅ Status de pagamento removido com sucesso');
+      } catch (error) {
+        console.error('❌ Erro ao remover pagamento:', error);
+        alert('Erro ao remover pagamento. Tente novamente.');
+      } finally {
+        setShowRemoverPagamentoModal(false);
+        setContaParaEnviar(null);
+        console.log('✅ Modal fechado e estado limpo');
+      }
+    };
+
+    const handleCancelRemoverEnviadoParaPagamento = () => {
+      console.log('🚫 handleCancelRemoverEnviadoParaPagamento chamada');
       setShowRemoverPagamentoModal(false);
       setContaParaEnviar(null);
-      console.log('✅ Modal fechado e estado limpo');
-    }
-  };
+      console.log('✅ Modal de remoção cancelado e estado limpo');
+    };
 
-  const handleCancelRemoverEnviadoParaPagamento = () => {
-    console.log('🚫 handleCancelRemoverEnviadoParaPagamento chamada');
-    setShowRemoverPagamentoModal(false);
-    setContaParaEnviar(null);
-    console.log('✅ Modal de remoção cancelado e estado limpo');
-  };
+    // Funções para modal de acesso restrito
+    */
 
-  // Funções para modal de acesso restrito
+  // Função para mostrar modal de acesso restrito
   const handleAcessoRestrito = (enviadoPor) => {
     setDadosAcessoRestrito({ enviadoPor });
     setShowAcessoRestritoModal(true);
@@ -2111,1699 +2416,2270 @@ const ContasAPagar = () => {
   };
 
   // Função para pagar todas as contas autorizadas
-  const handlePagarTodos = async () => {
+  const handlePagarTodosRemovida = async () => {
     // Verificar se o usuário tem permissão
-    if (!hasRole(['user'])) {
-      console.error('❌ Usuário sem permissão para pagar contas');
-      alert('Você não tem permissão para realizar esta ação.');
+    if (!hasRole(["user"])) {
+      console.error("❌ Usuário sem permissão para pagar contas");
+      alert("Você não tem permissão para realizar esta ação.");
       return;
     }
-    
-    const contasAutorizadas = dadosOrdenadosParaCards.filter(grupo => {
+
+    const contasAutorizadas = dadosOrdenadosParaCards.filter((grupo) => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
       const autorizacao = autorizacoes[chaveUnica];
-      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
-      return autorizacao && autorizacao.status === STATUS_AUTORIZACAO.AUTORIZADO && !contaPaga;
+      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== "";
+      return (
+        autorizacao &&
+        autorizacao.status === STATUS_AUTORIZACAO.AUTORIZADO &&
+        !contaPaga
+      );
     });
 
     if (contasAutorizadas.length === 0) {
-      alert('Nenhuma conta autorizada para pagar!');
+      alert("Nenhuma conta autorizada para pagar!");
       return;
     }
 
     try {
-      const chavesUnicas = contasAutorizadas.map(grupo => 
-        `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+      const chavesUnicas = contasAutorizadas.map(
+        (grupo) =>
+          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
       );
-      
+
       const { error } = await autorizacoesSupabase.enviarMultiplasParaPagamento(
-        chavesUnicas, 
-        user?.name || 'USUÁRIO'
+        chavesUnicas,
+        user?.name || "USUÁRIO"
       );
-      
+
       if (error) {
-        console.error('Erro ao pagar todas as contas:', error);
-        alert('Erro ao pagar contas. Tente novamente.');
+        console.error("Erro ao pagar todas as contas:", error);
+        alert("Erro ao pagar contas. Tente novamente.");
         return;
       }
-      
+
       // Atualizar estado local
       const novasAutorizacoes = { ...autorizacoes };
-      contasAutorizadas.forEach(grupo => {
+      contasAutorizadas.forEach((grupo) => {
         const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
         novasAutorizacoes[chaveUnica] = {
           ...novasAutorizacoes[chaveUnica],
           status: STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO,
-          enviadoPor: user?.name || 'USUÁRIO',
-          dataEnvioPagamento: new Date().toISOString()
+          enviadoPor: user?.name || "USUÁRIO",
+          dataEnvioPagamento: new Date().toISOString(),
         };
       });
-      
+
       setAutorizacoes(novasAutorizacoes);
-      console.log('✅ Todas as contas autorizadas foram pagas com sucesso');
+      console.log("✅ Todas as contas autorizadas foram pagas com sucesso");
       alert(`✅ ${contasAutorizadas.length} contas foram pagas com sucesso!`);
     } catch (error) {
-      console.error('Erro ao pagar todas as contas:', error);
-      alert('Erro ao pagar contas. Tente novamente.');
+      console.error("Erro ao pagar todas as contas:", error);
+      alert("Erro ao pagar contas. Tente novamente.");
     }
   };
 
   // Função para remover pagamento de todas as contas
-  const handleRemoverPagamentoTodos = async () => {
+  const handleRemoverPagamentoTodosRemovida = async () => {
     // Verificar se o usuário tem permissão
-    if (!hasRole(['user'])) {
-      console.error('❌ Usuário sem permissão para remover pagamento');
-      alert('Você não tem permissão para realizar esta ação.');
+    if (!hasRole(["user"])) {
+      console.error("❌ Usuário sem permissão para remover pagamento");
+      alert("Você não tem permissão para realizar esta ação.");
       return;
     }
-    
-    const contasEnviadas = dadosOrdenadosParaCards.filter(grupo => {
+
+    const contasEnviadas = dadosOrdenadosParaCards.filter((grupo) => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
       const autorizacao = autorizacoes[chaveUnica];
-      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
-      return autorizacao && autorizacao.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO && !contaPaga;
+      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== "";
+      return (
+        autorizacao &&
+        autorizacao.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO &&
+        !contaPaga
+      );
     });
 
     if (contasEnviadas.length === 0) {
-      alert('Nenhuma conta enviada para pagamento para remover!');
+      alert("Nenhuma conta enviada para pagamento para remover!");
       return;
     }
 
     try {
-      const chavesUnicas = contasEnviadas.map(grupo => 
-        `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+      const chavesUnicas = contasEnviadas.map(
+        (grupo) =>
+          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
       );
-      
-      const { error } = await autorizacoesSupabase.removerMultiplasEnviadasParaPagamento(
-        chavesUnicas
-      );
-      
+
+      const { error } =
+        await autorizacoesSupabase.removerMultiplasEnviadasParaPagamento(
+          chavesUnicas
+        );
+
       if (error) {
-        console.error('Erro ao remover pagamento de todas as contas:', error);
-        alert('Erro ao remover pagamento. Tente novamente.');
+        console.error("Erro ao remover pagamento de todas as contas:", error);
+        alert("Erro ao remover pagamento. Tente novamente.");
         return;
       }
-      
+
       // Atualizar estado local
       const novasAutorizacoes = { ...autorizacoes };
-      contasEnviadas.forEach(grupo => {
+      contasEnviadas.forEach((grupo) => {
         const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
         novasAutorizacoes[chaveUnica] = {
           ...novasAutorizacoes[chaveUnica],
           status: STATUS_AUTORIZACAO.AUTORIZADO,
           enviadoPor: null,
-          dataEnvioPagamento: null
+          dataEnvioPagamento: null,
         };
       });
-      
+
       setAutorizacoes(novasAutorizacoes);
-      console.log('✅ Pagamento removido de todas as contas com sucesso');
-      alert(`✅ Pagamento removido de ${contasEnviadas.length} contas com sucesso!`);
+      console.log("✅ Pagamento removido de todas as contas com sucesso");
+      alert(
+        `✅ Pagamento removido de ${contasEnviadas.length} contas com sucesso!`
+      );
     } catch (error) {
-      console.error('Erro ao remover pagamento de todas as contas:', error);
-      alert('Erro ao remover pagamento. Tente novamente.');
+      console.error("Erro ao remover pagamento de todas as contas:", error);
+      alert("Erro ao remover pagamento. Tente novamente.");
     }
   };
 
   // Função para pagar contas selecionadas
-  const handlePagarSelecionados = async () => {
+  const handlePagarSelecionadosRemovida = async () => {
     // Verificar se o usuário tem permissão
-    if (!hasRole(['user'])) {
-      console.error('❌ Usuário sem permissão para pagar contas selecionadas');
-      alert('Você não tem permissão para realizar esta ação.');
-      return;
-    }
-    
-    if (linhasSelecionadasAgrupadas.size === 0) {
-      alert('Nenhuma conta selecionada para pagar!');
+    if (!hasRole(["user"])) {
+      console.error("❌ Usuário sem permissão para pagar contas selecionadas");
+      alert("Você não tem permissão para realizar esta ação.");
       return;
     }
 
-    const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(index => dadosOrdenadosParaCards[index]);
-    const contasAutorizadas = contasSelecionadas.filter(grupo => {
+    if (linhasSelecionadasAgrupadas.size === 0) {
+      alert("Nenhuma conta selecionada para pagar!");
+      return;
+    }
+
+    const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(
+      (index) => dadosOrdenadosParaCards[index]
+    );
+    const contasAutorizadas = contasSelecionadas.filter((grupo) => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
       const autorizacao = autorizacoes[chaveUnica];
-      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
-      return autorizacao && autorizacao.status === STATUS_AUTORIZACAO.AUTORIZADO && !contaPaga;
+      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== "";
+      return (
+        autorizacao &&
+        autorizacao.status === STATUS_AUTORIZACAO.AUTORIZADO &&
+        !contaPaga
+      );
     });
 
     if (contasAutorizadas.length === 0) {
-      alert('Nenhuma das contas selecionadas está autorizada!');
+      alert("Nenhuma das contas selecionadas está autorizada!");
       return;
     }
 
     try {
-      const chavesUnicas = contasAutorizadas.map(grupo => 
-        `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+      const chavesUnicas = contasAutorizadas.map(
+        (grupo) =>
+          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
       );
-      
+
       const { error } = await autorizacoesSupabase.enviarMultiplasParaPagamento(
-        chavesUnicas, 
-        user?.name || 'USUÁRIO'
+        chavesUnicas,
+        user?.name || "USUÁRIO"
       );
-      
+
       if (error) {
-        console.error('Erro ao pagar contas selecionadas:', error);
-        alert('Erro ao pagar contas. Tente novamente.');
+        console.error("Erro ao pagar contas selecionadas:", error);
+        alert("Erro ao pagar contas. Tente novamente.");
         return;
       }
-      
+
       // Atualizar estado local
       const novasAutorizacoes = { ...autorizacoes };
-      contasAutorizadas.forEach(grupo => {
+      contasAutorizadas.forEach((grupo) => {
         const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
         novasAutorizacoes[chaveUnica] = {
           ...novasAutorizacoes[chaveUnica],
           status: STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO,
-          enviadoPor: user?.name || 'USUÁRIO',
-          dataEnvioPagamento: new Date().toISOString()
+          enviadoPor: user?.name || "USUÁRIO",
+          dataEnvioPagamento: new Date().toISOString(),
         };
       });
-      
+
       setAutorizacoes(novasAutorizacoes);
-      console.log('✅ Contas selecionadas pagas com sucesso');
-      alert(`✅ ${contasAutorizadas.length} contas selecionadas foram pagas com sucesso!`);
-      
+      console.log("✅ Contas selecionadas pagas com sucesso");
+      alert(
+        `✅ ${contasAutorizadas.length} contas selecionadas foram pagas com sucesso!`
+      );
+
       // Limpar seleção
       setLinhasSelecionadasAgrupadas(new Set());
     } catch (error) {
-      console.error('Erro ao pagar contas selecionadas:', error);
-      alert('Erro ao pagar contas. Tente novamente.');
+      console.error("Erro ao pagar contas selecionadas:", error);
+      alert("Erro ao pagar contas. Tente novamente.");
     }
   };
 
   // Função para remover pagamento de contas selecionadas
-  const handleRemoverPagamentoSelecionados = async () => {
+  const handleRemoverPagamentoSelecionadosRemovida = async () => {
     // Verificar se o usuário tem permissão
-    if (!hasRole(['user'])) {
-      console.error('❌ Usuário sem permissão para remover pagamento de contas selecionadas');
-      alert('Você não tem permissão para realizar esta ação.');
-      return;
-    }
-    
-    if (linhasSelecionadasAgrupadas.size === 0) {
-      alert('Nenhuma conta selecionada para remover pagamento!');
+    if (!hasRole(["user"])) {
+      console.error(
+        "❌ Usuário sem permissão para remover pagamento de contas selecionadas"
+      );
+      alert("Você não tem permissão para realizar esta ação.");
       return;
     }
 
-    const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(index => dadosOrdenadosParaCards[index]);
-    const contasEnviadas = contasSelecionadas.filter(grupo => {
+    if (linhasSelecionadasAgrupadas.size === 0) {
+      alert("Nenhuma conta selecionada para remover pagamento!");
+      return;
+    }
+
+    const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(
+      (index) => dadosOrdenadosParaCards[index]
+    );
+    const contasEnviadas = contasSelecionadas.filter((grupo) => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
       const autorizacao = autorizacoes[chaveUnica];
-      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
-      return autorizacao && autorizacao.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO && !contaPaga;
+      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== "";
+      return (
+        autorizacao &&
+        autorizacao.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO &&
+        !contaPaga
+      );
     });
 
     if (contasEnviadas.length === 0) {
-      alert('Nenhuma das contas selecionadas foi enviada para pagamento!');
+      alert("Nenhuma das contas selecionadas foi enviada para pagamento!");
       return;
     }
 
     try {
-      const chavesUnicas = contasEnviadas.map(grupo => 
-        `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+      const chavesUnicas = contasEnviadas.map(
+        (grupo) =>
+          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
       );
-      
-      const { error } = await autorizacoesSupabase.removerMultiplasEnviadasParaPagamento(
-        chavesUnicas
-      );
-      
+
+      const { error } =
+        await autorizacoesSupabase.removerMultiplasEnviadasParaPagamento(
+          chavesUnicas
+        );
+
       if (error) {
-        console.error('Erro ao remover pagamento das contas selecionadas:', error);
-        alert('Erro ao remover pagamento. Tente novamente.');
+        console.error(
+          "Erro ao remover pagamento das contas selecionadas:",
+          error
+        );
+        alert("Erro ao remover pagamento. Tente novamente.");
         return;
       }
-      
+
       // Atualizar estado local
       const novasAutorizacoes = { ...autorizacoes };
-      contasEnviadas.forEach(grupo => {
+      contasEnviadas.forEach((grupo) => {
         const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
         novasAutorizacoes[chaveUnica] = {
           ...novasAutorizacoes[chaveUnica],
           status: STATUS_AUTORIZACAO.AUTORIZADO,
           enviadoPor: null,
-          dataEnvioPagamento: null
+          dataEnvioPagamento: null,
         };
       });
-      
+
       setAutorizacoes(novasAutorizacoes);
-      console.log('✅ Pagamento removido das contas selecionadas com sucesso');
-      alert(`✅ Pagamento removido de ${contasEnviadas.length} contas selecionadas com sucesso!`);
-      
+      console.log("✅ Pagamento removido das contas selecionadas com sucesso");
+      alert(
+        `✅ Pagamento removido de ${contasEnviadas.length} contas selecionadas com sucesso!`
+      );
+
       // Limpar seleção
       setLinhasSelecionadasAgrupadas(new Set());
     } catch (error) {
-      console.error('Erro ao remover pagamento das contas selecionadas:', error);
-      alert('Erro ao remover pagamento. Tente novamente.');
+      console.error(
+        "Erro ao remover pagamento das contas selecionadas:",
+        error
+      );
+      alert("Erro ao remover pagamento. Tente novamente.");
     }
   };
 
   // Função para enviar múltiplas contas selecionadas para pagamento
   const handleEnviarSelecionadosParaPagamento = async () => {
     if (linhasSelecionadasAgrupadas.size === 0) {
-      alert('Nenhuma conta selecionada para enviar para pagamento!');
+      alert("Nenhuma conta selecionada para enviar para pagamento!");
       return;
     }
 
-    const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(index => dadosOrdenadosParaCards[index]);
-    const contasAutorizadas = contasSelecionadas.filter(grupo => {
+    const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(
+      (index) => dadosOrdenadosParaCards[index]
+    );
+    const contasAutorizadas = contasSelecionadas.filter((grupo) => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
       const autorizacao = autorizacoes[chaveUnica];
-      return autorizacao && autorizacao.status === STATUS_AUTORIZACAO.AUTORIZADO;
+      return (
+        autorizacao && autorizacao.status === STATUS_AUTORIZACAO.AUTORIZADO
+      );
     });
 
     if (contasAutorizadas.length === 0) {
-      alert('Nenhuma das contas selecionadas está autorizada!');
+      alert("Nenhuma das contas selecionadas está autorizada!");
       return;
     }
 
     try {
-      const chavesUnicas = contasAutorizadas.map(grupo => 
-        `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+      const chavesUnicas = contasAutorizadas.map(
+        (grupo) =>
+          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
       );
-      
+
       const { error } = await autorizacoesSupabase.enviarMultiplasParaPagamento(
-        chavesUnicas, 
-        user?.name || 'USUÁRIO'
+        chavesUnicas,
+        user?.name || "USUÁRIO"
       );
-      
+
       if (error) {
-        console.error('Erro ao enviar contas selecionadas para pagamento:', error);
-        alert('Erro ao enviar contas para pagamento. Tente novamente.');
+        console.error(
+          "Erro ao enviar contas selecionadas para pagamento:",
+          error
+        );
+        alert("Erro ao enviar contas para pagamento. Tente novamente.");
         return;
       }
-      
+
       // Atualizar estado local
       const novasAutorizacoes = { ...autorizacoes };
-      contasAutorizadas.forEach(grupo => {
+      contasAutorizadas.forEach((grupo) => {
         const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
         novasAutorizacoes[chaveUnica] = {
           ...novasAutorizacoes[chaveUnica],
           status: STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO,
-          enviadoPor: user?.name || 'USUÁRIO',
-          dataEnvioPagamento: new Date().toISOString()
+          enviadoPor: user?.name || "USUÁRIO",
+          dataEnvioPagamento: new Date().toISOString(),
         };
       });
-      
+
       setAutorizacoes(novasAutorizacoes);
-      console.log('✅ Contas selecionadas enviadas para pagamento com sucesso');
-      
+      console.log("✅ Contas selecionadas enviadas para pagamento com sucesso");
+
       // Limpar seleção
       setLinhasSelecionadasAgrupadas(new Set());
     } catch (error) {
-      console.error('Erro ao enviar contas selecionadas para pagamento:', error);
-      alert('Erro ao enviar contas para pagamento. Tente novamente.');
+      console.error(
+        "Erro ao enviar contas selecionadas para pagamento:",
+        error
+      );
+      alert("Erro ao enviar contas para pagamento. Tente novamente.");
     }
   };
 
   return (
     <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
-        <PageTitle 
-          title="Contas a Pagar"
-          subtitle="Gerencie e acompanhe todas as contas a pagar da empresa"
-          icon={Receipt}
-          iconColor="text-red-600"
-        />
-        
-        {/* Filtros */}
-        <div className="mb-4">
-          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-3 rounded-lg shadow-lg w-full max-w-4xl mx-auto border border-[#000638]/10">
-            <div className="mb-2">
-              <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
-                <Funnel size={18} weight="bold" />
-                Filtros
-              </span>
-              <span className="text-xs text-gray-500 mt-1">Selecione o período e empresa para análise</span>
-            </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-1 mb-3">
-              <div className="lg:col-span-2">
-                <FiltroEmpresa
-                  empresasSelecionadas={empresasSelecionadas}
-                  onSelectEmpresas={handleSelectEmpresas}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                  Data Início
-                </label>
-                <input
-                  type="date"
-                  value={dataInicio}
-                  onChange={(e) => setDataInicio(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                  Data Fim
-                </label>
-                <input
-                  type="date"
-                  value={dataFim}
-                  onChange={(e) => setDataFim(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Status</label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-                >
-                  <option value="Todos">TODOS</option>
-                  <option value="Pago">PAGO</option>
-                  <option value="Vencido">VENCIDO</option>
-                  <option value="A Vencer">A VENCER</option>
-                </select>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Situação</label>
-                <select
-                  value={situacao}
-                  onChange={(e) => setSituacao(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-                >
-                  <option value="NORMAIS">NORMAIS</option>
-                  <option value="CANCELADAS">CANCELADAS</option>
-                  <option value="TODAS">TODAS</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Previsão</label>
-                <select
-                  value={previsao}
-                  onChange={(e) => setPrevisao(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-                >
-                  <option value="TODOS">TODOS</option>
-                  <option value="PREVISÃO">PREVISÃO</option>
-                  <option value="REAL">REAL</option>
-                  <option value="CONSIGNADO">CONSIGNADO</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Autorização</label>
-                <select
-                  value={filtroAutorizacao}
-                  onChange={(e) => setFiltroAutorizacao(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-                >
-                  <option value="TODOS">TODOS</option>
-                  <option value="AUTORIZADOS">AUTORIZADOS</option>
-                  <option value="NAO_AUTORIZADOS">NÃO AUTORIZADOS</option>
-                  <option value="ENVIADO_PAGAMENTO">ENVIADO PAGAMENTO</option>
-                </select>
-              </div>
-              <div>
-                <FiltroFornecedor
-                  fornecedoresSelecionados={fornecedoresSelecionados}
-                  onSelectFornecedores={handleSelectFornecedores}
-                  dadosFornecedor={dadosFornecedor}
-                />
-              </div>
-              <div>
-                <FiltroDespesas
-                  despesasSelecionadas={despesasSelecionadas}
-                  onSelectDespesas={handleSelectDespesas}
-                  dadosDespesa={dadosDespesa}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Duplicata</label>
-                <input
-                  type="text"
-                  value={duplicata}
-                  onChange={(e) => setDuplicata(e.target.value)}
-                  placeholder="Buscar duplicata..."
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
-                />
-              </div>
-              <div>
-                <FiltroCentroCusto
-                  centrosCustoSelecionados={centrosCustoSelecionados}
-                  onSelectCentrosCusto={handleSelectCentrosCusto}
-                  dadosCentroCusto={dadosCentroCusto}
-                />
-              </div>
-              <div className="flex items-center">
-                <button 
-                  type="submit"
-                  className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
-                  disabled={loading || !dataInicio || !dataFim}
-                >
-                  {loading ? (
-                    <>
-                      <Spinner size={10} className="animate-spin" />
-                      <span>Buscando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Calendar size={10} />
-                      <span>Buscar Dados</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
+      <PageTitle
+        title="Contas a Pagar"
+        subtitle="Gerencie e acompanhe todas as contas a pagar da empresa"
+        icon={Receipt}
+        iconColor="text-red-600"
+      />
 
-        {/* Cards de Resumo */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8 max-w-7xl mx-auto">
-          {/* Total de Contas */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Receipt size={18} className="text-blue-600" />
-                <CardTitle className="text-sm font-bold text-blue-700">Total de Contas</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-blue-600 mb-0.5">
-                  {loading ? <Spinner size={24} className="animate-spin text-blue-600" /> : totalContasCards}
-              </div>
-              <CardDescription className="text-xs text-gray-500">Contas no período</CardDescription>
-            </CardContent>
-          </Card>
-
-          {/* Valor Total */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-green-600" />
-                <CardTitle className="text-sm font-bold text-green-700">Valor Total</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-green-600 mb-0.5 break-words">
-                {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : 
-                                     totalValorCards.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                    })
-                }
-              </div>
-              <CardDescription className="text-xs text-gray-500">Valor total das contas</CardDescription>
-            </CardContent>
-          </Card>
-
-          {/* Falta Pagar */}
-          <Card 
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={() => abrirModalCard('faltaPagar')}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <ArrowDown size={18} className="text-purple-600" />
-                <CardTitle className="text-sm font-bold text-purple-700">Falta Pagar</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-purple-600 mb-0.5">
-                {loading ? <Spinner size={24} className="animate-spin text-purple-600" /> : 
-                                     valorFaltaPagarCards.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                })
-                }
-              </div>
-              <div className="text-base font-medium text-purple-500">
-                {loading ? '...' : 
-                                     `${totalContasCards - totalContasPagasCards} contas`
-                }
-              </div>
-              <CardDescription className="text-xs text-gray-500">Contas pendentes</CardDescription>
-            </CardContent>
-          </Card>
-
-          {/* Contas Vencidas */}
-          <Card 
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={() => abrirModalCard('vencidas')}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Warning size={18} className="text-red-600" />
-                <CardTitle className="text-sm font-bold text-red-700">Contas Vencidas</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-red-600 mb-0.5">
-                {loading ? <Spinner size={24} className="animate-spin text-red-600" /> : 
-                                     valorContasVencidasCards.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })
-                }
-              </div>
-              <div className="text-base font-medium text-red-500">
-                {loading ? '...' : 
-                                     `${totalContasVencidasCards} contas`
-                }
-              </div>
-              <CardDescription className="text-xs text-gray-500">Contas em atraso</CardDescription>
-            </CardContent>
-          </Card>
-
-          {/* Contas A Vencer */}
-          <Card 
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={() => abrirModalCard('aVencer')}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Clock size={18} className="text-yellow-600" />
-                <CardTitle className="text-sm font-bold text-yellow-700">A Vencer</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-yellow-600 mb-0.5">
-                {loading ? <Spinner size={24} className="animate-spin text-yellow-600" /> : 
-                                     valorContasAVencerCards.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })
-                }
-              </div>
-              <div className="text-base font-medium text-yellow-500">
-                {loading ? '...' : 
-                                     `${totalContasAVencerCards} contas`
-                }
-              </div>
-              <CardDescription className="text-xs text-gray-500">Contas futuras</CardDescription>
-            </CardContent>
-          </Card>
-
-          {/* Próximas a Vencer (próximos 7 dias) */}
-          <Card 
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={() => abrirModalCard('proximasVencer')}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <ArrowUp size={18} className="text-orange-600" />
-                <CardTitle className="text-sm font-bold text-orange-700">Próximas a Vencer</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-orange-600 mb-0.5">
-                {loading ? <Spinner size={24} className="animate-spin text-orange-600" /> : 
-                                     valorContasProximasVencerCards.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                    })
-                }
-              </div>
-              <div className="text-base font-medium text-orange-500">
-                                {loading ? '...' : 
-                                     `${totalContasProximasVencerCards} contas`
-                }
-              </div>
-              <CardDescription className="text-xs text-gray-500">Próximos 7 dias</CardDescription>
-            </CardContent>
-          </Card>
-
-          {/* Contas Pagas */}
-          <Card 
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={() => abrirModalCard('pagas')}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <CheckCircle size={18} className="text-green-600" />
-                <CardTitle className="text-sm font-bold text-green-700">Contas Pagas</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-green-600 mb-0.5">
-                {loading ? <Spinner size={24} className="animate-spin text-green-600" /> : 
-                                      valorContasPagasCards.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                    })
-                }
-              </div>
-              <div className="text-base font-medium text-green-500">
-                {loading ? '...' : 
-                                     `${totalContasPagasCards} contas`
-                }
-              </div>
-              <CardDescription className="text-xs text-gray-500">Contas liquidadas</CardDescription>
-            </CardContent>
-          </Card>
-
-          {/* Descontos Ganhos */}
-          <Card 
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={() => abrirModalCard('descontos')}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <TrendDown size={18} className="text-emerald-600" />
-                <CardTitle className="text-sm font-bold text-emerald-700">Descontos Ganhos</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-emerald-600 mb-0.5">
-                {loading ? <Spinner size={24} className="animate-spin text-emerald-600" /> : 
-                                      totalDescontosCards.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                    })
-                }
-              </div>
-              <div className="text-base font-medium text-emerald-500">
-                {loading ? '...' : 
-                                     `${dadosOrdenadosParaCards.filter(grupo => parseFloat(grupo.item.vl_desconto || 0) > 0).length} contas`
-                }
-              </div>
-              <CardDescription className="text-xs text-gray-500">Total de descontos obtidos</CardDescription>
-            </CardContent>
-          </Card>
+      {/* Filtros */}
+      <div className="mb-4">
+        <form
+          onSubmit={handleFiltrar}
+          className="flex flex-col bg-white p-3 rounded-lg shadow-lg w-full max-w-4xl mx-auto border border-[#000638]/10"
+        >
+          <div className="mb-2">
+            <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
+              <Funnel size={18} weight="bold" />
+              Filtros
+            </span>
+            <span className="text-xs text-gray-500 mt-1">
+              Selecione o período e empresa para análise
+            </span>
           </div>
-          
-        {/* Conteúdo principal */}
-        <div className="flex flex-col gap-3 justify-center bg-white rounded-lg shadow-lg border border-[#000638]/10">
-          <div className="p-3">
-            {loading ? (
-              <div className="flex justify-center items-center py-12">
-                <div className="flex items-center gap-1">
-                  <Spinner size={18} className="animate-spin text-blue-600" />
-                  <span className="text-sm text-gray-600">Carregando dados...</span>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-1 mb-3">
+            <div className="lg:col-span-2">
+              <FiltroEmpresa
+                empresasSelecionadas={empresasSelecionadas}
+                onSelectEmpresas={handleSelectEmpresas}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Data Início
+              </label>
+              <input
+                type="date"
+                value={dataInicio}
+                onChange={(e) => setDataInicio(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Data Fim
+              </label>
+              <input
+                type="date"
+                value={dataFim}
+                onChange={(e) => setDataFim(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Status
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              >
+                <option value="Todos">TODOS</option>
+                <option value="Pago">PAGO</option>
+                <option value="Vencido">VENCIDO</option>
+                <option value="A Vencer">A VENCER</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Situação
+              </label>
+              <select
+                value={situacao}
+                onChange={(e) => setSituacao(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              >
+                <option value="NORMAIS">NORMAIS</option>
+                <option value="CANCELADAS">CANCELADAS</option>
+                <option value="TODAS">TODAS</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Previsão
+              </label>
+              <select
+                value={previsao}
+                onChange={(e) => setPrevisao(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              >
+                <option value="TODOS">TODOS</option>
+                <option value="PREVISÃO">PREVISÃO</option>
+                <option value="REAL">REAL</option>
+                <option value="CONSIGNADO">CONSIGNADO</option>
+              </select>
+            </div>
+            {/* Filtro de autorização removido */}
+            <div>
+              <FiltroFornecedor
+                fornecedoresSelecionados={fornecedoresSelecionados}
+                onSelectFornecedores={handleSelectFornecedores}
+                dadosFornecedor={dadosFornecedor}
+              />
+            </div>
+            <div>
+              <FiltroDespesas
+                despesasSelecionadas={despesasSelecionadas}
+                onSelectDespesas={handleSelectDespesas}
+                dadosDespesa={dadosDespesa}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Duplicata
+              </label>
+              <input
+                type="text"
+                value={duplicata}
+                onChange={(e) => setDuplicata(e.target.value)}
+                placeholder="Buscar duplicata..."
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
+              />
+            </div>
+            <div>
+              <FiltroCentroCusto
+                centrosCustoSelecionados={centrosCustoSelecionados}
+                onSelectCentrosCusto={handleSelectCentrosCusto}
+                dadosCentroCusto={dadosCentroCusto}
+              />
+            </div>
+            <div className="flex items-center">
+              <button
+                type="submit"
+                className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
+                disabled={loading || !dataInicio || !dataFim}
+              >
+                {loading ? (
+                  <>
+                    <Spinner size={10} className="animate-spin" />
+                    <span>Buscando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Calendar size={10} />
+                    <span>Buscar Dados</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      {/* Cards de Resumo */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8 max-w-7xl mx-auto">
+        {/* Total de Contas */}
+        <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Receipt size={18} className="text-blue-600" />
+              <CardTitle className="text-sm font-bold text-blue-700">
+                Total de Contas
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-4">
+            <div className="text-base font-extrabold text-blue-600 mb-0.5">
+              {loading ? (
+                <Spinner size={24} className="animate-spin text-blue-600" />
+              ) : (
+                totalContasCards
+              )}
+            </div>
+            <CardDescription className="text-xs text-gray-500">
+              Contas no período
+            </CardDescription>
+          </CardContent>
+        </Card>
+
+        {/* Valor Total */}
+        <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <CurrencyDollar size={18} className="text-green-600" />
+              <CardTitle className="text-sm font-bold text-green-700">
+                Valor Total
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-4">
+            <div className="text-base font-extrabold text-green-600 mb-0.5 break-words">
+              {loading ? (
+                <Spinner size={24} className="animate-spin text-green-600" />
+              ) : (
+                totalValorCards.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })
+              )}
+            </div>
+            <CardDescription className="text-xs text-gray-500">
+              Valor total das contas
+            </CardDescription>
+          </CardContent>
+        </Card>
+
+        {/* Falta Pagar */}
+        <Card
+          className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+          onClick={() => abrirModalCard("faltaPagar")}
+        >
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <ArrowDown size={18} className="text-purple-600" />
+              <CardTitle className="text-sm font-bold text-purple-700">
+                Falta Pagar
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-4">
+            <div className="text-base font-extrabold text-purple-600 mb-0.5">
+              {loading ? (
+                <Spinner size={24} className="animate-spin text-purple-600" />
+              ) : (
+                valorFaltaPagarCards.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })
+              )}
+            </div>
+            <div className="text-base font-medium text-purple-500">
+              {loading
+                ? "..."
+                : `${totalContasCards - totalContasPagasCards} contas`}
+            </div>
+            <CardDescription className="text-xs text-gray-500">
+              Contas pendentes
+            </CardDescription>
+          </CardContent>
+        </Card>
+
+        {/* Contas Vencidas */}
+        <Card
+          className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+          onClick={() => abrirModalCard("vencidas")}
+        >
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Warning size={18} className="text-red-600" />
+              <CardTitle className="text-sm font-bold text-red-700">
+                Contas Vencidas
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-4">
+            <div className="text-base font-extrabold text-red-600 mb-0.5">
+              {loading ? (
+                <Spinner size={24} className="animate-spin text-red-600" />
+              ) : (
+                valorContasVencidasCards.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })
+              )}
+            </div>
+            <div className="text-base font-medium text-red-500">
+              {loading ? "..." : `${totalContasVencidasCards} contas`}
+            </div>
+            <CardDescription className="text-xs text-gray-500">
+              Contas em atraso
+            </CardDescription>
+          </CardContent>
+        </Card>
+
+        {/* Contas A Vencer */}
+        <Card
+          className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+          onClick={() => abrirModalCard("aVencer")}
+        >
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Clock size={18} className="text-yellow-600" />
+              <CardTitle className="text-sm font-bold text-yellow-700">
+                A Vencer
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-4">
+            <div className="text-base font-extrabold text-yellow-600 mb-0.5">
+              {loading ? (
+                <Spinner size={24} className="animate-spin text-yellow-600" />
+              ) : (
+                valorContasAVencerCards.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })
+              )}
+            </div>
+            <div className="text-base font-medium text-yellow-500">
+              {loading ? "..." : `${totalContasAVencerCards} contas`}
+            </div>
+            <CardDescription className="text-xs text-gray-500">
+              Contas futuras
+            </CardDescription>
+          </CardContent>
+        </Card>
+
+        {/* Próximas a Vencer (próximos 7 dias) */}
+        <Card
+          className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+          onClick={() => abrirModalCard("proximasVencer")}
+        >
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <ArrowUp size={18} className="text-orange-600" />
+              <CardTitle className="text-sm font-bold text-orange-700">
+                Próximas a Vencer
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-4">
+            <div className="text-base font-extrabold text-orange-600 mb-0.5">
+              {loading ? (
+                <Spinner size={24} className="animate-spin text-orange-600" />
+              ) : (
+                valorContasProximasVencerCards.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })
+              )}
+            </div>
+            <div className="text-base font-medium text-orange-500">
+              {loading ? "..." : `${totalContasProximasVencerCards} contas`}
+            </div>
+            <CardDescription className="text-xs text-gray-500">
+              Próximos 7 dias
+            </CardDescription>
+          </CardContent>
+        </Card>
+
+        {/* Contas Pagas */}
+        <Card
+          className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+          onClick={() => abrirModalCard("pagas")}
+        >
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle size={18} className="text-green-600" />
+              <CardTitle className="text-sm font-bold text-green-700">
+                Contas Pagas
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-4">
+            <div className="text-base font-extrabold text-green-600 mb-0.5">
+              {loading ? (
+                <Spinner size={24} className="animate-spin text-green-600" />
+              ) : (
+                valorContasPagasCards.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })
+              )}
+            </div>
+            <div className="text-base font-medium text-green-500">
+              {loading ? "..." : `${totalContasPagasCards} contas`}
+            </div>
+            <CardDescription className="text-xs text-gray-500">
+              Contas liquidadas
+            </CardDescription>
+          </CardContent>
+        </Card>
+
+        {/* Descontos Ganhos */}
+        <Card
+          className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+          onClick={() => abrirModalCard("descontos")}
+        >
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <TrendDown size={18} className="text-emerald-600" />
+              <CardTitle className="text-sm font-bold text-emerald-700">
+                Descontos Ganhos
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-4">
+            <div className="text-base font-extrabold text-emerald-600 mb-0.5">
+              {loading ? (
+                <Spinner size={24} className="animate-spin text-emerald-600" />
+              ) : (
+                totalDescontosCards.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })
+              )}
+            </div>
+            <div className="text-base font-medium text-emerald-500">
+              {loading
+                ? "..."
+                : `${
+                    dadosOrdenadosParaCards.filter(
+                      (grupo) => parseFloat(grupo.item.vl_desconto || 0) > 0
+                    ).length
+                  } contas`}
+            </div>
+            <CardDescription className="text-xs text-gray-500">
+              Total de descontos obtidos
+            </CardDescription>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Conteúdo principal */}
+      <div className="flex flex-col gap-3 justify-center bg-white rounded-lg shadow-lg border border-[#000638]/10">
+        <div className="p-3">
+          {loading ? (
+            <div className="flex justify-center items-center py-12">
+              <div className="flex items-center gap-1">
+                <Spinner size={18} className="animate-spin text-blue-600" />
+                <span className="text-sm text-gray-600">
+                  Carregando dados...
+                </span>
+              </div>
+            </div>
+          ) : !dadosCarregados ? (
+            <div className="flex justify-center items-center py-12">
+              <div className="text-center">
+                <div className="text-gray-500 text-sm mb-0.5">
+                  Clique em "Buscar Dados" para carregar as informações
+                </div>
+                <div className="text-gray-400 text-xs">
+                  Selecione o período e empresa desejados
                 </div>
               </div>
-            ) : !dadosCarregados ? (
-              <div className="flex justify-center items-center py-12">
-                <div className="text-center">
-                  <div className="text-gray-500 text-sm mb-0.5">Clique em "Buscar Dados" para carregar as informações</div>
-                  <div className="text-gray-400 text-xs">Selecione o período e empresa desejados</div>
+            </div>
+          ) : dados.length === 0 ? (
+            <div className="flex justify-center items-center py-12">
+              <div className="text-center">
+                <div className="text-gray-500 text-sm mb-0.5">
+                  Nenhum dado encontrado
+                </div>
+                <div className="text-gray-400 text-xs">
+                  Verifique o período selecionado ou tente novamente
                 </div>
               </div>
-            ) : dados.length === 0 ? (
-              <div className="flex justify-center items-center py-12">
-                <div className="text-center">
-                  <div className="text-gray-500 text-sm mb-0.5">Nenhum dado encontrado</div>
-                  <div className="text-gray-400 text-xs">Verifique o período selecionado ou tente novamente</div>
-                </div>
+            </div>
+          ) : (
+            <>
+              {/* Plano de Contas (dropdown) */}
+              <div className="bg-white rounded-lg shadow-lg border border-[#000638]/10 w-full mb-3">
+                <button
+                  className="w-full p-3 flex items-center justify-between"
+                  onClick={() => setPlanoOpen(!planoOpen)}
+                >
+                  <h2 className="text-sm font-bold text-[#000638]">
+                    Plano de Contas
+                  </h2>
+                  <span className="text-xs text-gray-500">
+                    {planoOpen ? "Ocultar" : "Mostrar"}
+                  </span>
+                </button>
+                {planoOpen && (
+                  <div className="p-3 border-t border-[#000638]/10">
+                    <DespesasPorCategoria
+                      dados={dadosOrdenadosComFiltroMensal}
+                      totalContas={dadosOrdenadosComFiltroMensal.length}
+                      linhasSelecionadas={linhasSelecionadas}
+                      toggleLinhaSelecionada={toggleLinhaSelecionada}
+                      filtroMensal={filtroMensal}
+                      setFiltroMensal={setFiltroMensal}
+                      dadosOriginais={dadosComFiltrosAdicionais}
+                      filtroDia={filtroDia}
+                      setFiltroDia={setFiltroDia}
+                      handleFiltroMensalChange={handleFiltroMensalChange}
+                      obterDiasDoMes={obterDiasDoMes}
+                      abrirModalDetalhes={abrirModalDetalhes}
+                      getSortIcon={getSortIcon}
+                      handleSort={handleSort}
+                      agruparDadosIdenticos={agruparDadosIdenticos}
+                    />
+                  </div>
+                )}
               </div>
-            ) : (
-              <>
-                {/* Plano de Contas (dropdown) */}
-                <div className="bg-white rounded-lg shadow-lg border border-[#000638]/10 w-full mb-3">
-                  <button className="w-full p-3 flex items-center justify-between" onClick={() => setPlanoOpen(!planoOpen)}>
-                    <h2 className="text-sm font-bold text-[#000638]">Plano de Contas</h2>
-                    <span className="text-xs text-gray-500">{planoOpen ? 'Ocultar' : 'Mostrar'}</span>
-                  </button>
-                  {planoOpen && (
-                    <div className="p-3 border-t border-[#000638]/10">
-                      <DespesasPorCategoria 
-                        dados={dadosOrdenadosComFiltroMensal}
-                        totalContas={dadosOrdenadosComFiltroMensal.length}
-                        linhasSelecionadas={linhasSelecionadas}
-                        toggleLinhaSelecionada={toggleLinhaSelecionada}
-                        filtroMensal={filtroMensal}
-                        setFiltroMensal={setFiltroMensal}
-                        dadosOriginais={dadosComFiltrosAdicionais}
-                        filtroDia={filtroDia}
-                        setFiltroDia={setFiltroDia}
-                        handleFiltroMensalChange={handleFiltroMensalChange}
-                        obterDiasDoMes={obterDiasDoMes}
-                        abrirModalDetalhes={abrirModalDetalhes}
-                        getSortIcon={getSortIcon}
-                        handleSort={handleSort}
-                        agruparDadosIdenticos={agruparDadosIdenticos}
-                      />
+
+              {/* Detalhamento de Contas */}
+              <div className="bg-white rounded-lg shadow-lg border border-[#000638]/10  w-full mb-3">
+                <div className="p-3 border-b border-[#000638]/10">
+                  <h2 className="text-sm font-bold text-[#000638]">
+                    Detalhamento de Contas
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Registros consolidados por duplicata/parcela/fornecedor,
+                    unificando situações, previsões e datas como nos cards.
+                  </p>
+                  {carregandoAutorizacoes && (
+                    <div className="mt-2 flex items-center gap-1 text-xs text-blue-600">
+                      <Spinner size={10} className="animate-spin" />
+                      <span>Carregando autorizações...</span>
                     </div>
                   )}
+                  <div className="mt-3 flex items-center gap-1">
+                    {(() => {
+                      const allSelected =
+                        linhasSelecionadasAgrupadas.size ===
+                          calcularDadosPaginados.dados.length &&
+                        calcularDadosPaginados.dados.length > 0;
+                      const cls = allSelected
+                        ? "text-xs px-0.5 py-0.5 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
+                        : "text-xs px-0.5 py-0.5 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors";
+                      return (
+                        <button
+                          onClick={() => {
+                            const isAll =
+                              linhasSelecionadasAgrupadas.size ===
+                                calcularDadosPaginados.dados.length &&
+                              calcularDadosPaginados.dados.length > 0;
+                            if (isAll) {
+                              // Desmarcar todas da página atual
+                              const indicesParaRemover =
+                                calcularDadosPaginados.dados.map(
+                                  (_, idx) =>
+                                    (calcularDadosPaginados.paginaAtual - 1) *
+                                      calcularDadosPaginados.registrosPorPagina +
+                                    idx
+                                );
+                              setLinhasSelecionadasAgrupadas((prev) => {
+                                const novoSet = new Set(prev);
+                                indicesParaRemover.forEach((idx) =>
+                                  novoSet.delete(idx)
+                                );
+                                return novoSet;
+                              });
+                            } else {
+                              // Selecionar todas da página atual
+                              const indicesParaAdicionar =
+                                calcularDadosPaginados.dados.map(
+                                  (_, idx) =>
+                                    (calcularDadosPaginados.paginaAtual - 1) *
+                                      calcularDadosPaginados.registrosPorPagina +
+                                    idx
+                                );
+                              setLinhasSelecionadasAgrupadas((prev) => {
+                                const novoSet = new Set(prev);
+                                indicesParaAdicionar.forEach((idx) =>
+                                  novoSet.add(idx)
+                                );
+                                return novoSet;
+                              });
+                            }
+                          }}
+                          className={cls}
+                        >
+                          {allSelected ? "Desmarcar todas" : "Selecionar todas"}
+                        </button>
+                      );
+                    })()}
+                    {/* Botões de autorização removidos */}
+                    {hasRole(["user"]) && (
+                      <>
+                        <button
+                          onClick={() => handlePagarTodos()}
+                          className="text-xs px-0.5 py-0.5 bg-yellow-500 text-black font-bold rounded hover:bg-yellow-600 transition-colors"
+                        >
+                          PAGAR TODOS
+                        </button>
+                        <button
+                          onClick={() => handleRemoverPagamentoTodos()}
+                          className="text-xs px-0.5 py-0.5 bg-red-500 text-white font-bold rounded hover:bg-red-600 transition-colors"
+                        >
+                          REMOVER TODOS
+                        </button>
+                        <button
+                          onClick={() => handlePagarSelecionados()}
+                          disabled={linhasSelecionadasAgrupadas.size === 0}
+                          className="text-xs px-0.5 py-0.5 bg-yellow-500 text-black font-bold rounded hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          PAGAR SELECIONADOS ({linhasSelecionadasAgrupadas.size}
+                          )
+                        </button>
+                        <button
+                          onClick={() => handleRemoverPagamentoSelecionados()}
+                          disabled={linhasSelecionadasAgrupadas.size === 0}
+                          className="text-xs px-0.5 py-0.5 bg-red-500 text-white font-bold rounded hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          REMOVER SELECIONADOS (
+                          {linhasSelecionadasAgrupadas.size})
+                        </button>
+                      </>
+                    )}
+                    <button
+                      onClick={exportarExcelDetalhamento}
+                      className="text-xs px-0.5 py-0.5 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                    >
+                      Baixar Excel
+                    </button>
+                    {hasRole(["owner", "admin", "manager"]) && (
+                      <button
+                        onClick={carregarAutorizacoesSupabase}
+                        disabled={carregandoAutorizacoes}
+                        className="text-xs px-0.5 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {carregandoAutorizacoes ? (
+                          <div className="flex items-center gap-1">
+                            <Spinner size={10} className="animate-spin" />
+                            <span>Carregando...</span>
+                          </div>
+                        ) : (
+                          "🔄 Recarregar"
+                        )}
+                      </button>
+                    )}
+                  </div>
                 </div>
-
-					{/* Detalhamento de Contas */}
-					<div className="bg-white rounded-lg shadow-lg border border-[#000638]/10  w-full mb-3">
-						<div className="p-3 border-b border-[#000638]/10">
-							<h2 className="text-sm font-bold text-[#000638]">Detalhamento de Contas</h2>
-							<p className="text-xs text-gray-500 mt-1">Registros consolidados por duplicata/parcela/fornecedor, unificando situações, previsões e datas como nos cards.</p>
-							{carregandoAutorizacoes && (
-								<div className="mt-2 flex items-center gap-1 text-xs text-blue-600">
-									<Spinner size={10} className="animate-spin" />
-									<span>Carregando autorizações...</span>
-								</div>
-							)}
-							<div className="mt-3 flex items-center gap-1">
-								{(() => {
-									const allSelected = linhasSelecionadasAgrupadas.size === dadosOrdenadosParaCards.length && dadosOrdenadosParaCards.length > 0;
-									const cls = allSelected
-										? 'text-xs px-0.5 py-0.5 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors'
-										: 'text-xs px-0.5 py-0.5 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors';
-									return (
-										<button
-											onClick={() => {
-												const isAll = linhasSelecionadasAgrupadas.size === dadosOrdenadosParaCards.length && dadosOrdenadosParaCards.length > 0;
-												setLinhasSelecionadasAgrupadas(isAll ? new Set() : new Set(dadosOrdenadosParaCards.map((_, idx) => idx)));
-											}}
-											className={cls}
-										>
-											{allSelected ? 'Desmarcar todas' : 'Selecionar todas'}
-										</button>
-									);
-								})()}
-								{hasRole(['owner', 'admin', 'manager']) && (
-									<>
-										<button
-											onClick={() => handleAutorizarTodos()}
-											className="text-xs px-0.5 py-0.5 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors"
-										>
-											Autorizar Todos
-										</button>
-										<button
-											onClick={() => handleRemoverTodos()}
-											className="text-xs px-0.5 py-0.5 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-										>
-											Remover Todos
-										</button>
-										<button
-											onClick={() => handleAutorizarSelecionados()}
-											disabled={linhasSelecionadasAgrupadas.size === 0}
-											className="text-xs px-0.5 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-										>
-											Autorizar Selecionados ({linhasSelecionadasAgrupadas.size})
-										</button>
-										<button onClick={() => handleRemoverSelecionados()} disabled={linhasSelecionadasAgrupadas.size === 0} className="text-xs px-0.5 py-0.5 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-											Remover Selecionados ({linhasSelecionadasAgrupadas.size})
-										</button>
-									</>
-								)}
-								{hasRole(['user']) && (
-									<>
-										<button
-											onClick={() => handlePagarTodos()}
-											className="text-xs px-0.5 py-0.5 bg-yellow-500 text-black font-bold rounded hover:bg-yellow-600 transition-colors"
-										>
-											PAGAR TODOS
-										</button>
-										<button
-											onClick={() => handleRemoverPagamentoTodos()}
-											className="text-xs px-0.5 py-0.5 bg-red-500 text-white font-bold rounded hover:bg-red-600 transition-colors"
-										>
-											REMOVER TODOS
-										</button>
-										<button
-											onClick={() => handlePagarSelecionados()}
-											disabled={linhasSelecionadasAgrupadas.size === 0}
-											className="text-xs px-0.5 py-0.5 bg-yellow-500 text-black font-bold rounded hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-										>
-											PAGAR SELECIONADOS ({linhasSelecionadasAgrupadas.size})
-										</button>
-										<button
-											onClick={() => handleRemoverPagamentoSelecionados()}
-											disabled={linhasSelecionadasAgrupadas.size === 0}
-											className="text-xs px-0.5 py-0.5 bg-red-500 text-white font-bold rounded hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-										>
-											REMOVER SELECIONADOS ({linhasSelecionadasAgrupadas.size})
-										</button>
-									</>
-								)}
-								<button
-									onClick={exportarExcelDetalhamento}
-									className="text-xs px-0.5 py-0.5 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-								>
-									Baixar Excel
-								</button>
-								{hasRole(['owner', 'admin', 'manager']) && (
-									<button
-										onClick={carregarAutorizacoesSupabase}
-										disabled={carregandoAutorizacoes}
-										className="text-xs px-0.5 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-									>
-										{carregandoAutorizacoes ? (
-											<div className="flex items-center gap-1">
-												<Spinner size={10} className="animate-spin" />
-												<span>Carregando...</span>
-											</div>
-										) : (
-											'🔄 Recarregar'
-										)}
-									</button>
-								)}
-
-							</div>
-						</div>
-						<div className="p-3 overflow-x-auto">
-							<table className="contas-table w-full border-collapse">
-								<thead className="min-w-full border border-gray-200 rounded-lg">
-									<tr className="bg-[#000638] text-white text-[8px]">
-										<th className="px-0.5 py-0.5 text-center text-[8px]" style={{ width: '30px', minWidth: '30px', position: 'sticky', left: 0, zIndex: 10 }}>Selecionar</th>
-										{(hasRole(['owner', 'admin', 'manager']) || hasRole(['user'])) && (
-											<th className="px-0.5 py-0.5 text-center text-[8px]">Ações</th>
-										)}
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_situacao')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Status {getSortIcon('tp_situacao')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('tp_situacao');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['tp_situacao'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Status"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'tp_situacao' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="tp_situacao"
-															columnTitle="Status"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['tp_situacao']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_vencimento')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Vencimento {getSortIcon('dt_vencimento')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('dt_vencimento');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['dt_vencimento'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Vencimento"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'dt_vencimento' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="dt_vencimento"
-															columnTitle="Vencimento"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['dt_vencimento']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_duplicata')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Valor {getSortIcon('vl_duplicata')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('vl_duplicata');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['vl_duplicata'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Valor"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'vl_duplicata' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="vl_duplicata"
-															columnTitle="Valor"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['vl_duplicata']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_fornecedor')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Fornecedor {getSortIcon('cd_fornecedor')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('cd_fornecedor');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['cd_fornecedor'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Fornecedor"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'cd_fornecedor' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="cd_fornecedor"
-															columnTitle="Fornecedor"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['cd_fornecedor']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nm_fornecedor')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												NM Fornecedor {getSortIcon('nm_fornecedor')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('nm_fornecedor');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['nm_fornecedor'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Nome Fornecedor"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'nm_fornecedor' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="nm_fornecedor"
-															columnTitle="Nome Fornecedor"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['nm_fornecedor']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_despesaitem')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Despesa {getSortIcon('ds_despesaitem')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('ds_despesaitem');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['ds_despesaitem'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Despesa"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'ds_despesaitem' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="ds_despesaitem"
-															columnTitle="Despesa"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['ds_despesaitem']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_ccusto')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												NM CUSTO {getSortIcon('ds_ccusto')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('ds_ccusto');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['ds_ccusto'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Centro de Custo"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'ds_ccusto' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="ds_ccusto"
-															columnTitle="Centro de Custo"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['ds_ccusto']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_empresa')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Empresa {getSortIcon('cd_empresa')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('cd_empresa');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['cd_empresa'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Empresa"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'cd_empresa' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="cd_empresa"
-															columnTitle="Empresa"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['cd_empresa']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_duplicata')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Duplicata {getSortIcon('nr_duplicata')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('nr_duplicata');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['nr_duplicata'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Duplicata"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'nr_duplicata' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="nr_duplicata"
-															columnTitle="Duplicata"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['nr_duplicata']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_parcela')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Parcela {getSortIcon('nr_parcela')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('nr_parcela');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['nr_parcela'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Parcela"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'nr_parcela' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="nr_parcela"
-															columnTitle="Parcela"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['nr_parcela']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_portador')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Portador {getSortIcon('nr_portador')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('nr_portador');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['nr_portador'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Portador"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'nr_portador' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="nr_portador"
-															columnTitle="Portador"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['nr_portador']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_emissao')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Emissão {getSortIcon('dt_emissao')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('dt_emissao');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['dt_emissao'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Emissão"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'dt_emissao' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="dt_emissao"
-															columnTitle="Emissão"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['dt_emissao']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_entrada')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Entrada {getSortIcon('dt_entrada')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('dt_entrada');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['dt_entrada'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Entrada"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'dt_entrada' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="dt_entrada"
-															columnTitle="Entrada"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['dt_entrada']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_liq')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Liquidação {getSortIcon('dt_liq')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('dt_liq');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['dt_liq'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Liquidação"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'dt_liq' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="dt_liq"
-															columnTitle="Liquidação"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['dt_liq']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_situacao')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Situação {getSortIcon('tp_situacao')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('tp_situacao_col');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['tp_situacao_col'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Situação"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'tp_situacao_col' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="tp_situacao_col"
-															columnTitle="Situação"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['tp_situacao_col']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_estagio')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Estágio {getSortIcon('tp_estagio')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('tp_estagio');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['tp_estagio'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Estágio"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'tp_estagio' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="tp_estagio"
-															columnTitle="Estágio"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['tp_estagio']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_juros')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Juros {getSortIcon('vl_juros')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('vl_juros');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['vl_juros'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Juros"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'vl_juros' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="vl_juros"
-															columnTitle="Juros"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['vl_juros']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_acrescimo')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Acréscimo {getSortIcon('vl_acrescimo')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('vl_acrescimo');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['vl_acrescimo'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Acréscimo"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'vl_acrescimo' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="vl_acrescimo"
-															columnTitle="Acréscimo"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['vl_acrescimo']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_desconto')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Desconto {getSortIcon('vl_desconto')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('vl_desconto');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['vl_desconto'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Desconto"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'vl_desconto' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="vl_desconto"
-															columnTitle="Desconto"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['vl_desconto']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_pago')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Pago {getSortIcon('vl_pago')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('vl_pago');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['vl_pago'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Valor Pago"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'vl_pago' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="vl_pago"
-															columnTitle="Valor Pago"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['vl_pago']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('in_aceite')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Aceite {getSortIcon('in_aceite')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('in_aceite');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['in_aceite'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Aceite"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'in_aceite' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="in_aceite"
-															columnTitle="Aceite"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['in_aceite']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px]">Rateio(s)</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px]">Observação</th>
-										<th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_previsaoreal')}>
-											<div className="flex items-center justify-center gap-1 relative">
-												Previsão {getSortIcon('tp_previsaoreal')}
-												<button
-													type="button"
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleFilterDropdown('tp_previsaoreal');
-													}}
-													className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-														columnFilters['tp_previsaoreal'] ? 'text-yellow-400' : 'text-gray-400'
-													}`}
-													aria-label="Filtrar por Previsão"
-												>
-													<FunnelSimple size={10} />
-												</button>
-												{openFilterDropdown === 'tp_previsaoreal' && (
-													<div className="absolute top-full left-0 z-50 mt-1">
-														<FilterDropdown
-															columnKey="tp_previsaoreal"
-															columnTitle="Previsão"
-															data={dadosOrdenadosParaCards.map(grupo => grupo.item)}
-															currentFilter={columnFilters['tp_previsaoreal']}
-															onApplyFilter={handleApplyFilter}
-															onClose={() => toggleFilterDropdown(null)}
-														/>
-													</div>
-												)}
-											</div>
-										</th>
-									</tr>
-								</thead>
-								<tbody>
-									{dadosOrdenadosParaCards.map((grupo, index) => {
-										const isSelected = linhasSelecionadasAgrupadas.has(index);
-										const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
-										const autorizacao = autorizacoes[chaveUnica];
-										const autorizadoPor = autorizacao?.autorizadoPor;
-										const podeAutorizar = hasRole(['owner', 'admin', 'manager']);
-										const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
-										
-										// Debug para o botão ENVIAR PARA PAGAMENTO
-										if (index === 0) { // Apenas para o primeiro item para não poluir o console
-											console.log('🔍 Debug condições botão ENVIAR PARA PAGAMENTO:');
-											console.log('👤 hasRole FINANCEIRO:', hasRole(['user']));
-											console.log('✅ autorizadoPor:', autorizadoPor);
-											console.log('📊 autorizacao?.status:', autorizacao?.status);
-											console.log('🎯 STATUS_AUTORIZACAO.AUTORIZADO:', STATUS_AUTORIZACAO.AUTORIZADO);
-											console.log('🔗 Condição completa:', hasRole(['user']) && autorizadoPor && autorizacao?.status === STATUS_AUTORIZACAO.AUTORIZADO);
-											console.log('💰 contaPaga:', contaPaga);
-										}
-										
-										return (
-										<tr key={`grp-${index}`} className={`text-[8px] border-b transition-colors cursor-pointer ${isSelected ? 'bg-blue-100 hover:bg-blue-200' : index % 2 === 0 ? 'bg-white hover:bg-gray-100' : 'bg-gray-50 hover:bg-gray-100'}`} onClick={() => abrirModalDetalhes(grupo.item)} title="Clique para ver detalhes da conta">
-											<td className="px-0.5 py-0.5 text-center" style={{ width: '30px', minWidth: '30px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
-												<input type="checkbox" checked={isSelected} onChange={(e) => { e.stopPropagation(); toggleLinhaSelecionadaAgrupada(index); }} className="rounded w-3 h-3" onClick={(e) => e.stopPropagation()} />
-											</td>
-											{(hasRole(['owner', 'admin', 'manager']) || hasRole(['user'])) && (
-												<td className="px-0.5 py-0.5 text-center">
-													{contaPaga ? (
-														<span className="text-[8px] text-red-700 font-semibold">PAGO</span>
-													) : (
-														<>
-															{podeAutorizar ? (
-																<button
-																	onClick={(e) => { 
-																		e.stopPropagation(); 
-																		if (autorizadoPor) {
-																			// Verificar se é ADM para remover quando enviado para pagamento
-																			if (autorizacao?.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO && !hasRole(['owner', 'admin', 'manager'])) {
-																				handleAcessoRestrito(autorizacao.enviadoPor);
-																				return;
-																			}
-																			// Confirmação para remover autorização
-																			handleRemoveAuthorization(chaveUnica, autorizadoPor);
-																		} else {
-																			// Autorizar sem confirmação
-																			handleAutorizarConta(grupo.item, chaveUnica);
-																		}
-																	}}
-																	className={`text-[8px] px-0.5 py-0.5 rounded ${autorizadoPor ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
-																>
-																	{autorizadoPor ? 'REMOVER' : 'AUTORIZAR'}
-																</button>
-															) : null}
-															{hasRole(['user']) && autorizadoPor && autorizacao?.status === STATUS_AUTORIZACAO.AUTORIZADO && (
-																<div className="mt-1">
-																	<button
-																		onClick={(e) => { 
-																			e.stopPropagation(); 
-																			console.log('🔵 Botão PAGAR clicado');
-																			console.log('📋 Dados da conta:', grupo.item);
-																			console.log('🔑 Chave única:', chaveUnica);
-																			handleEnviarParaPagamento(grupo.item, chaveUnica);
-																		}}
-																		className="text-[8px] px-0.5 py-0.5 rounded bg-yellow-500 hover:bg-yellow-600 text-black font-bold w-full"
-																	>
-																		PAGAR
-																	</button>
-																</div>
-															)}
-															{hasRole(['user']) && autorizadoPor && autorizacao?.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO && (
-																<div className="mt-1">
-																	<button
-																		onClick={(e) => { 
-																			e.stopPropagation(); 
-																			console.log('🔴 Botão REMOVER PAGAMENTO clicado');
-																			console.log('📋 Dados da conta:', grupo.item);
-																			console.log('🔑 Chave única:', chaveUnica);
-																			handleRemoverEnviadoParaPagamento(grupo.item, chaveUnica);
-																		}}
-																		className="text-[8px] px-0.5 py-0.5 rounded bg-red-500 hover:bg-red-600 text-white font-bold w-full"
-																	>
-																		REMOVER PAGAMENTO
-																	</button>
-																</div>
-															)}
-														</>
-													)}
-												</td>
-											)}
-											<td className="px-0.5 py-0.5 text-center text-[8px]">
-												{contaPaga ? (
-													<div className="flex items-center justify-center gap-1">
-														<span className="w-2 h-2 bg-red-500 rounded-full"></span>
-														<span className="text-red-700 font-semibold">PAGO</span>
-														<span className="text-gray-600">em</span>
-														<span className="text-red-600 font-medium">{formatarData(grupo.item.dt_liq)}</span>
-													</div>
-												) : autorizacao?.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO ? (
-													<div className="flex items-center justify-center gap-1">
-														<span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
-														<span className="text-yellow-700 font-semibold">ENVIADO PARA PAGAMENTO</span>
-														<span className="text-gray-600">por</span>
-														<span className="text-blue-600 font-medium">{autorizacao.enviadoPor}</span>
-													</div>
-												) : autorizadoPor ? (
-													<div className="flex items-center justify-center gap-1">
-														<span className="w-2 h-2 bg-green-500 rounded-full"></span>
-														<span className="text-green-700 font-semibold">AUTORIZADO</span>
-														<span className="text-gray-600">por</span>
-														<span className="text-blue-600 font-medium">{autorizadoPor}</span>
-													</div>
-												) : (
-													<div className="flex items-center justify-center gap-1">
-														<span className="w-2 h-2 bg-gray-400 rounded-full"></span>
-														<span className="text-gray-500 font-medium">NÃO AUTORIZADO</span>
-													</div>
-												)}
-											</td>
-											<td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_vencimento)}</td>
-											<td className="px-0.5 py-0.5 text-right font-medium text-green-600">{parseFloat(grupo.item.vl_duplicata || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-											<td className="px-0.5 py-0.5 text-center">{grupo.item.cd_fornecedor || ''}</td>
-											<td className="px-0.5 py-0.5 text-left max-w-32 truncate" title={grupo.item.nm_fornecedor}>{grupo.item.nm_fornecedor || ''}</td>
-											<td className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_despesaitem}>{grupo.item.ds_despesaitem || ''}</td>
-											<td className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_ccusto}>{grupo.item.ds_ccusto || ''}</td>
-											<td className="px-0.5 py-0.5 text-center">{grupo.item.cd_empresa || ''}</td>
-											<td className="px-0.5 py-0.5 text-center">{grupo.item.nr_duplicata || ''}</td>
-											<td className="px-0.5 py-0.5 text-center">{grupo.item.nr_parcela || ''}</td>
-											<td className="px-0.5 py-0.5 text-center">{grupo.item.nr_portador || ''}</td>
-											<td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_emissao)}</td>
-											<td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_entrada)}</td>
-											<td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_liq)}</td>
-											<td className="px-0.5 py-0.5 text-center">{grupo.item.tp_situacao || ''}</td>
-											<td className="px-0.5 py-0.5 text-center">{grupo.item.tp_estagio || ''}</td>
-											<td className="px-0.5 py-0.5 text-right">{parseFloat(grupo.item.vl_juros || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-											<td className="px-0.5 py-0.5 text-right">{parseFloat(grupo.item.vl_acrescimo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-											<td className="px-0.5 py-0.5 text-right">{parseFloat(grupo.item.vl_desconto || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-											<td className="px-0.5 py-0.5 text-right">{parseFloat(grupo.item.vl_pago || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-											<td className="px-0.5 py-0.5 text-center">{grupo.item.in_aceite || ''}</td>
-											<td className="px-0.5 py-0.5 text-right" title={grupo.rateios && grupo.rateios.length > 0 ? grupo.rateios.join(' | ') : ''}>
-												{(grupo.rateios && grupo.rateios.length > 0) ? grupo.rateios.map(r => parseFloat(r || 0)).reduce((a,b)=>a+b,0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : ''}
-											</td>
-											<td className="px-0.5 py-0.5 text-left max-w-32 truncate" title={(grupo.observacoes||[]).join(' | ')}>{grupo.item.ds_observacao || ''}</td>
-											<td className="px-0.5 py-0.5 text-center">{grupo.item.tp_previsaoreal || ''}</td>
-										</tr>
-									)})}
-								</tbody>
-							</table>
-							<div className="mt-3 text-xs text-gray-600 flex items-center justify-between">
-								<div className="flex items-center gap-4">
-									<div>
-										Selecionadas: <span className="font-semibold">{linhasSelecionadasAgrupadas.size}</span>
-									</div>
-									<div className="flex items-center gap-1">
-										<span className="text-green-600">✓</span>
-										                <span>Dados de fornecedor, centro de custo e despesa das rotas refeitas (/fornecedor, /centrocusto e /despesa)</span>
-									</div>
-								</div>
-								<div className="flex items-center gap-3">
-									<div>
-										Valor total: <span className="font-semibold text-green-700">{Array.from(linhasSelecionadasAgrupadas).reduce((acc, idx) => acc + (parseFloat(dadosOrdenadosParaCards[idx]?.item?.vl_duplicata || 0)), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-									</div>
-									<div>
-										Valor autorizado: <span className="font-semibold text-emerald-700">{valorTotalAutorizado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-									</div>
-									<div>
-										Contas autorizadas: <span className="font-semibold text-emerald-700">{totalContasAutorizadas}</span>
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
-
-
-              </>
-            )}
+                <div className="p-3 overflow-x-auto">
+                  <table className="contas-table w-full border-collapse">
+                    <thead className="min-w-full border border-gray-200 rounded-lg">
+                      <tr className="bg-[#000638] text-white text-[8px]">
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px]"
+                          style={{
+                            width: "30px",
+                            minWidth: "30px",
+                            position: "sticky",
+                            left: 0,
+                            zIndex: 10,
+                          }}
+                        >
+                          Selecionar
+                        </th>
+                        {(hasRole(["owner", "admin", "manager"]) ||
+                          hasRole(["user"])) && (
+                          <th className="px-0.5 py-0.5 text-center text-[8px]">
+                            Ações
+                          </th>
+                        )}
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("tp_situacao")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Status {getSortIcon("tp_situacao")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("tp_situacao");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["tp_situacao"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Status"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "tp_situacao" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="tp_situacao"
+                                  columnTitle="Status"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["tp_situacao"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
                           </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("dt_vencimento")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Vencimento {getSortIcon("dt_vencimento")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("dt_vencimento");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["dt_vencimento"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Vencimento"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "dt_vencimento" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="dt_vencimento"
+                                  columnTitle="Vencimento"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["dt_vencimento"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
                           </div>
-                          
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("vl_duplicata")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Valor {getSortIcon("vl_duplicata")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("vl_duplicata");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["vl_duplicata"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Valor"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "vl_duplicata" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="vl_duplicata"
+                                  columnTitle="Valor"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["vl_duplicata"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("cd_fornecedor")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Fornecedor {getSortIcon("cd_fornecedor")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("cd_fornecedor");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["cd_fornecedor"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Fornecedor"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "cd_fornecedor" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="cd_fornecedor"
+                                  columnTitle="Fornecedor"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["cd_fornecedor"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("nm_fornecedor")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            NM Fornecedor {getSortIcon("nm_fornecedor")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("nm_fornecedor");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["nm_fornecedor"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Nome Fornecedor"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "nm_fornecedor" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="nm_fornecedor"
+                                  columnTitle="Nome Fornecedor"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["nm_fornecedor"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("ds_despesaitem")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Despesa {getSortIcon("ds_despesaitem")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("ds_despesaitem");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["ds_despesaitem"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Despesa"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "ds_despesaitem" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="ds_despesaitem"
+                                  columnTitle="Despesa"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={
+                                    columnFilters["ds_despesaitem"]
+                                  }
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("ds_ccusto")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            NM CUSTO {getSortIcon("ds_ccusto")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("ds_ccusto");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["ds_ccusto"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Centro de Custo"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "ds_ccusto" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="ds_ccusto"
+                                  columnTitle="Centro de Custo"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["ds_ccusto"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("cd_empresa")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Empresa {getSortIcon("cd_empresa")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("cd_empresa");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["cd_empresa"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Empresa"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "cd_empresa" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="cd_empresa"
+                                  columnTitle="Empresa"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["cd_empresa"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("nr_duplicata")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Duplicata {getSortIcon("nr_duplicata")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("nr_duplicata");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["nr_duplicata"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Duplicata"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "nr_duplicata" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="nr_duplicata"
+                                  columnTitle="Duplicata"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["nr_duplicata"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("nr_parcela")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Parcela {getSortIcon("nr_parcela")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("nr_parcela");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["nr_parcela"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Parcela"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "nr_parcela" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="nr_parcela"
+                                  columnTitle="Parcela"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["nr_parcela"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("nr_portador")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Portador {getSortIcon("nr_portador")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("nr_portador");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["nr_portador"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Portador"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "nr_portador" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="nr_portador"
+                                  columnTitle="Portador"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["nr_portador"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("dt_emissao")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Emissão {getSortIcon("dt_emissao")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("dt_emissao");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["dt_emissao"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Emissão"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "dt_emissao" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="dt_emissao"
+                                  columnTitle="Emissão"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["dt_emissao"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("dt_entrada")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Entrada {getSortIcon("dt_entrada")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("dt_entrada");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["dt_entrada"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Entrada"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "dt_entrada" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="dt_entrada"
+                                  columnTitle="Entrada"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["dt_entrada"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("dt_liq")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Liquidação {getSortIcon("dt_liq")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("dt_liq");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["dt_liq"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Liquidação"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "dt_liq" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="dt_liq"
+                                  columnTitle="Liquidação"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["dt_liq"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("tp_situacao")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Situação {getSortIcon("tp_situacao")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("tp_situacao_col");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["tp_situacao_col"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Situação"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "tp_situacao_col" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="tp_situacao_col"
+                                  columnTitle="Situação"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={
+                                    columnFilters["tp_situacao_col"]
+                                  }
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("tp_estagio")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Estágio {getSortIcon("tp_estagio")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("tp_estagio");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["tp_estagio"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Estágio"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "tp_estagio" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="tp_estagio"
+                                  columnTitle="Estágio"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["tp_estagio"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("vl_juros")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Juros {getSortIcon("vl_juros")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("vl_juros");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["vl_juros"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Juros"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "vl_juros" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="vl_juros"
+                                  columnTitle="Juros"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["vl_juros"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("vl_acrescimo")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Acréscimo {getSortIcon("vl_acrescimo")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("vl_acrescimo");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["vl_acrescimo"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Acréscimo"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "vl_acrescimo" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="vl_acrescimo"
+                                  columnTitle="Acréscimo"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["vl_acrescimo"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("vl_desconto")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Desconto {getSortIcon("vl_desconto")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("vl_desconto");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["vl_desconto"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Desconto"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "vl_desconto" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="vl_desconto"
+                                  columnTitle="Desconto"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["vl_desconto"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("vl_pago")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Pago {getSortIcon("vl_pago")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("vl_pago");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["vl_pago"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Valor Pago"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "vl_pago" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="vl_pago"
+                                  columnTitle="Valor Pago"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["vl_pago"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("in_aceite")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Aceite {getSortIcon("in_aceite")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("in_aceite");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["in_aceite"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Aceite"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "in_aceite" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="in_aceite"
+                                  columnTitle="Aceite"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={columnFilters["in_aceite"]}
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                        <th className="px-0.5 py-0.5 text-center text-[8px]">
+                          Rateio(s)
+                        </th>
+                        <th className="px-0.5 py-0.5 text-center text-[8px]">
+                          Observação
+                        </th>
+                        <th
+                          className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                          onClick={() => handleSort("tp_previsaoreal")}
+                        >
+                          <div className="flex items-center justify-center gap-1 relative">
+                            Previsão {getSortIcon("tp_previsaoreal")}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilterDropdown("tp_previsaoreal");
+                              }}
+                              className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
+                                columnFilters["tp_previsaoreal"]
+                                  ? "text-yellow-400"
+                                  : "text-gray-400"
+                              }`}
+                              aria-label="Filtrar por Previsão"
+                            >
+                              <FunnelSimple size={10} />
+                            </button>
+                            {openFilterDropdown === "tp_previsaoreal" && (
+                              <div className="absolute top-full left-0 z-50 mt-1">
+                                <FilterDropdown
+                                  columnKey="tp_previsaoreal"
+                                  columnTitle="Previsão"
+                                  data={dadosOrdenadosParaCards.map(
+                                    (grupo) => grupo.item
+                                  )}
+                                  currentFilter={
+                                    columnFilters["tp_previsaoreal"]
+                                  }
+                                  onApplyFilter={handleApplyFilter}
+                                  onClose={() => toggleFilterDropdown(null)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {calcularDadosPaginados.dados.map((grupo, index) => {
+                        const indiceGlobal =
+                          (calcularDadosPaginados.paginaAtual - 1) *
+                            calcularDadosPaginados.registrosPorPagina +
+                          index;
+                        const isSelected =
+                          linhasSelecionadasAgrupadas.has(indiceGlobal);
+                        const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
+                        const autorizacao = autorizacoes[chaveUnica];
+                        const autorizadoPor = autorizacao?.autorizadoPor;
+                        const podeAutorizar = hasRole([
+                          "owner",
+                          "admin",
+                          "manager",
+                        ]);
+                        const contaPaga =
+                          grupo.item.dt_liq && grupo.item.dt_liq.trim() !== "";
 
-            {/* Modal para exibir observações */}
+                        // Debug para o botão ENVIAR PARA PAGAMENTO
+                        if (index === 0) {
+                          // Apenas para o primeiro item para não poluir o console
+                          console.log(
+                            "🔍 Debug condições botão ENVIAR PARA PAGAMENTO:"
+                          );
+                          console.log(
+                            "👤 hasRole FINANCEIRO:",
+                            hasRole(["user"])
+                          );
+                          console.log("✅ autorizadoPor:", autorizadoPor);
+                          console.log(
+                            "📊 autorizacao?.status:",
+                            autorizacao?.status
+                          );
+                          console.log(
+                            "🎯 STATUS_AUTORIZACAO.AUTORIZADO:",
+                            STATUS_AUTORIZACAO.AUTORIZADO
+                          );
+                          console.log(
+                            "🔗 Condição completa:",
+                            hasRole(["user"]) &&
+                              autorizadoPor &&
+                              autorizacao?.status ===
+                                STATUS_AUTORIZACAO.AUTORIZADO
+                          );
+                          console.log("💰 contaPaga:", contaPaga);
+                        }
+
+                        return (
+                          <tr
+                            key={`grp-${index}`}
+                            className={`text-[8px] border-b transition-colors cursor-pointer ${
+                              isSelected
+                                ? "bg-blue-100 hover:bg-blue-200"
+                                : index % 2 === 0
+                                ? "bg-white hover:bg-gray-100"
+                                : "bg-gray-50 hover:bg-gray-100"
+                            }`}
+                            onClick={() => abrirModalDetalhes(grupo.item)}
+                            title="Clique para ver detalhes da conta"
+                          >
+                            <td
+                              className="px-0.5 py-0.5 text-center"
+                              style={{
+                                width: "30px",
+                                minWidth: "30px",
+                                position: "sticky",
+                                left: 0,
+                                zIndex: 10,
+                                background: isSelected ? "#dbeafe" : "inherit",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  toggleLinhaSelecionadaAgrupada(indiceGlobal);
+                                }}
+                                className="rounded w-3 h-3"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center">
+                              {contaPaga ? (
+                                <span className="text-[8px] text-red-700 font-semibold">
+                                  PAGO
+                                </span>
+                              ) : (
+                                <span className="text-[8px] text-blue-700 font-semibold">
+                                  ABERTO
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center text-[8px]">
+                              {contaPaga ? (
+                                <div className="flex items-center justify-center gap-1">
+                                  <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                                  <span className="text-red-700 font-semibold">
+                                    PAGO
+                                  </span>
+                                  <span className="text-gray-600">em</span>
+                                  <span className="text-red-600 font-medium">
+                                    {formatarData(grupo.item.dt_liq)}
+                                  </span>
+                                </div>
+                              ) : autorizacao?.status ===
+                                STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO ? (
+                                <div className="flex items-center justify-center gap-1">
+                                  <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
+                                  <span className="text-yellow-700 font-semibold">
+                                    ENVIADO PARA PAGAMENTO
+                                  </span>
+                                  <span className="text-gray-600">por</span>
+                                  <span className="text-blue-600 font-medium">
+                                    {autorizacao.enviadoPor}
+                                  </span>
+                                </div>
+                              ) : autorizadoPor ? (
+                                <div className="flex items-center justify-center gap-1">
+                                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                                  <span className="text-green-700 font-semibold">
+                                    AUTORIZADO
+                                  </span>
+                                  <span className="text-gray-600">por</span>
+                                  <span className="text-blue-600 font-medium">
+                                    {autorizadoPor}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-center gap-1">
+                                  <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
+                                  <span className="text-gray-500 font-medium">
+                                    NÃO AUTORIZADO
+                                  </span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center">
+                              {formatarData(grupo.item.dt_vencimento)}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-right font-medium text-green-600">
+                              {parseFloat(
+                                grupo.item.vl_duplicata || 0
+                              ).toLocaleString("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              })}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center">
+                              {grupo.item.cd_fornecedor || ""}
+                            </td>
+                            <td
+                              className="px-0.5 py-0.5 text-left max-w-32 truncate"
+                              title={grupo.item.nm_fornecedor}
+                            >
+                              {grupo.item.nm_fornecedor || ""}
+                            </td>
+                            <td
+                              className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32"
+                              title={grupo.item.ds_despesaitem}
+                            >
+                              {grupo.item.ds_despesaitem || ""}
+                            </td>
+                            <td
+                              className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32"
+                              title={grupo.item.ds_ccusto}
+                            >
+                              {grupo.item.ds_ccusto || ""}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center">
+                              {grupo.item.cd_empresa || ""}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center">
+                              {grupo.item.nr_duplicata || ""}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center">
+                              {grupo.item.nr_parcela || ""}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center">
+                              {grupo.item.nr_portador || ""}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center">
+                              {formatarData(grupo.item.dt_emissao)}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center">
+                              {formatarData(grupo.item.dt_entrada)}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center">
+                              {formatarData(grupo.item.dt_liq)}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center">
+                              {grupo.item.tp_situacao || ""}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center">
+                              {grupo.item.tp_estagio || ""}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-right">
+                              {parseFloat(
+                                grupo.item.vl_juros || 0
+                              ).toLocaleString("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              })}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-right">
+                              {parseFloat(
+                                grupo.item.vl_acrescimo || 0
+                              ).toLocaleString("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              })}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-right">
+                              {parseFloat(
+                                grupo.item.vl_desconto || 0
+                              ).toLocaleString("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              })}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-right">
+                              {parseFloat(
+                                grupo.item.vl_pago || 0
+                              ).toLocaleString("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              })}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center">
+                              {grupo.item.in_aceite || ""}
+                            </td>
+                            <td
+                              className="px-0.5 py-0.5 text-right"
+                              title={
+                                grupo.rateios && grupo.rateios.length > 0
+                                  ? grupo.rateios.join(" | ")
+                                  : ""
+                              }
+                            >
+                              {grupo.rateios && grupo.rateios.length > 0
+                                ? grupo.rateios
+                                    .map((r) => parseFloat(r || 0))
+                                    .reduce((a, b) => a + b, 0)
+                                    .toLocaleString("pt-BR", {
+                                      style: "currency",
+                                      currency: "BRL",
+                                    })
+                                : ""}
+                            </td>
+                            <td
+                              className="px-0.5 py-0.5 text-left max-w-32 truncate"
+                              title={(grupo.observacoes || []).join(" | ")}
+                            >
+                              {grupo.item.ds_observacao || ""}
+                            </td>
+                            <td className="px-0.5 py-0.5 text-center">
+                              {grupo.item.tp_previsaoreal || ""}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {/* Controles de Paginação */}
+                  {calcularDadosPaginados.totalPaginas > 1 && (
+                    <div className="mt-4 flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600">
+                          Mostrando{" "}
+                          {(calcularDadosPaginados.paginaAtual - 1) *
+                            calcularDadosPaginados.registrosPorPagina +
+                            1}{" "}
+                          a{" "}
+                          {Math.min(
+                            calcularDadosPaginados.paginaAtual *
+                              calcularDadosPaginados.registrosPorPagina,
+                            calcularDadosPaginados.totalRegistros
+                          )}{" "}
+                          de {calcularDadosPaginados.totalRegistros} registros
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        {/* Botão Primeira Página */}
+                        <button
+                          onClick={irParaPrimeiraPagina}
+                          disabled={calcularDadosPaginados.paginaAtual === 1}
+                          className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Primeira página"
+                        >
+                          ««
+                        </button>
+
+                        {/* Botão Página Anterior */}
+                        <button
+                          onClick={irParaPaginaAnterior}
+                          disabled={calcularDadosPaginados.paginaAtual === 1}
+                          className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Página anterior"
+                        >
+                          «
+                        </button>
+
+                        {/* Números das páginas */}
+                        <div className="flex items-center gap-1">
+                          {Array.from(
+                            {
+                              length: Math.min(
+                                5,
+                                calcularDadosPaginados.totalPaginas
+                              ),
+                            },
+                            (_, i) => {
+                              const paginaInicial = Math.max(
+                                1,
+                                calcularDadosPaginados.paginaAtual - 2
+                              );
+                              const numeroPagina = paginaInicial + i;
+
+                              if (
+                                numeroPagina >
+                                calcularDadosPaginados.totalPaginas
+                              )
+                                return null;
+
+                              return (
+                                <button
+                                  key={numeroPagina}
+                                  onClick={() => mudarPagina(numeroPagina)}
+                                  className={`px-2 py-1 text-xs rounded ${
+                                    calcularDadosPaginados.paginaAtual ===
+                                    numeroPagina
+                                      ? "bg-[#000638] text-white"
+                                      : "bg-white border border-gray-300 hover:bg-gray-50"
+                                  }`}
+                                >
+                                  {numeroPagina}
+                                </button>
+                              );
+                            }
+                          )}
+                        </div>
+
+                        {/* Botão Próxima Página */}
+                        <button
+                          onClick={irParaProximaPagina}
+                          disabled={
+                            calcularDadosPaginados.paginaAtual ===
+                            calcularDadosPaginados.totalPaginas
+                          }
+                          className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Próxima página"
+                        >
+                          »
+                        </button>
+
+                        {/* Botão Última Página */}
+                        <button
+                          onClick={irParaUltimaPagina}
+                          disabled={
+                            calcularDadosPaginados.paginaAtual ===
+                            calcularDadosPaginados.totalPaginas
+                          }
+                          className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Última página"
+                        >
+                          »»
+                        </button>
+                      </div>
+
+                      <div className="text-sm text-gray-600">
+                        Página {calcularDadosPaginados.paginaAtual} de{" "}
+                        {calcularDadosPaginados.totalPaginas}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-3 text-xs text-gray-600 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div>
+                        Selecionadas:{" "}
+                        <span className="font-semibold">
+                          {linhasSelecionadasAgrupadas.size}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-green-600">✓</span>
+                        <span>
+                          Dados de fornecedor, centro de custo e despesa das
+                          rotas refeitas (/fornecedor, /centrocusto e /despesa)
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div>
+                        Valor total:{" "}
+                        <span className="font-semibold text-green-700">
+                          {Array.from(linhasSelecionadasAgrupadas)
+                            .reduce(
+                              (acc, idx) =>
+                                acc +
+                                parseFloat(
+                                  calcularDadosPaginados.dados[idx]?.item
+                                    ?.vl_duplicata || 0
+                                ),
+                              0
+                            )
+                            .toLocaleString("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
+                            })}
+                        </span>
+                      </div>
+                      <div>
+                        Valor autorizado:{" "}
+                        <span className="font-semibold text-emerald-700">
+                          {valorTotalAutorizado.toLocaleString("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
+                          })}
+                        </span>
+                      </div>
+                      <div>
+                        Contas autorizadas:{" "}
+                        <span className="font-semibold text-emerald-700">
+                          {totalContasAutorizadas}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Modal para exibir observações */}
       {modalAberto && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] flex flex-col">
@@ -3813,52 +4689,77 @@ const ContasAPagar = () => {
               <p className="text-xs opacity-90 mt-1">
                 Detalhes das observações para a conta selecionada
               </p>
-                          </div>
+            </div>
 
             {/* Conteúdo do Modal */}
             <div className="flex-1 overflow-y-auto p-3">
-              {dadosModal && dadosModal.observacoes && dadosModal.observacoes.length > 0 ? (
+              {dadosModal &&
+              dadosModal.observacoes &&
+              dadosModal.observacoes.length > 0 ? (
                 <div className="space-y-3">
                   {dadosModal.observacoes.map((obs, index) => (
-                    <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                      <p className="text-gray-800 text-sm leading-relaxed">{obs}</p>
-                          </div>
+                    <div
+                      key={index}
+                      className="bg-gray-50 p-4 rounded-lg border border-gray-200"
+                    >
+                      <p className="text-gray-800 text-sm leading-relaxed">
+                        {obs}
+                      </p>
+                    </div>
                   ))}
-                          </div>
+                </div>
               ) : (
                 <div className="text-center py-8 text-gray-500">
-                  <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  <svg
+                    className="mx-auto h-12 w-12 text-gray-400 mb-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
                   </svg>
-                  <p className="text-lg font-medium">Nenhuma observação encontrada</p>
-                  <p className="text-sm">Este registro não possui observações cadastradas.</p>
-                          </div>
+                  <p className="text-lg font-medium">
+                    Nenhuma observação encontrada
+                  </p>
+                  <p className="text-sm">
+                    Este registro não possui observações cadastradas.
+                  </p>
+                </div>
               )}
-                          </div>
-                          </div>
-            {/* Footer do Modal */}
-            <div className="bg-gray-50 px-6 py-4 flex justify-end">
-              <button
-                onClick={fecharModal}
-                className="bg-[#000638] text-white px-6 py-2 rounded-lg hover:bg-[#fe0000] transition-colors font-medium"
-              >
-                Fechar
-              </button>
-                          </div>
-                          </div>
+            </div>
+          </div>
+          {/* Footer do Modal */}
+          <div className="bg-gray-50 px-6 py-4 flex justify-end">
+            <button
+              onClick={fecharModal}
+              className="bg-[#000638] text-white px-6 py-2 rounded-lg hover:bg-[#fe0000] transition-colors font-medium"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
       )}
-      
+
       {/* Modal para exibir dados dos cards */}
       {modalCardAberto && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] flex flex-col">
             {/* Header do Modal */}
             <div className="bg-[#000638] text-white p-3 rounded-t-lg">
-              <h2 className="text-sm font-bold">{getTituloModal(tipoCardSelecionado)}</h2>
+              <h2 className="text-sm font-bold">
+                {getTituloModal(tipoCardSelecionado)}
+              </h2>
               <p className="text-xs opacity-90 mt-1">
-                {dadosCardModal.length} registro{dadosCardModal.length !== 1 ? 's' : ''} encontrado{dadosCardModal.length !== 1 ? 's' : ''}
+                {dadosCardModal.length} registro
+                {dadosCardModal.length !== 1 ? "s" : ""} encontrado
+                {dadosCardModal.length !== 1 ? "s" : ""}
               </p>
-                          </div>
+            </div>
 
             {/* Conteúdo do Modal */}
             <div className="flex-1 overflow-y-auto p-3">
@@ -3867,15 +4768,31 @@ const ContasAPagar = () => {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 sticky top-0">
                       <tr>
-                        <th className="px-2 py-2 text-left font-medium text-gray-700">Vencimento</th>
-                        <th className="px-2 py-2 text-right font-medium text-gray-700">Valor</th>
-                        <th className="px-2 py-2 text-center font-medium text-gray-700">Fornecedor</th>
-                        <th className="px-2 py-2 text-left font-medium text-gray-700">Despesa</th>
-                        <th className="px-2 py-2 text-center font-medium text-gray-700">Duplicata</th>
-                        <th className="px-2 py-2 text-center font-medium text-gray-700">Status</th>
-                        <th className="px-2 py-2 text-center font-medium text-gray-700">Previsão</th>
-                        {tipoCardSelecionado === 'descontos' && (
-                          <th className="px-2 py-2 text-right font-medium text-gray-700">Desconto</th>
+                        <th className="px-2 py-2 text-left font-medium text-gray-700">
+                          Vencimento
+                        </th>
+                        <th className="px-2 py-2 text-right font-medium text-gray-700">
+                          Valor
+                        </th>
+                        <th className="px-2 py-2 text-center font-medium text-gray-700">
+                          Fornecedor
+                        </th>
+                        <th className="px-2 py-2 text-left font-medium text-gray-700">
+                          Despesa
+                        </th>
+                        <th className="px-2 py-2 text-center font-medium text-gray-700">
+                          Duplicata
+                        </th>
+                        <th className="px-2 py-2 text-center font-medium text-gray-700">
+                          Status
+                        </th>
+                        <th className="px-2 py-2 text-center font-medium text-gray-700">
+                          Previsão
+                        </th>
+                        {tipoCardSelecionado === "descontos" && (
+                          <th className="px-2 py-2 text-right font-medium text-gray-700">
+                            Desconto
+                          </th>
                         )}
                       </tr>
                     </thead>
@@ -3886,36 +4803,48 @@ const ContasAPagar = () => {
                             {formatarData(item.dt_vencimento)}
                           </td>
                           <td className="px-2 py-2 text-sm text-right font-medium text-green-600">
-                            {parseFloat(item.vl_duplicata || 0).toLocaleString('pt-BR', {
-                              style: 'currency',
-                              currency: 'BRL',
-                            })}
+                            {parseFloat(item.vl_duplicata || 0).toLocaleString(
+                              "pt-BR",
+                              {
+                                style: "currency",
+                                currency: "BRL",
+                              }
+                            )}
                           </td>
                           <td className="px-2 py-2 text-sm text-center text-gray-900">
-                            {item.nm_fornecedor || ''}
+                            {item.nm_fornecedor || ""}
                           </td>
                           <td className="px-2 py-2 text-sm text-gray-900">
-                            {item.ds_despesaitem || ''}
+                            {item.ds_despesaitem || ""}
                           </td>
                           <td className="px-2 py-2 text-sm text-center text-gray-900">
-                            {item.nr_duplicata || ''}
+                            {item.nr_duplicata || ""}
                           </td>
                           <td className="px-2 py-2 text-center">
-                            <span className={`inline-flex items-center px-0.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(getStatusFromData(item))}`}>
+                            <span
+                              className={`inline-flex items-center px-0.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                                getStatusFromData(item)
+                              )}`}
+                            >
                               {getStatusIcon(getStatusFromData(item))}
-                              <span className="ml-1">{getStatusFromData(item)}</span>
-                                  </span>
+                              <span className="ml-1">
+                                {getStatusFromData(item)}
+                              </span>
+                            </span>
                           </td>
                           <td className="px-2 py-2 text-center text-gray-900">
-                            {item.tp_previsaoreal || ''}
+                            {item.tp_previsaoreal || ""}
                           </td>
-                          {tipoCardSelecionado === 'descontos' && (
+                          {tipoCardSelecionado === "descontos" && (
                             <td className="px-2 py-2 text-sm text-right font-medium text-emerald-600">
-                              {parseFloat(item.vl_desconto || 0).toLocaleString('pt-BR', {
-                              style: 'currency',
-                              currency: 'BRL',
-                            })}
-                          </td>
+                              {parseFloat(item.vl_desconto || 0).toLocaleString(
+                                "pt-BR",
+                                {
+                                  style: "currency",
+                                  currency: "BRL",
+                                }
+                              )}
+                            </td>
                           )}
                         </tr>
                       ))}
@@ -3924,27 +4853,41 @@ const ContasAPagar = () => {
                 </div>
               ) : (
                 <div className="text-center py-8 text-gray-500">
-                  <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                  <p className="text-lg font-medium">Nenhum registro encontrado</p>
-                  <p className="text-sm">Não há registros para o filtro selecionado.</p>
-                        </div>
+                  <svg
+                    className="mx-auto h-12 w-12 text-gray-400 mb-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                  <p className="text-lg font-medium">
+                    Nenhum registro encontrado
+                  </p>
+                  <p className="text-sm">
+                    Não há registros para o filtro selecionado.
+                  </p>
+                </div>
               )}
-                        </div>
+            </div>
 
             {/* Footer do Modal */}
             <div className="bg-gray-50 px-6 py-4 flex justify-end">
-                      <button
+              <button
                 onClick={fecharModalCard}
                 className="bg-[#000638] text-white px-6 py-2 rounded-lg hover:bg-[#fe0000] transition-colors font-medium"
-                      >
+              >
                 Fechar
-                      </button>
+              </button>
             </div>
-                    </div>
-                  </div>
-                )}
+          </div>
+        </div>
+      )}
 
       {/* Modal de Detalhes da Conta */}
       <ModalDetalhesConta
@@ -3955,7 +4898,7 @@ const ContasAPagar = () => {
 
       {/* Modal de Confirmação de Remoção de Autorização */}
       {showConfirmModal && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
           onClick={handleModalClose}
         >
@@ -3967,7 +4910,7 @@ const ContasAPagar = () => {
             >
               <XCircle size={24} />
             </button>
-            
+
             <div className="text-center mb-6">
               <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
                 <Trash size={32} className="text-red-600" />
@@ -3976,7 +4919,8 @@ const ContasAPagar = () => {
                 Remover Autorização
               </h3>
               <p className="text-gray-600">
-                Tem certeza que deseja remover a autorização de <strong>{autorizacaoToRemove?.autorizadoPor}</strong>?
+                Tem certeza que deseja remover a autorização de{" "}
+                <strong>{autorizacaoToRemove?.autorizadoPor}</strong>?
               </p>
             </div>
 
@@ -3987,7 +4931,8 @@ const ContasAPagar = () => {
               <div className="space-y-1">
                 <div className="text-sm text-gray-600 flex items-center gap-1">
                   <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                  Autorizado por: <strong>{autorizacaoToRemove?.autorizadoPor}</strong>
+                  Autorizado por:{" "}
+                  <strong>{autorizacaoToRemove?.autorizadoPor}</strong>
                 </div>
                 <div className="text-sm text-gray-600 flex items-center gap-1">
                   <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
@@ -4016,7 +4961,7 @@ const ContasAPagar = () => {
 
       {/* Modal de Confirmação de Autorização em Massa */}
       {showAutorizarTodosModal && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
           onClick={handleAutorizarTodosModalClose}
         >
@@ -4028,7 +4973,7 @@ const ContasAPagar = () => {
             >
               <XCircle size={24} />
             </button>
-            
+
             <div className="text-center mb-6">
               <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
                 <CheckCircle size={32} className="text-green-600" />
@@ -4037,7 +4982,8 @@ const ContasAPagar = () => {
                 Autorizar Todos
               </h3>
               <p className="text-gray-600">
-                Tem certeza que deseja autorizar TODAS as {contasParaAutorizar.length} contas não autorizadas?
+                Tem certeza que deseja autorizar TODAS as{" "}
+                {contasParaAutorizar.length} contas não autorizadas?
               </p>
             </div>
 
@@ -4061,7 +5007,7 @@ const ContasAPagar = () => {
 
       {/* Modal de Confirmação de Remoção em Massa */}
       {showRemoverTodosModal && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
           onClick={handleRemoverTodosModalClose}
         >
@@ -4073,7 +5019,7 @@ const ContasAPagar = () => {
             >
               <XCircle size={24} />
             </button>
-            
+
             <div className="text-center mb-6">
               <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
                 <Trash size={32} className="text-red-600" />
@@ -4082,7 +5028,8 @@ const ContasAPagar = () => {
                 Remover Todos
               </h3>
               <p className="text-gray-600">
-                Tem certeza que deseja remover TODAS as {contasParaRemover.length} autorizações?
+                Tem certeza que deseja remover TODAS as{" "}
+                {contasParaRemover.length} autorizações?
               </p>
             </div>
 
@@ -4104,53 +5051,69 @@ const ContasAPagar = () => {
         </div>
       )}
 
-
-      
       {/* Debug: Mostrar estado do modal */}
-      {console.log('🔍 Renderizando componente - showEnviarPagamentoModal:', showEnviarPagamentoModal)}
+      {console.log(
+        "🔍 Renderizando componente - showEnviarPagamentoModal:",
+        showEnviarPagamentoModal
+      )}
 
       {/* Modal de Teste Simples */}
       {showEnviarPagamentoModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }} onClick={handleCancelEnviarParaPagamento}>
-          <div style={{
-            backgroundColor: 'white',
-            padding: '20px',
-            borderRadius: '8px',
-            maxWidth: '400px',
-            width: '90%',
-            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.3)'
-          }} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ color: '#000638', fontSize: '20px', fontWeight: 'bold', marginBottom: '10px' }}>
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+          onClick={handleCancelEnviarParaPagamento}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              padding: "20px",
+              borderRadius: "8px",
+              maxWidth: "400px",
+              width: "90%",
+              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.3)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              style={{
+                color: "#000638",
+                fontSize: "20px",
+                fontWeight: "bold",
+                marginBottom: "10px",
+              }}
+            >
               Confirmar Pagamento
             </h2>
-            <p style={{ marginBottom: '20px', color: '#666' }}>
+            <p style={{ marginBottom: "20px", color: "#666" }}>
               Tem certeza que deseja pagar esta conta?
             </p>
-            <p style={{ marginBottom: '20px', color: '#666', fontSize: '12px' }}>
-              Fornecedor: {contaParaEnviar?.dadosConta?.nm_fornecedor || 'N/A'}
+            <p
+              style={{ marginBottom: "20px", color: "#666", fontSize: "12px" }}
+            >
+              Fornecedor: {contaParaEnviar?.dadosConta?.nm_fornecedor || "N/A"}
             </p>
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ display: "flex", gap: "10px" }}>
               <button
                 onClick={handleCancelEnviarParaPagamento}
                 style={{
                   flex: 1,
-                  padding: '10px',
-                  backgroundColor: '#666',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
+                  padding: "10px",
+                  backgroundColor: "#666",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
                 }}
               >
                 Fechar
@@ -4159,13 +5122,13 @@ const ContasAPagar = () => {
                 onClick={handleConfirmEnviarParaPagamento}
                 style={{
                   flex: 1,
-                  padding: '10px',
-                  backgroundColor: '#eab308',
-                  color: 'black',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontWeight: 'bold'
+                  padding: "10px",
+                  backgroundColor: "#eab308",
+                  color: "black",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontWeight: "bold",
                 }}
               >
                 PAGAR
@@ -4177,46 +5140,61 @@ const ContasAPagar = () => {
 
       {/* Modal de Confirmação para Remover Pagamento */}
       {showRemoverPagamentoModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }} onClick={handleCancelRemoverEnviadoParaPagamento}>
-          <div style={{
-            backgroundColor: 'white',
-            padding: '20px',
-            borderRadius: '8px',
-            maxWidth: '400px',
-            width: '90%',
-            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.3)'
-          }} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ color: '#dc2626', fontSize: '20px', fontWeight: 'bold', marginBottom: '10px' }}>
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+          onClick={handleCancelRemoverEnviadoParaPagamento}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              padding: "20px",
+              borderRadius: "8px",
+              maxWidth: "400px",
+              width: "90%",
+              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.3)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              style={{
+                color: "#dc2626",
+                fontSize: "20px",
+                fontWeight: "bold",
+                marginBottom: "10px",
+              }}
+            >
               Remover Pagamento
             </h2>
-            <p style={{ marginBottom: '20px', color: '#666' }}>
+            <p style={{ marginBottom: "20px", color: "#666" }}>
               Tem certeza que deseja remover o status de pagamento desta conta?
             </p>
-            <p style={{ marginBottom: '20px', color: '#666', fontSize: '12px' }}>
-              Fornecedor: {contaParaEnviar?.dadosConta?.nm_fornecedor || 'N/A'}
+            <p
+              style={{ marginBottom: "20px", color: "#666", fontSize: "12px" }}
+            >
+              Fornecedor: {contaParaEnviar?.dadosConta?.nm_fornecedor || "N/A"}
             </p>
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ display: "flex", gap: "10px" }}>
               <button
                 onClick={handleCancelRemoverEnviadoParaPagamento}
                 style={{
                   flex: 1,
-                  padding: '10px',
-                  backgroundColor: '#666',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
+                  padding: "10px",
+                  backgroundColor: "#666",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
                 }}
               >
                 Cancelar
@@ -4225,13 +5203,13 @@ const ContasAPagar = () => {
                 onClick={handleConfirmRemoverEnviadoParaPagamento}
                 style={{
                   flex: 1,
-                  padding: '10px',
-                  backgroundColor: '#dc2626',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontWeight: 'bold'
+                  padding: "10px",
+                  backgroundColor: "#dc2626",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontWeight: "bold",
                 }}
               >
                 REMOVER
@@ -4243,52 +5221,90 @@ const ContasAPagar = () => {
 
       {/* Modal de Acesso Restrito */}
       {showAcessoRestritoModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }} onClick={handleCloseAcessoRestrito}>
-          <div style={{
-            backgroundColor: 'white',
-            padding: '20px',
-            borderRadius: '8px',
-            maxWidth: '450px',
-            width: '90%',
-            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.3)'
-          }} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ color: '#dc2626', fontSize: '20px', fontWeight: 'bold', marginBottom: '15px', textAlign: 'center' }}>
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+          onClick={handleCloseAcessoRestrito}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              padding: "20px",
+              borderRadius: "8px",
+              maxWidth: "450px",
+              width: "90%",
+              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.3)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              style={{
+                color: "#dc2626",
+                fontSize: "20px",
+                fontWeight: "bold",
+                marginBottom: "15px",
+                textAlign: "center",
+              }}
+            >
               ⚠️ ACESSO RESTRITO
             </h2>
-            <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#fef3c7', borderRadius: '6px', border: '1px solid #f59e0b' }}>
-              <p style={{ marginBottom: '10px', color: '#92400e', fontSize: '14px', fontWeight: 'bold' }}>
-                Esta conta foi enviada para pagamento por <strong>{dadosAcessoRestrito?.enviadoPor}</strong>.
+            <div
+              style={{
+                marginBottom: "20px",
+                padding: "15px",
+                backgroundColor: "#fef3c7",
+                borderRadius: "6px",
+                border: "1px solid #f59e0b",
+              }}
+            >
+              <p
+                style={{
+                  marginBottom: "10px",
+                  color: "#92400e",
+                  fontSize: "14px",
+                  fontWeight: "bold",
+                }}
+              >
+                Esta conta foi enviada para pagamento por{" "}
+                <strong>{dadosAcessoRestrito?.enviadoPor}</strong>.
               </p>
-              <p style={{ marginBottom: '10px', color: '#92400e', fontSize: '13px' }}>
-                Apenas administradores podem remover autorizações de contas que já foram enviadas para pagamento.
+              <p
+                style={{
+                  marginBottom: "10px",
+                  color: "#92400e",
+                  fontSize: "13px",
+                }}
+              >
+                Apenas administradores podem remover autorizações de contas que
+                já foram enviadas para pagamento.
               </p>
-              <p style={{ color: '#92400e', fontSize: '13px' }}>
-                Para solicitar a remoção, entre em contato com um administrador do sistema.
+              <p style={{ color: "#92400e", fontSize: "13px" }}>
+                Para solicitar a remoção, entre em contato com um administrador
+                do sistema.
               </p>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <div style={{ display: "flex", justifyContent: "center" }}>
               <button
                 onClick={handleCloseAcessoRestrito}
                 style={{
-                  padding: '12px 24px',
-                  backgroundColor: '#6b7280',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontWeight: 'bold',
-                  fontSize: '14px'
+                  padding: "12px 24px",
+                  backgroundColor: "#6b7280",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                  fontSize: "14px",
                 }}
               >
                 Entendi
@@ -4299,66 +5315,91 @@ const ContasAPagar = () => {
       )}
 
       {/* Debug: Mostrar estado do modal */}
-      {console.log('🔍 Renderizando componente - showEnviarPagamentoModal:', showEnviarPagamentoModal)}
-      {console.log('🔍 Renderizando componente - showRemoverPagamentoModal:', showRemoverPagamentoModal)}
-      {console.log('🔍 Renderizando componente - showAcessoRestritoModal:', showAcessoRestritoModal)}
+      {console.log(
+        "🔍 Renderizando componente - showEnviarPagamentoModal:",
+        showEnviarPagamentoModal
+      )}
+      {console.log(
+        "🔍 Renderizando componente - showRemoverPagamentoModal:",
+        showRemoverPagamentoModal
+      )}
+      {console.log(
+        "🔍 Renderizando componente - showAcessoRestritoModal:",
+        showAcessoRestritoModal
+      )}
     </div>
   );
 };
 
 // Componente para agrupar despesas por categoria
-const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, filtroDia, setFiltroDia, handleFiltroMensalChange, obterDiasDoMes, abrirModalDetalhes, getSortIcon, handleSort, agruparDadosIdenticos }) => {
+const DespesasPorCategoria = ({
+  dados,
+  totalContas,
+  linhasSelecionadas,
+  toggleLinhaSelecionada,
+  filtroMensal,
+  setFiltroMensal,
+  dadosOriginais,
+  filtroDia,
+  setFiltroDia,
+  handleFiltroMensalChange,
+  obterDiasDoMes,
+  abrirModalDetalhes,
+  getSortIcon,
+  handleSort,
+  agruparDadosIdenticos,
+}) => {
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(new Set());
   const [todosExpandidos, setTodosExpandidos] = useState(false);
 
   // Função para classificar despesa por código
   const classificarDespesa = (cdDespesa) => {
     const codigo = parseInt(cdDespesa) || 0;
-    
+
     const categoriaExcecao = getCategoriaPorCodigo(codigo);
     if (categoriaExcecao) {
       return categoriaExcecao;
     }
 
     if (codigo >= 1000 && codigo <= 1999) {
-      return 'CUSTO DAS MERCADORIAS VENDIDAS';
+      return "CUSTO DAS MERCADORIAS VENDIDAS";
     } else if (codigo >= 2000 && codigo <= 2999) {
-      return 'DESPESAS OPERACIONAIS';
+      return "DESPESAS OPERACIONAIS";
     } else if (codigo >= 3000 && codigo <= 3999) {
-      return 'DESPESAS COM PESSOAL';
+      return "DESPESAS COM PESSOAL";
     } else if (codigo >= 4001 && codigo <= 4999) {
-      return 'ALUGUÉIS E ARRENDAMENTOS';
+      return "ALUGUÉIS E ARRENDAMENTOS";
     } else if (codigo >= 5000 && codigo <= 5999) {
-      return 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
+      return "IMPOSTOS, TAXAS E CONTRIBUIÇÕES";
     } else if (codigo >= 6000 && codigo <= 6999) {
-      return 'DESPESAS GERAIS';
+      return "DESPESAS GERAIS";
     } else if (codigo >= 7000 && codigo <= 7999) {
-      return 'DESPESAS FINANCEIRAS';
+      return "DESPESAS FINANCEIRAS";
     } else if (codigo >= 8000 && codigo <= 8999) {
-      return 'OUTRAS DESPESAS OPERACIONAIS';
+      return "OUTRAS DESPESAS OPERACIONAIS";
     } else if (codigo >= 9000 && codigo <= 9999) {
-      return 'DESPESAS C/ VENDAS';
+      return "DESPESAS C/ VENDAS";
     } else {
-      return 'SEM CLASSIFICAÇÃO';
+      return "SEM CLASSIFICAÇÃO";
     }
   };
 
   // Agrupar dados por classificação de despesa, nome da despesa e fornecedor
   const dadosAgrupados = useMemo(() => {
     const categorias = {};
-    
+
     // Primeiro passo: agrupar os dados para evitar duplicações
     const dadosAgrupados = agruparDadosIdenticos(dados);
-    
+
     dadosAgrupados.forEach((grupo, index) => {
       const item = grupo.item;
       const cdDespesa = item.cd_despesaitem;
-      const nomeDespesa = item.ds_despesaitem || 'SEM DESCRIÇÃO';
-      const nomeFornecedor = item.nm_fornecedor || 'SEM FORNECEDOR';
+      const nomeDespesa = item.ds_despesaitem || "SEM DESCRIÇÃO";
+      const nomeFornecedor = item.nm_fornecedor || "SEM FORNECEDOR";
       // Usar o valor da duplicata em vez do rateio para manter consistência com os cards
       const vlDuplicata = parseFloat(item.vl_duplicata || 0);
       const categoria = classificarDespesa(cdDespesa);
-      
+
       // Criar categoria principal se não existir
       if (!categorias[categoria]) {
         categorias[categoria] = {
@@ -4366,10 +5407,10 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
           despesas: {},
           total: 0,
           quantidade: 0,
-          expandida: false
+          expandida: false,
         };
       }
-      
+
       // Criar sub-tópico da despesa se não existir
       if (!categorias[categoria].despesas[nomeDespesa]) {
         categorias[categoria].despesas[nomeDespesa] = {
@@ -4377,16 +5418,22 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
           fornecedores: {},
           total: 0,
           quantidade: 0,
-          expandida: false
+          expandida: false,
         };
       }
-      
+
       // Criar chave única para o fornecedor incluindo duplicata e parcela
       const chaveFornecedor = `${nomeFornecedor}|${item.nr_duplicata}|${item.nr_parcela}`;
-      
+
       // Criar sub-tópico do fornecedor se não existir
-      if (!categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor]) {
-        categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor] = {
+      if (
+        !categorias[categoria].despesas[nomeDespesa].fornecedores[
+          chaveFornecedor
+        ]
+      ) {
+        categorias[categoria].despesas[nomeDespesa].fornecedores[
+          chaveFornecedor
+        ] = {
           nome: nomeFornecedor,
           nrDuplicata: item.nr_duplicata,
           nrParcela: item.nr_parcela,
@@ -4394,17 +5441,23 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
           itens: [],
           total: 0,
           quantidade: 0,
-          expandida: false
+          expandida: false,
         };
       }
-      
+
       // Adicionar item ao fornecedor específico
-      categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor].itens.push({ grupo, indiceOriginal: index });
-      
+      categorias[categoria].despesas[nomeDespesa].fornecedores[
+        chaveFornecedor
+      ].itens.push({ grupo, indiceOriginal: index });
+
       // Usar o valor da duplicata como total para este item específico
-      categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor].total = vlDuplicata;
-      categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor].quantidade = 1;
-      
+      categorias[categoria].despesas[nomeDespesa].fornecedores[
+        chaveFornecedor
+      ].total = vlDuplicata;
+      categorias[categoria].despesas[nomeDespesa].fornecedores[
+        chaveFornecedor
+      ].quantidade = 1;
+
       // Adicionar totais da despesa e categoria usando o valor da duplicata
       categorias[categoria].despesas[nomeDespesa].total += vlDuplicata;
       categorias[categoria].despesas[nomeDespesa].quantidade += 1;
@@ -4414,28 +5467,30 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
 
     // Definir ordem específica das categorias
     const ordemCategorias = [
-      'CUSTO DAS MERCADORIAS VENDIDAS',
-      'DESPESAS OPERACIONAIS',
-      'DESPESAS COM PESSOAL',
-      'ALUGUÉIS E ARRENDAMENTOS',
-      'IMPOSTOS, TAXAS E CONTRIBUIÇÕES',
-      'DESPESAS GERAIS',
-      'DESPESAS FINANCEIRAS',
-      'OUTRAS DESPESAS OPERACIONAIS',
-      'DESPESAS C/ VENDAS',
-      'SEM CLASSIFICAÇÃO'
+      "CUSTO DAS MERCADORIAS VENDIDAS",
+      "DESPESAS OPERACIONAIS",
+      "DESPESAS COM PESSOAL",
+      "ALUGUÉIS E ARRENDAMENTOS",
+      "IMPOSTOS, TAXAS E CONTRIBUIÇÕES",
+      "DESPESAS GERAIS",
+      "DESPESAS FINANCEIRAS",
+      "OUTRAS DESPESAS OPERACIONAIS",
+      "DESPESAS C/ VENDAS",
+      "SEM CLASSIFICAÇÃO",
     ];
 
     // Converter para array e ordenar pela ordem definida
     return ordemCategorias
-      .filter(categoria => categorias[categoria]) // Só incluir categorias que têm dados
-      .map(categoria => {
+      .filter((categoria) => categorias[categoria]) // Só incluir categorias que têm dados
+      .map((categoria) => {
         const cat = categorias[categoria];
         // Converter despesas em array e ordenar por valor (maior primeiro)
         cat.despesasArray = Object.values(cat.despesas)
-          .map(despesa => {
+          .map((despesa) => {
             // Converter fornecedores em array e ordenar por valor (maior primeiro)
-            despesa.fornecedoresArray = Object.values(despesa.fornecedores).sort((a, b) => b.total - a.total);
+            despesa.fornecedoresArray = Object.values(
+              despesa.fornecedores
+            ).sort((a, b) => b.total - a.total);
             return despesa;
           })
           .sort((a, b) => b.total - a.total);
@@ -4444,7 +5499,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
   }, [dados]);
 
   const toggleCategoria = (nomeCategoria) => {
-    setCategoriasExpandidas(prev => {
+    setCategoriasExpandidas((prev) => {
       const novoSet = new Set(prev);
       if (novoSet.has(nomeCategoria)) {
         novoSet.delete(nomeCategoria);
@@ -4457,7 +5512,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
 
   const toggleDespesa = (nomeCategoria, nomeDespesa) => {
     const chave = `${nomeCategoria}|${nomeDespesa}`;
-    setCategoriasExpandidas(prev => {
+    setCategoriasExpandidas((prev) => {
       const novoSet = new Set(prev);
       if (novoSet.has(chave)) {
         novoSet.delete(chave);
@@ -4468,9 +5523,16 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
     });
   };
 
-  const toggleFornecedor = (nomeCategoria, nomeDespesa, nomeFornecedor, nrDuplicata, nrParcela, vlRateio) => {
+  const toggleFornecedor = (
+    nomeCategoria,
+    nomeDespesa,
+    nomeFornecedor,
+    nrDuplicata,
+    nrParcela,
+    vlRateio
+  ) => {
     const chave = `${nomeCategoria}|${nomeDespesa}|${nomeFornecedor}|${nrDuplicata}|${nrParcela}|${vlRateio}`;
-    setCategoriasExpandidas(prev => {
+    setCategoriasExpandidas((prev) => {
       const novoSet = new Set(prev);
       if (novoSet.has(chave)) {
         novoSet.delete(chave);
@@ -4488,57 +5550,57 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
       setTodosExpandidos(false);
     } else {
       // Expandir todos
-      const todasCategorias = new Set(dadosAgrupados.map(categoria => categoria.nome));
+      const todasCategorias = new Set(
+        dadosAgrupados.map((categoria) => categoria.nome)
+      );
       setCategoriasExpandidas(todasCategorias);
       setTodosExpandidos(true);
     }
   };
 
-
-
   // Função para exportar dados da última linha de hierarquia para Excel
   const exportarDadosUltimaLinha = () => {
     if (!dadosAgrupados || dadosAgrupados.length === 0) {
-      alert('Nenhum dado disponível para exportar');
+      alert("Nenhum dado disponível para exportar");
       return;
     }
 
     // Coletar todos os dados da última linha de hierarquia (itens individuais)
     const dadosParaExportar = [];
-    
-    dadosAgrupados.forEach(categoria => {
-      categoria.despesasArray.forEach(despesa => {
-        despesa.fornecedoresArray.forEach(fornecedor => {
-          fornecedor.itens.forEach(item => {
+
+    dadosAgrupados.forEach((categoria) => {
+      categoria.despesasArray.forEach((despesa) => {
+        despesa.fornecedoresArray.forEach((fornecedor) => {
+          fornecedor.itens.forEach((item) => {
             const dadoItem = item.grupo.item;
             dadosParaExportar.push({
-              'Categoria': categoria.nome,
-              'Despesa': despesa.nome,
-              'Fornecedor': fornecedor.nome,
-              'Duplicata': fornecedor.nrDuplicata,
-              'Valor': fornecedor.vlDuplicata,
-              'Vencimento': formatarData(dadoItem.dt_vencimento),
-              'Valor Duplicata': parseFloat(dadoItem.vl_duplicata || 0),
-              'Código Fornecedor': dadoItem.cd_fornecedor || '',
-              'Nome Fornecedor': dadoItem.nm_fornecedor || '',
-              'Despesa Item': dadoItem.ds_despesaitem || '',
-              'Centro de Custo': dadoItem.ds_ccusto || '',
-              'Empresa': dadoItem.cd_empresa || '',
-              'Portador': dadoItem.nr_portador || '',
-              'Emissão': formatarData(dadoItem.dt_emissao),
-              'Entrada': formatarData(dadoItem.dt_entrada),
-              'Liquidação': formatarData(dadoItem.dt_liq),
-              'Situação': dadoItem.tp_situacao || '',
-              'Estágio': dadoItem.tp_estagio || '',
-              'Juros': parseFloat(dadoItem.vl_juros || 0),
-              'Acréscimo': parseFloat(dadoItem.vl_acrescimo || 0),
-              'Desconto': parseFloat(dadoItem.vl_desconto || 0),
-              'Pago': parseFloat(dadoItem.vl_pago || 0),
-              'Aceite': dadoItem.in_aceite || '',
-              'Parcela': dadoItem.nr_parcela || '',
-              'Rateio Item': dadoItem.vl_rateio || '',
-              'Observação': dadoItem.ds_observacao || '',
-              'Previsão': dadoItem.tp_previsaoreal || ''
+              Categoria: categoria.nome,
+              Despesa: despesa.nome,
+              Fornecedor: fornecedor.nome,
+              Duplicata: fornecedor.nrDuplicata,
+              Valor: fornecedor.vlDuplicata,
+              Vencimento: formatarData(dadoItem.dt_vencimento),
+              "Valor Duplicata": parseFloat(dadoItem.vl_duplicata || 0),
+              "Código Fornecedor": dadoItem.cd_fornecedor || "",
+              "Nome Fornecedor": dadoItem.nm_fornecedor || "",
+              "Despesa Item": dadoItem.ds_despesaitem || "",
+              "Centro de Custo": dadoItem.ds_ccusto || "",
+              Empresa: dadoItem.cd_empresa || "",
+              Portador: dadoItem.nr_portador || "",
+              Emissão: formatarData(dadoItem.dt_emissao),
+              Entrada: formatarData(dadoItem.dt_entrada),
+              Liquidação: formatarData(dadoItem.dt_liq),
+              Situação: dadoItem.tp_situacao || "",
+              Estágio: dadoItem.tp_estagio || "",
+              Juros: parseFloat(dadoItem.vl_juros || 0),
+              Acréscimo: parseFloat(dadoItem.vl_acrescimo || 0),
+              Desconto: parseFloat(dadoItem.vl_desconto || 0),
+              Pago: parseFloat(dadoItem.vl_pago || 0),
+              Aceite: dadoItem.in_aceite || "",
+              Parcela: dadoItem.nr_parcela || "",
+              "Rateio Item": dadoItem.vl_rateio || "",
+              Observação: dadoItem.ds_observacao || "",
+              Previsão: dadoItem.tp_previsaoreal || "",
             });
           });
         });
@@ -4546,7 +5608,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
     });
 
     if (dadosParaExportar.length === 0) {
-      alert('Nenhum dado encontrado para exportar');
+      alert("Nenhum dado encontrado para exportar");
       return;
     }
 
@@ -4582,46 +5644,65 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
       { wch: 10 }, // Parcela
       { wch: 10 }, // Rateio
       { wch: 30 }, // Observação
-      { wch: 12 }  // Previsão
+      { wch: 12 }, // Previsão
     ];
-    ws['!cols'] = colWidths;
+    ws["!cols"] = colWidths;
 
     // Adicionar worksheet ao workbook
-    XLSX.utils.book_append_sheet(wb, ws, 'Contas a Pagar');
+    XLSX.utils.book_append_sheet(wb, ws, "Contas a Pagar");
 
     // Gerar arquivo e fazer download
-    const fileName = `contas_a_pagar_${new Date().toISOString().split('T')[0]}.xlsx`;
-    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    const data = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const fileName = `contas_a_pagar_${
+      new Date().toISOString().split("T")[0]
+    }.xlsx`;
+    const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const data = new Blob([excelBuffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
     saveAs(data, fileName);
 
-    console.log(`✅ Exportados ${dadosParaExportar.length} registros para Excel`);
+    console.log(
+      `✅ Exportados ${dadosParaExportar.length} registros para Excel`
+    );
   };
 
   // Calcular dados mensais para mostrar quantidades nos botões
   const calcularDadosMensais = () => {
-    const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    const meses = [
+      "JAN",
+      "FEV",
+      "MAR",
+      "ABR",
+      "MAI",
+      "JUN",
+      "JUL",
+      "AGO",
+      "SET",
+      "OUT",
+      "NOV",
+      "DEZ",
+    ];
     const dadosMensais = {};
-    
+
     // Calcular ANO ATUAL
     const anoAtual = new Date().getFullYear();
-    dadosMensais['ANO'] = dadosOriginais.filter(item => {
+    dadosMensais["ANO"] = dadosOriginais.filter((item) => {
       if (!item.dt_vencimento) return false;
       const data = criarDataSemFusoHorario(item.dt_vencimento);
       const ano = data.getFullYear();
       return ano === anoAtual;
     }).length;
-    
+
     // Calcular cada mês
     meses.forEach((mes, index) => {
       const numeroMes = index + 1;
-      dadosMensais[mes] = dadosOriginais.filter(item => {
+      dadosMensais[mes] = dadosOriginais.filter((item) => {
         if (!item.dt_vencimento) return false;
         const data = criarDataSemFusoHorario(item.dt_vencimento);
         return data.getMonth() + 1 === numeroMes;
       }).length;
     });
-    
+
     return dadosMensais;
   };
 
@@ -4633,84 +5714,106 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
       <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
         <div className="flex items-center gap-1 mb-3">
           <Calendar size={10} className="text-[#000638]" />
-          <h3 className="font-bold text-sm text-[#000638]">Filtro por Período (Data Vencimento)</h3>
-                    </div>
-                    
+          <h3 className="font-bold text-sm text-[#000638]">
+            Filtro por Período (Data Vencimento)
+          </h3>
+        </div>
+
         <div className="flex flex-wrap gap-1">
           {/* Botão ANO */}
-                      <button
-            onClick={() => handleFiltroMensalChange('ANO')}
+          <button
+            onClick={() => handleFiltroMensalChange("ANO")}
             className={`px-4 py-2 text-[0.7rem] font-medium rounded-md transition-colors ${
-              filtroMensal === 'ANO'
-                ? 'bg-[#000638] text-white'
-                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+              filtroMensal === "ANO"
+                ? "bg-[#000638] text-white"
+                : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-300"
             }`}
           >
             ANO
-                      </button>
+          </button>
 
           {/* Botões dos Meses */}
-          {['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'].map((mes) => (
-                          <button
+          {[
+            "JAN",
+            "FEV",
+            "MAR",
+            "ABR",
+            "MAI",
+            "JUN",
+            "JUL",
+            "AGO",
+            "SET",
+            "OUT",
+            "NOV",
+            "DEZ",
+          ].map((mes) => (
+            <button
               key={mes}
               onClick={() => handleFiltroMensalChange(mes)}
               className={`px-2 py-2 text-[0.7rem] font-medium rounded-md transition-colors ${
                 filtroMensal === mes
-                                ? 'bg-[#000638] text-white'
-                  : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
-                            }`}
-                          >
+                  ? "bg-[#000638] text-white"
+                  : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-300"
+              }`}
+            >
               {mes}
-                          </button>
-                        ))}
-                      </div>
+            </button>
+          ))}
+        </div>
 
         {/* Informação do filtro ativo */}
         <div className="mt-3 text-xs text-gray-500">
-          <span className="font-medium">Filtro ativo:</span> {filtroMensal} 
+          <span className="font-medium">Filtro ativo:</span> {filtroMensal}
           {filtroDia && <span className="ml-1">- Dia {filtroDia}</span>}
-          <span className="ml-2">({dados.length} registro{dados.length !== 1 ? 's' : ''})</span>
+          <span className="ml-2">
+            ({dados.length} registro{dados.length !== 1 ? "s" : ""})
+          </span>
         </div>
 
         {/* Filtro por Dia - aparece apenas quando um mês está selecionado */}
-        {filtroMensal !== 'ANO' && (
+        {filtroMensal !== "ANO" && (
           <div className="mt-4 pt-4 border-t border-gray-200">
             <div className="flex items-center gap-1 mb-3">
               <Calendar size={14} className="text-[#000638]" />
-              <h4 className="font-bold text-sm text-[#000638]">Filtro por Dia - {filtroMensal}</h4>
+              <h4 className="font-bold text-sm text-[#000638]">
+                Filtro por Dia - {filtroMensal}
+              </h4>
             </div>
-            
+
             <div className="flex flex-wrap gap-1">
               {/* Botão "Todos os Dias" */}
-                      <button
+              <button
                 onClick={() => setFiltroDia(null)}
                 className={`px-0.5 py-0.5 text-xs font-medium rounded-md transition-colors ${
                   filtroDia === null
-                    ? 'bg-[#000638] text-white'
-                    : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                    ? "bg-[#000638] text-white"
+                    : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-300"
                 }`}
               >
                 TODOS
-                      </button>
+              </button>
 
               {/* Botões dos dias */}
-              {Array.from({ length: obterDiasDoMes(filtroMensal) }, (_, i) => i + 1).map((dia) => (
+              {Array.from(
+                { length: obterDiasDoMes(filtroMensal) },
+                (_, i) => i + 1
+              ).map((dia) => (
                 <button
                   key={dia}
                   onClick={() => setFiltroDia(dia)}
                   className={`px-0.5 py-0.5 text-xs font-medium rounded-md transition-colors ${
                     filtroDia === dia
-                      ? 'bg-[#000638] text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                      ? "bg-[#000638] text-white"
+                      : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-300"
                   }`}
                 >
                   {dia}
                 </button>
               ))}
-              </div>
+            </div>
           </div>
         )}
-            </div>
+      </div>
 
       {/* Categorias de Despesas */}
       <div className="space-y-2">
@@ -4721,7 +5824,11 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
             <button
               onClick={toggleTodosTopicos}
               className="text-xs text-gray-500 hover:text-gray-700 px-0.5 py-0.5 rounded transition-colors flex items-center gap-1"
-              title={todosExpandidos ? "Colapsar todos os tópicos" : "Expandir todos os tópicos"}
+              title={
+                todosExpandidos
+                  ? "Colapsar todos os tópicos"
+                  : "Expandir todos os tópicos"
+              }
             >
               {todosExpandidos ? (
                 <>
@@ -4747,12 +5854,15 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
             </button>
           </div>
         )}
-        
+
         {dadosAgrupados.map((categoria, categoriaIndex) => {
           const isCategoriaExpanded = categoriasExpandidas.has(categoria.nome);
-          
+
           return (
-            <div key={`categoria-${categoriaIndex}-${categoria.nome}`} className="border border-gray-200 rounded-lg overflow-hidden">
+            <div
+              key={`categoria-${categoriaIndex}-${categoria.nome}`}
+              className="border border-gray-200 rounded-lg overflow-hidden"
+            >
               {/* Cabeçalho da categoria principal */}
               <div
                 className="bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors px-2 py-1.5 flex items-center justify-between"
@@ -4764,35 +5874,43 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                   ) : (
                     <CaretRight size={10} className="text-gray-600" />
                   )}
-                <div>
-                    <h3 className="font-medium text-xs text-gray-800">{categoria.nome}</h3>
+                  <div>
+                    <h3 className="font-medium text-xs text-gray-800">
+                      {categoria.nome}
+                    </h3>
                     <div className="flex items-center space-x-3 text-xs text-gray-600">
                       <span>{categoria.quantidade} conta(s)</span>
                       <span>{categoria.despesasArray.length} despesa(s)</span>
                       <span className="font-medium text-red-600">
-                        {categoria.total.toLocaleString('pt-BR', {
-                          style: 'currency',
-                          currency: 'BRL',
+                        {categoria.total.toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
                         })}
-                  </span>
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                </div>
-                </div>
-            </div>
+              </div>
 
               {/* Sub-tópicos de despesas */}
               {isCategoriaExpanded && (
                 <div className="bg-white border-t border-gray-100">
                   {categoria.despesasArray.map((despesa, despesaIndex) => {
                     const chaveExpansao = `${categoria.nome}|${despesa.nome}`;
-                    const isDespesaExpanded = categoriasExpandidas.has(chaveExpansao);
-                    
+                    const isDespesaExpanded =
+                      categoriasExpandidas.has(chaveExpansao);
+
                     return (
-                      <div key={`despesa-${categoriaIndex}-${despesaIndex}-${despesa.nome}`} className="border-b border-gray-100 last:border-b-0">
+                      <div
+                        key={`despesa-${categoriaIndex}-${despesaIndex}-${despesa.nome}`}
+                        className="border-b border-gray-100 last:border-b-0"
+                      >
                         {/* Cabeçalho da despesa específica */}
                         <div
                           className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-4 py-1.5 flex items-center justify-between"
-                          onClick={() => toggleDespesa(categoria.nome, despesa.nome)}
+                          onClick={() =>
+                            toggleDespesa(categoria.nome, despesa.nome)
+                          }
                         >
                           <div className="flex items-center space-x-2">
                             {isDespesaExpanded ? (
@@ -4800,258 +5918,624 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                             ) : (
                               <CaretRight size={10} className="text-gray-500" />
                             )}
-                <div>
-                              <h4 className="font-medium text-xs text-gray-700">{despesa.nome}</h4>
+                            <div>
+                              <h4 className="font-medium text-xs text-gray-700">
+                                {despesa.nome}
+                              </h4>
                               <div className="flex items-center space-x-3 text-xs text-gray-500">
                                 <span>{despesa.quantidade} conta(s)</span>
-                                <span>{despesa.fornecedoresArray.length} fornecedor(es)</span>
+                                <span>
+                                  {despesa.fornecedoresArray.length}{" "}
+                                  fornecedor(es)
+                                </span>
                                 <span className="font-medium text-red-500">
-                                  {despesa.total.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })}
-                  </span>
-                </div>
-                </div>
-                </div>
-              </div>
+                                  {despesa.total.toLocaleString("pt-BR", {
+                                    style: "currency",
+                                    currency: "BRL",
+                                  })}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
 
                         {/* Sub-tópicos de fornecedores */}
                         {isDespesaExpanded && (
                           <div className="bg-white border-t border-gray-50">
-                                                    {despesa.fornecedoresArray.map((fornecedor, fornecedorIndex) => {
-                          const chaveExpansaoFornecedor = `${categoria.nome}|${despesa.nome}|${fornecedor.nome}|${fornecedor.nrDuplicata}|${fornecedor.nrParcela}|${fornecedor.vlRateio}`;
-                          const isFornecedorExpanded = categoriasExpandidas.has(chaveExpansaoFornecedor);
-                          
-                          return (
-                            <div key={`fornecedor-${categoriaIndex}-${despesaIndex}-${fornecedorIndex}-${fornecedor.nome}-${fornecedor.nrDuplicata}-${fornecedor.nrParcela}`} className="border-b border-gray-50 last:border-b-0">
-                                  {/* Cabeçalho do fornecedor */}
-                                  <div
-                                    className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-6 py-1.5 flex items-center justify-between"
-                                    onClick={() => toggleFornecedor(categoria.nome, despesa.nome, fornecedor.nome, fornecedor.nrDuplicata, fornecedor.nrParcela, fornecedor.vlRateio)}
-                                  >
-                                    <div className="flex items-center space-x-2">
-                                      {isFornecedorExpanded ? (
-                                        <CaretDown size={10} className="text-gray-400" />
-                                      ) : (
-                                        <CaretRight size={10} className="text-gray-400" />
-                                      )}
-                <div>
-                                        <h5 className="font-medium text-xs text-gray-600">
-                                          {fornecedor.nome}
-                                          <span className="ml-1 text-gray-400">
-                                            (Dup: {fornecedor.nrDuplicata} | Parc: {fornecedor.nrParcela || '-'})
-                                          </span>
-                                          {fornecedor.vlRateio > 0 && (
-                                            <span className="ml-1 text-gray-400">
-                                              - Rateio: {parseFloat(fornecedor.vlRateio).toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })}
-                  </span>
-                                          )}
-                                        </h5>
-                                        <div className="flex items-center space-x-3 text-xs text-gray-400">
-                                          <span>{fornecedor.quantidade} conta(s)</span>
-                                          <span className="font-medium text-red-400">
-                                            {fornecedor.total.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })}
-                  </span>
-                </div>
-                                      </div>
-                </div>
-              </div>
+                            {despesa.fornecedoresArray.map(
+                              (fornecedor, fornecedorIndex) => {
+                                const chaveExpansaoFornecedor = `${categoria.nome}|${despesa.nome}|${fornecedor.nome}|${fornecedor.nrDuplicata}|${fornecedor.nrParcela}|${fornecedor.vlRateio}`;
+                                const isFornecedorExpanded =
+                                  categoriasExpandidas.has(
+                                    chaveExpansaoFornecedor
+                                  );
 
-                                  {/* Tabela de detalhes do fornecedor */}
-                                  {isFornecedorExpanded && (
-                                    <div className="bg-white">
-                                      <div className="overflow-x-auto">
-                                        <table className="contas-table w-full border-collapse">
-                                          <thead>
-                                            <tr className="bg-[#000638] text-white text-[8px]">
-                                              <th className="px-0.5 py-0.5 text-center text-[8px]" style={{ width: '30px', minWidth: '30px', position: 'sticky', left: 0, zIndex: 10, background: '#000638' }}>
-                                                Selecionar
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_vencimento')}>
-                                                <div className="flex items-center justify-center">Vencimento {getSortIcon('dt_vencimento')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_duplicata')}>
-                                                <div className="flex items-center justify-center">Valor {getSortIcon('vl_duplicata')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_fornecedor')}>
-                                                <div className="flex items-center justify-center">Fornecedor {getSortIcon('cd_fornecedor')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nm_fornecedor')}>
-                                                <div className="flex items-center justify-center">NM Fornecedor {getSortIcon('nm_fornecedor')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_despesaitem')}>
-                                                <div className="flex items-center justify-center">Despesa {getSortIcon('ds_despesaitem')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('ds_ccusto')}>
-                                                <div className="flex items-center justify-center">NM CUSTO {getSortIcon('ds_ccusto')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('cd_empresa')}>
-                                                <div className="flex items-center justify-center">Empresa {getSortIcon('cd_empresa')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_duplicata')}>
-                                                <div className="flex items-center justify-center">Duplicata {getSortIcon('nr_duplicata')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_portador')}>
-                                                <div className="flex items-center justify-center">Portador {getSortIcon('nr_portador')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_emissao')}>
-                                                <div className="flex items-center justify-center">Emissão {getSortIcon('dt_emissao')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_entrada')}>
-                                                <div className="flex items-center justify-center">Entrada {getSortIcon('dt_entrada')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('dt_liq')}>
-                                                <div className="flex items-center justify-center">Liquidação {getSortIcon('dt_liq')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_situacao')}>
-                                                <div className="flex items-center justify-center">Situação {getSortIcon('tp_situacao')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_estagio')}>
-                                                <div className="flex items-center justify-center">Estágio {getSortIcon('tp_estagio')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_juros')}>
-                                                <div className="flex items-center justify-center">Juros {getSortIcon('vl_juros')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_acrescimo')}>
-                                                <div className="flex items-center justify-center">Acréscimo {getSortIcon('vl_acrescimo')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_desconto')}>
-                                                <div className="flex items-center justify-center">Desconto {getSortIcon('vl_desconto')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('vl_pago')}>
-                                                <div className="flex items-center justify-center">Pago {getSortIcon('vl_pago')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('in_aceite')}>
-                                                <div className="flex items-center justify-center">Aceite {getSortIcon('in_aceite')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('nr_parcela')}>
-                                                <div className="flex items-center justify-center">Parcela {getSortIcon('nr_parcela')}</div>
-                                              </th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px]">Rateio</th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px]">Observação</th>
-                                              <th className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors" onClick={() => handleSort('tp_previsaoreal')}>
-                                                <div className="flex items-center justify-center">Previsão {getSortIcon('tp_previsaoreal')}</div>
-                                              </th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {fornecedor.itens.map((item, index) => {
-                                              const indiceReal = item.indiceOriginal;
-                                              const isSelected = linhasSelecionadas.has(indiceReal);
-                                              const dadoItem = item.grupo.item; // Acessar o item através do grupo
-                                              
-                                              return (
-                                                <tr
-                                                  key={`${dadoItem.cd_empresa}-${dadoItem.nr_duplicata}-${index}`}
-                                                  className={`text-[8px] border-b transition-colors cursor-pointer ${
-                                                    isSelected
-                                                      ? 'bg-blue-100 hover:bg-blue-200'
-                                                      : index % 2 === 0
-                                                      ? 'bg-white hover:bg-gray-100'
-                                                      : 'bg-gray-50 hover:bg-gray-100'
-                                                  }`}
-                                                  onClick={() => abrirModalDetalhes(dadoItem)}
-                                                  title="Clique para ver detalhes da conta"
+                                return (
+                                  <div
+                                    key={`fornecedor-${categoriaIndex}-${despesaIndex}-${fornecedorIndex}-${fornecedor.nome}-${fornecedor.nrDuplicata}-${fornecedor.nrParcela}`}
+                                    className="border-b border-gray-50 last:border-b-0"
+                                  >
+                                    {/* Cabeçalho do fornecedor */}
+                                    <div
+                                      className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-6 py-1.5 flex items-center justify-between"
+                                      onClick={() =>
+                                        toggleFornecedor(
+                                          categoria.nome,
+                                          despesa.nome,
+                                          fornecedor.nome,
+                                          fornecedor.nrDuplicata,
+                                          fornecedor.nrParcela,
+                                          fornecedor.vlRateio
+                                        )
+                                      }
+                                    >
+                                      <div className="flex items-center space-x-2">
+                                        {isFornecedorExpanded ? (
+                                          <CaretDown
+                                            size={10}
+                                            className="text-gray-400"
+                                          />
+                                        ) : (
+                                          <CaretRight
+                                            size={10}
+                                            className="text-gray-400"
+                                          />
+                                        )}
+                                        <div>
+                                          <h5 className="font-medium text-xs text-gray-600">
+                                            {fornecedor.nome}
+                                            <span className="ml-1 text-gray-400">
+                                              (Dup: {fornecedor.nrDuplicata} |
+                                              Parc:{" "}
+                                              {fornecedor.nrParcela || "-"})
+                                            </span>
+                                            {fornecedor.vlRateio > 0 && (
+                                              <span className="ml-1 text-gray-400">
+                                                - Rateio:{" "}
+                                                {parseFloat(
+                                                  fornecedor.vlRateio
+                                                ).toLocaleString("pt-BR", {
+                                                  style: "currency",
+                                                  currency: "BRL",
+                                                })}
+                                              </span>
+                                            )}
+                                          </h5>
+                                          <div className="flex items-center space-x-3 text-xs text-gray-400">
+                                            <span>
+                                              {fornecedor.quantidade} conta(s)
+                                            </span>
+                                            <span className="font-medium text-red-400">
+                                              {fornecedor.total.toLocaleString(
+                                                "pt-BR",
+                                                {
+                                                  style: "currency",
+                                                  currency: "BRL",
+                                                }
+                                              )}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Tabela de detalhes do fornecedor */}
+                                    {isFornecedorExpanded && (
+                                      <div className="bg-white">
+                                        <div className="overflow-x-auto">
+                                          <table className="contas-table w-full border-collapse">
+                                            <thead>
+                                              <tr className="bg-[#000638] text-white text-[8px]">
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px]"
+                                                  style={{
+                                                    width: "30px",
+                                                    minWidth: "30px",
+                                                    position: "sticky",
+                                                    left: 0,
+                                                    zIndex: 10,
+                                                    background: "#000638",
+                                                  }}
                                                 >
-                                                  <td className="px-0.5 py-0.5 text-center" style={{ width: '30px', minWidth: '30px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
-                                                    <input
-                                                      type="checkbox"
-                                                      checked={isSelected}
-                                                      onChange={(e) => {
-                                                        e.stopPropagation();
-                                                        toggleLinhaSelecionada(indiceReal);
-                                                      }}
-                                                      className="rounded w-3 h-3"
-                                                      onClick={(e) => e.stopPropagation()}
-                                                    />
-                                                  </td>
-                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(dadoItem.dt_vencimento)}</td>
-                                                  <td className="px-0.5 py-0.5 text-right font-medium text-green-600">
-                                                    {parseFloat(dadoItem.vl_duplicata || 0).toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })}
-                                                  </td>
-                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.cd_fornecedor || ''}</td>
-                                                  <td className="px-0.5 py-0.5 text-left max-w-32 truncate" title={dadoItem.nm_fornecedor}>
-                                                    {dadoItem.nm_fornecedor || ''}
-                                                  </td>
-                                                  <td className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32" title={dadoItem.ds_despesaitem}>
-                                                    {dadoItem.ds_despesaitem || ''}
-                                                  </td>
-                                                  <td className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32" title={dadoItem.ds_ccusto}>
-                                                    {dadoItem.ds_ccusto || ''}
-                                                  </td>
-                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.cd_empresa || ''}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.nr_duplicata || ''}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.nr_portador || ''}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(dadoItem.dt_emissao)}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(dadoItem.dt_entrada)}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(dadoItem.dt_liq)}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.tp_situacao || ''}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.tp_estagio || ''}</td>
-                                                  <td className="px-0.5 py-0.5 text-right">
-                                                    {parseFloat(dadoItem.vl_juros || 0).toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })}
-                                                  </td>
-                                                  <td className="px-0.5 py-0.5 text-right">
-                                                    {parseFloat(dadoItem.vl_acrescimo || 0).toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })}
-                                                  </td>
-                                                  <td className="px-0.5 py-0.5 text-right">
-                                                    {parseFloat(dadoItem.vl_desconto || 0).toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })}
-                                                  </td>
-                                                  <td className="px-0.5 py-0.5 text-right">
-                                                    {parseFloat(dadoItem.vl_pago || 0).toLocaleString('pt-BR', {
-                                                      style: 'currency',
-                                                      currency: 'BRL',
-                                                    })}
-                                                  </td>
-                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.in_aceite || ''}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.nr_parcela || ''}</td>
-                                                  <td className="px-0.5 py-0.5 text-right">
-                                                    {parseFloat(dadoItem.vl_rateio || 0).toLocaleString('pt-BR', {
-                                                      style: 'currency',
-                                                      currency: 'BRL',
-                                                    })}
-                                                  </td>
-                                                  <td className="px-0.5 py-0.5 text-left max-w-32 truncate" title={dadoItem.ds_observacao}>
-                                                    {dadoItem.ds_observacao || ''}
-                                                  </td>
-                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.tp_previsaoreal || ''}</td>
-                                                </tr>
-                                              );
-                                            })}
-                                          </tbody>
-                                        </table>
-                </div>
-              </div>
-                                  )}
-                    </div>
-                              );
-                            })}
-                  </div>
-                )}
-              </div>
+                                                  Selecionar
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("dt_vencimento")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Vencimento{" "}
+                                                    {getSortIcon(
+                                                      "dt_vencimento"
+                                                    )}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("vl_duplicata")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Valor{" "}
+                                                    {getSortIcon(
+                                                      "vl_duplicata"
+                                                    )}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("cd_fornecedor")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Fornecedor{" "}
+                                                    {getSortIcon(
+                                                      "cd_fornecedor"
+                                                    )}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("nm_fornecedor")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    NM Fornecedor{" "}
+                                                    {getSortIcon(
+                                                      "nm_fornecedor"
+                                                    )}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("ds_despesaitem")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Despesa{" "}
+                                                    {getSortIcon(
+                                                      "ds_despesaitem"
+                                                    )}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("ds_ccusto")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    NM CUSTO{" "}
+                                                    {getSortIcon("ds_ccusto")}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("cd_empresa")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Empresa{" "}
+                                                    {getSortIcon("cd_empresa")}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("nr_duplicata")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Duplicata{" "}
+                                                    {getSortIcon(
+                                                      "nr_duplicata"
+                                                    )}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("nr_portador")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Portador{" "}
+                                                    {getSortIcon("nr_portador")}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("dt_emissao")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Emissão{" "}
+                                                    {getSortIcon("dt_emissao")}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("dt_entrada")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Entrada{" "}
+                                                    {getSortIcon("dt_entrada")}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("dt_liq")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Liquidação{" "}
+                                                    {getSortIcon("dt_liq")}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("tp_situacao")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Situação{" "}
+                                                    {getSortIcon("tp_situacao")}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("tp_estagio")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Estágio{" "}
+                                                    {getSortIcon("tp_estagio")}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("vl_juros")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Juros{" "}
+                                                    {getSortIcon("vl_juros")}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("vl_acrescimo")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Acréscimo{" "}
+                                                    {getSortIcon(
+                                                      "vl_acrescimo"
+                                                    )}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("vl_desconto")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Desconto{" "}
+                                                    {getSortIcon("vl_desconto")}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("vl_pago")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Pago{" "}
+                                                    {getSortIcon("vl_pago")}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("in_aceite")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Aceite{" "}
+                                                    {getSortIcon("in_aceite")}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort("nr_parcela")
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Parcela{" "}
+                                                    {getSortIcon("nr_parcela")}
+                                                  </div>
+                                                </th>
+                                                <th className="px-0.5 py-0.5 text-center text-[8px]">
+                                                  Rateio
+                                                </th>
+                                                <th className="px-0.5 py-0.5 text-center text-[8px]">
+                                                  Observação
+                                                </th>
+                                                <th
+                                                  className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                                                  onClick={() =>
+                                                    handleSort(
+                                                      "tp_previsaoreal"
+                                                    )
+                                                  }
+                                                >
+                                                  <div className="flex items-center justify-center">
+                                                    Previsão{" "}
+                                                    {getSortIcon(
+                                                      "tp_previsaoreal"
+                                                    )}
+                                                  </div>
+                                                </th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {fornecedor.itens.map(
+                                                (item, index) => {
+                                                  const indiceReal =
+                                                    item.indiceOriginal;
+                                                  const isSelected =
+                                                    linhasSelecionadas.has(
+                                                      indiceReal
+                                                    );
+                                                  const dadoItem =
+                                                    item.grupo.item; // Acessar o item através do grupo
+
+                                                  return (
+                                                    <tr
+                                                      key={`${dadoItem.cd_empresa}-${dadoItem.nr_duplicata}-${index}`}
+                                                      className={`text-[8px] border-b transition-colors cursor-pointer ${
+                                                        isSelected
+                                                          ? "bg-blue-100 hover:bg-blue-200"
+                                                          : index % 2 === 0
+                                                          ? "bg-white hover:bg-gray-100"
+                                                          : "bg-gray-50 hover:bg-gray-100"
+                                                      }`}
+                                                      onClick={() =>
+                                                        abrirModalDetalhes(
+                                                          dadoItem
+                                                        )
+                                                      }
+                                                      title="Clique para ver detalhes da conta"
+                                                    >
+                                                      <td
+                                                        className="px-0.5 py-0.5 text-center"
+                                                        style={{
+                                                          width: "30px",
+                                                          minWidth: "30px",
+                                                          position: "sticky",
+                                                          left: 0,
+                                                          zIndex: 10,
+                                                          background: isSelected
+                                                            ? "#dbeafe"
+                                                            : "inherit",
+                                                        }}
+                                                      >
+                                                        <input
+                                                          type="checkbox"
+                                                          checked={isSelected}
+                                                          onChange={(e) => {
+                                                            e.stopPropagation();
+                                                            toggleLinhaSelecionada(
+                                                              indiceReal
+                                                            );
+                                                          }}
+                                                          className="rounded w-3 h-3"
+                                                          onClick={(e) =>
+                                                            e.stopPropagation()
+                                                          }
+                                                        />
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-center">
+                                                        {formatarData(
+                                                          dadoItem.dt_vencimento
+                                                        )}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-right font-medium text-green-600">
+                                                        {parseFloat(
+                                                          dadoItem.vl_duplicata ||
+                                                            0
+                                                        ).toLocaleString(
+                                                          "pt-BR",
+                                                          {
+                                                            style: "currency",
+                                                            currency: "BRL",
+                                                          }
+                                                        )}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-center">
+                                                        {dadoItem.cd_fornecedor ||
+                                                          ""}
+                                                      </td>
+                                                      <td
+                                                        className="px-0.5 py-0.5 text-left max-w-32 truncate"
+                                                        title={
+                                                          dadoItem.nm_fornecedor
+                                                        }
+                                                      >
+                                                        {dadoItem.nm_fornecedor ||
+                                                          ""}
+                                                      </td>
+                                                      <td
+                                                        className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32"
+                                                        title={
+                                                          dadoItem.ds_despesaitem
+                                                        }
+                                                      >
+                                                        {dadoItem.ds_despesaitem ||
+                                                          ""}
+                                                      </td>
+                                                      <td
+                                                        className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32"
+                                                        title={
+                                                          dadoItem.ds_ccusto
+                                                        }
+                                                      >
+                                                        {dadoItem.ds_ccusto ||
+                                                          ""}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-center">
+                                                        {dadoItem.cd_empresa ||
+                                                          ""}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-center">
+                                                        {dadoItem.nr_duplicata ||
+                                                          ""}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-center">
+                                                        {dadoItem.nr_portador ||
+                                                          ""}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-center">
+                                                        {formatarData(
+                                                          dadoItem.dt_emissao
+                                                        )}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-center">
+                                                        {formatarData(
+                                                          dadoItem.dt_entrada
+                                                        )}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-center">
+                                                        {formatarData(
+                                                          dadoItem.dt_liq
+                                                        )}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-center">
+                                                        {dadoItem.tp_situacao ||
+                                                          ""}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-center">
+                                                        {dadoItem.tp_estagio ||
+                                                          ""}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-right">
+                                                        {parseFloat(
+                                                          dadoItem.vl_juros || 0
+                                                        ).toLocaleString(
+                                                          "pt-BR",
+                                                          {
+                                                            style: "currency",
+                                                            currency: "BRL",
+                                                          }
+                                                        )}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-right">
+                                                        {parseFloat(
+                                                          dadoItem.vl_acrescimo ||
+                                                            0
+                                                        ).toLocaleString(
+                                                          "pt-BR",
+                                                          {
+                                                            style: "currency",
+                                                            currency: "BRL",
+                                                          }
+                                                        )}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-right">
+                                                        {parseFloat(
+                                                          dadoItem.vl_desconto ||
+                                                            0
+                                                        ).toLocaleString(
+                                                          "pt-BR",
+                                                          {
+                                                            style: "currency",
+                                                            currency: "BRL",
+                                                          }
+                                                        )}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-right">
+                                                        {parseFloat(
+                                                          dadoItem.vl_pago || 0
+                                                        ).toLocaleString(
+                                                          "pt-BR",
+                                                          {
+                                                            style: "currency",
+                                                            currency: "BRL",
+                                                          }
+                                                        )}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-center">
+                                                        {dadoItem.in_aceite ||
+                                                          ""}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-center">
+                                                        {dadoItem.nr_parcela ||
+                                                          ""}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-right">
+                                                        {parseFloat(
+                                                          dadoItem.vl_rateio ||
+                                                            0
+                                                        ).toLocaleString(
+                                                          "pt-BR",
+                                                          {
+                                                            style: "currency",
+                                                            currency: "BRL",
+                                                          }
+                                                        )}
+                                                      </td>
+                                                      <td
+                                                        className="px-0.5 py-0.5 text-left max-w-32 truncate"
+                                                        title={
+                                                          dadoItem.ds_observacao
+                                                        }
+                                                      >
+                                                        {dadoItem.ds_observacao ||
+                                                          ""}
+                                                      </td>
+                                                      <td className="px-0.5 py-0.5 text-center">
+                                                        {dadoItem.tp_previsaoreal ||
+                                                          ""}
+                                                      </td>
+                                                    </tr>
+                                                  );
+                                                }
+                                              )}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              }
+                            )}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
-                        </div>
+                </div>
               )}
-                      </div>
+            </div>
           );
         })}
 
@@ -5065,4 +6549,4 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
   );
 };
 
-export default ContasAPagar; 
+export default ContasAPagar;
