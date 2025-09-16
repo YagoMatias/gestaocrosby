@@ -2836,6 +2836,7 @@ const ContasAPagar = () => {
                         abrirModalDetalhes={abrirModalDetalhes}
                         getSortIcon={getSortIcon}
                         handleSort={handleSort}
+                        agruparDadosIdenticos={agruparDadosIdenticos}
                       />
                     </div>
                   )}
@@ -4306,7 +4307,7 @@ const ContasAPagar = () => {
 };
 
 // Componente para agrupar despesas por categoria
-const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, filtroDia, setFiltroDia, handleFiltroMensalChange, obterDiasDoMes, abrirModalDetalhes, getSortIcon, handleSort }) => {
+const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, filtroDia, setFiltroDia, handleFiltroMensalChange, obterDiasDoMes, abrirModalDetalhes, getSortIcon, handleSort, agruparDadosIdenticos }) => {
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(new Set());
   const [todosExpandidos, setTodosExpandidos] = useState(false);
 
@@ -4346,11 +4347,16 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
   const dadosAgrupados = useMemo(() => {
     const categorias = {};
     
-    dados.forEach((item, index) => {
+    // Primeiro passo: agrupar os dados para evitar duplicações
+    const dadosAgrupados = agruparDadosIdenticos(dados);
+    
+    dadosAgrupados.forEach((grupo, index) => {
+      const item = grupo.item;
       const cdDespesa = item.cd_despesaitem;
       const nomeDespesa = item.ds_despesaitem || 'SEM DESCRIÇÃO';
       const nomeFornecedor = item.nm_fornecedor || 'SEM FORNECEDOR';
-      const vlRateio = item.vl_rateio || 0;
+      // Usar o valor da duplicata em vez do rateio para manter consistência com os cards
+      const vlDuplicata = parseFloat(item.vl_duplicata || 0);
       const categoria = classificarDespesa(cdDespesa);
       
       // Criar categoria principal se não existir
@@ -4375,8 +4381,8 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
         };
       }
       
-      // Criar chave única para o fornecedor incluindo duplicata, parcela e rateio
-      const chaveFornecedor = `${nomeFornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${vlRateio}`;
+      // Criar chave única para o fornecedor incluindo duplicata e parcela
+      const chaveFornecedor = `${nomeFornecedor}|${item.nr_duplicata}|${item.nr_parcela}`;
       
       // Criar sub-tópico do fornecedor se não existir
       if (!categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor]) {
@@ -4384,7 +4390,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
           nome: nomeFornecedor,
           nrDuplicata: item.nr_duplicata,
           nrParcela: item.nr_parcela,
-          vlRateio: vlRateio,
+          vlDuplicata: vlDuplicata,
           itens: [],
           total: 0,
           quantidade: 0,
@@ -4393,16 +4399,16 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
       }
       
       // Adicionar item ao fornecedor específico
-      categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor].itens.push({ item, indiceOriginal: index });
+      categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor].itens.push({ grupo, indiceOriginal: index });
       
-      // Usar o valor de rateio como total para este item específico
-      categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor].total = parseFloat(vlRateio || 0);
+      // Usar o valor da duplicata como total para este item específico
+      categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor].total = vlDuplicata;
       categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor].quantidade = 1;
       
-      // Adicionar totais da despesa e categoria usando o rateio
-      categorias[categoria].despesas[nomeDespesa].total += parseFloat(vlRateio || 0);
+      // Adicionar totais da despesa e categoria usando o valor da duplicata
+      categorias[categoria].despesas[nomeDespesa].total += vlDuplicata;
       categorias[categoria].despesas[nomeDespesa].quantidade += 1;
-      categorias[categoria].total += parseFloat(vlRateio || 0);
+      categorias[categoria].total += vlDuplicata;
       categorias[categoria].quantidade += 1;
     });
 
@@ -4503,36 +4509,36 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
     dadosAgrupados.forEach(categoria => {
       categoria.despesasArray.forEach(despesa => {
         despesa.fornecedoresArray.forEach(fornecedor => {
-          fornecedor.itens.forEach(grupo => {
-            const item = grupo.item;
+          fornecedor.itens.forEach(item => {
+            const dadoItem = item.grupo.item;
             dadosParaExportar.push({
               'Categoria': categoria.nome,
               'Despesa': despesa.nome,
               'Fornecedor': fornecedor.nome,
               'Duplicata': fornecedor.nrDuplicata,
-              'Rateio': fornecedor.vlRateio,
-              'Vencimento': formatarData(item.dt_vencimento),
-              'Valor': parseFloat(item.vl_duplicata || 0),
-              'Código Fornecedor': item.cd_fornecedor || '',
-              'Nome Fornecedor': item.nm_fornecedor || '',
-              'Despesa Item': item.ds_despesaitem || '',
-              'Centro de Custo': item.ds_ccusto || '',
-              'Empresa': item.cd_empresa || '',
-              'Portador': item.nr_portador || '',
-              'Emissão': formatarData(item.dt_emissao),
-              'Entrada': formatarData(item.dt_entrada),
-              'Liquidação': formatarData(item.dt_liq),
-              'Situação': item.tp_situacao || '',
-              'Estágio': item.tp_estagio || '',
-              'Juros': parseFloat(item.vl_juros || 0),
-              'Acréscimo': parseFloat(item.vl_acrescimo || 0),
-              'Desconto': parseFloat(item.vl_desconto || 0),
-              'Pago': parseFloat(item.vl_pago || 0),
-              'Aceite': item.in_aceite || '',
-              'Parcela': item.nr_parcela || '',
-              'Rateio Item': item.vl_rateio || '',
-              'Observação': item.ds_observacao || '',
-              'Previsão': item.tp_previsaoreal || ''
+              'Valor': fornecedor.vlDuplicata,
+              'Vencimento': formatarData(dadoItem.dt_vencimento),
+              'Valor Duplicata': parseFloat(dadoItem.vl_duplicata || 0),
+              'Código Fornecedor': dadoItem.cd_fornecedor || '',
+              'Nome Fornecedor': dadoItem.nm_fornecedor || '',
+              'Despesa Item': dadoItem.ds_despesaitem || '',
+              'Centro de Custo': dadoItem.ds_ccusto || '',
+              'Empresa': dadoItem.cd_empresa || '',
+              'Portador': dadoItem.nr_portador || '',
+              'Emissão': formatarData(dadoItem.dt_emissao),
+              'Entrada': formatarData(dadoItem.dt_entrada),
+              'Liquidação': formatarData(dadoItem.dt_liq),
+              'Situação': dadoItem.tp_situacao || '',
+              'Estágio': dadoItem.tp_estagio || '',
+              'Juros': parseFloat(dadoItem.vl_juros || 0),
+              'Acréscimo': parseFloat(dadoItem.vl_acrescimo || 0),
+              'Desconto': parseFloat(dadoItem.vl_desconto || 0),
+              'Pago': parseFloat(dadoItem.vl_pago || 0),
+              'Aceite': dadoItem.in_aceite || '',
+              'Parcela': dadoItem.nr_parcela || '',
+              'Rateio Item': dadoItem.vl_rateio || '',
+              'Observação': dadoItem.ds_observacao || '',
+              'Previsão': dadoItem.tp_previsaoreal || ''
             });
           });
         });
@@ -4936,13 +4942,14 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                             </tr>
                                           </thead>
                                           <tbody>
-                                            {fornecedor.itens.map((grupo, index) => {
-                                              const indiceReal = grupo.indiceOriginal;
+                                            {fornecedor.itens.map((item, index) => {
+                                              const indiceReal = item.indiceOriginal;
                                               const isSelected = linhasSelecionadas.has(indiceReal);
+                                              const dadoItem = item.grupo.item; // Acessar o item através do grupo
                                               
                                               return (
                                                 <tr
-                                                  key={`${grupo.item.cd_empresa}-${grupo.item.nr_duplicata}-${index}`}
+                                                  key={`${dadoItem.cd_empresa}-${dadoItem.nr_duplicata}-${index}`}
                                                   className={`text-[8px] border-b transition-colors cursor-pointer ${
                                                     isSelected
                                                       ? 'bg-blue-100 hover:bg-blue-200'
@@ -4950,7 +4957,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                                       ? 'bg-white hover:bg-gray-100'
                                                       : 'bg-gray-50 hover:bg-gray-100'
                                                   }`}
-                                                  onClick={() => abrirModalDetalhes(grupo.item)}
+                                                  onClick={() => abrirModalDetalhes(dadoItem)}
                                                   title="Clique para ver detalhes da conta"
                                                 >
                                                   <td className="px-0.5 py-0.5 text-center" style={{ width: '30px', minWidth: '30px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
@@ -4965,67 +4972,67 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
                                                       onClick={(e) => e.stopPropagation()}
                                                     />
                                                   </td>
-                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_vencimento)}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(dadoItem.dt_vencimento)}</td>
                                                   <td className="px-0.5 py-0.5 text-right font-medium text-green-600">
-                                                    {parseFloat(grupo.item.vl_duplicata || 0).toLocaleString('pt-BR', {
+                                                    {parseFloat(dadoItem.vl_duplicata || 0).toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
                     })}
                                                   </td>
-                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.cd_fornecedor || ''}</td>
-                                                  <td className="px-0.5 py-0.5 text-left max-w-32 truncate" title={grupo.item.nm_fornecedor}>
-                                                    {grupo.item.nm_fornecedor || ''}
+                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.cd_fornecedor || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-left max-w-32 truncate" title={dadoItem.nm_fornecedor}>
+                                                    {dadoItem.nm_fornecedor || ''}
                                                   </td>
-                                                  <td className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_despesaitem}>
-                                                    {grupo.item.ds_despesaitem || ''}
+                                                  <td className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32" title={dadoItem.ds_despesaitem}>
+                                                    {dadoItem.ds_despesaitem || ''}
                                                   </td>
-                                                  <td className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32" title={grupo.item.ds_ccusto}>
-                                                    {grupo.item.ds_ccusto || ''}
+                                                  <td className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32" title={dadoItem.ds_ccusto}>
+                                                    {dadoItem.ds_ccusto || ''}
                                                   </td>
-                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.cd_empresa || ''}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.nr_duplicata || ''}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.nr_portador || ''}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_emissao)}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_entrada)}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(grupo.item.dt_liq)}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.tp_situacao || ''}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.tp_estagio || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.cd_empresa || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.nr_duplicata || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.nr_portador || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(dadoItem.dt_emissao)}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(dadoItem.dt_entrada)}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{formatarData(dadoItem.dt_liq)}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.tp_situacao || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.tp_estagio || ''}</td>
                                                   <td className="px-0.5 py-0.5 text-right">
-                                                    {parseFloat(grupo.item.vl_juros || 0).toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })}
-                                                  </td>
-                                                  <td className="px-0.5 py-0.5 text-right">
-                                                    {parseFloat(grupo.item.vl_acrescimo || 0).toLocaleString('pt-BR', {
+                                                    {parseFloat(dadoItem.vl_juros || 0).toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
                     })}
                                                   </td>
                                                   <td className="px-0.5 py-0.5 text-right">
-                                                    {parseFloat(grupo.item.vl_desconto || 0).toLocaleString('pt-BR', {
+                                                    {parseFloat(dadoItem.vl_acrescimo || 0).toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL',
                     })}
                                                   </td>
                                                   <td className="px-0.5 py-0.5 text-right">
-                                                    {parseFloat(grupo.item.vl_pago || 0).toLocaleString('pt-BR', {
+                                                    {parseFloat(dadoItem.vl_desconto || 0).toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
+                                                  </td>
+                                                  <td className="px-0.5 py-0.5 text-right">
+                                                    {parseFloat(dadoItem.vl_pago || 0).toLocaleString('pt-BR', {
                                                       style: 'currency',
                                                       currency: 'BRL',
                                                     })}
                                                   </td>
-                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.in_aceite || ''}</td>
-                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.nr_parcela || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.in_aceite || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.nr_parcela || ''}</td>
                                                   <td className="px-0.5 py-0.5 text-right">
-                                                    {parseFloat(grupo.item.vl_rateio || 0).toLocaleString('pt-BR', {
+                                                    {parseFloat(dadoItem.vl_rateio || 0).toLocaleString('pt-BR', {
                                                       style: 'currency',
                                                       currency: 'BRL',
                                                     })}
                                                   </td>
-                                                  <td className="px-0.5 py-0.5 text-left max-w-32 truncate" title={grupo.item.ds_observacao}>
-                                                    {grupo.item.ds_observacao || ''}
+                                                  <td className="px-0.5 py-0.5 text-left max-w-32 truncate" title={dadoItem.ds_observacao}>
+                                                    {dadoItem.ds_observacao || ''}
                                                   </td>
-                                                  <td className="px-0.5 py-0.5 text-center">{grupo.item.tp_previsaoreal || ''}</td>
+                                                  <td className="px-0.5 py-0.5 text-center">{dadoItem.tp_previsaoreal || ''}</td>
                                                 </tr>
                                               );
                                             })}
