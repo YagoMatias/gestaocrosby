@@ -1,27 +1,27 @@
-import React, { useEffect, useState, useMemo, useCallback } from "react";
-import { useAuth } from "../components/AuthContext";
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { useAuth } from '../components/AuthContext';
 
-import FiltroEmpresa from "../components/FiltroEmpresa";
-import FiltroCentroCusto from "../components/FiltroCentroCusto";
-import FiltroDespesas from "../components/FiltroDespesas";
-import FiltroFornecedor from "../components/FiltroFornecedor";
-import useApiClient from "../hooks/useApiClient";
-import PageTitle from "../components/ui/PageTitle";
+import FiltroEmpresa from '../components/FiltroEmpresa';
+import FiltroCentroCusto from '../components/FiltroCentroCusto';
+import FiltroDespesas from '../components/FiltroDespesas';
+import FiltroFornecedor from '../components/FiltroFornecedor';
+import useApiClient from '../hooks/useApiClient';
+import PageTitle from '../components/ui/PageTitle';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "../components/ui/cards";
+} from '../components/ui/cards';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "../components/ui/tooltip";
-import FilterDropdown from "../components/ui/FilterDropdown";
-import ModalDetalhesConta from "../components/ModalDetalhesConta";
+} from '../components/ui/tooltip';
+import FilterDropdown from '../components/ui/FilterDropdown';
+import ModalDetalhesConta from '../components/ModalDetalhesConta';
 import {
   Receipt,
   Calendar,
@@ -42,27 +42,27 @@ import {
   FileArrowDown,
   XCircle,
   Trash,
-} from "@phosphor-icons/react";
-import * as XLSX from "xlsx";
-import { saveAs } from "file-saver";
-import { getCategoriaPorCodigo } from "../config/categoriasDespesas";
+} from '@phosphor-icons/react';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
+import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
 import {
   autorizacoesSupabase,
   STATUS_AUTORIZACAO,
-} from "../lib/autorizacoesSupabase";
+} from '../lib/autorizacoesSupabase';
 
 // Função para criar Date object sem problemas de fuso horário
 const criarDataSemFusoHorario = (dataString) => {
   if (!dataString) return null;
-  if (dataString.includes("T")) {
+  if (dataString.includes('T')) {
     // Para datas ISO, usar apenas a parte da data
-    const dataPart = dataString.split("T")[0];
-    const [ano, mes, dia] = dataPart.split("-");
+    const dataPart = dataString.split('T')[0];
+    const [ano, mes, dia] = dataPart.split('-');
     return new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia));
   }
   // Para datas já no formato DD/MM/YYYY
-  if (dataString.includes("/")) {
-    const [dia, mes, ano] = dataString.split("/");
+  if (dataString.includes('/')) {
+    const [dia, mes, ano] = dataString.split('/');
     return new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia));
   }
   return new Date(dataString);
@@ -70,11 +70,11 @@ const criarDataSemFusoHorario = (dataString) => {
 
 // Função para formatar data
 const formatarData = (data) => {
-  if (!data) return "";
-  if (data.includes("T")) {
+  if (!data) return '';
+  if (data.includes('T')) {
     // Para datas ISO, criar a data considerando apenas a parte da data (YYYY-MM-DD)
-    const dataPart = data.split("T")[0];
-    const [ano, mes, dia] = dataPart.split("-");
+    const dataPart = data.split('T')[0];
+    const [ano, mes, dia] = dataPart.split('-');
     return `${dia}/${mes}/${ano}`;
   }
   return data;
@@ -86,20 +86,20 @@ const ContasAPagar = () => {
 
   // Debug logs para verificar o status do usuário
   useEffect(() => {
-    console.log("🔍 DEBUG - Usuário atual:", user);
-    console.log("🔍 DEBUG - Role do usuário:", user?.role);
+    console.log('🔍 DEBUG - Usuário atual:', user);
+    console.log('🔍 DEBUG - Role do usuário:', user?.role);
     console.log(
-      "🔍 DEBUG - hasRole owner:",
-      hasRole(["owner", "admin", "manager"])
+      '🔍 DEBUG - hasRole owner:',
+      hasRole(['owner', 'admin', 'manager']),
     );
-    console.log("🔍 DEBUG - hasRole user:", hasRole(["user"]));
+    console.log('🔍 DEBUG - hasRole user:', hasRole(['user']));
   }, [user, hasRole]);
 
   const [dados, setDados] = useState([]);
   const [dadosFornecedor, setDadosFornecedor] = useState([]);
   const [dadosCentroCusto, setDadosCentroCusto] = useState([]);
   const [dadosDespesa, setDadosDespesa] = useState([]);
-  const [dataInicio, setDataInicio] = useState("");
+  const [dataInicio, setDataInicio] = useState('');
   const [modalDetalhes, setModalDetalhes] = useState({
     isOpen: false,
     conta: null,
@@ -107,7 +107,7 @@ const ContasAPagar = () => {
 
   // Injetar CSS customizado para a tabela
   useEffect(() => {
-    const styleElement = document.createElement("style");
+    const styleElement = document.createElement('style');
     styleElement.textContent = `
         .table-container {
           overflow-x: auto;
@@ -213,27 +213,27 @@ const ContasAPagar = () => {
     };
   }, []);
 
-  const [dataFim, setDataFim] = useState("");
+  const [dataFim, setDataFim] = useState('');
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
-  const [status, setStatus] = useState("Todos");
-  const [situacao, setSituacao] = useState("NORMAIS");
-  const [previsao, setPrevisao] = useState("TODOS");
-  const [filtroAutorizacao, setFiltroAutorizacao] = useState("TODOS");
+  const [status, setStatus] = useState('Todos');
+  const [situacao, setSituacao] = useState('NORMAIS');
+  const [previsao, setPrevisao] = useState('TODOS');
+  const [filtroAutorizacao, setFiltroAutorizacao] = useState('TODOS');
 
-  const [duplicata, setDuplicata] = useState("");
+  const [duplicata, setDuplicata] = useState('');
 
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
   const [linhasSelecionadasAgrupadas, setLinhasSelecionadasAgrupadas] =
     useState(new Set());
 
   // Estados para filtro mensal
-  const [filtroMensal, setFiltroMensal] = useState("ANO");
+  const [filtroMensal, setFiltroMensal] = useState('ANO');
   const [filtroDia, setFiltroDia] = useState(null);
 
   // Estados para modais dos cards
   const [modalCardAberto, setModalCardAberto] = useState(false);
-  const [tipoCardSelecionado, setTipoCardSelecionado] = useState("");
+  const [tipoCardSelecionado, setTipoCardSelecionado] = useState('');
   const [dadosCardModal, setDadosCardModal] = useState([]);
   // Estado para exibição do plano de contas
   const [planoOpen, setPlanoOpen] = useState(true);
@@ -256,9 +256,9 @@ const ContasAPagar = () => {
 
   // Constantes para compatibilidade
   const STATUS_AUTORIZACAO = {
-    AUTORIZADO: "AUTORIZADO",
-    NAO_AUTORIZADO: "NAO_AUTORIZADO",
-    ENVIADO_PAGAMENTO: "ENVIADO_PAGAMENTO",
+    AUTORIZADO: 'AUTORIZADO',
+    NAO_AUTORIZADO: 'NAO_AUTORIZADO',
+    ENVIADO_PAGAMENTO: 'ENVIADO_PAGAMENTO',
   };
 
   // Estados para paginação
@@ -273,56 +273,56 @@ const ContasAPagar = () => {
 
   // Função para abrir modal do card
   const abrirModalCard = (tipo) => {
-    console.log("🔍 Abrindo modal do card:", tipo);
+    console.log('🔍 Abrindo modal do card:', tipo);
     console.log(
-      "📊 Total de dados disponíveis:",
-      dadosOrdenadosParaCards.length
+      '📊 Total de dados disponíveis:',
+      dadosOrdenadosParaCards.length,
     );
 
     let dadosFiltrados = [];
 
     switch (tipo) {
-      case "vencidas":
+      case 'vencidas':
         dadosFiltrados = dadosOrdenadosParaCards
           .filter((grupo) => {
             const status = getStatusFromData(grupo.item);
-            return status === "Vencido";
+            return status === 'Vencido';
           })
           .map((grupo) => grupo.item);
         break;
-      case "aVencer":
+      case 'aVencer':
         dadosFiltrados = dadosOrdenadosParaCards
           .filter((grupo) => {
             const status = getStatusFromData(grupo.item);
-            return status === "A Vencer";
+            return status === 'A Vencer';
           })
           .map((grupo) => grupo.item);
         break;
-      case "proximasVencer":
+      case 'proximasVencer':
         dadosFiltrados = dadosOrdenadosParaCards
           .filter((grupo) => {
             const status = getStatusFromData(grupo.item);
-            return status === "Próxima a Vencer";
+            return status === 'Próxima a Vencer';
           })
           .map((grupo) => grupo.item);
         break;
-      case "pagas":
+      case 'pagas':
         dadosFiltrados = dadosOrdenadosParaCards
           .filter((grupo) => {
             const status = getStatusFromData(grupo.item);
-            return status === "Pago";
+            return status === 'Pago';
           })
           .map((grupo) => grupo.item);
         break;
-      case "faltaPagar":
+      case 'faltaPagar':
         dadosFiltrados = dadosOrdenadosParaCards
           .filter((grupo) => {
             const status = getStatusFromData(grupo.item);
-            return status !== "Pago";
+            return status !== 'Pago';
           })
           .map((grupo) => grupo.item);
         break;
-      case "descontos":
+      case 'descontos':
         dadosFiltrados = dadosOrdenadosParaCards
           .filter((grupo) => {
             return parseFloat(grupo.item.vl_desconto || 0) > 0;
@@ -333,8 +333,8 @@ const ContasAPagar = () => {
         dadosFiltrados = [];
     }
 
-    console.log("✅ Dados filtrados encontrados:", dadosFiltrados.length);
-    console.log("📋 Amostra dos dados filtrados:", dadosFiltrados.slice(0, 2));
+    console.log('✅ Dados filtrados encontrados:', dadosFiltrados.length);
+    console.log('📋 Amostra dos dados filtrados:', dadosFiltrados.slice(0, 2));
 
     setDadosCardModal(dadosFiltrados);
     setTipoCardSelecionado(tipo);
@@ -344,27 +344,27 @@ const ContasAPagar = () => {
   // Função para fechar modal do card
   const fecharModalCard = () => {
     setModalCardAberto(false);
-    setTipoCardSelecionado("");
+    setTipoCardSelecionado('');
     setDadosCardModal([]);
   };
 
   // Função para obter título do modal
   const getTituloModal = (tipo) => {
     switch (tipo) {
-      case "vencidas":
-        return "Contas Vencidas";
-      case "aVencer":
-        return "Contas a Vencer";
-      case "proximasVencer":
-        return "Próximas a Vencer";
-      case "pagas":
-        return "Contas Pagas";
-      case "faltaPagar":
-        return "Falta Pagar";
-      case "descontos":
-        return "Descontos Ganhos";
+      case 'vencidas':
+        return 'Contas Vencidas';
+      case 'aVencer':
+        return 'Contas a Vencer';
+      case 'proximasVencer':
+        return 'Próximas a Vencer';
+      case 'pagas':
+        return 'Contas Pagas';
+      case 'faltaPagar':
+        return 'Falta Pagar';
+      case 'descontos':
+        return 'Descontos Ganhos';
       default:
-        return "Detalhes";
+        return 'Detalhes';
     }
   };
 
@@ -412,7 +412,7 @@ const ContasAPagar = () => {
   // Exportar Excel do Detalhamento de Contas (agrupado)
   const exportarExcelDetalhamento = () => {
     if (!dadosOrdenadosParaCards || dadosOrdenadosParaCards.length === 0) {
-      alert("Nenhum dado para exportar");
+      alert('Nenhum dado para exportar');
       return;
     }
 
@@ -427,33 +427,33 @@ const ContasAPagar = () => {
       return {
         Vencimento: formatarData(grupo.item.dt_vencimento),
         Valor: parseFloat(grupo.item.vl_duplicata || 0),
-        Fornecedor: grupo.item.cd_fornecedor || "",
-        "Nome Fornecedor": grupo.item.nm_fornecedor || "",
-        Despesa: grupo.item.ds_despesaitem || "",
-        "Centro de Custo": grupo.item.ds_ccusto || "",
-        Empresa: grupo.item.cd_empresa || "",
-        Duplicata: grupo.item.nr_duplicata || "",
-        Parcela: grupo.item.nr_parcela || "",
-        Portador: grupo.item.nr_portador || "",
+        Fornecedor: grupo.item.cd_fornecedor || '',
+        'Nome Fornecedor': grupo.item.nm_fornecedor || '',
+        Despesa: grupo.item.ds_despesaitem || '',
+        'Centro de Custo': grupo.item.ds_ccusto || '',
+        Empresa: grupo.item.cd_empresa || '',
+        Duplicata: grupo.item.nr_duplicata || '',
+        Parcela: grupo.item.nr_parcela || '',
+        Portador: grupo.item.nr_portador || '',
         Emissão: formatarData(grupo.item.dt_emissao),
         Entrada: formatarData(grupo.item.dt_entrada),
         Liquidação: formatarData(grupo.item.dt_liq),
-        Situação: grupo.item.tp_situacao || "",
-        Estágio: grupo.item.tp_estagio || "",
+        Situação: grupo.item.tp_situacao || '',
+        Estágio: grupo.item.tp_estagio || '',
         Juros: parseFloat(grupo.item.vl_juros || 0),
         Acréscimo: parseFloat(grupo.item.vl_acrescimo || 0),
         Desconto: parseFloat(grupo.item.vl_desconto || 0),
         Pago: parseFloat(grupo.item.vl_pago || 0),
-        Aceite: grupo.item.in_aceite || "",
-        "Rateio Total": rateioTotal,
-        Observação: grupo.item.ds_observacao || "",
-        Previsão: grupo.item.tp_previsaoreal || "",
+        Aceite: grupo.item.in_aceite || '',
+        'Rateio Total': rateioTotal,
+        Observação: grupo.item.ds_observacao || '',
+        Previsão: grupo.item.tp_previsaoreal || '',
       };
     });
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
-    ws["!cols"] = [
+    ws['!cols'] = [
       { wch: 12 }, // Vencimento
       { wch: 14 }, // Valor
       { wch: 12 }, // Fornecedor
@@ -478,13 +478,13 @@ const ContasAPagar = () => {
       { wch: 30 }, // Observação
       { wch: 10 }, // Previsão
     ];
-    XLSX.utils.book_append_sheet(wb, ws, "Detalhamento");
+    XLSX.utils.book_append_sheet(wb, ws, 'Detalhamento');
     const fileName = `detalhamento_contas_${
-      new Date().toISOString().split("T")[0]
+      new Date().toISOString().split('T')[0]
     }.xlsx`;
-    const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const dataBlob = new Blob([excelBuffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
     saveAs(dataBlob, fileName);
   };
@@ -508,8 +508,8 @@ const ContasAPagar = () => {
 
   // Estados para ordenação
   const [sortConfig, setSortConfig] = useState({
-    key: "dt_vencimento",
-    direction: "asc",
+    key: 'dt_vencimento',
+    direction: 'asc',
   });
 
   // Estados para filtros de coluna (FilterDropdown)
@@ -521,13 +521,13 @@ const ContasAPagar = () => {
     if (!dadosOriginais || dadosOriginais.length === 0) return [];
 
     switch (situacao) {
-      case "NORMAIS":
+      case 'NORMAIS':
         // Mostra apenas itens com tp_situacao = 'N' (Normais)
-        return dadosOriginais.filter((item) => item.tp_situacao === "N");
-      case "CANCELADAS":
+        return dadosOriginais.filter((item) => item.tp_situacao === 'N');
+      case 'CANCELADAS':
         // Mostra apenas itens com tp_situacao = 'C' (Canceladas)
-        return dadosOriginais.filter((item) => item.tp_situacao === "C");
-      case "TODAS":
+        return dadosOriginais.filter((item) => item.tp_situacao === 'C');
+      case 'TODAS':
         // Mostra todos os itens
         return dadosOriginais;
       default:
@@ -543,13 +543,13 @@ const ContasAPagar = () => {
     if (!dadosOriginais || dadosOriginais.length === 0) return [];
 
     switch (status) {
-      case "Todos":
+      case 'Todos':
         // Mostra todos os itens
         return dadosOriginais;
-      case "Pago":
+      case 'Pago':
         // Mostra apenas itens pagos
         return dadosOriginais.filter((item) => parseFloat(item.vl_pago) > 0);
-      case "Vencido":
+      case 'Vencido':
         // Mostra apenas itens vencidos (data de vencimento menor que hoje)
         return dadosOriginais.filter((item) => {
           if (!item.dt_vencimento) return false;
@@ -558,7 +558,7 @@ const ContasAPagar = () => {
           hoje.setHours(0, 0, 0, 0);
           return dataVencimento < hoje;
         });
-      case "A Vencer":
+      case 'A Vencer':
         // Mostra apenas itens a vencer (data de vencimento maior ou igual a hoje)
         return dadosOriginais.filter((item) => {
           if (!item.dt_vencimento) return true;
@@ -577,18 +577,18 @@ const ContasAPagar = () => {
     if (!dadosOriginais || dadosOriginais.length === 0) return [];
 
     switch (previsao) {
-      case "TODOS":
+      case 'TODOS':
         // Mostra todos os itens
         return dadosOriginais;
-      case "PREVISÃO":
+      case 'PREVISÃO':
         // Mostra apenas itens com tp_previsaoreal = 'P' (Previsão)
-        return dadosOriginais.filter((item) => item.tp_previsaoreal === "1");
-      case "REAL":
+        return dadosOriginais.filter((item) => item.tp_previsaoreal === '1');
+      case 'REAL':
         // Mostra apenas itens com tp_previsaoreal = 'R' (Real)
-        return dadosOriginais.filter((item) => item.tp_previsaoreal === "2");
-      case "CONSIGNADO":
+        return dadosOriginais.filter((item) => item.tp_previsaoreal === '2');
+      case 'CONSIGNADO':
         // Mostra apenas itens com tp_previsaoreal = 'C' (Consignado)
-        return dadosOriginais.filter((item) => item.tp_previsaoreal === "3");
+        return dadosOriginais.filter((item) => item.tp_previsaoreal === '3');
       default:
         return dadosOriginais;
     }
@@ -606,9 +606,9 @@ const ContasAPagar = () => {
 
   // Função para ordenar os dados
   const handleSort = (key) => {
-    let direction = "asc";
-    if (sortConfig.key === key && sortConfig.direction === "asc") {
-      direction = "desc";
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
     }
     setSortConfig({ key, direction });
   };
@@ -618,7 +618,7 @@ const ContasAPagar = () => {
     if (sortConfig.key !== key) {
       return <CaretDown size={10} className="ml-1 opacity-50" />;
     }
-    return sortConfig.direction === "asc" ? (
+    return sortConfig.direction === 'asc' ? (
       <CaretUp size={10} className="ml-1" />
     ) : (
       <CaretDown size={10} className="ml-1" />
@@ -658,7 +658,7 @@ const ContasAPagar = () => {
       const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
       const dia = data.getDate();
 
-      if (filtro === "ANO") {
+      if (filtro === 'ANO') {
         // Mostrar dados do ano atual
         const anoAtual = new Date().getFullYear();
         return ano === anoAtual;
@@ -773,10 +773,10 @@ const ContasAPagar = () => {
 
       if (grupo.situacoes.length > 1) {
         // Se há 'C' entre as situações, usar 'C' (cancelada tem prioridade)
-        if (grupo.situacoes.includes("C")) {
-          situacaoFinal = "C";
-        } else if (grupo.situacoes.includes("N")) {
-          situacaoFinal = "N";
+        if (grupo.situacoes.includes('C')) {
+          situacaoFinal = 'C';
+        } else if (grupo.situacoes.includes('N')) {
+          situacaoFinal = 'N';
         }
         // Se não há nem 'C' nem 'N', manter a primeira situação
       }
@@ -786,12 +786,12 @@ const ContasAPagar = () => {
 
       if (grupo.previsoes && grupo.previsoes.length > 1) {
         // Prioridade: REAL > PREVISÃO > CONSIGNADO
-        if (grupo.previsoes.includes("R")) {
-          previsaoFinal = "R";
-        } else if (grupo.previsoes.includes("P")) {
-          previsaoFinal = "P";
-        } else if (grupo.previsoes.includes("C")) {
-          previsaoFinal = "C";
+        if (grupo.previsoes.includes('R')) {
+          previsaoFinal = 'R';
+        } else if (grupo.previsoes.includes('P')) {
+          previsaoFinal = 'P';
+        } else if (grupo.previsoes.includes('C')) {
+          previsaoFinal = 'C';
         }
         // Se não há nenhum dos valores esperados, manter o primeiro
       }
@@ -840,35 +840,35 @@ const ContasAPagar = () => {
       let aValue, bValue;
 
       switch (sortConfig.key) {
-        case "cd_empresa":
-          aValue = a.item?.cd_empresa || "";
-          bValue = b.item?.cd_empresa || "";
+        case 'cd_empresa':
+          aValue = a.item?.cd_empresa || '';
+          bValue = b.item?.cd_empresa || '';
           break;
-        case "cd_fornecedor":
-          aValue = a.item?.cd_fornecedor || "";
-          bValue = b.item?.cd_fornecedor || "";
+        case 'cd_fornecedor':
+          aValue = a.item?.cd_fornecedor || '';
+          bValue = b.item?.cd_fornecedor || '';
           break;
-        case "nm_fornecedor":
-          aValue = a.item?.nm_fornecedor || "";
-          bValue = b.item?.nm_fornecedor || "";
+        case 'nm_fornecedor':
+          aValue = a.item?.nm_fornecedor || '';
+          bValue = b.item?.nm_fornecedor || '';
           break;
-        case "ds_despesaitem":
-          aValue = a.item?.ds_despesaitem || "";
-          bValue = b.item?.ds_despesaitem || "";
+        case 'ds_despesaitem':
+          aValue = a.item?.ds_despesaitem || '';
+          bValue = b.item?.ds_despesaitem || '';
           break;
-        case "ds_ccusto":
-          aValue = a.item?.ds_ccusto || "";
-          bValue = b.item?.ds_ccusto || "";
+        case 'ds_ccusto':
+          aValue = a.item?.ds_ccusto || '';
+          bValue = b.item?.ds_ccusto || '';
           break;
-        case "nr_duplicata":
-          aValue = a.item?.nr_duplicata || "";
-          bValue = b.item?.nr_duplicata || "";
+        case 'nr_duplicata':
+          aValue = a.item?.nr_duplicata || '';
+          bValue = b.item?.nr_duplicata || '';
           break;
-        case "nr_portador":
-          aValue = a.item?.nr_portador || "";
-          bValue = b.item?.nr_portador || "";
+        case 'nr_portador':
+          aValue = a.item?.nr_portador || '';
+          bValue = b.item?.nr_portador || '';
           break;
-        case "dt_emissao":
+        case 'dt_emissao':
           aValue = a.item?.dt_emissao
             ? criarDataSemFusoHorario(a.item.dt_emissao)
             : new Date(0);
@@ -876,7 +876,7 @@ const ContasAPagar = () => {
             ? criarDataSemFusoHorario(b.item.dt_emissao)
             : new Date(0);
           break;
-        case "dt_vencimento":
+        case 'dt_vencimento':
           aValue = a.item?.dt_vencimento
             ? criarDataSemFusoHorario(a.item.dt_vencimento)
             : new Date(0);
@@ -884,7 +884,7 @@ const ContasAPagar = () => {
             ? criarDataSemFusoHorario(b.item.dt_vencimento)
             : new Date(0);
           break;
-        case "dt_entrada":
+        case 'dt_entrada':
           aValue = a.item?.dt_entrada
             ? criarDataSemFusoHorario(a.item.dt_entrada)
             : new Date(0);
@@ -892,7 +892,7 @@ const ContasAPagar = () => {
             ? criarDataSemFusoHorario(b.item.dt_entrada)
             : new Date(0);
           break;
-        case "dt_liq":
+        case 'dt_liq':
           aValue = a.item?.dt_liq
             ? criarDataSemFusoHorario(a.item.dt_liq)
             : new Date(0);
@@ -900,57 +900,57 @@ const ContasAPagar = () => {
             ? criarDataSemFusoHorario(b.item.dt_liq)
             : new Date(0);
           break;
-        case "tp_situacao":
-          aValue = a.item?.tp_situacao || "";
-          bValue = b.item?.tp_situacao || "";
+        case 'tp_situacao':
+          aValue = a.item?.tp_situacao || '';
+          bValue = b.item?.tp_situacao || '';
           break;
-        case "tp_estagio":
-          aValue = a.item?.tp_estagio || "";
-          bValue = b.item?.tp_estagio || "";
+        case 'tp_estagio':
+          aValue = a.item?.tp_estagio || '';
+          bValue = b.item?.tp_estagio || '';
           break;
-        case "tp_previsaoreal":
-          aValue = a.item?.tp_previsaoreal || "";
-          bValue = b.item?.tp_previsaoreal || "";
+        case 'tp_previsaoreal':
+          aValue = a.item?.tp_previsaoreal || '';
+          bValue = b.item?.tp_previsaoreal || '';
           break;
-        case "vl_duplicata":
+        case 'vl_duplicata':
           aValue = parseFloat(a.item?.vl_duplicata) || 0;
           bValue = parseFloat(b.item?.vl_duplicata) || 0;
           break;
-        case "vl_juros":
+        case 'vl_juros':
           aValue = parseFloat(a.item?.vl_juros) || 0;
           bValue = parseFloat(b.item?.vl_juros) || 0;
           break;
-        case "vl_acrescimo":
+        case 'vl_acrescimo':
           aValue = parseFloat(a.item?.vl_acrescimo) || 0;
           bValue = parseFloat(b.item?.vl_acrescimo) || 0;
           break;
-        case "vl_desconto":
+        case 'vl_desconto':
           aValue = parseFloat(a.item?.vl_desconto) || 0;
           bValue = parseFloat(b.item?.vl_desconto) || 0;
           break;
-        case "vl_pago":
+        case 'vl_pago':
           aValue = parseFloat(a.item?.vl_pago) || 0;
           bValue = parseFloat(b.item?.vl_pago) || 0;
           break;
-        case "in_aceite":
-          aValue = a.item?.in_aceite || "";
-          bValue = b.item?.in_aceite || "";
+        case 'in_aceite':
+          aValue = a.item?.in_aceite || '';
+          bValue = b.item?.in_aceite || '';
           break;
-        case "nr_parcela":
+        case 'nr_parcela':
           aValue = parseInt(a.item?.nr_parcela) || 0;
           bValue = parseInt(b.item?.nr_parcela) || 0;
           break;
         default:
-          aValue = a.item?.[sortConfig.key] || "";
-          bValue = b.item?.[sortConfig.key] || "";
+          aValue = a.item?.[sortConfig.key] || '';
+          bValue = b.item?.[sortConfig.key] || '';
       }
 
-      if (typeof aValue === "string" && typeof bValue === "string") {
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
         aValue = aValue.toLowerCase();
         bValue = bValue.toLowerCase();
       }
 
-      if (sortConfig.direction === "asc") {
+      if (sortConfig.direction === 'asc') {
         return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
       } else {
         return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
@@ -962,7 +962,7 @@ const ContasAPagar = () => {
     if (!inicio || !fim) return;
 
     if (empresasSelecionadas.length === 0) {
-      alert("Selecione pelo menos uma empresa para consultar!");
+      alert('Selecione pelo menos uma empresa para consultar!');
       return;
     }
 
@@ -973,9 +973,9 @@ const ContasAPagar = () => {
     let resultCentroCusto = { success: true, data: [] };
 
     try {
-      console.log("🔍 Iniciando busca de contas a pagar...");
-      console.log("📅 Período:", { inicio, fim });
-      console.log("🏢 Empresas selecionadas:", empresasSelecionadas);
+      console.log('🔍 Iniciando busca de contas a pagar...');
+      console.log('📅 Período:', { inicio, fim });
+      console.log('🏢 Empresas selecionadas:', empresasSelecionadas);
 
       // Buscar dados usando a nova rota que aceita múltiplas empresas
       const params = {
@@ -992,20 +992,20 @@ const ContasAPagar = () => {
         params.cd_empresa = codigosEmpresas;
       }
 
-      console.log("📋 Parâmetros da requisição:", params);
-      console.log("🏢 Códigos das empresas:", codigosEmpresas);
+      console.log('📋 Parâmetros da requisição:', params);
+      console.log('🏢 Códigos das empresas:', codigosEmpresas);
 
       // Buscar dados principais de contas a pagar
       const result = await apiClient.financial.contasPagar(params);
 
-      console.log("🔍 Resultado da API:", {
+      console.log('🔍 Resultado da API:', {
         success: result.success,
         dataLength: result.data?.length,
         message: result.message,
         metadata: result.metadata,
         estrutura: result.metadata?.periodo
-          ? "Nova estrutura"
-          : "Estrutura antiga",
+          ? 'Nova estrutura'
+          : 'Estrutura antiga',
         performance: result.performance,
         queryType: result.queryType,
       });
@@ -1021,7 +1021,7 @@ const ContasAPagar = () => {
         } else if (result.data && Array.isArray(result.data.data)) {
           dadosArray = result.data.data;
         } else {
-          console.warn("⚠️ Estrutura de dados não reconhecida:", result);
+          console.warn('⚠️ Estrutura de dados não reconhecida:', result);
           dadosArray = [];
         }
 
@@ -1029,57 +1029,57 @@ const ContasAPagar = () => {
         if (dadosArray.length > 0) {
           const primeiroItem = dadosArray[0];
           console.log(
-            "🔍 Campos disponíveis no primeiro item:",
-            Object.keys(primeiroItem)
+            '🔍 Campos disponíveis no primeiro item:',
+            Object.keys(primeiroItem),
           );
 
           // Verificar campos obrigatórios
           const camposObrigatorios = [
-            "cd_empresa",
-            "cd_fornecedor",
-            "nr_duplicata",
-            "dt_vencimento",
-            "vl_duplicata",
+            'cd_empresa',
+            'cd_fornecedor',
+            'nr_duplicata',
+            'dt_vencimento',
+            'vl_duplicata',
           ];
           const camposFaltando = camposObrigatorios.filter(
-            (campo) => !(campo in primeiroItem)
+            (campo) => !(campo in primeiroItem),
           );
 
           if (camposFaltando.length > 0) {
             console.warn(
-              "⚠️ Campos faltando na resposta da API:",
-              camposFaltando
+              '⚠️ Campos faltando na resposta da API:',
+              camposFaltando,
             );
           }
 
           // Verificar campos opcionais que podem estar faltando
-          const camposOpcionais = ["in_aceite", "vl_rateio"];
+          const camposOpcionais = ['in_aceite', 'vl_rateio'];
           const camposOpcionaisFaltando = camposOpcionais.filter(
-            (campo) => !(campo in primeiroItem)
+            (campo) => !(campo in primeiroItem),
           );
 
           if (camposOpcionaisFaltando.length > 0) {
             console.log(
-              "ℹ️ Campos opcionais não presentes:",
-              camposOpcionaisFaltando
+              'ℹ️ Campos opcionais não presentes:',
+              camposOpcionaisFaltando,
             );
           }
         }
 
-        console.log("✅ Dados obtidos:", {
+        console.log('✅ Dados obtidos:', {
           total: dadosArray.length,
           amostra: dadosArray.slice(0, 2),
           empresas: codigosEmpresas,
           metadata: result.metadata,
           estrutura: result.metadata?.periodo
-            ? "Nova estrutura"
-            : "Estrutura antiga",
+            ? 'Nova estrutura'
+            : 'Estrutura antiga',
         });
 
         // Extrair códigos únicos de fornecedor, centro de custo e despesa dos dados principais
         const codigosFornecedor = [
           ...new Set(
-            dadosArray.map((item) => item.cd_fornecedor).filter(Boolean)
+            dadosArray.map((item) => item.cd_fornecedor).filter(Boolean),
           ),
         ];
         const codigosCentroCusto = [
@@ -1087,68 +1087,103 @@ const ContasAPagar = () => {
         ];
         const codigosDespesa = [
           ...new Set(
-            dadosArray.map((item) => item.cd_despesaitem).filter(Boolean)
+            dadosArray.map((item) => item.cd_despesaitem).filter(Boolean),
           ),
         ];
 
-        console.log("🔍 Debug - Extração de códigos:");
+        console.log('🔍 Debug - Extração de códigos:');
         console.log(
-          "   - Dados originais (primeiros 3):",
+          '   - Dados originais (primeiros 3):',
           dadosArray.slice(0, 3).map((item) => ({
             cd_fornecedor: item.cd_fornecedor,
             cd_ccusto: item.cd_ccusto,
             cd_despesaitem: item.cd_despesaitem,
-          }))
+          })),
         );
 
         // Verificar se há códigos válidos antes de fazer as chamadas
         if (codigosCentroCusto.length === 0) {
           console.log(
-            "⚠️ Nenhum código de centro de custo encontrado, pulando chamada da API"
+            '⚠️ Nenhum código de centro de custo encontrado, pulando chamada da API',
           );
         }
         if (codigosFornecedor.length === 0) {
           console.log(
-            "⚠️ Nenhum código de fornecedor encontrado, pulando chamada da API"
+            '⚠️ Nenhum código de fornecedor encontrado, pulando chamada da API',
           );
         }
         if (codigosDespesa.length === 0) {
           console.log(
-            "⚠️ Nenhum código de despesa encontrado, pulando chamada da API"
+            '⚠️ Nenhum código de despesa encontrado, pulando chamada da API',
           );
         }
 
-        // Buscar dados de fornecedor, centro de custo e despesa das novas rotas com os códigos extraídos
-        const promises = [];
+        // Buscar dados de fornecedor, centro de custo e despesa em lotes para evitar URLs muito longas
+        const chunkArray = (arr, size) => {
+          const chunks = [];
+          for (let i = 0; i < arr.length; i += size) {
+            chunks.push(arr.slice(i, i + size));
+          }
+          return chunks;
+        };
 
+        const LOTE_MAX = 100; // tamanho de lote para evitar URLs enormes
+
+        // Fornecedor
+        let fornecedorResponses = [];
         if (codigosFornecedor.length > 0) {
-          promises.push(
-            apiClient.financial.fornecedor({ cd_fornecedor: codigosFornecedor })
+          const fornecedorChunks = chunkArray(codigosFornecedor, LOTE_MAX);
+          const fornecedorPromises = fornecedorChunks.map((lote) =>
+            apiClient.financial.fornecedor({ cd_fornecedor: lote }),
           );
+          fornecedorResponses = await Promise.all(fornecedorPromises);
         } else {
-          promises.push(Promise.resolve({ success: true, data: [] }));
+          fornecedorResponses = [{ success: true, data: [] }];
         }
 
+        // Centro de Custo
+        let centroCustoResponses = [];
         if (codigosCentroCusto.length > 0) {
-          promises.push(
-            apiClient.financial.centrocusto({ cd_ccusto: codigosCentroCusto })
+          const centroCustoChunks = chunkArray(codigosCentroCusto, LOTE_MAX);
+          const centroCustoPromises = centroCustoChunks.map((lote) =>
+            apiClient.financial.centrocusto({ cd_ccusto: lote }),
           );
+          centroCustoResponses = await Promise.all(centroCustoPromises);
         } else {
-          promises.push(Promise.resolve({ success: true, data: [] }));
+          centroCustoResponses = [{ success: true, data: [] }];
         }
 
+        // Despesa
+        let despesaResponses = [];
         if (codigosDespesa.length > 0) {
-          promises.push(
-            apiClient.financial.despesa({ cd_despesaitem: codigosDespesa })
+          const despesaChunks = chunkArray(codigosDespesa, LOTE_MAX);
+          const despesaPromises = despesaChunks.map((lote) =>
+            apiClient.financial.despesa({ cd_despesaitem: lote }),
           );
+          despesaResponses = await Promise.all(despesaPromises);
         } else {
-          promises.push(Promise.resolve({ success: true, data: [] }));
+          despesaResponses = [{ success: true, data: [] }];
         }
 
-        const results = await Promise.all(promises);
-        resultFornecedor = results[0];
-        resultCentroCusto = results[1];
-        let resultDespesa = results[2];
+        // Unificar respostas por tipo
+        const mergeResults = (responses) => {
+          const base = { success: true, data: [] };
+          responses.forEach((resp) => {
+            if (!resp || resp.success === false) return;
+            if (Array.isArray(resp.data)) {
+              base.data = base.data.concat(resp.data);
+            } else if (resp.data && Array.isArray(resp.data.data)) {
+              base.data = base.data.concat(resp.data.data);
+            } else if (resp.metadata && Array.isArray(resp.metadata.data)) {
+              base.data = base.data.concat(resp.metadata.data);
+            }
+          });
+          return base;
+        };
+
+        resultFornecedor = mergeResults(fornecedorResponses);
+        resultCentroCusto = mergeResults(centroCustoResponses);
+        let resultDespesa = mergeResults(despesaResponses);
 
         // Processar dados de fornecedor
         let dadosFornecedorArray = [];
@@ -1205,28 +1240,28 @@ const ContasAPagar = () => {
         }
 
         console.log(
-          "🔍 Estrutura completa da resposta de fornecedor:",
-          resultFornecedor
+          '🔍 Estrutura completa da resposta de fornecedor:',
+          resultFornecedor,
         );
-        console.log("🔍 Dados de fornecedor obtidos:", {
+        console.log('🔍 Dados de fornecedor obtidos:', {
           total: dadosFornecedorArray.length,
           amostra: dadosFornecedorArray.slice(0, 2),
         });
 
         console.log(
-          "🔍 Estrutura completa da resposta de centro de custo:",
-          resultCentroCusto
+          '🔍 Estrutura completa da resposta de centro de custo:',
+          resultCentroCusto,
         );
-        console.log("🔍 Dados de centro de custo obtidos:", {
+        console.log('🔍 Dados de centro de custo obtidos:', {
           total: dadosCentroCustoArray.length,
           amostra: dadosCentroCustoArray.slice(0, 2),
         });
 
         console.log(
-          "🔍 Estrutura completa da resposta de despesa:",
-          resultDespesa
+          '🔍 Estrutura completa da resposta de despesa:',
+          resultDespesa,
         );
-        console.log("🔍 Dados de despesa obtidos:", {
+        console.log('🔍 Dados de despesa obtidos:', {
           total: dadosDespesaArray.length,
           amostra: dadosDespesaArray.slice(0, 2),
         });
@@ -1247,14 +1282,14 @@ const ContasAPagar = () => {
           despesaMap.set(item.cd_despesaitem, item);
         });
 
-        console.log("🗺️ Mapas criados:", {
+        console.log('🗺️ Mapas criados:', {
           fornecedorMapSize: fornecedorMap.size,
           centroCustoMapSize: centroCustoMap.size,
           despesaMapSize: despesaMap.size,
           amostraFornecedorMap: Array.from(fornecedorMap.entries()).slice(0, 2),
           amostraCentroCustoMap: Array.from(centroCustoMap.entries()).slice(
             0,
-            2
+            2,
           ),
           amostraDespesaMap: Array.from(despesaMap.entries()).slice(0, 2),
         });
@@ -1280,31 +1315,31 @@ const ContasAPagar = () => {
                 dadosFornecedor: dadosFornecedor,
                 dadosCentroCusto: dadosCentroCusto,
                 dadosDespesa: dadosDespesa,
-              }
+              },
             );
           }
 
           return {
             ...item,
-            ds_observacao: item.ds_observacao || "",
-            in_aceite: item.in_aceite || "",
+            ds_observacao: item.ds_observacao || '',
+            in_aceite: item.in_aceite || '',
             vl_rateio: item.vl_rateio || 0,
-            tp_aceite: item.in_aceite || "", // Mantém compatibilidade
+            tp_aceite: item.in_aceite || '', // Mantém compatibilidade
             // Usar dados das novas rotas separadas
-            ds_ccusto: dadosCentroCusto?.ds_ccusto || item.ds_ccusto || "",
+            ds_ccusto: dadosCentroCusto?.ds_ccusto || item.ds_ccusto || '',
             nm_fornecedor:
-              dadosFornecedor?.nm_fornecedor || item.nm_fornecedor || "",
+              dadosFornecedor?.nm_fornecedor || item.nm_fornecedor || '',
             ds_despesaitem:
-              dadosDespesa?.ds_despesaitem || item.ds_despesaitem || "",
-            cd_despesaitem: item.cd_despesaitem || "",
-            cd_ccusto: dadosCentroCusto?.cd_ccusto || item.cd_ccusto || "",
+              dadosDespesa?.ds_despesaitem || item.ds_despesaitem || '',
+            cd_despesaitem: item.cd_despesaitem || '',
+            cd_ccusto: dadosCentroCusto?.cd_ccusto || item.cd_ccusto || '',
           };
         });
 
         // Debug para verificar dados de despesa, centro de custo e fornecedor
         if (dadosProcessados.length > 0) {
           console.log(
-            "🔍 Debug - Primeiros 3 registros com dados das novas rotas:"
+            '🔍 Debug - Primeiros 3 registros com dados das novas rotas:',
           );
           dadosProcessados.slice(0, 3).forEach((item, index) => {
             console.log(`📋 Registro ${index + 1}:`, {
@@ -1318,44 +1353,44 @@ const ContasAPagar = () => {
               temCentroCusto: !!item.ds_ccusto,
               temDespesa: !!item.ds_despesaitem,
               fonteFornecedor: item.nm_fornecedor
-                ? "Nova rota /fornecedor"
-                : "Dados originais",
+                ? 'Nova rota /fornecedor'
+                : 'Dados originais',
               fonteCentroCusto: item.ds_ccusto
-                ? "Nova rota /centrocusto"
-                : "Dados originais",
+                ? 'Nova rota /centrocusto'
+                : 'Dados originais',
               fonteDespesa: item.ds_despesaitem
-                ? "Nova rota /despesa"
-                : "Dados originais",
+                ? 'Nova rota /despesa'
+                : 'Dados originais',
             });
           });
 
           // Verificar se há dados vazios
           const fornecedoresVazios = dadosProcessados.filter(
-            (item) => !item.nm_fornecedor
+            (item) => !item.nm_fornecedor,
           ).length;
           const centrosCustoVazios = dadosProcessados.filter(
-            (item) => !item.ds_ccusto
+            (item) => !item.ds_ccusto,
           ).length;
           const despesasVazias = dadosProcessados.filter(
-            (item) => !item.ds_despesaitem
+            (item) => !item.ds_despesaitem,
           ).length;
 
-          console.log("📊 Estatísticas dos dados processados:", {
+          console.log('📊 Estatísticas dos dados processados:', {
             total: dadosProcessados.length,
             fornecedoresVazios,
             centrosCustoVazios,
             despesasVazias,
             percentualFornecedoresVazios:
               ((fornecedoresVazios / dadosProcessados.length) * 100).toFixed(
-                2
-              ) + "%",
+                2,
+              ) + '%',
             percentualCentrosCustoVazios:
               ((centrosCustoVazios / dadosProcessados.length) * 100).toFixed(
-                2
-              ) + "%",
+                2,
+              ) + '%',
             percentualDespesasVazias:
               ((despesasVazias / dadosProcessados.length) * 100).toFixed(2) +
-              "%",
+              '%',
           });
         }
 
@@ -1365,7 +1400,7 @@ const ContasAPagar = () => {
         setDadosDespesa(dadosDespesaArray);
         setDadosCarregados(true);
 
-        console.log("✅ Resumo das chamadas das novas rotas:", {
+        console.log('✅ Resumo das chamadas das novas rotas:', {
           contasPagar: dadosProcessados.length,
           fornecedor: dadosFornecedorArray.length,
           centroCusto: dadosCentroCustoArray.length,
@@ -1375,7 +1410,7 @@ const ContasAPagar = () => {
           sucessoDespesa: resultDespesa.success,
         });
       } else {
-        console.warn("⚠️ Falha ao buscar dados:", result.message);
+        console.warn('⚠️ Falha ao buscar dados:', result.message);
         setDados([]);
         setDadosCarregados(false);
       }
@@ -1383,18 +1418,18 @@ const ContasAPagar = () => {
       // Log de erros das novas rotas se houver
       if (!resultFornecedor.success) {
         console.warn(
-          "⚠️ Falha ao buscar dados de fornecedor:",
-          resultFornecedor.message
+          '⚠️ Falha ao buscar dados de fornecedor:',
+          resultFornecedor.message,
         );
       }
       if (!resultCentroCusto.success) {
         console.warn(
-          "⚠️ Falha ao buscar dados de centro de custo:",
-          resultCentroCusto.message
+          '⚠️ Falha ao buscar dados de centro de custo:',
+          resultCentroCusto.message,
         );
       }
     } catch (err) {
-      console.error("❌ Erro geral ao buscar dados:", err);
+      console.error('❌ Erro geral ao buscar dados:', err);
       setDados([]);
       setDadosCarregados(false);
     } finally {
@@ -1405,7 +1440,7 @@ const ContasAPagar = () => {
   const getStatusFromData = (item) => {
     // Se tem data de liquidação, está pago
     if (item.dt_liq) {
-      return "Pago";
+      return 'Pago';
     }
 
     // Se tem vencimento, verificar se está vencido
@@ -1414,68 +1449,68 @@ const ContasAPagar = () => {
       hoje.setHours(0, 0, 0, 0);
       const vencimento = criarDataSemFusoHorario(item.dt_vencimento);
       const diasParaVencer = Math.ceil(
-        (vencimento - hoje) / (1000 * 60 * 60 * 24)
+        (vencimento - hoje) / (1000 * 60 * 60 * 24),
       );
 
       if (vencimento < hoje) {
-        return "Vencido";
+        return 'Vencido';
       } else if (diasParaVencer >= 0 && diasParaVencer <= 7) {
-        return "Próxima a Vencer";
+        return 'Próxima a Vencer';
       } else {
-        return "A Vencer";
+        return 'A Vencer';
       }
     }
 
     // Verificar tp_situacao se disponível
     if (item.tp_situacao) {
       switch (item.tp_situacao.toString()) {
-        case "1":
-        case "P":
-          return "Pago";
-        case "2":
-        case "V":
-          return "Vencido";
-        case "3":
-        case "A":
-          return "A Vencer";
+        case '1':
+        case 'P':
+          return 'Pago';
+        case '2':
+        case 'V':
+          return 'Vencido';
+        case '3':
+        case 'A':
+          return 'A Vencer';
         default:
-          return "Pendente";
+          return 'Pendente';
       }
     }
 
-    return "Pendente";
+    return 'Pendente';
   };
 
   const getStatusColor = (status) => {
     switch (status?.toLowerCase()) {
-      case "pago":
-      case "liquidado":
-        return "bg-green-100 text-green-800";
-      case "vencido":
-      case "atrasado":
-        return "bg-red-100 text-red-800";
-      case "a vencer":
-      case "vencendo":
-        return "bg-yellow-100 text-yellow-800";
-      case "pendente":
-        return "bg-blue-100 text-blue-800";
+      case 'pago':
+      case 'liquidado':
+        return 'bg-green-100 text-green-800';
+      case 'vencido':
+      case 'atrasado':
+        return 'bg-red-100 text-red-800';
+      case 'a vencer':
+      case 'vencendo':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'pendente':
+        return 'bg-blue-100 text-blue-800';
       default:
-        return "bg-gray-100 text-gray-800";
+        return 'bg-gray-100 text-gray-800';
     }
   };
 
   const getStatusIcon = (status) => {
     switch (status?.toLowerCase()) {
-      case "pago":
-      case "liquidado":
+      case 'pago':
+      case 'liquidado':
         return <CheckCircle size={14} className="text-green-600" />;
-      case "vencido":
-      case "atrasado":
+      case 'vencido':
+      case 'atrasado':
         return <Warning size={14} className="text-red-600" />;
-      case "a vencer":
-      case "vencendo":
+      case 'a vencer':
+      case 'vencendo':
         return <Clock size={14} className="text-yellow-600" />;
-      case "pendente":
+      case 'pendente':
         return <ArrowUp size={14} className="text-blue-600" />;
       default:
         return <ArrowDown size={14} className="text-gray-600" />;
@@ -1488,17 +1523,17 @@ const ContasAPagar = () => {
     const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
     const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
 
-    setDataInicio(primeiroDia.toISOString().split("T")[0]);
-    setDataFim(ultimoDia.toISOString().split("T")[0]);
+    setDataInicio(primeiroDia.toISOString().split('T')[0]);
+    setDataFim(ultimoDia.toISOString().split('T')[0]);
   }, []);
 
   // Aplicar filtros adicionais aos dados já filtrados por situação e status
   const dadosComFiltrosAdicionais = dadosFiltradosCompletos.filter((item) => {
     // Filtro por fornecedor (dropdown)
     if (fornecedoresSelecionados.length > 0) {
-      const cdFornecedor = item.cd_fornecedor || "";
+      const cdFornecedor = item.cd_fornecedor || '';
       const isSelected = fornecedoresSelecionados.some(
-        (fornecedor) => fornecedor.cd_fornecedor === cdFornecedor
+        (fornecedor) => fornecedor.cd_fornecedor === cdFornecedor,
       );
 
       if (!isSelected) {
@@ -1508,7 +1543,7 @@ const ContasAPagar = () => {
 
     // Filtro por duplicata
     if (duplicata) {
-      const nrDuplicata = item.nr_duplicata || "";
+      const nrDuplicata = item.nr_duplicata || '';
       if (
         !nrDuplicata.toString().toLowerCase().includes(duplicata.toLowerCase())
       ) {
@@ -1518,9 +1553,9 @@ const ContasAPagar = () => {
 
     // Filtro por centro de custo (dropdown)
     if (centrosCustoSelecionados.length > 0) {
-      const cdCentroCusto = item.cd_ccusto || "";
+      const cdCentroCusto = item.cd_ccusto || '';
       const isSelected = centrosCustoSelecionados.some(
-        (centro) => centro.cd_ccusto === cdCentroCusto
+        (centro) => centro.cd_ccusto === cdCentroCusto,
       );
 
       if (!isSelected) {
@@ -1530,9 +1565,9 @@ const ContasAPagar = () => {
 
     // Filtro por despesa (dropdown)
     if (despesasSelecionadas.length > 0) {
-      const cdDespesa = item.cd_despesaitem || "";
+      const cdDespesa = item.cd_despesaitem || '';
       const isSelected = despesasSelecionadas.some(
-        (despesa) => despesa.cd_despesaitem === cdDespesa
+        (despesa) => despesa.cd_despesaitem === cdDespesa,
       );
 
       if (!isSelected) {
@@ -1547,7 +1582,7 @@ const ContasAPagar = () => {
   const dadosComFiltroMensal = aplicarFiltroMensal(
     dadosComFiltrosAdicionais,
     filtroMensal,
-    filtroDia
+    filtroDia,
   );
 
   // Usar dados filtrados diretamente (sem ordenação personalizada)
@@ -1559,8 +1594,8 @@ const ContasAPagar = () => {
       if (!dadosOriginais || dadosOriginais.length === 0) return [];
       if (Object.keys(columnFilters).length === 0) return dadosOriginais;
 
-      console.log("🔍 Aplicando filtros de coluna:", columnFilters);
-      console.log("📊 Dados originais:", dadosOriginais.length);
+      console.log('🔍 Aplicando filtros de coluna:', columnFilters);
+      console.log('📊 Dados originais:', dadosOriginais.length);
 
       const dadosFiltrados = dadosOriginais.filter((grupo) => {
         const item = grupo.item;
@@ -1569,12 +1604,12 @@ const ContasAPagar = () => {
         for (const [columnKey, filterConfig] of Object.entries(columnFilters)) {
           if (!filterConfig) continue;
 
-          const valorItem = String(item[columnKey] || "");
+          const valorItem = String(item[columnKey] || '');
 
           // Filtro por texto (searchTerm)
           if (
             filterConfig.searchTerm &&
-            filterConfig.searchTerm.trim() !== ""
+            filterConfig.searchTerm.trim() !== ''
           ) {
             if (
               !valorItem
@@ -1582,7 +1617,7 @@ const ContasAPagar = () => {
                 .includes(filterConfig.searchTerm.toLowerCase())
             ) {
               console.log(
-                `❌ Item rejeitado por searchTerm - ${columnKey}: "${valorItem}" não contém "${filterConfig.searchTerm}"`
+                `❌ Item rejeitado por searchTerm - ${columnKey}: "${valorItem}" não contém "${filterConfig.searchTerm}"`,
               );
               return false;
             }
@@ -1593,8 +1628,8 @@ const ContasAPagar = () => {
             if (!filterConfig.selected.includes(valorItem)) {
               console.log(
                 `❌ Item rejeitado por seleção - ${columnKey}: "${valorItem}" não está em [${filterConfig.selected.join(
-                  ", "
-                )}]`
+                  ', ',
+                )}]`,
               );
               return false;
             }
@@ -1604,10 +1639,10 @@ const ContasAPagar = () => {
         return true;
       });
 
-      console.log("✅ Dados filtrados:", dadosFiltrados.length);
+      console.log('✅ Dados filtrados:', dadosFiltrados.length);
       return dadosFiltrados;
     },
-    [columnFilters]
+    [columnFilters],
   );
 
   // ===== LÓGICA SEPARADA PARA OS CARDS (igual ao Fluxo de Caixa) =====
@@ -1629,7 +1664,7 @@ const ContasAPagar = () => {
       dados: dadosOrdenadosParaCards.slice(inicio, fim),
       totalRegistros: dadosOrdenadosParaCards.length,
       totalPaginas: Math.ceil(
-        dadosOrdenadosParaCards.length / registrosPorPagina
+        dadosOrdenadosParaCards.length / registrosPorPagina,
       ),
       paginaAtual,
       registrosPorPagina,
@@ -1639,7 +1674,7 @@ const ContasAPagar = () => {
   // Função para mudar de página
   const mudarPagina = (novaPagina) => {
     const totalPaginas = Math.ceil(
-      dadosOrdenadosParaCards.length / registrosPorPagina
+      dadosOrdenadosParaCards.length / registrosPorPagina,
     );
 
     // Verificar se a página é válida
@@ -1679,29 +1714,29 @@ const ContasAPagar = () => {
   const totalContasCards = dadosOrdenadosParaCards.length;
   const totalValorCards = dadosOrdenadosParaCards.reduce(
     (acc, grupo) => acc + parseFloat(grupo.item.vl_duplicata || 0),
-    0
+    0,
   );
 
   const contasVencidasCards = dadosOrdenadosParaCards.filter((grupo) => {
     const status = getStatusFromData(grupo.item);
-    return status.toLowerCase().includes("vencido");
+    return status.toLowerCase().includes('vencido');
   });
 
   const totalContasVencidasCards = contasVencidasCards.length;
   const valorContasVencidasCards = contasVencidasCards.reduce(
     (acc, grupo) => acc + (parseFloat(grupo.item.vl_duplicata) || 0),
-    0
+    0,
   );
 
   const contasAVencerCards = dadosOrdenadosParaCards.filter((grupo) => {
     const status = getStatusFromData(grupo.item);
-    return status.toLowerCase().includes("vencer");
+    return status.toLowerCase().includes('vencer');
   });
 
   const totalContasAVencerCards = contasAVencerCards.length;
   const valorContasAVencerCards = contasAVencerCards.reduce(
     (acc, grupo) => acc + (parseFloat(grupo.item.vl_duplicata) || 0),
-    0
+    0,
   );
 
   // Cálculo para contas próximas a vencer (próximos 7 dias)
@@ -1710,7 +1745,7 @@ const ContasAPagar = () => {
     if (!grupo.item.dt_vencimento) return false;
     const dataVencimento = criarDataSemFusoHorario(grupo.item.dt_vencimento);
     const diasParaVencer = Math.ceil(
-      (dataVencimento - hoje) / (1000 * 60 * 60 * 24)
+      (dataVencimento - hoje) / (1000 * 60 * 60 * 24),
     );
     return diasParaVencer >= 0 && diasParaVencer <= 7 && !grupo.item.dt_liq;
   });
@@ -1718,19 +1753,19 @@ const ContasAPagar = () => {
   const totalContasProximasVencerCards = contasProximasVencerCards.length;
   const valorContasProximasVencerCards = contasProximasVencerCards.reduce(
     (acc, grupo) => acc + (parseFloat(grupo.item.vl_duplicata) || 0),
-    0
+    0,
   );
 
   // Cálculo para contas pagas
   const contasPagasCards = dadosOrdenadosParaCards.filter((grupo) => {
     const status = getStatusFromData(grupo.item);
-    return status.toLowerCase().includes("pago");
+    return status.toLowerCase().includes('pago');
   });
 
   const totalContasPagasCards = contasPagasCards.length;
   const valorContasPagasCards = contasPagasCards.reduce(
     (acc, grupo) => acc + (parseFloat(grupo.item.vl_pago) || 0),
-    0
+    0,
   );
 
   // Cálculo para valor que falta pagar
@@ -1739,7 +1774,7 @@ const ContasAPagar = () => {
   // Cálculo para descontos ganhos
   const totalDescontosCards = dadosOrdenadosParaCards.reduce(
     (acc, grupo) => acc + (parseFloat(grupo.item.vl_desconto) || 0),
-    0
+    0,
   );
 
   // Função para lidar com seleção de empresas
@@ -1803,9 +1838,9 @@ const ContasAPagar = () => {
   // Funções para modal de confirmação de remoção de autorização
   const handleRemoveAuthorization = (chaveUnica, autorizadoPor) => {
     // Verificar se o usuário tem permissão
-    if (!hasRole(["owner", "admin", "manager"])) {
-      console.error("❌ Usuário sem permissão para remover autorização");
-      alert("Você não tem permissão para realizar esta ação.");
+    if (!hasRole(['owner', 'admin', 'manager'])) {
+      console.error('❌ Usuário sem permissão para remover autorização');
+      alert('Você não tem permissão para realizar esta ação.');
       return;
     }
 
@@ -1817,12 +1852,12 @@ const ContasAPagar = () => {
     if (autorizacaoToRemove) {
       try {
         const { error } = await autorizacoesSupabase.removerAutorizacao(
-          autorizacaoToRemove.chaveUnica
+          autorizacaoToRemove.chaveUnica,
         );
 
         if (error) {
-          console.error("Erro ao remover autorização:", error);
-          alert("Erro ao remover autorização. Tente novamente.");
+          console.error('Erro ao remover autorização:', error);
+          alert('Erro ao remover autorização. Tente novamente.');
           return;
         }
 
@@ -1833,10 +1868,10 @@ const ContasAPagar = () => {
           return novasAutorizacoes;
         });
 
-        console.log("✅ Autorização removida com sucesso");
+        console.log('✅ Autorização removida com sucesso');
       } catch (error) {
-        console.error("Erro ao remover autorização:", error);
-        alert("Erro ao remover autorização. Tente novamente.");
+        console.error('Erro ao remover autorização:', error);
+        alert('Erro ao remover autorização. Tente novamente.');
       }
     }
     setShowConfirmModal(false);
@@ -1860,25 +1895,25 @@ const ContasAPagar = () => {
   // Adicionar listener para tecla ESC
   useEffect(() => {
     const handleEscKey = (e) => {
-      if (e.key === "Escape" && showConfirmModal) {
+      if (e.key === 'Escape' && showConfirmModal) {
         handleCancelRemoveAuthorization();
       }
-      if (e.key === "Escape" && showAutorizarTodosModal) {
+      if (e.key === 'Escape' && showAutorizarTodosModal) {
         handleCancelAutorizarTodos();
       }
-      if (e.key === "Escape" && showRemoverTodosModal) {
+      if (e.key === 'Escape' && showRemoverTodosModal) {
         handleCancelRemoverTodos();
       }
     };
 
     if (showConfirmModal || showAutorizarTodosModal || showRemoverTodosModal) {
-      document.addEventListener("keydown", handleEscKey);
-      document.body.style.overflow = "hidden"; // Prevenir scroll
+      document.addEventListener('keydown', handleEscKey);
+      document.body.style.overflow = 'hidden'; // Prevenir scroll
     }
 
     return () => {
-      document.removeEventListener("keydown", handleEscKey);
-      document.body.style.overflow = "unset";
+      document.removeEventListener('keydown', handleEscKey);
+      document.body.style.overflow = 'unset';
     };
   }, [showConfirmModal, showAutorizarTodosModal, showRemoverTodosModal]);
 
@@ -2210,7 +2245,7 @@ const ContasAPagar = () => {
   // Resetar página apenas quando necessário
   useEffect(() => {
     const totalPaginas = Math.ceil(
-      dadosOrdenadosParaCards.length / registrosPorPagina
+      dadosOrdenadosParaCards.length / registrosPorPagina,
     );
 
     // Se não há dados, ir para página 1
@@ -2228,23 +2263,23 @@ const ContasAPagar = () => {
   const handleModalClose = () => setShowConfirmModal(false);
   const handleAutorizarTodosModalClose = () =>
     setShowAutorizarTodosModal(false);
-  const handlePagarTodos = () => console.log("Função removida: Pagar Todos");
+  const handlePagarTodos = () => console.log('Função removida: Pagar Todos');
   const handleRemoverPagamentoTodos = () =>
-    console.log("Função removida: Remover Pagamentos");
+    console.log('Função removida: Remover Pagamentos');
   const handlePagarSelecionados = () =>
-    console.log("Função removida: Pagar Selecionados");
+    console.log('Função removida: Pagar Selecionados');
   const handleRemoverPagamentoSelecionados = () =>
-    console.log("Função removida: Remover Pagamentos Selecionados");
+    console.log('Função removida: Remover Pagamentos Selecionados');
   const handleAutorizarTodos = () =>
-    console.log("Função removida: Autorizar Todos");
+    console.log('Função removida: Autorizar Todos');
   const handleRemoverTodos = () =>
-    console.log("Função removida: Remover Todos");
+    console.log('Função removida: Remover Todos');
   const handleAutorizarSelecionados = () =>
-    console.log("Função removida: Autorizar Selecionados");
+    console.log('Função removida: Autorizar Selecionados');
   const handleRemoverSelecionados = () =>
-    console.log("Função removida: Remover Selecionados");
+    console.log('Função removida: Remover Selecionados');
   const carregarAutorizacoesSupabase = () =>
-    console.log("Função removida: Carregar Autorizações Supabase");
+    console.log('Função removida: Carregar Autorizações Supabase');
 
   // Cálculos para autorizações
   // Simplificado - sem cálculos de autorização
@@ -2418,16 +2453,16 @@ const ContasAPagar = () => {
   // Função para pagar todas as contas autorizadas
   const handlePagarTodosRemovida = async () => {
     // Verificar se o usuário tem permissão
-    if (!hasRole(["user"])) {
-      console.error("❌ Usuário sem permissão para pagar contas");
-      alert("Você não tem permissão para realizar esta ação.");
+    if (!hasRole(['user'])) {
+      console.error('❌ Usuário sem permissão para pagar contas');
+      alert('Você não tem permissão para realizar esta ação.');
       return;
     }
 
     const contasAutorizadas = dadosOrdenadosParaCards.filter((grupo) => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
       const autorizacao = autorizacoes[chaveUnica];
-      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== "";
+      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
       return (
         autorizacao &&
         autorizacao.status === STATUS_AUTORIZACAO.AUTORIZADO &&
@@ -2436,24 +2471,24 @@ const ContasAPagar = () => {
     });
 
     if (contasAutorizadas.length === 0) {
-      alert("Nenhuma conta autorizada para pagar!");
+      alert('Nenhuma conta autorizada para pagar!');
       return;
     }
 
     try {
       const chavesUnicas = contasAutorizadas.map(
         (grupo) =>
-          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`,
       );
 
       const { error } = await autorizacoesSupabase.enviarMultiplasParaPagamento(
         chavesUnicas,
-        user?.name || "USUÁRIO"
+        user?.name || 'USUÁRIO',
       );
 
       if (error) {
-        console.error("Erro ao pagar todas as contas:", error);
-        alert("Erro ao pagar contas. Tente novamente.");
+        console.error('Erro ao pagar todas as contas:', error);
+        alert('Erro ao pagar contas. Tente novamente.');
         return;
       }
 
@@ -2464,33 +2499,33 @@ const ContasAPagar = () => {
         novasAutorizacoes[chaveUnica] = {
           ...novasAutorizacoes[chaveUnica],
           status: STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO,
-          enviadoPor: user?.name || "USUÁRIO",
+          enviadoPor: user?.name || 'USUÁRIO',
           dataEnvioPagamento: new Date().toISOString(),
         };
       });
 
       setAutorizacoes(novasAutorizacoes);
-      console.log("✅ Todas as contas autorizadas foram pagas com sucesso");
+      console.log('✅ Todas as contas autorizadas foram pagas com sucesso');
       alert(`✅ ${contasAutorizadas.length} contas foram pagas com sucesso!`);
     } catch (error) {
-      console.error("Erro ao pagar todas as contas:", error);
-      alert("Erro ao pagar contas. Tente novamente.");
+      console.error('Erro ao pagar todas as contas:', error);
+      alert('Erro ao pagar contas. Tente novamente.');
     }
   };
 
   // Função para remover pagamento de todas as contas
   const handleRemoverPagamentoTodosRemovida = async () => {
     // Verificar se o usuário tem permissão
-    if (!hasRole(["user"])) {
-      console.error("❌ Usuário sem permissão para remover pagamento");
-      alert("Você não tem permissão para realizar esta ação.");
+    if (!hasRole(['user'])) {
+      console.error('❌ Usuário sem permissão para remover pagamento');
+      alert('Você não tem permissão para realizar esta ação.');
       return;
     }
 
     const contasEnviadas = dadosOrdenadosParaCards.filter((grupo) => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
       const autorizacao = autorizacoes[chaveUnica];
-      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== "";
+      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
       return (
         autorizacao &&
         autorizacao.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO &&
@@ -2499,24 +2534,24 @@ const ContasAPagar = () => {
     });
 
     if (contasEnviadas.length === 0) {
-      alert("Nenhuma conta enviada para pagamento para remover!");
+      alert('Nenhuma conta enviada para pagamento para remover!');
       return;
     }
 
     try {
       const chavesUnicas = contasEnviadas.map(
         (grupo) =>
-          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`,
       );
 
       const { error } =
         await autorizacoesSupabase.removerMultiplasEnviadasParaPagamento(
-          chavesUnicas
+          chavesUnicas,
         );
 
       if (error) {
-        console.error("Erro ao remover pagamento de todas as contas:", error);
-        alert("Erro ao remover pagamento. Tente novamente.");
+        console.error('Erro ao remover pagamento de todas as contas:', error);
+        alert('Erro ao remover pagamento. Tente novamente.');
         return;
       }
 
@@ -2533,37 +2568,37 @@ const ContasAPagar = () => {
       });
 
       setAutorizacoes(novasAutorizacoes);
-      console.log("✅ Pagamento removido de todas as contas com sucesso");
+      console.log('✅ Pagamento removido de todas as contas com sucesso');
       alert(
-        `✅ Pagamento removido de ${contasEnviadas.length} contas com sucesso!`
+        `✅ Pagamento removido de ${contasEnviadas.length} contas com sucesso!`,
       );
     } catch (error) {
-      console.error("Erro ao remover pagamento de todas as contas:", error);
-      alert("Erro ao remover pagamento. Tente novamente.");
+      console.error('Erro ao remover pagamento de todas as contas:', error);
+      alert('Erro ao remover pagamento. Tente novamente.');
     }
   };
 
   // Função para pagar contas selecionadas
   const handlePagarSelecionadosRemovida = async () => {
     // Verificar se o usuário tem permissão
-    if (!hasRole(["user"])) {
-      console.error("❌ Usuário sem permissão para pagar contas selecionadas");
-      alert("Você não tem permissão para realizar esta ação.");
+    if (!hasRole(['user'])) {
+      console.error('❌ Usuário sem permissão para pagar contas selecionadas');
+      alert('Você não tem permissão para realizar esta ação.');
       return;
     }
 
     if (linhasSelecionadasAgrupadas.size === 0) {
-      alert("Nenhuma conta selecionada para pagar!");
+      alert('Nenhuma conta selecionada para pagar!');
       return;
     }
 
     const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(
-      (index) => dadosOrdenadosParaCards[index]
+      (index) => dadosOrdenadosParaCards[index],
     );
     const contasAutorizadas = contasSelecionadas.filter((grupo) => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
       const autorizacao = autorizacoes[chaveUnica];
-      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== "";
+      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
       return (
         autorizacao &&
         autorizacao.status === STATUS_AUTORIZACAO.AUTORIZADO &&
@@ -2572,24 +2607,24 @@ const ContasAPagar = () => {
     });
 
     if (contasAutorizadas.length === 0) {
-      alert("Nenhuma das contas selecionadas está autorizada!");
+      alert('Nenhuma das contas selecionadas está autorizada!');
       return;
     }
 
     try {
       const chavesUnicas = contasAutorizadas.map(
         (grupo) =>
-          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`,
       );
 
       const { error } = await autorizacoesSupabase.enviarMultiplasParaPagamento(
         chavesUnicas,
-        user?.name || "USUÁRIO"
+        user?.name || 'USUÁRIO',
       );
 
       if (error) {
-        console.error("Erro ao pagar contas selecionadas:", error);
-        alert("Erro ao pagar contas. Tente novamente.");
+        console.error('Erro ao pagar contas selecionadas:', error);
+        alert('Erro ao pagar contas. Tente novamente.');
         return;
       }
 
@@ -2600,48 +2635,48 @@ const ContasAPagar = () => {
         novasAutorizacoes[chaveUnica] = {
           ...novasAutorizacoes[chaveUnica],
           status: STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO,
-          enviadoPor: user?.name || "USUÁRIO",
+          enviadoPor: user?.name || 'USUÁRIO',
           dataEnvioPagamento: new Date().toISOString(),
         };
       });
 
       setAutorizacoes(novasAutorizacoes);
-      console.log("✅ Contas selecionadas pagas com sucesso");
+      console.log('✅ Contas selecionadas pagas com sucesso');
       alert(
-        `✅ ${contasAutorizadas.length} contas selecionadas foram pagas com sucesso!`
+        `✅ ${contasAutorizadas.length} contas selecionadas foram pagas com sucesso!`,
       );
 
       // Limpar seleção
       setLinhasSelecionadasAgrupadas(new Set());
     } catch (error) {
-      console.error("Erro ao pagar contas selecionadas:", error);
-      alert("Erro ao pagar contas. Tente novamente.");
+      console.error('Erro ao pagar contas selecionadas:', error);
+      alert('Erro ao pagar contas. Tente novamente.');
     }
   };
 
   // Função para remover pagamento de contas selecionadas
   const handleRemoverPagamentoSelecionadosRemovida = async () => {
     // Verificar se o usuário tem permissão
-    if (!hasRole(["user"])) {
+    if (!hasRole(['user'])) {
       console.error(
-        "❌ Usuário sem permissão para remover pagamento de contas selecionadas"
+        '❌ Usuário sem permissão para remover pagamento de contas selecionadas',
       );
-      alert("Você não tem permissão para realizar esta ação.");
+      alert('Você não tem permissão para realizar esta ação.');
       return;
     }
 
     if (linhasSelecionadasAgrupadas.size === 0) {
-      alert("Nenhuma conta selecionada para remover pagamento!");
+      alert('Nenhuma conta selecionada para remover pagamento!');
       return;
     }
 
     const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(
-      (index) => dadosOrdenadosParaCards[index]
+      (index) => dadosOrdenadosParaCards[index],
     );
     const contasEnviadas = contasSelecionadas.filter((grupo) => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
       const autorizacao = autorizacoes[chaveUnica];
-      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== "";
+      const contaPaga = grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
       return (
         autorizacao &&
         autorizacao.status === STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO &&
@@ -2650,27 +2685,27 @@ const ContasAPagar = () => {
     });
 
     if (contasEnviadas.length === 0) {
-      alert("Nenhuma das contas selecionadas foi enviada para pagamento!");
+      alert('Nenhuma das contas selecionadas foi enviada para pagamento!');
       return;
     }
 
     try {
       const chavesUnicas = contasEnviadas.map(
         (grupo) =>
-          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`,
       );
 
       const { error } =
         await autorizacoesSupabase.removerMultiplasEnviadasParaPagamento(
-          chavesUnicas
+          chavesUnicas,
         );
 
       if (error) {
         console.error(
-          "Erro ao remover pagamento das contas selecionadas:",
-          error
+          'Erro ao remover pagamento das contas selecionadas:',
+          error,
         );
-        alert("Erro ao remover pagamento. Tente novamente.");
+        alert('Erro ao remover pagamento. Tente novamente.');
         return;
       }
 
@@ -2687,31 +2722,31 @@ const ContasAPagar = () => {
       });
 
       setAutorizacoes(novasAutorizacoes);
-      console.log("✅ Pagamento removido das contas selecionadas com sucesso");
+      console.log('✅ Pagamento removido das contas selecionadas com sucesso');
       alert(
-        `✅ Pagamento removido de ${contasEnviadas.length} contas selecionadas com sucesso!`
+        `✅ Pagamento removido de ${contasEnviadas.length} contas selecionadas com sucesso!`,
       );
 
       // Limpar seleção
       setLinhasSelecionadasAgrupadas(new Set());
     } catch (error) {
       console.error(
-        "Erro ao remover pagamento das contas selecionadas:",
-        error
+        'Erro ao remover pagamento das contas selecionadas:',
+        error,
       );
-      alert("Erro ao remover pagamento. Tente novamente.");
+      alert('Erro ao remover pagamento. Tente novamente.');
     }
   };
 
   // Função para enviar múltiplas contas selecionadas para pagamento
   const handleEnviarSelecionadosParaPagamento = async () => {
     if (linhasSelecionadasAgrupadas.size === 0) {
-      alert("Nenhuma conta selecionada para enviar para pagamento!");
+      alert('Nenhuma conta selecionada para enviar para pagamento!');
       return;
     }
 
     const contasSelecionadas = Array.from(linhasSelecionadasAgrupadas).map(
-      (index) => dadosOrdenadosParaCards[index]
+      (index) => dadosOrdenadosParaCards[index],
     );
     const contasAutorizadas = contasSelecionadas.filter((grupo) => {
       const chaveUnica = `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`;
@@ -2722,27 +2757,27 @@ const ContasAPagar = () => {
     });
 
     if (contasAutorizadas.length === 0) {
-      alert("Nenhuma das contas selecionadas está autorizada!");
+      alert('Nenhuma das contas selecionadas está autorizada!');
       return;
     }
 
     try {
       const chavesUnicas = contasAutorizadas.map(
         (grupo) =>
-          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`
+          `${grupo.item.cd_fornecedor}|${grupo.item.nr_duplicata}|${grupo.item.cd_empresa}|${grupo.item.nr_parcela}`,
       );
 
       const { error } = await autorizacoesSupabase.enviarMultiplasParaPagamento(
         chavesUnicas,
-        user?.name || "USUÁRIO"
+        user?.name || 'USUÁRIO',
       );
 
       if (error) {
         console.error(
-          "Erro ao enviar contas selecionadas para pagamento:",
-          error
+          'Erro ao enviar contas selecionadas para pagamento:',
+          error,
         );
-        alert("Erro ao enviar contas para pagamento. Tente novamente.");
+        alert('Erro ao enviar contas para pagamento. Tente novamente.');
         return;
       }
 
@@ -2753,22 +2788,22 @@ const ContasAPagar = () => {
         novasAutorizacoes[chaveUnica] = {
           ...novasAutorizacoes[chaveUnica],
           status: STATUS_AUTORIZACAO.ENVIADO_PAGAMENTO,
-          enviadoPor: user?.name || "USUÁRIO",
+          enviadoPor: user?.name || 'USUÁRIO',
           dataEnvioPagamento: new Date().toISOString(),
         };
       });
 
       setAutorizacoes(novasAutorizacoes);
-      console.log("✅ Contas selecionadas enviadas para pagamento com sucesso");
+      console.log('✅ Contas selecionadas enviadas para pagamento com sucesso');
 
       // Limpar seleção
       setLinhasSelecionadasAgrupadas(new Set());
     } catch (error) {
       console.error(
-        "Erro ao enviar contas selecionadas para pagamento:",
-        error
+        'Erro ao enviar contas selecionadas para pagamento:',
+        error,
       );
-      alert("Erro ao enviar contas para pagamento. Tente novamente.");
+      alert('Erro ao enviar contas para pagamento. Tente novamente.');
     }
   };
 
@@ -2971,9 +3006,9 @@ const ContasAPagar = () => {
               {loading ? (
                 <Spinner size={24} className="animate-spin text-green-600" />
               ) : (
-                totalValorCards.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
+                totalValorCards.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
                 })
               )}
             </div>
@@ -2986,7 +3021,7 @@ const ContasAPagar = () => {
         {/* Falta Pagar */}
         <Card
           className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-          onClick={() => abrirModalCard("faltaPagar")}
+          onClick={() => abrirModalCard('faltaPagar')}
         >
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
@@ -3001,15 +3036,15 @@ const ContasAPagar = () => {
               {loading ? (
                 <Spinner size={24} className="animate-spin text-purple-600" />
               ) : (
-                valorFaltaPagarCards.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
+                valorFaltaPagarCards.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
                 })
               )}
             </div>
             <div className="text-base font-medium text-purple-500">
               {loading
-                ? "..."
+                ? '...'
                 : `${totalContasCards - totalContasPagasCards} contas`}
             </div>
             <CardDescription className="text-xs text-gray-500">
@@ -3021,7 +3056,7 @@ const ContasAPagar = () => {
         {/* Contas Vencidas */}
         <Card
           className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-          onClick={() => abrirModalCard("vencidas")}
+          onClick={() => abrirModalCard('vencidas')}
         >
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
@@ -3036,14 +3071,14 @@ const ContasAPagar = () => {
               {loading ? (
                 <Spinner size={24} className="animate-spin text-red-600" />
               ) : (
-                valorContasVencidasCards.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
+                valorContasVencidasCards.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
                 })
               )}
             </div>
             <div className="text-base font-medium text-red-500">
-              {loading ? "..." : `${totalContasVencidasCards} contas`}
+              {loading ? '...' : `${totalContasVencidasCards} contas`}
             </div>
             <CardDescription className="text-xs text-gray-500">
               Contas em atraso
@@ -3054,7 +3089,7 @@ const ContasAPagar = () => {
         {/* Contas A Vencer */}
         <Card
           className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-          onClick={() => abrirModalCard("aVencer")}
+          onClick={() => abrirModalCard('aVencer')}
         >
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
@@ -3069,14 +3104,14 @@ const ContasAPagar = () => {
               {loading ? (
                 <Spinner size={24} className="animate-spin text-yellow-600" />
               ) : (
-                valorContasAVencerCards.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
+                valorContasAVencerCards.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
                 })
               )}
             </div>
             <div className="text-base font-medium text-yellow-500">
-              {loading ? "..." : `${totalContasAVencerCards} contas`}
+              {loading ? '...' : `${totalContasAVencerCards} contas`}
             </div>
             <CardDescription className="text-xs text-gray-500">
               Contas futuras
@@ -3087,7 +3122,7 @@ const ContasAPagar = () => {
         {/* Próximas a Vencer (próximos 7 dias) */}
         <Card
           className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-          onClick={() => abrirModalCard("proximasVencer")}
+          onClick={() => abrirModalCard('proximasVencer')}
         >
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
@@ -3102,14 +3137,14 @@ const ContasAPagar = () => {
               {loading ? (
                 <Spinner size={24} className="animate-spin text-orange-600" />
               ) : (
-                valorContasProximasVencerCards.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
+                valorContasProximasVencerCards.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
                 })
               )}
             </div>
             <div className="text-base font-medium text-orange-500">
-              {loading ? "..." : `${totalContasProximasVencerCards} contas`}
+              {loading ? '...' : `${totalContasProximasVencerCards} contas`}
             </div>
             <CardDescription className="text-xs text-gray-500">
               Próximos 7 dias
@@ -3120,7 +3155,7 @@ const ContasAPagar = () => {
         {/* Contas Pagas */}
         <Card
           className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-          onClick={() => abrirModalCard("pagas")}
+          onClick={() => abrirModalCard('pagas')}
         >
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
@@ -3135,14 +3170,14 @@ const ContasAPagar = () => {
               {loading ? (
                 <Spinner size={24} className="animate-spin text-green-600" />
               ) : (
-                valorContasPagasCards.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
+                valorContasPagasCards.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
                 })
               )}
             </div>
             <div className="text-base font-medium text-green-500">
-              {loading ? "..." : `${totalContasPagasCards} contas`}
+              {loading ? '...' : `${totalContasPagasCards} contas`}
             </div>
             <CardDescription className="text-xs text-gray-500">
               Contas liquidadas
@@ -3153,7 +3188,7 @@ const ContasAPagar = () => {
         {/* Descontos Ganhos */}
         <Card
           className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-          onClick={() => abrirModalCard("descontos")}
+          onClick={() => abrirModalCard('descontos')}
         >
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
@@ -3168,18 +3203,18 @@ const ContasAPagar = () => {
               {loading ? (
                 <Spinner size={24} className="animate-spin text-emerald-600" />
               ) : (
-                totalDescontosCards.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
+                totalDescontosCards.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
                 })
               )}
             </div>
             <div className="text-base font-medium text-emerald-500">
               {loading
-                ? "..."
+                ? '...'
                 : `${
                     dadosOrdenadosParaCards.filter(
-                      (grupo) => parseFloat(grupo.item.vl_desconto || 0) > 0
+                      (grupo) => parseFloat(grupo.item.vl_desconto || 0) > 0,
                     ).length
                   } contas`}
             </div>
@@ -3236,7 +3271,7 @@ const ContasAPagar = () => {
                     Plano de Contas
                   </h2>
                   <span className="text-xs text-gray-500">
-                    {planoOpen ? "Ocultar" : "Mostrar"}
+                    {planoOpen ? 'Ocultar' : 'Mostrar'}
                   </span>
                 </button>
                 {planoOpen && (
@@ -3285,8 +3320,8 @@ const ContasAPagar = () => {
                           calcularDadosPaginados.dados.length &&
                         calcularDadosPaginados.dados.length > 0;
                       const cls = allSelected
-                        ? "text-xs px-0.5 py-0.5 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
-                        : "text-xs px-0.5 py-0.5 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors";
+                        ? 'text-xs px-0.5 py-0.5 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors'
+                        : 'text-xs px-0.5 py-0.5 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors';
                       return (
                         <button
                           onClick={() => {
@@ -3301,12 +3336,12 @@ const ContasAPagar = () => {
                                   (_, idx) =>
                                     (calcularDadosPaginados.paginaAtual - 1) *
                                       calcularDadosPaginados.registrosPorPagina +
-                                    idx
+                                    idx,
                                 );
                               setLinhasSelecionadasAgrupadas((prev) => {
                                 const novoSet = new Set(prev);
                                 indicesParaRemover.forEach((idx) =>
-                                  novoSet.delete(idx)
+                                  novoSet.delete(idx),
                                 );
                                 return novoSet;
                               });
@@ -3317,12 +3352,12 @@ const ContasAPagar = () => {
                                   (_, idx) =>
                                     (calcularDadosPaginados.paginaAtual - 1) *
                                       calcularDadosPaginados.registrosPorPagina +
-                                    idx
+                                    idx,
                                 );
                               setLinhasSelecionadasAgrupadas((prev) => {
                                 const novoSet = new Set(prev);
                                 indicesParaAdicionar.forEach((idx) =>
-                                  novoSet.add(idx)
+                                  novoSet.add(idx),
                                 );
                                 return novoSet;
                               });
@@ -3330,12 +3365,12 @@ const ContasAPagar = () => {
                           }}
                           className={cls}
                         >
-                          {allSelected ? "Desmarcar todas" : "Selecionar todas"}
+                          {allSelected ? 'Desmarcar todas' : 'Selecionar todas'}
                         </button>
                       );
                     })()}
                     {/* Botões de autorização removidos */}
-                    {hasRole(["user"]) && (
+                    {hasRole(['user']) && (
                       <>
                         <button
                           onClick={() => handlePagarTodos()}
@@ -3373,7 +3408,7 @@ const ContasAPagar = () => {
                     >
                       Baixar Excel
                     </button>
-                    {hasRole(["owner", "admin", "manager"]) && (
+                    {hasRole(['owner', 'admin', 'manager']) && (
                       <button
                         onClick={carregarAutorizacoesSupabase}
                         disabled={carregandoAutorizacoes}
@@ -3385,7 +3420,7 @@ const ContasAPagar = () => {
                             <span>Carregando...</span>
                           </div>
                         ) : (
-                          "🔄 Recarregar"
+                          '🔄 Recarregar'
                         )}
                       </button>
                     )}
@@ -3398,51 +3433,51 @@ const ContasAPagar = () => {
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px]"
                           style={{
-                            width: "30px",
-                            minWidth: "30px",
-                            position: "sticky",
+                            width: '30px',
+                            minWidth: '30px',
+                            position: 'sticky',
                             left: 0,
                             zIndex: 10,
                           }}
                         >
                           Selecionar
                         </th>
-                        {(hasRole(["owner", "admin", "manager"]) ||
-                          hasRole(["user"])) && (
+                        {(hasRole(['owner', 'admin', 'manager']) ||
+                          hasRole(['user'])) && (
                           <th className="px-0.5 py-0.5 text-center text-[8px]">
                             Ações
                           </th>
                         )}
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("tp_situacao")}
+                          onClick={() => handleSort('tp_situacao')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Status {getSortIcon("tp_situacao")}
+                            Status {getSortIcon('tp_situacao')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("tp_situacao");
+                                toggleFilterDropdown('tp_situacao');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["tp_situacao"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['tp_situacao']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Status"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "tp_situacao" && (
+                            {openFilterDropdown === 'tp_situacao' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="tp_situacao"
                                   columnTitle="Status"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["tp_situacao"]}
+                                  currentFilter={columnFilters['tp_situacao']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -3452,34 +3487,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("dt_vencimento")}
+                          onClick={() => handleSort('dt_vencimento')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Vencimento {getSortIcon("dt_vencimento")}
+                            Vencimento {getSortIcon('dt_vencimento')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("dt_vencimento");
+                                toggleFilterDropdown('dt_vencimento');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["dt_vencimento"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['dt_vencimento']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Vencimento"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "dt_vencimento" && (
+                            {openFilterDropdown === 'dt_vencimento' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="dt_vencimento"
                                   columnTitle="Vencimento"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["dt_vencimento"]}
+                                  currentFilter={columnFilters['dt_vencimento']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -3489,34 +3524,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("vl_duplicata")}
+                          onClick={() => handleSort('vl_duplicata')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Valor {getSortIcon("vl_duplicata")}
+                            Valor {getSortIcon('vl_duplicata')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("vl_duplicata");
+                                toggleFilterDropdown('vl_duplicata');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["vl_duplicata"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['vl_duplicata']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Valor"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "vl_duplicata" && (
+                            {openFilterDropdown === 'vl_duplicata' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="vl_duplicata"
                                   columnTitle="Valor"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["vl_duplicata"]}
+                                  currentFilter={columnFilters['vl_duplicata']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -3526,34 +3561,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("cd_fornecedor")}
+                          onClick={() => handleSort('cd_fornecedor')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Fornecedor {getSortIcon("cd_fornecedor")}
+                            Fornecedor {getSortIcon('cd_fornecedor')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("cd_fornecedor");
+                                toggleFilterDropdown('cd_fornecedor');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["cd_fornecedor"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['cd_fornecedor']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Fornecedor"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "cd_fornecedor" && (
+                            {openFilterDropdown === 'cd_fornecedor' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="cd_fornecedor"
                                   columnTitle="Fornecedor"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["cd_fornecedor"]}
+                                  currentFilter={columnFilters['cd_fornecedor']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -3563,34 +3598,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("nm_fornecedor")}
+                          onClick={() => handleSort('nm_fornecedor')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            NM Fornecedor {getSortIcon("nm_fornecedor")}
+                            NM Fornecedor {getSortIcon('nm_fornecedor')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("nm_fornecedor");
+                                toggleFilterDropdown('nm_fornecedor');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["nm_fornecedor"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['nm_fornecedor']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Nome Fornecedor"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "nm_fornecedor" && (
+                            {openFilterDropdown === 'nm_fornecedor' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="nm_fornecedor"
                                   columnTitle="Nome Fornecedor"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["nm_fornecedor"]}
+                                  currentFilter={columnFilters['nm_fornecedor']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -3600,35 +3635,35 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("ds_despesaitem")}
+                          onClick={() => handleSort('ds_despesaitem')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Despesa {getSortIcon("ds_despesaitem")}
+                            Despesa {getSortIcon('ds_despesaitem')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("ds_despesaitem");
+                                toggleFilterDropdown('ds_despesaitem');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["ds_despesaitem"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['ds_despesaitem']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Despesa"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "ds_despesaitem" && (
+                            {openFilterDropdown === 'ds_despesaitem' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="ds_despesaitem"
                                   columnTitle="Despesa"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
                                   currentFilter={
-                                    columnFilters["ds_despesaitem"]
+                                    columnFilters['ds_despesaitem']
                                   }
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
@@ -3639,34 +3674,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("ds_ccusto")}
+                          onClick={() => handleSort('ds_ccusto')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            NM CUSTO {getSortIcon("ds_ccusto")}
+                            NM CUSTO {getSortIcon('ds_ccusto')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("ds_ccusto");
+                                toggleFilterDropdown('ds_ccusto');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["ds_ccusto"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['ds_ccusto']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Centro de Custo"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "ds_ccusto" && (
+                            {openFilterDropdown === 'ds_ccusto' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="ds_ccusto"
                                   columnTitle="Centro de Custo"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["ds_ccusto"]}
+                                  currentFilter={columnFilters['ds_ccusto']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -3676,34 +3711,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("cd_empresa")}
+                          onClick={() => handleSort('cd_empresa')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Empresa {getSortIcon("cd_empresa")}
+                            Empresa {getSortIcon('cd_empresa')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("cd_empresa");
+                                toggleFilterDropdown('cd_empresa');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["cd_empresa"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['cd_empresa']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Empresa"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "cd_empresa" && (
+                            {openFilterDropdown === 'cd_empresa' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="cd_empresa"
                                   columnTitle="Empresa"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["cd_empresa"]}
+                                  currentFilter={columnFilters['cd_empresa']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -3713,34 +3748,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("nr_duplicata")}
+                          onClick={() => handleSort('nr_duplicata')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Duplicata {getSortIcon("nr_duplicata")}
+                            Duplicata {getSortIcon('nr_duplicata')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("nr_duplicata");
+                                toggleFilterDropdown('nr_duplicata');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["nr_duplicata"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['nr_duplicata']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Duplicata"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "nr_duplicata" && (
+                            {openFilterDropdown === 'nr_duplicata' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="nr_duplicata"
                                   columnTitle="Duplicata"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["nr_duplicata"]}
+                                  currentFilter={columnFilters['nr_duplicata']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -3750,34 +3785,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("nr_parcela")}
+                          onClick={() => handleSort('nr_parcela')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Parcela {getSortIcon("nr_parcela")}
+                            Parcela {getSortIcon('nr_parcela')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("nr_parcela");
+                                toggleFilterDropdown('nr_parcela');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["nr_parcela"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['nr_parcela']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Parcela"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "nr_parcela" && (
+                            {openFilterDropdown === 'nr_parcela' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="nr_parcela"
                                   columnTitle="Parcela"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["nr_parcela"]}
+                                  currentFilter={columnFilters['nr_parcela']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -3787,34 +3822,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("nr_portador")}
+                          onClick={() => handleSort('nr_portador')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Portador {getSortIcon("nr_portador")}
+                            Portador {getSortIcon('nr_portador')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("nr_portador");
+                                toggleFilterDropdown('nr_portador');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["nr_portador"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['nr_portador']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Portador"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "nr_portador" && (
+                            {openFilterDropdown === 'nr_portador' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="nr_portador"
                                   columnTitle="Portador"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["nr_portador"]}
+                                  currentFilter={columnFilters['nr_portador']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -3824,34 +3859,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("dt_emissao")}
+                          onClick={() => handleSort('dt_emissao')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Emissão {getSortIcon("dt_emissao")}
+                            Emissão {getSortIcon('dt_emissao')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("dt_emissao");
+                                toggleFilterDropdown('dt_emissao');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["dt_emissao"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['dt_emissao']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Emissão"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "dt_emissao" && (
+                            {openFilterDropdown === 'dt_emissao' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="dt_emissao"
                                   columnTitle="Emissão"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["dt_emissao"]}
+                                  currentFilter={columnFilters['dt_emissao']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -3861,34 +3896,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("dt_entrada")}
+                          onClick={() => handleSort('dt_entrada')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Entrada {getSortIcon("dt_entrada")}
+                            Entrada {getSortIcon('dt_entrada')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("dt_entrada");
+                                toggleFilterDropdown('dt_entrada');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["dt_entrada"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['dt_entrada']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Entrada"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "dt_entrada" && (
+                            {openFilterDropdown === 'dt_entrada' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="dt_entrada"
                                   columnTitle="Entrada"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["dt_entrada"]}
+                                  currentFilter={columnFilters['dt_entrada']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -3898,34 +3933,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("dt_liq")}
+                          onClick={() => handleSort('dt_liq')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Liquidação {getSortIcon("dt_liq")}
+                            Liquidação {getSortIcon('dt_liq')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("dt_liq");
+                                toggleFilterDropdown('dt_liq');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["dt_liq"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['dt_liq']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Liquidação"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "dt_liq" && (
+                            {openFilterDropdown === 'dt_liq' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="dt_liq"
                                   columnTitle="Liquidação"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["dt_liq"]}
+                                  currentFilter={columnFilters['dt_liq']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -3935,35 +3970,35 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("tp_situacao")}
+                          onClick={() => handleSort('tp_situacao')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Situação {getSortIcon("tp_situacao")}
+                            Situação {getSortIcon('tp_situacao')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("tp_situacao_col");
+                                toggleFilterDropdown('tp_situacao_col');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["tp_situacao_col"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['tp_situacao_col']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Situação"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "tp_situacao_col" && (
+                            {openFilterDropdown === 'tp_situacao_col' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="tp_situacao_col"
                                   columnTitle="Situação"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
                                   currentFilter={
-                                    columnFilters["tp_situacao_col"]
+                                    columnFilters['tp_situacao_col']
                                   }
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
@@ -3974,34 +4009,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("tp_estagio")}
+                          onClick={() => handleSort('tp_estagio')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Estágio {getSortIcon("tp_estagio")}
+                            Estágio {getSortIcon('tp_estagio')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("tp_estagio");
+                                toggleFilterDropdown('tp_estagio');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["tp_estagio"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['tp_estagio']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Estágio"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "tp_estagio" && (
+                            {openFilterDropdown === 'tp_estagio' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="tp_estagio"
                                   columnTitle="Estágio"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["tp_estagio"]}
+                                  currentFilter={columnFilters['tp_estagio']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -4011,34 +4046,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("vl_juros")}
+                          onClick={() => handleSort('vl_juros')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Juros {getSortIcon("vl_juros")}
+                            Juros {getSortIcon('vl_juros')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("vl_juros");
+                                toggleFilterDropdown('vl_juros');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["vl_juros"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['vl_juros']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Juros"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "vl_juros" && (
+                            {openFilterDropdown === 'vl_juros' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="vl_juros"
                                   columnTitle="Juros"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["vl_juros"]}
+                                  currentFilter={columnFilters['vl_juros']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -4048,34 +4083,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("vl_acrescimo")}
+                          onClick={() => handleSort('vl_acrescimo')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Acréscimo {getSortIcon("vl_acrescimo")}
+                            Acréscimo {getSortIcon('vl_acrescimo')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("vl_acrescimo");
+                                toggleFilterDropdown('vl_acrescimo');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["vl_acrescimo"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['vl_acrescimo']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Acréscimo"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "vl_acrescimo" && (
+                            {openFilterDropdown === 'vl_acrescimo' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="vl_acrescimo"
                                   columnTitle="Acréscimo"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["vl_acrescimo"]}
+                                  currentFilter={columnFilters['vl_acrescimo']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -4085,34 +4120,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("vl_desconto")}
+                          onClick={() => handleSort('vl_desconto')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Desconto {getSortIcon("vl_desconto")}
+                            Desconto {getSortIcon('vl_desconto')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("vl_desconto");
+                                toggleFilterDropdown('vl_desconto');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["vl_desconto"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['vl_desconto']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Desconto"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "vl_desconto" && (
+                            {openFilterDropdown === 'vl_desconto' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="vl_desconto"
                                   columnTitle="Desconto"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["vl_desconto"]}
+                                  currentFilter={columnFilters['vl_desconto']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -4122,34 +4157,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("vl_pago")}
+                          onClick={() => handleSort('vl_pago')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Pago {getSortIcon("vl_pago")}
+                            Pago {getSortIcon('vl_pago')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("vl_pago");
+                                toggleFilterDropdown('vl_pago');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["vl_pago"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['vl_pago']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Valor Pago"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "vl_pago" && (
+                            {openFilterDropdown === 'vl_pago' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="vl_pago"
                                   columnTitle="Valor Pago"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["vl_pago"]}
+                                  currentFilter={columnFilters['vl_pago']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -4159,34 +4194,34 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("in_aceite")}
+                          onClick={() => handleSort('in_aceite')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Aceite {getSortIcon("in_aceite")}
+                            Aceite {getSortIcon('in_aceite')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("in_aceite");
+                                toggleFilterDropdown('in_aceite');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["in_aceite"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['in_aceite']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Aceite"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "in_aceite" && (
+                            {openFilterDropdown === 'in_aceite' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="in_aceite"
                                   columnTitle="Aceite"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
-                                  currentFilter={columnFilters["in_aceite"]}
+                                  currentFilter={columnFilters['in_aceite']}
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
                                 />
@@ -4202,35 +4237,35 @@ const ContasAPagar = () => {
                         </th>
                         <th
                           className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                          onClick={() => handleSort("tp_previsaoreal")}
+                          onClick={() => handleSort('tp_previsaoreal')}
                         >
                           <div className="flex items-center justify-center gap-1 relative">
-                            Previsão {getSortIcon("tp_previsaoreal")}
+                            Previsão {getSortIcon('tp_previsaoreal')}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFilterDropdown("tp_previsaoreal");
+                                toggleFilterDropdown('tp_previsaoreal');
                               }}
                               className={`hover:text-gray-300 focus:outline-none focus:text-gray-300 ${
-                                columnFilters["tp_previsaoreal"]
-                                  ? "text-yellow-400"
-                                  : "text-gray-400"
+                                columnFilters['tp_previsaoreal']
+                                  ? 'text-yellow-400'
+                                  : 'text-gray-400'
                               }`}
                               aria-label="Filtrar por Previsão"
                             >
                               <FunnelSimple size={10} />
                             </button>
-                            {openFilterDropdown === "tp_previsaoreal" && (
+                            {openFilterDropdown === 'tp_previsaoreal' && (
                               <div className="absolute top-full left-0 z-50 mt-1">
                                 <FilterDropdown
                                   columnKey="tp_previsaoreal"
                                   columnTitle="Previsão"
                                   data={dadosOrdenadosParaCards.map(
-                                    (grupo) => grupo.item
+                                    (grupo) => grupo.item,
                                   )}
                                   currentFilter={
-                                    columnFilters["tp_previsaoreal"]
+                                    columnFilters['tp_previsaoreal']
                                   }
                                   onApplyFilter={handleApplyFilter}
                                   onClose={() => toggleFilterDropdown(null)}
@@ -4253,40 +4288,40 @@ const ContasAPagar = () => {
                         const autorizacao = autorizacoes[chaveUnica];
                         const autorizadoPor = autorizacao?.autorizadoPor;
                         const podeAutorizar = hasRole([
-                          "owner",
-                          "admin",
-                          "manager",
+                          'owner',
+                          'admin',
+                          'manager',
                         ]);
                         const contaPaga =
-                          grupo.item.dt_liq && grupo.item.dt_liq.trim() !== "";
+                          grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
 
                         // Debug para o botão ENVIAR PARA PAGAMENTO
                         if (index === 0) {
                           // Apenas para o primeiro item para não poluir o console
                           console.log(
-                            "🔍 Debug condições botão ENVIAR PARA PAGAMENTO:"
+                            '🔍 Debug condições botão ENVIAR PARA PAGAMENTO:',
                           );
                           console.log(
-                            "👤 hasRole FINANCEIRO:",
-                            hasRole(["user"])
+                            '👤 hasRole FINANCEIRO:',
+                            hasRole(['user']),
                           );
-                          console.log("✅ autorizadoPor:", autorizadoPor);
+                          console.log('✅ autorizadoPor:', autorizadoPor);
                           console.log(
-                            "📊 autorizacao?.status:",
-                            autorizacao?.status
-                          );
-                          console.log(
-                            "🎯 STATUS_AUTORIZACAO.AUTORIZADO:",
-                            STATUS_AUTORIZACAO.AUTORIZADO
+                            '📊 autorizacao?.status:',
+                            autorizacao?.status,
                           );
                           console.log(
-                            "🔗 Condição completa:",
-                            hasRole(["user"]) &&
+                            '🎯 STATUS_AUTORIZACAO.AUTORIZADO:',
+                            STATUS_AUTORIZACAO.AUTORIZADO,
+                          );
+                          console.log(
+                            '🔗 Condição completa:',
+                            hasRole(['user']) &&
                               autorizadoPor &&
                               autorizacao?.status ===
-                                STATUS_AUTORIZACAO.AUTORIZADO
+                                STATUS_AUTORIZACAO.AUTORIZADO,
                           );
-                          console.log("💰 contaPaga:", contaPaga);
+                          console.log('💰 contaPaga:', contaPaga);
                         }
 
                         return (
@@ -4294,10 +4329,10 @@ const ContasAPagar = () => {
                             key={`grp-${index}`}
                             className={`text-[8px] border-b transition-colors cursor-pointer ${
                               isSelected
-                                ? "bg-blue-100 hover:bg-blue-200"
+                                ? 'bg-blue-100 hover:bg-blue-200'
                                 : index % 2 === 0
-                                ? "bg-white hover:bg-gray-100"
-                                : "bg-gray-50 hover:bg-gray-100"
+                                ? 'bg-white hover:bg-gray-100'
+                                : 'bg-gray-50 hover:bg-gray-100'
                             }`}
                             onClick={() => abrirModalDetalhes(grupo.item)}
                             title="Clique para ver detalhes da conta"
@@ -4305,12 +4340,12 @@ const ContasAPagar = () => {
                             <td
                               className="px-0.5 py-0.5 text-center"
                               style={{
-                                width: "30px",
-                                minWidth: "30px",
-                                position: "sticky",
+                                width: '30px',
+                                minWidth: '30px',
+                                position: 'sticky',
                                 left: 0,
                                 zIndex: 10,
-                                background: isSelected ? "#dbeafe" : "inherit",
+                                background: isSelected ? '#dbeafe' : 'inherit',
                               }}
                             >
                               <input
@@ -4384,44 +4419,44 @@ const ContasAPagar = () => {
                             </td>
                             <td className="px-0.5 py-0.5 text-right font-medium text-green-600">
                               {parseFloat(
-                                grupo.item.vl_duplicata || 0
-                              ).toLocaleString("pt-BR", {
-                                style: "currency",
-                                currency: "BRL",
+                                grupo.item.vl_duplicata || 0,
+                              ).toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
                               })}
                             </td>
                             <td className="px-0.5 py-0.5 text-center">
-                              {grupo.item.cd_fornecedor || ""}
+                              {grupo.item.cd_fornecedor || ''}
                             </td>
                             <td
                               className="px-0.5 py-0.5 text-left max-w-32 truncate"
                               title={grupo.item.nm_fornecedor}
                             >
-                              {grupo.item.nm_fornecedor || ""}
+                              {grupo.item.nm_fornecedor || ''}
                             </td>
                             <td
                               className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32"
                               title={grupo.item.ds_despesaitem}
                             >
-                              {grupo.item.ds_despesaitem || ""}
+                              {grupo.item.ds_despesaitem || ''}
                             </td>
                             <td
                               className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32"
                               title={grupo.item.ds_ccusto}
                             >
-                              {grupo.item.ds_ccusto || ""}
+                              {grupo.item.ds_ccusto || ''}
                             </td>
                             <td className="px-0.5 py-0.5 text-center">
-                              {grupo.item.cd_empresa || ""}
+                              {grupo.item.cd_empresa || ''}
                             </td>
                             <td className="px-0.5 py-0.5 text-center">
-                              {grupo.item.nr_duplicata || ""}
+                              {grupo.item.nr_duplicata || ''}
                             </td>
                             <td className="px-0.5 py-0.5 text-center">
-                              {grupo.item.nr_parcela || ""}
+                              {grupo.item.nr_parcela || ''}
                             </td>
                             <td className="px-0.5 py-0.5 text-center">
-                              {grupo.item.nr_portador || ""}
+                              {grupo.item.nr_portador || ''}
                             </td>
                             <td className="px-0.5 py-0.5 text-center">
                               {formatarData(grupo.item.dt_emissao)}
@@ -4433,72 +4468,72 @@ const ContasAPagar = () => {
                               {formatarData(grupo.item.dt_liq)}
                             </td>
                             <td className="px-0.5 py-0.5 text-center">
-                              {grupo.item.tp_situacao || ""}
+                              {grupo.item.tp_situacao || ''}
                             </td>
                             <td className="px-0.5 py-0.5 text-center">
-                              {grupo.item.tp_estagio || ""}
+                              {grupo.item.tp_estagio || ''}
                             </td>
                             <td className="px-0.5 py-0.5 text-right">
                               {parseFloat(
-                                grupo.item.vl_juros || 0
-                              ).toLocaleString("pt-BR", {
-                                style: "currency",
-                                currency: "BRL",
+                                grupo.item.vl_juros || 0,
+                              ).toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
                               })}
                             </td>
                             <td className="px-0.5 py-0.5 text-right">
                               {parseFloat(
-                                grupo.item.vl_acrescimo || 0
-                              ).toLocaleString("pt-BR", {
-                                style: "currency",
-                                currency: "BRL",
+                                grupo.item.vl_acrescimo || 0,
+                              ).toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
                               })}
                             </td>
                             <td className="px-0.5 py-0.5 text-right">
                               {parseFloat(
-                                grupo.item.vl_desconto || 0
-                              ).toLocaleString("pt-BR", {
-                                style: "currency",
-                                currency: "BRL",
+                                grupo.item.vl_desconto || 0,
+                              ).toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
                               })}
                             </td>
                             <td className="px-0.5 py-0.5 text-right">
                               {parseFloat(
-                                grupo.item.vl_pago || 0
-                              ).toLocaleString("pt-BR", {
-                                style: "currency",
-                                currency: "BRL",
+                                grupo.item.vl_pago || 0,
+                              ).toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
                               })}
                             </td>
                             <td className="px-0.5 py-0.5 text-center">
-                              {grupo.item.in_aceite || ""}
+                              {grupo.item.in_aceite || ''}
                             </td>
                             <td
                               className="px-0.5 py-0.5 text-right"
                               title={
                                 grupo.rateios && grupo.rateios.length > 0
-                                  ? grupo.rateios.join(" | ")
-                                  : ""
+                                  ? grupo.rateios.join(' | ')
+                                  : ''
                               }
                             >
                               {grupo.rateios && grupo.rateios.length > 0
                                 ? grupo.rateios
                                     .map((r) => parseFloat(r || 0))
                                     .reduce((a, b) => a + b, 0)
-                                    .toLocaleString("pt-BR", {
-                                      style: "currency",
-                                      currency: "BRL",
+                                    .toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
                                     })
-                                : ""}
+                                : ''}
                             </td>
                             <td
                               className="px-0.5 py-0.5 text-left max-w-32 truncate"
-                              title={(grupo.observacoes || []).join(" | ")}
+                              title={(grupo.observacoes || []).join(' | ')}
                             >
-                              {grupo.item.ds_observacao || ""}
+                              {grupo.item.ds_observacao || ''}
                             </td>
                             <td className="px-0.5 py-0.5 text-center">
-                              {grupo.item.tp_previsaoreal || ""}
+                              {grupo.item.tp_previsaoreal || ''}
                             </td>
                           </tr>
                         );
@@ -4510,16 +4545,16 @@ const ContasAPagar = () => {
                     <div className="mt-4 flex items-center justify-between bg-gray-50 p-3 rounded-lg">
                       <div className="flex items-center gap-2">
                         <span className="text-sm text-gray-600">
-                          Mostrando{" "}
+                          Mostrando{' '}
                           {(calcularDadosPaginados.paginaAtual - 1) *
                             calcularDadosPaginados.registrosPorPagina +
-                            1}{" "}
-                          a{" "}
+                            1}{' '}
+                          a{' '}
                           {Math.min(
                             calcularDadosPaginados.paginaAtual *
                               calcularDadosPaginados.registrosPorPagina,
-                            calcularDadosPaginados.totalRegistros
-                          )}{" "}
+                            calcularDadosPaginados.totalRegistros,
+                          )}{' '}
                           de {calcularDadosPaginados.totalRegistros} registros
                         </span>
                       </div>
@@ -4551,13 +4586,13 @@ const ContasAPagar = () => {
                             {
                               length: Math.min(
                                 5,
-                                calcularDadosPaginados.totalPaginas
+                                calcularDadosPaginados.totalPaginas,
                               ),
                             },
                             (_, i) => {
                               const paginaInicial = Math.max(
                                 1,
-                                calcularDadosPaginados.paginaAtual - 2
+                                calcularDadosPaginados.paginaAtual - 2,
                               );
                               const numeroPagina = paginaInicial + i;
 
@@ -4574,14 +4609,14 @@ const ContasAPagar = () => {
                                   className={`px-2 py-1 text-xs rounded ${
                                     calcularDadosPaginados.paginaAtual ===
                                     numeroPagina
-                                      ? "bg-[#000638] text-white"
-                                      : "bg-white border border-gray-300 hover:bg-gray-50"
+                                      ? 'bg-[#000638] text-white'
+                                      : 'bg-white border border-gray-300 hover:bg-gray-50'
                                   }`}
                                 >
                                   {numeroPagina}
                                 </button>
                               );
-                            }
+                            },
                           )}
                         </div>
 
@@ -4613,7 +4648,7 @@ const ContasAPagar = () => {
                       </div>
 
                       <div className="text-sm text-gray-600">
-                        Página {calcularDadosPaginados.paginaAtual} de{" "}
+                        Página {calcularDadosPaginados.paginaAtual} de{' '}
                         {calcularDadosPaginados.totalPaginas}
                       </div>
                     </div>
@@ -4622,7 +4657,7 @@ const ContasAPagar = () => {
                   <div className="mt-3 text-xs text-gray-600 flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <div>
-                        Selecionadas:{" "}
+                        Selecionadas:{' '}
                         <span className="font-semibold">
                           {linhasSelecionadasAgrupadas.size}
                         </span>
@@ -4637,7 +4672,7 @@ const ContasAPagar = () => {
                     </div>
                     <div className="flex items-center gap-3">
                       <div>
-                        Valor total:{" "}
+                        Valor total:{' '}
                         <span className="font-semibold text-green-700">
                           {Array.from(linhasSelecionadasAgrupadas)
                             .reduce(
@@ -4645,27 +4680,27 @@ const ContasAPagar = () => {
                                 acc +
                                 parseFloat(
                                   calcularDadosPaginados.dados[idx]?.item
-                                    ?.vl_duplicata || 0
+                                    ?.vl_duplicata || 0,
                                 ),
-                              0
+                              0,
                             )
-                            .toLocaleString("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
+                            .toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL',
                             })}
                         </span>
                       </div>
                       <div>
-                        Valor autorizado:{" "}
+                        Valor autorizado:{' '}
                         <span className="font-semibold text-emerald-700">
-                          {valorTotalAutorizado.toLocaleString("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
+                          {valorTotalAutorizado.toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
                           })}
                         </span>
                       </div>
                       <div>
-                        Contas autorizadas:{" "}
+                        Contas autorizadas:{' '}
                         <span className="font-semibold text-emerald-700">
                           {totalContasAutorizadas}
                         </span>
@@ -4756,8 +4791,8 @@ const ContasAPagar = () => {
               </h2>
               <p className="text-xs opacity-90 mt-1">
                 {dadosCardModal.length} registro
-                {dadosCardModal.length !== 1 ? "s" : ""} encontrado
-                {dadosCardModal.length !== 1 ? "s" : ""}
+                {dadosCardModal.length !== 1 ? 's' : ''} encontrado
+                {dadosCardModal.length !== 1 ? 's' : ''}
               </p>
             </div>
 
@@ -4789,7 +4824,7 @@ const ContasAPagar = () => {
                         <th className="px-2 py-2 text-center font-medium text-gray-700">
                           Previsão
                         </th>
-                        {tipoCardSelecionado === "descontos" && (
+                        {tipoCardSelecionado === 'descontos' && (
                           <th className="px-2 py-2 text-right font-medium text-gray-700">
                             Desconto
                           </th>
@@ -4804,26 +4839,26 @@ const ContasAPagar = () => {
                           </td>
                           <td className="px-2 py-2 text-sm text-right font-medium text-green-600">
                             {parseFloat(item.vl_duplicata || 0).toLocaleString(
-                              "pt-BR",
+                              'pt-BR',
                               {
-                                style: "currency",
-                                currency: "BRL",
-                              }
+                                style: 'currency',
+                                currency: 'BRL',
+                              },
                             )}
                           </td>
                           <td className="px-2 py-2 text-sm text-center text-gray-900">
-                            {item.nm_fornecedor || ""}
+                            {item.nm_fornecedor || ''}
                           </td>
                           <td className="px-2 py-2 text-sm text-gray-900">
-                            {item.ds_despesaitem || ""}
+                            {item.ds_despesaitem || ''}
                           </td>
                           <td className="px-2 py-2 text-sm text-center text-gray-900">
-                            {item.nr_duplicata || ""}
+                            {item.nr_duplicata || ''}
                           </td>
                           <td className="px-2 py-2 text-center">
                             <span
                               className={`inline-flex items-center px-0.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
-                                getStatusFromData(item)
+                                getStatusFromData(item),
                               )}`}
                             >
                               {getStatusIcon(getStatusFromData(item))}
@@ -4833,16 +4868,16 @@ const ContasAPagar = () => {
                             </span>
                           </td>
                           <td className="px-2 py-2 text-center text-gray-900">
-                            {item.tp_previsaoreal || ""}
+                            {item.tp_previsaoreal || ''}
                           </td>
-                          {tipoCardSelecionado === "descontos" && (
+                          {tipoCardSelecionado === 'descontos' && (
                             <td className="px-2 py-2 text-sm text-right font-medium text-emerald-600">
                               {parseFloat(item.vl_desconto || 0).toLocaleString(
-                                "pt-BR",
+                                'pt-BR',
                                 {
-                                  style: "currency",
-                                  currency: "BRL",
-                                }
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                },
                               )}
                             </td>
                           )}
@@ -4919,7 +4954,7 @@ const ContasAPagar = () => {
                 Remover Autorização
               </h3>
               <p className="text-gray-600">
-                Tem certeza que deseja remover a autorização de{" "}
+                Tem certeza que deseja remover a autorização de{' '}
                 <strong>{autorizacaoToRemove?.autorizadoPor}</strong>?
               </p>
             </div>
@@ -4931,7 +4966,7 @@ const ContasAPagar = () => {
               <div className="space-y-1">
                 <div className="text-sm text-gray-600 flex items-center gap-1">
                   <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                  Autorizado por:{" "}
+                  Autorizado por:{' '}
                   <strong>{autorizacaoToRemove?.autorizadoPor}</strong>
                 </div>
                 <div className="text-sm text-gray-600 flex items-center gap-1">
@@ -4982,7 +5017,7 @@ const ContasAPagar = () => {
                 Autorizar Todos
               </h3>
               <p className="text-gray-600">
-                Tem certeza que deseja autorizar TODAS as{" "}
+                Tem certeza que deseja autorizar TODAS as{' '}
                 {contasParaAutorizar.length} contas não autorizadas?
               </p>
             </div>
@@ -5028,7 +5063,7 @@ const ContasAPagar = () => {
                 Remover Todos
               </h3>
               <p className="text-gray-600">
-                Tem certeza que deseja remover TODAS as{" "}
+                Tem certeza que deseja remover TODAS as{' '}
                 {contasParaRemover.length} autorizações?
               </p>
             </div>
@@ -5053,67 +5088,67 @@ const ContasAPagar = () => {
 
       {/* Debug: Mostrar estado do modal */}
       {console.log(
-        "🔍 Renderizando componente - showEnviarPagamentoModal:",
-        showEnviarPagamentoModal
+        '🔍 Renderizando componente - showEnviarPagamentoModal:',
+        showEnviarPagamentoModal,
       )}
 
       {/* Modal de Teste Simples */}
       {showEnviarPagamentoModal && (
         <div
           style={{
-            position: "fixed",
+            position: 'fixed',
             top: 0,
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             zIndex: 9999,
           }}
           onClick={handleCancelEnviarParaPagamento}
         >
           <div
             style={{
-              backgroundColor: "white",
-              padding: "20px",
-              borderRadius: "8px",
-              maxWidth: "400px",
-              width: "90%",
-              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.3)",
+              backgroundColor: 'white',
+              padding: '20px',
+              borderRadius: '8px',
+              maxWidth: '400px',
+              width: '90%',
+              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.3)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <h2
               style={{
-                color: "#000638",
-                fontSize: "20px",
-                fontWeight: "bold",
-                marginBottom: "10px",
+                color: '#000638',
+                fontSize: '20px',
+                fontWeight: 'bold',
+                marginBottom: '10px',
               }}
             >
               Confirmar Pagamento
             </h2>
-            <p style={{ marginBottom: "20px", color: "#666" }}>
+            <p style={{ marginBottom: '20px', color: '#666' }}>
               Tem certeza que deseja pagar esta conta?
             </p>
             <p
-              style={{ marginBottom: "20px", color: "#666", fontSize: "12px" }}
+              style={{ marginBottom: '20px', color: '#666', fontSize: '12px' }}
             >
-              Fornecedor: {contaParaEnviar?.dadosConta?.nm_fornecedor || "N/A"}
+              Fornecedor: {contaParaEnviar?.dadosConta?.nm_fornecedor || 'N/A'}
             </p>
-            <div style={{ display: "flex", gap: "10px" }}>
+            <div style={{ display: 'flex', gap: '10px' }}>
               <button
                 onClick={handleCancelEnviarParaPagamento}
                 style={{
                   flex: 1,
-                  padding: "10px",
-                  backgroundColor: "#666",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
+                  padding: '10px',
+                  backgroundColor: '#666',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
                 }}
               >
                 Fechar
@@ -5122,13 +5157,13 @@ const ContasAPagar = () => {
                 onClick={handleConfirmEnviarParaPagamento}
                 style={{
                   flex: 1,
-                  padding: "10px",
-                  backgroundColor: "#eab308",
-                  color: "black",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  fontWeight: "bold",
+                  padding: '10px',
+                  backgroundColor: '#eab308',
+                  color: 'black',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
                 }}
               >
                 PAGAR
@@ -5142,59 +5177,59 @@ const ContasAPagar = () => {
       {showRemoverPagamentoModal && (
         <div
           style={{
-            position: "fixed",
+            position: 'fixed',
             top: 0,
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             zIndex: 9999,
           }}
           onClick={handleCancelRemoverEnviadoParaPagamento}
         >
           <div
             style={{
-              backgroundColor: "white",
-              padding: "20px",
-              borderRadius: "8px",
-              maxWidth: "400px",
-              width: "90%",
-              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.3)",
+              backgroundColor: 'white',
+              padding: '20px',
+              borderRadius: '8px',
+              maxWidth: '400px',
+              width: '90%',
+              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.3)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <h2
               style={{
-                color: "#dc2626",
-                fontSize: "20px",
-                fontWeight: "bold",
-                marginBottom: "10px",
+                color: '#dc2626',
+                fontSize: '20px',
+                fontWeight: 'bold',
+                marginBottom: '10px',
               }}
             >
               Remover Pagamento
             </h2>
-            <p style={{ marginBottom: "20px", color: "#666" }}>
+            <p style={{ marginBottom: '20px', color: '#666' }}>
               Tem certeza que deseja remover o status de pagamento desta conta?
             </p>
             <p
-              style={{ marginBottom: "20px", color: "#666", fontSize: "12px" }}
+              style={{ marginBottom: '20px', color: '#666', fontSize: '12px' }}
             >
-              Fornecedor: {contaParaEnviar?.dadosConta?.nm_fornecedor || "N/A"}
+              Fornecedor: {contaParaEnviar?.dadosConta?.nm_fornecedor || 'N/A'}
             </p>
-            <div style={{ display: "flex", gap: "10px" }}>
+            <div style={{ display: 'flex', gap: '10px' }}>
               <button
                 onClick={handleCancelRemoverEnviadoParaPagamento}
                 style={{
                   flex: 1,
-                  padding: "10px",
-                  backgroundColor: "#666",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
+                  padding: '10px',
+                  backgroundColor: '#666',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
                 }}
               >
                 Cancelar
@@ -5203,13 +5238,13 @@ const ContasAPagar = () => {
                 onClick={handleConfirmRemoverEnviadoParaPagamento}
                 style={{
                   flex: 1,
-                  padding: "10px",
-                  backgroundColor: "#dc2626",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  fontWeight: "bold",
+                  padding: '10px',
+                  backgroundColor: '#dc2626',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
                 }}
               >
                 REMOVER
@@ -5223,88 +5258,88 @@ const ContasAPagar = () => {
       {showAcessoRestritoModal && (
         <div
           style={{
-            position: "fixed",
+            position: 'fixed',
             top: 0,
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             zIndex: 9999,
           }}
           onClick={handleCloseAcessoRestrito}
         >
           <div
             style={{
-              backgroundColor: "white",
-              padding: "20px",
-              borderRadius: "8px",
-              maxWidth: "450px",
-              width: "90%",
-              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.3)",
+              backgroundColor: 'white',
+              padding: '20px',
+              borderRadius: '8px',
+              maxWidth: '450px',
+              width: '90%',
+              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.3)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <h2
               style={{
-                color: "#dc2626",
-                fontSize: "20px",
-                fontWeight: "bold",
-                marginBottom: "15px",
-                textAlign: "center",
+                color: '#dc2626',
+                fontSize: '20px',
+                fontWeight: 'bold',
+                marginBottom: '15px',
+                textAlign: 'center',
               }}
             >
               ⚠️ ACESSO RESTRITO
             </h2>
             <div
               style={{
-                marginBottom: "20px",
-                padding: "15px",
-                backgroundColor: "#fef3c7",
-                borderRadius: "6px",
-                border: "1px solid #f59e0b",
+                marginBottom: '20px',
+                padding: '15px',
+                backgroundColor: '#fef3c7',
+                borderRadius: '6px',
+                border: '1px solid #f59e0b',
               }}
             >
               <p
                 style={{
-                  marginBottom: "10px",
-                  color: "#92400e",
-                  fontSize: "14px",
-                  fontWeight: "bold",
+                  marginBottom: '10px',
+                  color: '#92400e',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
                 }}
               >
-                Esta conta foi enviada para pagamento por{" "}
+                Esta conta foi enviada para pagamento por{' '}
                 <strong>{dadosAcessoRestrito?.enviadoPor}</strong>.
               </p>
               <p
                 style={{
-                  marginBottom: "10px",
-                  color: "#92400e",
-                  fontSize: "13px",
+                  marginBottom: '10px',
+                  color: '#92400e',
+                  fontSize: '13px',
                 }}
               >
                 Apenas administradores podem remover autorizações de contas que
                 já foram enviadas para pagamento.
               </p>
-              <p style={{ color: "#92400e", fontSize: "13px" }}>
+              <p style={{ color: '#92400e', fontSize: '13px' }}>
                 Para solicitar a remoção, entre em contato com um administrador
                 do sistema.
               </p>
             </div>
-            <div style={{ display: "flex", justifyContent: "center" }}>
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
               <button
                 onClick={handleCloseAcessoRestrito}
                 style={{
-                  padding: "12px 24px",
-                  backgroundColor: "#6b7280",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                  fontSize: "14px",
+                  padding: '12px 24px',
+                  backgroundColor: '#6b7280',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '14px',
                 }}
               >
                 Entendi
@@ -5316,16 +5351,16 @@ const ContasAPagar = () => {
 
       {/* Debug: Mostrar estado do modal */}
       {console.log(
-        "🔍 Renderizando componente - showEnviarPagamentoModal:",
-        showEnviarPagamentoModal
+        '🔍 Renderizando componente - showEnviarPagamentoModal:',
+        showEnviarPagamentoModal,
       )}
       {console.log(
-        "🔍 Renderizando componente - showRemoverPagamentoModal:",
-        showRemoverPagamentoModal
+        '🔍 Renderizando componente - showRemoverPagamentoModal:',
+        showRemoverPagamentoModal,
       )}
       {console.log(
-        "🔍 Renderizando componente - showAcessoRestritoModal:",
-        showAcessoRestritoModal
+        '🔍 Renderizando componente - showAcessoRestritoModal:',
+        showAcessoRestritoModal,
       )}
     </div>
   );
@@ -5362,25 +5397,25 @@ const DespesasPorCategoria = ({
     }
 
     if (codigo >= 1000 && codigo <= 1999) {
-      return "CUSTO DAS MERCADORIAS VENDIDAS";
+      return 'CUSTO DAS MERCADORIAS VENDIDAS';
     } else if (codigo >= 2000 && codigo <= 2999) {
-      return "DESPESAS OPERACIONAIS";
+      return 'DESPESAS OPERACIONAIS';
     } else if (codigo >= 3000 && codigo <= 3999) {
-      return "DESPESAS COM PESSOAL";
+      return 'DESPESAS COM PESSOAL';
     } else if (codigo >= 4001 && codigo <= 4999) {
-      return "ALUGUÉIS E ARRENDAMENTOS";
+      return 'ALUGUÉIS E ARRENDAMENTOS';
     } else if (codigo >= 5000 && codigo <= 5999) {
-      return "IMPOSTOS, TAXAS E CONTRIBUIÇÕES";
+      return 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
     } else if (codigo >= 6000 && codigo <= 6999) {
-      return "DESPESAS GERAIS";
+      return 'DESPESAS GERAIS';
     } else if (codigo >= 7000 && codigo <= 7999) {
-      return "DESPESAS FINANCEIRAS";
+      return 'DESPESAS FINANCEIRAS';
     } else if (codigo >= 8000 && codigo <= 8999) {
-      return "OUTRAS DESPESAS OPERACIONAIS";
+      return 'OUTRAS DESPESAS OPERACIONAIS';
     } else if (codigo >= 9000 && codigo <= 9999) {
-      return "DESPESAS C/ VENDAS";
+      return 'DESPESAS C/ VENDAS';
     } else {
-      return "SEM CLASSIFICAÇÃO";
+      return 'SEM CLASSIFICAÇÃO';
     }
   };
 
@@ -5394,8 +5429,8 @@ const DespesasPorCategoria = ({
     dadosAgrupados.forEach((grupo, index) => {
       const item = grupo.item;
       const cdDespesa = item.cd_despesaitem;
-      const nomeDespesa = item.ds_despesaitem || "SEM DESCRIÇÃO";
-      const nomeFornecedor = item.nm_fornecedor || "SEM FORNECEDOR";
+      const nomeDespesa = item.ds_despesaitem || 'SEM DESCRIÇÃO';
+      const nomeFornecedor = item.nm_fornecedor || 'SEM FORNECEDOR';
       // Usar o valor da duplicata em vez do rateio para manter consistência com os cards
       const vlDuplicata = parseFloat(item.vl_duplicata || 0);
       const categoria = classificarDespesa(cdDespesa);
@@ -5467,16 +5502,16 @@ const DespesasPorCategoria = ({
 
     // Definir ordem específica das categorias
     const ordemCategorias = [
-      "CUSTO DAS MERCADORIAS VENDIDAS",
-      "DESPESAS OPERACIONAIS",
-      "DESPESAS COM PESSOAL",
-      "ALUGUÉIS E ARRENDAMENTOS",
-      "IMPOSTOS, TAXAS E CONTRIBUIÇÕES",
-      "DESPESAS GERAIS",
-      "DESPESAS FINANCEIRAS",
-      "OUTRAS DESPESAS OPERACIONAIS",
-      "DESPESAS C/ VENDAS",
-      "SEM CLASSIFICAÇÃO",
+      'CUSTO DAS MERCADORIAS VENDIDAS',
+      'DESPESAS OPERACIONAIS',
+      'DESPESAS COM PESSOAL',
+      'ALUGUÉIS E ARRENDAMENTOS',
+      'IMPOSTOS, TAXAS E CONTRIBUIÇÕES',
+      'DESPESAS GERAIS',
+      'DESPESAS FINANCEIRAS',
+      'OUTRAS DESPESAS OPERACIONAIS',
+      'DESPESAS C/ VENDAS',
+      'SEM CLASSIFICAÇÃO',
     ];
 
     // Converter para array e ordenar pela ordem definida
@@ -5489,7 +5524,7 @@ const DespesasPorCategoria = ({
           .map((despesa) => {
             // Converter fornecedores em array e ordenar por valor (maior primeiro)
             despesa.fornecedoresArray = Object.values(
-              despesa.fornecedores
+              despesa.fornecedores,
             ).sort((a, b) => b.total - a.total);
             return despesa;
           })
@@ -5529,7 +5564,7 @@ const DespesasPorCategoria = ({
     nomeFornecedor,
     nrDuplicata,
     nrParcela,
-    vlRateio
+    vlRateio,
   ) => {
     const chave = `${nomeCategoria}|${nomeDespesa}|${nomeFornecedor}|${nrDuplicata}|${nrParcela}|${vlRateio}`;
     setCategoriasExpandidas((prev) => {
@@ -5551,7 +5586,7 @@ const DespesasPorCategoria = ({
     } else {
       // Expandir todos
       const todasCategorias = new Set(
-        dadosAgrupados.map((categoria) => categoria.nome)
+        dadosAgrupados.map((categoria) => categoria.nome),
       );
       setCategoriasExpandidas(todasCategorias);
       setTodosExpandidos(true);
@@ -5561,7 +5596,7 @@ const DespesasPorCategoria = ({
   // Função para exportar dados da última linha de hierarquia para Excel
   const exportarDadosUltimaLinha = () => {
     if (!dadosAgrupados || dadosAgrupados.length === 0) {
-      alert("Nenhum dado disponível para exportar");
+      alert('Nenhum dado disponível para exportar');
       return;
     }
 
@@ -5580,27 +5615,27 @@ const DespesasPorCategoria = ({
               Duplicata: fornecedor.nrDuplicata,
               Valor: fornecedor.vlDuplicata,
               Vencimento: formatarData(dadoItem.dt_vencimento),
-              "Valor Duplicata": parseFloat(dadoItem.vl_duplicata || 0),
-              "Código Fornecedor": dadoItem.cd_fornecedor || "",
-              "Nome Fornecedor": dadoItem.nm_fornecedor || "",
-              "Despesa Item": dadoItem.ds_despesaitem || "",
-              "Centro de Custo": dadoItem.ds_ccusto || "",
-              Empresa: dadoItem.cd_empresa || "",
-              Portador: dadoItem.nr_portador || "",
+              'Valor Duplicata': parseFloat(dadoItem.vl_duplicata || 0),
+              'Código Fornecedor': dadoItem.cd_fornecedor || '',
+              'Nome Fornecedor': dadoItem.nm_fornecedor || '',
+              'Despesa Item': dadoItem.ds_despesaitem || '',
+              'Centro de Custo': dadoItem.ds_ccusto || '',
+              Empresa: dadoItem.cd_empresa || '',
+              Portador: dadoItem.nr_portador || '',
               Emissão: formatarData(dadoItem.dt_emissao),
               Entrada: formatarData(dadoItem.dt_entrada),
               Liquidação: formatarData(dadoItem.dt_liq),
-              Situação: dadoItem.tp_situacao || "",
-              Estágio: dadoItem.tp_estagio || "",
+              Situação: dadoItem.tp_situacao || '',
+              Estágio: dadoItem.tp_estagio || '',
               Juros: parseFloat(dadoItem.vl_juros || 0),
               Acréscimo: parseFloat(dadoItem.vl_acrescimo || 0),
               Desconto: parseFloat(dadoItem.vl_desconto || 0),
               Pago: parseFloat(dadoItem.vl_pago || 0),
-              Aceite: dadoItem.in_aceite || "",
-              Parcela: dadoItem.nr_parcela || "",
-              "Rateio Item": dadoItem.vl_rateio || "",
-              Observação: dadoItem.ds_observacao || "",
-              Previsão: dadoItem.tp_previsaoreal || "",
+              Aceite: dadoItem.in_aceite || '',
+              Parcela: dadoItem.nr_parcela || '',
+              'Rateio Item': dadoItem.vl_rateio || '',
+              Observação: dadoItem.ds_observacao || '',
+              Previsão: dadoItem.tp_previsaoreal || '',
             });
           });
         });
@@ -5608,7 +5643,7 @@ const DespesasPorCategoria = ({
     });
 
     if (dadosParaExportar.length === 0) {
-      alert("Nenhum dado encontrado para exportar");
+      alert('Nenhum dado encontrado para exportar');
       return;
     }
 
@@ -5646,47 +5681,47 @@ const DespesasPorCategoria = ({
       { wch: 30 }, // Observação
       { wch: 12 }, // Previsão
     ];
-    ws["!cols"] = colWidths;
+    ws['!cols'] = colWidths;
 
     // Adicionar worksheet ao workbook
-    XLSX.utils.book_append_sheet(wb, ws, "Contas a Pagar");
+    XLSX.utils.book_append_sheet(wb, ws, 'Contas a Pagar');
 
     // Gerar arquivo e fazer download
     const fileName = `contas_a_pagar_${
-      new Date().toISOString().split("T")[0]
+      new Date().toISOString().split('T')[0]
     }.xlsx`;
-    const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const data = new Blob([excelBuffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
     saveAs(data, fileName);
 
     console.log(
-      `✅ Exportados ${dadosParaExportar.length} registros para Excel`
+      `✅ Exportados ${dadosParaExportar.length} registros para Excel`,
     );
   };
 
   // Calcular dados mensais para mostrar quantidades nos botões
   const calcularDadosMensais = () => {
     const meses = [
-      "JAN",
-      "FEV",
-      "MAR",
-      "ABR",
-      "MAI",
-      "JUN",
-      "JUL",
-      "AGO",
-      "SET",
-      "OUT",
-      "NOV",
-      "DEZ",
+      'JAN',
+      'FEV',
+      'MAR',
+      'ABR',
+      'MAI',
+      'JUN',
+      'JUL',
+      'AGO',
+      'SET',
+      'OUT',
+      'NOV',
+      'DEZ',
     ];
     const dadosMensais = {};
 
     // Calcular ANO ATUAL
     const anoAtual = new Date().getFullYear();
-    dadosMensais["ANO"] = dadosOriginais.filter((item) => {
+    dadosMensais['ANO'] = dadosOriginais.filter((item) => {
       if (!item.dt_vencimento) return false;
       const data = criarDataSemFusoHorario(item.dt_vencimento);
       const ano = data.getFullYear();
@@ -5722,11 +5757,11 @@ const DespesasPorCategoria = ({
         <div className="flex flex-wrap gap-1">
           {/* Botão ANO */}
           <button
-            onClick={() => handleFiltroMensalChange("ANO")}
+            onClick={() => handleFiltroMensalChange('ANO')}
             className={`px-4 py-2 text-[0.7rem] font-medium rounded-md transition-colors ${
-              filtroMensal === "ANO"
-                ? "bg-[#000638] text-white"
-                : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-300"
+              filtroMensal === 'ANO'
+                ? 'bg-[#000638] text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
             }`}
           >
             ANO
@@ -5734,26 +5769,26 @@ const DespesasPorCategoria = ({
 
           {/* Botões dos Meses */}
           {[
-            "JAN",
-            "FEV",
-            "MAR",
-            "ABR",
-            "MAI",
-            "JUN",
-            "JUL",
-            "AGO",
-            "SET",
-            "OUT",
-            "NOV",
-            "DEZ",
+            'JAN',
+            'FEV',
+            'MAR',
+            'ABR',
+            'MAI',
+            'JUN',
+            'JUL',
+            'AGO',
+            'SET',
+            'OUT',
+            'NOV',
+            'DEZ',
           ].map((mes) => (
             <button
               key={mes}
               onClick={() => handleFiltroMensalChange(mes)}
               className={`px-2 py-2 text-[0.7rem] font-medium rounded-md transition-colors ${
                 filtroMensal === mes
-                  ? "bg-[#000638] text-white"
-                  : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-300"
+                  ? 'bg-[#000638] text-white'
+                  : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
               }`}
             >
               {mes}
@@ -5766,12 +5801,12 @@ const DespesasPorCategoria = ({
           <span className="font-medium">Filtro ativo:</span> {filtroMensal}
           {filtroDia && <span className="ml-1">- Dia {filtroDia}</span>}
           <span className="ml-2">
-            ({dados.length} registro{dados.length !== 1 ? "s" : ""})
+            ({dados.length} registro{dados.length !== 1 ? 's' : ''})
           </span>
         </div>
 
         {/* Filtro por Dia - aparece apenas quando um mês está selecionado */}
-        {filtroMensal !== "ANO" && (
+        {filtroMensal !== 'ANO' && (
           <div className="mt-4 pt-4 border-t border-gray-200">
             <div className="flex items-center gap-1 mb-3">
               <Calendar size={14} className="text-[#000638]" />
@@ -5786,8 +5821,8 @@ const DespesasPorCategoria = ({
                 onClick={() => setFiltroDia(null)}
                 className={`px-0.5 py-0.5 text-xs font-medium rounded-md transition-colors ${
                   filtroDia === null
-                    ? "bg-[#000638] text-white"
-                    : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-300"
+                    ? 'bg-[#000638] text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
                 }`}
               >
                 TODOS
@@ -5796,15 +5831,15 @@ const DespesasPorCategoria = ({
               {/* Botões dos dias */}
               {Array.from(
                 { length: obterDiasDoMes(filtroMensal) },
-                (_, i) => i + 1
+                (_, i) => i + 1,
               ).map((dia) => (
                 <button
                   key={dia}
                   onClick={() => setFiltroDia(dia)}
                   className={`px-0.5 py-0.5 text-xs font-medium rounded-md transition-colors ${
                     filtroDia === dia
-                      ? "bg-[#000638] text-white"
-                      : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-300"
+                      ? 'bg-[#000638] text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
                   }`}
                 >
                   {dia}
@@ -5826,8 +5861,8 @@ const DespesasPorCategoria = ({
               className="text-xs text-gray-500 hover:text-gray-700 px-0.5 py-0.5 rounded transition-colors flex items-center gap-1"
               title={
                 todosExpandidos
-                  ? "Colapsar todos os tópicos"
-                  : "Expandir todos os tópicos"
+                  ? 'Colapsar todos os tópicos'
+                  : 'Expandir todos os tópicos'
               }
             >
               {todosExpandidos ? (
@@ -5882,9 +5917,9 @@ const DespesasPorCategoria = ({
                       <span>{categoria.quantidade} conta(s)</span>
                       <span>{categoria.despesasArray.length} despesa(s)</span>
                       <span className="font-medium text-red-600">
-                        {categoria.total.toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
+                        {categoria.total.toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
                         })}
                       </span>
                     </div>
@@ -5925,13 +5960,13 @@ const DespesasPorCategoria = ({
                               <div className="flex items-center space-x-3 text-xs text-gray-500">
                                 <span>{despesa.quantidade} conta(s)</span>
                                 <span>
-                                  {despesa.fornecedoresArray.length}{" "}
+                                  {despesa.fornecedoresArray.length}{' '}
                                   fornecedor(es)
                                 </span>
                                 <span className="font-medium text-red-500">
-                                  {despesa.total.toLocaleString("pt-BR", {
-                                    style: "currency",
-                                    currency: "BRL",
+                                  {despesa.total.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
                                   })}
                                 </span>
                               </div>
@@ -5947,7 +5982,7 @@ const DespesasPorCategoria = ({
                                 const chaveExpansaoFornecedor = `${categoria.nome}|${despesa.nome}|${fornecedor.nome}|${fornecedor.nrDuplicata}|${fornecedor.nrParcela}|${fornecedor.vlRateio}`;
                                 const isFornecedorExpanded =
                                   categoriasExpandidas.has(
-                                    chaveExpansaoFornecedor
+                                    chaveExpansaoFornecedor,
                                   );
 
                                 return (
@@ -5965,7 +6000,7 @@ const DespesasPorCategoria = ({
                                           fornecedor.nome,
                                           fornecedor.nrDuplicata,
                                           fornecedor.nrParcela,
-                                          fornecedor.vlRateio
+                                          fornecedor.vlRateio,
                                         )
                                       }
                                     >
@@ -5986,17 +6021,17 @@ const DespesasPorCategoria = ({
                                             {fornecedor.nome}
                                             <span className="ml-1 text-gray-400">
                                               (Dup: {fornecedor.nrDuplicata} |
-                                              Parc:{" "}
-                                              {fornecedor.nrParcela || "-"})
+                                              Parc:{' '}
+                                              {fornecedor.nrParcela || '-'})
                                             </span>
                                             {fornecedor.vlRateio > 0 && (
                                               <span className="ml-1 text-gray-400">
-                                                - Rateio:{" "}
+                                                - Rateio:{' '}
                                                 {parseFloat(
-                                                  fornecedor.vlRateio
-                                                ).toLocaleString("pt-BR", {
-                                                  style: "currency",
-                                                  currency: "BRL",
+                                                  fornecedor.vlRateio,
+                                                ).toLocaleString('pt-BR', {
+                                                  style: 'currency',
+                                                  currency: 'BRL',
                                                 })}
                                               </span>
                                             )}
@@ -6007,11 +6042,11 @@ const DespesasPorCategoria = ({
                                             </span>
                                             <span className="font-medium text-red-400">
                                               {fornecedor.total.toLocaleString(
-                                                "pt-BR",
+                                                'pt-BR',
                                                 {
-                                                  style: "currency",
-                                                  currency: "BRL",
-                                                }
+                                                  style: 'currency',
+                                                  currency: 'BRL',
+                                                },
                                               )}
                                             </span>
                                           </div>
@@ -6029,12 +6064,12 @@ const DespesasPorCategoria = ({
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px]"
                                                   style={{
-                                                    width: "30px",
-                                                    minWidth: "30px",
-                                                    position: "sticky",
+                                                    width: '30px',
+                                                    minWidth: '30px',
+                                                    position: 'sticky',
                                                     left: 0,
                                                     zIndex: 10,
-                                                    background: "#000638",
+                                                    background: '#000638',
                                                   }}
                                                 >
                                                   Selecionar
@@ -6042,235 +6077,235 @@ const DespesasPorCategoria = ({
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("dt_vencimento")
+                                                    handleSort('dt_vencimento')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Vencimento{" "}
+                                                    Vencimento{' '}
                                                     {getSortIcon(
-                                                      "dt_vencimento"
+                                                      'dt_vencimento',
                                                     )}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("vl_duplicata")
+                                                    handleSort('vl_duplicata')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Valor{" "}
+                                                    Valor{' '}
                                                     {getSortIcon(
-                                                      "vl_duplicata"
+                                                      'vl_duplicata',
                                                     )}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("cd_fornecedor")
+                                                    handleSort('cd_fornecedor')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Fornecedor{" "}
+                                                    Fornecedor{' '}
                                                     {getSortIcon(
-                                                      "cd_fornecedor"
+                                                      'cd_fornecedor',
                                                     )}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("nm_fornecedor")
+                                                    handleSort('nm_fornecedor')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    NM Fornecedor{" "}
+                                                    NM Fornecedor{' '}
                                                     {getSortIcon(
-                                                      "nm_fornecedor"
+                                                      'nm_fornecedor',
                                                     )}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("ds_despesaitem")
+                                                    handleSort('ds_despesaitem')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Despesa{" "}
+                                                    Despesa{' '}
                                                     {getSortIcon(
-                                                      "ds_despesaitem"
+                                                      'ds_despesaitem',
                                                     )}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("ds_ccusto")
+                                                    handleSort('ds_ccusto')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    NM CUSTO{" "}
-                                                    {getSortIcon("ds_ccusto")}
+                                                    NM CUSTO{' '}
+                                                    {getSortIcon('ds_ccusto')}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("cd_empresa")
+                                                    handleSort('cd_empresa')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Empresa{" "}
-                                                    {getSortIcon("cd_empresa")}
+                                                    Empresa{' '}
+                                                    {getSortIcon('cd_empresa')}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("nr_duplicata")
+                                                    handleSort('nr_duplicata')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Duplicata{" "}
+                                                    Duplicata{' '}
                                                     {getSortIcon(
-                                                      "nr_duplicata"
+                                                      'nr_duplicata',
                                                     )}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("nr_portador")
+                                                    handleSort('nr_portador')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Portador{" "}
-                                                    {getSortIcon("nr_portador")}
+                                                    Portador{' '}
+                                                    {getSortIcon('nr_portador')}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("dt_emissao")
+                                                    handleSort('dt_emissao')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Emissão{" "}
-                                                    {getSortIcon("dt_emissao")}
+                                                    Emissão{' '}
+                                                    {getSortIcon('dt_emissao')}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("dt_entrada")
+                                                    handleSort('dt_entrada')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Entrada{" "}
-                                                    {getSortIcon("dt_entrada")}
+                                                    Entrada{' '}
+                                                    {getSortIcon('dt_entrada')}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("dt_liq")
+                                                    handleSort('dt_liq')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Liquidação{" "}
-                                                    {getSortIcon("dt_liq")}
+                                                    Liquidação{' '}
+                                                    {getSortIcon('dt_liq')}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("tp_situacao")
+                                                    handleSort('tp_situacao')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Situação{" "}
-                                                    {getSortIcon("tp_situacao")}
+                                                    Situação{' '}
+                                                    {getSortIcon('tp_situacao')}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("tp_estagio")
+                                                    handleSort('tp_estagio')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Estágio{" "}
-                                                    {getSortIcon("tp_estagio")}
+                                                    Estágio{' '}
+                                                    {getSortIcon('tp_estagio')}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("vl_juros")
+                                                    handleSort('vl_juros')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Juros{" "}
-                                                    {getSortIcon("vl_juros")}
+                                                    Juros{' '}
+                                                    {getSortIcon('vl_juros')}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("vl_acrescimo")
+                                                    handleSort('vl_acrescimo')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Acréscimo{" "}
+                                                    Acréscimo{' '}
                                                     {getSortIcon(
-                                                      "vl_acrescimo"
+                                                      'vl_acrescimo',
                                                     )}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("vl_desconto")
+                                                    handleSort('vl_desconto')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Desconto{" "}
-                                                    {getSortIcon("vl_desconto")}
+                                                    Desconto{' '}
+                                                    {getSortIcon('vl_desconto')}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("vl_pago")
+                                                    handleSort('vl_pago')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Pago{" "}
-                                                    {getSortIcon("vl_pago")}
+                                                    Pago{' '}
+                                                    {getSortIcon('vl_pago')}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("in_aceite")
+                                                    handleSort('in_aceite')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Aceite{" "}
-                                                    {getSortIcon("in_aceite")}
+                                                    Aceite{' '}
+                                                    {getSortIcon('in_aceite')}
                                                   </div>
                                                 </th>
                                                 <th
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
-                                                    handleSort("nr_parcela")
+                                                    handleSort('nr_parcela')
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Parcela{" "}
-                                                    {getSortIcon("nr_parcela")}
+                                                    Parcela{' '}
+                                                    {getSortIcon('nr_parcela')}
                                                   </div>
                                                 </th>
                                                 <th className="px-0.5 py-0.5 text-center text-[8px]">
@@ -6283,14 +6318,14 @@ const DespesasPorCategoria = ({
                                                   className="px-0.5 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                                                   onClick={() =>
                                                     handleSort(
-                                                      "tp_previsaoreal"
+                                                      'tp_previsaoreal',
                                                     )
                                                   }
                                                 >
                                                   <div className="flex items-center justify-center">
-                                                    Previsão{" "}
+                                                    Previsão{' '}
                                                     {getSortIcon(
-                                                      "tp_previsaoreal"
+                                                      'tp_previsaoreal',
                                                     )}
                                                   </div>
                                                 </th>
@@ -6303,7 +6338,7 @@ const DespesasPorCategoria = ({
                                                     item.indiceOriginal;
                                                   const isSelected =
                                                     linhasSelecionadas.has(
-                                                      indiceReal
+                                                      indiceReal,
                                                     );
                                                   const dadoItem =
                                                     item.grupo.item; // Acessar o item através do grupo
@@ -6313,14 +6348,14 @@ const DespesasPorCategoria = ({
                                                       key={`${dadoItem.cd_empresa}-${dadoItem.nr_duplicata}-${index}`}
                                                       className={`text-[8px] border-b transition-colors cursor-pointer ${
                                                         isSelected
-                                                          ? "bg-blue-100 hover:bg-blue-200"
+                                                          ? 'bg-blue-100 hover:bg-blue-200'
                                                           : index % 2 === 0
-                                                          ? "bg-white hover:bg-gray-100"
-                                                          : "bg-gray-50 hover:bg-gray-100"
+                                                          ? 'bg-white hover:bg-gray-100'
+                                                          : 'bg-gray-50 hover:bg-gray-100'
                                                       }`}
                                                       onClick={() =>
                                                         abrirModalDetalhes(
-                                                          dadoItem
+                                                          dadoItem,
                                                         )
                                                       }
                                                       title="Clique para ver detalhes da conta"
@@ -6328,14 +6363,14 @@ const DespesasPorCategoria = ({
                                                       <td
                                                         className="px-0.5 py-0.5 text-center"
                                                         style={{
-                                                          width: "30px",
-                                                          minWidth: "30px",
-                                                          position: "sticky",
+                                                          width: '30px',
+                                                          minWidth: '30px',
+                                                          position: 'sticky',
                                                           left: 0,
                                                           zIndex: 10,
                                                           background: isSelected
-                                                            ? "#dbeafe"
-                                                            : "inherit",
+                                                            ? '#dbeafe'
+                                                            : 'inherit',
                                                         }}
                                                       >
                                                         <input
@@ -6344,7 +6379,7 @@ const DespesasPorCategoria = ({
                                                           onChange={(e) => {
                                                             e.stopPropagation();
                                                             toggleLinhaSelecionada(
-                                                              indiceReal
+                                                              indiceReal,
                                                             );
                                                           }}
                                                           className="rounded w-3 h-3"
@@ -6355,24 +6390,24 @@ const DespesasPorCategoria = ({
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-center">
                                                         {formatarData(
-                                                          dadoItem.dt_vencimento
+                                                          dadoItem.dt_vencimento,
                                                         )}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-right font-medium text-green-600">
                                                         {parseFloat(
                                                           dadoItem.vl_duplicata ||
-                                                            0
+                                                            0,
                                                         ).toLocaleString(
-                                                          "pt-BR",
+                                                          'pt-BR',
                                                           {
-                                                            style: "currency",
-                                                            currency: "BRL",
-                                                          }
+                                                            style: 'currency',
+                                                            currency: 'BRL',
+                                                          },
                                                         )}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-center">
                                                         {dadoItem.cd_fornecedor ||
-                                                          ""}
+                                                          ''}
                                                       </td>
                                                       <td
                                                         className="px-0.5 py-0.5 text-left max-w-32 truncate"
@@ -6381,7 +6416,7 @@ const DespesasPorCategoria = ({
                                                         }
                                                       >
                                                         {dadoItem.nm_fornecedor ||
-                                                          ""}
+                                                          ''}
                                                       </td>
                                                       <td
                                                         className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32"
@@ -6390,7 +6425,7 @@ const DespesasPorCategoria = ({
                                                         }
                                                       >
                                                         {dadoItem.ds_despesaitem ||
-                                                          ""}
+                                                          ''}
                                                       </td>
                                                       <td
                                                         className="px-0.5 py-0.5 text-left max-w-48 truncate min-w-32"
@@ -6399,107 +6434,108 @@ const DespesasPorCategoria = ({
                                                         }
                                                       >
                                                         {dadoItem.ds_ccusto ||
-                                                          ""}
+                                                          ''}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-center">
                                                         {dadoItem.cd_empresa ||
-                                                          ""}
+                                                          ''}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-center">
                                                         {dadoItem.nr_duplicata ||
-                                                          ""}
+                                                          ''}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-center">
                                                         {dadoItem.nr_portador ||
-                                                          ""}
+                                                          ''}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-center">
                                                         {formatarData(
-                                                          dadoItem.dt_emissao
+                                                          dadoItem.dt_emissao,
                                                         )}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-center">
                                                         {formatarData(
-                                                          dadoItem.dt_entrada
+                                                          dadoItem.dt_entrada,
                                                         )}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-center">
                                                         {formatarData(
-                                                          dadoItem.dt_liq
+                                                          dadoItem.dt_liq,
                                                         )}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-center">
                                                         {dadoItem.tp_situacao ||
-                                                          ""}
+                                                          ''}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-center">
                                                         {dadoItem.tp_estagio ||
-                                                          ""}
+                                                          ''}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-right">
                                                         {parseFloat(
-                                                          dadoItem.vl_juros || 0
+                                                          dadoItem.vl_juros ||
+                                                            0,
                                                         ).toLocaleString(
-                                                          "pt-BR",
+                                                          'pt-BR',
                                                           {
-                                                            style: "currency",
-                                                            currency: "BRL",
-                                                          }
+                                                            style: 'currency',
+                                                            currency: 'BRL',
+                                                          },
                                                         )}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-right">
                                                         {parseFloat(
                                                           dadoItem.vl_acrescimo ||
-                                                            0
+                                                            0,
                                                         ).toLocaleString(
-                                                          "pt-BR",
+                                                          'pt-BR',
                                                           {
-                                                            style: "currency",
-                                                            currency: "BRL",
-                                                          }
+                                                            style: 'currency',
+                                                            currency: 'BRL',
+                                                          },
                                                         )}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-right">
                                                         {parseFloat(
                                                           dadoItem.vl_desconto ||
-                                                            0
+                                                            0,
                                                         ).toLocaleString(
-                                                          "pt-BR",
+                                                          'pt-BR',
                                                           {
-                                                            style: "currency",
-                                                            currency: "BRL",
-                                                          }
+                                                            style: 'currency',
+                                                            currency: 'BRL',
+                                                          },
                                                         )}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-right">
                                                         {parseFloat(
-                                                          dadoItem.vl_pago || 0
+                                                          dadoItem.vl_pago || 0,
                                                         ).toLocaleString(
-                                                          "pt-BR",
+                                                          'pt-BR',
                                                           {
-                                                            style: "currency",
-                                                            currency: "BRL",
-                                                          }
+                                                            style: 'currency',
+                                                            currency: 'BRL',
+                                                          },
                                                         )}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-center">
                                                         {dadoItem.in_aceite ||
-                                                          ""}
+                                                          ''}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-center">
                                                         {dadoItem.nr_parcela ||
-                                                          ""}
+                                                          ''}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-right">
                                                         {parseFloat(
                                                           dadoItem.vl_rateio ||
-                                                            0
+                                                            0,
                                                         ).toLocaleString(
-                                                          "pt-BR",
+                                                          'pt-BR',
                                                           {
-                                                            style: "currency",
-                                                            currency: "BRL",
-                                                          }
+                                                            style: 'currency',
+                                                            currency: 'BRL',
+                                                          },
                                                         )}
                                                       </td>
                                                       <td
@@ -6509,15 +6545,15 @@ const DespesasPorCategoria = ({
                                                         }
                                                       >
                                                         {dadoItem.ds_observacao ||
-                                                          ""}
+                                                          ''}
                                                       </td>
                                                       <td className="px-0.5 py-0.5 text-center">
                                                         {dadoItem.tp_previsaoreal ||
-                                                          ""}
+                                                          ''}
                                                       </td>
                                                     </tr>
                                                   );
-                                                }
+                                                },
                                               )}
                                             </tbody>
                                           </table>
@@ -6526,7 +6562,7 @@ const DespesasPorCategoria = ({
                                     )}
                                   </div>
                                 );
-                              }
+                              },
                             )}
                           </div>
                         )}
