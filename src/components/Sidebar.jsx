@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-import { 
-  UserGear, 
-  X, 
-  Money, 
-  Receipt, 
-  CreditCard, 
-  FileText, 
+import {
+  UserGear,
+  X,
+  Money,
+  Receipt,
+  CreditCard,
+  FileText,
   ChartLineUp,
   CheckCircle,
   Megaphone,
@@ -27,50 +27,192 @@ import {
   Eye,
   ChartBar,
   Target,
-  IdentificationCard
+  IdentificationCard,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
-const ChevronIcon = ({ open }) => (
-  open ? 
-    <CaretDown size={16} className="ml-auto transition-transform duration-200" /> : 
-    <CaretRight size={16} className="ml-auto transition-transform duration-200" />
-);
+const ChevronIcon = ({ open }) =>
+  open ? (
+    <CaretDown
+      size={16}
+      className="ml-auto transition-transform duration-200"
+    />
+  ) : (
+    <CaretRight
+      size={16}
+      className="ml-auto transition-transform duration-200"
+    />
+  );
 
 const financeiro = [
-  { name: 'Contas a Pagar', href: '/contas-a-pagar', icon: Money, color: 'text-red-600' },
-  { name: 'Contas a Receber', href: '/contas-a-receber', icon: Receipt, color: 'text-green-600' },
-  { name: 'Fluxo de Caixa', href: '/fluxo-caixa', icon: TrendUp, color: 'text-indigo-600' },
-  { name: 'Saldo Bancário', href: '/saldo-bancario', icon: Bank, color: 'text-cyan-600' },
-  { name: 'Importação .RET', href: '/importacao-ret', icon: FileText, color: 'text-teal-600' },
-  { name: 'Extrato Financeiro', href: '/extrato-financeiro', icon: CreditCard, color: 'text-blue-600' },
-  { name: 'Conciliação', href: '/conciliacao', icon: CheckCircle, color: 'text-green-600' },
-  { name: 'Saldo Bancário TOTVS', href: '/saldo-bancario-totvs', icon: Bank, color: 'text-blue-600' },
-  { name: 'DRE Demo', href: '/dre-demo', icon: ChartPieSlice, color: 'text-emerald-600' },
-  { name: 'Manifestação de NF', href: '/manifestacao-nf', icon: FileText, color: 'text-indigo-600' },
-  { name: 'Receita Líquida', href: '/receita-liquida', icon: ChartBar, color: 'text-purple-600' },
+  {
+    name: 'Contas a Pagar',
+    href: '/contas-a-pagar',
+    icon: Money,
+    color: 'text-red-600',
+  },
+  {
+    name: 'Contas a Receber',
+    href: '/contas-a-receber',
+    icon: Receipt,
+    color: 'text-green-600',
+  },
+  {
+    name: 'Fluxo de Caixa',
+    href: '/fluxo-caixa',
+    icon: TrendUp,
+    color: 'text-indigo-600',
+  },
+  {
+    name: 'Saldo Bancário',
+    href: '/saldo-bancario',
+    icon: Bank,
+    color: 'text-cyan-600',
+  },
+  {
+    name: 'Importação .RET',
+    href: '/importacao-ret',
+    icon: FileText,
+    color: 'text-teal-600',
+  },
+  {
+    name: 'Extrato Financeiro',
+    href: '/extrato-financeiro',
+    icon: CreditCard,
+    color: 'text-blue-600',
+  },
+  {
+    name: 'Conciliação',
+    href: '/conciliacao',
+    icon: CheckCircle,
+    color: 'text-green-600',
+  },
+  {
+    name: 'Saldo Bancário TOTVS',
+    href: '/saldo-bancario-totvs',
+    icon: Bank,
+    color: 'text-blue-600',
+  },
+  {
+    name: 'DRE Demo',
+    href: '/dre-demo',
+    icon: ChartPieSlice,
+    color: 'text-emerald-600',
+  },
+  {
+    name: 'Manifestação de NF',
+    href: '/manifestacao-nf',
+    icon: FileText,
+    color: 'text-indigo-600',
+  },
+  {
+    name: 'Receita Líquida',
+    href: '/receita-liquida',
+    icon: ChartBar,
+    color: 'text-purple-600',
+  },
 ];
 
 const faturamento = [
   { name: 'Varejo', href: '/varejo', icon: Storefront, color: 'text-blue-600' },
-  { name: 'Franquias', href: '/franquias', icon: Buildings, color: 'text-green-600' },
-  { name: 'Multimarcas', href: '/multimarcas', icon: TrendUp, color: 'text-purple-600' },
-  { name: 'Revenda', href: '/revenda', icon: ShoppingCart, color: 'text-orange-600' },
-  { name: 'Consolidado', href: '/consolidado', icon: ChartLineUp, color: 'text-indigo-600' },
-  { name: 'Auditoria CMV', href: '/auditoria-cmv', icon: FileText, color: 'text-indigo-600' },
+  {
+    name: 'Franquias',
+    href: '/franquias',
+    icon: Buildings,
+    color: 'text-green-600',
+  },
+  {
+    name: 'Multimarcas',
+    href: '/multimarcas',
+    icon: TrendUp,
+    color: 'text-purple-600',
+  },
+  {
+    name: 'Revenda',
+    href: '/revenda',
+    icon: ShoppingCart,
+    color: 'text-orange-600',
+  },
+  {
+    name: 'Consolidado',
+    href: '/consolidado',
+    icon: ChartLineUp,
+    color: 'text-indigo-600',
+  },
+  {
+    name: 'Auditoria CMV',
+    href: '/auditoria-cmv',
+    icon: FileText,
+    color: 'text-indigo-600',
+  },
+  {
+    name: 'CMV CONSOLIDADO',
+    href: '/cmv-consolidado',
+    icon: FileText,
+    color: 'text-indigo-600',
+  },
+  {
+    name: 'CMV Multimarcas',
+    href: '/cmv-multimarcas',
+    icon: FileText,
+    color: 'text-indigo-600',
+  },
+  {
+    name: 'CMV Revenda',
+    href: '/cmv-revenda',
+    icon: FileText,
+    color: 'text-indigo-600',
+  },
+  {
+    name: 'CMV Franquia',
+    href: '/cmv-franquia',
+    icon: FileText,
+    color: 'text-indigo-600',
+  },
+  {
+    name: 'CMV Varejo',
+    href: '/cmv-varejo',
+    icon: FileText,
+    color: 'text-indigo-600',
+  },
 ];
 
 const franquias = [
-  { name: 'Metas Varejo', href: '/metas-varejo', icon: Target, color: 'text-orange-600' },
-  { name: 'Compras Franquias', href: '/compras-franquias', icon: ShoppingCart, color: 'text-emerald-600' },
+  {
+    name: 'Metas Varejo',
+    href: '/metas-varejo',
+    icon: Target,
+    color: 'text-orange-600',
+  },
+  {
+    name: 'Compras Franquias',
+    href: '/compras-franquias',
+    icon: ShoppingCart,
+    color: 'text-emerald-600',
+  },
   { name: 'CREDEV', href: '/credev', icon: Buildings, color: 'text-blue-600' },
 ];
 
 // Sub-seção: Dashboard Financeiro (itens internos)
 const dashboardFinanceiro = [
-  { name: 'Financeiro por Canal', href: '/financeiro-por-canal', icon: ChartBar, color: 'text-purple-600' },
-  { name: 'Endividamento', href: '/endividamento', icon: ChartBar, color: 'text-purple-600' },
-  { name: 'PMR', href: '/dash-contas-a-receber', icon: ChartBar, color: 'text-purple-600' },
+  {
+    name: 'Financeiro por Canal',
+    href: '/financeiro-por-canal',
+    icon: ChartBar,
+    color: 'text-purple-600',
+  },
+  {
+    name: 'Endividamento',
+    href: '/endividamento',
+    icon: ChartBar,
+    color: 'text-purple-600',
+  },
+  {
+    name: 'PMR',
+    href: '/dash-contas-a-receber',
+    icon: ChartBar,
+    color: 'text-purple-600',
+  },
 ];
 
 const Sidebar = ({ isOpen, onClose, onToggle }) => {
@@ -136,30 +278,41 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const MenuItem = ({ item, isActive, level = 0 }) => {
     const IconComponent = item.icon;
     const paddingLeft = level === 0 ? 'pl-3' : 'pl-6';
-    
+
     return (
-      <button 
+      <button
         onClick={() => handleNavigation(item.href, item.external)}
         className={`
           w-full flex items-center gap-2 ${paddingLeft} pr-3 py-2 
           text-xs font-medium rounded-lg transition-all duration-200 font-barlow
-          ${isActive 
-            ? 'bg-gradient-to-r from-blue-50 to-blue-100 text-blue-700 border-r-2 border-blue-600' 
-            : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900'
+          ${
+            isActive
+              ? 'bg-gradient-to-r from-blue-50 to-blue-100 text-blue-700 border-r-2 border-blue-600'
+              : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900'
           }
         `}
       >
-        <IconComponent 
-          size={14} 
-          weight={isActive ? "fill" : "regular"}
+        <IconComponent
+          size={14}
+          weight={isActive ? 'fill' : 'regular'}
           className="text-gray-500"
         />
         <span className={`${isActive ? 'font-semibold' : ''}`}>
           {item.name}
         </span>
         {item.external && (
-          <svg className="ml-auto w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          <svg
+            className="ml-auto w-4 h-4 text-gray-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+            />
           </svg>
         )}
       </button>
@@ -167,9 +320,16 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
   };
 
   // Componente para seções colapsáveis
-  const MenuSection = ({ title, items, isOpen, onToggle, icon: SectionIcon, color = "text-gray-600" }) => (
+  const MenuSection = ({
+    title,
+    items,
+    isOpen,
+    onToggle,
+    icon: SectionIcon,
+    color = 'text-gray-600',
+  }) => (
     <div className="mb-2">
-        <button 
+      <button
         onClick={onToggle}
         className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 hover:bg-gray-200 group font-barlow"
       >
@@ -177,13 +337,13 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
         <span className="flex-1 text-left text-gray-800">{title}</span>
         <ChevronIcon open={isOpen} />
       </button>
-      
+
       {isOpen && (
         <div className="mt-2 space-y-1 animate-in slide-in-from-top-2 duration-200">
           {items.map((item) => (
-            <MenuItem 
-              key={item.name} 
-              item={item} 
+            <MenuItem
+              key={item.name}
+              item={item}
               isActive={location.pathname === item.href}
               level={1}
             />
@@ -195,7 +355,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
 
   const SidebarContent = () => {
     if (!user) return null;
-    
+
     // Função para obter o label do role
     const getRoleLabel = (role) => {
       const roleConfig = {
@@ -203,11 +363,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
         manager: 'Gerente',
         user: 'Usuário',
         guest: 'Varejo', // Alterado visualmente para Varejo
-        owner: 'Proprietário'
+        owner: 'Proprietário',
       };
       return roleConfig[role] || role;
     };
-    
+
     // Owner: acesso total
     if (user.role === 'owner') {
       return (
@@ -215,7 +375,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           {/* Header com logo e close button */}
           <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-3">
-              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
+              <img
+                src="/crosbyazul.png"
+                alt="Logo Crosby"
+                className="h-8 w-auto"
+              />
             </div>
             <button
               onClick={onClose}
@@ -228,19 +392,29 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           {/* Navigation */}
           <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
             {/* Dashboard/Home */}
-            <MenuItem 
-              item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
+            <MenuItem
+              item={{
+                name: 'Home',
+                href: '/home',
+                icon: House,
+                color: 'text-blue-600',
+              }}
               isActive={location.pathname === '/home'}
             />
 
             {/* Dashboard */}
-            <MenuItem 
-              item={{ name: 'Dashboard', href: '/dashboard', icon: ChartLineUp, color: 'text-indigo-600' }}
+            <MenuItem
+              item={{
+                name: 'Dashboard',
+                href: '/dashboard',
+                icon: ChartLineUp,
+                color: 'text-indigo-600',
+              }}
               isActive={location.pathname === '/dashboard'}
             />
 
             {/* Seções principais */}
-            <MenuSection 
+            <MenuSection
               title="Financeiro"
               items={financeiro}
               isOpen={financeiroOpen}
@@ -254,16 +428,16 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                   title="Dashboard Financeiro"
                   items={dashboardFinanceiro}
                   isOpen={dashboardFinanceiroOpen}
-                  onToggle={() => setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)}
+                  onToggle={() =>
+                    setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)
+                  }
                   icon={ChartBar}
                   color="text-purple-600"
                 />
               </div>
             )}
 
-            
-
-            <MenuSection 
+            <MenuSection
               title="CMV"
               items={faturamento}
               isOpen={faturamentoOpen}
@@ -272,7 +446,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               color="text-blue-600"
             />
 
-            <MenuSection 
+            <MenuSection
               title="Varejo"
               items={franquias}
               isOpen={franquiasOpen}
@@ -282,31 +456,54 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             />
 
             {/* VIGIA - item independente */}
-            <MenuItem 
-              item={{ name: 'Vigia', href: 'https://vigia.crosbytech.com.br/', icon: Eye, color: 'text-blue-600', external: true }}
+            <MenuItem
+              item={{
+                name: 'Vigia',
+                href: 'https://vigia.crosbytech.com.br/',
+                icon: Eye,
+                color: 'text-blue-600',
+                external: true,
+              }}
               isActive={false}
             />
-            
+
             {/* Clientes - item independente */}
-            <MenuItem 
-              item={{ name: 'Clientes', href: '/clientes', icon: IdentificationCard, color: 'text-blue-600' }}
+            <MenuItem
+              item={{
+                name: 'Clientes',
+                href: '/clientes',
+                icon: IdentificationCard,
+                color: 'text-blue-600',
+              }}
               isActive={location.pathname === '/clientes'}
             />
 
             {/* Ranking Faturamento - fora de seção */}
             <div className="pt-4 border-t border-gray-100">
-              <MenuItem 
-                item={{ name: 'Ranking Faturamento', href: '/ranking-faturamento', icon: Trophy, color: 'text-yellow-600' }}
+              <MenuItem
+                item={{
+                  name: 'Ranking Faturamento',
+                  href: '/ranking-faturamento',
+                  icon: Trophy,
+                  color: 'text-yellow-600',
+                }}
                 isActive={location.pathname === '/ranking-faturamento'}
               />
             </div>
-            
+
             {/* Seção Administrativa - apenas para owner */}
             {user.role === 'owner' && (
               <div className="pt-6 border-t border-gray-200">
-                <MenuSection 
+                <MenuSection
                   title="Administração"
-                  items={[{ name: 'Painel Admin', href: '/painel-admin', icon: UserGear, color: 'text-red-600' }]}
+                  items={[
+                    {
+                      name: 'Painel Admin',
+                      href: '/painel-admin',
+                      icon: UserGear,
+                      color: 'text-red-600',
+                    },
+                  ]}
                   isOpen={adminOpen}
                   onToggle={() => handleSectionToggle('admin')}
                   icon={Shield}
@@ -323,15 +520,19 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                 <UserGear size={16} className="text-blue-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate font-barlow">{user.email}</p>
-                <p className="text-xs text-gray-500 font-barlow">{getRoleLabel(user.role)}</p>
+                <p className="text-xs font-medium text-gray-900 truncate font-barlow">
+                  {user.email}
+                </p>
+                <p className="text-xs text-gray-500 font-barlow">
+                  {getRoleLabel(user.role)}
+                </p>
               </div>
             </div>
           </div>
         </div>
       );
     }
-    
+
     // Admin: acesso total (igual ao owner)
     if (user.role === 'admin') {
       return (
@@ -339,7 +540,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           {/* Header com logo e close button */}
           <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-3">
-              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
+              <img
+                src="/crosbyazul.png"
+                alt="Logo Crosby"
+                className="h-8 w-auto"
+              />
             </div>
             <button
               onClick={onClose}
@@ -352,19 +557,29 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           {/* Navigation */}
           <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
             {/* Dashboard/Home */}
-            <MenuItem 
-              item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
+            <MenuItem
+              item={{
+                name: 'Home',
+                href: '/home',
+                icon: House,
+                color: 'text-blue-600',
+              }}
               isActive={location.pathname === '/home'}
             />
 
             {/* Dashboard */}
-            <MenuItem 
-              item={{ name: 'Dashboard', href: '/dashboard', icon: ChartLineUp, color: 'text-indigo-600' }}
+            <MenuItem
+              item={{
+                name: 'Dashboard',
+                href: '/dashboard',
+                icon: ChartLineUp,
+                color: 'text-indigo-600',
+              }}
               isActive={location.pathname === '/dashboard'}
             />
 
             {/* Seções principais */}
-            <MenuSection 
+            <MenuSection
               title="Financeiro"
               items={financeiro}
               isOpen={financeiroOpen}
@@ -378,16 +593,16 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                   title="Dashboard Financeiro"
                   items={dashboardFinanceiro}
                   isOpen={dashboardFinanceiroOpen}
-                  onToggle={() => setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)}
+                  onToggle={() =>
+                    setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)
+                  }
                   icon={ChartBar}
                   color="text-purple-600"
                 />
               </div>
             )}
 
-            
-
-            <MenuSection 
+            <MenuSection
               title="CMV"
               items={faturamento}
               isOpen={faturamentoOpen}
@@ -396,7 +611,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               color="text-blue-600"
             />
 
-            <MenuSection 
+            <MenuSection
               title="Varejo"
               items={franquias}
               isOpen={franquiasOpen}
@@ -406,30 +621,53 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             />
 
             {/* VIGIA - item independente */}
-            <MenuItem 
-              item={{ name: 'VIGIA', href: 'https://vigia.crosbytech.com.br/', icon: Eye, color: 'text-blue-600', external: true }}
+            <MenuItem
+              item={{
+                name: 'VIGIA',
+                href: 'https://vigia.crosbytech.com.br/',
+                icon: Eye,
+                color: 'text-blue-600',
+                external: true,
+              }}
               isActive={false}
             />
-            
+
             {/* Clientes - item independente */}
-            <MenuItem 
-              item={{ name: 'Clientes', href: '/clientes', icon: IdentificationCard, color: 'text-blue-600' }}
+            <MenuItem
+              item={{
+                name: 'Clientes',
+                href: '/clientes',
+                icon: IdentificationCard,
+                color: 'text-blue-600',
+              }}
               isActive={location.pathname === '/clientes'}
             />
 
             {/* Ranking Faturamento - fora de seção */}
             <div className="pt-4 border-t border-gray-100">
-              <MenuItem 
-                item={{ name: 'Ranking Faturamento', href: '/ranking-faturamento', icon: Trophy, color: 'text-yellow-600' }}
+              <MenuItem
+                item={{
+                  name: 'Ranking Faturamento',
+                  href: '/ranking-faturamento',
+                  icon: Trophy,
+                  color: 'text-yellow-600',
+                }}
                 isActive={location.pathname === '/ranking-faturamento'}
               />
             </div>
-            
+
             {/* Seção Administrativa - apenas para owner e admin */}
             <div className="pt-6 border-t border-gray-200">
-              <MenuSection 
+              <MenuSection
                 title="Administração"
-                items={[{ name: 'Painel Admin', href: '/painel-admin', icon: UserGear, color: 'text-red-600' }]}
+                items={[
+                  {
+                    name: 'Painel Admin',
+                    href: '/painel-admin',
+                    icon: UserGear,
+                    color: 'text-red-600',
+                  },
+                ]}
                 isOpen={adminOpen}
                 onToggle={() => setAdminOpen(!adminOpen)}
                 icon={Shield}
@@ -445,15 +683,19 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                 <UserGear size={16} className="text-blue-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate font-barlow">{user.email}</p>
-                <p className="text-xs text-gray-500 font-barlow">{getRoleLabel(user.role)}</p>
+                <p className="text-xs font-medium text-gray-900 truncate font-barlow">
+                  {user.email}
+                </p>
+                <p className="text-xs text-gray-500 font-barlow">
+                  {getRoleLabel(user.role)}
+                </p>
               </div>
             </div>
           </div>
         </div>
       );
     }
-    
+
     // Manager: acesso total exceto administração
     if (user.role === 'manager') {
       return (
@@ -461,7 +703,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           {/* Header com logo e close button */}
           <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-3">
-              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
+              <img
+                src="/crosbyazul.png"
+                alt="Logo Crosby"
+                className="h-8 w-auto"
+              />
             </div>
             <button
               onClick={onClose}
@@ -474,19 +720,29 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           {/* Navigation */}
           <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
             {/* Dashboard/Home */}
-            <MenuItem 
-              item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
+            <MenuItem
+              item={{
+                name: 'Home',
+                href: '/home',
+                icon: House,
+                color: 'text-blue-600',
+              }}
               isActive={location.pathname === '/home'}
             />
 
             {/* Dashboard */}
-            <MenuItem 
-              item={{ name: 'Dashboard', href: '/dashboard', icon: ChartLineUp, color: 'text-indigo-600' }}
+            <MenuItem
+              item={{
+                name: 'Dashboard',
+                href: '/dashboard',
+                icon: ChartLineUp,
+                color: 'text-indigo-600',
+              }}
               isActive={location.pathname === '/dashboard'}
             />
 
             {/* Seção Financeiro */}
-            <MenuSection 
+            <MenuSection
               title="Financeiro"
               items={financeiro}
               isOpen={financeiroOpen}
@@ -500,16 +756,16 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                   title="Dashboard Financeiro"
                   items={dashboardFinanceiro}
                   isOpen={dashboardFinanceiroOpen}
-                  onToggle={() => setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)}
+                  onToggle={() =>
+                    setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)
+                  }
                   icon={ChartBar}
                   color="text-purple-600"
                 />
               </div>
             )}
 
-            
-
-            <MenuSection 
+            <MenuSection
               title="CMV"
               items={faturamento}
               isOpen={faturamentoOpen}
@@ -518,7 +774,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               color="text-blue-600"
             />
 
-            <MenuSection 
+            <MenuSection
               title="Varejo"
               items={franquias}
               isOpen={franquiasOpen}
@@ -528,21 +784,37 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             />
 
             {/* VIGIA - item independente */}
-            <MenuItem 
-              item={{ name: 'VIGIA', href: 'https://vigia.crosbytech.com.br/', icon: Eye, color: 'text-blue-600', external: true }}
+            <MenuItem
+              item={{
+                name: 'VIGIA',
+                href: 'https://vigia.crosbytech.com.br/',
+                icon: Eye,
+                color: 'text-blue-600',
+                external: true,
+              }}
               isActive={false}
             />
-            
+
             {/* Clientes - item independente */}
-            <MenuItem 
-              item={{ name: 'Clientes', href: '/clientes', icon: IdentificationCard, color: 'text-blue-600' }}
+            <MenuItem
+              item={{
+                name: 'Clientes',
+                href: '/clientes',
+                icon: IdentificationCard,
+                color: 'text-blue-600',
+              }}
               isActive={location.pathname === '/clientes'}
             />
 
             {/* Ranking Faturamento - fora de seção */}
             <div className="pt-4 border-t border-gray-100">
-              <MenuItem 
-                item={{ name: 'Ranking Faturamento', href: '/ranking-faturamento', icon: Trophy, color: 'text-yellow-600' }}
+              <MenuItem
+                item={{
+                  name: 'Ranking Faturamento',
+                  href: '/ranking-faturamento',
+                  icon: Trophy,
+                  color: 'text-yellow-600',
+                }}
                 isActive={location.pathname === '/ranking-faturamento'}
               />
             </div>
@@ -555,15 +827,19 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                 <UserGear size={16} className="text-blue-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate font-barlow">{user.email}</p>
-                <p className="text-xs text-gray-500 font-barlow">{getRoleLabel(user.role)}</p>
+                <p className="text-xs font-medium text-gray-900 truncate font-barlow">
+                  {user.email}
+                </p>
+                <p className="text-xs text-gray-500 font-barlow">
+                  {getRoleLabel(user.role)}
+                </p>
               </div>
             </div>
           </div>
         </div>
       );
     }
-    
+
     // User: acesso ao financeiro e franquias
     if (user.role === 'user') {
       return (
@@ -571,7 +847,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           {/* Header com logo e close button */}
           <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-3">
-              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
+              <img
+                src="/crosbyazul.png"
+                alt="Logo Crosby"
+                className="h-8 w-auto"
+              />
             </div>
             <button
               onClick={onClose}
@@ -584,19 +864,29 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           {/* Navigation */}
           <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
             {/* Dashboard/Home */}
-            <MenuItem 
-              item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
+            <MenuItem
+              item={{
+                name: 'Home',
+                href: '/home',
+                icon: House,
+                color: 'text-blue-600',
+              }}
               isActive={location.pathname === '/home'}
             />
 
             {/* Dashboard */}
-            <MenuItem 
-              item={{ name: 'Dashboard', href: '/dashboard', icon: ChartLineUp, color: 'text-indigo-600' }}
+            <MenuItem
+              item={{
+                name: 'Dashboard',
+                href: '/dashboard',
+                icon: ChartLineUp,
+                color: 'text-indigo-600',
+              }}
               isActive={location.pathname === '/dashboard'}
             />
 
             {/* Seção Financeiro */}
-            <MenuSection 
+            <MenuSection
               title="Financeiro"
               items={financeiro}
               isOpen={financeiroOpen}
@@ -610,7 +900,9 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                   title="Dashboard Financeiro"
                   items={dashboardFinanceiro}
                   isOpen={dashboardFinanceiroOpen}
-                  onToggle={() => setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)}
+                  onToggle={() =>
+                    setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)
+                  }
                   icon={ChartBar}
                   color="text-purple-600"
                 />
@@ -618,7 +910,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             )}
 
             {/* Seção CMV */}
-            <MenuSection 
+            <MenuSection
               title="CMV"
               items={faturamento}
               isOpen={faturamentoOpen}
@@ -628,7 +920,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             />
 
             {/* Seção Varejo */}
-            <MenuSection 
+            <MenuSection
               title="Varejo"
               items={franquias}
               isOpen={franquiasOpen}
@@ -645,15 +937,19 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                 <UserGear size={16} className="text-blue-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate font-barlow">{user.email}</p>
-                <p className="text-xs text-gray-500 font-barlow">{getRoleLabel(user.role)}</p>
+                <p className="text-xs font-medium text-gray-900 truncate font-barlow">
+                  {user.email}
+                </p>
+                <p className="text-xs text-gray-500 font-barlow">
+                  {getRoleLabel(user.role)}
+                </p>
               </div>
             </div>
           </div>
         </div>
       );
     }
-    
+
     // Guest (Varejo): acesso a franquias e ranking faturamento
     if (user.role === 'guest') {
       return (
@@ -661,7 +957,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           {/* Header com logo e close button */}
           <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-3">
-              <img src="/crosbyazul.png" alt="Logo Crosby" className="h-8 w-auto" />
+              <img
+                src="/crosbyazul.png"
+                alt="Logo Crosby"
+                className="h-8 w-auto"
+              />
             </div>
             <button
               onClick={onClose}
@@ -674,19 +974,29 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           {/* Navigation */}
           <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
             {/* Dashboard/Home */}
-            <MenuItem 
-              item={{ name: 'Home', href: '/home', icon: House, color: 'text-blue-600' }}
+            <MenuItem
+              item={{
+                name: 'Home',
+                href: '/home',
+                icon: House,
+                color: 'text-blue-600',
+              }}
               isActive={location.pathname === '/home'}
             />
 
             {/* Dashboard */}
-            <MenuItem 
-              item={{ name: 'Dashboard', href: '/dashboard', icon: ChartLineUp, color: 'text-indigo-600' }}
+            <MenuItem
+              item={{
+                name: 'Dashboard',
+                href: '/dashboard',
+                icon: ChartLineUp,
+                color: 'text-indigo-600',
+              }}
               isActive={location.pathname === '/dashboard'}
             />
 
             {/* Seção Varejo */}
-            <MenuSection 
+            <MenuSection
               title="Varejo"
               items={franquias}
               isOpen={franquiasOpen}
@@ -696,15 +1006,26 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             />
 
             {/* VIGIA - item independente */}
-            <MenuItem 
-              item={{ name: 'VIGIA', href: 'https://vigia.crosbytech.com.br/', icon: Eye, color: 'text-blue-600', external: true }}
+            <MenuItem
+              item={{
+                name: 'VIGIA',
+                href: 'https://vigia.crosbytech.com.br/',
+                icon: Eye,
+                color: 'text-blue-600',
+                external: true,
+              }}
               isActive={false}
             />
 
             {/* Ranking Faturamento */}
             <div className="pt-4 border-t border-gray-100">
-              <MenuItem 
-                item={{ name: 'Ranking Faturamento', href: '/ranking-faturamento', icon: Trophy, color: 'text-yellow-600' }}
+              <MenuItem
+                item={{
+                  name: 'Ranking Faturamento',
+                  href: '/ranking-faturamento',
+                  icon: Trophy,
+                  color: 'text-yellow-600',
+                }}
                 isActive={location.pathname === '/ranking-faturamento'}
               />
             </div>
@@ -717,15 +1038,19 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                 <UserGear size={16} className="text-blue-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate font-barlow">{user.email}</p>
-                <p className="text-xs text-gray-500 font-barlow">{getRoleLabel(user.role)}</p>
+                <p className="text-xs font-medium text-gray-900 truncate font-barlow">
+                  {user.email}
+                </p>
+                <p className="text-xs text-gray-500 font-barlow">
+                  {getRoleLabel(user.role)}
+                </p>
               </div>
             </div>
           </div>
         </div>
       );
     }
-    
+
     // Caso não reconhecido
     return null;
   };
@@ -735,7 +1060,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       {/* Mobile overlay */}
       {isOpen && (
         <div className="fixed inset-0 z-50 lg:hidden animate-in fade-in duration-500">
-          <div 
+          <div
             className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-all duration-500 ease-in-out"
             onClick={onClose}
           />
@@ -746,9 +1071,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       )}
 
       {/* Desktop sidebar - sempre visível em lg+ */}
-      <div className={`hidden lg:block lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 transform transition-all duration-500 ease-in-out ${
-        isOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}>
+      <div
+        className={`hidden lg:block lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 transform transition-all duration-500 ease-in-out ${
+          isOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
         <SidebarContent />
       </div>
     </>

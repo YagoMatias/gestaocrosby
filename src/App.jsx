@@ -25,7 +25,6 @@ const Multimarcas = lazy(() => import('./pages/Multimarcas'));
 const Revenda = lazy(() => import('./pages/Revenda'));
 const MetasVarejo = lazy(() => import('./pages/MetasVarejo'));
 
-
 const RankingFaturamento = lazy(() => import('./pages/RankingFaturamento'));
 const Consolidado = lazy(() => import('./pages/Consolidado'));
 const AuditoriaCMV = lazy(() => import('./pages/AuditoriaCMV'));
@@ -42,6 +41,11 @@ const FinanceiroPorCanal = lazy(() => import('./pages/FinanceiroPorCanal'));
 const Endividamento = lazy(() => import('./pages/Endividamento'));
 const ReceitaLiquida = lazy(() => import('./pages/ReceitaLiquida'));
 const PMR = lazy(() => import('./pages/pmr'));
+const CMVConsolidado = lazy(() => import('./pages/CMVConsolidado'));
+const CMVMultimarcas = lazy(() => import('./pages/CMVMultimarcas'));
+const CMVRevenda = lazy(() => import('./pages/CMVRevenda'));
+const CMVFranquia = lazy(() => import('./pages/CMVFranquia'));
+const CMVVarejo = lazy(() => import('./pages/CMVVarejo'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -70,55 +74,199 @@ const AppRoutes = memo(() => {
 
   // Lista de rotas protegidas (evita centenas de blocos repetidos)
   const protectedRoutes = [
-    { path: '/clientes', component: Clientes, roles: ['owner','admin','manager','user'] },
-    { path: '/financeiro-por-canal', component: FinanceiroPorCanal, roles: ['owner','admin','manager','user'] },
-    { path: '/endividamento', component: Endividamento, roles: ['owner','admin','manager','user'] },
-    { path: '/dash-contas-a-receber', component: PMR, roles: ['owner','admin','manager','user'] },
-    { path: '/conciliacao', component: Conciliacao, roles: ['owner','admin','manager','user'] },
-    { path: '/saldo-bancario-totvs', component: SaldoBancarioTotvs, roles: ['owner','admin','manager','user'] },
-    { path: '/home', component: Home, roles: ['admin','manager','user','guest','owner'] },
-    { path: '/dashboard', component: Dashboard, roles: ['admin','manager','user','guest','owner'] },
-    { path: '/contas-a-pagar', component: ContasAPagar, roles: ['owner','admin','manager','user'] },
-    { path: '/contas-a-receber', component: ContasAReceber, roles: ['owner','admin','manager','user'] },
-    { path: '/fluxo-caixa', component: FluxoCaixa, roles: ['owner','admin','manager','user'] },
-    { path: '/saldo-bancario', component: SaldoBancario, roles: ['owner','admin','manager','user'] },
-    { path: '/importacao-ret', component: ImportacaoRet, roles: ['owner','admin','manager','user'] },
-    { path: '/extrato-financeiro', component: ExtratoFinanceiro, roles: ['owner','admin','manager','user'] },
-    { path: '/receita-liquida', component: ReceitaLiquida, roles: ['owner','admin','manager','user'] },
-    { path: '/varejo', component: Varejo, roles: ['owner','admin','manager','user'] },
-    { path: '/metas-varejo', component: MetasVarejo, roles: ['owner','admin','manager','user'] },
-    { path: '/franquias', component: Franquias, roles: ['owner','admin','manager','user'] },
-    { path: '/multimarcas', component: Multimarcas, roles: ['owner','admin','manager','user'] },
-    { path: '/revenda', component: Revenda, roles: ['owner','admin','manager','user'] },
-    { path: '/dre-demo', component: DreDemo, roles: ['owner','admin','manager'] },
-    { path: '/manifestacao-nf', component: ManifestacaoNF, roles: ['owner','admin','manager','user'] },
-    { path: '/ranking-faturamento', component: RankingFaturamento, roles: ['admin','manager','guest','owner','user'] },
-    { path: '/consolidado', component: Consolidado, roles: ['owner','admin','manager','user'] },
-    { path: '/auditoria-cmv', component: AuditoriaCMV, roles: ['owner','admin','manager','user'] },
-    { path: '/compras-franquias', component: ComprasFranquias, roles: ['admin','manager','guest','owner','user'] },
-    { path: '/credev', component: Credev, roles: ['admin','manager','guest','owner','user'] },
+    {
+      path: '/clientes',
+      component: Clientes,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/financeiro-por-canal',
+      component: FinanceiroPorCanal,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/endividamento',
+      component: Endividamento,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/dash-contas-a-receber',
+      component: PMR,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/conciliacao',
+      component: Conciliacao,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/saldo-bancario-totvs',
+      component: SaldoBancarioTotvs,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/home',
+      component: Home,
+      roles: ['admin', 'manager', 'user', 'guest', 'owner'],
+    },
+    {
+      path: '/dashboard',
+      component: Dashboard,
+      roles: ['admin', 'manager', 'user', 'guest', 'owner'],
+    },
+    {
+      path: '/contas-a-pagar',
+      component: ContasAPagar,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/contas-a-receber',
+      component: ContasAReceber,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/fluxo-caixa',
+      component: FluxoCaixa,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/saldo-bancario',
+      component: SaldoBancario,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/importacao-ret',
+      component: ImportacaoRet,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/extrato-financeiro',
+      component: ExtratoFinanceiro,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/receita-liquida',
+      component: ReceitaLiquida,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/varejo',
+      component: Varejo,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/metas-varejo',
+      component: MetasVarejo,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/franquias',
+      component: Franquias,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/multimarcas',
+      component: Multimarcas,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/revenda',
+      component: Revenda,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/dre-demo',
+      component: DreDemo,
+      roles: ['owner', 'admin', 'manager'],
+    },
+    {
+      path: '/manifestacao-nf',
+      component: ManifestacaoNF,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/ranking-faturamento',
+      component: RankingFaturamento,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
+    {
+      path: '/consolidado',
+      component: Consolidado,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/auditoria-cmv',
+      component: AuditoriaCMV,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/cmv-consolidado',
+      component: CMVConsolidado,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/cmv-multimarcas',
+      component: CMVMultimarcas,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/cmv-revenda',
+      component: CMVRevenda,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/cmv-franquia',
+      component: CMVFranquia,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/cmv-varejo',
+      component: CMVVarejo,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/compras-franquias',
+      component: ComprasFranquias,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
+    {
+      path: '/credev',
+      component: Credev,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
     { path: '/painel-admin', component: PainelAdmin, roles: ['owner'] },
-    { path: '/user-panel', component: UserPanel, roles: ['admin','manager','user','guest','owner'] },
+    {
+      path: '/user-panel',
+      component: UserPanel,
+      roles: ['admin', 'manager', 'user', 'guest', 'owner'],
+    },
     { path: '/auth-test', component: AuthTest, roles: ['owner'] },
   ];
 
   // Componente de layout para rotas protegidas
   const ProtectedLayout = ({ Component, allowedRoles }) => (
-          <div className="h-screen flex">
-            <Sidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} onToggle={handleToggleSidebar} />
-            <div className="flex-1 flex flex-col">
-              <Header sidebarOpen={sidebarOpen} onToggleSidebar={handleToggleSidebar} />
+    <div className="h-screen flex">
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={handleCloseSidebar}
+        onToggle={handleToggleSidebar}
+      />
+      <div className="flex-1 flex flex-col">
+        <Header
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={handleToggleSidebar}
+        />
         <main
           className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
-                sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
+            sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
           }`}
         >
           <ErrorBoundary>
             {createPrivateRoute(Component, allowedRoles)}
           </ErrorBoundary>
-              </main>
-            </div>
-          </div>
+        </main>
+      </div>
+    </div>
   );
 
   return (
@@ -128,10 +276,12 @@ const AppRoutes = memo(() => {
 
       {/* Gera rotas protegidas dinamicamente */}
       {protectedRoutes.map(({ path, component, roles }) => (
-      <Route 
+        <Route
           key={path}
           path={path}
-          element={<ProtectedLayout Component={component} allowedRoles={roles} />}
+          element={
+            <ProtectedLayout Component={component} allowedRoles={roles} />
+          }
         />
       ))}
     </Routes>

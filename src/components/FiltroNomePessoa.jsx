@@ -1,23 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-const FiltroClassificacao = ({ classificacoesSelecionadas = [], onSelectClassificacoes, dadosClassificacao = [] }) => {
+const FiltroNomePessoa = ({ nomesPessoaSelecionados = [], onSelectNomesPessoa, dadosNomePessoa = [] }) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef(null);
 
-  // Filtrar classificações baseado no termo de busca
-  const classificacoesFiltradas = dadosClassificacao.filter(classificacao =>
-    classificacao.toLowerCase().includes(searchTerm.toLowerCase())
+  // Filtrar nomes de pessoa baseado no termo de busca
+  const nomesPessoaFiltrados = dadosNomePessoa.filter(nomePessoa =>
+    nomePessoa.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleToggleClassificacao = (classificacao) => {
-    let novasSelecionadas;
-    if (classificacoesSelecionadas.includes(classificacao)) {
-      novasSelecionadas = classificacoesSelecionadas.filter(c => c !== classificacao);
+  const handleToggleNomePessoa = (nomePessoa) => {
+    let novosSelecionados;
+    if (nomesPessoaSelecionados.includes(nomePessoa)) {
+      novosSelecionados = nomesPessoaSelecionados.filter(n => n !== nomePessoa);
     } else {
-      novasSelecionadas = [...classificacoesSelecionadas, classificacao];
+      novosSelecionados = [...nomesPessoaSelecionados, nomePessoa];
     }
-    if (onSelectClassificacoes) onSelectClassificacoes(novasSelecionadas);
+    if (onSelectNomesPessoa) onSelectNomesPessoa(novosSelecionados);
   };
 
   // Fechar dropdown quando clicar fora
@@ -36,24 +36,24 @@ const FiltroClassificacao = ({ classificacoesSelecionadas = [], onSelectClassifi
 
   return (
     <div className="flex flex-col relative" ref={dropdownRef}>
-      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Classificação</label>
+      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Nome Pessoa</label>
       
       {/* Botão do dropdown */}
       <button
         type="button"
         onClick={() => setShowDropdown(!showDropdown)}
-        disabled={dadosClassificacao.length === 0}
+        disabled={dadosNomePessoa.length === 0}
         className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-left flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed text-xs"
       >
         <span className="truncate">
-          {dadosClassificacao.length === 0 
-            ? 'Nenhuma classificação disponível' 
-            : classificacoesSelecionadas.length === 0 
-              ? 'Selecione as classificações' 
-              : `${classificacoesSelecionadas.length} classificação(ões) selecionada(s)`
+          {dadosNomePessoa.length === 0 
+            ? 'Nenhum nome disponível' 
+            : nomesPessoaSelecionados.length === 0 
+              ? 'Selecione os nomes' 
+              : `${nomesPessoaSelecionados.length} nome(s) selecionado(s)`
           }
         </span>
-        {dadosClassificacao.length === 0 ? (
+        {dadosNomePessoa.length === 0 ? (
           <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
           </svg>
@@ -76,7 +76,7 @@ const FiltroClassificacao = ({ classificacoesSelecionadas = [], onSelectClassifi
           <div className="p-3 border-b border-gray-200">
             <input
               type="text"
-              placeholder="Buscar classificação..."
+              placeholder="Buscar nome..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#000638] text-sm"
@@ -88,16 +88,16 @@ const FiltroClassificacao = ({ classificacoesSelecionadas = [], onSelectClassifi
             <button
               type="button"
               onClick={() => {
-                if (onSelectClassificacoes) onSelectClassificacoes([...dadosClassificacao]);
+                if (onSelectNomesPessoa) onSelectNomesPessoa([...dadosNomePessoa]);
               }}
               className="text-xs px-2 py-1 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors"
             >
-              Selecionar Todas
+              Selecionar Todos
             </button>
             <button
               type="button"
               onClick={() => {
-                if (onSelectClassificacoes) onSelectClassificacoes([]);
+                if (onSelectNomesPessoa) onSelectNomesPessoa([]);
               }}
               className="text-xs px-2 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
             >
@@ -105,30 +105,30 @@ const FiltroClassificacao = ({ classificacoesSelecionadas = [], onSelectClassifi
             </button>
           </div>
 
-          {/* Lista de classificações */}
+          {/* Lista de nomes */}
           <div className="w-full max-h-48 overflow-y-auto">
-            {dadosClassificacao.length === 0 ? (
+            {dadosNomePessoa.length === 0 ? (
               <div className="p-3 text-gray-500 text-sm text-center">
-                Nenhuma classificação disponível
+                Nenhum nome disponível
               </div>
-            ) : classificacoesFiltradas.length === 0 ? (
+            ) : nomesPessoaFiltrados.length === 0 ? (
               <div className="p-3 text-gray-500 text-sm text-center">
-                Nenhuma classificação encontrada
+                Nenhum nome encontrado
               </div>
             ) : (
-              classificacoesFiltradas.map((classificacao) => {
-                const isSelected = classificacoesSelecionadas.includes(classificacao);
+              nomesPessoaFiltrados.map((nomePessoa) => {
+                const isSelected = nomesPessoaSelecionados.includes(nomePessoa);
                 return (
                   <div
-                    key={classificacao}
+                    key={nomePessoa}
                     className={`px-2 py-2 hover:bg-gray-50 cursor-pointer flex items-start mb-1 ${
                       isSelected ? 'bg-blue-50' : ''
                     }`}
-                    onClick={() => handleToggleClassificacao(classificacao)}
+                    onClick={() => handleToggleNomePessoa(nomePessoa)}
                   >
                     <div className="flex flex-col flex-1">
                       <span className="text-xs font-medium text-gray-900">
-                        {classificacao}
+                        {nomePessoa}
                       </span>
                     </div>
                     <input
@@ -149,4 +149,4 @@ const FiltroClassificacao = ({ classificacoesSelecionadas = [], onSelectClassifi
   );
 };
 
-export default FiltroClassificacao;
+export default FiltroNomePessoa;

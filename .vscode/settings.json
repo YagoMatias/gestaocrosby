@@ -1,11 +1,9 @@
 {
-  "editor.fontFamily": "IBM Plex Mono, Monaco, Courier New, monospace",
-  "editor.fontSize": 14,
+  "editor.fontSize": 13,
   "editor.lineHeight": 28,
   "editor.tabSize": 2,
   "editor.tabCompletion": "on",
   "editor.wordWrap": "on",
-  "workbench.activityBar.visible": true,
   "liveServer.settings.donotShowInfoMsg": true,
   "liveServer.settings.donotVerifyTags": true,
   "explorer.confirmDragAndDrop": false,
@@ -24,7 +22,7 @@
   "telemetry.telemetryLevel": "off",
   "color-highlight.markerType": "dot-before",
   "editor.renderWhitespace": "selection",
-  "workbench.statusBar.visible": true,
+  "workbench.statusBar.visible": false,
   "prettier.trailingComma": "all",
   "[javascriptreact]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"

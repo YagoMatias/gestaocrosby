@@ -1,22 +1,34 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import DropdownContas from '../components/DropdownContas';
-import { contas } from "../utils/contas";
-import { 
-  ArrowsClockwise, 
-  CaretDown, 
-  CaretRight, 
-  ArrowCircleDown, 
-  ArrowCircleUp, 
-  Receipt, 
-  CheckCircle, 
-  XCircle, 
+import { contas } from '../utils/contas';
+import {
+  ArrowsClockwise,
+  CaretDown,
+  CaretRight,
+  ArrowCircleDown,
+  ArrowCircleUp,
+  Receipt,
+  CheckCircle,
+  XCircle,
   Question,
   CaretUp,
   CaretUpDown,
   Download,
-  Spinner
+  Spinner,
 } from '@phosphor-icons/react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from '../components/ui/cards';
 import LoadingCircle from '../components/LoadingCircle';
 import useApiClient from '../hooks/useApiClient';
 import ExtratoTotvsTable from '../components/ExtratoTotvsTable';
@@ -43,7 +55,17 @@ const ExtratoFinanceiro = () => {
   });
   const [expandTabela, setExpandTabela] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [modalContent, setModalContent] = useState({ title: '', description: '', calculation: '' });
+  const [modalContent, setModalContent] = useState({
+    title: '',
+    description: '',
+    calculation: '',
+  });
+
+  // Filtro de Mês/Ano (como no Contas a Pagar)
+  const [anoSelecionado, setAnoSelecionado] = useState(
+    new Date().getFullYear(),
+  );
+  const [mesSelecionado, setMesSelecionado] = useState(''); // '' (livre), 'ANO', ou '0'..'11'
 
   // Estados para paginação client-side
   const [currentPage, setCurrentPage] = useState(1);
@@ -51,11 +73,9 @@ const ExtratoFinanceiro = () => {
 
   // Estados para ordenação
   const [ordenacao, setOrdenacao] = useState({ campo: null, direcao: 'asc' });
-  
+
   // Estados para seleção de linhas
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
-  
-
 
   // CSS customizado para a tabela
   useEffect(() => {
@@ -145,28 +165,32 @@ const ExtratoFinanceiro = () => {
 
   // Hook para debounce do filtro de texto
 
-
   // Função para ordenação
   const handleSort = useCallback((campo) => {
-    setOrdenacao(prev => ({
+    setOrdenacao((prev) => ({
       campo,
-      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc'
+      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc',
     }));
   }, []);
 
   // Função para ícone de ordenação
-  const getSortIcon = useCallback((campo) => {
-    if (ordenacao.campo !== campo) {
-      return <CaretUpDown size={12} className="opacity-50" />;
-    }
-    return ordenacao.direcao === 'asc' ? 
-      <CaretUp size={12} /> : 
-      <CaretDown size={12} />;
-  }, [ordenacao]);
+  const getSortIcon = useCallback(
+    (campo) => {
+      if (ordenacao.campo !== campo) {
+        return <CaretUpDown size={12} className="opacity-50" />;
+      }
+      return ordenacao.direcao === 'asc' ? (
+        <CaretUp size={12} />
+      ) : (
+        <CaretDown size={12} />
+      );
+    },
+    [ordenacao],
+  );
 
   // Função para selecionar/deselecionar linha
   const toggleLinhaSelecionada = useCallback((index) => {
-    setLinhasSelecionadas(prev => {
+    setLinhasSelecionadas((prev) => {
       const nova = new Set(prev);
       if (nova.has(index)) {
         nova.delete(index);
@@ -260,11 +284,11 @@ const ExtratoFinanceiro = () => {
         dt_movim_ini: filtrosParam.dt_movim_ini,
         dt_movim_fim: filtrosParam.dt_movim_fim,
         limit: 1000000, // Buscar todos os dados de uma vez
-        offset: 0
+        offset: 0,
       };
 
       const result = await apiClient.financial.extrato(params);
-      
+
       if (result.success) {
         setDados(result.data || []);
         setTotal(result.total || 0);
@@ -280,7 +304,7 @@ const ExtratoFinanceiro = () => {
       setLoading(false);
       setDadosCarregados(true);
     }
-    
+
     // Buscar também dados do TOTVS
     setLoadingTotvs(true);
     setErroTotvs('');
@@ -290,11 +314,11 @@ const ExtratoFinanceiro = () => {
         dt_movim_ini: filtrosParam.dt_movim_ini,
         dt_movim_fim: filtrosParam.dt_movim_fim,
         limit: 1000000, // Buscar todos os dados de uma vez
-        offset: 0
+        offset: 0,
       };
 
       const resultTotvs = await apiClient.financial.extratoTotvs(params);
-      
+
       if (resultTotvs.success) {
         setDadosTotvs(resultTotvs.data || []);
         setTotalTotvs(resultTotvs.total || 0);
@@ -313,6 +337,31 @@ const ExtratoFinanceiro = () => {
 
   const handleChange = (e) => {
     setFiltros({ ...filtros, [e.target.name]: e.target.value });
+  };
+
+  // Aplica dt_inicio/dt_fim conforme ano/mês escolhidos
+  const aplicarPeriodoMes = (ano, mes) => {
+    if (!ano) return;
+    if (mes === 'ANO') {
+      const inicio = new Date(ano, 0, 1).toISOString().split('T')[0];
+      const fim = new Date(ano, 12, 0).toISOString().split('T')[0];
+      setFiltros((prev) => ({
+        ...prev,
+        dt_movim_ini: inicio,
+        dt_movim_fim: fim,
+      }));
+      return;
+    }
+    if (mes !== '' && !Number.isNaN(Number(mes))) {
+      const m = Number(mes);
+      const inicio = new Date(ano, m, 1).toISOString().split('T')[0];
+      const fim = new Date(ano, m + 1, 0).toISOString().split('T')[0];
+      setFiltros((prev) => ({
+        ...prev,
+        dt_movim_ini: inicio,
+        dt_movim_fim: fim,
+      }));
+    }
   };
 
   const handleContaCheckbox = (numero) => {
@@ -368,18 +417,23 @@ const ExtratoFinanceiro = () => {
       'Histórico',
       'Operação',
       'Valor',
-      'Data Conciliação'
+      'Data Conciliação',
     ];
-    const rows = dados.map(row => [
+    const rows = dados.map((row) => [
       row.nr_ctapes,
       formatarDataBR(row.dt_lancto),
       row.ds_histbco,
       row.tp_operbco,
-      row.vl_lancto !== null && row.vl_lancto !== undefined ? Number(row.vl_lancto).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-',
-      formatarDataBR(row.dt_conciliacao)
+      row.vl_lancto !== null && row.vl_lancto !== undefined
+        ? Number(row.vl_lancto).toLocaleString('pt-BR', {
+            style: 'currency',
+            currency: 'BRL',
+          })
+        : '-',
+      formatarDataBR(row.dt_conciliacao),
     ]);
     const csvContent = [header, ...rows]
-      .map(e => e.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .map((e) => e.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
       .join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -404,14 +458,30 @@ const ExtratoFinanceiro = () => {
 
   // Cálculos dos cards usando dados processados
   const estatisticas = useMemo(() => {
-    const qtdDebitos = dadosProcessados.filter(row => row.tp_operbco === 'D').length;
-    const valorDebitos = dadosProcessados.filter(row => row.tp_operbco === 'D').reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
-    const qtdCreditos = dadosProcessados.filter(row => row.tp_operbco === 'C').length;
-    const valorCreditos = dadosProcessados.filter(row => row.tp_operbco === 'C').reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
-    const qtdConciliadas = dadosProcessados.filter(row => !!row.dt_conciliacao).length;
-    const qtdDesconciliadas = dadosProcessados.filter(row => !row.dt_conciliacao).length;
-    const valorConciliadas = dadosProcessados.filter(row => !!row.dt_conciliacao).reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
-    const valorDesconciliadas = dadosProcessados.filter(row => !row.dt_conciliacao).reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+    const qtdDebitos = dadosProcessados.filter(
+      (row) => row.tp_operbco === 'D',
+    ).length;
+    const valorDebitos = dadosProcessados
+      .filter((row) => row.tp_operbco === 'D')
+      .reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+    const qtdCreditos = dadosProcessados.filter(
+      (row) => row.tp_operbco === 'C',
+    ).length;
+    const valorCreditos = dadosProcessados
+      .filter((row) => row.tp_operbco === 'C')
+      .reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+    const qtdConciliadas = dadosProcessados.filter(
+      (row) => !!row.dt_conciliacao,
+    ).length;
+    const qtdDesconciliadas = dadosProcessados.filter(
+      (row) => !row.dt_conciliacao,
+    ).length;
+    const valorConciliadas = dadosProcessados
+      .filter((row) => !!row.dt_conciliacao)
+      .reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+    const valorDesconciliadas = dadosProcessados
+      .filter((row) => !row.dt_conciliacao)
+      .reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
 
     return {
       qtdDebitos,
@@ -421,7 +491,7 @@ const ExtratoFinanceiro = () => {
       qtdConciliadas,
       qtdDesconciliadas,
       valorConciliadas,
-      valorDesconciliadas
+      valorDesconciliadas,
     };
   }, [dadosProcessados]);
 
@@ -442,16 +512,24 @@ const ExtratoFinanceiro = () => {
 
   // Cards TOTVs
   const estatisticasTotvs = useMemo(() => {
-  const qtdDebitosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'D').length;
-  const valorDebitosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'D').reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
-  const qtdCreditosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'C').length;
-  const valorCreditosTotvs = dadosTotvs.filter(row => row.tp_operacao === 'C').reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+    const qtdDebitosTotvs = dadosTotvs.filter(
+      (row) => row.tp_operacao === 'D',
+    ).length;
+    const valorDebitosTotvs = dadosTotvs
+      .filter((row) => row.tp_operacao === 'D')
+      .reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+    const qtdCreditosTotvs = dadosTotvs.filter(
+      (row) => row.tp_operacao === 'C',
+    ).length;
+    const valorCreditosTotvs = dadosTotvs
+      .filter((row) => row.tp_operacao === 'C')
+      .reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
 
     return {
       qtdDebitosTotvs,
       valorDebitosTotvs,
       qtdCreditosTotvs,
-      valorCreditosTotvs
+      valorCreditosTotvs,
     };
   }, [dadosTotvs]);
 
@@ -460,20 +538,21 @@ const ExtratoFinanceiro = () => {
   // Cálculo do saldo por conta
   const saldoPorConta = useMemo(() => {
     const saldo = {};
-    
+
     // Processar dados do extrato financeiro
-    dadosProcessados.forEach(row => {
+    dadosProcessados.forEach((row) => {
       const contaNumero = String(row.nr_ctapes);
       if (!saldo[contaNumero]) {
         saldo[contaNumero] = {
           numero: contaNumero,
-          nome: contas.find(c => c.numero === contaNumero)?.nome || contaNumero,
+          nome:
+            contas.find((c) => c.numero === contaNumero)?.nome || contaNumero,
           creditos: 0,
           debitos: 0,
           saldo: 0,
           creditosTotvs: 0,
           debitosTotvs: 0,
-          saldoExtrato: 0
+          saldoExtrato: 0,
         };
       }
 
@@ -482,22 +561,24 @@ const ExtratoFinanceiro = () => {
       } else if (row.tp_operbco === 'D') {
         saldo[contaNumero].debitos += parseFloat(row.vl_lancto) || 0;
       }
-      saldo[contaNumero].saldo = saldo[contaNumero].creditos - saldo[contaNumero].debitos;
+      saldo[contaNumero].saldo =
+        saldo[contaNumero].creditos - saldo[contaNumero].debitos;
     });
 
     // Processar dados do TOTVS
-    dadosTotvs.forEach(row => {
+    dadosTotvs.forEach((row) => {
       const contaNumero = String(row.nr_ctapes);
       if (!saldo[contaNumero]) {
         saldo[contaNumero] = {
           numero: contaNumero,
-          nome: contas.find(c => c.numero === contaNumero)?.nome || contaNumero,
+          nome:
+            contas.find((c) => c.numero === contaNumero)?.nome || contaNumero,
           creditos: 0,
           debitos: 0,
           saldo: 0,
           creditosTotvs: 0,
           debitosTotvs: 0,
-          saldoExtrato: 0
+          saldoExtrato: 0,
         };
       }
 
@@ -506,37 +587,61 @@ const ExtratoFinanceiro = () => {
       } else if (row.tp_operacao === 'D') {
         saldo[contaNumero].debitosTotvs += parseFloat(row.vl_lancto) || 0;
       }
-      saldo[contaNumero].saldoExtrato = saldo[contaNumero].creditosTotvs - saldo[contaNumero].debitosTotvs;
+      saldo[contaNumero].saldoExtrato =
+        saldo[contaNumero].creditosTotvs - saldo[contaNumero].debitosTotvs;
     });
-    
-    return Object.values(saldo).sort((a, b) => a.numero.localeCompare(b.numero));
+
+    return Object.values(saldo).sort((a, b) =>
+      a.numero.localeCompare(b.numero),
+    );
   }, [dadosProcessados, dadosTotvs, contas]);
 
   return (
-    <ErrorBoundary 
+    <ErrorBoundary
       message="Erro ao carregar a página de Extrato Financeiro"
-      onError={(error, errorInfo) => { 
-        console.error('ExtratoFinanceiro Error:', error, errorInfo); 
+      onError={(error, errorInfo) => {
+        console.error('ExtratoFinanceiro Error:', error, errorInfo);
       }}
     >
-    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
-        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Extrato Financeiro</h1>
+      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
+        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">
+          Extrato Financeiro
+        </h1>
         <div className="mb-4">
-          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
+          <form
+            onSubmit={handleFiltrar}
+            className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10"
+          >
             <div className="mb-6">
-              <span className="text-lg font-bold text-[#000638] flex items-center gap-2"><Receipt size={22} weight="bold" />Filtros</span>
-              <span className="text-sm text-gray-500 mt-1">Selecione o período e as contas para análise</span>
+              <span className="text-lg font-bold text-[#000638] flex items-center gap-2">
+                <Receipt size={22} weight="bold" />
+                Filtros
+              </span>
+              <span className="text-sm text-gray-500 mt-1">
+                Selecione o período e as contas para análise
+              </span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-x-3 gap-y-2 w-full mb-4">
               <div className="flex flex-col">
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Contas</label>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                  Contas
+                </label>
                 <DropdownContas
                   contas={contas}
-                  contasSelecionadas={Array.isArray(filtros.nr_ctapes) ? filtros.nr_ctapes : []}
-                  setContasSelecionadas={fn =>
-                    setFiltros(prev => ({
+                  contasSelecionadas={
+                    Array.isArray(filtros.nr_ctapes) ? filtros.nr_ctapes : []
+                  }
+                  setContasSelecionadas={(fn) =>
+                    setFiltros((prev) => ({
                       ...prev,
-                      nr_ctapes: typeof fn === 'function' ? fn(Array.isArray(prev.nr_ctapes) ? prev.nr_ctapes : []) : fn
+                      nr_ctapes:
+                        typeof fn === 'function'
+                          ? fn(
+                              Array.isArray(prev.nr_ctapes)
+                                ? prev.nr_ctapes
+                                : [],
+                            )
+                          : fn,
                     }))
                   }
                   minWidth={200}
@@ -546,18 +651,87 @@ const ExtratoFinanceiro = () => {
                   className="!bg-[#f8f9fb] !text-[#000638] !placeholder:text-gray-400 !px-3 !py-2 !w-full !rounded-lg !border !border-[#000638]/30 focus:!outline-none focus:!ring-2 focus:!ring-[#000638] !h-[42px] !text-base"
                 />
               </div>
+              {/* Seletor de Ano e Mês */}
               <div className="flex flex-col">
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Inicial</label>
-                <input type="date" name="dt_movim_ini" value={filtros.dt_movim_ini} onChange={handleChange} className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" />
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                  Ano
+                </label>
+                <select
+                  value={anoSelecionado}
+                  onChange={(e) => {
+                    const novoAno = Number(e.target.value);
+                    setAnoSelecionado(novoAno);
+                    aplicarPeriodoMes(novoAno, mesSelecionado);
+                  }}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                >
+                  {Array.from({ length: 6 }).map((_, idx) => {
+                    const y = new Date().getFullYear() - idx;
+                    return (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    );
+                  })}
+                </select>
               </div>
               <div className="flex flex-col">
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Final</label>
-                <input type="date" name="dt_movim_fim" value={filtros.dt_movim_fim} onChange={handleChange} className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" />
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                  Mês
+                </label>
+                <select
+                  value={mesSelecionado}
+                  onChange={(e) => {
+                    const novoMes = e.target.value;
+                    setMesSelecionado(novoMes);
+                    aplicarPeriodoMes(anoSelecionado, novoMes);
+                  }}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                >
+                  <option value="">— Selecionar —</option>
+                  <option value="ANO">Ano inteiro</option>
+                  <option value="0">Jan</option>
+                  <option value="1">Fev</option>
+                  <option value="2">Mar</option>
+                  <option value="3">Abr</option>
+                  <option value="4">Mai</option>
+                  <option value="5">Jun</option>
+                  <option value="6">Jul</option>
+                  <option value="7">Ago</option>
+                  <option value="8">Set</option>
+                  <option value="9">Out</option>
+                  <option value="10">Nov</option>
+                  <option value="11">Dez</option>
+                </select>
+              </div>
+              <div className="flex flex-col">
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                  Data Inicial
+                </label>
+                <input
+                  type="date"
+                  name="dt_movim_ini"
+                  value={filtros.dt_movim_ini}
+                  onChange={handleChange}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                  Data Final
+                </label>
+                <input
+                  type="date"
+                  name="dt_movim_fim"
+                  value={filtros.dt_movim_fim}
+                  onChange={handleChange}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                />
               </div>
             </div>
             <div className="flex justify-end w-full mt-1">
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 className="flex items-center gap-1 bg-[#000638] text-white px-5 py-2 rounded-lg hover:bg-[#fe0000] transition h-9 text-sm font-bold shadow tracking-wide uppercase min-w-[90px] disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={loading}
               >
@@ -570,7 +744,11 @@ const ExtratoFinanceiro = () => {
               </button>
             </div>
           </form>
-          {erro && <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{erro}</div>}
+          {erro && (
+            <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">
+              {erro}
+            </div>
+          )}
         </div>
         {/* (Removido: seção de transação desconciliada por banco) */}
         {/* Cards em linha, ainda menores */}
@@ -580,25 +758,42 @@ const ExtratoFinanceiro = () => {
             <CardHeader className="pb-0 px-1 pt-1">
               <div className="flex flex-row items-center gap-1">
                 <ArrowCircleDown size={15} className="text-[#fe0000]" />
-                <CardTitle className="text-xs font-bold text-[#fe0000]">Déb. Fin. (D)</CardTitle>
+                <CardTitle className="text-xs font-bold text-[#fe0000]">
+                  Déb. Fin. (D)
+                </CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-1 pl-2">
               <div className="text-lg font-extrabold text-[#fe0000] mb-0.5">
-                {loading ? <Spinner size={18} className="animate-spin text-[#fe0000]" /> : estatisticas.qtdDebitos}
+                {loading ? (
+                  <Spinner size={18} className="animate-spin text-[#fe0000]" />
+                ) : (
+                  estatisticas.qtdDebitos
+                )}
               </div>
-              <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
+              <CardDescription className="text-[10px] text-gray-500">
+                Qtd
+              </CardDescription>
               <div className="text-xs font-bold text-[#fe0000] mt-0.5">
-                {loading ? '...' : estatisticas.valorDebitos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {loading
+                  ? '...'
+                  : estatisticas.valorDebitos.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
               </div>
               <div className="flex justify-between items-center mt-1">
-                <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+                <CardDescription className="text-[10px] text-gray-500">
+                  Soma
+                </CardDescription>
                 <button
-                  onClick={() => showHelpModal(
-                    'Débitos Financeiros',
-                    'Mostra a quantidade e valor total de todas as movimentações de débito (D) no extrato financeiro.',
-                    'Dados referentes ao componente FCCFP023'
-                  )}
+                  onClick={() =>
+                    showHelpModal(
+                      'Débitos Financeiros',
+                      'Mostra a quantidade e valor total de todas as movimentações de débito (D) no extrato financeiro.',
+                      'Dados referentes ao componente FCCFP023',
+                    )
+                  }
                   className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
                 >
                   <Question size={10} className="text-gray-600" />
@@ -611,25 +806,42 @@ const ExtratoFinanceiro = () => {
             <CardHeader className="pb-0 px-1 pt-1">
               <div className="flex flex-row items-center gap-1">
                 <ArrowCircleUp size={15} className="text-green-600" />
-                <CardTitle className="text-xs font-bold text-green-600">Créd. Fin. (C)</CardTitle>
+                <CardTitle className="text-xs font-bold text-green-600">
+                  Créd. Fin. (C)
+                </CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-1 pl-2">
               <div className="text-lg font-extrabold text-green-600 mb-0.5">
-                {loading ? <Spinner size={18} className="animate-spin text-green-600" /> : estatisticas.qtdCreditos}
+                {loading ? (
+                  <Spinner size={18} className="animate-spin text-green-600" />
+                ) : (
+                  estatisticas.qtdCreditos
+                )}
               </div>
-              <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
+              <CardDescription className="text-[10px] text-gray-500">
+                Qtd
+              </CardDescription>
               <div className="text-xs font-bold text-green-600 mt-0.5">
-                {loading ? '...' : estatisticas.valorCreditos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {loading
+                  ? '...'
+                  : estatisticas.valorCreditos.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
               </div>
               <div className="flex justify-between items-center mt-1">
-                <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+                <CardDescription className="text-[10px] text-gray-500">
+                  Soma
+                </CardDescription>
                 <button
-                  onClick={() => showHelpModal(
-                    'Créditos Financeiros',
-                    'Mostra a quantidade e valor total de todas as movimentações de crédito (C) no extrato financeiro.',
-                    'Dados referentes ao componente FCCFP023'
-                  )}
+                  onClick={() =>
+                    showHelpModal(
+                      'Créditos Financeiros',
+                      'Mostra a quantidade e valor total de todas as movimentações de crédito (C) no extrato financeiro.',
+                      'Dados referentes ao componente FCCFP023',
+                    )
+                  }
                   className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
                 >
                   <Question size={10} className="text-gray-600" />
@@ -642,25 +854,42 @@ const ExtratoFinanceiro = () => {
             <CardHeader className="pb-0 px-1 pt-1">
               <div className="flex flex-row items-center gap-1">
                 <CheckCircle size={15} className="text-green-600" />
-                <CardTitle className="text-xs font-bold text-green-600">Conciliadas</CardTitle>
+                <CardTitle className="text-xs font-bold text-green-600">
+                  Conciliadas
+                </CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-1 pl-2">
               <div className="text-lg font-extrabold text-green-600 mb-0.5">
-                {loading ? <Spinner size={18} className="animate-spin text-green-600" /> : estatisticas.qtdConciliadas}
+                {loading ? (
+                  <Spinner size={18} className="animate-spin text-green-600" />
+                ) : (
+                  estatisticas.qtdConciliadas
+                )}
               </div>
-              <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
+              <CardDescription className="text-[10px] text-gray-500">
+                Qtd
+              </CardDescription>
               <div className="text-xs font-bold text-green-600 mt-0.5">
-                {loading ? '...' : estatisticas.valorConciliadas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {loading
+                  ? '...'
+                  : estatisticas.valorConciliadas.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
               </div>
               <div className="flex justify-between items-center mt-1">
-                <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+                <CardDescription className="text-[10px] text-gray-500">
+                  Soma
+                </CardDescription>
                 <button
-                  onClick={() => showHelpModal(
-                    'Transações Conciliadas',
-                    'Mostra a quantidade e valor total de todas as movimentações que já foram conciliadas com o sistema TOTVS.',
-                    'Dados referentes ao componente FCCFP023'
-                  )}
+                  onClick={() =>
+                    showHelpModal(
+                      'Transações Conciliadas',
+                      'Mostra a quantidade e valor total de todas as movimentações que já foram conciliadas com o sistema TOTVS.',
+                      'Dados referentes ao componente FCCFP023',
+                    )
+                  }
                   className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
                 >
                   <Question size={10} className="text-gray-600" />
@@ -673,25 +902,42 @@ const ExtratoFinanceiro = () => {
             <CardHeader className="pb-0 px-1 pt-1">
               <div className="flex flex-row items-center gap-1">
                 <XCircle size={15} className="text-[#fe0000]" />
-                <CardTitle className="text-xs font-bold text-[#fe0000]">Desconciliadas</CardTitle>
+                <CardTitle className="text-xs font-bold text-[#fe0000]">
+                  Desconciliadas
+                </CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-1 pl-2">
               <div className="text-lg font-extrabold text-[#fe0000] mb-0.5">
-                {loading ? <Spinner size={18} className="animate-spin text-[#fe0000]" /> : estatisticas.qtdDesconciliadas}
+                {loading ? (
+                  <Spinner size={18} className="animate-spin text-[#fe0000]" />
+                ) : (
+                  estatisticas.qtdDesconciliadas
+                )}
               </div>
-              <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
+              <CardDescription className="text-[10px] text-gray-500">
+                Qtd
+              </CardDescription>
               <div className="text-xs font-bold text-[#fe0000] mt-0.5">
-                {loading ? '...' : estatisticas.valorDesconciliadas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {loading
+                  ? '...'
+                  : estatisticas.valorDesconciliadas.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
               </div>
               <div className="flex justify-between items-center mt-1">
-                <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+                <CardDescription className="text-[10px] text-gray-500">
+                  Soma
+                </CardDescription>
                 <button
-                  onClick={() => showHelpModal(
-                    'Transações Desconciliadas',
-                    'Mostra a quantidade e valor total de todas as movimentações que estão pendentes de conciliação com o sistema TOTVS.',
-                    'Dados referentes ao componente FCCFP023'
-                  )}
+                  onClick={() =>
+                    showHelpModal(
+                      'Transações Desconciliadas',
+                      'Mostra a quantidade e valor total de todas as movimentações que estão pendentes de conciliação com o sistema TOTVS.',
+                      'Dados referentes ao componente FCCFP023',
+                    )
+                  }
                   className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
                 >
                   <Question size={10} className="text-gray-600" />
@@ -704,21 +950,36 @@ const ExtratoFinanceiro = () => {
             <CardHeader className="pb-0 px-1 pt-1">
               <div className="flex flex-row items-center gap-1">
                 <ArrowCircleDown size={15} className="text-[#fe0000]" />
-                <CardTitle className="text-xs font-bold text-[#fe0000]">Déb. TOTVs (D)</CardTitle>
+                <CardTitle className="text-xs font-bold text-[#fe0000]">
+                  Déb. TOTVs (D)
+                </CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-1 pl-2">
-              <div className="text-lg font-extrabold text-[#fe0000] mb-0.5">{estatisticasTotvs.qtdDebitosTotvs}</div>
-              <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
-              <div className="text-xs font-bold text-[#fe0000] mt-0.5">{estatisticasTotvs.valorDebitosTotvs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+              <div className="text-lg font-extrabold text-[#fe0000] mb-0.5">
+                {estatisticasTotvs.qtdDebitosTotvs}
+              </div>
+              <CardDescription className="text-[10px] text-gray-500">
+                Qtd
+              </CardDescription>
+              <div className="text-xs font-bold text-[#fe0000] mt-0.5">
+                {estatisticasTotvs.valorDebitosTotvs.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })}
+              </div>
               <div className="flex justify-between items-center mt-1">
-                <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+                <CardDescription className="text-[10px] text-gray-500">
+                  Soma
+                </CardDescription>
                 <button
-                  onClick={() => showHelpModal(
-                    'Débitos TOTVS',
-                    'Mostra a quantidade e valor total de todas as movimentações de débito (D) no sistema TOTVS.',
-                    'Dados referentes ao componente FCCFL004'
-                  )}
+                  onClick={() =>
+                    showHelpModal(
+                      'Débitos TOTVS',
+                      'Mostra a quantidade e valor total de todas as movimentações de débito (D) no sistema TOTVS.',
+                      'Dados referentes ao componente FCCFL004',
+                    )
+                  }
                   className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
                 >
                   <Question size={10} className="text-gray-600" />
@@ -731,21 +992,36 @@ const ExtratoFinanceiro = () => {
             <CardHeader className="pb-0 px-1 pt-1">
               <div className="flex flex-row items-center gap-1">
                 <ArrowCircleUp size={15} className="text-green-600" />
-                <CardTitle className="text-xs font-bold text-green-600">Créd. TOTVs (C)</CardTitle>
+                <CardTitle className="text-xs font-bold text-green-600">
+                  Créd. TOTVs (C)
+                </CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-1 pl-2">
-              <div className="text-lg font-extrabold text-green-600 mb-0.5">{estatisticasTotvs.qtdCreditosTotvs}</div>
-              <CardDescription className="text-[10px] text-gray-500">Qtd</CardDescription>
-              <div className="text-xs font-bold text-green-600 mt-0.5">{estatisticasTotvs.valorCreditosTotvs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+              <div className="text-lg font-extrabold text-green-600 mb-0.5">
+                {estatisticasTotvs.qtdCreditosTotvs}
+              </div>
+              <CardDescription className="text-[10px] text-gray-500">
+                Qtd
+              </CardDescription>
+              <div className="text-xs font-bold text-green-600 mt-0.5">
+                {estatisticasTotvs.valorCreditosTotvs.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })}
+              </div>
               <div className="flex justify-between items-center mt-1">
-                <CardDescription className="text-[10px] text-gray-500">Soma</CardDescription>
+                <CardDescription className="text-[10px] text-gray-500">
+                  Soma
+                </CardDescription>
                 <button
-                  onClick={() => showHelpModal(
-                    'Créditos TOTVS',
-                    'Mostra a quantidade e valor total de todas as movimentações de crédito (C) no sistema TOTVS.',
-                    'Dados referentes ao componente FCCFL004'
-                  )}
+                  onClick={() =>
+                    showHelpModal(
+                      'Créditos TOTVS',
+                      'Mostra a quantidade e valor total de todas as movimentações de crédito (C) no sistema TOTVS.',
+                      'Dados referentes ao componente FCCFL004',
+                    )
+                  }
                   className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
                 >
                   <Question size={10} className="text-gray-600" />
@@ -774,25 +1050,38 @@ const ExtratoFinanceiro = () => {
         {saldoPorConta.length > 0 && (
           <div className="rounded-2xl shadow-lg bg-white border border-[#000638]/10 mb-6">
             <div className="p-4 border-b border-[#000638]/10">
-              <h2 className="text-xl font-bold text-[#000638]">Saldo por Conta</h2>
+              <h2 className="text-xl font-bold text-[#000638]">
+                Saldo por Conta
+              </h2>
               <p className="text-sm text-gray-500 mt-1">
-                Resumo financeiro por conta (Créditos - Débitos) e Saldo do Extrato TOTVS
+                Resumo financeiro por conta (Créditos - Débitos) e Saldo do
+                Extrato TOTVS
               </p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead className="bg-[#000638] text-white">
                   <tr>
-                    <th className="px-4 py-3 text-left text-sm font-semibold">Conta</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold">Créditos</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold">Débitos</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold">Saldo</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold">Saldo Extrato</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold">
+                      Conta
+                    </th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold">
+                      Créditos
+                    </th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold">
+                      Débitos
+                    </th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold">
+                      Saldo
+                    </th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold">
+                      Saldo Extrato
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {saldoPorConta.map((conta, index) => (
-                    <tr 
+                    <tr
                       key={conta.numero}
                       className={`border-b ${
                         index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
@@ -804,33 +1093,43 @@ const ExtratoFinanceiro = () => {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-green-600">
-                        {conta.creditos.toLocaleString('pt-BR', { 
-                          style: 'currency', 
-                          currency: 'BRL' 
+                        {conta.creditos.toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
                         })}
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-red-600">
-                        {conta.debitos.toLocaleString('pt-BR', { 
-                          style: 'currency', 
-                          currency: 'BRL' 
+                        {conta.debitos.toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
                         })}
                       </td>
-                      <td className={`px-4 py-3 text-right font-bold ${
-                        conta.saldo > 0 ? 'text-green-600' : 
-                        conta.saldo < 0 ? 'text-red-600' : 'text-gray-600'
-                      }`}>
-                        {conta.saldo.toLocaleString('pt-BR', { 
-                          style: 'currency', 
-                          currency: 'BRL' 
+                      <td
+                        className={`px-4 py-3 text-right font-bold ${
+                          conta.saldo > 0
+                            ? 'text-green-600'
+                            : conta.saldo < 0
+                            ? 'text-red-600'
+                            : 'text-gray-600'
+                        }`}
+                      >
+                        {conta.saldo.toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
                         })}
                       </td>
-                      <td className={`px-4 py-3 text-right font-bold ${
-                        conta.saldoExtrato > 0 ? 'text-green-600' : 
-                        conta.saldoExtrato < 0 ? 'text-red-600' : 'text-gray-600'
-                      }`}>
-                        {conta.saldoExtrato.toLocaleString('pt-BR', { 
-                          style: 'currency', 
-                          currency: 'BRL' 
+                      <td
+                        className={`px-4 py-3 text-right font-bold ${
+                          conta.saldoExtrato > 0
+                            ? 'text-green-600'
+                            : conta.saldoExtrato < 0
+                            ? 'text-red-600'
+                            : 'text-gray-600'
+                        }`}
+                      >
+                        {conta.saldoExtrato.toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
                         })}
                       </td>
                     </tr>
@@ -838,36 +1137,68 @@ const ExtratoFinanceiro = () => {
                 </tbody>
                 <tfoot className="bg-gray-100 border-t-2 border-[#000638]">
                   <tr>
-                    <td className="px-4 py-3 font-bold text-[#000638]">TOTAL</td>
+                    <td className="px-4 py-3 font-bold text-[#000638]">
+                      TOTAL
+                    </td>
                     <td className="px-4 py-3 text-right font-bold text-green-600">
-                      {saldoPorConta.reduce((acc, conta) => acc + conta.creditos, 0).toLocaleString('pt-BR', { 
-                        style: 'currency', 
-                        currency: 'BRL' 
-                      })}
+                      {saldoPorConta
+                        .reduce((acc, conta) => acc + conta.creditos, 0)
+                        .toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        })}
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-red-600">
-                      {saldoPorConta.reduce((acc, conta) => acc + conta.debitos, 0).toLocaleString('pt-BR', { 
-                        style: 'currency', 
-                        currency: 'BRL' 
-                      })}
+                      {saldoPorConta
+                        .reduce((acc, conta) => acc + conta.debitos, 0)
+                        .toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        })}
                     </td>
-                    <td className={`px-4 py-3 text-right font-bold ${
-                      saldoPorConta.reduce((acc, conta) => acc + conta.saldo, 0) > 0 ? 'text-green-600' : 
-                      saldoPorConta.reduce((acc, conta) => acc + conta.saldo, 0) < 0 ? 'text-red-600' : 'text-gray-600'
-                    }`}>
-                      {saldoPorConta.reduce((acc, conta) => acc + conta.saldo, 0).toLocaleString('pt-BR', { 
-                        style: 'currency', 
-                        currency: 'BRL' 
-                      })}
+                    <td
+                      className={`px-4 py-3 text-right font-bold ${
+                        saldoPorConta.reduce(
+                          (acc, conta) => acc + conta.saldo,
+                          0,
+                        ) > 0
+                          ? 'text-green-600'
+                          : saldoPorConta.reduce(
+                              (acc, conta) => acc + conta.saldo,
+                              0,
+                            ) < 0
+                          ? 'text-red-600'
+                          : 'text-gray-600'
+                      }`}
+                    >
+                      {saldoPorConta
+                        .reduce((acc, conta) => acc + conta.saldo, 0)
+                        .toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        })}
                     </td>
-                    <td className={`px-4 py-3 text-right font-bold ${
-                      saldoPorConta.reduce((acc, conta) => acc + conta.saldoExtrato, 0) > 0 ? 'text-green-600' : 
-                      saldoPorConta.reduce((acc, conta) => acc + conta.saldoExtrato, 0) < 0 ? 'text-red-600' : 'text-gray-600'
-                    }`}>
-                      {saldoPorConta.reduce((acc, conta) => acc + conta.saldoExtrato, 0).toLocaleString('pt-BR', { 
-                        style: 'currency', 
-                        currency: 'BRL' 
-                      })}
+                    <td
+                      className={`px-4 py-3 text-right font-bold ${
+                        saldoPorConta.reduce(
+                          (acc, conta) => acc + conta.saldoExtrato,
+                          0,
+                        ) > 0
+                          ? 'text-green-600'
+                          : saldoPorConta.reduce(
+                              (acc, conta) => acc + conta.saldoExtrato,
+                              0,
+                            ) < 0
+                          ? 'text-red-600'
+                          : 'text-gray-600'
+                      }`}
+                    >
+                      {saldoPorConta
+                        .reduce((acc, conta) => acc + conta.saldoExtrato, 0)
+                        .toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        })}
                     </td>
                   </tr>
                 </tfoot>
@@ -879,11 +1210,16 @@ const ExtratoFinanceiro = () => {
         <div className="rounded-2xl shadow-lg bg-white border border-[#000638]/10">
           <div className="p-4 border-b border-[#000638]/10 flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold text-[#000638]">Detalhamento do Extrato Financeiro</h2>
+              <h2 className="text-xl font-bold text-[#000638]">
+                Detalhamento do Extrato Financeiro
+              </h2>
               {dadosProcessados.length > 0 && (
                 <p className="text-sm text-gray-500 mt-1">
-                  {dadosProcessados.length} movimentação{dadosProcessados.length > 1 ? 'ões' : ''} encontrada{dadosProcessados.length > 1 ? 's' : ''}
-                  {totalPages > 1 && ` - Página ${currentPage} de ${totalPages} (${PAGE_SIZE} por página)`}
+                  {dadosProcessados.length} movimentação
+                  {dadosProcessados.length > 1 ? 'ões' : ''} encontrada
+                  {dadosProcessados.length > 1 ? 's' : ''}
+                  {totalPages > 1 &&
+                    ` - Página ${currentPage} de ${totalPages} (${PAGE_SIZE} por página)`}
                 </p>
               )}
             </div>
@@ -891,10 +1227,14 @@ const ExtratoFinanceiro = () => {
               onClick={() => setExpandTabela(!expandTabela)}
               className="flex items-center text-gray-500 hover:text-gray-700"
             >
-              {expandTabela ? <CaretDown size={20} /> : <CaretRight size={20} />}
+              {expandTabela ? (
+                <CaretDown size={20} />
+              ) : (
+                <CaretRight size={20} />
+              )}
             </button>
           </div>
-          
+
           {expandTabela && (
             <>
               {loading ? (
@@ -907,29 +1247,47 @@ const ExtratoFinanceiro = () => {
               ) : !dadosCarregados ? (
                 <div className="flex justify-center items-center py-20">
                   <div className="text-center">
-                    <div className="text-gray-500 text-lg mb-2">Clique em "Filtrar" para carregar as informações</div>
-                    <div className="text-gray-400 text-sm">Selecione o período e as contas desejadas</div>
+                    <div className="text-gray-500 text-lg mb-2">
+                      Clique em "Filtrar" para carregar as informações
+                    </div>
+                    <div className="text-gray-400 text-sm">
+                      Selecione o período e as contas desejadas
+                    </div>
                   </div>
                 </div>
               ) : (
                 <>
                   <div className="table-container max-w-full mx-auto">
-                    <table 
+                    <table
                       className="border-collapse rounded-lg overflow-hidden shadow-lg extrato-table"
                       style={{ minWidth: '1200px' }}
                     >
                       <thead className="bg-[#000638] text-white text-xs uppercase tracking-wider">
                         <tr>
                           {/* Checkbox para seleção */}
-                          <th 
-                            className="px-2 py-1 text-center text-[10px]" 
-                            style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 20, backgroundColor: '#000638' }}
+                          <th
+                            className="px-2 py-1 text-center text-[10px]"
+                            style={{
+                              width: '50px',
+                              minWidth: '50px',
+                              position: 'sticky',
+                              left: 0,
+                              zIndex: 20,
+                              backgroundColor: '#000638',
+                            }}
                           >
                             <input
                               type="checkbox"
-                              checked={linhasSelecionadas.size === dadosProcessados.length && dadosProcessados.length > 0}
+                              checked={
+                                linhasSelecionadas.size ===
+                                  dadosProcessados.length &&
+                                dadosProcessados.length > 0
+                              }
                               onChange={() => {
-                                if (linhasSelecionadas.size === dadosProcessados.length) {
+                                if (
+                                  linhasSelecionadas.size ===
+                                  dadosProcessados.length
+                                ) {
                                   deselecionarTodasLinhas();
                                 } else {
                                   selecionarTodasLinhas();
@@ -938,9 +1296,9 @@ const ExtratoFinanceiro = () => {
                               className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
                             />
                           </th>
-                          
+
                           {/* Colunas ordenáveis */}
-                          <th 
+                          <th
                             className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                             onClick={() => handleSort('nr_ctapes')}
                           >
@@ -949,8 +1307,8 @@ const ExtratoFinanceiro = () => {
                               {getSortIcon('nr_ctapes')}
                             </div>
                           </th>
-                          
-                          <th 
+
+                          <th
                             className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                             onClick={() => handleSort('dt_lancto')}
                           >
@@ -959,8 +1317,8 @@ const ExtratoFinanceiro = () => {
                               {getSortIcon('dt_lancto')}
                             </div>
                           </th>
-                          
-                          <th 
+
+                          <th
                             className="px-3 py-1 text-left text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                             onClick={() => handleSort('ds_histbco')}
                           >
@@ -969,8 +1327,8 @@ const ExtratoFinanceiro = () => {
                               {getSortIcon('ds_histbco')}
                             </div>
                           </th>
-                          
-                          <th 
+
+                          <th
                             className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                             onClick={() => handleSort('tp_operbco')}
                           >
@@ -979,8 +1337,8 @@ const ExtratoFinanceiro = () => {
                               {getSortIcon('tp_operbco')}
                             </div>
                           </th>
-                          
-                          <th 
+
+                          <th
                             className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                             onClick={() => handleSort('vl_lancto')}
                           >
@@ -989,8 +1347,8 @@ const ExtratoFinanceiro = () => {
                               {getSortIcon('vl_lancto')}
                             </div>
                           </th>
-                          
-                          <th 
+
+                          <th
                             className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                             onClick={() => handleSort('dt_conciliacao')}
                           >
@@ -999,15 +1357,17 @@ const ExtratoFinanceiro = () => {
                               {getSortIcon('dt_conciliacao')}
                             </div>
                           </th>
-                    </tr>
-                  </thead>
-                      
+                        </tr>
+                      </thead>
+
                       <tbody>
                         {dadosPaginados.length === 0 ? (
                           <tr>
                             <td colSpan="7" className="text-center py-20">
                               <div className="text-center">
-                                <div className="text-gray-500 text-lg mb-2">Nenhum dado encontrado</div>
+                                <div className="text-gray-500 text-lg mb-2">
+                                  Nenhum dado encontrado
+                                </div>
                                 <div className="text-gray-400 text-sm">
                                   Verifique os filtros selecionados
                                 </div>
@@ -1016,97 +1376,126 @@ const ExtratoFinanceiro = () => {
                           </tr>
                         ) : (
                           dadosPaginados.map((row, index) => {
-                            const globalIndex = (currentPage - 1) * PAGE_SIZE + index;
+                            const globalIndex =
+                              (currentPage - 1) * PAGE_SIZE + index;
                             return (
-                            <tr
-                              key={globalIndex}
-                              className={`text-[11px] border-b transition-colors cursor-pointer ${
-                                linhasSelecionadas.has(globalIndex)
-                                  ? 'bg-blue-100 hover:bg-blue-200'
-                                  : index % 2 === 0
-                                  ? 'bg-white hover:bg-gray-100'
-                                  : 'bg-gray-50 hover:bg-gray-100'
-                              }`}
-                            >
-                              {/* Checkbox de seleção */}
-                              <td 
-                                className="px-2 py-1 text-center" 
-                                style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10 }}
-                                onClick={(e) => e.stopPropagation()}
+                              <tr
+                                key={globalIndex}
+                                className={`text-[11px] border-b transition-colors cursor-pointer ${
+                                  linhasSelecionadas.has(globalIndex)
+                                    ? 'bg-blue-100 hover:bg-blue-200'
+                                    : index % 2 === 0
+                                    ? 'bg-white hover:bg-gray-100'
+                                    : 'bg-gray-50 hover:bg-gray-100'
+                                }`}
                               >
-                                <input
-                                  type="checkbox"
-                                  checked={linhasSelecionadas.has(globalIndex)}
-                                  onChange={() => toggleLinhaSelecionada(globalIndex)}
-                                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                                />
-                              </td>
-                              
-                              {/* Conta */}
-                              <td className={`px-2 py-1 text-center text-xs ${(() => {
-                            const conta = contas.find(c => c.numero === String(row.nr_ctapes));
-                            return conta ? corConta(conta.nome) : '';
-                              })()}`}>
-                                {(() => {
-                              const conta = contas.find(c => c.numero === String(row.nr_ctapes));
-                              return conta ? `${conta.numero} - ${conta.nome}` : row.nr_ctapes;
-                                })()}
-                              </td>
-                              
-                              {/* Data Lançamento */}
-                              <td className="px-2 py-1 text-center text-[#000638] font-medium">
-                                {formatarDataBR(row.dt_lancto)}
-                              </td>
-                              
-                              {/* Histórico */}
-                              <td className="px-2 py-1 text-gray-800">
-                                <div className="max-w-xs truncate" title={row.ds_histbco}>
-                                  {row.ds_histbco}
-                                </div>
-                              </td>
-                              
-                              {/* Operação */}
-                              <td className="px-2 py-1 text-center">
-                                <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                                  row.tp_operbco === 'D' 
-                                    ? 'bg-red-100 text-red-800' 
-                                    : row.tp_operbco === 'C' 
-                                    ? 'bg-green-100 text-green-800' 
-                                    : 'bg-gray-100 text-gray-800'
-                                }`}>
-                                  {row.tp_operbco}
-                                </span>
-                              </td>
-                              
-                              {/* Valor */}
-                              <td className={`px-2 py-1 text-right font-bold ${
-                                row.tp_operbco === 'D' ? 'text-red-600' : 
-                                row.tp_operbco === 'C' ? 'text-green-600' : 'text-gray-600'
-                              }`}>
-                                {row.vl_lancto?.toLocaleString('pt-BR', { 
-                                  style: 'currency', 
-                                  currency: 'BRL' 
-                                })}
-                              </td>
-                              
-                              {/* Data Conciliação */}
-                              <td className="px-2 py-1 text-center">
-                                {row.dt_conciliacao ? (
-                                  <span className="text-green-600 font-medium">
-                                    {formatarDataBR(row.dt_conciliacao)}
+                                {/* Checkbox de seleção */}
+                                <td
+                                  className="px-2 py-1 text-center"
+                                  style={{
+                                    width: '50px',
+                                    minWidth: '50px',
+                                    position: 'sticky',
+                                    left: 0,
+                                    zIndex: 10,
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={linhasSelecionadas.has(
+                                      globalIndex,
+                                    )}
+                                    onChange={() =>
+                                      toggleLinhaSelecionada(globalIndex)
+                                    }
+                                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                                  />
+                                </td>
+
+                                {/* Conta */}
+                                <td
+                                  className={`px-2 py-1 text-center text-xs ${(() => {
+                                    const conta = contas.find(
+                                      (c) => c.numero === String(row.nr_ctapes),
+                                    );
+                                    return conta ? corConta(conta.nome) : '';
+                                  })()}`}
+                                >
+                                  {(() => {
+                                    const conta = contas.find(
+                                      (c) => c.numero === String(row.nr_ctapes),
+                                    );
+                                    return conta
+                                      ? `${conta.numero} - ${conta.nome}`
+                                      : row.nr_ctapes;
+                                  })()}
+                                </td>
+
+                                {/* Data Lançamento */}
+                                <td className="px-2 py-1 text-center text-[#000638] font-medium">
+                                  {formatarDataBR(row.dt_lancto)}
+                                </td>
+
+                                {/* Histórico */}
+                                <td className="px-2 py-1 text-gray-800">
+                                  <div
+                                    className="max-w-xs truncate"
+                                    title={row.ds_histbco}
+                                  >
+                                    {row.ds_histbco}
+                                  </div>
+                                </td>
+
+                                {/* Operação */}
+                                <td className="px-2 py-1 text-center">
+                                  <span
+                                    className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                      row.tp_operbco === 'D'
+                                        ? 'bg-red-100 text-red-800'
+                                        : row.tp_operbco === 'C'
+                                        ? 'bg-green-100 text-green-800'
+                                        : 'bg-gray-100 text-gray-800'
+                                    }`}
+                                  >
+                                    {row.tp_operbco}
                                   </span>
-                                ) : (
-                                  <span className="text-red-500 font-medium">
-                                    Pendente
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })
-                    )}
-                  </tbody>
-                </table>
+                                </td>
+
+                                {/* Valor */}
+                                <td
+                                  className={`px-2 py-1 text-right font-bold ${
+                                    row.tp_operbco === 'D'
+                                      ? 'text-red-600'
+                                      : row.tp_operbco === 'C'
+                                      ? 'text-green-600'
+                                      : 'text-gray-600'
+                                  }`}
+                                >
+                                  {row.vl_lancto?.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })}
+                                </td>
+
+                                {/* Data Conciliação */}
+                                <td className="px-2 py-1 text-center">
+                                  {row.dt_conciliacao ? (
+                                    <span className="text-green-600 font-medium">
+                                      {formatarDataBR(row.dt_conciliacao)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-red-500 font-medium">
+                                      Pendente
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
                   </div>
 
                   {/* Resumo das linhas selecionadas */}
@@ -1117,18 +1506,27 @@ const ExtratoFinanceiro = () => {
                           <div className="flex items-center gap-2">
                             <CheckCircle className="w-5 h-5 text-blue-600" />
                             <span className="text-sm font-medium text-blue-800">
-                              {linhasSelecionadas.size} linha{linhasSelecionadas.size > 1 ? 's' : ''} selecionada{linhasSelecionadas.size > 1 ? 's' : ''}
+                              {linhasSelecionadas.size} linha
+                              {linhasSelecionadas.size > 1 ? 's' : ''}{' '}
+                              selecionada
+                              {linhasSelecionadas.size > 1 ? 's' : ''}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <Receipt className="w-5 h-5 text-green-600" />
                             <span className="text-sm font-medium text-green-800">
-                              Total: {Array.from(linhasSelecionadas).reduce((acc, index) => {
-                                return acc + (dadosProcessados[index]?.vl_lancto || 0);
-                              }, 0).toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL',
-                              })}
+                              Total:{' '}
+                              {Array.from(linhasSelecionadas)
+                                .reduce((acc, index) => {
+                                  return (
+                                    acc +
+                                    (dadosProcessados[index]?.vl_lancto || 0)
+                                  );
+                                }, 0)
+                                .toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                })}
                             </span>
                           </div>
                         </div>
@@ -1185,9 +1583,15 @@ const ExtratoFinanceiro = () => {
                     {(() => {
                       const pages = [];
                       const maxVisiblePages = 5;
-                      let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
-                      let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
-                      
+                      let startPage = Math.max(
+                        1,
+                        currentPage - Math.floor(maxVisiblePages / 2),
+                      );
+                      let endPage = Math.min(
+                        totalPages,
+                        startPage + maxVisiblePages - 1,
+                      );
+
                       if (endPage - startPage + 1 < maxVisiblePages) {
                         startPage = Math.max(1, endPage - maxVisiblePages + 1);
                       }
@@ -1205,7 +1609,7 @@ const ExtratoFinanceiro = () => {
                             } disabled:opacity-50 disabled:cursor-not-allowed`}
                           >
                             {i}
-                          </button>
+                          </button>,
                         );
                       }
                       return pages;
@@ -1250,7 +1654,6 @@ const ExtratoFinanceiro = () => {
           onPageChange={handlePageChangeTotvs}
           pageSize={PAGE_SIZE}
         />
-
       </div>
 
       {/* Modal de Ajuda */}
@@ -1258,7 +1661,9 @@ const ExtratoFinanceiro = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-800">{modalContent.title}</h3>
+              <h3 className="text-lg font-bold text-gray-800">
+                {modalContent.title}
+              </h3>
               <button
                 onClick={closeModal}
                 className="text-gray-500 hover:text-gray-700 text-xl font-bold"
@@ -1267,9 +1672,13 @@ const ExtratoFinanceiro = () => {
               </button>
             </div>
             <div className="mb-4">
-              <p className="text-sm text-gray-600 mb-2">{modalContent.description}</p>
+              <p className="text-sm text-gray-600 mb-2">
+                {modalContent.description}
+              </p>
               <div className="bg-gray-100 p-3 rounded">
-                <p className="text-xs text-gray-700 font-mono">{modalContent.calculation}</p>
+                <p className="text-xs text-gray-700 font-mono">
+                  {modalContent.calculation}
+                </p>
               </div>
             </div>
             <button
@@ -1285,4 +1694,4 @@ const ExtratoFinanceiro = () => {
   );
 };
 
-export default ExtratoFinanceiro; 
+export default ExtratoFinanceiro;
