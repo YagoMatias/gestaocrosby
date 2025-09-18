@@ -1,7 +1,46 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import useApiClient from '../hooks/useApiClient';
 import PageTitle from '../components/ui/PageTitle';
 import { ChartLineUp } from '@phosphor-icons/react';
+
+// Cache em memória (sobrevive durante a sessão)
+const memoryCache = new Map();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+
+const buildCacheKey = (routeName, params) => {
+  // Normaliza objeto para chave estável
+  const stable = JSON.stringify(params, Object.keys(params).sort());
+  return `${routeName}::${stable}`;
+};
+
+const readCache = (key) => {
+  // 1) memória
+  if (memoryCache.has(key)) {
+    const entry = memoryCache.get(key);
+    if (Date.now() - entry.ts < CACHE_TTL_MS) return entry.data;
+  }
+  // 2) localStorage
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.ts && Date.now() - parsed.ts < CACHE_TTL_MS) {
+        // re-hidrata memória
+        memoryCache.set(key, { data: parsed.data, ts: parsed.ts });
+        return parsed.data;
+      }
+    }
+  } catch {}
+  return null;
+};
+
+const writeCache = (key, data) => {
+  const entry = { data, ts: Date.now() };
+  memoryCache.set(key, entry);
+  try {
+    localStorage.setItem(key, JSON.stringify(entry));
+  } catch {}
+};
 
 const CMVConsolidado = () => {
   const api = useApiClient();
@@ -10,20 +49,43 @@ const CMVConsolidado = () => {
   const [dados, setDados] = useState([]);
   const [dadosVarejo, setDadosVarejo] = useState([]);
 
+  // Evitar race condition entre buscas
+  const lastRequestIdRef = useRef(0);
+
   const [filtros, setFiltros] = useState({
     dt_inicio: '',
     dt_fim: '',
     empresas: [],
-    nr_transacao: '',
-    cd_pessoa: '',
-    cd_empresa: '',
   });
 
   // Filtro de Mês/Ano (igual Contas a Receber)
-  const [filtroMensal, setFiltroMensal] = useState('ANO');
-  const [filtroDia, setFiltroDia] = useState(null);
+  const [filtroMensal, setFiltroMensal] = useState(() => {
+    try {
+      return localStorage.getItem('cmvconsolidado:filtroMensal') || 'ANO';
+    } catch {
+      return 'ANO';
+    }
+  });
+  const [filtroDia, setFiltroDia] = useState(() => {
+    try {
+      const raw = localStorage.getItem('cmvconsolidado:filtroDia');
+      return raw === null ? null : JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  });
 
   useEffect(() => {
+    // Hidrata filtros do localStorage, se existirem
+    try {
+      const saved = localStorage.getItem('cmvconsolidado:filtros');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setFiltros((f) => ({ ...f, ...parsed }));
+        return;
+      }
+    } catch {}
+    // Default: mês atual
     const hoje = new Date();
     const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
       .toISOString()
@@ -33,6 +95,28 @@ const CMVConsolidado = () => {
       .split('T')[0];
     setFiltros((f) => ({ ...f, dt_inicio: primeiroDia, dt_fim: ultimoDia }));
   }, []);
+
+  // Persiste filtros e período
+  useEffect(() => {
+    try {
+      localStorage.setItem('cmvconsolidado:filtros', JSON.stringify(filtros));
+    } catch {}
+  }, [filtros]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('cmvconsolidado:filtroMensal', filtroMensal);
+    } catch {}
+  }, [filtroMensal]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'cmvconsolidado:filtroDia',
+        JSON.stringify(filtroDia),
+      );
+    } catch {}
+  }, [filtroDia]);
 
   const buscar = async () => {
     try {
@@ -46,13 +130,6 @@ const CMVConsolidado = () => {
       };
       if (Array.isArray(filtros.empresas) && filtros.empresas.length > 0) {
         params.cd_empresa = filtros.empresas;
-      }
-
-      if (filtros.nr_transacao && String(filtros.nr_transacao).trim() !== '') {
-        params.nr_transacao = String(filtros.nr_transacao).trim();
-      }
-      if (filtros.cd_pessoa && String(filtros.cd_pessoa).trim() !== '') {
-        params.cd_pessoa = String(filtros.cd_pessoa).trim();
       }
 
       // Fetch consolidado (classificações 2,3,4) e varejo em paralelo
@@ -77,6 +154,19 @@ const CMVConsolidado = () => {
         cd_empresa: empresasFixasVarejo,
       };
 
+      // Chaves de cache
+      const keyConsol = buildCacheKey('cmvtest', params);
+      const keyVarejo = buildCacheKey('faturamento', paramsVarejo);
+
+      // SWR: mostra cache imediatamente se existir
+      const cachedConsol = readCache(keyConsol);
+      const cachedVarejo = readCache(keyVarejo);
+      if (cachedConsol) setDados(cachedConsol);
+      if (cachedVarejo) setDadosVarejo(cachedVarejo);
+
+      // Controle de corrida
+      const reqId = ++lastRequestIdRef.current;
+
       const [respConsolidado, respVarejo] = await Promise.all([
         api.sales.cmvtest(params),
         api.sales.faturamento(paramsVarejo),
@@ -84,27 +174,33 @@ const CMVConsolidado = () => {
 
       if (!respConsolidado.success) {
         setErro(respConsolidado.message || 'Falha ao carregar dados');
-        setDados([]);
+        if (!cachedConsol) setDados([]);
       } else {
         const lista = Array.isArray(respConsolidado?.data?.data)
           ? respConsolidado.data.data
           : Array.isArray(respConsolidado?.data)
           ? respConsolidado.data
           : [];
-        setDados(lista);
+        if (reqId === lastRequestIdRef.current) {
+          setDados(lista);
+          writeCache(keyConsol, lista);
+        }
       }
 
       if (!respVarejo.success) {
         // mantém erro informativo mas não bloqueia os dados de consolidado
         console.warn('Falha ao carregar varejo:', respVarejo.message);
-        setDadosVarejo([]);
+        if (!cachedVarejo) setDadosVarejo([]);
       } else {
         const listaVar = Array.isArray(respVarejo?.data?.data)
           ? respVarejo.data.data
           : Array.isArray(respVarejo?.data)
           ? respVarejo.data
           : [];
-        setDadosVarejo(listaVar);
+        if (reqId === lastRequestIdRef.current) {
+          setDadosVarejo(listaVar);
+          writeCache(keyVarejo, listaVar);
+        }
       }
     } catch (e) {
       setErro('Erro ao buscar dados');
@@ -229,49 +325,11 @@ const CMVConsolidado = () => {
 
   // Filtragem em memória (como "duplicata" em Contas a Pagar)
   const dadosFiltrados = useMemo(() => {
-    const termoNr = String(filtros.nr_transacao || '').trim();
-    const termoPessoa = String(filtros.cd_pessoa || '').trim();
-    const termoEmpresa = String(filtros.cd_empresa || '').trim();
-
-    let dadosFiltrados = dados;
-
-    // Aplicar filtros de texto primeiro
-    if (termoNr || termoPessoa || termoEmpresa) {
-      dadosFiltrados = dados.filter((row) => {
-        let ok = true;
-        if (termoNr) {
-          ok = ok && String(row?.nr_transacao || '').includes(termoNr);
-        }
-        if (termoPessoa) {
-          ok = ok && String(row?.cd_pessoa || '').includes(termoPessoa);
-        }
-        if (termoEmpresa) {
-          ok =
-            ok &&
-            String(row?.cd_grupoempresa || row?.cd_empresa || '').includes(
-              termoEmpresa,
-            );
-        }
-        return ok;
-      });
-    }
-
-    // Aplicar filtro mensal aos dados já filtrados
-    dadosFiltrados = aplicarFiltroMensal(
-      dadosFiltrados,
-      filtroMensal,
-      filtroDia,
-    );
+    // Aplicar filtro mensal aos dados
+    const dadosFiltrados = aplicarFiltroMensal(dados, filtroMensal, filtroDia);
 
     return dadosFiltrados;
-  }, [
-    dados,
-    filtros.nr_transacao,
-    filtros.cd_pessoa,
-    filtros.cd_empresa,
-    filtroMensal,
-    filtroDia,
-  ]);
+  }, [dados, filtroMensal, filtroDia]);
 
   // Helpers de agregação por segmento
   const aggregateTotais = (rows) => {
@@ -396,50 +454,7 @@ const CMVConsolidado = () => {
               className="border rounded px-2 py-1.5 w-full text-xs"
             />
           </div>
-          {/* Filtro por Período - estilo pills */}
-          <div>
-            <label className="block text-xs font-semibold mb-1">
-              Cd Empresa
-            </label>
-            <input
-              type="text"
-              value={filtros.cd_empresa}
-              onChange={(e) =>
-                setFiltros((f) => ({ ...f, cd_empresa: e.target.value }))
-              }
-              placeholder="Ex.: 11"
-              className="border rounded px-2 py-1.5 w-full text-xs"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold mb-1">
-              Nr Transação
-            </label>
-            <input
-              type="text"
-              value={filtros.nr_transacao}
-              onChange={(e) =>
-                setFiltros((f) => ({ ...f, nr_transacao: e.target.value }))
-              }
-              placeholder="Ex.: 685924"
-              className="border rounded px-2 py-1.5 w-full text-xs"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold mb-1">
-              Cd Pessoa
-            </label>
-            <input
-              type="text"
-              value={filtros.cd_pessoa}
-              onChange={(e) =>
-                setFiltros((f) => ({ ...f, cd_pessoa: e.target.value }))
-              }
-              placeholder="Ex.: 19295"
-              className="border rounded px-2 py-1.5 w-full text-xs"
-            />
-          </div>
-          <div className="flex items-end">
+          <div className="flex items-center">
             <button
               onClick={buscar}
               disabled={loading || !filtros.dt_inicio || !filtros.dt_fim}

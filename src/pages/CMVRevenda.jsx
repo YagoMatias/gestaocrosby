@@ -52,7 +52,7 @@ const CMVRevenda = () => {
         params.cd_pessoa = String(filtros.cd_pessoa).trim();
       }
 
-      const resp = await api.sales.cmvtest(params);
+      const resp = await api.sales.cmv(params);
       if (!resp.success) {
         setErro(resp.message || 'Falha ao carregar dados');
         setDados([]);
@@ -198,7 +198,7 @@ const CMVRevenda = () => {
     <div className="w-full max-w-7xl mx-auto p-4">
       <PageTitle
         title="CMV REVENDA"
-        subtitle="Consulta da rota /cmvtest (classificação fixa 3)"
+        subtitle="Consulta da rota /cmv (view materializada mv_nfitemprod)"
         icon={ChartLineUp}
         iconColor="text-indigo-600"
       />

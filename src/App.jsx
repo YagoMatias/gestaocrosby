@@ -19,14 +19,9 @@ const Conciliacao = lazy(() => import('./pages/Conciliacao'));
 const SaldoBancarioTotvs = lazy(() => import('./pages/SaldoBancarioTotvs'));
 const Clientes = lazy(() => import('./pages/Clientes'));
 
-const Varejo = lazy(() => import('./pages/Varejo'));
-const Franquias = lazy(() => import('./pages/Franquias'));
-const Multimarcas = lazy(() => import('./pages/Multimarcas'));
-const Revenda = lazy(() => import('./pages/Revenda'));
 const MetasVarejo = lazy(() => import('./pages/MetasVarejo'));
 
 const RankingFaturamento = lazy(() => import('./pages/RankingFaturamento'));
-const Consolidado = lazy(() => import('./pages/Consolidado'));
 const AuditoriaCMV = lazy(() => import('./pages/AuditoriaCMV'));
 const ComprasFranquias = lazy(() => import('./pages/ComprasFranquias'));
 const Credev = lazy(() => import('./pages/Credev'));
@@ -150,28 +145,8 @@ const AppRoutes = memo(() => {
       roles: ['owner', 'admin', 'manager', 'user'],
     },
     {
-      path: '/varejo',
-      component: Varejo,
-      roles: ['owner', 'admin', 'manager', 'user'],
-    },
-    {
       path: '/metas-varejo',
       component: MetasVarejo,
-      roles: ['owner', 'admin', 'manager', 'user'],
-    },
-    {
-      path: '/franquias',
-      component: Franquias,
-      roles: ['owner', 'admin', 'manager', 'user'],
-    },
-    {
-      path: '/multimarcas',
-      component: Multimarcas,
-      roles: ['owner', 'admin', 'manager', 'user'],
-    },
-    {
-      path: '/revenda',
-      component: Revenda,
       roles: ['owner', 'admin', 'manager', 'user'],
     },
     {
@@ -188,11 +163,6 @@ const AppRoutes = memo(() => {
       path: '/ranking-faturamento',
       component: RankingFaturamento,
       roles: ['admin', 'manager', 'guest', 'owner', 'user'],
-    },
-    {
-      path: '/consolidado',
-      component: Consolidado,
-      roles: ['owner', 'admin', 'manager', 'user'],
     },
     {
       path: '/auditoria-cmv',

@@ -1,1091 +1,1120 @@
-import React, { useState } from 'react';
-import { Funnel, Calendar, Spinner, Package, ArrowsClockwise, CaretUp, CaretDown, CaretUpDown, CaretRight, Warning, ArrowDown, ArrowUp } from '@phosphor-icons/react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import useApiClient from '../hooks/useApiClient';
+import PageTitle from '../components/ui/PageTitle';
+import { FileText, Spinner } from '@phosphor-icons/react';
 import custoProdutos from '../custoprodutos.json';
-import * as XLSX from 'xlsx';
-import { saveAs } from 'file-saver';
 import Modal from '../components/ui/Modal';
 
-const AuditoriaCMV = () => {
-  const apiClient = useApiClient();
+// Cache em memória (sobrevive durante a sessão)
+const memoryCache = new Map();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 
-  const [filtros, setFiltros] = useState({ dt_inicio: '', dt_fim: '' });
+const buildCacheKey = (routeName, params) => {
+  // Normaliza objeto para chave estável
+  const stable = JSON.stringify(params, Object.keys(params).sort());
+  return `${routeName}::${stable}`;
+};
+
+// Função para buscar custo do produto baseado no código
+const buscarCustoProduto = (codigo) => {
+  if (!codigo) return null;
+
+  // Busca no array de produtos pelo código
+  const produto = custoProdutos.find((p) => p.Codigo === codigo);
+  return produto ? produto.Custo : null;
+};
+
+const readCache = (key) => {
+  // 1) memória
+  if (memoryCache.has(key)) {
+    const entry = memoryCache.get(key);
+    if (Date.now() - entry.ts < CACHE_TTL_MS) return entry.data;
+  }
+  // 2) localStorage
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.ts && Date.now() - parsed.ts < CACHE_TTL_MS) {
+        // re-hidrata memória
+        memoryCache.set(key, { data: parsed.data, ts: parsed.ts });
+        return parsed.data;
+      }
+    }
+  } catch {}
+  return null;
+};
+
+const writeCache = (key, data) => {
+  const entry = { data, ts: Date.now() };
+  memoryCache.set(key, entry);
+  try {
+    localStorage.setItem(key, JSON.stringify(entry));
+  } catch {}
+};
+
+const AuditoriaCMV = () => {
+  const api = useApiClient();
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
   const [dados, setDados] = useState([]);
-  const [sortConfig, setSortConfig] = useState({ key: 'valorTotal', direction: 'desc' });
-  const [rankingOpen, setRankingOpen] = useState(true);
-  const [semCustoOpen, setSemCustoOpen] = useState(false);
-  const [semCustoCount, setSemCustoCount] = useState(0);
-  const [semCustoItens, setSemCustoItens] = useState([]);
-  const [semCustoModalOpen, setSemCustoModalOpen] = useState(false);
-  const [cmvBaixoCount, setCmvBaixoCount] = useState(0);
-  const [cmvBaixoItens, setCmvBaixoItens] = useState([]);
-  const [cmvBaixoModalOpen, setCmvBaixoModalOpen] = useState(false);
-  const [cmvAltoCount, setCmvAltoCount] = useState(0);
-  const [cmvAltoItens, setCmvAltoItens] = useState([]);
-  const [cmvAltoModalOpen, setCmvAltoModalOpen] = useState(false);
-  
-  // Estados para análise por canal
-  const [cmvPorCanal, setCmvPorCanal] = useState({
-    multimarca: { baixo: [], alto: [] },
-    franquias: { baixo: [], alto: [] },
-    varejo: { baixo: [], alto: [] },
-    revenda: { baixo: [], alto: [] }
+  const [dadosVarejo, setDadosVarejo] = useState([]);
+
+  // Evitar race condition entre buscas
+  const lastRequestIdRef = useRef(0);
+
+  const [filtros, setFiltros] = useState({
+    dt_inicio: '',
+    dt_fim: '',
+    empresas: [],
   });
-  const [cmvPorCanalModalOpen, setCmvPorCanalModalOpen] = useState(false);
 
-  // Map rápido: Modelo -> Custo (usa primeiro custo encontrado por modelo)
-  const modeloParaCustoMap = React.useMemo(() => {
-    const map = new Map();
+  // Filtro de Mês/Ano (igual Contas a Receber)
+  const [filtroMensal, setFiltroMensal] = useState(() => {
     try {
-      if (Array.isArray(custoProdutos)) {
-        for (const item of custoProdutos) {
-          const modelo = (item?.Modelo || '').toString().trim().toUpperCase();
-          if (!modelo) continue;
-          const custo = item?.Custo;
-          if (!map.has(modelo) && custo !== undefined) {
-            map.set(modelo, Number(custo));
-          }
-        }
+      return localStorage.getItem('auditoriaCMV:filtroMensal') || 'ANO';
+    } catch {
+      return 'ANO';
+    }
+  });
+  const [filtroDia, setFiltroDia] = useState(() => {
+    try {
+      const raw = localStorage.getItem('auditoriaCMV:filtroDia');
+      return raw === null ? null : JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    // Hidrata filtros do localStorage, se existirem
+    try {
+      const saved = localStorage.getItem('auditoriaCMV:filtros');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setFiltros((f) => ({ ...f, ...parsed }));
+        return;
       }
     } catch {}
-    return map;
+    // Default: mês atual
+    const hoje = new Date();
+    const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
+      .toISOString()
+      .split('T')[0];
+    const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0)
+      .toISOString()
+      .split('T')[0];
+    setFiltros((f) => ({ ...f, dt_inicio: primeiroDia, dt_fim: ultimoDia }));
   }, []);
 
-  // Map: Código -> Custo (para colunas de custo, cmv, etc.)
-  const custoMap = React.useMemo(() => {
-    const map = {};
+  // Persiste filtros e período
+  useEffect(() => {
     try {
-      if (Array.isArray(custoProdutos)) {
-        for (const item of custoProdutos) {
-          const codigo = (item?.Codigo || '').toString().trim();
-          if (!codigo) continue;
-          if (item?.Custo !== undefined) map[codigo] = Number(item.Custo);
-        }
-      }
+      localStorage.setItem('auditoriaCMV:filtros', JSON.stringify(filtros));
     } catch {}
-    return map;
-  }, []);
+  }, [filtros]);
 
-  // Mesma lógica de fontes do Consolidado
-  const empresasFixas = ['2', '200', '75', '31', '6', '85', '11'];
-  const empresasVarejoFixas = ['2', '5', '500', '55', '550', '65', '650', '93', '930', '94', '940', '95', '950', '96', '960', '97', '970'];
-
-  const handleFiltrar = async (e) => {
-    e?.preventDefault?.();
-    if (!filtros.dt_inicio || !filtros.dt_fim) return;
-    setLoading(true);
-    setErro('');
-    
+  useEffect(() => {
     try {
-      // Buscar dados de todos os canais
-      const [resultRevenda, resultVarejo, resultFranquia, resultMtm] = await Promise.all([
-        apiClient.sales.faturamentoRevenda({
-          dt_inicio: filtros.dt_inicio,
-          dt_fim: filtros.dt_fim,
-          cd_empresa: empresasFixas
-        }),
-        apiClient.sales.faturamento({
-          dt_inicio: filtros.dt_inicio,
-          dt_fim: filtros.dt_fim,
-          cd_empresa: empresasVarejoFixas
-        }),
-        apiClient.sales.faturamentoFranquia({
-          dt_inicio: filtros.dt_inicio,
-          dt_fim: filtros.dt_fim,
-          cd_empresa: empresasFixas
-        }),
-        apiClient.sales.faturamentoMtm({
-          dt_inicio: filtros.dt_inicio,
-          dt_fim: filtros.dt_fim,
-          cd_empresa: empresasFixas
-        })
-      ]);
+      localStorage.setItem('auditoriaCMV:filtroMensal', filtroMensal);
+    } catch {}
+  }, [filtroMensal]);
 
-      const dadosRevenda = resultRevenda?.success ? resultRevenda.data : [];
-      const dadosVarejo = resultVarejo?.success ? resultVarejo.data : [];
-      const dadosFranquia = resultFranquia?.success ? resultFranquia.data : [];
-      const dadosMtm = resultMtm?.success ? resultMtm.data : [];
+  useEffect(() => {
+    try {
+      localStorage.setItem('auditoriaCMV:filtroDia', JSON.stringify(filtroDia));
+    } catch {}
+  }, [filtroDia]);
 
-      // Combinar todos os dados com identificação de canal
-      const todosDados = [
-        ...dadosRevenda.map(item => ({ ...item, canal: 'revenda' })),
-        ...dadosVarejo.map(item => ({ ...item, canal: 'varejo' })),
-        ...dadosFranquia.map(item => ({ ...item, canal: 'franquias' })),
-        ...dadosMtm.map(item => ({ ...item, canal: 'multimarca' }))
-      ];
-      setDados(todosDados);
+  // Função para aplicar filtro mensal (igual Contas a Receber)
+  const aplicarFiltroMensal = (dados, filtroMensal, filtroDia) => {
+    if (!Array.isArray(dados) || dados.length === 0) return dados;
 
-      // Montar base por produto (cd_nivel) para cálculos, incluindo receita e quantidade
-      const porProduto = new Map();
-      const porProdutoCanal = new Map(); // Para análise por canal
-      
-      for (const row of todosDados) {
-        const cd = (row?.cd_nivel || '').toString().trim();
-        if (!cd) continue;
-        const modelo = (row?.ds_nivel || '').toString().trim();
-        const qt = Number(row?.qt_faturado) || 0;
-        const vlUnit = Number(row?.vl_unitliquido) || 0;
-        const valor = vlUnit * qt;
-        const canal = row.canal;
-        
-        // Agregação geral
-        if (!porProduto.has(cd)) {
-          porProduto.set(cd, { cd_nivel: cd, modelo, receita: 0, quantidade: 0 });
-        }
-        const acc = porProduto.get(cd);
-        if (row?.tp_operacao === 'S') {
-          acc.receita += valor;
-          acc.quantidade += qt;
-        } else if (row?.tp_operacao === 'E') {
-          acc.receita -= valor;
-          acc.quantidade -= qt;
-        }
-        
-        // Agregação por canal
-        const chaveCanal = `${cd}_${canal}`;
-        if (!porProdutoCanal.has(chaveCanal)) {
-          porProdutoCanal.set(chaveCanal, { 
-            cd_nivel: cd, 
-            modelo, 
-            canal,
-            receita: 0, 
-            quantidade: 0 
-          });
-        }
-        const accCanal = porProdutoCanal.get(chaveCanal);
-        if (row?.tp_operacao === 'S') {
-          accCanal.receita += valor;
-          accCanal.quantidade += qt;
-        } else if (row?.tp_operacao === 'E') {
-          accCanal.receita -= valor;
-          accCanal.quantidade -= qt;
-        }
-      }
+    return dados.filter((row) => {
+      const dataVenda = new Date(
+        row.dt_venda || row.dt_faturamento || row.dt_emissao,
+      );
+      if (isNaN(dataVenda.getTime())) return false;
 
-      // Sem custo por MODELO
-      const semCustoLista = [];
-      for (const { cd_nivel, modelo } of porProduto.values()) {
-        const custoModelo = modelo ? modeloParaCustoMap.get(modelo.toUpperCase()) : undefined;
-        if (custoModelo === undefined) {
-          semCustoLista.push({ cd_nivel, modelo, custo: 0 });
-        }
-      }
-      setSemCustoItens(semCustoLista);
-      setSemCustoCount(semCustoLista.length);
+      const mes = dataVenda.getMonth() + 1;
+      const dia = dataVenda.getDate();
 
-             // CMV baixo (< 10%) por código com custo disponível
-       const cmvBaixoLista = [];
-       for (const item of porProduto.values()) {
-         const custoUnit = custoMap[item.cd_nivel];
-         if (custoUnit === undefined) continue; // precisa ter custo
-         if ((item?.receita || 0) <= 0) continue; // precisa ter receita positiva
-         const custoTotal = (item.quantidade || 0) * custoUnit;
-         const cmv = custoTotal / item.receita;
-         if (cmv < 0.10) {
-           cmvBaixoLista.push({ 
-             cd_nivel: item.cd_nivel, 
-             modelo: item.modelo, 
-             quantidade: item.quantidade,
-             custo: custoTotal, 
-             cmv: cmv * 100 
-           });
-         }
-       }
-      setCmvBaixoItens(cmvBaixoLista);
-      setCmvBaixoCount(cmvBaixoLista.length);
+      if (filtroMensal === 'ANO') return true;
 
-             // CMV alto (> 70%) por código com custo disponível
-       const cmvAltoLista = [];
-       for (const item of porProduto.values()) {
-         const custoUnit = custoMap[item.cd_nivel];
-         if (custoUnit === undefined) continue; // precisa ter custo
-         if ((item?.receita || 0) <= 0) continue; // precisa ter receita positiva
-         const custoTotal = (item.quantidade || 0) * custoUnit;
-         const cmv = custoTotal / item.receita;
-         if (cmv > 0.70) {
-           cmvAltoLista.push({ 
-             cd_nivel: item.cd_nivel, 
-             modelo: item.modelo, 
-             quantidade: item.quantidade,
-             custo: custoTotal, 
-             cmv: cmv * 100 
-           });
-         }
-       }
-      setCmvAltoItens(cmvAltoLista);
-      setCmvAltoCount(cmvAltoLista.length);
-
-      // Análise de CMV por canal
-      const cmvPorCanalTemp = {
-        multimarca: { baixo: [], alto: [] },
-        franquias: { baixo: [], alto: [] },
-        varejo: { baixo: [], alto: [] },
-        revenda: { baixo: [], alto: [] }
+      const mesesNumericos = {
+        JAN: 1,
+        FEV: 2,
+        MAR: 3,
+        ABR: 4,
+        MAI: 5,
+        JUN: 6,
+        JUL: 7,
+        AGO: 8,
+        SET: 9,
+        OUT: 10,
+        NOV: 11,
+        DEZ: 12,
       };
 
-      for (const item of porProdutoCanal.values()) {
-        const custoUnit = custoMap[item.cd_nivel];
-        if (custoUnit === undefined) continue; // precisa ter custo
-        if ((item?.receita || 0) <= 0) continue; // precisa ter receita positiva
-        
-        const custoTotal = (item.quantidade || 0) * custoUnit;
-        const cmv = custoTotal / item.receita;
-        
-        const itemCompleto = {
-          cd_nivel: item.cd_nivel,
-          modelo: item.modelo,
-          canal: item.canal,
-          quantidade: item.quantidade,
-          receita: item.receita,
-          custo: custoTotal,
-          cmv: cmv * 100
-        };
-
-        if (cmv < 0.10) {
-          cmvPorCanalTemp[item.canal].baixo.push(itemCompleto);
-        } else if (cmv > 0.70) {
-          cmvPorCanalTemp[item.canal].alto.push(itemCompleto);
-        }
+      if (filtroMensal in mesesNumericos) {
+        const mesFiltro = mesesNumericos[filtroMensal];
+        if (mes !== mesFiltro) return false;
       }
 
-      setCmvPorCanal(cmvPorCanalTemp);
-      
-    } catch (err) {
-      console.error('Erro ao buscar Auditoria CMV:', err);
-      setErro('Erro ao buscar dados. Tente novamente.');
-      setSemCustoItens([]);
-      setSemCustoCount(0);
-      setCmvBaixoItens([]);
-      setCmvBaixoCount(0);
-      setCmvAltoItens([]);
-      setCmvAltoCount(0);
-      setCmvPorCanal({
-        multimarca: { baixo: [], alto: [] },
-        franquias: { baixo: [], alto: [] },
-        varejo: { baixo: [], alto: [] },
-        revenda: { baixo: [], alto: [] }
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Função para ordenar os dados do ranking
-  const sortRankData = (data) => {
-    if (!data || data.length === 0) return data;
-
-    return [...data].sort((a, b) => {
-      let aValue, bValue;
-
-      switch (sortConfig.key) {
-        case 'rank':
-          aValue = a.valorTotal || 0;
-          bValue = b.valorTotal || 0;
-          break;
-        case 'cd_nivel':
-          aValue = a.cd_nivel || '';
-          bValue = b.cd_nivel || '';
-          break;
-        case 'modelo':
-          aValue = a.modelo || '';
-          bValue = b.modelo || '';
-          break;
-        case 'quantidade':
-          aValue = a.quantidade || 0;
-          bValue = b.quantidade || 0;
-          break;
-        case 'valorTotal':
-          aValue = a.valorTotal || 0;
-          bValue = b.valorTotal || 0;
-          break;
-        case 'valorBrutoTotal':
-          aValue = a.valorBrutoTotal || 0;
-          bValue = b.valorBrutoTotal || 0;
-          break;
-        case 'desconto':
-          aValue = (a.valorBrutoTotal || 0) - (a.valorTotal || 0);
-          bValue = (b.valorBrutoTotal || 0) - (b.valorTotal || 0);
-          break;
-        case 'custo':
-          aValue = custoMap[a.cd_nivel?.trim()] !== undefined ? (a.quantidade || 0) * custoMap[a.cd_nivel.trim()] : 0;
-          bValue = custoMap[b.cd_nivel?.trim()] !== undefined ? (b.quantidade || 0) * custoMap[b.cd_nivel.trim()] : 0;
-          break;
-        case 'cmv':
-          const aCustoUnit = custoMap[a.cd_nivel?.trim()];
-          const bCustoUnit = custoMap[b.cd_nivel?.trim()];
-          const aCustoTotal = aCustoUnit !== undefined ? (a.quantidade || 0) * aCustoUnit : 0;
-          const bCustoTotal = bCustoUnit !== undefined ? (b.quantidade || 0) * bCustoUnit : 0;
-          aValue = (a.valorTotal || 0) > 0 ? aCustoTotal / (a.valorTotal || 0) : 0;
-          bValue = (b.valorTotal || 0) > 0 ? bCustoTotal / (b.valorTotal || 0) : 0;
-          break;
-        case 'markup':
-          const aMarkupCustoUnit = custoMap[a.cd_nivel?.trim()];
-          const bMarkupCustoUnit = custoMap[b.cd_nivel?.trim()];
-          const aMarkupCustoTotal = aMarkupCustoUnit !== undefined ? (a.quantidade || 0) * aMarkupCustoUnit : 0;
-          const bMarkupCustoTotal = bMarkupCustoUnit !== undefined ? (b.quantidade || 0) * bMarkupCustoUnit : 0;
-          aValue = aMarkupCustoTotal > 0 ? (a.valorTotal || 0) / aMarkupCustoTotal : 0;
-          bValue = bMarkupCustoTotal > 0 ? (b.valorTotal || 0) / bMarkupCustoTotal : 0;
-          break;
-        case 'margem':
-          const aMargemCustoUnit = custoMap[a.cd_nivel?.trim()];
-          const bMargemCustoUnit = custoMap[b.cd_nivel?.trim()];
-          const aMargemCustoTotal = aMargemCustoUnit !== undefined ? (a.quantidade || 0) * aMargemCustoUnit : 0;
-          const bMargemCustoTotal = bMargemCustoUnit !== undefined ? (b.quantidade || 0) * bMargemCustoUnit : 0;
-          aValue = (a.valorTotal || 0) > 0 ? ((a.valorTotal || 0) - aMargemCustoTotal) / (a.valorTotal || 0) : 0;
-          bValue = (b.valorTotal || 0) > 0 ? ((b.valorTotal || 0) - bMargemCustoTotal) / (b.valorTotal || 0) : 0;
-          break;
-        default:
-          aValue = a[sortConfig.key] || 0;
-          bValue = b[sortConfig.key] || 0;
+      if (filtroDia && filtroDia.dia) {
+        return dia === filtroDia.dia;
       }
 
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
-        aValue = aValue.toLowerCase();
-        bValue = bValue.toLowerCase();
-      }
-
-      if (sortConfig.direction === 'asc') {
-        return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
-      } else {
-        return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
-      }
+      return true;
     });
   };
 
-  const handleSort = (key) => {
-    setSortConfig(prevConfig => ({
-      key,
-      direction: prevConfig.key === key && prevConfig.direction === 'asc' ? 'desc' : 'asc'
+  // Filtragem em memória
+  const dadosFiltrados = useMemo(() => {
+    // Aplicar filtro mensal aos dados
+    const dadosFiltrados = aplicarFiltroMensal(dados, filtroMensal, filtroDia);
+
+    return dadosFiltrados;
+  }, [dados, filtroMensal, filtroDia]);
+
+  const dadosVarejoFiltrados = useMemo(() => {
+    // Aplicar filtro mensal aos dados do varejo
+    const dadosFiltrados = aplicarFiltroMensal(
+      dadosVarejo,
+      filtroMensal,
+      filtroDia,
+    );
+
+    return dadosFiltrados;
+  }, [dadosVarejo, filtroMensal, filtroDia]);
+
+  const handleOrdenacao = (campo) => {
+    setOrdenacao((prev) => ({
+      campo,
+      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc',
     }));
+    setPaginaAtual(1); // Volta para a primeira página ao ordenar
   };
 
-  const getSortIcon = (key) => {
-    if (sortConfig.key !== key) {
-      return <CaretUpDown size={12} className="opacity-50" />;
+  const buscar = async () => {
+    const currentRequestId = ++lastRequestIdRef.current;
+    setLoading(true);
+    setErro('');
+
+    const cacheKeyCmvtest = JSON.stringify({
+      ...filtros,
+      cd_classificacao: [2, 3, 4],
+    });
+    const cacheKeyFaturamento = JSON.stringify({
+      ...filtros,
+      cd_empresa: [2, 5, 55, 65, 90, 91, 92, 93, 94, 95, 96, 97, 98],
+    });
+    const now = Date.now();
+
+    let cachedCmvtest = readCache(cacheKeyCmvtest);
+    let cachedFaturamento = readCache(cacheKeyFaturamento);
+
+    // SWR: Serve stale data immediately if available and not expired
+    if (cachedCmvtest && now < cachedCmvtest.ts + CACHE_TTL_MS) {
+      setDados(cachedCmvtest.data);
     }
-    return sortConfig.direction === 'asc' ? <CaretUp size={12} /> : <CaretDown size={12} />;
-  };
+    if (cachedFaturamento && now < cachedFaturamento.ts + CACHE_TTL_MS) {
+      setDadosVarejo(cachedFaturamento.data);
+    }
 
-  const exportarRankParaExcel = () => {
     try {
-      // Agrupa por cd_nivel e soma os valores
-      const rankProdutos = dados.reduce((acc, row) => {
-        const nivel = row.cd_nivel;
-        if (!acc[nivel]) {
-          acc[nivel] = {
-            cd_nivel: nivel,
-            modelo: row.ds_nivel,
-            valorTotal: 0,
-            valorBrutoTotal: 0,
-            quantidade: 0
-          };
-        }
-        const qtFaturado = Number(row.qt_faturado) || 1;
-        const valor = (Number(row.vl_unitliquido) || 0) * qtFaturado;
-        const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-        if (row.tp_operacao === 'S') {
-          acc[nivel].valorTotal += valor;
-          acc[nivel].valorBrutoTotal += valorBruto;
-          acc[nivel].quantidade += qtFaturado;
-        } else if (row.tp_operacao === 'E') {
-          acc[nivel].valorTotal -= valor;
-          acc[nivel].valorBrutoTotal -= valorBruto;
-          acc[nivel].quantidade -= qtFaturado;
-        }
-        return acc;
-      }, {});
+      const params = {
+        dt_inicio: filtros.dt_inicio,
+        dt_fim: filtros.dt_fim,
+        cd_classificacao: [2, 3, 4],
+      };
+      if (Array.isArray(filtros.empresas) && filtros.empresas.length > 0) {
+        params.cd_empresa = filtros.empresas;
+      }
 
-      const rankArray = sortRankData(Object.values(rankProdutos));
+      // Fetch consolidado (classificações 2,3,4) e varejo em paralelo
+      const empresasFixasVarejo = [
+        '2',
+        '5',
+        '55',
+        '65',
+        '90',
+        '91',
+        '92',
+        '93',
+        '94',
+        '95',
+        '96',
+        '97',
+        '98',
+      ];
 
-      const dadosParaExportar = rankArray.map((produto, index) => {
-        const descontoTotal = produto.valorBrutoTotal - produto.valorTotal;
-        const custoUnit = custoMap[produto.cd_nivel?.trim()];
-        const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : 0;
-        const cmv = produto.valorTotal > 0 ? (custoTotal / produto.valorTotal) * 100 : 0;
-        const markup = custoTotal > 0 ? produto.valorTotal / custoTotal : 0;
-        const margem = produto.valorTotal > 0 ? ((produto.valorTotal - custoTotal) / produto.valorTotal) * 100 : 0;
+      const paramsVarejo = {
+        dt_inicio: filtros.dt_inicio,
+        dt_fim: filtros.dt_fim,
+        cd_empresa: empresasFixasVarejo,
+      };
 
-        return {
-          'Rank': index + 1,
-          'Código': produto.cd_nivel || '',
-          'Modelo': produto.modelo || '',
-          'Quantidade': produto.quantidade,
-          'Valor Total': produto.valorTotal,
-          'Valor Bruto': produto.valorBrutoTotal,
-          'Desconto': descontoTotal,
-          'Custo': custoTotal,
-          'CMV %': cmv,
-          'Markup': markup,
-          'Margem %': margem
-        };
-      });
+      // Chaves de cache
+      const keyCmvtest = buildCacheKey('cmvtest', params);
+      const keyFaturamento = buildCacheKey('faturamento', paramsVarejo);
 
-      const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Ranking Produtos');
-      const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const hoje = new Date().toISOString().slice(0,10);
-      saveAs(blob, `ranking-produtos-auditoria-cmv-${hoje}.xlsx`);
+      const [respConsolidado, respVarejo] = await Promise.all([
+        api.sales.cmvtest(params),
+        api.sales.faturamento(paramsVarejo),
+      ]);
+
+      if (currentRequestId !== lastRequestIdRef.current) {
+        return; // Ignore outdated response
+      }
+
+      if (respConsolidado.success) {
+        const lista = Array.isArray(respConsolidado?.data?.data)
+          ? respConsolidado.data.data
+          : Array.isArray(respConsolidado?.data)
+          ? respConsolidado.data
+          : [];
+        console.log('🔍 Debug - Dados consolidado carregados:', {
+          success: respConsolidado.success,
+          dataLength: lista.length,
+          primeiroItem: lista[0],
+          camposDisponiveis: lista[0] ? Object.keys(lista[0]) : [],
+        });
+        setDados(lista);
+        writeCache(keyCmvtest, lista);
+      } else {
+        setErro(respConsolidado.message || 'Falha ao carregar dados');
+        setDados([]);
+      }
+
+      if (respVarejo.success) {
+        const listaVar = Array.isArray(respVarejo?.data?.data)
+          ? respVarejo.data.data
+          : Array.isArray(respVarejo?.data)
+          ? respVarejo.data
+          : [];
+        console.log('🔍 Debug - Dados varejo carregados:', {
+          success: respVarejo.success,
+          dataLength: listaVar.length,
+          primeiroItem: listaVar[0],
+          camposDisponiveis: listaVar[0] ? Object.keys(listaVar[0]) : [],
+        });
+        setDadosVarejo(listaVar);
+        writeCache(keyFaturamento, listaVar);
+      } else {
+        console.warn('Falha ao carregar varejo:', respVarejo.message);
+        setDadosVarejo([]);
+      }
     } catch (e) {
-      console.error('Erro ao exportar Excel:', e);
-      alert('Erro ao exportar Excel.');
+      if (currentRequestId === lastRequestIdRef.current) {
+        setErro('Erro ao buscar dados');
+        console.error(e);
+      }
+    } finally {
+      if (currentRequestId === lastRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
+
+  // Combinar dados de todas as fontes
+  const todosDados = useMemo(() => {
+    const combinados = [...dados, ...dadosVarejo];
+    console.log('🔍 Debug - Dados combinados:', {
+      dados: dados.length,
+      dadosVarejo: dadosVarejo.length,
+      total: combinados.length,
+      primeiroItem: combinados[0],
+    });
+    return combinados;
+  }, [dados, dadosVarejo]);
+
+  // Paginação
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const registrosPorPagina = 20;
+
+  // Ordenação
+  const [ordenacao, setOrdenacao] = useState({
+    campo: null,
+    direcao: 'asc',
+  });
+
+  // Modal: Sem Custo na Planilha
+  const [modalSemCustoOpen, setModalSemCustoOpen] = useState(false);
+  // Modal: Valores Diferentes
+  const [modalValoresDiferentesOpen, setModalValoresDiferentesOpen] =
+    useState(false);
+
+  // Dados agrupados por Código, Descrição, Valor Sistema e Valor Planilha
+  const dadosAgrupados = useMemo(() => {
+    const grupos = new Map();
+
+    todosDados.forEach((item) => {
+      const codigo =
+        item.cd_nivel ||
+        item.cd_nivelproduto ||
+        item.cd_produto ||
+        item.cd_item;
+      const descricao =
+        item.ds_nivel ||
+        item.ds_nivelproduto ||
+        item.ds_produto ||
+        item.ds_item;
+      const valorSistema =
+        Number(item.vl_produto) ||
+        Number(item.vl_unitliquido) ||
+        Number(item.vl_unitbruto) ||
+        0;
+      const custoPlanilha = buscarCustoProduto(codigo);
+      const quantidade =
+        Number(item.qt_faturado) ||
+        Number(item.qt_item) ||
+        Number(item.quantidade) ||
+        0;
+
+      // Verificações de segurança
+      if (codigo === undefined || descricao === undefined) {
+        return; // Pula itens sem código ou descrição
+      }
+
+      // Chave única para agrupamento
+      const chave = `${codigo}|${descricao}|${valorSistema}|${custoPlanilha}`;
+
+      if (grupos.has(chave)) {
+        // Se já existe, soma a quantidade
+        const grupo = grupos.get(chave);
+        grupo.quantidade += quantidade;
+      } else {
+        // Se não existe, cria novo grupo
+        grupos.set(chave, {
+          codigo,
+          descricao,
+          valorSistema,
+          custoPlanilha,
+          quantidade,
+        });
+      }
+    });
+
+    const dados = Array.from(grupos.values());
+
+    // Aplicar ordenação se especificada
+    if (ordenacao.campo) {
+      dados.sort((a, b) => {
+        let valorA, valorB;
+
+        switch (ordenacao.campo) {
+          case 'valorSistema':
+            valorA = a.valorSistema || 0;
+            valorB = b.valorSistema || 0;
+            break;
+          case 'custoPlanilha':
+            valorA = a.custoPlanilha || 0;
+            valorB = b.custoPlanilha || 0;
+            break;
+          case 'quantidade':
+            valorA = a.quantidade || 0;
+            valorB = b.quantidade || 0;
+            break;
+          default:
+            return 0;
+        }
+
+        if (valorA < valorB) return ordenacao.direcao === 'asc' ? -1 : 1;
+        if (valorA > valorB) return ordenacao.direcao === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return dados;
+  }, [todosDados, ordenacao]);
+
+  const totalPaginas = Math.ceil(dadosAgrupados.length / registrosPorPagina);
+  const indiceInicial = (paginaAtual - 1) * registrosPorPagina;
+  const indiceFinal = indiceInicial + registrosPorPagina;
+  const dadosPaginados = dadosAgrupados.slice(indiceInicial, indiceFinal);
+
+  // Lista derivada: itens sem custo na planilha
+  const itensSemCustoPlanilha = useMemo(() => {
+    return dadosAgrupados.filter(
+      (item) =>
+        item.custoPlanilha === null ||
+        item.custoPlanilha === undefined ||
+        item.custoPlanilha === 0,
+    );
+  }, [dadosAgrupados]);
+
+  // Estatísticas dos dados
+  const estatisticas = useMemo(() => {
+    const totalRegistros = dadosAgrupados.length;
+    const produtosComValorZero = dadosAgrupados.filter((item) => {
+      return (item.valorSistema || 0) === 0;
+    }).length;
+    const produtosComValor = totalRegistros - produtosComValorZero;
+    const percentualZero =
+      totalRegistros > 0
+        ? ((produtosComValorZero / totalRegistros) * 100).toFixed(1)
+        : 0;
+
+    // Estatísticas da planilha
+    const produtosComCustoPlanilha = dadosAgrupados.filter((item) => {
+      return item.custoPlanilha !== null;
+    }).length;
+    const produtosSemCustoPlanilha = totalRegistros - produtosComCustoPlanilha;
+    const percentualComCusto =
+      totalRegistros > 0
+        ? ((produtosComCustoPlanilha / totalRegistros) * 100).toFixed(1)
+        : 0;
+
+    // Estatísticas comparativas entre Valor Sistema e Valor Planilha
+    const produtosComCustoPlanilhaZerado = dadosAgrupados.filter((item) => {
+      return (
+        item.custoPlanilha === null ||
+        item.custoPlanilha === undefined ||
+        item.custoPlanilha === 0
+      );
+    }).length;
+
+    const produtosValoresDiferentes = dadosAgrupados.filter((item) => {
+      // Considera diferente se: tem custo na planilha E é diferente do sistema
+      return (
+        item.custoPlanilha !== null &&
+        item.custoPlanilha !== undefined &&
+        item.custoPlanilha !== (item.valorSistema || 0)
+      );
+    }).length;
+
+    const produtosValoresIguais = dadosAgrupados.filter((item) => {
+      // Considera igual se: tem custo na planilha E é igual ao sistema
+      return (
+        item.custoPlanilha !== null &&
+        item.custoPlanilha !== undefined &&
+        item.custoPlanilha === (item.valorSistema || 0)
+      );
+    }).length;
+
+    return {
+      totalRegistros,
+      produtosComValorZero,
+      produtosComValor,
+      percentualZero,
+      produtosComCustoPlanilha,
+      produtosSemCustoPlanilha,
+      percentualComCusto,
+      produtosComCustoPlanilhaZerado,
+      produtosValoresDiferentes,
+      produtosValoresIguais,
+    };
+  }, [todosDados]);
 
   return (
-    <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-[#000638] font-barlow">Auditoria CMV</h1>
-      </div>
+    <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+      <PageTitle
+        title="Auditoria CMV"
+        subtitle="Análise detalhada dos dados de CMV por produto"
+        icon={FileText}
+        iconColor="text-indigo-600"
+      />
 
       {/* Filtros */}
-      <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-6 rounded-2xl shadow-lg w-full border border-[#000638]/10 mb-6">
-        <div className="mb-4 flex items-center gap-2 text-[#000638]">
-          <Funnel size={20} />
-          <span className="text-lg font-bold font-barlow">Filtros</span>
+      <div className="mb-4">
+        <div className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full max-w-4xl mx-auto border border-gray-200">
+          <div className="mb-2">
+            <span className="text-xs font-bold text-gray-700 flex items-center gap-1">
+              <FileText size={10} weight="bold" />
+              Filtros
+            </span>
+            <span className="text-xs text-gray-500 mt-1">
+              Selecione o período para análise
+            </span>
+          </div>
+          <div className="flex flex-row gap-x-6 w-full">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold mb-1 text-gray-700">
+                Data Inicial
+              </label>
+              <input
+                type="date"
+                value={filtros.dt_inicio}
+                onChange={(e) =>
+                  setFiltros((f) => ({ ...f, dt_inicio: e.target.value }))
+                }
+                className="border rounded px-2 py-1.5 w-full text-xs"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs font-semibold mb-1 text-gray-700">
+                Data Final
+              </label>
+              <input
+                type="date"
+                value={filtros.dt_fim}
+                onChange={(e) =>
+                  setFiltros((f) => ({ ...f, dt_fim: e.target.value }))
+                }
+                className="border rounded px-2 py-1.5 w-full text-xs"
+              />
+            </div>
+            <div className="flex items-center">
+              <button
+                onClick={buscar}
+                disabled={loading || !filtros.dt_inicio || !filtros.dt_fim}
+                className="bg-indigo-600 text-white text-xs px-3 py-2 rounded hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {loading ? 'Buscando...' : 'Buscar'}
+              </button>
+            </div>
+          </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Início</label>
-            <input
-              type="date"
-              value={filtros.dt_inicio}
-              onChange={(e) => setFiltros({ ...filtros, dt_inicio: e.target.value })}
-              className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Fim</label>
-            <input
-              type="date"
-              value={filtros.dt_fim}
-              onChange={(e) => setFiltros({ ...filtros, dt_fim: e.target.value })}
-              className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
-            />
-          </div>
-          <div className="flex items-center">
+        {erro && <div className="mt-2 text-xs text-red-600">{erro}</div>}
+      </div>
+
+      {/* Filtro de Período */}
+      <div className="mb-4">
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-sm font-medium text-gray-700">Período:</span>
+          {[
+            'ANO',
+            'JAN',
+            'FEV',
+            'MAR',
+            'ABR',
+            'MAI',
+            'JUN',
+            'JUL',
+            'AGO',
+            'SET',
+            'OUT',
+            'NOV',
+            'DEZ',
+          ].map((mes) => (
             <button
-              type="submit"
-              className="flex items-center gap-2 bg-[#000638] text-white px-4 py-2 rounded-lg hover:bg-[#fe0000] transition h-10 text-sm font-bold shadow-md tracking-wide uppercase w-full sm:w-auto"
-              disabled={loading || !filtros.dt_inicio || !filtros.dt_fim}
+              key={mes}
+              onClick={() => setFiltroMensal(mes)}
+              className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                filtroMensal === mes
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
             >
-              {loading ? <Spinner size={18} className="animate-spin" /> : <Calendar size={18} />}
-              {loading ? 'Buscando...' : 'Buscar'}
+              {mes}
             </button>
-          </div>
-        </div>
-        {erro && (
-          <div className="mt-3 text-sm text-red-600">{erro}</div>
-        )}
-      </form>
-
-      {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-        {/* Produtos sem custo */}
-        <button
-          type="button"
-          onClick={() => setSemCustoModalOpen(true)}
-          className="w-full text-left bg-white rounded-2xl shadow-lg border border-[#000638]/10 p-5 hover:shadow-xl transition"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 mb-1">Produtos sem custo</p>
-              <p className="text-2xl font-bold text-gray-900">{loading ? '-' : semCustoCount.toLocaleString('pt-BR')}</p>
-              <p className="text-xs text-gray-500 mt-1">Com base no Modelo no arquivo de custos</p>
-            </div>
-            <div className="p-3 rounded-full bg-red-500">
-              <Warning size={24} className="text-white" />
-            </div>
-          </div>
-        </button>
-        {/* CMV baixo (< 10%) */}
-        <button
-          type="button"
-          onClick={() => setCmvBaixoModalOpen(true)}
-          className="w-full text-left bg-white rounded-2xl shadow-lg border border-[#000638]/10 p-5 hover:shadow-xl transition"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 mb-1">CMV muito baixo ( &lt; 10% )</p>
-              <p className="text-2xl font-bold text-gray-900">{loading ? '-' : cmvBaixoCount.toLocaleString('pt-BR')}</p>
-              <p className="text-xs text-gray-500 mt-1">Produtos com CMV calculado menor que 10%</p>
-            </div>
-            <div className="p-3 rounded-full bg-yellow-500">
-              <ArrowDown size={24} className="text-white" />
-            </div>
-          </div>
-        </button>
-        {/* CMV alto (> 70%) */}
-        <button
-          type="button"
-          onClick={() => setCmvAltoModalOpen(true)}
-          className="w-full text-left bg-white rounded-2xl shadow-lg border border-[#000638]/10 p-5 hover:shadow-xl transition"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 mb-1">CMV muito alto ( &gt; 70% )</p>
-              <p className="text-2xl font-bold text-gray-900">{loading ? '-' : cmvAltoCount.toLocaleString('pt-BR')}</p>
-              <p className="text-xs text-gray-500 mt-1">Produtos com CMV calculado maior que 70%</p>
-            </div>
-            <div className="p-3 rounded-full bg-red-500">
-              <ArrowUp size={24} className="text-white" />
-            </div>
-          </div>
-        </button>
-        
-        {/* Análise por Canal */}
-        <button
-          type="button"
-          onClick={() => setCmvPorCanalModalOpen(true)}
-          className="w-full text-left bg-white rounded-2xl shadow-lg border border-[#000638]/10 p-5 hover:shadow-xl transition"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 mb-1">Análise por Canal</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {loading ? '-' : (
-                  Object.values(cmvPorCanal).reduce((total, canal) => 
-                    total + canal.baixo.length + canal.alto.length, 0
-                  ).toLocaleString('pt-BR')
-                )}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">CMV baixo/alto por canal de venda</p>
-            </div>
-            <div className="p-3 rounded-full bg-blue-500">
-              <Package size={24} className="text-white" />
-            </div>
-          </div>
-        </button>
-      </div>
-
-      {/* Modal: Produtos sem custo */}
-      <Modal
-        isOpen={semCustoModalOpen}
-        onClose={() => setSemCustoModalOpen(false)}
-        title={`Produtos sem custo (${semCustoItens.length})`}
-        size="5xl"
-      >
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="bg-[#000638] text-white">
-                <th className="px-2 py-2 text-left text-[11px]">Código</th>
-                <th className="px-2 py-2 text-left text-[11px]">Modelo</th>
-                <th className="px-2 py-2 text-right text-[11px]">Custo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={3} className="text-center py-8"><Spinner size={24} className="animate-spin" /></td></tr>
-              ) : semCustoItens.length === 0 ? (
-                <tr><td colSpan={3} className="text-center py-8">Nenhum produto sem custo encontrado.</td></tr>
-              ) : (
-                semCustoItens.map((item, idx) => (
-                  <tr key={idx} className="border-b hover:bg-gray-50">
-                    <td className="px-2 py-2">{item.cd_nivel || '-'}</td>
-                    <td className="px-2 py-2">{item.modelo || '-'}</td>
-                    <td className="px-2 py-2 text-right">{(0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Modal>
-
-             {/* Modal: CMV muito baixo (< 10%) */}
-       <Modal
-         isOpen={cmvBaixoModalOpen}
-         onClose={() => setCmvBaixoModalOpen(false)}
-         title={`CMV muito baixo (< 10%) - ${cmvBaixoItens.length} produto(s)`}
-         size="5xl"
-       >
-         <div className="overflow-x-auto rounded-lg border border-gray-200">
-                       <table className="min-w-full text-sm">
-              <thead>
-                <tr className="bg-[#000638] text-white">
-                  <th className="px-2 py-2 text-left text-[11px]">Código</th>
-                  <th className="px-2 py-2 text-left text-[11px]">Modelo</th>
-                  <th className="px-2 py-2 text-center text-[11px]">Quantidade</th>
-                  <th className="px-2 py-2 text-right text-[11px]">Custo Unit.</th>
-                  <th className="px-2 py-2 text-right text-[11px]">Custo Total</th>
-                  <th className="px-2 py-2 text-right text-[11px]">CMV %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={6} className="text-center py-8"><Spinner size={24} className="animate-spin" /></td></tr>
-                ) : cmvBaixoItens.length === 0 ? (
-                  <tr><td colSpan={6} className="text-center py-8">Nenhum produto com CMV baixo encontrado.</td></tr>
-                ) : (
-                  cmvBaixoItens.map((item, idx) => {
-                    const custoUnit = custoMap[item.cd_nivel];
-                    return (
-                      <tr key={idx} className="border-b hover:bg-gray-50">
-                        <td className="px-2 py-2">{item.cd_nivel || '-'}</td>
-                        <td className="px-2 py-2">{item.modelo || '-'}</td>
-                        <td className="px-2 py-2 text-center">{item.quantidade?.toLocaleString('pt-BR') || '-'}</td>
-                        <td className="px-2 py-2 text-right">{custoUnit?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
-                        <td className="px-2 py-2 text-right">{item.custo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                        <td className="px-2 py-2 text-right">{item.cmv != null ? item.cmv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '-'}</td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-         </div>
-       </Modal>
-
-             {/* Modal: CMV muito alto (> 70%) */}
-       <Modal
-         isOpen={cmvAltoModalOpen}
-         onClose={() => setCmvAltoModalOpen(false)}
-         title={`CMV muito alto (> 70%) - ${cmvAltoItens.length} produto(s)`}
-         size="5xl"
-       >
-         <div className="overflow-x-auto rounded-lg border border-gray-200">
-                       <table className="min-w-full text-sm">
-              <thead>
-                <tr className="bg-[#000638] text-white">
-                  <th className="px-2 py-2 text-left text-[11px]">Código</th>
-                  <th className="px-2 py-2 text-left text-[11px]">Modelo</th>
-                  <th className="px-2 py-2 text-center text-[11px]">Quantidade</th>
-                  <th className="px-2 py-2 text-right text-[11px]">Custo Unit.</th>
-                  <th className="px-2 py-2 text-right text-[11px]">Custo Total</th>
-                  <th className="px-2 py-2 text-right text-[11px]">CMV %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={6} className="text-center py-8"><Spinner size={24} className="animate-spin" /></td></tr>
-                ) : cmvAltoItens.length === 0 ? (
-                  <tr><td colSpan={6} className="text-center py-8">Nenhum produto com CMV alto encontrado.</td></tr>
-                ) : (
-                  cmvAltoItens.map((item, idx) => {
-                    const custoUnit = custoMap[item.cd_nivel];
-                    return (
-                      <tr key={idx} className="border-b hover:bg-gray-50">
-                        <td className="px-2 py-2">{item.cd_nivel || '-'}</td>
-                        <td className="px-2 py-2">{item.modelo || '-'}</td>
-                        <td className="px-2 py-2 text-center">{item.quantidade?.toLocaleString('pt-BR') || '-'}</td>
-                        <td className="px-2 py-2 text-right">{custoUnit?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
-                        <td className="px-2 py-2 text-right">{item.custo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                        <td className="px-2 py-2 text-right">{item.cmv != null ? item.cmv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '-'}</td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-         </div>
-       </Modal>
-
-      {/* Tabela Ranking Produtos (Dropdown) */}
-      <div className="mt-8 rounded-2xl shadow-lg bg-white border border-[#000638]/10">
-        <div className="flex items-center justify-between p-6 border-b border-[#000638]/10">
-          <button
-            type="button"
-            onClick={() => setRankingOpen(!rankingOpen)}
-            className="flex items-center gap-3 group"
-          >
-            {rankingOpen ? (
-              <CaretDown size={18} className="text-gray-500 group-hover:text-[#000638] transition-colors" />
-            ) : (
-              <CaretRight size={18} className="text-gray-500 group-hover:text-[#000638] transition-colors" />
-            )}
-            <Package size={24} className="text-[#000638]" />
-            <h2 className="text-xl font-bold text-[#000638]">Ranking Produtos</h2>
-            <span className="text-sm text-gray-500">(Todos os canais)</span>
-          </button>
-          <button
-            className="px-4 py-2 bg-[#000638] text-white rounded-lg text-sm font-semibold hover:bg-[#001060] transition-all duration-200 shadow-md hover:shadow-lg flex items-center gap-2"
-            onClick={exportarRankParaExcel}
-            type="button"
-            disabled={dados.length === 0}
-          >
-            <ArrowsClockwise size={16} />
-            Baixar Excel
-          </button>
-        </div>
-        {rankingOpen && (
-          <div className="p-6">
-            <div className="overflow-x-auto rounded-lg border border-gray-200">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="bg-[#000638] text-white">
-                    <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('rank')}
-                    >
-                      <div className="flex items-center justify-center gap-1">
-                        Rank {getSortIcon('rank')}
-                      </div>
-                    </th>
-                    <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('cd_nivel')}
-                    >
-                      <div className="flex items-center justify-center gap-1">
-                        Código {getSortIcon('cd_nivel')}
-                      </div>
-                    </th>
-                    <th 
-                      className="px-1 py-1 text-left text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('modelo')}
-                    >
-                      <div className="flex items-center gap-1">
-                        Modelo {getSortIcon('modelo')}
-                      </div>
-                    </th>
-                    <th 
-                      className="px-1 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('quantidade')}
-                    >
-                      <div className="flex items-center justify-center gap-1">
-                        Qtd {getSortIcon('quantidade')}
-                      </div>
-                    </th>
-                    <th 
-                      className="px-1 py-1 text-right text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('valorTotal')}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        Valor {getSortIcon('valorTotal')}
-                      </div>
-                    </th>
-                    <th 
-                      className="px-1 py-1 text-right text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('valorBrutoTotal')}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        V. Bruto {getSortIcon('valorBrutoTotal')}
-                      </div>
-                    </th>
-                    <th 
-                      className="px-1 py-1 text-right text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('desconto')}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        Desc. {getSortIcon('desconto')}
-                      </div>
-                    </th>
-                    <th 
-                      className="px-1 py-1 text-right text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('custo')}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        Custo {getSortIcon('custo')}
-                      </div>
-                    </th>
-                    <th 
-                      className="px-1 py-1 text-right text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('cmv')}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        CMV % {getSortIcon('cmv')}
-                      </div>
-                    </th>
-                    <th 
-                      className="px-1 py-1 text-right text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('markup')}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        Markup {getSortIcon('markup')}
-                      </div>
-                    </th>
-                    <th 
-                      className="px-1 py-1 text-right text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('margem')}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        Margem % {getSortIcon('margem')}
-                      </div>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(() => {
-                    // Agrupa por cd_nivel e soma os valores
-                    const rankProdutos = dados.reduce((acc, row) => {
-                      const nivel = row.cd_nivel;
-                      if (!acc[nivel]) {
-                        acc[nivel] = {
-                          cd_nivel: nivel,
-                          modelo: row.ds_nivel,
-                          valorTotal: 0,
-                          valorBrutoTotal: 0,
-                          quantidade: 0
-                        };
-                      }
-                      const qtFaturado = Number(row.qt_faturado) || 1;
-                      const valor = (Number(row.vl_unitliquido) || 0) * qtFaturado;
-                      const valorBruto = (Number(row.vl_unitbruto) || 0) * qtFaturado;
-                      if (row.tp_operacao === 'S') {
-                        acc[nivel].valorTotal += valor;
-                        acc[nivel].valorBrutoTotal += valorBruto;
-                        acc[nivel].quantidade += qtFaturado;
-                      } else if (row.tp_operacao === 'E') {
-                        acc[nivel].valorTotal -= valor;
-                        acc[nivel].valorBrutoTotal -= valorBruto;
-                        acc[nivel].quantidade -= qtFaturado;
-                      }
-                      return acc;
-                    }, {});
-                    
-                    // Converte para array e aplica ordenação
-                    const rankArray = sortRankData(Object.values(rankProdutos));
-                    
-                    if (loading) {
-                      return (
-                        <tr>
-                          <td colSpan={11} className="text-center py-12">
-                            <div className="flex flex-col items-center gap-3">
-                              <Spinner size={32} className="animate-spin text-blue-600" />
-                              <span className="text-gray-500 text-sm">Carregando produtos...</span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    }
-                    
-                    return rankArray.length === 0 ? (
-                      <tr>
-                        <td colSpan={11} className="text-center py-12">
-                          <div className="flex flex-col items-center gap-2">
-                            <Package size={32} className="text-gray-400" />
-                            <span className="text-gray-500 text-sm font-medium">Nenhum produto encontrado</span>
-                            <span className="text-gray-400 text-xs">Tente ajustar os filtros de busca</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : (
-                      rankArray.map((produto, index) => {
-                        const descontoTotal = produto.valorBrutoTotal - produto.valorTotal;
-                        return (
-                          <tr key={index} className="border-b hover:bg-gray-50 transition-colors">
-                            <td className="px-0.5 py-0.5 text-center text-blue-600 font-semibold">#{index + 1}</td>
-                            <td className="px-0.5 py-0.5 text-center">{produto.cd_nivel || 'N/A'}</td>
-                            <td className="px-0.5 py-0.5 text-center">{produto.modelo || 'N/A'}</td>
-                            <td className="px-0.5 py-0.5 text-center">{produto.quantidade.toLocaleString('pt-BR')}</td>
-                                                         <td className="px-0.5 py-0.5 text-right font-semibold text-green-600">{produto.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                             <td className="px-0.5 py-0.5 text-right font-semibold text-blue-600">{produto.valorBrutoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                             <td className="px-0.5 py-0.5 text-right font-semibold text-orange-600">{descontoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                                                         <td className="px-0.5 py-0.5 text-right font-semibold text-red-600">
-                               {custoMap[produto.cd_nivel?.trim()] !== undefined
-                                 ? (produto.quantidade * custoMap[produto.cd_nivel.trim()]).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                                 : '-'}
-                             </td>
-                                                         {/* CMV: custo / valor */}
-                             <td className="px-0.5 py-0.5 text-right font-semibold">
-                               {(() => {
-                                 const custoUnit = custoMap[produto.cd_nivel?.trim()];
-                                 const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
-                                 if (custoTotal !== undefined && produto.valorTotal > 0) {
-                                   const cmv = custoTotal / produto.valorTotal;
-                                   const cmvPercent = cmv * 100;
-                                   let cmvColor = 'text-gray-600';
-                                   if (cmvPercent < 30) cmvColor = 'text-green-600';
-                                   else if (cmvPercent < 50) cmvColor = 'text-blue-600';
-                                   else if (cmvPercent < 70) cmvColor = 'text-yellow-600';
-                                   else cmvColor = 'text-red-600';
-                                   return <span className={cmvColor}>{(cmvPercent).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'}</span>;
-                                 }
-                                 return '-';
-                               })()}
-                             </td>
-                                                         <td className="px-0.5 py-0.5 text-right font-semibold">
-                               {(() => {
-                                 const custoUnit = custoMap[produto.cd_nivel?.trim()];
-                                 const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
-                                 if (custoTotal && custoTotal !== 0) {
-                                   const markup = produto.valorTotal / custoTotal;
-                                   let markupColor = 'text-gray-600';
-                                   if (markup > 3) markupColor = 'text-green-600';
-                                   else if (markup > 2) markupColor = 'text-blue-600';
-                                   else if (markup > 1.5) markupColor = 'text-yellow-600';
-                                   else markupColor = 'text-red-600';
-                                   return <span className={markupColor}>{markup.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
-                                 }
-                                 return '-';
-                               })()}
-                             </td>
-                                                         <td className="px-0.5 py-0.5 text-right font-semibold">
-                               {(() => {
-                                 const custoUnit = custoMap[produto.cd_nivel?.trim()];
-                                 const custoTotal = custoUnit !== undefined ? produto.quantidade * custoUnit : undefined;
-                                 if (produto.valorTotal && custoTotal !== undefined && produto.valorTotal !== 0) {
-                                   const margem = ((produto.valorTotal - custoTotal) / produto.valorTotal) * 100;
-                                   let margemColor = 'text-gray-600';
-                                   if (margem > 70) margemColor = 'text-green-600';
-                                   else if (margem > 50) margemColor = 'text-blue-600';
-                                   else if (margem > 30) margemColor = 'text-yellow-600';
-                                   else margemColor = 'text-red-600';
-                                   return <span className={margemColor}>{margem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'}</span>;
-                                 }
-                                 return '-';
-                               })()}
-                             </td>
-                          </tr>
-                        );
-                      })
-                    );
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
-
-             {/* Modal: Análise por Canal */}
-       <Modal
-         isOpen={cmvPorCanalModalOpen}
-         onClose={() => setCmvPorCanalModalOpen(false)}
-         title="Análise de CMV por Canal"
-         size="full"
-       >
-        <div className="space-y-6">
-          {/* Resumo por Canal */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            {Object.entries(cmvPorCanal).map(([canal, dados]) => (
-              <div key={canal} className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-bold text-lg capitalize text-[#000638] mb-2">
-                  {canal === 'multimarca' ? 'Multimarca' : 
-                   canal === 'franquias' ? 'Franquias' :
-                   canal === 'varejo' ? 'Varejo' : 'Revenda'}
-                </h3>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-yellow-600">CMV Baixo:</span>
-                    <span className="font-semibold">{dados.baixo.length}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-red-600">CMV Alto:</span>
-                    <span className="font-semibold">{dados.alto.length}</span>
-                  </div>
-                  <div className="flex justify-between text-sm font-bold border-t pt-1">
-                    <span>Total:</span>
-                    <span>{dados.baixo.length + dados.alto.length}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Tabelas por Canal */}
-          {Object.entries(cmvPorCanal).map(([canal, dados]) => (
-            <div key={canal} className="border rounded-lg overflow-hidden">
-              <div className="bg-[#000638] text-white p-4">
-                <h3 className="text-lg font-bold capitalize">
-                  {canal === 'multimarca' ? 'Multimarca' : 
-                   canal === 'franquias' ? 'Franquias' :
-                   canal === 'varejo' ? 'Varejo' : 'Revenda'}
-                </h3>
-              </div>
-              
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-4">
-                {/* CMV Baixo */}
-                <div>
-                                     <h4 className="font-semibold text-yellow-600 mb-3 flex items-center gap-2">
-                     <ArrowDown size={16} />
-                     CMV Baixo (&lt; 10%) - {dados.baixo.length} produto(s)
-                   </h4>
-                  <div className="overflow-x-auto rounded-lg border border-gray-200">
-                                         <table className="min-w-full text-xs">
-                       <thead>
-                         <tr className="bg-gray-100">
-                           <th className="px-2 py-2 text-left text-[10px]">Código</th>
-                           <th className="px-2 py-2 text-left text-[10px]">Modelo</th>
-                           <th className="px-2 py-2 text-center text-[10px]">Qtd</th>
-                           <th className="px-2 py-2 text-right text-[10px]">Custo Unit.</th>
-                           <th className="px-2 py-2 text-right text-[10px]">Custo Total</th>
-                           <th className="px-2 py-2 text-right text-[10px]">Receita</th>
-                           <th className="px-2 py-2 text-right text-[10px]">CMV %</th>
-                         </tr>
-                       </thead>
-                       <tbody>
-                         {dados.baixo.length === 0 ? (
-                           <tr><td colSpan={7} className="text-center py-4 text-gray-500 text-xs">Nenhum produto com CMV baixo</td></tr>
-                         ) : (
-                           dados.baixo.map((item, idx) => {
-                             const custoUnit = custoMap[item.cd_nivel];
-                             return (
-                               <tr key={idx} className="border-b hover:bg-gray-50">
-                                 <td className="px-2 py-2 text-xs">{item.cd_nivel || '-'}</td>
-                                 <td className="px-2 py-2 text-xs">{item.modelo || '-'}</td>
-                                 <td className="px-2 py-2 text-center text-xs">{item.quantidade?.toLocaleString('pt-BR') || '-'}</td>
-                                 <td className="px-2 py-2 text-right text-xs">{custoUnit?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
-                                 <td className="px-2 py-2 text-right text-xs">{item.custo?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
-                                 <td className="px-2 py-2 text-right text-xs">{item.receita?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
-                                 <td className="px-2 py-2 text-right text-yellow-600 font-semibold text-xs">
-                                   {item.cmv?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' || '-'}
-                                 </td>
-                               </tr>
-                             );
-                           })
-                         )}
-                       </tbody>
-                     </table>
-                  </div>
-                </div>
-
-                {/* CMV Alto */}
-                <div>
-                                     <h4 className="font-semibold text-red-600 mb-3 flex items-center gap-2">
-                     <ArrowUp size={16} />
-                     CMV Alto (&gt; 70%) - {dados.alto.length} produto(s)
-                   </h4>
-                  <div className="overflow-x-auto rounded-lg border border-gray-200">
-                                         <table className="min-w-full text-xs">
-                       <thead>
-                         <tr className="bg-gray-100">
-                           <th className="px-2 py-2 text-left text-[10px]">Código</th>
-                           <th className="px-2 py-2 text-left text-[10px]">Modelo</th>
-                           <th className="px-2 py-2 text-center text-[10px]">Qtd</th>
-                           <th className="px-2 py-2 text-right text-[10px]">Custo Unit.</th>
-                           <th className="px-2 py-2 text-right text-[10px]">Custo Total</th>
-                           <th className="px-2 py-2 text-right text-[10px]">Receita</th>
-                           <th className="px-2 py-2 text-right text-[10px]">CMV %</th>
-                         </tr>
-                       </thead>
-                       <tbody>
-                         {dados.alto.length === 0 ? (
-                           <tr><td colSpan={7} className="text-center py-4 text-gray-500 text-xs">Nenhum produto com CMV alto</td></tr>
-                         ) : (
-                           dados.alto.map((item, idx) => {
-                             const custoUnit = custoMap[item.cd_nivel];
-                             return (
-                               <tr key={idx} className="border-b hover:bg-gray-50">
-                                 <td className="px-2 py-2 text-xs">{item.cd_nivel || '-'}</td>
-                                 <td className="px-2 py-2 text-xs">{item.modelo || '-'}</td>
-                                 <td className="px-2 py-2 text-center text-xs">{item.quantidade?.toLocaleString('pt-BR') || '-'}</td>
-                                 <td className="px-2 py-2 text-right text-xs">{custoUnit?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
-                                 <td className="px-2 py-2 text-right text-xs">{item.custo?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
-                                 <td className="px-2 py-2 text-right text-xs">{item.receita?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '-'}</td>
-                                 <td className="px-2 py-2 text-right text-red-600 font-semibold text-xs">
-                                   {item.cmv?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' || '-'}
-                                 </td>
-                               </tr>
-                             );
-                           })
-                         )}
-                       </tbody>
-                     </table>
-                  </div>
-                </div>
-              </div>
-            </div>
           ))}
         </div>
+      </div>
+
+      {/* Cards de Estatísticas */}
+      {todosDados.length > 0 && (
+        <div className="mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            {/* Card Total de Registros */}
+            <div className="bg-white rounded-lg shadow-md p-4 border border-gray-200">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <FileText className="h-8 w-8 text-blue-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500">
+                    Total de Registros
+                  </p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {estatisticas.totalRegistros.toLocaleString('pt-BR')}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Card Produtos com Valor Zero */}
+            <div className="bg-white rounded-lg shadow-md p-4 border border-red-200">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="h-8 w-8 bg-red-100 rounded-full flex items-center justify-center">
+                    <span className="text-red-600 font-bold text-sm">0</span>
+                  </div>
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500">
+                    Produtos com Valor Zero
+                  </p>
+                  <p className="text-2xl font-semibold text-red-600">
+                    {estatisticas.produtosComValorZero.toLocaleString('pt-BR')}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {estatisticas.percentualZero}% do total
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Card Produtos com Valor */}
+            <div className="bg-white rounded-lg shadow-md p-4 border border-green-200">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="h-8 w-8 bg-green-100 rounded-full flex items-center justify-center">
+                    <span className="text-green-600 font-bold text-sm">R$</span>
+                  </div>
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500">
+                    Produtos com Valor
+                  </p>
+                  <p className="text-2xl font-semibold text-green-600">
+                    {estatisticas.produtosComValor.toLocaleString('pt-BR')}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {(
+                      (estatisticas.produtosComValor /
+                        estatisticas.totalRegistros) *
+                      100
+                    ).toFixed(1)}
+                    % do total
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Card Produtos com Custo na Planilha */}
+            <div className="bg-white rounded-lg shadow-md p-4 border border-purple-200">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="h-8 w-8 bg-purple-100 rounded-full flex items-center justify-center">
+                    <span className="text-purple-600 font-bold text-sm">
+                      📊
+                    </span>
+                  </div>
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500">
+                    Com Custo Planilha
+                  </p>
+                  <p className="text-2xl font-semibold text-purple-600">
+                    {estatisticas.produtosComCustoPlanilha.toLocaleString(
+                      'pt-BR',
+                    )}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {estatisticas.percentualComCusto}% do total
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Card Produtos com Custo Planilha Zerado */}
+            <div
+              className="bg-white rounded-lg shadow-md p-4 border border-orange-200 cursor-pointer hover:shadow-lg transition"
+              onClick={() =>
+                itensSemCustoPlanilha.length > 0 && setModalSemCustoOpen(true)
+              }
+              title={
+                itensSemCustoPlanilha.length > 0
+                  ? 'Clique para ver os itens'
+                  : 'Sem itens para listar'
+              }
+              role="button"
+              tabIndex={0}
+            >
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="h-8 w-8 bg-orange-100 rounded-full flex items-center justify-center">
+                    <span className="text-orange-600 font-bold text-sm">0</span>
+                  </div>
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500">
+                    Sem Custo na Planilha
+                  </p>
+                  <p className="text-2xl font-semibold text-orange-600">
+                    {estatisticas.produtosComCustoPlanilhaZerado.toLocaleString(
+                      'pt-BR',
+                    )}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {estatisticas.produtosComCustoPlanilha > 0
+                      ? (
+                          (estatisticas.produtosComCustoPlanilhaZerado /
+                            estatisticas.produtosComCustoPlanilha) *
+                          100
+                        ).toFixed(1)
+                      : 0}
+                    % da planilha
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Card Valores Diferentes */}
+            <div
+              className="bg-white rounded-lg shadow-md p-4 border border-red-200 cursor-pointer hover:shadow-lg transition"
+              onClick={() =>
+                estatisticas.produtosValoresDiferentes > 0 &&
+                setModalValoresDiferentesOpen(true)
+              }
+              title={
+                estatisticas.produtosValoresDiferentes > 0
+                  ? 'Clique para ver os itens'
+                  : 'Sem itens para listar'
+              }
+              role="button"
+              tabIndex={0}
+            >
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="h-8 w-8 bg-red-100 rounded-full flex items-center justify-center">
+                    <span className="text-red-600 font-bold text-sm">≠</span>
+                  </div>
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500">
+                    Valores Diferentes
+                  </p>
+                  <p className="text-2xl font-semibold text-red-600">
+                    {estatisticas.produtosValoresDiferentes.toLocaleString(
+                      'pt-BR',
+                    )}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {estatisticas.produtosComCustoPlanilha > 0
+                      ? (
+                          (estatisticas.produtosValoresDiferentes /
+                            estatisticas.produtosComCustoPlanilha) *
+                          100
+                        ).toFixed(1)
+                      : 0}
+                    % da planilha
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Card Valores Iguais */}
+            <div className="bg-white rounded-lg shadow-md p-4 border border-emerald-200">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="h-8 w-8 bg-emerald-100 rounded-full flex items-center justify-center">
+                    <span className="text-emerald-600 font-bold text-sm">
+                      =
+                    </span>
+                  </div>
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500">
+                    Valores Iguais
+                  </p>
+                  <p className="text-2xl font-semibold text-emerald-600">
+                    {estatisticas.produtosValoresIguais.toLocaleString('pt-BR')}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {estatisticas.produtosComCustoPlanilha > 0
+                      ? (
+                          (estatisticas.produtosValoresIguais /
+                            estatisticas.produtosComCustoPlanilha) *
+                          100
+                        ).toFixed(1)
+                      : 0}
+                    % da planilha
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabela de Dados */}
+      {todosDados.length > 0 && (
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b">
+            <h3 className="text-lg font-semibold text-gray-800">
+              Dados de Auditoria CMV ({todosDados.length} registros)
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    #
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Código Nível
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Descrição Nível
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      onClick={() => handleOrdenacao('valorSistema')}
+                      className="flex items-center space-x-1 hover:text-gray-700"
+                    >
+                      <span>Valor Sistema</span>
+                      {ordenacao.campo === 'valorSistema' && (
+                        <span className="text-indigo-600">
+                          {ordenacao.direcao === 'asc' ? '↑' : '↓'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      onClick={() => handleOrdenacao('custoPlanilha')}
+                      className="flex items-center space-x-1 hover:text-gray-700"
+                    >
+                      <span>Valor Planilha</span>
+                      {ordenacao.campo === 'custoPlanilha' && (
+                        <span className="text-indigo-600">
+                          {ordenacao.direcao === 'asc' ? '↑' : '↓'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      onClick={() => handleOrdenacao('quantidade')}
+                      className="flex items-center space-x-1 hover:text-gray-700"
+                    >
+                      <span>Quantidade</span>
+                      {ordenacao.campo === 'quantidade' && (
+                        <span className="text-indigo-600">
+                          {ordenacao.direcao === 'asc' ? '↑' : '↓'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {dadosPaginados.map((item, index) => (
+                  <tr key={index} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {indiceInicial + index + 1}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {item.codigo || 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      {item.descricao || 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {(item.valorSistema || 0).toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {item.custoPlanilha !== null &&
+                      item.custoPlanilha !== undefined
+                        ? item.custoPlanilha.toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })
+                        : 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {(item.quantidade || 0).toLocaleString('pt-BR')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Paginação */}
+          {totalPaginas > 1 && (
+            <div className="px-4 py-3 bg-gray-50 border-t">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-700">
+                  Mostrando {indiceInicial + 1} a{' '}
+                  {Math.min(indiceFinal, dadosAgrupados.length)} de{' '}
+                  {dadosAgrupados.length} registros agrupados
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => setPaginaAtual(Math.max(1, paginaAtual - 1))}
+                    disabled={paginaAtual === 1}
+                    className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                  >
+                    Anterior
+                  </button>
+
+                  {Array.from({ length: Math.min(5, totalPaginas) }, (_, i) => {
+                    const pagina = i + 1;
+                    return (
+                      <button
+                        key={pagina}
+                        onClick={() => setPaginaAtual(pagina)}
+                        className={`px-3 py-1 text-sm border rounded ${
+                          pagina === paginaAtual
+                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            : 'hover:bg-gray-100'
+                        }`}
+                      >
+                        {pagina}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    onClick={() =>
+                      setPaginaAtual(Math.min(totalPaginas, paginaAtual + 1))
+                    }
+                    disabled={paginaAtual === totalPaginas}
+                    className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                  >
+                    Próximo
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {loading && (
+        <div className="flex items-center justify-center py-8">
+          <Spinner size={24} className="animate-spin text-indigo-600" />
+          <span className="ml-2 text-gray-600">Carregando dados...</span>
+        </div>
+      )}
+
+      {!loading && todosDados.length === 0 && (
+        <div className="text-center py-8 text-gray-500">
+          Nenhum dado encontrado para o período selecionado.
+        </div>
+      )}
+
+      {/* Modal: Itens Sem Custo na Planilha */}
+      <Modal
+        isOpen={modalSemCustoOpen}
+        onClose={() => setModalSemCustoOpen(false)}
+        title={`Itens sem custo na planilha (${itensSemCustoPlanilha.length})`}
+        size="4xl"
+      >
+        {itensSemCustoPlanilha.length === 0 ? (
+          <div className="text-sm text-gray-600">Nenhum item encontrado.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Código Nível
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Descrição Nível
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Valor Sistema
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Valor Planilha
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {itensSemCustoPlanilha.map((item, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 text-sm text-gray-900">
+                      {item.codigo || 'N/A'}
+                    </td>
+                    <td className="px-4 py-2 text-sm text-gray-900">
+                      {item.descricao || 'N/A'}
+                    </td>
+                    <td className="px-4 py-2 text-sm text-gray-900">
+                      {(item.valorSistema || 0).toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}
+                    </td>
+                    <td className="px-4 py-2 text-sm text-gray-900">
+                      {item.custoPlanilha !== null &&
+                      item.custoPlanilha !== undefined
+                        ? item.custoPlanilha.toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })
+                        : 'N/A'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal: Itens com Valores Diferentes (Sistema x Planilha) */}
+      <Modal
+        isOpen={modalValoresDiferentesOpen}
+        onClose={() => setModalValoresDiferentesOpen(false)}
+        title="Itens com valores diferentes (Sistema x Planilha)"
+        size="4xl"
+      >
+        {dadosAgrupados.filter(
+          (item) =>
+            item.custoPlanilha !== null &&
+            item.custoPlanilha !== undefined &&
+            item.custoPlanilha !== (item.valorSistema || 0),
+        ).length === 0 ? (
+          <div className="text-sm text-gray-600">Nenhum item encontrado.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Código Nível
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Descrição Nível
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Valor Sistema
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Valor Planilha
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {dadosAgrupados
+                  .filter(
+                    (item) =>
+                      item.custoPlanilha !== null &&
+                      item.custoPlanilha !== undefined &&
+                      item.custoPlanilha !== (item.valorSistema || 0),
+                  )
+                  .map((item, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50">
+                      <td className="px-4 py-2 text-sm text-gray-900">
+                        {item.codigo || 'N/A'}
+                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-900">
+                        {item.descricao || 'N/A'}
+                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-900">
+                        {(item.valorSistema || 0).toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        })}
+                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-900">
+                        {item.custoPlanilha !== null &&
+                        item.custoPlanilha !== undefined
+                          ? item.custoPlanilha.toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL',
+                            })
+                          : 'N/A'}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Modal>
     </div>
   );
 };
 
 export default AuditoriaCMV;
-
-

@@ -223,6 +223,7 @@ const useApiClient = () => {
       apiCall('/api/sales/ranking-vendedores', params),
     vlimposto: (params) => apiCall('/api/sales/vlimposto', params),
     cmvtest: (params) => apiCall('/api/sales/cmvtest', params),
+    cmv: (params) => apiCall('/api/sales/cmv', params),
   };
 
   const company = {

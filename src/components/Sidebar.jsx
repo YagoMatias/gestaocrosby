@@ -114,31 +114,6 @@ const financeiro = [
 ];
 
 const faturamento = [
-  { name: 'Varejo', href: '/varejo', icon: Storefront, color: 'text-blue-600' },
-  {
-    name: 'Franquias',
-    href: '/franquias',
-    icon: Buildings,
-    color: 'text-green-600',
-  },
-  {
-    name: 'Multimarcas',
-    href: '/multimarcas',
-    icon: TrendUp,
-    color: 'text-purple-600',
-  },
-  {
-    name: 'Revenda',
-    href: '/revenda',
-    icon: ShoppingCart,
-    color: 'text-orange-600',
-  },
-  {
-    name: 'Consolidado',
-    href: '/consolidado',
-    icon: ChartLineUp,
-    color: 'text-indigo-600',
-  },
   {
     name: 'Auditoria CMV',
     href: '/auditoria-cmv',
@@ -146,7 +121,7 @@ const faturamento = [
     color: 'text-indigo-600',
   },
   {
-    name: 'CMV CONSOLIDADO',
+    name: 'CMV Consolidado',
     href: '/cmv-consolidado',
     icon: FileText,
     color: 'text-indigo-600',
