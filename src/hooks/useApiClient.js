@@ -26,7 +26,28 @@ const useApiClient = () => {
       const response = await fetch(url.toString());
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        let errorBody = null;
+        try {
+          errorBody = await response.json();
+        } catch {}
+        const message =
+          (errorBody && (errorBody.message || errorBody.error)) ||
+          response.statusText ||
+          'Erro ao processar requisição';
+        console.warn('⚠️ Resposta não OK da API:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody,
+          url: url.toString(),
+        });
+        return {
+          success: false,
+          data: [],
+          total: 0,
+          message,
+          status: response.status,
+          error: errorBody?.error || null,
+        };
       }
 
       const result = await response.json();
@@ -224,6 +245,10 @@ const useApiClient = () => {
     vlimposto: (params) => apiCall('/api/sales/vlimposto', params),
     cmvtest: (params) => apiCall('/api/sales/cmvtest', params),
     cmv: (params) => apiCall('/api/sales/cmv', params),
+    cmvvarejo: (params) => apiCall('/api/sales/cmvvarejo', params),
+    cmvfranquia: (params) => apiCall('/api/sales/cmvfranquia', params),
+    cmvmultimarcas: (params) => apiCall('/api/sales/cmvmultimarcas', params),
+    cmvrevenda: (params) => apiCall('/api/sales/cmvrevenda', params),
   };
 
   const company = {

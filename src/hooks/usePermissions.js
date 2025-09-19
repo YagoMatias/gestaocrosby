@@ -1,6 +1,6 @@
 import { useAuth } from '../components/AuthContext';
 
-export const usePermissions = () => {
+const usePermissions = () => {
   const { user } = useAuth();
 
   // Verificações de roles específicos
@@ -13,10 +13,13 @@ export const usePermissions = () => {
   // Verificações de permissões baseadas em níveis
   const canAccessAdmin = () => isOwner() || isAdmin();
   const canAccessManager = () => isOwner() || isAdmin() || isManager();
-  const canAccessFinancial = () => isOwner() || isAdmin() || isManager() || isUser(); // User tem acesso ao financeiro
+  const canAccessFinancial = () =>
+    isOwner() || isAdmin() || isManager() || isUser(); // User tem acesso ao financeiro
   const canAccessCMV = () => isOwner() || isAdmin() || isManager(); // Manager tem acesso ao CMV
-  const canAccessFranchise = () => isOwner() || isAdmin() || isManager() || isUser() || isGuest(); // Guest tem acesso às franquias
-  const canAccessComprasFranquias = () => isOwner() || isAdmin() || isManager() || isUser() || isGuest(); // Guest tem acesso às compras franquias
+  const canAccessFranchise = () =>
+    isOwner() || isAdmin() || isManager() || isUser() || isGuest(); // Guest tem acesso às franquias
+  const canAccessComprasFranquias = () =>
+    isOwner() || isAdmin() || isManager() || isUser() || isGuest(); // Guest tem acesso às compras franquias
   const canAccessDashboard = () => true; // Todos os roles podem acessar o dashboard
 
   // Funções auxiliares
@@ -28,7 +31,7 @@ export const usePermissions = () => {
       admin: 2,
       manager: 3,
       user: 4,
-      guest: 5
+      guest: 5,
     };
     return (levelMap[user?.role] || 6) <= minLevel;
   };
@@ -49,6 +52,8 @@ export const usePermissions = () => {
     canAccessDashboard,
     hasRole,
     hasAnyRole,
-    hasPermissionLevel
+    hasPermissionLevel,
   };
-}; 
+};
+
+export default usePermissions;

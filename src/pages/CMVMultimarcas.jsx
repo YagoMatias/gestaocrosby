@@ -14,7 +14,7 @@ const CMVMultimarcas = () => {
   const [filtros, setFiltros] = useState({
     dt_inicio: '',
     dt_fim: '',
-    empresas: [],
+    empresas: [1, 2, 6, 11, 31, 75, 85, 92, 99], // empresas fixas
     // classificacoes é fixo e oculto: sempre [2]
     nr_transacao: '',
     cd_pessoa: '',
@@ -52,7 +52,7 @@ const CMVMultimarcas = () => {
         params.cd_pessoa = String(filtros.cd_pessoa).trim();
       }
 
-      const resp = await api.sales.cmv(params);
+      const resp = await api.sales.cmvmultimarcas(params);
       if (!resp.success) {
         setErro(resp.message || 'Falha ao carregar dados');
         setDados([]);
@@ -198,7 +198,7 @@ const CMVMultimarcas = () => {
     <div className="w-full max-w-7xl mx-auto p-4">
       <PageTitle
         title="CMV MULTIMARCAS"
-        subtitle="Consulta da rota /cmv (view materializada mv_nfitemprod)"
+        subtitle="Consulta da rota /cmvmultimarcas (view materializada cmvmultimarcas)"
         icon={ChartLineUp}
         iconColor="text-indigo-600"
       />

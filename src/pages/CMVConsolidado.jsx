@@ -1,53 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import useApiClient from '../hooks/useApiClient';
+import usePermissions from '../hooks/usePermissions';
 import PageTitle from '../components/ui/PageTitle';
-import { ChartLineUp } from '@phosphor-icons/react';
-
-// Cache em memória (sobrevive durante a sessão)
-const memoryCache = new Map();
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
-
-const buildCacheKey = (routeName, params) => {
-  // Normaliza objeto para chave estável
-  const stable = JSON.stringify(params, Object.keys(params).sort());
-  return `${routeName}::${stable}`;
-};
-
-const readCache = (key) => {
-  // 1) memória
-  if (memoryCache.has(key)) {
-    const entry = memoryCache.get(key);
-    if (Date.now() - entry.ts < CACHE_TTL_MS) return entry.data;
-  }
-  // 2) localStorage
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.ts && Date.now() - parsed.ts < CACHE_TTL_MS) {
-        // re-hidrata memória
-        memoryCache.set(key, { data: parsed.data, ts: parsed.ts });
-        return parsed.data;
-      }
-    }
-  } catch {}
-  return null;
-};
-
-const writeCache = (key, data) => {
-  const entry = { data, ts: Date.now() };
-  memoryCache.set(key, entry);
-  try {
-    localStorage.setItem(key, JSON.stringify(entry));
-  } catch {}
-};
+import PerformanceModal from '../components/ui/PerformanceModal';
+import { ChartLineUp, Gauge } from '@phosphor-icons/react';
 
 const CMVConsolidado = () => {
   const api = useApiClient();
+  const { isAdmin } = usePermissions();
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
   const [dados, setDados] = useState([]);
   const [dadosVarejo, setDadosVarejo] = useState([]);
+  const [showPerformanceModal, setShowPerformanceModal] = useState(false);
+  const [performanceData, setPerformanceData] = useState(null);
 
   // Evitar race condition entre buscas
   const lastRequestIdRef = useRef(0);
@@ -58,33 +24,11 @@ const CMVConsolidado = () => {
     empresas: [],
   });
 
-  // Filtro de Mês/Ano (igual Contas a Receber)
-  const [filtroMensal, setFiltroMensal] = useState(() => {
-    try {
-      return localStorage.getItem('cmvconsolidado:filtroMensal') || 'ANO';
-    } catch {
-      return 'ANO';
-    }
-  });
-  const [filtroDia, setFiltroDia] = useState(() => {
-    try {
-      const raw = localStorage.getItem('cmvconsolidado:filtroDia');
-      return raw === null ? null : JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  });
+  // Filtro de Mês/Ano
+  const [filtroMensal, setFiltroMensal] = useState('ANO');
+  const [filtroDia, setFiltroDia] = useState(null);
 
   useEffect(() => {
-    // Hidrata filtros do localStorage, se existirem
-    try {
-      const saved = localStorage.getItem('cmvconsolidado:filtros');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setFiltros((f) => ({ ...f, ...parsed }));
-        return;
-      }
-    } catch {}
     // Default: mês atual
     const hoje = new Date();
     const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
@@ -95,28 +39,6 @@ const CMVConsolidado = () => {
       .split('T')[0];
     setFiltros((f) => ({ ...f, dt_inicio: primeiroDia, dt_fim: ultimoDia }));
   }, []);
-
-  // Persiste filtros e período
-  useEffect(() => {
-    try {
-      localStorage.setItem('cmvconsolidado:filtros', JSON.stringify(filtros));
-    } catch {}
-  }, [filtros]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('cmvconsolidado:filtroMensal', filtroMensal);
-    } catch {}
-  }, [filtroMensal]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        'cmvconsolidado:filtroDia',
-        JSON.stringify(filtroDia),
-      );
-    } catch {}
-  }, [filtroDia]);
 
   const buscar = async () => {
     try {
@@ -132,65 +54,201 @@ const CMVConsolidado = () => {
         params.cd_empresa = filtros.empresas;
       }
 
-      // Fetch consolidado (classificações 2,3,4) e varejo em paralelo
-      const empresasFixasVarejo = [
-        '2',
-        '5',
-        '55',
-        '65',
-        '90',
-        '91',
-        '92',
-        '93',
-        '94',
-        '95',
-        '96',
-        '97',
-        '98',
-      ];
+      // Empresas fixas para todas as rotas
+      const empresasFixas = [1, 2, 6, 11, 31, 75, 85, 92, 99];
+
+      // Parâmetros para cada rota específica
+      const paramsFranquia = {
+        dt_inicio: filtros.dt_inicio,
+        dt_fim: filtros.dt_fim,
+        cd_empresa: empresasFixas,
+        cd_classificacao: [4], // Franquia
+      };
+
+      const paramsMultimarcas = {
+        dt_inicio: filtros.dt_inicio,
+        dt_fim: filtros.dt_fim,
+        cd_empresa: empresasFixas,
+        cd_classificacao: [2], // Multimarcas
+      };
+
+      const paramsRevenda = {
+        dt_inicio: filtros.dt_inicio,
+        dt_fim: filtros.dt_fim,
+        cd_empresa: empresasFixas,
+        cd_classificacao: [3], // Revenda
+      };
+
       const paramsVarejo = {
         dt_inicio: filtros.dt_inicio,
         dt_fim: filtros.dt_fim,
-        cd_empresa: empresasFixasVarejo,
+        cd_empresa: empresasFixas,
       };
-
-      // Chaves de cache
-      const keyConsol = buildCacheKey('cmvtest', params);
-      const keyVarejo = buildCacheKey('faturamento', paramsVarejo);
-
-      // SWR: mostra cache imediatamente se existir
-      const cachedConsol = readCache(keyConsol);
-      const cachedVarejo = readCache(keyVarejo);
-      if (cachedConsol) setDados(cachedConsol);
-      if (cachedVarejo) setDadosVarejo(cachedVarejo);
 
       // Controle de corrida
       const reqId = ++lastRequestIdRef.current;
 
-      const [respConsolidado, respVarejo] = await Promise.all([
-        api.sales.cmvtest(params),
-        api.sales.faturamento(paramsVarejo),
-      ]);
+      // Medir tempo de carregamento para administradores
+      const startTime = performance.now();
+      const routeTimings = [];
 
-      if (!respConsolidado.success) {
-        setErro(respConsolidado.message || 'Falha ao carregar dados');
-        if (!cachedConsol) setDados([]);
-      } else {
-        const lista = Array.isArray(respConsolidado?.data?.data)
-          ? respConsolidado.data.data
-          : Array.isArray(respConsolidado?.data)
-          ? respConsolidado.data
+      const [resFranquia, resMultimarcas, resRevenda, resVarejo] =
+        await Promise.allSettled([
+          (async () => {
+            const routeStart = performance.now();
+            const result = await api.sales.cmvfranquia(paramsFranquia);
+            const routeEnd = performance.now();
+            routeTimings.push({
+              name: 'Franquia',
+              endpoint: '/api/sales/cmvfranquia',
+              duration: Math.round(routeEnd - routeStart),
+              success: result.success,
+              recordCount: result.data?.length || 0,
+            });
+            return result;
+          })(),
+          (async () => {
+            const routeStart = performance.now();
+            const result = await api.sales.cmvmultimarcas(paramsMultimarcas);
+            const routeEnd = performance.now();
+            routeTimings.push({
+              name: 'Multimarcas',
+              endpoint: '/api/sales/cmvmultimarcas',
+              duration: Math.round(routeEnd - routeStart),
+              success: result.success,
+              recordCount: result.data?.length || 0,
+            });
+            return result;
+          })(),
+          (async () => {
+            const routeStart = performance.now();
+            const result = await api.sales.cmvrevenda(paramsRevenda);
+            const routeEnd = performance.now();
+            routeTimings.push({
+              name: 'Revenda',
+              endpoint: '/api/sales/cmvrevenda',
+              duration: Math.round(routeEnd - routeStart),
+              success: result.success,
+              recordCount: result.data?.length || 0,
+            });
+            return result;
+          })(),
+          (async () => {
+            const routeStart = performance.now();
+            const result = await api.sales.cmvvarejo(paramsVarejo);
+            const routeEnd = performance.now();
+            routeTimings.push({
+              name: 'Varejo',
+              endpoint: '/api/sales/cmvvarejo',
+              duration: Math.round(routeEnd - routeStart),
+              success: result.success,
+              recordCount: result.data?.length || 0,
+            });
+            return result;
+          })(),
+        ]);
+
+      const totalTime = Math.round(performance.now() - startTime);
+
+      // Salvar dados de performance para administradores
+      if (isAdmin()) {
+        setPerformanceData({
+          routes: routeTimings,
+          total: totalTime,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      const respFranquia =
+        resFranquia.status === 'fulfilled'
+          ? resFranquia.value
+          : {
+              success: false,
+              message:
+                resFranquia.reason?.message ||
+                'Falha ao carregar dados da franquia',
+            };
+      const respMultimarcas =
+        resMultimarcas.status === 'fulfilled'
+          ? resMultimarcas.value
+          : {
+              success: false,
+              message:
+                resMultimarcas.reason?.message ||
+                'Falha ao carregar dados de multimarcas',
+            };
+      const respRevenda =
+        resRevenda.status === 'fulfilled'
+          ? resRevenda.value
+          : {
+              success: false,
+              message:
+                resRevenda.reason?.message ||
+                'Falha ao carregar dados de revenda',
+            };
+      const respVarejo =
+        resVarejo.status === 'fulfilled'
+          ? resVarejo.value
+          : {
+              success: false,
+              message:
+                resVarejo.reason?.message ||
+                'Falha ao carregar dados do varejo',
+            };
+
+      // Combinar dados de franquia, multimarcas e revenda para o consolidado
+      let dadosConsolidados = [];
+      let hasError = false;
+
+      if (respFranquia.success) {
+        const listaFranquia = Array.isArray(respFranquia?.data?.data)
+          ? respFranquia.data.data
+          : Array.isArray(respFranquia?.data)
+          ? respFranquia.data
           : [];
-        if (reqId === lastRequestIdRef.current) {
-          setDados(lista);
-          writeCache(keyConsol, lista);
-        }
+        dadosConsolidados = dadosConsolidados.concat(listaFranquia);
+      } else {
+        console.warn('Falha ao carregar franquia:', respFranquia.message);
+        hasError = true;
+      }
+
+      if (respMultimarcas.success) {
+        const listaMultimarcas = Array.isArray(respMultimarcas?.data?.data)
+          ? respMultimarcas.data.data
+          : Array.isArray(respMultimarcas?.data)
+          ? respMultimarcas.data
+          : [];
+        dadosConsolidados = dadosConsolidados.concat(listaMultimarcas);
+      } else {
+        console.warn('Falha ao carregar multimarcas:', respMultimarcas.message);
+        hasError = true;
+      }
+
+      if (respRevenda.success) {
+        const listaRevenda = Array.isArray(respRevenda?.data?.data)
+          ? respRevenda.data.data
+          : Array.isArray(respRevenda?.data)
+          ? respRevenda.data
+          : [];
+        dadosConsolidados = dadosConsolidados.concat(listaRevenda);
+      } else {
+        console.warn('Falha ao carregar revenda:', respRevenda.message);
+        hasError = true;
+      }
+
+      if (hasError) {
+        setErro(
+          'Algumas consultas falharam, mas dados disponíveis serão exibidos',
+        );
+      }
+
+      if (reqId === lastRequestIdRef.current) {
+        setDados(dadosConsolidados);
       }
 
       if (!respVarejo.success) {
-        // mantém erro informativo mas não bloqueia os dados de consolidado
         console.warn('Falha ao carregar varejo:', respVarejo.message);
-        if (!cachedVarejo) setDadosVarejo([]);
+        setDadosVarejo([]);
       } else {
         const listaVar = Array.isArray(respVarejo?.data?.data)
           ? respVarejo.data.data
@@ -199,7 +257,6 @@ const CMVConsolidado = () => {
           : [];
         if (reqId === lastRequestIdRef.current) {
           setDadosVarejo(listaVar);
-          writeCache(keyVarejo, listaVar);
         }
       }
     } catch (e) {
@@ -454,7 +511,7 @@ const CMVConsolidado = () => {
               className="border rounded px-2 py-1.5 w-full text-xs"
             />
           </div>
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
             <button
               onClick={buscar}
               disabled={loading || !filtros.dt_inicio || !filtros.dt_fim}
@@ -462,6 +519,16 @@ const CMVConsolidado = () => {
             >
               {loading ? 'Buscando...' : 'Buscar'}
             </button>
+            {isAdmin() && performanceData && (
+              <button
+                onClick={() => setShowPerformanceModal(true)}
+                className="bg-blue-500 text-white text-xs px-3 py-2 rounded hover:bg-blue-600 flex items-center gap-1"
+                title="Ver performance das rotas"
+              >
+                <Gauge className="w-3 h-3" />
+                Performance
+              </button>
+            )}
           </div>
         </div>
         {erro && <div className="mt-2 text-xs text-red-600">{erro}</div>}
@@ -1003,6 +1070,15 @@ const CMVConsolidado = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de Performance - apenas para administradores */}
+      {isAdmin() && (
+        <PerformanceModal
+          isOpen={showPerformanceModal}
+          onClose={() => setShowPerformanceModal(false)}
+          performanceData={performanceData}
+        />
+      )}
     </div>
   );
 };

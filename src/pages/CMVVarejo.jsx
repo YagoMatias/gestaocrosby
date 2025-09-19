@@ -61,7 +61,7 @@ const CMVVarejo = () => {
         params.cd_pessoa = String(filtros.cd_pessoa).trim();
       }
 
-      const resp = await api.sales.faturamento(params);
+      const resp = await api.sales.cmvvarejo(params);
       if (!resp.success) {
         setErro(resp.message || 'Falha ao carregar dados');
         setDados([]);
@@ -204,7 +204,7 @@ const CMVVarejo = () => {
     <div className="w-full max-w-7xl mx-auto p-4">
       <PageTitle
         title="CMV Varejo"
-        subtitle="Consulta da rota /faturamento"
+        subtitle="Consulta da rota /cmvvarejo"
         icon={ChartLineUp}
         iconColor="text-indigo-600"
       />
