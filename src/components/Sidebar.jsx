@@ -100,6 +100,12 @@ const financeiro = [
     color: 'text-emerald-600',
   },
   {
+    name: 'DRE',
+    href: '/dre',
+    icon: ChartBar,
+    color: 'text-purple-600',
+  },
+  {
     name: 'Manifestação de NF',
     href: '/manifestacao-nf',
     icon: FileText,

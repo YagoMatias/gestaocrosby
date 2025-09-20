@@ -41,6 +41,7 @@ const CMVMultimarcas = lazy(() => import('./pages/CMVMultimarcas'));
 const CMVRevenda = lazy(() => import('./pages/CMVRevenda'));
 const CMVFranquia = lazy(() => import('./pages/CMVFranquia'));
 const CMVVarejo = lazy(() => import('./pages/CMVVarejo'));
+const DRE = lazy(() => import('./pages/DRE'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -192,6 +193,11 @@ const AppRoutes = memo(() => {
     {
       path: '/cmv-varejo',
       component: CMVVarejo,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/dre',
+      component: DRE,
       roles: ['owner', 'admin', 'manager', 'user'],
     },
     {
