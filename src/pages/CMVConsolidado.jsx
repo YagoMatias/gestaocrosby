@@ -102,7 +102,7 @@ const CMVConsolidado = () => {
 
       return chavesParaRemover.length > 0;
     } catch (error) {
-      console.error('Erro ao tentar liberar espaço no localStorage:', error);
+      console.error('Erro ao tentar liberar espaço localStorage:', error);
       return false;
     }
   };
