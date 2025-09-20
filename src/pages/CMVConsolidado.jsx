@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from 'react';
 import useApiClient from '../hooks/useApiClient';
 import usePermissions from '../hooks/usePermissions';
 import PageTitle from '../components/ui/PageTitle';
@@ -9,6 +15,7 @@ const CMVConsolidado = () => {
   const api = useApiClient();
   const { isAdmin } = usePermissions();
   const [loading, setLoading] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState('');
   const [erro, setErro] = useState('');
   const [dados, setDados] = useState([]);
   const [dadosVarejo, setDadosVarejo] = useState([]);
@@ -17,6 +24,12 @@ const CMVConsolidado = () => {
 
   // Evitar race condition entre buscas
   const lastRequestIdRef = useRef(0);
+
+  // Referência para os totais por segmento (usado com cache)
+  const totaisPorSegmentoRef = useRef(null);
+
+  // Chave base para localStorage
+  const STORAGE_KEY_BASE = 'cmvconsolidado_data';
 
   const [filtros, setFiltros] = useState({
     dt_inicio: '',
@@ -28,6 +41,324 @@ const CMVConsolidado = () => {
   const [filtroMensal, setFiltroMensal] = useState('ANO');
   const [filtroDia, setFiltroDia] = useState(null);
 
+  // Estado para controlar se os dados vieram do cache
+  const [dadosFromCache, setDadosFromCache] = useState(false);
+
+  // Função para verificar se uma data é do mês atual
+  const isCurrentMonth = (dateString) => {
+    if (!dateString) return false;
+    const hoje = new Date();
+    const mesAtual = hoje.getMonth() + 1;
+    const anoAtual = hoje.getFullYear();
+
+    const [ano, mes] = dateString.split('-');
+    return Number(ano) === anoAtual && Number(mes) === mesAtual;
+  };
+
+  // Funções para otimizar o armazenamento no localStorage
+  const extractTotalsOnly = (data) => {
+    // Salvar apenas os totais calculados, sem os dados brutos
+    if (!data) return null;
+
+    return {
+      timestamp: data.timestamp,
+      periodo: data.periodo,
+      // Não salvar os dados brutos de transação
+      // dados: [],
+      // dadosVarejo: [],
+      // Salvar apenas os totais calculados por segmento
+      totaisPorSegmento: data.totaisPorSegmento,
+    };
+  };
+
+  // Função para limpar espaço no localStorage quando a quota é excedida
+  const limparEspacoLocalStorage = () => {
+    try {
+      console.log('Tentando liberar espaço no localStorage...');
+
+      // Obter todas as chaves relacionadas ao nosso app
+      const nossasChaves = Object.keys(localStorage)
+        .filter((key) => key.startsWith(STORAGE_KEY_BASE))
+        .sort(); // Ordenar para remover as mais antigas primeiro
+
+      if (nossasChaves.length <= 1) {
+        console.warn('Não há dados suficientes para liberar espaço');
+        return false;
+      }
+
+      // Remover a metade mais antiga dos dados
+      const chavesParaRemover = nossasChaves.slice(
+        0,
+        Math.ceil(nossasChaves.length / 2),
+      );
+      console.log(
+        `Removendo ${chavesParaRemover.length} chaves antigas para liberar espaço`,
+      );
+
+      chavesParaRemover.forEach((key) => {
+        localStorage.removeItem(key);
+        console.log(`Chave removida: ${key}`);
+      });
+
+      return chavesParaRemover.length > 0;
+    } catch (error) {
+      console.error('Erro ao tentar liberar espaço no localStorage:', error);
+      return false;
+    }
+  };
+
+  // Funções para gerenciar o localStorage
+  const getStorageKey = useCallback((dataInicio, dataFim) => {
+    // Formato: cmvconsolidado_data_AAAAMM (ano e mês da data inicial)
+    if (!dataInicio) return null;
+    const [ano, mes] = dataInicio.split('-');
+    return `${STORAGE_KEY_BASE}_${ano}${mes}`;
+  }, []);
+
+  // Helpers de agregação por segmento
+  const aggregateTotais = (rows) => {
+    let totalLiquido = 0;
+    let totalBruto = 0;
+    let totalDevolucoes = 0;
+    let totalCMV = 0;
+    let totalFrete = 0;
+    for (const row of rows || []) {
+      const qtd = toNumber(row?.qt_faturado) || 1;
+      const frete = toNumber(row?.vl_freterat) || 0;
+      const liq = toNumber(row?.vl_unitliquido) * qtd + frete;
+      const bru = toNumber(row?.vl_unitbruto) * qtd + frete;
+      const cmv = toNumber(row?.vl_produto) * qtd;
+      const isDev = String(row?.tp_operacao).trim() === 'E';
+      if (isDev) {
+        totalLiquido -= Math.abs(liq);
+        totalBruto -= Math.abs(bru);
+        totalDevolucoes += Math.abs(liq);
+        totalCMV -= Math.abs(cmv);
+      } else {
+        totalLiquido += liq;
+        totalBruto += bru;
+        totalCMV += cmv;
+      }
+      totalFrete += frete;
+    }
+    return { totalLiquido, totalBruto, totalDevolucoes, totalCMV, totalFrete };
+  };
+
+  const aggregateVarejo = (rows) => {
+    // Varejo vem da rota /faturamento: cmv = vl_produto * qt_faturado, vendas com frete incluso
+    let totalLiquido = 0;
+    let totalBruto = 0;
+    let totalDevolucoes = 0;
+    let totalCMV = 0;
+    let totalFrete = 0;
+    for (const row of rows || []) {
+      const qtd = toNumber(row?.qt_faturado) || 1;
+      const frete = toNumber(row?.vl_freterat) || 0;
+      const liq = toNumber(row?.vl_unitliquido) * qtd + frete;
+      const bru = toNumber(row?.vl_unitbruto) * qtd + frete;
+      const cmv = toNumber(row?.vl_produto) * qtd;
+      const isDev = String(row?.tp_operacao).trim() === 'E';
+      if (isDev) {
+        totalLiquido -= Math.abs(liq);
+        totalBruto -= Math.abs(bru);
+        totalDevolucoes += Math.abs(liq);
+        totalCMV -= Math.abs(cmv);
+      } else {
+        totalLiquido += liq;
+        totalBruto += bru;
+        totalCMV += cmv;
+      }
+      totalFrete += frete;
+    }
+    return { totalLiquido, totalBruto, totalDevolucoes, totalCMV, totalFrete };
+  };
+
+  const cleanOldData = useCallback(() => {
+    try {
+      // Verificar se localStorage está disponível
+      if (typeof localStorage === 'undefined') {
+        console.warn('localStorage não está disponível');
+        return;
+      }
+
+      // Obter data atual
+      const hoje = new Date();
+      const mesAtual = hoje.getMonth() + 1;
+      const anoAtual = hoje.getFullYear();
+
+      // Calcular mês anterior
+      let mesAnterior = mesAtual - 1;
+      let anoAnterior = anoAtual;
+
+      if (mesAnterior === 0) {
+        mesAnterior = 12;
+        anoAnterior = anoAtual - 1;
+      }
+
+      // Formatar mês anterior com zero à esquerda se necessário
+      const mesAnteriorStr =
+        mesAnterior < 10 ? `0${mesAnterior}` : `${mesAnterior}`;
+
+      // Chave para o mês anterior
+      const keyMesAnterior = `${STORAGE_KEY_BASE}_${anoAnterior}${mesAnteriorStr}`;
+
+      // Remover todos os dados do localStorage exceto o mês atual e o anterior
+      Object.keys(localStorage).forEach((key) => {
+        if (
+          key.startsWith(STORAGE_KEY_BASE) &&
+          key !== keyMesAnterior &&
+          !key.endsWith(`${anoAtual}${mesAtual < 10 ? '0' : ''}${mesAtual}`)
+        ) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (error) {
+      console.error('Erro ao limpar dados antigos do localStorage:', error);
+    }
+  }, []);
+
+  const saveToLocalStorage = useCallback(
+    (dataInicio, dataFim, dados, dadosVarejo) => {
+      try {
+        // Verificar se localStorage está disponível
+        if (typeof localStorage === 'undefined') {
+          console.warn('localStorage não está disponível');
+          return;
+        }
+
+        if (!dataInicio || !dataFim || !dados) return;
+
+        // Não salvar dados do mês atual
+        if (isCurrentMonth(dataInicio) || isCurrentMonth(dataFim)) {
+          console.log('Não salvando dados do mês atual no localStorage');
+          return;
+        }
+
+        const key = getStorageKey(dataInicio, dataFim);
+        if (!key) return;
+
+        // Dados a serem salvos
+        const dadosToSave = {
+          timestamp: new Date().getTime(),
+          periodo: { dataInicio, dataFim },
+          dados,
+          dadosVarejo,
+          totaisPorSegmento: {
+            consolidado: {
+              ...aggregateTotais(dados),
+              ...aggregateVarejo(dadosVarejo),
+            },
+            multimarcas: aggregateTotais(
+              dados.filter((r) => Number(r?.cd_classificacao) === 2),
+            ),
+            revenda: aggregateTotais(
+              dados.filter((r) => Number(r?.cd_classificacao) === 3),
+            ),
+            franquia: aggregateTotais(
+              dados.filter((r) => Number(r?.cd_classificacao) === 4),
+            ),
+            varejo: aggregateVarejo(dadosVarejo),
+          },
+        };
+
+        // Extrair apenas os totais calculados para economizar espaço
+        const dadosOtimizados = extractTotalsOnly(dadosToSave);
+        const jsonData = JSON.stringify(dadosOtimizados);
+
+        const salvarDados = () => {
+          try {
+            console.log('Salvando dados no localStorage com a chave:', key);
+            localStorage.setItem(key, jsonData);
+            console.log('Dados salvos com sucesso!');
+            return true;
+          } catch (storageError) {
+            return false;
+          }
+        };
+
+        // Tentar salvar os dados
+        if (!salvarDados()) {
+          // Se falhar, verificar se é erro de quota
+          console.warn(
+            'Falha ao salvar no localStorage, tentando liberar espaço...',
+          );
+
+          // Tentar liberar espaço e salvar novamente
+          if (limparEspacoLocalStorage()) {
+            if (!salvarDados()) {
+              console.error(
+                'Não foi possível salvar mesmo após liberar espaço',
+              );
+            }
+          }
+        }
+
+        // Limpar dados antigos (manter apenas último mês)
+        cleanOldData();
+      } catch (error) {
+        console.error('Erro ao salvar dados no localStorage:', error);
+      }
+    },
+    [getStorageKey, cleanOldData, isCurrentMonth],
+  );
+
+  const getFromLocalStorage = useCallback(
+    (dataInicio, dataFim) => {
+      try {
+        // Verificar se localStorage está disponível
+        if (typeof localStorage === 'undefined') {
+          console.warn('localStorage não está disponível');
+          return null;
+        }
+
+        if (!dataInicio || !dataFim) return null;
+
+        // Não carregar dados se o período inclui o mês atual
+        if (isCurrentMonth(dataInicio) || isCurrentMonth(dataFim)) {
+          console.log('Período inclui o mês atual. Não usando cache.');
+          return null;
+        }
+
+        const key = getStorageKey(dataInicio, dataFim);
+        if (!key) return null;
+
+        console.log('Verificando dados no localStorage com a chave:', key);
+        const storedData = localStorage.getItem(key);
+        if (!storedData) {
+          console.log('Nenhum dado encontrado no localStorage para esta chave');
+          return null;
+        }
+
+        console.log('Dados encontrados no localStorage!');
+        try {
+          const parsedData = JSON.parse(storedData);
+
+          // Verificar se os dados são do período correto
+          if (
+            parsedData.periodo?.dataInicio !== dataInicio ||
+            parsedData.periodo?.dataFim !== dataFim
+          ) {
+            console.log(
+              'Período dos dados no cache não corresponde ao solicitado',
+            );
+            return null;
+          }
+
+          return parsedData;
+        } catch (parseError) {
+          console.error('Erro ao analisar dados do localStorage:', parseError);
+          // Remover dados corrompidos
+          localStorage.removeItem(key);
+          return null;
+        }
+      } catch (error) {
+        console.error('Erro ao recuperar dados do localStorage:', error);
+        return null;
+      }
+    },
+    [getStorageKey, isCurrentMonth],
+  );
+
   useEffect(() => {
     // Default: mês atual
     const hoje = new Date();
@@ -38,12 +369,164 @@ const CMVConsolidado = () => {
       .toISOString()
       .split('T')[0];
     setFiltros((f) => ({ ...f, dt_inicio: primeiroDia, dt_fim: ultimoDia }));
-  }, []);
+
+    // Limpar dados antigos ao iniciar
+    cleanOldData();
+  }, [cleanOldData]);
+
+  // Função para fazer requisição com retry
+  const fetchWithRetry = async (
+    apiCall,
+    params,
+    name,
+    endpoint,
+    maxRetries = 2,
+    delay = 1000,
+  ) => {
+    let attempts = 0;
+    let lastError;
+
+    while (attempts <= maxRetries) {
+      try {
+        const routeStart = performance.now();
+        const result = await apiCall(params);
+        const routeEnd = performance.now();
+
+        const timing = {
+          name,
+          endpoint,
+          duration: Math.round(routeEnd - routeStart),
+          success: result.success,
+          recordCount: result.data?.length || 0,
+          attempts: attempts + 1,
+        };
+
+        return { result, timing };
+      } catch (error) {
+        lastError = error;
+        attempts++;
+        console.log(
+          `Tentativa ${attempts} para ${name} falhou. Tentando novamente em ${delay}ms...`,
+        );
+
+        if (attempts <= maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          // Aumentar o delay para a próxima tentativa (backoff exponencial)
+          delay *= 2;
+        }
+      }
+    }
+
+    // Se chegou aqui, todas as tentativas falharam
+    return {
+      result: {
+        success: false,
+        message: `Falha após ${maxRetries + 1} tentativas: ${
+          lastError?.message || 'Erro desconhecido'
+        }`,
+      },
+      timing: {
+        name,
+        endpoint,
+        duration: 0,
+        success: false,
+        recordCount: 0,
+        attempts: attempts,
+        error: lastError?.message,
+      },
+    };
+  };
+
+  // Função para adicionar delay entre requisições
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Função para dividir o período em mês atual e meses anteriores
+  const dividirPeriodo = (dataInicio, dataFim) => {
+    const hoje = new Date();
+    const anoAtual = hoje.getFullYear();
+    const mesAtual = hoje.getMonth() + 1;
+
+    // Primeiro dia do mês atual
+    const primeiroDiaMesAtual = `${anoAtual}-${
+      mesAtual < 10 ? '0' + mesAtual : mesAtual
+    }-01`;
+
+    // Se o período termina antes do mês atual, não precisa dividir
+    if (dataFim < primeiroDiaMesAtual) {
+      return {
+        periodoAnterior: { inicio: dataInicio, fim: dataFim },
+        periodoAtual: null,
+      };
+    }
+
+    // Se o período começa no mês atual ou depois, não precisa dividir
+    if (dataInicio >= primeiroDiaMesAtual) {
+      return {
+        periodoAnterior: null,
+        periodoAtual: { inicio: dataInicio, fim: dataFim },
+      };
+    }
+
+    // Dividir o período
+    const ultimoDiaMesAnterior = new Date(anoAtual, mesAtual - 1, 0)
+      .toISOString()
+      .split('T')[0];
+
+    return {
+      periodoAnterior: { inicio: dataInicio, fim: ultimoDiaMesAnterior },
+      periodoAtual: { inicio: primeiroDiaMesAtual, fim: dataFim },
+    };
+  };
 
   const buscar = async () => {
     try {
       setLoading(true);
       setErro('');
+      setDadosFromCache(false);
+
+      // Verificar se o período inclui o mês atual
+      const periodos = dividirPeriodo(filtros.dt_inicio, filtros.dt_fim);
+
+      // Se temos apenas período anterior ao mês atual, podemos usar o cache
+      if (periodos.periodoAnterior && !periodos.periodoAtual) {
+        const cachedData = getFromLocalStorage(
+          periodos.periodoAnterior.inicio,
+          periodos.periodoAnterior.fim,
+        );
+        if (cachedData) {
+          console.log(
+            'Usando dados do cache para o período:',
+            periodos.periodoAnterior.inicio,
+            'a',
+            periodos.periodoAnterior.fim,
+          );
+
+          // Verificar se temos apenas os totais ou os dados completos
+          if (
+            cachedData.totaisPorSegmento &&
+            (!cachedData.dados || cachedData.dados.length === 0)
+          ) {
+            console.log('Usando totais pré-calculados do cache');
+            // Usar diretamente os totais calculados
+            setDadosFromCache(true);
+            setLoadingStatus('');
+            setLoading(false);
+
+            // Definir os totais diretamente no estado
+            totaisPorSegmentoRef.current = cachedData.totaisPorSegmento;
+            return;
+          } else {
+            // Caso ainda tenha dados completos no cache (versões antigas)
+            setDados(cachedData.dados || []);
+            setDadosVarejo(cachedData.dadosVarejo || []);
+            setDadosFromCache(true);
+            setLoadingStatus('');
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
       const params = {
         dt_inicio: filtros.dt_inicio,
         dt_fim: filtros.dt_fim,
@@ -54,8 +537,16 @@ const CMVConsolidado = () => {
         params.cd_empresa = filtros.empresas;
       }
 
-      // Empresas fixas para todas as rotas
+      // Empresas fixas para rotas de franquia, multimarcas e revenda
       const empresasFixas = [1, 2, 6, 11, 31, 75, 85, 92, 99];
+
+      // Lista específica de empresas para a rota de varejo
+      const empresasVarejo = [
+        // Lista fornecida pelo usuário
+        1, 2, 5, 6, 7, 11, 31, 55, 65, 75, 85, 90, 91, 92, 93, 94, 95, 96, 97,
+        98, 99, 100, 101, 111, 200, 311, 500, 550, 600, 650, 700, 750, 850, 890,
+        910, 920, 930, 940, 950, 960, 970, 980, 990,
+      ];
 
       // Parâmetros para cada rota específica
       const paramsFranquia = {
@@ -82,7 +573,7 @@ const CMVConsolidado = () => {
       const paramsVarejo = {
         dt_inicio: filtros.dt_inicio,
         dt_fim: filtros.dt_fim,
-        cd_empresa: empresasFixas,
+        cd_empresa: empresasVarejo, // Usar a lista específica de empresas para varejo
       };
 
       // Controle de corrida
@@ -92,61 +583,60 @@ const CMVConsolidado = () => {
       const startTime = performance.now();
       const routeTimings = [];
 
-      const [resFranquia, resMultimarcas, resRevenda, resVarejo] =
-        await Promise.allSettled([
-          (async () => {
-            const routeStart = performance.now();
-            const result = await api.sales.cmvfranquia(paramsFranquia);
-            const routeEnd = performance.now();
-            routeTimings.push({
-              name: 'Franquia',
-              endpoint: '/api/sales/cmvfranquia',
-              duration: Math.round(routeEnd - routeStart),
-              success: result.success,
-              recordCount: result.data?.length || 0,
-            });
-            return result;
-          })(),
-          (async () => {
-            const routeStart = performance.now();
-            const result = await api.sales.cmvmultimarcas(paramsMultimarcas);
-            const routeEnd = performance.now();
-            routeTimings.push({
-              name: 'Multimarcas',
-              endpoint: '/api/sales/cmvmultimarcas',
-              duration: Math.round(routeEnd - routeStart),
-              success: result.success,
-              recordCount: result.data?.length || 0,
-            });
-            return result;
-          })(),
-          (async () => {
-            const routeStart = performance.now();
-            const result = await api.sales.cmvrevenda(paramsRevenda);
-            const routeEnd = performance.now();
-            routeTimings.push({
-              name: 'Revenda',
-              endpoint: '/api/sales/cmvrevenda',
-              duration: Math.round(routeEnd - routeStart),
-              success: result.success,
-              recordCount: result.data?.length || 0,
-            });
-            return result;
-          })(),
-          (async () => {
-            const routeStart = performance.now();
-            const result = await api.sales.cmvvarejo(paramsVarejo);
-            const routeEnd = performance.now();
-            routeTimings.push({
-              name: 'Varejo',
-              endpoint: '/api/sales/cmvvarejo',
-              duration: Math.round(routeEnd - routeStart),
-              success: result.success,
-              recordCount: result.data?.length || 0,
-            });
-            return result;
-          })(),
-        ]);
+      // Fazer requisições sequenciais em vez de paralelas
+      console.log('Iniciando requisições sequenciais...');
+
+      // 1. Franquia
+      setLoadingStatus('Carregando dados de Franquia (1/4)...');
+      const { result: resFranquia, timing: timingFranquia } =
+        await fetchWithRetry(
+          api.sales.cmvfranquia,
+          paramsFranquia,
+          'Franquia',
+          '/api/sales/cmvfranquia',
+        );
+      routeTimings.push(timingFranquia);
+
+      // Delay entre requisições
+      await sleep(500);
+
+      // 2. Multimarcas
+      setLoadingStatus('Carregando dados de Multimarcas (2/4)...');
+      const { result: resMultimarcas, timing: timingMultimarcas } =
+        await fetchWithRetry(
+          api.sales.cmvmultimarcas,
+          paramsMultimarcas,
+          'Multimarcas',
+          '/api/sales/cmvmultimarcas',
+        );
+      routeTimings.push(timingMultimarcas);
+
+      await sleep(500);
+
+      // 3. Revenda
+      setLoadingStatus('Carregando dados de Revenda (3/4)...');
+      const { result: resRevenda, timing: timingRevenda } =
+        await fetchWithRetry(
+          api.sales.cmvrevenda,
+          paramsRevenda,
+          'Revenda',
+          '/api/sales/cmvrevenda',
+        );
+      routeTimings.push(timingRevenda);
+
+      await sleep(500);
+
+      // 4. Varejo
+      setLoadingStatus('Carregando dados de Varejo (4/4)...');
+      const { result: resVarejo, timing: timingVarejo } = await fetchWithRetry(
+        api.sales.cmvvarejo,
+        paramsVarejo,
+        'Varejo',
+        '/api/sales/cmvvarejo',
+      );
+      routeTimings.push(timingVarejo);
+
+      setLoadingStatus('Processando dados...');
 
       const totalTime = Math.round(performance.now() - startTime);
 
@@ -159,42 +649,11 @@ const CMVConsolidado = () => {
         });
       }
 
-      const respFranquia =
-        resFranquia.status === 'fulfilled'
-          ? resFranquia.value
-          : {
-              success: false,
-              message:
-                resFranquia.reason?.message ||
-                'Falha ao carregar dados da franquia',
-            };
-      const respMultimarcas =
-        resMultimarcas.status === 'fulfilled'
-          ? resMultimarcas.value
-          : {
-              success: false,
-              message:
-                resMultimarcas.reason?.message ||
-                'Falha ao carregar dados de multimarcas',
-            };
-      const respRevenda =
-        resRevenda.status === 'fulfilled'
-          ? resRevenda.value
-          : {
-              success: false,
-              message:
-                resRevenda.reason?.message ||
-                'Falha ao carregar dados de revenda',
-            };
-      const respVarejo =
-        resVarejo.status === 'fulfilled'
-          ? resVarejo.value
-          : {
-              success: false,
-              message:
-                resVarejo.reason?.message ||
-                'Falha ao carregar dados do varejo',
-            };
+      // Resultados já estão disponíveis diretamente, sem precisar verificar status
+      const respFranquia = resFranquia;
+      const respMultimarcas = resMultimarcas;
+      const respRevenda = resRevenda;
+      const respVarejo = resVarejo;
 
       // Combinar dados de franquia, multimarcas e revenda para o consolidado
       let dadosConsolidados = [];
@@ -257,12 +716,23 @@ const CMVConsolidado = () => {
           : [];
         if (reqId === lastRequestIdRef.current) {
           setDadosVarejo(listaVar);
+
+          // Salvar dados no localStorage (apenas se não for do mês atual)
+          if (dadosConsolidados.length > 0 || listaVar.length > 0) {
+            saveToLocalStorage(
+              filtros.dt_inicio,
+              filtros.dt_fim,
+              dadosConsolidados,
+              listaVar,
+            );
+          }
         }
       }
     } catch (e) {
       setErro('Erro ao buscar dados');
       console.error(e);
     } finally {
+      setLoadingStatus('');
       setLoading(false);
     }
   };
@@ -388,70 +858,19 @@ const CMVConsolidado = () => {
     return dadosFiltrados;
   }, [dados, filtroMensal, filtroDia]);
 
-  // Helpers de agregação por segmento
-  const aggregateTotais = (rows) => {
-    let totalLiquido = 0;
-    let totalBruto = 0;
-    let totalDevolucoes = 0;
-    let totalCMV = 0;
-    let totalFrete = 0;
-    for (const row of rows || []) {
-      const qtd = toNumber(row?.qt_faturado) || 1;
-      const frete = toNumber(row?.vl_freterat) || 0;
-      const liq = toNumber(row?.vl_unitliquido) * qtd + frete;
-      const bru = toNumber(row?.vl_unitbruto) * qtd + frete;
-      const cmv = toNumber(row?.vl_produto) * qtd;
-      const isDev = String(row?.tp_operacao).trim() === 'E';
-      if (isDev) {
-        totalLiquido -= Math.abs(liq);
-        totalBruto -= Math.abs(bru);
-        totalDevolucoes += Math.abs(liq);
-        totalCMV -= Math.abs(cmv);
-      } else {
-        totalLiquido += liq;
-        totalBruto += bru;
-        totalCMV += cmv;
-      }
-      totalFrete += frete;
-    }
-    return { totalLiquido, totalBruto, totalDevolucoes, totalCMV, totalFrete };
-  };
-
-  const aggregateVarejo = (rows) => {
-    // Varejo vem da rota /faturamento: cmv = vl_produto * qt_faturado, vendas com frete incluso
-    let totalLiquido = 0;
-    let totalBruto = 0;
-    let totalDevolucoes = 0;
-    let totalCMV = 0;
-    let totalFrete = 0;
-    for (const row of rows || []) {
-      const qtd = toNumber(row?.qt_faturado) || 1;
-      const frete = toNumber(row?.vl_freterat) || 0;
-      const liq = toNumber(row?.vl_unitliquido) * qtd + frete;
-      const bru = toNumber(row?.vl_unitbruto) * qtd + frete;
-      const cmv = toNumber(row?.vl_produto) * qtd;
-      const isDev = String(row?.tp_operacao).trim() === 'E';
-      if (isDev) {
-        totalLiquido -= Math.abs(liq);
-        totalBruto -= Math.abs(bru);
-        totalDevolucoes += Math.abs(liq);
-        totalCMV -= Math.abs(cmv);
-      } else {
-        totalLiquido += liq;
-        totalBruto += bru;
-        totalCMV += cmv;
-      }
-      totalFrete += frete;
-    }
-    return { totalLiquido, totalBruto, totalDevolucoes, totalCMV, totalFrete };
-  };
-
   // Aplicar filtro mensal também aos dados do Varejo
   const dadosVarejoFiltrados = useMemo(() => {
     return aplicarFiltroMensal(dadosVarejo || [], filtroMensal, filtroDia);
   }, [dadosVarejo, filtroMensal, filtroDia]);
 
   const totaisPorSegmento = useMemo(() => {
+    // Se temos dados do cache, usar diretamente
+    if (totaisPorSegmentoRef.current && dadosFromCache) {
+      console.log('Usando totais calculados do cache');
+      return totaisPorSegmentoRef.current;
+    }
+
+    // Caso contrário, calcular normalmente
     // Classificações fixas: 2 MULTIMARCAS, 3 REVENDA, 4 FRANQUIA
     const byClass = (cls) =>
       (dadosFiltrados || []).filter(
@@ -474,7 +893,12 @@ const CMVConsolidado = () => {
       soma(franquia, varejo),
     );
     return { consolidado, multimarcas, franquia, revenda, varejo };
-  }, [dadosFiltrados, dadosVarejoFiltrados]);
+  }, [
+    dadosFiltrados,
+    dadosVarejoFiltrados,
+    dadosFromCache,
+    totaisPorSegmentoRef,
+  ]);
 
   return (
     <div className="w-full max-w-7xl mx-auto p-4">
@@ -517,7 +941,7 @@ const CMVConsolidado = () => {
               disabled={loading || !filtros.dt_inicio || !filtros.dt_fim}
               className="bg-indigo-600 text-white text-xs px-3 py-2 rounded hover:bg-indigo-700 disabled:opacity-50"
             >
-              {loading ? 'Buscando...' : 'Buscar'}
+              {loading ? loadingStatus || 'Buscando...' : 'Buscar'}
             </button>
             {isAdmin() && performanceData && (
               <button
@@ -532,6 +956,47 @@ const CMVConsolidado = () => {
           </div>
         </div>
         {erro && <div className="mt-2 text-xs text-red-600">{erro}</div>}
+        {dadosFromCache && (
+          <div className="mt-2 text-xs text-blue-600 flex items-center">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4 mr-1"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M13 10V3L4 14h7v7l9-11h-7z"
+              />
+            </svg>
+            Dados carregados do cache local
+          </div>
+        )}
+        {isAdmin() && (
+          <button
+            onClick={() => {
+              console.log(
+                'Chaves no localStorage:',
+                Object.keys(localStorage).filter((k) =>
+                  k.startsWith(STORAGE_KEY_BASE),
+                ),
+              );
+              const key = getStorageKey(filtros.dt_inicio, filtros.dt_fim);
+              const data = localStorage.getItem(key);
+              console.log(
+                'Dados para a chave atual:',
+                key,
+                data ? 'Encontrados' : 'Não encontrados',
+              );
+            }}
+            className="mt-2 text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded hover:bg-gray-300"
+          >
+            Debug localStorage
+          </button>
+        )}
       </div>
 
       {/* Filtro por Período - estilo pills (igual Contas a Receber) */}
