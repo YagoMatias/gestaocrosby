@@ -6,7 +6,7 @@ import React, {
   useCallback,
 } from 'react';
 import useApiClient from '../hooks/useApiClient';
-import usePermissions from '../hooks/usePermissions';
+import { usePermissions } from '../hooks/usePermissions';
 import PageTitle from '../components/ui/PageTitle';
 import PerformanceModal from '../components/ui/PerformanceModal';
 import { ChartLineUp, Gauge } from '@phosphor-icons/react';
