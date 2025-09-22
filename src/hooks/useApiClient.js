@@ -210,6 +210,8 @@ const useApiClient = () => {
     extratoTotvs: (params) => apiCall('/api/financial/extrato-totvs', params),
 
     contasPagar: (params) => apiCall('/api/financial/contas-pagar', params),
+    contasPagarEmissao: (params) =>
+      apiCall('/api/financial/contas-pagar-emissao', params),
     contasReceber: (params) => apiCall('/api/financial/contas-receber', params),
     fluxoCaixa: (params) => apiCall('/api/financial/fluxo-caixa', params),
     fluxocaixaSaida: (params) =>

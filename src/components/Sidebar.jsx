@@ -8,6 +8,7 @@ import {
   Receipt,
   CreditCard,
   FileText,
+  Calendar,
   ChartLineUp,
   CheckCircle,
   Megaphone,
@@ -47,9 +48,23 @@ const ChevronIcon = ({ open }) =>
 const financeiro = [
   {
     name: 'Contas a Pagar',
-    href: '/contas-a-pagar',
+    href: '#',
     icon: Money,
     color: 'text-red-600',
+    children: [
+      {
+        name: 'Vencimento',
+        href: '/contas-a-pagar',
+        icon: Calendar,
+        color: 'text-red-600',
+      },
+      {
+        name: 'Emissão',
+        href: '/contas-a-pagar-emissao',
+        icon: Calendar,
+        color: 'text-red-600',
+      },
+    ],
   },
   {
     name: 'Contas a Receber',
@@ -92,12 +107,6 @@ const financeiro = [
     href: '/saldo-bancario-totvs',
     icon: Bank,
     color: 'text-blue-600',
-  },
-  {
-    name: 'DRE Demo',
-    href: '/dre-demo',
-    icon: ChartPieSlice,
-    color: 'text-emerald-600',
   },
   {
     name: 'DRE',
@@ -260,6 +269,44 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     const IconComponent = item.icon;
     const paddingLeft = level === 0 ? 'pl-3' : 'pl-6';
 
+    // Item com filhos (subpasta)
+    if (item.children && Array.isArray(item.children)) {
+      const [open, setOpen] = React.useState(false);
+      return (
+        <div className={`${paddingLeft}`}>
+          <button
+            onClick={() => setOpen(!open)}
+            className={`
+              w-full flex items-center gap-2 pr-3 py-2 
+              text-xs font-semibold rounded-lg transition-all duration-200 font-barlow
+              ${
+                open
+                  ? 'bg-gray-100 text-gray-900'
+                  : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900'
+              }
+            `}
+          >
+            <IconComponent size={14} className="text-gray-500" />
+            <span>{item.name}</span>
+            <ChevronIcon open={open} />
+          </button>
+          {open && (
+            <div className="mt-1 space-y-1">
+              {item.children.map((child) => (
+                <MenuItem
+                  key={`${item.name}-${child.name}`}
+                  item={child}
+                  isActive={location.pathname === child.href}
+                  level={level + 1}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Item simples
     return (
       <button
         onClick={() => handleNavigation(item.href, item.external)}
@@ -273,11 +320,13 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           }
         `}
       >
-        <IconComponent
-          size={14}
-          weight={isActive ? 'fill' : 'regular'}
-          className="text-gray-500"
-        />
+        {IconComponent && (
+          <IconComponent
+            size={14}
+            weight={isActive ? 'fill' : 'regular'}
+            className="text-gray-500"
+          />
+        )}
         <span className={`${isActive ? 'font-semibold' : ''}`}>
           {item.name}
         </span>

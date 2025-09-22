@@ -12,6 +12,7 @@ import { TrendUp } from '@phosphor-icons/react';
 const Home = lazy(() => import('./pages/Home'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const ContasAPagar = lazy(() => import('./pages/ContasAPagar'));
+const ContasAPagarEmissao = lazy(() => import('./pages/ContasAPagarEmissao'));
 const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
 const FluxoCaixa = lazy(() => import('./pages/FluxoCaixa'));
 const ExtratoFinanceiro = lazy(() => import('./pages/ExtratoFinanceiro'));
@@ -27,7 +28,6 @@ const ComprasFranquias = lazy(() => import('./pages/ComprasFranquias'));
 const Credev = lazy(() => import('./pages/Credev'));
 const PainelAdmin = lazy(() => import('./pages/PainelAdmin'));
 const UserPanel = lazy(() => import('./pages/UserPanel'));
-const DreDemo = lazy(() => import('./pages/DreDemo'));
 const ManifestacaoNF = lazy(() => import('./pages/ManifestacaoNF'));
 const SaldoBancario = lazy(() => import('./pages/SaldoBancario'));
 const ImportacaoRet = lazy(() => import('./pages/ImportacaoRet'));
@@ -116,6 +116,11 @@ const AppRoutes = memo(() => {
       roles: ['owner', 'admin', 'manager', 'user'],
     },
     {
+      path: '/contas-a-pagar-emissao',
+      component: ContasAPagarEmissao,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
       path: '/contas-a-receber',
       component: ContasAReceber,
       roles: ['owner', 'admin', 'manager', 'user'],
@@ -149,11 +154,6 @@ const AppRoutes = memo(() => {
       path: '/metas-varejo',
       component: MetasVarejo,
       roles: ['owner', 'admin', 'manager', 'user'],
-    },
-    {
-      path: '/dre-demo',
-      component: DreDemo,
-      roles: ['owner', 'admin', 'manager'],
     },
     {
       path: '/manifestacao-nf',

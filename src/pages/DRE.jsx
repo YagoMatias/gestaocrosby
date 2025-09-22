@@ -12,6 +12,7 @@ import {
   Folder,
   FileText,
 } from '@phosphor-icons/react';
+import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
 
 const DRE = () => {
   const api = useApiClient();
@@ -31,6 +32,7 @@ const DRE = () => {
   const [pis, setPis] = useState(0);
   const [cofins, setCofins] = useState(0);
   const [totalImpostos, setTotalImpostos] = useState(0);
+  const [despesasOperacionais, setDespesasOperacionais] = useState({});
   const [periodo, setPeriodo] = useState({
     dt_inicio: '',
     dt_fim: '',
@@ -354,13 +356,88 @@ const DRE = () => {
         total: totalImpostosReal,
       });
 
-      // Descontos = Receita Bruta - Receita Líquida + Impostos
+      // Descontos = Vendas Brutas - Devoluções - soma(vl_unitliquido)
+      // Somar vl_unitliquido considerando quantidade e sinal por tp_operacao
+      const somaVlUnitLiquido = (arr) =>
+        (arr || []).reduce((acc, r) => {
+          const q = Number(r.qt_faturado) || 1;
+          const v = (Number(r.vl_unitliquido) || 0) * q;
+          if (r.tp_operacao === 'S') return acc + v;
+          if (r.tp_operacao === 'E') return acc - v;
+          return acc;
+        }, 0);
+
+      const somaLiquidoTotal =
+        somaVlUnitLiquido(varejoData) +
+        somaVlUnitLiquido(multimarcasData) +
+        somaVlUnitLiquido(franquiasData) +
+        somaVlUnitLiquido(revendaData);
+
       const totalDescontos =
-        totalReceitaBruta - totalReceitaLiquida + totalImpostosReal;
+        totalVendasBrutas - totalDevolucoes - somaLiquidoTotal;
 
       // Total das Deduções = Devoluções + Descontos + Impostos
       const totalDeducoesCalculado =
         totalDevolucoes + totalDescontos + totalImpostosReal;
+
+      // ====== NOVO: Agregar despesas operacionais por categoria (a partir da emissão de contas a pagar) ======
+      // Busca baseada no mesmo período/empresas
+      let despesasOperacionais = {};
+      try {
+        // Garantir datas para a emissão (fallback ao período selecionado)
+        const inicio = paramsVarejo?.dt_inicio || periodo?.dt_inicio || '';
+        const fim = paramsVarejo?.dt_fim || periodo?.dt_fim || '';
+
+        const empresasFinanceiro = Array.from(
+          new Set([
+            ...(paramsVarejo?.cd_empresa || []),
+            ...(paramsFranquia?.cd_empresa || []),
+            ...(paramsMultimarcas?.cd_empresa || []),
+            ...(paramsRevenda?.cd_empresa || []),
+          ]),
+        );
+        const paramsFinanceiro = {
+          dt_inicio: inicio,
+          dt_fim: fim,
+          ...(empresasFinanceiro.length
+            ? { cd_empresa: empresasFinanceiro }
+            : {}),
+        };
+        setLoadingStatus('Buscando despesas (Emissão)...');
+        const respEmissao = await api.financial.contasPagarEmissao(
+          paramsFinanceiro,
+        );
+        const linhas = Array.isArray(respEmissao?.data) ? respEmissao.data : [];
+        console.log('📦 Emissão (contas a pagar) recebida:', {
+          empresasFinanceiro: empresasFinanceiro.length,
+          linhas: linhas.length,
+        });
+        if (linhas.length) {
+          console.log('🧾 Amostra emissão:', linhas.slice(0, 2));
+        }
+
+        // Somar por categoria utilizando getCategoriaPorCodigo(cd_despesaitem)
+        const somaPorCategoria = {};
+        for (const row of linhas) {
+          const codigoDespesa = row?.cd_despesaitem;
+          const categoria =
+            getCategoriaPorCodigo(codigoDespesa) || 'DESPESAS GERAIS';
+          const valor = Number(row?.vl_duplicata || 0);
+          somaPorCategoria[categoria] =
+            (somaPorCategoria[categoria] || 0) + valor;
+        }
+        despesasOperacionais = somaPorCategoria;
+        console.log(
+          '🧮 Despesas por categoria (Emissão):',
+          despesasOperacionais,
+        );
+        setDespesasOperacionais(somaPorCategoria);
+      } catch (e) {
+        console.warn(
+          'Não foi possível agregar despesas operacionais (emissão):',
+          e,
+        );
+      }
 
       // Receita Líquida = Vendas Brutas - Deduções
       const receitaLiquidaCalculada =
@@ -532,7 +609,7 @@ const DRE = () => {
     return [
       {
         id: 'vendas-bruta',
-        label: 'Vendas Brutas',
+        label: 'Receitas Brutas',
         description: 'Quanto você vendeu no período (sem tirar nada ainda).',
         value: vendasBrutas,
         type: 'receita',
@@ -622,92 +699,63 @@ const DRE = () => {
       {
         id: 'despesas-operacionais',
         label: 'Despesas Operacionais',
-        description: 'Despesas comerciais, administrativas e financeiras.',
-        value: -420000.0,
+        description:
+          'Despesas comerciais, administrativas e financeiras (por plano de contas).',
+        value: -(
+          (despesasOperacionais?.['CUSTO DAS MERCADORIAS VENDIDAS'] || 0) +
+          (despesasOperacionais?.['DESPESAS COM PESSOAL'] || 0) +
+          (despesasOperacionais?.['IMPOSTOS, TAXAS E CONTRIBUIÇÕES'] || 0) +
+          (despesasOperacionais?.['DESPESAS GERAIS'] || 0) +
+          (despesasOperacionais?.['DESPESAS FINANCEIRAS'] || 0) +
+          (despesasOperacionais?.['DESPESAS C/ VENDAS'] || 0)
+        ),
         type: 'despesa',
         children: [
           {
-            id: 'despesas-comerciais',
-            label: 'Despesas Comerciais/Vendas',
-            description: 'Comissão, marketing, frete sobre vendas',
-            value: -180000.0,
+            id: 'op-cmv',
+            label: 'CUSTO DAS MERCADORIAS VENDIDAS',
+            description: 'Itens mapeados como CMV no plano de contas',
+            value: -(
+              despesasOperacionais?.['CUSTO DAS MERCADORIAS VENDIDAS'] || 0
+            ),
             type: 'despesa',
-            children: [
-              {
-                id: 'comissoes',
-                label: 'Comissões',
-                description: 'Comissões pagas aos vendedores',
-                value: -95000.0,
-                type: 'despesa',
-              },
-              {
-                id: 'marketing',
-                label: 'Marketing',
-                description: 'Gastos com publicidade e marketing',
-                value: -65000.0,
-                type: 'despesa',
-              },
-              {
-                id: 'frete-vendas',
-                label: 'Frete sobre Vendas',
-                description: 'Custos de frete nas vendas',
-                value: -20000.0,
-                type: 'despesa',
-              },
-            ],
           },
           {
-            id: 'despesas-administrativas',
-            label: 'Despesas Administrativas',
-            description: 'Salários administrativos, aluguel, energia',
-            value: -180000.0,
+            id: 'op-pessoal',
+            label: 'DESPESAS COM PESSOAL',
+            description: 'Salários, encargos e benefícios',
+            value: -(despesasOperacionais?.['DESPESAS COM PESSOAL'] || 0),
             type: 'despesa',
-            children: [
-              {
-                id: 'salarios-admin',
-                label: 'Salários Administrativos',
-                description: 'Salários da área administrativa',
-                value: -120000.0,
-                type: 'despesa',
-              },
-              {
-                id: 'aluguel',
-                label: 'Aluguel',
-                description: 'Aluguel do escritório',
-                value: -35000.0,
-                type: 'despesa',
-              },
-              {
-                id: 'energia',
-                label: 'Energia do Escritório',
-                description: 'Conta de energia elétrica',
-                value: -25000.0,
-                type: 'despesa',
-              },
-            ],
           },
           {
-            id: 'despesas-financeiras',
-            label: 'Despesas Financeiras',
-            description: 'Juros pagos em empréstimos, tarifas bancárias',
-            value: -60000.0,
+            id: 'op-impostos',
+            label: 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES',
+            description: 'Tributos operacionais não vinculados a vendas',
+            value: -(
+              despesasOperacionais?.['IMPOSTOS, TAXAS E CONTRIBUIÇÕES'] || 0
+            ),
             type: 'despesa',
-            children: [
-              {
-                id: 'juros-emprestimos',
-                label: 'Juros de Empréstimos',
-                description: 'Juros pagos em empréstimos',
-                value: -45000.0,
-                type: 'despesa',
-              },
-              {
-                id: 'tarifas-bancarias',
-                label: 'Tarifas Bancárias',
-                description: 'Tarifas e taxas bancárias',
-                value: -15000.0,
-                type: 'despesa',
-              },
-            ],
+          },
+          {
+            id: 'op-gerais',
+            label: 'DESPESAS GERAIS',
+            description: 'Custos administrativos e gerais',
+            value: -(despesasOperacionais?.['DESPESAS GERAIS'] || 0),
+            type: 'despesa',
+          },
+          {
+            id: 'op-financeiras',
+            label: 'DESPESAS FINANCEIRAS',
+            description: 'Juros, tarifas e despesas financeiras',
+            value: -(despesasOperacionais?.['DESPESAS FINANCEIRAS'] || 0),
+            type: 'despesa',
+          },
+          {
+            id: 'op-vendas',
+            label: 'DESPESAS C/ VENDAS',
+            description: 'Comercial/marketing e apoio às vendas',
+            value: -(despesasOperacionais?.['DESPESAS C/ VENDAS'] || 0),
+            type: 'despesa',
           },
         ],
       },
@@ -795,6 +843,7 @@ const DRE = () => {
     pis,
     cofins,
     totalImpostos,
+    despesasOperacionais,
   ]);
 
   const toggleNode = (nodeId) => {

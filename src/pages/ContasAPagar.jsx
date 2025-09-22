@@ -80,9 +80,10 @@ const formatarData = (data) => {
   return data;
 };
 
-const ContasAPagar = () => {
+const ContasAPagar = (props) => {
   const { user, hasRole } = useAuth?.() || { user: null, hasRole: () => false };
   const apiClient = useApiClient();
+  const isEmissao = !!props?.__modoEmissao;
 
   // Debug logs para verificar o status do usuário
   useEffect(() => {
@@ -996,7 +997,9 @@ const ContasAPagar = () => {
       console.log('🏢 Códigos das empresas:', codigosEmpresas);
 
       // Buscar dados principais de contas a pagar
-      const result = await apiClient.financial.contasPagar(params);
+      const result = isEmissao
+        ? await apiClient.financial.contasPagarEmissao(params)
+        : await apiClient.financial.contasPagar(params);
 
       console.log('🔍 Resultado da API:', {
         success: result.success,
