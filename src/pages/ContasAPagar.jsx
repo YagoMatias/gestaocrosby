@@ -5413,7 +5413,7 @@ const DespesasPorCategoria = ({
       return 'DESPESAS GERAIS';
     } else if (codigo >= 7000 && codigo <= 7999) {
       return 'DESPESAS FINANCEIRAS';
-    } else if (codigo >= 8000 && codigo <= 8999) {
+    } else if (codigo >= 8000 && codigo <= 8999 && codigo === 12001) {
       return 'OUTRAS DESPESAS OPERACIONAIS';
     } else if (codigo >= 9000 && codigo <= 9999) {
       return 'DESPESAS C/ VENDAS';
@@ -5514,6 +5514,7 @@ const DespesasPorCategoria = ({
       'DESPESAS FINANCEIRAS',
       'OUTRAS DESPESAS OPERACIONAIS',
       'DESPESAS C/ VENDAS',
+      'ATIVOS',
       'SEM CLASSIFICAÇÃO',
     ];
 

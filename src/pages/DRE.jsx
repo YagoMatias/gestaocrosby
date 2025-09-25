@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import useApiClient from '../hooks/useApiClient';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
 import {
   CaretDown,
   CaretRight,
@@ -12,7 +13,6 @@ import {
   Folder,
   FileText,
 } from '@phosphor-icons/react';
-import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
 
 const DRE = () => {
   const api = useApiClient();
@@ -27,12 +27,84 @@ const DRE = () => {
   const [receitaLiquida, setReceitaLiquida] = useState(0);
   const [lucroBruto, setLucroBruto] = useState(0);
 
+  // Estados para totais por canal
+  const [totaisVarejo, setTotaisVarejo] = useState({
+    totalBruto: 0,
+    totalDevolucoes: 0,
+    totalCMV: 0,
+    totalLiquido: 0,
+  });
+  const [totaisMultimarcas, setTotaisMultimarcas] = useState({
+    totalBruto: 0,
+    totalDevolucoes: 0,
+    totalCMV: 0,
+    totalLiquido: 0,
+  });
+  const [totaisFranquias, setTotaisFranquias] = useState({
+    totalBruto: 0,
+    totalDevolucoes: 0,
+    totalCMV: 0,
+    totalLiquido: 0,
+  });
+  const [totaisRevenda, setTotaisRevenda] = useState({
+    totalBruto: 0,
+    totalDevolucoes: 0,
+    totalCMV: 0,
+    totalLiquido: 0,
+  });
+  // Plano de Contas (Contas a Pagar - Emissão)
+  const [planoDespesasNodes, setPlanoDespesasNodes] = useState([]);
+  const [planoDespesasTotal, setPlanoDespesasTotal] = useState(0);
+
+  // Despesas Financeiras (Contas a Pagar - Emissão)
+  const [despesasFinanceirasNodes, setDespesasFinanceirasNodes] = useState([]);
+  const [despesasFinanceirasTotal, setDespesasFinanceirasTotal] = useState(0);
+
   // Estados para impostos reais
   const [icms, setIcms] = useState(0);
   const [pis, setPis] = useState(0);
   const [cofins, setCofins] = useState(0);
   const [totalImpostos, setTotalImpostos] = useState(0);
-  const [despesasOperacionais, setDespesasOperacionais] = useState({});
+
+  // Estados para impostos por canal
+  const [impostosVarejo, setImpostosVarejo] = useState({
+    icms: 0,
+    pis: 0,
+    cofins: 0,
+  });
+  const [impostosMultimarcas, setImpostosMultimarcas] = useState({
+    icms: 0,
+    pis: 0,
+    cofins: 0,
+  });
+  const [impostosFranquias, setImpostosFranquias] = useState({
+    icms: 0,
+    pis: 0,
+    cofins: 0,
+  });
+  const [impostosRevenda, setImpostosRevenda] = useState({
+    icms: 0,
+    pis: 0,
+    cofins: 0,
+  });
+
+  // Estados para receitas líquidas por canal
+  const [receitaLiquidaVarejo, setReceitaLiquidaVarejo] = useState(0);
+  const [receitaLiquidaMultimarcas, setReceitaLiquidaMultimarcas] = useState(0);
+  const [receitaLiquidaFranquias, setReceitaLiquidaFranquias] = useState(0);
+  const [receitaLiquidaRevenda, setReceitaLiquidaRevenda] = useState(0);
+
+  // Estados para CMV por canal
+  const [cmvVarejo, setCmvVarejo] = useState(0);
+  const [cmvMultimarcas, setCmvMultimarcas] = useState(0);
+  const [cmvFranquias, setCmvFranquias] = useState(0);
+  const [cmvRevenda, setCmvRevenda] = useState(0);
+
+  // Estados para lucro bruto por canal
+  const [lucroBrutoVarejo, setLucroBrutoVarejo] = useState(0);
+  const [lucroBrutoMultimarcas, setLucroBrutoMultimarcas] = useState(0);
+  const [lucroBrutoFranquias, setLucroBrutoFranquias] = useState(0);
+  const [lucroBrutoRevenda, setLucroBrutoRevenda] = useState(0);
   const [periodo, setPeriodo] = useState({
     dt_inicio: '',
     dt_fim: '',
@@ -48,10 +120,15 @@ const DRE = () => {
     'despesas-operacionais': true,
     'resultado-operacional': true,
     'outras-receitas-despesas': true,
+    'despesas-financeiras': true,
     'lucro-antes-impostos': true,
     'impostos-lucro': true,
     'lucro-liquido': true,
   });
+
+  // Estados para controle de expansão no estilo Contas a Pagar
+  const [categoriasExpandidas, setCategoriasExpandidas] = useState(new Set());
+  const [todosExpandidos, setTodosExpandidos] = useState(false);
 
   // Inicializar período padrão
   useEffect(() => {
@@ -84,9 +161,9 @@ const DRE = () => {
       // Lista específica de empresas para a rota de varejo
       const empresasVarejo = [
         // Lista fornecida pelo usuário
-        1, 2, 5, 6, 7, 11, 31, 55, 65, 75, 85, 90, 91, 92, 93, 94, 95, 96, 97,
-        98, 99, 100, 101, 111, 200, 311, 500, 550, 600, 650, 700, 750, 850, 890,
-        910, 920, 930, 940, 950, 960, 970, 980, 990,
+        1, 2, 6, 7, 11, 31, 65, 75, 85, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99,
+        100, 101, 111, 200, 311, 600, 650, 700, 750, 850, 890, 910, 920, 930,
+        940, 950, 960, 970, 980, 990,
       ];
 
       // Parâmetros específicos para cada rota
@@ -308,52 +385,141 @@ const DRE = () => {
         : [];
       const revendaData = Array.isArray(revenda?.data) ? revenda.data : [];
 
-      // Coletar todos os nr_transacao para buscar impostos (apenas vendas - operação 'S')
-      const todasTransacoes = [
-        ...varejoData
-          .filter((r) => r.tp_operacao === 'S')
-          .map((r) => r.nr_transacao),
-        ...multimarcasData
-          .filter((r) => r.tp_operacao === 'S')
-          .map((r) => r.nr_transacao),
-        ...franquiasData
-          .filter((r) => r.tp_operacao === 'S')
-          .map((r) => r.nr_transacao),
-        ...revendaData
-          .filter((r) => r.tp_operacao === 'S')
-          .map((r) => r.nr_transacao),
-      ].filter((nr, index, arr) => nr && arr.indexOf(nr) === index); // Remove duplicatas
+      // Coletar nr_transacao separadamente por canal para buscar impostos específicos
+      const transacoesVarejo = varejoData
+        .filter((r) => r.tp_operacao === 'S')
+        .map((r) => r.nr_transacao)
+        .filter((nr, index, arr) => nr && arr.indexOf(nr) === index); // Remove duplicatas
 
-      console.log(
-        `📋 Total de transações únicas para buscar impostos: ${todasTransacoes.length}`,
-      );
+      const transacoesMultimarcas = multimarcasData
+        .filter((r) => r.tp_operacao === 'S')
+        .map((r) => r.nr_transacao)
+        .filter((nr, index, arr) => nr && arr.indexOf(nr) === index); // Remove duplicatas
 
-      // Buscar dados de impostos reais da rota VLIMPOSTO
-      let impostosData;
+      const transacoesFranquias = franquiasData
+        .filter((r) => r.tp_operacao === 'S')
+        .map((r) => r.nr_transacao)
+        .filter((nr, index, arr) => nr && arr.indexOf(nr) === index); // Remove duplicatas
+
+      const transacoesRevenda = revendaData
+        .filter((r) => r.tp_operacao === 'S')
+        .map((r) => r.nr_transacao)
+        .filter((nr, index, arr) => nr && arr.indexOf(nr) === index); // Remove duplicatas
+
+      console.log(`📋 Transações por canal para buscar impostos:`, {
+        varejo: transacoesVarejo.length,
+        multimarcas: transacoesMultimarcas.length,
+        franquias: transacoesFranquias.length,
+        revenda: transacoesRevenda.length,
+      });
+
+      // Buscar impostos separadamente por canal
+      let impostosPorCanal = {};
       try {
-        setLoadingStatus('Buscando dados de impostos...');
-        impostosData = await buscarImpostos(todasTransacoes, (progress) => {
-          setLoadingStatus(`Buscando impostos... ${progress}%`);
-        });
+        setLoadingStatus('Buscando impostos por canal...');
+
+        // Buscar impostos do Varejo
+        if (transacoesVarejo.length > 0) {
+          setLoadingStatus('Buscando impostos do Varejo...');
+          impostosPorCanal.varejo = await buscarImpostos(
+            transacoesVarejo,
+            (progress) => {
+              setLoadingStatus(`Buscando impostos do Varejo... ${progress}%`);
+            },
+          );
+        } else {
+          impostosPorCanal.varejo = { totals: { icms: 0, pis: 0, cofins: 0 } };
+        }
+
+        // Buscar impostos do Multimarcas
+        if (transacoesMultimarcas.length > 0) {
+          setLoadingStatus('Buscando impostos do Multimarcas...');
+          impostosPorCanal.multimarcas = await buscarImpostos(
+            transacoesMultimarcas,
+            (progress) => {
+              setLoadingStatus(
+                `Buscando impostos do Multimarcas... ${progress}%`,
+              );
+            },
+          );
+        } else {
+          impostosPorCanal.multimarcas = {
+            totals: { icms: 0, pis: 0, cofins: 0 },
+          };
+        }
+
+        // Buscar impostos das Franquias
+        if (transacoesFranquias.length > 0) {
+          setLoadingStatus('Buscando impostos das Franquias...');
+          impostosPorCanal.franquias = await buscarImpostos(
+            transacoesFranquias,
+            (progress) => {
+              setLoadingStatus(
+                `Buscando impostos das Franquias... ${progress}%`,
+              );
+            },
+          );
+        } else {
+          impostosPorCanal.franquias = {
+            totals: { icms: 0, pis: 0, cofins: 0 },
+          };
+        }
+
+        // Buscar impostos da Revenda
+        if (transacoesRevenda.length > 0) {
+          setLoadingStatus('Buscando impostos da Revenda...');
+          impostosPorCanal.revenda = await buscarImpostos(
+            transacoesRevenda,
+            (progress) => {
+              setLoadingStatus(`Buscando impostos da Revenda... ${progress}%`);
+            },
+          );
+        } else {
+          impostosPorCanal.revenda = { totals: { icms: 0, pis: 0, cofins: 0 } };
+        }
       } catch (error) {
-        console.error('Falha crítica ao buscar impostos reais:', error);
+        console.error('Falha crítica ao buscar impostos por canal:', error);
         setErro(
           'Erro ao buscar dados de impostos. Verifique a conexão e tente novamente.',
         );
         return;
       }
 
-      // Usar dados reais de impostos da rota VLIMPOSTO
-      const icmsReal = impostosData.totals.icms;
-      const pisReal = impostosData.totals.pis;
-      const cofinsReal = impostosData.totals.cofins;
+      // Atualizar estados com impostos por canal
+      setImpostosVarejo(impostosPorCanal.varejo.totals);
+      setImpostosMultimarcas(impostosPorCanal.multimarcas.totals);
+      setImpostosFranquias(impostosPorCanal.franquias.totals);
+      setImpostosRevenda(impostosPorCanal.revenda.totals);
+
+      // Totais gerais (soma de todos os canais)
+      const icmsReal =
+        impostosPorCanal.varejo.totals.icms +
+        impostosPorCanal.multimarcas.totals.icms +
+        impostosPorCanal.franquias.totals.icms +
+        impostosPorCanal.revenda.totals.icms;
+      const pisReal =
+        impostosPorCanal.varejo.totals.pis +
+        impostosPorCanal.multimarcas.totals.pis +
+        impostosPorCanal.franquias.totals.pis +
+        impostosPorCanal.revenda.totals.pis;
+      const cofinsReal =
+        impostosPorCanal.varejo.totals.cofins +
+        impostosPorCanal.multimarcas.totals.cofins +
+        impostosPorCanal.franquias.totals.cofins +
+        impostosPorCanal.revenda.totals.cofins;
       const totalImpostosReal = icmsReal + pisReal + cofinsReal;
 
-      console.log('💰 Impostos reais calculados:', {
-        icms: icmsReal,
-        pis: pisReal,
-        cofins: cofinsReal,
-        total: totalImpostosReal,
+      console.log('💰 Impostos reais por canal:', {
+        varejo: impostosPorCanal.varejo.totals,
+        multimarcas: impostosPorCanal.multimarcas.totals,
+        franquias: impostosPorCanal.franquias.totals,
+        revenda: impostosPorCanal.revenda.totals,
+        totais: {
+          icms: icmsReal,
+          pis: pisReal,
+          cofins: cofinsReal,
+          total: totalImpostosReal,
+        },
       });
 
       // Descontos = Vendas Brutas - Devoluções - soma(vl_unitliquido)
@@ -373,71 +539,42 @@ const DRE = () => {
         somaVlUnitLiquido(franquiasData) +
         somaVlUnitLiquido(revendaData);
 
+      // Calcular descontos usando a mesma fórmula da estrutura da DRE
       const totalDescontos =
-        totalVendasBrutas - totalDevolucoes - somaLiquidoTotal;
+        totaisVarejo.totalBruto -
+        totaisVarejo.totalDevolucoes -
+        (totaisVarejo.totalLiquido - totaisVarejo.totalDevolucoes) +
+        (totaisMultimarcas.totalBruto -
+          totaisMultimarcas.totalDevolucoes -
+          (totaisMultimarcas.totalLiquido -
+            totaisMultimarcas.totalDevolucoes)) +
+        (totaisRevenda.totalBruto -
+          totaisRevenda.totalDevolucoes -
+          (totaisRevenda.totalLiquido - totaisRevenda.totalDevolucoes)) +
+        (totaisFranquias.totalBruto -
+          totaisFranquias.totalDevolucoes -
+          (totaisFranquias.totalLiquido - totaisFranquias.totalDevolucoes));
 
       // Total das Deduções = Devoluções + Descontos + Impostos
       const totalDeducoesCalculado =
         totalDevolucoes + totalDescontos + totalImpostosReal;
-
-      // ====== NOVO: Agregar despesas operacionais por categoria (a partir da emissão de contas a pagar) ======
-      // Busca baseada no mesmo período/empresas
-      let despesasOperacionais = {};
-      try {
-        // Garantir datas para a emissão (fallback ao período selecionado)
-        const inicio = paramsVarejo?.dt_inicio || periodo?.dt_inicio || '';
-        const fim = paramsVarejo?.dt_fim || periodo?.dt_fim || '';
-
-        const empresasFinanceiro = Array.from(
-          new Set([
-            ...(paramsVarejo?.cd_empresa || []),
-            ...(paramsFranquia?.cd_empresa || []),
-            ...(paramsMultimarcas?.cd_empresa || []),
-            ...(paramsRevenda?.cd_empresa || []),
-          ]),
-        );
-        const paramsFinanceiro = {
-          dt_inicio: inicio,
-          dt_fim: fim,
-          ...(empresasFinanceiro.length
-            ? { cd_empresa: empresasFinanceiro }
-            : {}),
-        };
-        setLoadingStatus('Buscando despesas (Emissão)...');
-        const respEmissao = await api.financial.contasPagarEmissao(
-          paramsFinanceiro,
-        );
-        const linhas = Array.isArray(respEmissao?.data) ? respEmissao.data : [];
-        console.log('📦 Emissão (contas a pagar) recebida:', {
-          empresasFinanceiro: empresasFinanceiro.length,
-          linhas: linhas.length,
-        });
-        if (linhas.length) {
-          console.log('🧾 Amostra emissão:', linhas.slice(0, 2));
-        }
-
-        // Somar por categoria utilizando getCategoriaPorCodigo(cd_despesaitem)
-        const somaPorCategoria = {};
-        for (const row of linhas) {
-          const codigoDespesa = row?.cd_despesaitem;
-          const categoria =
-            getCategoriaPorCodigo(codigoDespesa) || 'DESPESAS GERAIS';
-          const valor = Number(row?.vl_duplicata || 0);
-          somaPorCategoria[categoria] =
-            (somaPorCategoria[categoria] || 0) + valor;
-        }
-        despesasOperacionais = somaPorCategoria;
-        console.log(
-          '🧮 Despesas por categoria (Emissão):',
-          despesasOperacionais,
-        );
-        setDespesasOperacionais(somaPorCategoria);
-      } catch (e) {
-        console.warn(
-          'Não foi possível agregar despesas operacionais (emissão):',
-          e,
-        );
-      }
+      console.log('totalDescontos', totalDescontos);
+      console.log('totalImpostosReal', totalImpostosReal);
+      console.log('totalDevolucoes', totalDevolucoes);
+      console.log('totalDeducoesCalculado', totalDeducoesCalculado);
+      console.log('📊 Cálculo das Deduções sobre Vendas:', {
+        devolucoes: totalDevolucoes,
+        descontos: totalDescontos,
+        impostos: totalImpostosReal,
+        totalDeducoes: totalDeducoesCalculado,
+        formula: 'Devoluções + Descontos + Impostos',
+        verificacao: {
+          soma: totalDevolucoes + totalDescontos + totalImpostosReal,
+          bate:
+            totalDevolucoes + totalDescontos + totalImpostosReal ===
+            totalDeducoesCalculado,
+        },
+      });
 
       // Receita Líquida = Vendas Brutas - Deduções
       const receitaLiquidaCalculada =
@@ -445,6 +582,109 @@ const DRE = () => {
 
       // Lucro Bruto = Receita Líquida - CMV
       const lucroBrutoCalculado = receitaLiquidaCalculada - totalCMV;
+
+      // ================= CÁLCULOS POR CANAL =================
+
+      // Calcular receitas líquidas por canal
+      // Receita Líquida = Vendas Brutas - Deduções (Devoluções + Descontos + Impostos)
+      const receitaLiquidaVarejoCalc =
+        totaisVarejo.totalBruto +
+        totaisVarejo.totalDevolucoes -
+        (totaisVarejo.totalDevolucoes +
+          (totaisVarejo.totalBruto +
+            totaisVarejo.totalDevolucoes -
+            totaisVarejo.totalLiquido) +
+          (impostosPorCanal.varejo.totals.icms +
+            impostosPorCanal.varejo.totals.pis +
+            impostosPorCanal.varejo.totals.cofins));
+
+      const receitaLiquidaMultimarcasCalc =
+        totaisMultimarcas.totalBruto +
+        totaisMultimarcas.totalDevolucoes -
+        (totaisMultimarcas.totalDevolucoes +
+          (totaisMultimarcas.totalBruto +
+            totaisMultimarcas.totalDevolucoes -
+            totaisMultimarcas.totalLiquido) +
+          (impostosPorCanal.multimarcas.totals.icms +
+            impostosPorCanal.multimarcas.totals.pis +
+            impostosPorCanal.multimarcas.totals.cofins));
+
+      const receitaLiquidaFranquiasCalc =
+        totaisFranquias.totalBruto +
+        totaisFranquias.totalDevolucoes -
+        (totaisFranquias.totalDevolucoes +
+          (totaisFranquias.totalBruto +
+            totaisFranquias.totalDevolucoes -
+            totaisFranquias.totalLiquido) +
+          (impostosPorCanal.franquias.totals.icms +
+            impostosPorCanal.franquias.totals.pis +
+            impostosPorCanal.franquias.totals.cofins));
+
+      const receitaLiquidaRevendaCalc =
+        totaisRevenda.totalBruto +
+        totaisRevenda.totalDevolucoes -
+        (totaisRevenda.totalDevolucoes +
+          (totaisRevenda.totalBruto +
+            totaisRevenda.totalDevolucoes -
+            totaisRevenda.totalLiquido) +
+          (impostosPorCanal.revenda.totals.icms +
+            impostosPorCanal.revenda.totals.pis +
+            impostosPorCanal.revenda.totals.cofins));
+
+      // Usar os valores corretos do CMV por canal que já estão sendo calculados
+      const cmvVarejoCalc = totaisVarejo.totalCMV;
+      const cmvMultimarcasCalc = totaisMultimarcas.totalCMV;
+      const cmvFranquiasCalc = totaisFranquias.totalCMV;
+      const cmvRevendaCalc = totaisRevenda.totalCMV;
+
+      // Calcular lucro bruto por canal: RECEITA LÍQUIDA - CMV
+      const lucroBrutoVarejoCalc = receitaLiquidaVarejoCalc - cmvVarejoCalc;
+      const lucroBrutoMultimarcasCalc =
+        receitaLiquidaMultimarcasCalc - cmvMultimarcasCalc;
+      const lucroBrutoFranquiasCalc =
+        receitaLiquidaFranquiasCalc - cmvFranquiasCalc;
+      const lucroBrutoRevendaCalc = receitaLiquidaRevendaCalc - cmvRevendaCalc;
+
+      // Atualizar estados com valores por canal
+      setReceitaLiquidaVarejo(receitaLiquidaVarejoCalc);
+      setReceitaLiquidaMultimarcas(receitaLiquidaMultimarcasCalc);
+      setReceitaLiquidaFranquias(receitaLiquidaFranquiasCalc);
+      setReceitaLiquidaRevenda(receitaLiquidaRevendaCalc);
+
+      setCmvVarejo(cmvVarejoCalc);
+      setCmvMultimarcas(cmvMultimarcasCalc);
+      setCmvFranquias(cmvFranquiasCalc);
+      setCmvRevenda(cmvRevendaCalc);
+
+      setLucroBrutoVarejo(lucroBrutoVarejoCalc);
+      setLucroBrutoMultimarcas(lucroBrutoMultimarcasCalc);
+      setLucroBrutoFranquias(lucroBrutoFranquiasCalc);
+      setLucroBrutoRevenda(lucroBrutoRevendaCalc);
+
+      console.log('📊 Receitas Líquidas por canal:', {
+        varejo: receitaLiquidaVarejoCalc,
+        multimarcas: receitaLiquidaMultimarcasCalc,
+        franquias: receitaLiquidaFranquiasCalc,
+        revenda: receitaLiquidaRevendaCalc,
+        total: receitaLiquidaCalculada,
+      });
+
+      console.log('📊 CMV por canal:', {
+        varejo: cmvVarejoCalc,
+        multimarcas: cmvMultimarcasCalc,
+        franquias: cmvFranquiasCalc,
+        revenda: cmvRevendaCalc,
+        total: totalCMV,
+      });
+
+      console.log('📊 Lucro Bruto por canal:', {
+        varejo: lucroBrutoVarejoCalc,
+        multimarcas: lucroBrutoMultimarcasCalc,
+        franquias: lucroBrutoFranquiasCalc,
+        revenda: lucroBrutoRevendaCalc,
+        total: lucroBrutoCalculado,
+        formula: 'Receita Líquida - CMV',
+      });
 
       console.log('📊 Empresas utilizadas:', {
         varejo: empresasVarejo.length + ' empresas',
@@ -560,6 +800,12 @@ const DRE = () => {
       setDevolucoes(totalDevolucoes);
       setDescontos(totalDescontos);
       setTotalDeducoes(totalDeducoesCalculado);
+
+      // Salvar totais por canal nos estados
+      setTotaisVarejo(totaisVarejo);
+      setTotaisMultimarcas(totaisMultimarcas);
+      setTotaisFranquias(totaisFranquias);
+      setTotaisRevenda(totaisRevenda);
       setCmv(totalCMV);
       setReceitaLiquida(receitaLiquidaCalculada);
       setLucroBruto(lucroBrutoCalculado);
@@ -569,6 +815,589 @@ const DRE = () => {
       setPis(pisReal);
       setCofins(cofinsReal);
       setTotalImpostos(totalImpostosReal);
+
+      // ================= Plano de Contas (Contas a Pagar - Emissão) =================
+      try {
+        setLoadingStatus('Buscando Contas a Pagar (Emissão)...');
+        // Usar exatamente as mesmas empresas do Varejo
+        const todasEmpresasCodigos = [
+          1, 2, 5, 6, 7, 11, 31, 55, 65, 75, 85, 90, 91, 92, 93, 94, 95, 96, 97,
+          98, 99, 100, 101, 111, 200, 311, 500, 550, 600, 650, 700, 750, 850,
+          890, 910, 920, 930, 940, 950, 960, 970, 980, 990,
+        ];
+
+        const paramsCP = {
+          dt_inicio: periodo.dt_inicio,
+          dt_fim: periodo.dt_fim,
+          cd_empresa: todasEmpresasCodigos,
+        };
+        const contasPagar = await api.financial.contasPagarEmissao(paramsCP);
+
+        // Buscar nomes das despesas e fornecedores
+        setLoadingStatus('Buscando nomes das despesas e fornecedores...');
+
+        // Normalizar formatos possíveis da resposta
+        let dadosCP = [];
+        if (Array.isArray(contasPagar?.data)) {
+          dadosCP = contasPagar.data;
+        } else if (
+          contasPagar?.data?.data &&
+          Array.isArray(contasPagar.data.data)
+        ) {
+          dadosCP = contasPagar.data.data;
+        } else if (Array.isArray(contasPagar?.rows)) {
+          dadosCP = contasPagar.rows;
+        } else if (
+          contasPagar?.data?.rows &&
+          Array.isArray(contasPagar.data.rows)
+        ) {
+          dadosCP = contasPagar.data.rows;
+        }
+
+        // Agrupar dados idênticos (mesma regra usada em ContasAPagar.jsx)
+        const agruparDadosIdenticosLocal = (dados) => {
+          const grupos = new Map();
+
+          dados.forEach((item) => {
+            // Criar chave única SEM vl_rateio para manter totais corretos
+            const chave = `${item.cd_fornecedor}|${item.nm_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.tp_previsaoreal}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
+
+            if (!grupos.has(chave)) {
+              grupos.set(chave, {
+                item: item,
+                observacoes: [],
+                situacoes: [],
+                datasEmissao: [],
+                datasVencimento: [],
+                datasEntrada: [],
+                datasLiquidacao: [],
+                rateios: [],
+                quantidade: 0,
+              });
+            }
+
+            const grupo = grupos.get(chave);
+            grupo.quantidade += 1;
+
+            // Adicionar rateio se não existir
+            if (item.vl_rateio && !grupo.rateios.includes(item.vl_rateio)) {
+              grupo.rateios.push(item.vl_rateio);
+            }
+
+            // Adicionar observação se existir e for diferente
+            if (
+              item.ds_observacao &&
+              !grupo.observacoes.includes(item.ds_observacao)
+            ) {
+              grupo.observacoes.push(item.ds_observacao);
+            }
+
+            // Adicionar situação se existir e for diferente
+            if (
+              item.tp_situacao &&
+              !grupo.situacoes.includes(item.tp_situacao)
+            ) {
+              grupo.situacoes.push(item.tp_situacao);
+            }
+
+            // Adicionar previsão se existir e for diferente
+            if (item.tp_previsaoreal && !grupo.previsoes) {
+              grupo.previsoes = [];
+            }
+            if (
+              item.tp_previsaoreal &&
+              !grupo.previsoes.includes(item.tp_previsaoreal)
+            ) {
+              grupo.previsoes.push(item.tp_previsaoreal);
+            }
+
+            // Adicionar datas se existirem e forem diferentes
+            if (
+              item.dt_emissao &&
+              !grupo.datasEmissao.includes(item.dt_emissao)
+            ) {
+              grupo.datasEmissao.push(item.dt_emissao);
+            }
+            if (
+              item.dt_vencimento &&
+              !grupo.datasVencimento.includes(item.dt_vencimento)
+            ) {
+              grupo.datasVencimento.push(item.dt_vencimento);
+            }
+            if (
+              item.dt_entrada &&
+              !grupo.datasEntrada.includes(item.dt_entrada)
+            ) {
+              grupo.datasEntrada.push(item.dt_entrada);
+            }
+            if (item.dt_liq && !grupo.datasLiquidacao.includes(item.dt_liq)) {
+              grupo.datasLiquidacao.push(item.dt_liq);
+            }
+          });
+
+          return Array.from(grupos.values()).map((grupo) => {
+            // Priorizar situações
+            let situacaoFinal = grupo.item.tp_situacao;
+            if (grupo.situacoes.length > 1) {
+              if (grupo.situacoes.includes('C')) situacaoFinal = 'C';
+              else if (grupo.situacoes.includes('N')) situacaoFinal = 'N';
+            }
+
+            // Priorizar previsões: R > P > C
+            let previsaoFinal = grupo.item.tp_previsaoreal;
+            if (grupo.previsoes && grupo.previsoes.length > 1) {
+              if (grupo.previsoes.includes('R')) previsaoFinal = 'R';
+              else if (grupo.previsoes.includes('P')) previsaoFinal = 'P';
+              else if (grupo.previsoes.includes('C')) previsaoFinal = 'C';
+            }
+
+            // Datas relevantes (mais recente)
+            const dtEmissaoFinal =
+              grupo.datasEmissao.length > 0
+                ? grupo.datasEmissao.sort(
+                    (a, b) => new Date(b) - new Date(a),
+                  )[0]
+                : grupo.item.dt_emissao;
+            const dtVencimentoFinal =
+              grupo.datasVencimento.length > 0
+                ? grupo.datasVencimento.sort(
+                    (a, b) => new Date(b) - new Date(a),
+                  )[0]
+                : grupo.item.dt_vencimento;
+            const dtEntradaFinal =
+              grupo.datasEntrada.length > 0
+                ? grupo.datasEntrada.sort(
+                    (a, b) => new Date(b) - new Date(a),
+                  )[0]
+                : grupo.item.dt_entrada;
+            const dtLiqFinal =
+              grupo.datasLiquidacao.length > 0
+                ? grupo.datasLiquidacao.sort(
+                    (a, b) => new Date(b) - new Date(a),
+                  )[0]
+                : grupo.item.dt_liq;
+
+            return {
+              ...grupo,
+              item: {
+                ...grupo.item,
+                tp_situacao: situacaoFinal,
+                tp_previsaoreal: previsaoFinal,
+                dt_emissao: dtEmissaoFinal,
+                dt_vencimento: dtVencimentoFinal,
+                dt_entrada: dtEntradaFinal,
+                dt_liq: dtLiqFinal,
+              },
+            };
+          });
+        };
+
+        console.log('🔍 Debug DRE - dadosCP.length:', dadosCP.length);
+        console.log('🔍 Debug DRE - primeiro item:', dadosCP[0]);
+
+        const dadosAgrupadosCP = agruparDadosIdenticosLocal(dadosCP);
+        console.log(
+          '🔍 Debug DRE - dadosAgrupadosCP.length:',
+          dadosAgrupadosCP.length,
+        );
+
+        // Filtrar apenas situação NORMAL (N) e previsão REAL (R ou código '2')
+        const dadosFiltradosCP = dadosAgrupadosCP.filter((g) => {
+          let situacaoFinal = g.item.tp_situacao;
+
+          if (g.situacoes.length > 1) {
+            if (g.situacoes.includes('C')) situacaoFinal = 'C';
+            else if (g.situacoes.includes('N')) situacaoFinal = 'N';
+          }
+
+          let previsaoFinal = g.item.tp_previsaoreal;
+          if (g.previsoes && g.previsoes.length > 1) {
+            if (g.previsoes.includes('R')) previsaoFinal = 'R';
+            else if (g.previsoes.includes('P')) previsaoFinal = 'P';
+            else if (g.previsoes.includes('C')) previsaoFinal = 'C';
+          }
+
+          return (
+            situacaoFinal === 'N' &&
+            (previsaoFinal === 'R' || previsaoFinal === '2')
+          );
+        });
+
+        console.log(
+          '🔍 Debug DRE - dadosFiltradosCP.length:',
+          dadosFiltradosCP.length,
+        );
+
+        // Extrair códigos únicos de despesas e fornecedores
+        const codigosDespesa = [
+          ...new Set(
+            dadosFiltradosCP
+              .map((item) => parseInt(item.item.cd_despesaitem))
+              .filter((codigo) => codigo && !isNaN(codigo)),
+          ),
+        ];
+        const codigosFornecedor = [
+          ...new Set(
+            dadosFiltradosCP
+              .map((item) => parseInt(item.item.cd_fornecedor))
+              .filter((codigo) => codigo && !isNaN(codigo)),
+          ),
+        ];
+
+        console.log('🔍 Códigos únicos encontrados:', {
+          despesas: codigosDespesa.length,
+          fornecedores: codigosFornecedor.length,
+          amostraDespesas: codigosDespesa.slice(0, 5),
+          amostraFornecedores: codigosFornecedor.slice(0, 5),
+        });
+
+        // Buscar nomes das despesas
+        const despesasMap = new Map();
+        if (codigosDespesa.length > 0) {
+          try {
+            const despesasResponse = await api.financial.despesa({
+              cd_despesaitem: codigosDespesa,
+            });
+            if (
+              despesasResponse?.data &&
+              Array.isArray(despesasResponse.data)
+            ) {
+              despesasResponse.data.forEach((despesa) => {
+                if (despesa.cd_despesaitem && despesa.ds_despesaitem) {
+                  despesasMap.set(
+                    parseInt(despesa.cd_despesaitem),
+                    despesa.ds_despesaitem,
+                  );
+                }
+              });
+            }
+            console.log('📋 Despesas carregadas:', despesasMap.size);
+          } catch (error) {
+            console.warn('⚠️ Erro ao buscar despesas:', error);
+          }
+        }
+
+        // Buscar nomes dos fornecedores
+        const fornecedoresMap = new Map();
+        if (codigosFornecedor.length > 0) {
+          try {
+            const fornecedoresResponse = await api.financial.fornecedor({
+              cd_fornecedor: codigosFornecedor,
+            });
+            if (
+              fornecedoresResponse?.data &&
+              Array.isArray(fornecedoresResponse.data)
+            ) {
+              fornecedoresResponse.data.forEach((fornecedor) => {
+                if (fornecedor.cd_fornecedor && fornecedor.nm_fornecedor) {
+                  fornecedoresMap.set(
+                    parseInt(fornecedor.cd_fornecedor),
+                    fornecedor.nm_fornecedor,
+                  );
+                }
+              });
+            }
+            console.log('👥 Fornecedores carregados:', fornecedoresMap.size);
+          } catch (error) {
+            console.warn('⚠️ Erro ao buscar fornecedores:', error);
+          }
+        }
+
+        // Classificação por categoria (mesma lógica do ContasAPagar)
+        const classificarDespesa = (cdDespesa) => {
+          const codigo = parseInt(cdDespesa) || 0;
+          const categoriaExcecao = getCategoriaPorCodigo(codigo);
+          if (categoriaExcecao) return categoriaExcecao;
+          if (codigo >= 1000 && codigo <= 1999)
+            return 'CUSTO DAS MERCADORIAS VENDIDAS';
+          if (codigo >= 2000 && codigo <= 2999) return 'DESPESAS OPERACIONAIS';
+          if (codigo >= 3000 && codigo <= 3999) return 'DESPESAS COM PESSOAL';
+          if (codigo >= 4001 && codigo <= 4999)
+            return 'ALUGUÉIS E ARRENDAMENTOS';
+          if (codigo >= 5000 && codigo <= 5999)
+            return 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
+          if (codigo >= 6000 && codigo <= 6999) return 'DESPESAS GERAIS';
+          if (codigo >= 7000 && codigo <= 7999) return 'DESPESAS FINANCEIRAS';
+          if (codigo >= 8000 && codigo <= 8999)
+            return 'OUTRAS DESPESAS OPERACIONAIS';
+          if (codigo >= 9000 && codigo <= 9999) return 'DESPESAS C/ VENDAS';
+          return 'SEM CLASSIFICAÇÃO';
+        };
+
+        // Categorias que NÃO devem aparecer nas despesas operacionais da DRE
+        const categoriasExcluidasDRE = [
+          'CUSTO DAS MERCADORIAS VENDIDAS',
+          'IMPOSTOS, TAXAS E CONTRIBUIÇÕES',
+          'ATIVOS',
+          'DESPESAS FINANCEIRAS',
+        ];
+
+        // Agrupar: Categoria -> Despesa -> Fornecedor (com duplicata/parcela) e somar vl_duplicata
+        const categorias = new Map();
+        for (const grupo of dadosFiltradosCP) {
+          const item = grupo.item;
+          const categoria = classificarDespesa(item.cd_despesaitem);
+
+          // Filtrar categorias excluídas da DRE
+          if (categoriasExcluidasDRE.includes(categoria)) {
+            continue;
+          }
+
+          // Usar nomes reais das despesas e fornecedores
+          const nomeDespesa =
+            despesasMap.get(parseInt(item.cd_despesaitem)) ||
+            item.ds_despesaitem ||
+            'SEM DESCRIÇÃO';
+          const nomeFornecedor =
+            fornecedoresMap.get(parseInt(item.cd_fornecedor)) ||
+            item.nm_fornecedor ||
+            'SEM FORNECEDOR';
+          const nrDuplicata = item.nr_duplicata || '';
+          const nrParcela = item.nr_parcela || '';
+          const valor = parseFloat(item.vl_duplicata || 0) || 0;
+
+          if (!categorias.has(categoria)) {
+            categorias.set(categoria, new Map()); // map de despesas
+          }
+          const despesasMapLocal = categorias.get(categoria);
+          if (!despesasMapLocal.has(nomeDespesa)) {
+            despesasMapLocal.set(nomeDespesa, new Map()); // map de fornecedores/chaves
+          }
+          const fornecedoresMapLocal = despesasMapLocal.get(nomeDespesa);
+          const chaveFornecedor = `${item.cd_empresa || ''}|${
+            item.cd_fornecedor || ''
+          }|${nomeFornecedor}|${nrDuplicata}|${nrParcela}`;
+          fornecedoresMapLocal.set(
+            chaveFornecedor,
+            (fornecedoresMapLocal.get(chaveFornecedor) || 0) + valor,
+          );
+        }
+
+        // Ordem de categorias para DRE (sem CMV, Impostos e Ativos)
+        const ordemCategorias = [
+          'DESPESAS OPERACIONAIS',
+          'DESPESAS COM PESSOAL',
+          'ALUGUÉIS E ARRENDAMENTOS',
+          'DESPESAS GERAIS',
+          'OUTRAS DESPESAS OPERACIONAIS',
+          'DESPESAS C/ VENDAS',
+          'SEM CLASSIFICAÇÃO',
+        ];
+
+        // Transformar em nós do tree view do DRE
+        const nodes = [];
+        let totalGeral = 0;
+        for (const catNome of ordemCategorias) {
+          if (!categorias.has(catNome)) continue;
+          const despesasMapLocal = categorias.get(catNome);
+
+          const despesasNodes = [];
+          let totalCategoria = 0;
+          for (const [
+            despesaNome,
+            fornecedoresMapLocal,
+          ] of despesasMapLocal.entries()) {
+            const fornecedoresNodes = [];
+            let totalDespesa = 0;
+            for (const [chaveForn, vl] of fornecedoresMapLocal.entries()) {
+              const [empCod, fornCod, fornNome, dup, parc] =
+                chaveForn.split('|');
+              totalDespesa += vl;
+              fornecedoresNodes.push({
+                id: `forn-${catNome}-${despesaNome}-${empCod}-${fornCod}-${dup}-${parc}`,
+                label: `${fornNome}`,
+                description: `Empresa: ${empCod} | Fornecedor: ${fornCod} | Duplicata: ${
+                  dup || '-'
+                } | Parcela: ${parc || '-'}`,
+                value: -vl,
+                type: 'despesa',
+                children: [],
+              });
+            }
+            // Ordenar fornecedores desc por valor
+            fornecedoresNodes.sort(
+              (a, b) => Math.abs(b.value) - Math.abs(a.value),
+            );
+
+            totalCategoria += totalDespesa;
+            despesasNodes.push({
+              id: `desp-${catNome}-${despesaNome}`,
+              label: despesaNome,
+              description: `${
+                fornecedoresNodes.length
+              } fornecedor(es) | Total: ${totalDespesa.toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+              })}`,
+              value: -totalDespesa,
+              type: 'despesa',
+              children: fornecedoresNodes,
+            });
+          }
+          // Ordenar despesas desc por valor
+          despesasNodes.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+
+          totalGeral += totalCategoria;
+          nodes.push({
+            id: `cat-${catNome}`,
+            label: catNome,
+            description: `${
+              despesasNodes.length
+            } despesa(s) | ${despesasNodes.reduce(
+              (acc, desp) => acc + desp.children.length,
+              0,
+            )} fornecedor(es) | Total: ${totalCategoria.toLocaleString(
+              'pt-BR',
+              { style: 'currency', currency: 'BRL' },
+            )}`,
+            value: -totalCategoria,
+            type: 'despesa',
+            children: despesasNodes,
+          });
+        }
+
+        console.log('🔍 Debug DRE - nodes.length:', nodes.length);
+        console.log('🔍 Debug DRE - totalGeral:', totalGeral);
+        console.log('🔍 Debug DRE - nodes:', nodes);
+
+        setPlanoDespesasNodes(nodes);
+        setPlanoDespesasTotal(totalGeral);
+
+        // Processar Despesas Financeiras separadamente
+        const categoriasFinanceiras = new Map();
+        for (const grupo of dadosFiltradosCP) {
+          const item = grupo.item;
+          const categoria = classificarDespesa(item.cd_despesaitem);
+
+          // Incluir apenas DESPESAS FINANCEIRAS
+          if (categoria !== 'DESPESAS FINANCEIRAS') {
+            continue;
+          }
+
+          // Usar nomes reais das despesas e fornecedores
+          const nomeDespesa =
+            despesasMap.get(parseInt(item.cd_despesaitem)) ||
+            item.ds_despesaitem ||
+            'SEM DESCRIÇÃO';
+          const nomeFornecedor =
+            fornecedoresMap.get(parseInt(item.cd_fornecedor)) ||
+            item.nm_fornecedor ||
+            'SEM FORNECEDOR';
+
+          // Filtrar despesas que contenham "EMPRÉSTIMO" no nome (case insensitive)
+          if (
+            nomeDespesa.toUpperCase().includes('EMPRÉSTIMO') ||
+            nomeDespesa.toUpperCase().includes('EMPRESTIMO')
+          ) {
+            console.log(
+              '🚫 Despesa financeira bloqueada (empréstimo):',
+              nomeDespesa,
+            );
+            continue;
+          }
+          const nrDuplicata = item.nr_duplicata || '';
+          const nrParcela = item.nr_parcela || '';
+          const valor = parseFloat(item.vl_duplicata || 0) || 0;
+
+          if (!categoriasFinanceiras.has(categoria)) {
+            categoriasFinanceiras.set(categoria, new Map());
+          }
+          const despesasMapLocal = categoriasFinanceiras.get(categoria);
+          if (!despesasMapLocal.has(nomeDespesa)) {
+            despesasMapLocal.set(nomeDespesa, new Map());
+          }
+          const fornecedoresMapLocal = despesasMapLocal.get(nomeDespesa);
+          const chaveFornecedor = `${item.cd_empresa || ''}|${
+            item.cd_fornecedor || ''
+          }|${nomeFornecedor}|${nrDuplicata}|${nrParcela}`;
+          fornecedoresMapLocal.set(
+            chaveFornecedor,
+            (fornecedoresMapLocal.get(chaveFornecedor) || 0) + valor,
+          );
+        }
+
+        // Processar nodes das despesas financeiras
+        const financeirasNodes = [];
+        let totalFinanceiras = 0;
+        for (const [
+          catNome,
+          despesasMapLocal,
+        ] of categoriasFinanceiras.entries()) {
+          const despesasNodes = [];
+          let totalCategoria = 0;
+          for (const [
+            despesaNome,
+            fornecedoresMapLocal,
+          ] of despesasMapLocal.entries()) {
+            const fornecedoresNodes = [];
+            let totalDespesa = 0;
+            for (const [chaveForn, vl] of fornecedoresMapLocal.entries()) {
+              const [empCod, fornCod, fornNome, dup, parc] =
+                chaveForn.split('|');
+              totalDespesa += vl;
+              fornecedoresNodes.push({
+                id: `fin-forn-${catNome}-${despesaNome}-${empCod}-${fornCod}-${dup}-${parc}`,
+                label: `${fornNome}`,
+                description: `Empresa: ${empCod} | Fornecedor: ${fornCod} | Duplicata: ${
+                  dup || '-'
+                } | Parcela: ${parc || '-'}`,
+                value: -vl,
+                type: 'despesa',
+                children: [],
+              });
+            }
+            fornecedoresNodes.sort(
+              (a, b) => Math.abs(b.value) - Math.abs(a.value),
+            );
+
+            totalCategoria += totalDespesa;
+            despesasNodes.push({
+              id: `fin-desp-${catNome}-${despesaNome}`,
+              label: despesaNome,
+              description: `${
+                fornecedoresNodes.length
+              } fornecedor(es) | Total: ${totalDespesa.toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+              })}`,
+              value: -totalDespesa,
+              type: 'despesa',
+              children: fornecedoresNodes,
+            });
+          }
+          despesasNodes.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+
+          totalFinanceiras += totalCategoria;
+          financeirasNodes.push({
+            id: `fin-cat-${catNome}`,
+            label: catNome,
+            description: `${
+              despesasNodes.length
+            } despesa(s) | ${despesasNodes.reduce(
+              (acc, desp) => acc + desp.children.length,
+              0,
+            )} fornecedor(es) | Total: ${totalCategoria.toLocaleString(
+              'pt-BR',
+              { style: 'currency', currency: 'BRL' },
+            )}`,
+            value: -totalCategoria,
+            type: 'despesa',
+            children: despesasNodes,
+          });
+        }
+
+        setDespesasFinanceirasNodes(financeirasNodes);
+        setDespesasFinanceirasTotal(totalFinanceiras);
+      } catch (error) {
+        console.error(
+          'Erro ao buscar/gerar Plano de Contas (AP Emissão):',
+          error,
+        );
+        setPlanoDespesasNodes([]);
+        setPlanoDespesasTotal(0);
+        setDespesasFinanceirasNodes([]);
+        setDespesasFinanceirasTotal(0);
+      }
     } catch (err) {
       console.error('Erro ao buscar vendas brutas:', err);
       setError(`Erro ao carregar dados: ${err.message || 'Erro desconhecido'}`);
@@ -606,6 +1435,17 @@ const DRE = () => {
       'totalImpostos:',
       totalImpostos,
     );
+    // Montar nó de Despesas Operacionais a partir do Plano de Contas (AP Emissão)
+    const despesasOperacionaisNode = {
+      id: 'despesas-operacionais',
+      label: 'Despesas Operacionais',
+      description:
+        'Despesas por categorias e despesas oriundas das Contas a Pagar (Emissão).',
+      value: -planoDespesasTotal,
+      type: 'despesa',
+      children: planoDespesasNodes,
+    };
+
     return [
       {
         id: 'vendas-bruta',
@@ -613,14 +1453,44 @@ const DRE = () => {
         description: 'Quanto você vendeu no período (sem tirar nada ainda).',
         value: vendasBrutas,
         type: 'receita',
-        children: [],
+        children: [
+          {
+            id: 'varejo',
+            label: 'Varejo',
+            description: 'Vendas do canal Varejo',
+            value: totaisVarejo.totalBruto + totaisVarejo.totalDevolucoes,
+            type: 'receita',
+          },
+          {
+            id: 'multimarcas',
+            label: 'Multimarcas',
+            description: 'Vendas do canal Multimarcas',
+            value:
+              totaisMultimarcas.totalBruto + totaisMultimarcas.totalDevolucoes,
+            type: 'receita',
+          },
+          {
+            id: 'revenda',
+            label: 'Revenda',
+            description: 'Vendas do canal Revenda',
+            value: totaisRevenda.totalBruto + totaisRevenda.totalDevolucoes,
+            type: 'receita',
+          },
+          {
+            id: 'franquias',
+            label: 'Franquias',
+            description: 'Vendas do canal Franquias',
+            value: totaisFranquias.totalBruto + totaisFranquias.totalDevolucoes,
+            type: 'receita',
+          },
+        ],
       },
       {
         id: 'deducoes-vendas',
         label: 'Deduções sobre Vendas',
         description:
           'Devoluções, descontos concedidos e impostos sobre vendas.',
-        value: -totalDeducoes, // Valor negativo (dedução)
+        value: -(devolucoes + descontos + totalImpostos), // Soma dos valores individuais
         type: 'deducao',
         children: [
           {
@@ -629,13 +1499,106 @@ const DRE = () => {
             description: 'Clientes devolveram mercadorias',
             value: -devolucoes, // Valor negativo (dedução)
             type: 'deducao',
+            children: [
+              {
+                id: 'devolucoes-varejo',
+                label: 'Varejo',
+                description: 'Devoluções do canal Varejo',
+                value: -totaisVarejo.totalDevolucoes,
+                type: 'deducao',
+              },
+              {
+                id: 'devolucoes-multimarcas',
+                label: 'Multimarcas',
+                description: 'Devoluções do canal Multimarcas',
+                value: -totaisMultimarcas.totalDevolucoes,
+                type: 'deducao',
+              },
+              {
+                id: 'devolucoes-revenda',
+                label: 'Revenda',
+                description: 'Devoluções do canal Revenda',
+                value: -totaisRevenda.totalDevolucoes,
+                type: 'deducao',
+              },
+              {
+                id: 'devolucoes-franquias',
+                label: 'Franquias',
+                description: 'Devoluções do canal Franquias',
+                value: -totaisFranquias.totalDevolucoes,
+                type: 'deducao',
+              },
+            ],
           },
           {
             id: 'descontos',
             label: 'Descontos Concedidos',
             description: 'Descontos dados aos clientes',
-            value: -descontos, // Valor negativo (dedução)
+            value: -(
+              totaisVarejo.totalBruto -
+              totaisVarejo.totalDevolucoes -
+              (totaisVarejo.totalLiquido - totaisVarejo.totalDevolucoes) +
+              (totaisMultimarcas.totalBruto -
+                totaisMultimarcas.totalDevolucoes -
+                (totaisMultimarcas.totalLiquido -
+                  totaisMultimarcas.totalDevolucoes)) +
+              (totaisRevenda.totalBruto -
+                totaisRevenda.totalDevolucoes -
+                (totaisRevenda.totalLiquido - totaisRevenda.totalDevolucoes)) +
+              (totaisFranquias.totalBruto -
+                totaisFranquias.totalDevolucoes -
+                (totaisFranquias.totalLiquido -
+                  totaisFranquias.totalDevolucoes))
+            ),
             type: 'deducao',
+            children: [
+              {
+                id: 'descontos-varejo',
+                label: 'Varejo',
+                description: 'Descontos do canal Varejo',
+                value: -(
+                  totaisVarejo.totalBruto -
+                  totaisVarejo.totalDevolucoes -
+                  (totaisVarejo.totalLiquido - totaisVarejo.totalDevolucoes)
+                ),
+                type: 'deducao',
+              },
+              {
+                id: 'descontos-multimarcas',
+                label: 'Multimarcas',
+                description: 'Descontos do canal Multimarcas',
+                value: -(
+                  totaisMultimarcas.totalBruto -
+                  totaisMultimarcas.totalDevolucoes -
+                  (totaisMultimarcas.totalLiquido -
+                    totaisMultimarcas.totalDevolucoes)
+                ),
+                type: 'deducao',
+              },
+              {
+                id: 'descontos-revenda',
+                label: 'Revenda',
+                description: 'Descontos do canal Revenda',
+                value: -(
+                  totaisRevenda.totalBruto -
+                  totaisRevenda.totalDevolucoes -
+                  (totaisRevenda.totalLiquido - totaisRevenda.totalDevolucoes)
+                ),
+                type: 'deducao',
+              },
+              {
+                id: 'descontos-franquias',
+                label: 'Franquias',
+                description: 'Descontos do canal Franquias',
+                value: -(
+                  totaisFranquias.totalBruto -
+                  totaisFranquias.totalDevolucoes -
+                  (totaisFranquias.totalLiquido -
+                    totaisFranquias.totalDevolucoes)
+                ),
+                type: 'deducao',
+              },
+            ],
           },
           {
             id: 'impostos-vendas',
@@ -645,27 +1608,140 @@ const DRE = () => {
             type: 'deducao',
             children: [
               {
-                id: 'icms',
-                label: 'ICMS',
-                description:
-                  'Imposto sobre Circulação de Mercadorias e Serviços',
-                value: -icms, // Valor real calculado
+                id: 'impostos-varejo',
+                label: 'Varejo',
+                description: 'Impostos do canal Varejo',
+                value: -(
+                  impostosVarejo.icms +
+                  impostosVarejo.pis +
+                  impostosVarejo.cofins
+                ),
                 type: 'deducao',
+                children: [
+                  {
+                    id: 'icms-varejo',
+                    label: 'ICMS',
+                    description: 'ICMS do canal Varejo',
+                    value: -impostosVarejo.icms,
+                    type: 'deducao',
+                  },
+                  {
+                    id: 'pis-varejo',
+                    label: 'PIS',
+                    description: 'PIS do canal Varejo',
+                    value: -impostosVarejo.pis,
+                    type: 'deducao',
+                  },
+                  {
+                    id: 'cofins-varejo',
+                    label: 'COFINS',
+                    description: 'COFINS do canal Varejo',
+                    value: -impostosVarejo.cofins,
+                    type: 'deducao',
+                  },
+                ],
               },
               {
-                id: 'pis',
-                label: 'PIS',
-                description: 'Programa de Integração Social',
-                value: -pis, // Valor real calculado
+                id: 'impostos-multimarcas',
+                label: 'Multimarcas',
+                description: 'Impostos do canal Multimarcas',
+                value: -(
+                  impostosMultimarcas.icms +
+                  impostosMultimarcas.pis +
+                  impostosMultimarcas.cofins
+                ),
                 type: 'deducao',
+                children: [
+                  {
+                    id: 'icms-multimarcas',
+                    label: 'ICMS',
+                    description: 'ICMS do canal Multimarcas',
+                    value: -impostosMultimarcas.icms,
+                    type: 'deducao',
+                  },
+                  {
+                    id: 'pis-multimarcas',
+                    label: 'PIS',
+                    description: 'PIS do canal Multimarcas',
+                    value: -impostosMultimarcas.pis,
+                    type: 'deducao',
+                  },
+                  {
+                    id: 'cofins-multimarcas',
+                    label: 'COFINS',
+                    description: 'COFINS do canal Multimarcas',
+                    value: -impostosMultimarcas.cofins,
+                    type: 'deducao',
+                  },
+                ],
               },
               {
-                id: 'cofins',
-                label: 'COFINS',
-                description:
-                  'Contribuição para o Financiamento da Seguridade Social',
-                value: -cofins, // Valor real calculado
+                id: 'impostos-revenda',
+                label: 'Revenda',
+                description: 'Impostos do canal Revenda',
+                value: -(
+                  impostosRevenda.icms +
+                  impostosRevenda.pis +
+                  impostosRevenda.cofins
+                ),
                 type: 'deducao',
+                children: [
+                  {
+                    id: 'icms-revenda',
+                    label: 'ICMS',
+                    description: 'ICMS do canal Revenda',
+                    value: -impostosRevenda.icms,
+                    type: 'deducao',
+                  },
+                  {
+                    id: 'pis-revenda',
+                    label: 'PIS',
+                    description: 'PIS do canal Revenda',
+                    value: -impostosRevenda.pis,
+                    type: 'deducao',
+                  },
+                  {
+                    id: 'cofins-revenda',
+                    label: 'COFINS',
+                    description: 'COFINS do canal Revenda',
+                    value: -impostosRevenda.cofins,
+                    type: 'deducao',
+                  },
+                ],
+              },
+              {
+                id: 'impostos-franquias',
+                label: 'Franquias',
+                description: 'Impostos do canal Franquias',
+                value: -(
+                  impostosFranquias.icms +
+                  impostosFranquias.pis +
+                  impostosFranquias.cofins
+                ),
+                type: 'deducao',
+                children: [
+                  {
+                    id: 'icms-franquias',
+                    label: 'ICMS',
+                    description: 'ICMS do canal Franquias',
+                    value: -impostosFranquias.icms,
+                    type: 'deducao',
+                  },
+                  {
+                    id: 'pis-franquias',
+                    label: 'PIS',
+                    description: 'PIS do canal Franquias',
+                    value: -impostosFranquias.pis,
+                    type: 'deducao',
+                  },
+                  {
+                    id: 'cofins-franquias',
+                    label: 'COFINS',
+                    description: 'COFINS do canal Franquias',
+                    value: -impostosFranquias.cofins,
+                    type: 'deducao',
+                  },
+                ],
               },
             ],
           },
@@ -677,7 +1753,36 @@ const DRE = () => {
         description: 'É o que realmente ficou das vendas.',
         value: receitaLiquida, // Valor real calculado
         type: 'resultado',
-        children: [],
+        children: [
+          {
+            id: 'receita-liquida-varejo',
+            label: 'Varejo',
+            description: 'Receita líquida do canal Varejo',
+            value: receitaLiquidaVarejo,
+            type: 'resultado',
+          },
+          {
+            id: 'receita-liquida-multimarcas',
+            label: 'Multimarcas',
+            description: 'Receita líquida do canal Multimarcas',
+            value: receitaLiquidaMultimarcas,
+            type: 'resultado',
+          },
+          {
+            id: 'receita-liquida-revenda',
+            label: 'Revenda',
+            description: 'Receita líquida do canal Revenda',
+            value: receitaLiquidaRevenda,
+            type: 'resultado',
+          },
+          {
+            id: 'receita-liquida-franquias',
+            label: 'Franquias',
+            description: 'Receita líquida do canal Franquias',
+            value: receitaLiquidaFranquias,
+            type: 'resultado',
+          },
+        ],
       },
       {
         id: 'cmv',
@@ -686,7 +1791,36 @@ const DRE = () => {
           'Quanto custou comprar ou produzir o que você vendeu (matéria-prima, mercadorias para revenda, mão de obra da produção).',
         value: -cmv, // Valor negativo (custo)
         type: 'custo',
-        children: [],
+        children: [
+          {
+            id: 'cmv-varejo',
+            label: 'Varejo',
+            description: 'CMV do canal Varejo',
+            value: -cmvVarejo,
+            type: 'custo',
+          },
+          {
+            id: 'cmv-multimarcas',
+            label: 'Multimarcas',
+            description: 'CMV do canal Multimarcas',
+            value: -cmvMultimarcas,
+            type: 'custo',
+          },
+          {
+            id: 'cmv-revenda',
+            label: 'Revenda',
+            description: 'CMV do canal Revenda',
+            value: -cmvRevenda,
+            type: 'custo',
+          },
+          {
+            id: 'cmv-franquias',
+            label: 'Franquias',
+            description: 'CMV do canal Franquias',
+            value: -cmvFranquias,
+            type: 'custo',
+          },
+        ],
       },
       {
         id: 'lucro-bruto',
@@ -694,76 +1828,43 @@ const DRE = () => {
         description: 'Receita Líquida – CMV',
         value: lucroBruto, // Valor real calculado
         type: 'resultado',
-        children: [],
-      },
-      {
-        id: 'despesas-operacionais',
-        label: 'Despesas Operacionais',
-        description:
-          'Despesas comerciais, administrativas e financeiras (por plano de contas).',
-        value: -(
-          (despesasOperacionais?.['CUSTO DAS MERCADORIAS VENDIDAS'] || 0) +
-          (despesasOperacionais?.['DESPESAS COM PESSOAL'] || 0) +
-          (despesasOperacionais?.['IMPOSTOS, TAXAS E CONTRIBUIÇÕES'] || 0) +
-          (despesasOperacionais?.['DESPESAS GERAIS'] || 0) +
-          (despesasOperacionais?.['DESPESAS FINANCEIRAS'] || 0) +
-          (despesasOperacionais?.['DESPESAS C/ VENDAS'] || 0)
-        ),
-        type: 'despesa',
         children: [
           {
-            id: 'op-cmv',
-            label: 'CUSTO DAS MERCADORIAS VENDIDAS',
-            description: 'Itens mapeados como CMV no plano de contas',
-            value: -(
-              despesasOperacionais?.['CUSTO DAS MERCADORIAS VENDIDAS'] || 0
-            ),
-            type: 'despesa',
+            id: 'lucro-bruto-varejo',
+            label: 'Varejo',
+            description: 'Lucro bruto do canal Varejo',
+            value: lucroBrutoVarejo,
+            type: 'resultado',
           },
           {
-            id: 'op-pessoal',
-            label: 'DESPESAS COM PESSOAL',
-            description: 'Salários, encargos e benefícios',
-            value: -(despesasOperacionais?.['DESPESAS COM PESSOAL'] || 0),
-            type: 'despesa',
+            id: 'lucro-bruto-multimarcas',
+            label: 'Multimarcas',
+            description: 'Lucro bruto do canal Multimarcas',
+            value: lucroBrutoMultimarcas,
+            type: 'resultado',
           },
           {
-            id: 'op-impostos',
-            label: 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES',
-            description: 'Tributos operacionais não vinculados a vendas',
-            value: -(
-              despesasOperacionais?.['IMPOSTOS, TAXAS E CONTRIBUIÇÕES'] || 0
-            ),
-            type: 'despesa',
+            id: 'lucro-bruto-revenda',
+            label: 'Revenda',
+            description: 'Lucro bruto do canal Revenda',
+            value: lucroBrutoRevenda,
+            type: 'resultado',
           },
           {
-            id: 'op-gerais',
-            label: 'DESPESAS GERAIS',
-            description: 'Custos administrativos e gerais',
-            value: -(despesasOperacionais?.['DESPESAS GERAIS'] || 0),
-            type: 'despesa',
-          },
-          {
-            id: 'op-financeiras',
-            label: 'DESPESAS FINANCEIRAS',
-            description: 'Juros, tarifas e despesas financeiras',
-            value: -(despesasOperacionais?.['DESPESAS FINANCEIRAS'] || 0),
-            type: 'despesa',
-          },
-          {
-            id: 'op-vendas',
-            label: 'DESPESAS C/ VENDAS',
-            description: 'Comercial/marketing e apoio às vendas',
-            value: -(despesasOperacionais?.['DESPESAS C/ VENDAS'] || 0),
-            type: 'despesa',
+            id: 'lucro-bruto-franquias',
+            label: 'Franquias',
+            description: 'Lucro bruto do canal Franquias',
+            value: lucroBrutoFranquias,
+            type: 'resultado',
           },
         ],
       },
+      despesasOperacionaisNode,
       {
         id: 'resultado-operacional',
         label: 'Resultado Operacional',
-        description: 'O que sobrou depois das despesas.',
-        value: 180000.0,
+        description: 'Lucro Bruto - Despesas Operacionais',
+        value: lucroBruto - planoDespesasTotal,
         type: 'resultado',
         children: [],
       },
@@ -772,30 +1873,40 @@ const DRE = () => {
         label: 'Outras Receitas e Despesas',
         description:
           'Venda de bens da empresa, ganhos ou perdas não recorrentes.',
-        value: 15000.0,
+        value: 0,
         type: 'outro',
         children: [
           {
             id: 'venda-bens',
             label: 'Venda de Bens',
             description: 'Venda de equipamentos da empresa',
-            value: 25000.0,
+            value: 0,
             type: 'receita',
           },
           {
             id: 'perdas-nao-recorrentes',
             label: 'Perdas Não Recorrentes',
             description: 'Perdas eventuais não recorrentes',
-            value: -10000.0,
+            value: 0,
             type: 'despesa',
           },
         ],
+      },
+      // Nova aba: Despesas Financeiras
+      {
+        id: 'despesas-financeiras',
+        label: 'Despesas Financeiras',
+        description:
+          'Despesas financeiras oriundas das Contas a Pagar (Emissão).',
+        value: -despesasFinanceirasTotal,
+        type: 'despesa',
+        children: despesasFinanceirasNodes,
       },
       {
         id: 'lucro-antes-impostos',
         label: 'Lucro Antes do IR/CSLL',
         description: 'Resultado antes dos impostos sobre o lucro.',
-        value: 195000.0,
+        value: lucroBruto - planoDespesasTotal - despesasFinanceirasTotal,
         type: 'resultado',
         children: [],
       },
@@ -803,21 +1914,21 @@ const DRE = () => {
         id: 'impostos-lucro',
         label: 'Impostos sobre o Lucro (IR/CSLL)',
         description: 'Se a empresa paga esse tipo de imposto.',
-        value: -58500.0,
+        value: 0,
         type: 'imposto',
         children: [
           {
             id: 'irpj',
             label: 'IRPJ',
             description: 'Imposto de Renda Pessoa Jurídica',
-            value: -39000.0,
+            value: 0,
             type: 'imposto',
           },
           {
             id: 'csll',
             label: 'CSLL',
             description: 'Contribuição Social sobre o Lucro Líquido',
-            value: -19500.0,
+            value: 0,
             type: 'imposto',
           },
         ],
@@ -825,8 +1936,9 @@ const DRE = () => {
       {
         id: 'lucro-liquido',
         label: 'Lucro Líquido do Exercício',
-        description: 'O resultado final: lucro ou prejuízo.',
-        value: 136500.0,
+        description:
+          'Resultado Operacional - Despesas Financeiras - Impostos sobre o Lucro',
+        value: lucroBruto - planoDespesasTotal - despesasFinanceirasTotal - 0,
         type: 'resultado-final',
         children: [],
       },
@@ -843,7 +1955,34 @@ const DRE = () => {
     pis,
     cofins,
     totalImpostos,
-    despesasOperacionais,
+    planoDespesasTotal,
+    planoDespesasNodes,
+    despesasFinanceirasTotal,
+    despesasFinanceirasNodes,
+    totaisVarejo,
+    totaisMultimarcas,
+    totaisFranquias,
+    totaisRevenda,
+    // Impostos por canal
+    impostosVarejo,
+    impostosMultimarcas,
+    impostosFranquias,
+    impostosRevenda,
+    // Receitas líquidas por canal
+    receitaLiquidaVarejo,
+    receitaLiquidaMultimarcas,
+    receitaLiquidaFranquias,
+    receitaLiquidaRevenda,
+    // CMV por canal
+    cmvVarejo,
+    cmvMultimarcas,
+    cmvFranquias,
+    cmvRevenda,
+    // Lucro bruto por canal
+    lucroBrutoVarejo,
+    lucroBrutoMultimarcas,
+    lucroBrutoFranquias,
+    lucroBrutoRevenda,
   ]);
 
   const toggleNode = (nodeId) => {
@@ -853,11 +1992,64 @@ const DRE = () => {
     }));
   };
 
+  // Funções de controle de expansão no estilo Contas a Pagar
+  const toggleCategoria = (categoriaNome) => {
+    const novaSet = new Set(categoriasExpandidas);
+    if (novaSet.has(categoriaNome)) {
+      novaSet.delete(categoriaNome);
+    } else {
+      novaSet.add(categoriaNome);
+    }
+    setCategoriasExpandidas(novaSet);
+  };
+
+  const toggleTodosTopicos = () => {
+    if (todosExpandidos) {
+      setCategoriasExpandidas(new Set());
+    } else {
+      const todasCategorias = new Set();
+      // Seções de resultado que não devem ser expansíveis
+      const resultadoSections = [
+        'Receitas Brutas',
+        'Receita Líquida de Vendas',
+        'Lucro Bruto',
+        'Resultado Operacional',
+        'Lucro Antes do IR/CSLL',
+        'Lucro Líquido do Exercício',
+      ];
+
+      dreData.forEach((item) => {
+        // Só adiciona se não for uma seção de resultado
+        if (!resultadoSections.includes(item.label)) {
+          todasCategorias.add(item.label);
+          if (item.children) {
+            item.children.forEach((child) => {
+              // Adiciona o subitem como chave composta
+              todasCategorias.add(`${item.label}|${child.label}`);
+              // Se o subitem tem children, adiciona eles também
+              if (child.children) {
+                child.children.forEach((grandchild) => {
+                  todasCategorias.add(
+                    `${item.label}|${child.label}|${grandchild.label}`,
+                  );
+                });
+              }
+            });
+          }
+        }
+      });
+      setCategoriasExpandidas(todasCategorias);
+    }
+    setTodosExpandidos(!todosExpandidos);
+  };
+
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', {
+    const formatted = new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
-    }).format(value);
+    }).format(Math.abs(value));
+
+    return value < 0 ? `-${formatted}` : formatted;
   };
 
   const getValueColor = (value, type) => {
@@ -1167,52 +2359,311 @@ const DRE = () => {
           </div>
         ) : vendasBrutas > 0 ? (
           <>
-            {/* Tree Root */}
-            <div
-              className="hs-accordion-treeview-root"
-              role="tree"
-              aria-orientation="vertical"
-            >
-              <div
-                className="hs-accordion-group"
-                role="group"
-                data-hs-accordion-always-open=""
-              >
-                <div className="p-4">
-                  {dreData.map((item, index) => {
-                    const isLastInSection = index === dreData.length - 1;
-                    const isEven = (index + 1) % 2 === 0;
-                    return (
-                      <div key={item.id}>
-                        {renderTreeItem(item, 0, isLastInSection, isEven)}
-                        {/* Divider between main sections */}
-                        {!isLastInSection && (
-                          <div className="border-b border-gray-300 my-3"></div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+            {/* DRE Tree View - Estilo Contas a Pagar */}
+            <div className="space-y-2 flex justify-center items-center flex-col">
+              {/* Botões de ação */}
+              <div className="flex justify-between items-center">
+                {/* Botão discreto para expandir/colapsar todos */}
+                <button
+                  onClick={toggleTodosTopicos}
+                  className="text-xs text-gray-500 hover:text-gray-700 px-0.5 py-0.5 rounded transition-colors flex items-center gap-1"
+                  title={
+                    todosExpandidos
+                      ? 'Colapsar todos os tópicos'
+                      : 'Expandir todos os tópicos'
+                  }
+                >
+                  {todosExpandidos ? (
+                    <>
+                      <span>−</span>
+                      <span>Colapsar tudo</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>+</span>
+                      <span>Expandir tudo</span>
+                    </>
+                  )}
+                </button>
               </div>
-            </div>
 
-            {/* Resumo Final */}
-            <div className="bg-blue-50 px-4 py-4 border-t-2 border-blue-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <TrendUp className="w-5 h-5 text-blue-600 mr-2" />
-                  <span className="text-lg font-semibold text-blue-900">
-                    Vendas Brutas do Período
-                  </span>
-                </div>
-                <span className="text-xl font-bold text-blue-600">
-                  {formatCurrency(vendasBrutas)}
-                </span>
-              </div>
-              <p className="text-sm text-blue-700 mt-1">
-                Total das vendas brutas das 4 rotas CMV (Varejo, Multimarcas,
-                Franquias e Revenda)
-              </p>
+              {/* Módulos da DRE */}
+              {dreData.map((modulo, moduloIndex) => {
+                const isModuloExpanded = categoriasExpandidas.has(modulo.label);
+
+                // Seções de resultado que não devem ser expansíveis
+                const resultadoSections = [
+                  // 'Receitas Brutas',
+                  // 'Receita Líquida de Vendas',
+                  // 'Lucro Bruto',
+                  // 'Resultado Operacional',
+                  // 'Lucro Antes do IR/CSLL',
+                  // 'Lucro Líquido do Exercício',
+                ];
+
+                const isResultadoSection = resultadoSections.includes(
+                  modulo.label,
+                );
+
+                return (
+                  <div
+                    key={`modulo-${moduloIndex}-${modulo.id}`}
+                    className={`w-1/2 ${
+                      isResultadoSection
+                        ? 'bg-blue-50 rounded-lg'
+                        : 'border border-gray-200 rounded-lg overflow-hidden'
+                    }`}
+                  >
+                    {/* Cabeçalho do módulo principal */}
+                    <div
+                      className={`${
+                        isResultadoSection
+                          ? 'bg-blue-50 cursor-default'
+                          : 'bg-gray-50 hover:bg-gray-100 cursor-pointer'
+                      } transition-colors px-2 py-1.5 flex items-center justify-between`}
+                      onClick={
+                        isResultadoSection
+                          ? undefined
+                          : () => toggleCategoria(modulo.label)
+                      }
+                    >
+                      <div className="flex items-center space-x-2">
+                        {!isResultadoSection &&
+                          (isModuloExpanded ? (
+                            <CaretDown size={10} className="text-gray-600" />
+                          ) : (
+                            <CaretRight size={10} className="text-gray-600" />
+                          ))}
+                        <div>
+                          <h3 className="font-medium text-xs text-gray-800">
+                            {modulo.label}
+                          </h3>
+                          <div className="flex gap-96 items-center justify-between space-x-32 text-xs text-gray-600">
+                            <span
+                              className={`font-medium text-xs ${
+                                modulo.value >= 0
+                                  ? 'text-green-600'
+                                  : 'text-red-600'
+                              }`}
+                            >
+                              {formatCurrency(Math.abs(modulo.value))}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sub-itens do módulo */}
+                    {isModuloExpanded &&
+                      modulo.children &&
+                      modulo.children.length > 0 && (
+                        <div className="bg-white border-t border-gray-100">
+                          {modulo.children.map((subitem, subitemIndex) => {
+                            const chaveSubitem = `${modulo.label}|${subitem.label}`;
+                            const isSubitemExpanded =
+                              categoriasExpandidas.has(chaveSubitem);
+                            const hasSubitemChildren =
+                              subitem.children && subitem.children.length > 0;
+
+                            return (
+                              <div
+                                key={`subitem-${moduloIndex}-${subitemIndex}-${subitem.id}`}
+                                className="border-b border-gray-100 last:border-b-0"
+                              >
+                                {/* Cabeçalho do sub-item */}
+                                <div
+                                  className={`bg-gray-25 hover:bg-gray-50 transition-colors px-4 py-1.5 flex items-center justify-between ${
+                                    hasSubitemChildren
+                                      ? 'cursor-pointer'
+                                      : 'cursor-default'
+                                  }`}
+                                  onClick={
+                                    hasSubitemChildren
+                                      ? () => toggleCategoria(chaveSubitem)
+                                      : undefined
+                                  }
+                                >
+                                  <div className="flex items-center space-x-2">
+                                    {hasSubitemChildren &&
+                                      (isSubitemExpanded ? (
+                                        <CaretDown
+                                          size={10}
+                                          className="text-gray-500"
+                                        />
+                                      ) : (
+                                        <CaretRight
+                                          size={10}
+                                          className="text-gray-500"
+                                        />
+                                      ))}
+                                    <div>
+                                      <h4 className="font-medium text-xs text-gray-700">
+                                        {subitem.label}
+                                      </h4>
+                                      <div className="flex items-center space-x-3 text-xs text-gray-500">
+                                        <span
+                                          className={`font-medium ${
+                                            subitem.value >= 0
+                                              ? 'text-green-500'
+                                              : 'text-red-500'
+                                          }`}
+                                        >
+                                          {formatCurrency(
+                                            Math.abs(subitem.value),
+                                          )}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Sub-sub-itens (se existirem) */}
+                                {isSubitemExpanded &&
+                                  subitem.children &&
+                                  subitem.children.length > 0 && (
+                                    <div className="bg-white border-t border-gray-50">
+                                      {subitem.children.map(
+                                        (subsubitem, subsubitemIndex) => {
+                                          const chaveSubsubitem = `${modulo.label}|${subitem.label}|${subsubitem.label}`;
+                                          const isSubsubitemExpanded =
+                                            categoriasExpandidas.has(
+                                              chaveSubsubitem,
+                                            );
+                                          const hasSubsubitemChildren =
+                                            subsubitem.children &&
+                                            subsubitem.children.length > 0;
+
+                                          return (
+                                            <div
+                                              key={`subsubitem-${moduloIndex}-${subitemIndex}-${subsubitemIndex}-${subsubitem.id}`}
+                                              className="border-b border-gray-50 last:border-b-0"
+                                            >
+                                              <div
+                                                className={`bg-gray-25 hover:bg-gray-50 transition-colors px-6 py-1.5 flex items-center justify-between ${
+                                                  hasSubsubitemChildren
+                                                    ? 'cursor-pointer'
+                                                    : 'cursor-default'
+                                                }`}
+                                                onClick={
+                                                  hasSubsubitemChildren
+                                                    ? () =>
+                                                        toggleCategoria(
+                                                          chaveSubsubitem,
+                                                        )
+                                                    : undefined
+                                                }
+                                              >
+                                                <div className="flex items-center space-x-2">
+                                                  {hasSubsubitemChildren &&
+                                                    (isSubsubitemExpanded ? (
+                                                      <CaretDown
+                                                        size={10}
+                                                        className="text-gray-400"
+                                                      />
+                                                    ) : (
+                                                      <CaretRight
+                                                        size={10}
+                                                        className="text-gray-400"
+                                                      />
+                                                    ))}
+                                                  <div>
+                                                    <h5 className="font-medium text-xs text-gray-600">
+                                                      {subsubitem.label}
+                                                    </h5>
+                                                    <div className="flex items-center space-x-3 text-xs text-gray-400">
+                                                      {subsubitem.description && (
+                                                        <span className="text-gray-400">
+                                                          {
+                                                            subsubitem.description
+                                                          }
+                                                        </span>
+                                                      )}
+                                                      <span
+                                                        className={`font-medium ${
+                                                          subsubitem.value >= 0
+                                                            ? 'text-green-400'
+                                                            : 'text-red-400'
+                                                        }`}
+                                                      >
+                                                        {formatCurrency(
+                                                          Math.abs(
+                                                            subsubitem.value,
+                                                          ),
+                                                        )}
+                                                      </span>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </div>
+
+                                              {/* Sub-sub-sub-itens (4º nível - se existirem) */}
+                                              {isSubsubitemExpanded &&
+                                                subsubitem.children &&
+                                                subsubitem.children.length >
+                                                  0 && (
+                                                  <div className="bg-white border-t border-gray-50">
+                                                    {subsubitem.children.map(
+                                                      (
+                                                        subsubsubitem,
+                                                        subsubsubitemIndex,
+                                                      ) => (
+                                                        <div
+                                                          key={`subsubsubitem-${moduloIndex}-${subitemIndex}-${subsubitemIndex}-${subsubsubitemIndex}-${subsubsubitem.id}`}
+                                                          className="border-b border-gray-50 last:border-b-0"
+                                                        >
+                                                          <div className="bg-gray-25 hover:bg-gray-50 cursor-default transition-colors px-8 py-1.5 flex items-center justify-between">
+                                                            <div className="flex items-center space-x-2">
+                                                              <div>
+                                                                <h6 className="font-medium text-xs text-gray-500">
+                                                                  {
+                                                                    subsubsubitem.label
+                                                                  }
+                                                                </h6>
+                                                                <div className="flex items-center space-x-3 text-xs text-gray-300">
+                                                                  {subsubsubitem.description && (
+                                                                    <span className="text-gray-200">
+                                                                      {
+                                                                        subsubsubitem.description
+                                                                      }
+                                                                    </span>
+                                                                  )}
+                                                                  <span
+                                                                    className={`font-medium ${
+                                                                      subsubsubitem.value >=
+                                                                      0
+                                                                        ? 'text-green-300'
+                                                                        : 'text-red-300'
+                                                                    }`}
+                                                                  >
+                                                                    {formatCurrency(
+                                                                      Math.abs(
+                                                                        subsubsubitem.value,
+                                                                      ),
+                                                                    )}
+                                                                  </span>
+                                                                </div>
+                                                              </div>
+                                                            </div>
+                                                          </div>
+                                                        </div>
+                                                      ),
+                                                    )}
+                                                  </div>
+                                                )}
+                                            </div>
+                                          );
+                                        },
+                                      )}
+                                    </div>
+                                  )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                  </div>
+                );
+              })}
             </div>
           </>
         ) : (
@@ -1236,28 +2687,6 @@ const DRE = () => {
             </div>
           </div>
         )}
-      </div>
-
-      {/* Informações Adicionais */}
-      <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <div className="flex items-start">
-          <div className="flex-shrink-0">
-            <div className="w-5 h-5 bg-blue-400 rounded-full flex items-center justify-center">
-              <span className="text-blue-800 text-xs font-bold">i</span>
-            </div>
-          </div>
-          <div className="ml-3">
-            <h3 className="text-sm font-medium text-blue-800">
-              Dados Sob Demanda
-            </h3>
-            <p className="text-sm text-blue-700 mt-1">
-              Clique em "Buscar Dados" para calcular as vendas brutas a partir
-              das 4 rotas CMV (Varejo, Multimarcas, Franquias e Revenda),
-              somando as operações de entrada (E) e saída (S) do período
-              selecionado.
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   );
