@@ -33,7 +33,7 @@ import {
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
-const ContasAReceber = () => {
+const ContasAReceber = ({ modo = 'vencimento' }) => {
   const [dados, setDados] = useState([]);
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
@@ -264,11 +264,12 @@ const ContasAReceber = () => {
   // Função para aplicar filtro mensal e por dia
   const aplicarFiltroMensal = (dados, filtro, diaFiltro = null) => {
     return dados.filter((item) => {
-      // Usar dt_vencimento como base para o filtro mensal (data de vencimento)
-      const dataVencimento = item.dt_vencimento;
-      if (!dataVencimento) return false;
+      // Base do filtro mensal conforme modo selecionado
+      const campoDataBase =
+        modo === 'emissao' ? item.dt_emissao : item.dt_vencimento;
+      if (!campoDataBase) return false;
 
-      const data = parseDateNoTZ(dataVencimento);
+      const data = parseDateNoTZ(campoDataBase);
       const ano = data.getFullYear();
       const mes = data.getMonth() + 1; // getMonth() retorna 0-11, então +1
       const dia = data.getDate();
@@ -618,8 +619,10 @@ const ContasAReceber = () => {
     try {
       const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
         try {
+          const endpoint =
+            modo === 'emissao' ? 'contas-receberemiss' : 'contas-receber';
           const res = await fetch(
-            `${BaseURL}contas-receber?dt_inicio=${inicio}&dt_fim=${fim}&cd_empresa=${empresa.cd_empresa}`,
+            `${BaseURL}${endpoint}?dt_inicio=${inicio}&dt_fim=${fim}&cd_empresa=${empresa.cd_empresa}`,
           );
 
           if (!res.ok) {

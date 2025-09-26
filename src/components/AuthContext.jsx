@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseSession } from '../lib/supabase';
 
 // Roles disponíveis no sistema (ordenados por hierarquia)
 const ROLES = ['owner', 'admin', 'manager', 'user', 'guest'];
@@ -9,28 +9,28 @@ const ROLE_CONFIG = {
   owner: {
     label: 'Proprietário',
     level: 1,
-    color: '#9c27b0'
+    color: '#9c27b0',
   },
   admin: {
     label: 'Administrador',
     level: 2,
-    color: '#ff4747'
+    color: '#ff4747',
   },
   manager: {
     label: 'Gerente',
     level: 3,
-    color: '#ff6b35'
+    color: '#ff6b35',
   },
   user: {
     label: 'Usuário',
     level: 4,
-    color: '#4CAF50'
+    color: '#4CAF50',
   },
   guest: {
     label: 'Convidado',
     level: 5,
-    color: '#757575'
-  }
+    color: '#757575',
+  },
 };
 
 const AuthContext = createContext();
@@ -48,14 +48,16 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   // Função de login
-  const login = async (email, password) => {
+  const login = async (email, password, rememberMe = true) => {
     try {
       console.log('🔐 Tentando login com:', email);
       setLoading(true);
 
-      const { data: authData, error } = await supabase.auth.signInWithPassword({
+      const client = rememberMe ? supabase : supabaseSession;
+
+      const { data: authData, error } = await client.auth.signInWithPassword({
         email,
-        password
+        password,
       });
 
       if (error) {
@@ -83,8 +85,8 @@ export const AuthProvider = ({ children }) => {
           name: validRole,
           label: roleConfig.label,
           level: roleConfig.level,
-          color: roleConfig.color
-        }
+          color: roleConfig.color,
+        },
       };
 
       console.log('✅ Dados do usuário configurados:', userData);
@@ -92,7 +94,6 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
 
       return { success: true, user: userData };
-
     } catch (error) {
       console.error('❌ Erro no login:', error);
       setLoading(false);
@@ -104,6 +105,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       await supabase.auth.signOut();
+      await supabaseSession.auth.signOut();
       setUser(null);
     } catch (error) {
       console.error('Erro no logout:', error);
@@ -115,12 +117,14 @@ export const AuthProvider = ({ children }) => {
     const checkSession = async () => {
       try {
         console.log('🔄 Verificando sessão inicial...');
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
         if (session?.user) {
           console.log('✅ Sessão encontrada:', session.user.email);
           const userRole = session.user.user_metadata?.role || 'guest';
-          
+
           // Verificar se o role é válido
           const validRole = ROLES.includes(userRole) ? userRole : 'guest';
           const roleConfig = ROLE_CONFIG[validRole];
@@ -134,8 +138,8 @@ export const AuthProvider = ({ children }) => {
               name: validRole,
               label: roleConfig.label,
               level: roleConfig.level,
-              color: roleConfig.color
-            }
+              color: roleConfig.color,
+            },
           });
         } else {
           console.log('❌ Nenhuma sessão encontrada');
@@ -150,40 +154,71 @@ export const AuthProvider = ({ children }) => {
     checkSession();
 
     // Listener para mudanças de autenticação
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('🔄 Evento de autenticação:', event);
-        
-        if (event === 'SIGNED_IN' && session?.user) {
-          console.log('✅ Usuário fez login:', session.user.email);
-          const userRole = session.user.user_metadata?.role || 'guest';
-          
-          // Verificar se o role é válido
-          const validRole = ROLES.includes(userRole) ? userRole : 'guest';
-          const roleConfig = ROLE_CONFIG[validRole];
-          
-          setUser({
-            id: session.user.id,
-            email: session.user.email,
-            name: session.user.user_metadata?.name || 'Usuário',
-            role: validRole,
-            profile: {
-              name: validRole,
-              label: roleConfig.label,
-              level: roleConfig.level,
-              color: roleConfig.color
-            }
-          });
-          setLoading(false);
-        } else if (event === 'SIGNED_OUT') {
-          console.log('🚪 Usuário fez logout');
-          setUser(null);
-          setLoading(false);
-        }
-      }
-    );
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('🔄 Evento de autenticação:', event);
 
-    return () => subscription.unsubscribe();
+      if (event === 'SIGNED_IN' && session?.user) {
+        console.log('✅ Usuário fez login:', session.user.email);
+        const userRole = session.user.user_metadata?.role || 'guest';
+
+        // Verificar se o role é válido
+        const validRole = ROLES.includes(userRole) ? userRole : 'guest';
+        const roleConfig = ROLE_CONFIG[validRole];
+
+        setUser({
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.user_metadata?.name || 'Usuário',
+          role: validRole,
+          profile: {
+            name: validRole,
+            label: roleConfig.label,
+            level: roleConfig.level,
+            color: roleConfig.color,
+          },
+        });
+        setLoading(false);
+      } else if (event === 'SIGNED_OUT') {
+        console.log('🚪 Usuário fez logout');
+        setUser(null);
+        setLoading(false);
+      }
+    });
+
+    // Também ouvir mudanças do cliente baseado em sessionStorage
+    const {
+      data: { subscription: subscriptionSession },
+    } = supabaseSession.auth.onAuthStateChange(async (event, session) => {
+      console.log('🔄 Evento de autenticação (session):', event);
+      if (event === 'SIGNED_IN' && session?.user) {
+        const userRole = session.user.user_metadata?.role || 'guest';
+        const validRole = ROLES.includes(userRole) ? userRole : 'guest';
+        const roleConfig = ROLE_CONFIG[validRole];
+        setUser({
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.user_metadata?.name || 'Usuário',
+          role: validRole,
+          profile: {
+            name: validRole,
+            label: roleConfig.label,
+            level: roleConfig.level,
+            color: roleConfig.color,
+          },
+        });
+        setLoading(false);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      subscriptionSession.unsubscribe();
+    };
   }, []);
 
   // Funções de verificação de permissão
@@ -218,12 +253,8 @@ export const AuthProvider = ({ children }) => {
     hasPermission,
     getRoleConfig,
     ROLES,
-    ROLE_CONFIG
+    ROLE_CONFIG,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
-}; 
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};

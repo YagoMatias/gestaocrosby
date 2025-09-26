@@ -68,9 +68,23 @@ const financeiro = [
   },
   {
     name: 'Contas a Receber',
-    href: '/contas-a-receber',
+    href: '#',
     icon: Receipt,
     color: 'text-green-600',
+    children: [
+      {
+        name: 'Vencimento',
+        href: '/contas-a-receber',
+        icon: Calendar,
+        color: 'text-green-600',
+      },
+      {
+        name: 'Emissão',
+        href: '/contas-a-receber-emissao',
+        icon: Calendar,
+        color: 'text-green-600',
+      },
+    ],
   },
   {
     name: 'Fluxo de Caixa',

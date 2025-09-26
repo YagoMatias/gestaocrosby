@@ -15,6 +15,7 @@ const LoginForm = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const navigate = useNavigate();
   const { login } = useAuth();
 
@@ -23,10 +24,10 @@ const LoginForm = () => {
     console.log('🚀 Iniciando processo de login...');
     setError('');
     setLoading(true);
-    
+
     try {
       console.log('🔐 Chamando função login...');
-      await login(email, password);
+      await login(email, password, rememberMe);
       console.log('✅ Login bem-sucedido!');
       setLoading(false);
       console.log('🧭 Redirecionando para /home...');
@@ -41,13 +42,24 @@ const LoginForm = () => {
 
   return (
     <div className="w-screen h-screen flex items-center justify-center bg-white">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm mx-auto p-8 rounded-lg shadow-lg bg-white flex flex-col justify-center">
+      <form
+        onSubmit={handleSubmit}
+        className="w-full max-w-sm mx-auto p-8 rounded-lg shadow-lg bg-white flex flex-col justify-center"
+      >
         <Logo />
-        <h2 className="text-center text-2xl font-light tracking-wide text-gray-700 mb-2">HEADCOACH CROSBY</h2>
-        <div className="text-center text-cyan-600 text-xl font-medium mb-6">Boas-vindas</div>
-        
-        {error && <div className="mb-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{error}</div>}
-        
+        <h2 className="text-center text-2xl font-light tracking-wide text-gray-700 mb-2">
+          HEADCOACH CROSBY
+        </h2>
+        <div className="text-center text-cyan-600 text-xl font-medium mb-6">
+          Boas-vindas
+        </div>
+
+        {error && (
+          <div className="mb-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">
+            {error}
+          </div>
+        )}
+
         <div className="mb-4 relative flex items-center">
           <span className="absolute left-3 mt-1.5 -translate-y-1/2 text-gray-400 flex items-center justify-center">
             <User size={20} />
@@ -63,7 +75,7 @@ const LoginForm = () => {
             required
           />
         </div>
-        
+
         <div className="mb-6 relative flex items-center">
           <span className="absolute left-3 mt-1.5 -translate-y-1/2 text-gray-400 flex items-center justify-center">
             <Lock size={20} />
@@ -86,7 +98,19 @@ const LoginForm = () => {
             {showPassword ? <EyeSlash size={20} /> : <Eye size={20} />}
           </button>
         </div>
-        
+
+        <div className="mb-6 flex items-center justify-between">
+          <label className="inline-flex items-center gap-2 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+            />
+            <span>Manter conectado</span>
+          </label>
+        </div>
+
         <button
           type="submit"
           disabled={loading}
