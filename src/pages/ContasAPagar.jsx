@@ -84,6 +84,9 @@ const ContasAPagar = (props) => {
   const { user, hasRole } = useAuth?.() || { user: null, hasRole: () => false };
   const apiClient = useApiClient();
   const isEmissao = !!props?.__modoEmissao;
+  const blockedCostCenters = (props?.__blockedCostCenters || []).map((n) =>
+    typeof n === 'string' ? parseInt(n, 10) : Number(n),
+  );
 
   // Debug logs para verificar o status do usuário
   useEffect(() => {
@@ -1397,7 +1400,20 @@ const ContasAPagar = (props) => {
           });
         }
 
-        setDados(dadosProcessados);
+        // Aplicar bloqueio de centros de custo, se configurado pelo wrapper
+        const dadosAposBloqueio =
+          blockedCostCenters && blockedCostCenters.length > 0
+            ? dadosProcessados.filter((item) => {
+                const cc = Number(
+                  typeof item.cd_ccusto === 'string'
+                    ? parseInt(item.cd_ccusto, 10)
+                    : item.cd_ccusto,
+                );
+                return !blockedCostCenters.includes(cc);
+              })
+            : dadosProcessados;
+
+        setDados(dadosAposBloqueio);
         setDadosFornecedor(dadosFornecedorArray);
         setDadosCentroCusto(dadosCentroCustoArray);
         setDadosDespesa(dadosDespesaArray);

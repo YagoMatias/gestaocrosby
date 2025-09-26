@@ -13,33 +13,33 @@ export const API_ENDPOINTS = {
 
   CONTAS_PAGAR: '/api/financial/contas-pagar',
   CONTAS_RECEBER: '/api/financial/contas-receber',
-  
+
   // Sales
   FATURAMENTO: '/api/sales/faturamento',
   FATURAMENTO_FRANQUIA: '/api/sales/faturamento-franquia',
   FATURAMENTO_MTM: '/api/sales/faturamento-mtm',
   FATURAMENTO_REVENDA: '/api/sales/faturamento-revenda',
   RANKING_VENDEDORES: '/api/sales/ranking-vendedores',
-  
+
   // Company
   EMPRESAS: '/api/company/empresas',
   GRUPO_EMPRESA: '/api/company/grupo-empresas',
   FATURAMENTO_LOJAS: '/api/company/faturamento-lojas',
   EXPEDICAO: '/api/company/expedicao',
   PCP: '/api/company/pcp',
-  
+
   // Franchise
   CONSULTA_FATURA: '/api/franchise/consulta-fatura',
 
   FRANQUIAS_CREDEV: '/api/franchise/franquias-credev',
-  
+
   // Utils
   AUTOCOMPLETE_FANTASIA: '/api/utils/autocomplete/nm_fantasia',
   AUTOCOMPLETE_GRUPOEMPRESA: '/api/utils/autocomplete/nm_grupoempresa',
   CADASTRO_PESSOA: '/api/utils/cadastropessoa',
   HEALTH: '/api/utils/health',
   STATS: '/api/utils/stats',
-  DOCS: '/api/docs'
+  DOCS: '/api/docs',
 };
 
 // Configurações de UI
@@ -79,7 +79,8 @@ export const BREAKPOINTS = {
 // Mensagens de erro padrão
 export const ERROR_MESSAGES = {
   NETWORK_ERROR: 'Erro de conexão. Verifique sua internet e tente novamente.',
-  SERVER_ERROR: 'Erro interno do servidor. Tente novamente em alguns instantes.',
+  SERVER_ERROR:
+    'Erro interno do servidor. Tente novamente em alguns instantes.',
   VALIDATION_ERROR: 'Dados inválidos. Verifique os campos e tente novamente.',
   NO_DATA: 'Nenhum dado encontrado para os filtros selecionados.',
   REQUIRED_FIELD: 'Este campo é obrigatório.',
@@ -106,15 +107,15 @@ export const USER_ROLES = {
   ADMIN: 'admin',
   MANAGER: 'manager',
   USER: 'user',
-  GUEST: 'guest'
+  GUEST: 'guest',
 };
 
 export const USER_ROLE_LABELS = {
   [USER_ROLES.OWNER]: 'Proprietário',
   [USER_ROLES.ADMIN]: 'Administrador',
   [USER_ROLES.MANAGER]: 'Gerente',
-  [USER_ROLES.USER]: 'Usuário',
-  [USER_ROLES.GUEST]: 'Varejo' // Alterado visualmente para Varejo
+  [USER_ROLES.USER]: 'Financeiro',
+  [USER_ROLES.GUEST]: 'Padrão',
 };
 
 export const USER_ROLE_COLORS = {
@@ -122,5 +123,5 @@ export const USER_ROLE_COLORS = {
   [USER_ROLES.ADMIN]: 'bg-red-100 text-red-800',
   [USER_ROLES.MANAGER]: 'bg-orange-100 text-orange-800',
   [USER_ROLES.USER]: 'bg-green-100 text-green-800',
-  [USER_ROLES.GUEST]: 'bg-gray-100 text-gray-800'
+  [USER_ROLES.GUEST]: 'bg-gray-100 text-gray-800',
 };

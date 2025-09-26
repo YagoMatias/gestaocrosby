@@ -12,6 +12,7 @@ import {
   CurrencyDollar,
   Folder,
   FileText,
+  Funnel,
 } from '@phosphor-icons/react';
 
 const DRE = () => {
@@ -110,6 +111,57 @@ const DRE = () => {
     dt_fim: '',
     empresas: [1, 2, 3, 4, 5], // Empresas padrão
   });
+  const [filtroMensal, setFiltroMensal] = useState('ANO');
+
+  const obterDiasDoMes = (mesNumero, anoNumero) => {
+    // Retorna o último dia do mês considerando ano bissexto
+    return new Date(anoNumero, mesNumero, 0).getDate();
+  };
+
+  const handleFiltroMensalChange = (mesSigla) => {
+    setFiltroMensal(mesSigla);
+    if (mesSigla === 'ANO') return; // Não altera datas diretamente
+
+    const mesesMap = {
+      JAN: 1,
+      FEV: 2,
+      MAR: 3,
+      ABR: 4,
+      MAI: 5,
+      JUN: 6,
+      JUL: 7,
+      AGO: 8,
+      SET: 9,
+      OUT: 10,
+      NOV: 11,
+      DEZ: 12,
+    };
+
+    const mesNumero = mesesMap[mesSigla];
+    if (!mesNumero) return;
+
+    const anoBase = (() => {
+      if (periodo.dt_inicio) {
+        const [y] = periodo.dt_inicio.split('-');
+        const n = parseInt(y, 10);
+        if (n > 1900) return n;
+      }
+      return new Date().getFullYear();
+    })();
+
+    const primeiroDia = `${anoBase}-${String(mesNumero).padStart(2, '0')}-01`;
+    const ultimoDiaNum = obterDiasDoMes(mesNumero, anoBase);
+    const ultimoDia = `${anoBase}-${String(mesNumero).padStart(
+      2,
+      '0',
+    )}-${String(ultimoDiaNum).padStart(2, '0')}`;
+
+    setPeriodo((prev) => ({
+      ...prev,
+      dt_inicio: primeiroDia,
+      dt_fim: ultimoDia,
+    }));
+  };
 
   const [expandedNodes, setExpandedNodes] = useState({
     'vendas-bruta': true,
@@ -2257,15 +2309,57 @@ const DRE = () => {
       />
 
       {/* Filtros */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="bg-white rounded-lg shadow p-3 mb-4 border border-gray-200">
+        <div className="mb-6">
+          <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
+            <Funnel size={18} weight="bold" />
+            Filtros
+          </span>
+          <span className="text-xs text-gray-500 mt-1">
+            Selecione o período e empresa para análise
+          </span>
+        </div>
+        {/* Filtro rápido por período (ANO/Meses) */}
+        <div className="mb-3">
+          <div className="flex flex-wrap gap-1">
+            {[
+              'ANO',
+              'JAN',
+              'FEV',
+              'MAR',
+              'ABR',
+              'MAI',
+              'JUN',
+              'JUL',
+              'AGO',
+              'SET',
+              'OUT',
+              'NOV',
+              'DEZ',
+            ].map((mes) => (
+              <button
+                key={mes}
+                type="button"
+                onClick={() => handleFiltroMensalChange(mes)}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  filtroMensal === mes
+                    ? 'bg-[#000638] text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                }`}
+              >
+                {mes}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-xs font-semibold mb-1">
               Período Inicial
             </label>
             <input
               type="date"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="border rounded px-2 py-1.5 w-full text-xs"
               value={periodo.dt_inicio}
               onChange={(e) =>
                 setPeriodo((prev) => ({ ...prev, dt_inicio: e.target.value }))
@@ -2273,12 +2367,12 @@ const DRE = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-xs font-medium text-gray-700 mb-1">
               Período Final
             </label>
             <input
               type="date"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="border rounded px-2 py-1.5 w-full text-xs"
               value={periodo.dt_fim}
               onChange={(e) =>
                 setPeriodo((prev) => ({ ...prev, dt_fim: e.target.value }))
@@ -2287,7 +2381,7 @@ const DRE = () => {
           </div>
           <div className="flex items-center">
             <button
-              className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-[#000638] text-white text-xs px-3 py-2 rounded hover:bg-[#fe0000]"
               onClick={buscarVendasBrutas}
               disabled={loading}
             >
@@ -2310,11 +2404,31 @@ const DRE = () => {
           </h2>
           <p className="text-sm text-gray-600 mt-1">
             Período:{' '}
-            {periodo.dt_inicio && periodo.dt_fim
-              ? `${new Date(periodo.dt_inicio).toLocaleDateString(
-                  'pt-BR',
-                )} a ${new Date(periodo.dt_fim).toLocaleDateString('pt-BR')}`
-              : 'Selecione um período'}
+            {(() => {
+              const parseDateNoTZ = (iso) => {
+                if (!iso) return null;
+                try {
+                  const [y, m, d] = iso.split('-').map((n) => parseInt(n, 10));
+                  if (!y || !m || !d) return null;
+                  return new Date(y, m - 1, d);
+                } catch {
+                  return null;
+                }
+              };
+              const formatDateBR = (iso) => {
+                const d = parseDateNoTZ(iso);
+                if (!d) return '';
+                const dd = String(d.getDate()).padStart(2, '0');
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const yyyy = String(d.getFullYear());
+                return `${dd}/${mm}/${yyyy}`;
+              };
+              return periodo.dt_inicio && periodo.dt_fim
+                ? `${formatDateBR(periodo.dt_inicio)} a ${formatDateBR(
+                    periodo.dt_fim,
+                  )}`
+                : 'Selecione um período';
+            })()}
           </p>
         </div>
 
@@ -2621,7 +2735,7 @@ const DRE = () => {
                                                                 </h6>
                                                                 <div className="flex items-center space-x-3 text-xs text-gray-300">
                                                                   {subsubsubitem.description && (
-                                                                    <span className="text-gray-200">
+                                                                    <span className="text-gray-400">
                                                                       {
                                                                         subsubsubitem.description
                                                                       }
@@ -2673,17 +2787,6 @@ const DRE = () => {
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 Nenhum dado carregado
               </h3>
-              <p className="text-gray-600 mb-4">
-                Selecione um período e clique em "Buscar Dados" para carregar o
-                DRE.
-              </p>
-              <button
-                className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition-colors"
-                onClick={buscarVendasBrutas}
-                disabled={!periodo.dt_inicio || !periodo.dt_fim}
-              >
-                Buscar Dados Agora
-              </button>
             </div>
           </div>
         )}

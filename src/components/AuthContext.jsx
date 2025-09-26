@@ -22,7 +22,7 @@ const ROLE_CONFIG = {
     color: '#ff6b35',
   },
   user: {
-    label: 'Usuário',
+    label: 'Financeiro',
     level: 4,
     color: '#4CAF50',
   },

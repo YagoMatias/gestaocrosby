@@ -51,18 +51,21 @@ const financeiro = [
     href: '#',
     icon: Money,
     color: 'text-red-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
     children: [
       {
         name: 'Vencimento',
         href: '/contas-a-pagar',
         icon: Calendar,
         color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
         name: 'Emissão',
         href: '/contas-a-pagar-emissao',
         icon: Calendar,
         color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
       },
     ],
   },
@@ -71,18 +74,21 @@ const financeiro = [
     href: '#',
     icon: Receipt,
     color: 'text-green-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
     children: [
       {
         name: 'Vencimento',
         href: '/contas-a-receber',
         icon: Calendar,
         color: 'text-green-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
         name: 'Emissão',
         href: '/contas-a-receber-emissao',
         icon: Calendar,
         color: 'text-green-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
       },
     ],
   },
@@ -91,54 +97,70 @@ const financeiro = [
     href: '/fluxo-caixa',
     icon: TrendUp,
     color: 'text-indigo-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
+  {
+    name: 'Despesas por Setor',
+    href: '/despesas-por-setor',
+    icon: FileText,
+    color: 'text-red-600',
+    roles: ['owner', 'admin', 'manager', 'user', 'guest'],
   },
   {
     name: 'Saldo Bancário',
     href: '/saldo-bancario',
     icon: Bank,
     color: 'text-cyan-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
     name: 'Importação .RET',
     href: '/importacao-ret',
     icon: FileText,
     color: 'text-teal-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
     name: 'Extrato Financeiro',
     href: '/extrato-financeiro',
     icon: CreditCard,
     color: 'text-blue-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
     name: 'Conciliação',
     href: '/conciliacao',
     icon: CheckCircle,
     color: 'text-green-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
     name: 'Saldo Bancário TOTVS',
     href: '/saldo-bancario-totvs',
     icon: Bank,
     color: 'text-blue-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
     name: 'DRE',
     href: '/dre',
     icon: ChartBar,
     color: 'text-purple-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
     name: 'Manifestação de NF',
     href: '/manifestacao-nf',
     icon: FileText,
     color: 'text-indigo-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
     name: 'Receita Líquida',
     href: '/receita-liquida',
     icon: ChartBar,
     color: 'text-purple-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
   },
 ];
 
@@ -282,6 +304,9 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const MenuItem = ({ item, isActive, level = 0 }) => {
     const IconComponent = item.icon;
     const paddingLeft = level === 0 ? 'pl-3' : 'pl-6';
+    const canSee = !item.roles || item.roles.includes(user?.role);
+
+    if (!canSee) return null;
 
     // Item com filhos (subpasta)
     if (item.children && Array.isArray(item.children)) {
@@ -405,8 +430,8 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       const roleConfig = {
         admin: 'Administrador',
         manager: 'Gerente',
-        user: 'Usuário',
-        guest: 'Varejo', // Alterado visualmente para Varejo
+        user: 'Financeiro',
+        guest: 'Padrão', // Alterado visualmente
         owner: 'Proprietário',
       };
       return roleConfig[role] || role;
@@ -1037,6 +1062,16 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                 color: 'text-indigo-600',
               }}
               isActive={location.pathname === '/dashboard'}
+            />
+
+            {/* Seção Financeiro - visível para PADRÃO apenas com filtros por role */}
+            <MenuSection
+              title="Financeiro"
+              items={financeiro}
+              isOpen={financeiroOpen}
+              onToggle={() => setFinanceiroOpen(!financeiroOpen)}
+              icon={Money}
+              color="text-emerald-600"
             />
 
             {/* Seção Varejo */}
