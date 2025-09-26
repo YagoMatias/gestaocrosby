@@ -1413,7 +1413,23 @@ const ContasAPagar = (props) => {
               })
             : dadosProcessados;
 
-        setDados(dadosAposBloqueio);
+        // Se filtro por Centro de Custo estiver ativo, usar o valor rateado
+        const usarRateioComoValorBase =
+          Array.isArray(centrosCustoSelecionados) &&
+          centrosCustoSelecionados.length > 0;
+
+        const dadosAposRateio = usarRateioComoValorBase
+          ? dadosAposBloqueio.map((item) => ({
+              ...item,
+              // Substituir o campo base por vl_rateio para que totais, agrupamentos e UI usem o rateio
+              vl_duplicata:
+                item.vl_rateio != null && item.vl_rateio !== ''
+                  ? item.vl_rateio
+                  : item.vl_duplicata,
+            }))
+          : dadosAposBloqueio;
+
+        setDados(dadosAposRateio);
         setDadosFornecedor(dadosFornecedorArray);
         setDadosCentroCusto(dadosCentroCustoArray);
         setDadosDespesa(dadosDespesaArray);
@@ -1733,6 +1749,11 @@ const ContasAPagar = (props) => {
   const totalContasCards = dadosOrdenadosParaCards.length;
   const totalValorCards = dadosOrdenadosParaCards.reduce(
     (acc, grupo) => acc + parseFloat(grupo.item.vl_duplicata || 0),
+    0,
+  );
+  // Total de despesas por rateio (útil quando há filtro de centro de custo)
+  const totalDespesaPorRateioCards = dadosOrdenadosParaCards.reduce(
+    (acc, grupo) => acc + (parseFloat(grupo.item.vl_rateio || 0) || 0),
     0,
   );
 
@@ -2985,7 +3006,7 @@ const ContasAPagar = (props) => {
       </div>
 
       {/* Cards de Resumo */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8 max-w-7xl mx-auto">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-8 max-w-7xl mx-auto">
         {/* Total de Contas */}
         <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
           <CardHeader className="pb-2">
@@ -3009,6 +3030,34 @@ const ContasAPagar = (props) => {
             </CardDescription>
           </CardContent>
         </Card>
+        {/* Despesa por Rateio (exibir apenas quando houver CC selecionado) */}
+        {centrosCustoSelecionados.length > 0 && (
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={18} className="text-red-600" />
+                <CardTitle className="text-sm font-bold text-red-700">
+                  Despesa por Rateio
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-base font-extrabold text-red-600 mb-0.5">
+                {loading ? (
+                  <Spinner size={24} className="animate-spin text-red-600" />
+                ) : (
+                  totalDespesaPorRateioCards.toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })
+                )}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                Soma dos rateios filtrados
+              </CardDescription>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Valor Total */}
         <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">

@@ -2316,7 +2316,7 @@ const DRE = () => {
             Filtros
           </span>
           <span className="text-xs text-gray-500 mt-1">
-            Selecione o período e empresa para análise
+            Selecione o período para análise
           </span>
         </div>
         {/* Filtro rápido por período (ANO/Meses) */}
