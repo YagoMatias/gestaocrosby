@@ -1,22 +1,56 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-const FiltroLoja = ({ lojasSelecionadas = [], onSelectLojas, dadosLoja = [] }) => {
+const FiltroLoja = ({
+  lojasSelecionadas = [],
+  onSelectLojas,
+  dadosLoja = [],
+  tipoLoja = 'Todos',
+}) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef(null);
 
-  // Filtrar lojas baseado no termo de busca
-  const lojasFiltradas = dadosLoja.filter(loja =>
-    loja.cd_loja?.toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-    loja.nm_loja?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    loja.nome_fantasia?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filtrar lojas baseado no tipo e termo de busca
+  const lojasFiltradas = dadosLoja.filter((loja) => {
+    // Filtro por tipo de loja
+    if (tipoLoja !== 'Todos') {
+      const nomeFantasia =
+        loja.nome_fantasia?.toUpperCase() || loja.nm_loja?.toUpperCase() || '';
+
+      if (tipoLoja === 'Franquias') {
+        // Considerar franquia se o nome contém "F0" (padrão de código de franquia)
+        const isFranquia = nomeFantasia.includes('F0');
+        return isFranquia;
+      }
+
+      if (tipoLoja === 'Proprias') {
+        // Considerar própria se o nome NÃO contém "F0"
+        const isFranquia =
+          nomeFantasia.includes('-') || nomeFantasia.includes('- CROSBY');
+        return !isFranquia;
+      }
+    }
+
+    // Filtro por termo de busca
+    return (
+      loja.cd_loja
+        ?.toString()
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      loja.nm_loja?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      loja.nome_fantasia?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  });
 
   const handleToggleLoja = (lojaObj) => {
     let novosSelecionados;
     const lojaId = lojaObj.cd_loja || lojaObj.id;
-    if (lojasSelecionadas.some(loja => (loja.cd_loja || loja.id) === lojaId)) {
-      novosSelecionados = lojasSelecionadas.filter(loja => (loja.cd_loja || loja.id) !== lojaId);
+    if (
+      lojasSelecionadas.some((loja) => (loja.cd_loja || loja.id) === lojaId)
+    ) {
+      novosSelecionados = lojasSelecionadas.filter(
+        (loja) => (loja.cd_loja || loja.id) !== lojaId,
+      );
     } else {
       novosSelecionados = [...lojasSelecionadas, lojaObj];
     }
@@ -39,8 +73,10 @@ const FiltroLoja = ({ lojasSelecionadas = [], onSelectLojas, dadosLoja = [] }) =
 
   return (
     <div className="flex flex-col relative" ref={dropdownRef}>
-      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Loja</label>
-      
+      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+        Loja
+      </label>
+
       {/* Botão do dropdown */}
       <button
         type="button"
@@ -49,25 +85,40 @@ const FiltroLoja = ({ lojasSelecionadas = [], onSelectLojas, dadosLoja = [] }) =
         className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-left flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed text-xs"
       >
         <span className="truncate">
-          {dadosLoja.length === 0 
-            ? 'Nenhuma loja disponível' 
-            : lojasSelecionadas.length === 0 
-              ? 'Selecione as lojas' 
-              : `${lojasSelecionadas.length} loja(s) selecionada(s)`
-          }
+          {dadosLoja.length === 0
+            ? 'Nenhuma loja disponível'
+            : lojasSelecionadas.length === 0
+            ? 'Selecione as lojas'
+            : `${lojasSelecionadas.length} loja(s) selecionada(s)`}
         </span>
         {dadosLoja.length === 0 ? (
-          <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-          </svg>
-        ) : (
-          <svg 
-            className={`w-4 h-4 transition-transform ${showDropdown ? 'rotate-180' : ''}`} 
-            fill="none" 
-            stroke="currentColor" 
+          <svg
+            className="w-4 h-4 text-gray-400"
+            fill="none"
             viewBox="0 0 24 24"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+            />
+          </svg>
+        ) : (
+          <svg
+            className={`w-4 h-4 transition-transform ${
+              showDropdown ? 'rotate-180' : ''
+            }`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M19 9l-7 7-7-7"
+            />
           </svg>
         )}
       </button>
@@ -91,11 +142,11 @@ const FiltroLoja = ({ lojasSelecionadas = [], onSelectLojas, dadosLoja = [] }) =
             <button
               type="button"
               onClick={() => {
-                if (onSelectLojas) onSelectLojas([...dadosLoja]);
+                if (onSelectLojas) onSelectLojas([...lojasFiltradas]);
               }}
               className="text-xs px-2 py-1 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors"
             >
-              Selecionar Todas
+              Selecionar {tipoLoja !== 'Todos' ? 'Filtradas' : 'Todas'}
             </button>
             <button
               type="button"
@@ -121,7 +172,9 @@ const FiltroLoja = ({ lojasSelecionadas = [], onSelectLojas, dadosLoja = [] }) =
             ) : (
               lojasFiltradas.map((loja) => {
                 const lojaId = loja.cd_loja || loja.id;
-                const isSelected = lojasSelecionadas.some(lojaSel => (lojaSel.cd_loja || lojaSel.id) === lojaId);
+                const isSelected = lojasSelecionadas.some(
+                  (lojaSel) => (lojaSel.cd_loja || lojaSel.id) === lojaId,
+                );
                 return (
                   <div
                     key={lojaId}
@@ -132,7 +185,8 @@ const FiltroLoja = ({ lojasSelecionadas = [], onSelectLojas, dadosLoja = [] }) =
                   >
                     <div className="flex flex-col flex-1">
                       <span className="text-xs font-medium text-gray-900">
-                        {loja.cd_loja || loja.id} - {loja.nome_fantasia || loja.nm_loja || 'Loja'}
+                        {loja.cd_loja || loja.id} -{' '}
+                        {loja.nome_fantasia || loja.nm_loja || 'Loja'}
                       </span>
                     </div>
                     <input

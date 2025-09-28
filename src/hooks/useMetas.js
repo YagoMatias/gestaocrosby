@@ -24,7 +24,7 @@ export const useMetas = () => {
               valor: valor,
               mes: mes, // formato YYYY-MM
               usuario: usuario,
-              data_alteracao: new Date().toISOString()
+              data_alteracao: new Date().toISOString(),
             });
           }
         });
@@ -37,9 +37,9 @@ export const useMetas = () => {
       // Usar UPSERT (INSERT com ON CONFLICT) para evitar duplicatas
       const { data, error: upsertError } = await supabase
         .from('metas_varejo')
-        .upsert(metasParaInserir, { 
+        .upsert(metasParaInserir, {
           onConflict: 'tipo,nome,campo,mes',
-          ignoreDuplicates: false 
+          ignoreDuplicates: false,
         })
         .select();
 
@@ -72,7 +72,9 @@ export const useMetas = () => {
         query = query.eq('tipo', tipo);
       }
 
-      const { data, error: fetchError } = await query.order('data_alteracao', { ascending: false });
+      const { data, error: fetchError } = await query.order('data_alteracao', {
+        ascending: false,
+      });
 
       if (fetchError) {
         throw fetchError;
@@ -141,13 +143,54 @@ export const useMetas = () => {
     }
   };
 
+  // Função para deletar metas por critérios específicos
+  const deletarMetasPorCriterios = async (criterios) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log('🗑️ Excluindo metas mensais com critérios:', criterios);
+
+      let query = supabase.from('metas_varejo').delete();
+
+      // Aplicar filtros baseados nos critérios
+      if (criterios.mes) {
+        query = query.eq('mes', criterios.mes);
+      }
+      if (criterios.tipo) {
+        query = query.eq('tipo', criterios.tipo);
+      }
+      if (criterios.nome) {
+        query = query.eq('nome', criterios.nome);
+      }
+      if (criterios.campo) {
+        query = query.eq('campo', criterios.campo);
+      }
+
+      const { data, error: deleteError } = await query;
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      return { success: true, data };
+    } catch (err) {
+      setError(err.message);
+      console.error('❌ Erro ao excluir metas mensais:', err);
+      return { success: false, error: err.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     loading,
     error,
     salvarMetas,
     buscarMetas,
     buscarLogAlteracoes,
-    deletarMeta
+    deletarMeta,
+    deletarMetasPorCriterios,
   };
 };
 

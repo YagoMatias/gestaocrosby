@@ -6,7 +6,6 @@ import LoadingSpinner from './components/LoadingSpinner';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
-import { TrendUp } from '@phosphor-icons/react';
 
 // Lazy loading de todas as páginas para otimizar bundle
 const Home = lazy(() => import('./pages/Home'));
