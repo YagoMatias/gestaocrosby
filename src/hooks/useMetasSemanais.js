@@ -650,7 +650,11 @@ export const useMetasSemanais = () => {
         throw deleteError;
       }
 
-      console.log('✅ Metas semanais excluídas com sucesso:', criterios);
+      console.log('✅ Metas semanais excluídas com sucesso:', {
+        criterios,
+        registrosExcluidos: data?.length || 0,
+        data,
+      });
       return { success: true, data };
     } catch (err) {
       console.error('❌ Erro ao excluir metas semanais:', err);

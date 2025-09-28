@@ -1229,6 +1229,7 @@ const MetasVarejo = () => {
         console.log(
           `🗑️ Excluindo ${criteriosExclusao.length} metas semanais...`,
         );
+        console.log('🔍 Critérios de exclusão:', criteriosExclusao);
 
         // Excluir metas semanais usando a nova função
         console.log(
@@ -1256,6 +1257,14 @@ const MetasVarejo = () => {
 
           // Recarregar dados
           await carregarMetasExistentes();
+
+          // Recarregar dados semanais se a visualização for SEMANAL
+          if (visualizacaoTipo === 'SEMANAL') {
+            console.log('🔄 Recarregando dados semanais após exclusão...');
+            await carregarDadosSemanais();
+            console.log('✅ Dados semanais recarregados');
+          }
+
           await carregarLogAlteracoes();
 
           setNotification({
@@ -1540,7 +1549,11 @@ const MetasVarejo = () => {
       viewMode === 'dashboard' &&
       (dadosLojas.length > 0 || dadosVendedores.length > 0)
     ) {
-      calcularStatsDashboard();
+      if (visualizacaoTipo === 'SEMANAL') {
+        calcularStatsSemanais();
+      } else {
+        calcularStatsDashboard();
+      }
     }
   }, [
     metaValores,
@@ -1550,6 +1563,10 @@ const MetasVarejo = () => {
     tipoLoja,
     lojasSelecionadas,
     vendedoresSelecionados,
+    visualizacaoTipo,
+    semanasCalculadas,
+    dashboardStats.lojaDetalhes,
+    dashboardStats.vendedorDetalhes,
   ]);
 
   // Carregar dados semanais quando visualização mudar para SEMANAL
@@ -1670,6 +1687,9 @@ const MetasVarejo = () => {
         resultadoMensais.error,
       );
     }
+
+    // Forçar atualização das metas mensais calculadas após exclusão
+    await atualizarMetasMensaisCalculadas(mes);
   };
 
   const carregarMetasExistentes = async () => {
@@ -2289,6 +2309,79 @@ const MetasVarejo = () => {
     setDashboardStats(stats);
   };
 
+  const calcularStatsSemanais = () => {
+    if (!semanasCalculadas || semanasCalculadas.length === 0) return;
+
+    // Inicializar estatísticas semanais
+    const statsSemanais = {
+      bronze: { lojas: 0, vendedores: 0 },
+      prata: { lojas: 0, vendedores: 0 },
+      ouro: { lojas: 0, vendedores: 0 },
+      diamante: { lojas: 0, vendedores: 0 },
+    };
+
+    // Calcular para lojas
+    if (dashboardStats.lojaDetalhes && dashboardStats.lojaDetalhes.length > 0) {
+      dashboardStats.lojaDetalhes.forEach((loja) => {
+        // Verificar se a loja tem dados semanais
+        if (loja.semanas && loja.semanas.length > 0) {
+          // Verificar a semana atual (ou a última semana disponível)
+          const semanaAtual = loja.semanas[loja.semanas.length - 1];
+          if (semanaAtual && semanaAtual.metaAtingida > 0) {
+            // Determinar o nível da meta atingida
+            const nomeMeta = semanaAtual.nomeMetaAtingida?.toLowerCase();
+            if (nomeMeta) {
+              if (nomeMeta.includes('bronze')) {
+                statsSemanais.bronze.lojas++;
+              } else if (nomeMeta.includes('prata')) {
+                statsSemanais.prata.lojas++;
+              } else if (nomeMeta.includes('ouro')) {
+                statsSemanais.ouro.lojas++;
+              } else if (nomeMeta.includes('diamante')) {
+                statsSemanais.diamante.lojas++;
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Calcular para vendedores
+    if (dashboardStats.vendedorDetalhes && dashboardStats.vendedorDetalhes.length > 0) {
+      dashboardStats.vendedorDetalhes.forEach((vendedor) => {
+        // Verificar se o vendedor tem dados semanais
+        if (vendedor.semanas && vendedor.semanas.length > 0) {
+          // Verificar a semana atual (ou a última semana disponível)
+          const semanaAtual = vendedor.semanas[vendedor.semanas.length - 1];
+          if (semanaAtual && semanaAtual.metaAtingida > 0) {
+            // Determinar o nível da meta atingida
+            const nomeMeta = semanaAtual.nomeMetaAtingida?.toLowerCase();
+            if (nomeMeta) {
+              if (nomeMeta.includes('bronze')) {
+                statsSemanais.bronze.vendedores++;
+              } else if (nomeMeta.includes('prata')) {
+                statsSemanais.prata.vendedores++;
+              } else if (nomeMeta.includes('ouro')) {
+                statsSemanais.ouro.vendedores++;
+              } else if (nomeMeta.includes('diamante')) {
+                statsSemanais.diamante.vendedores++;
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Atualizar as estatísticas do dashboard com os dados semanais
+    setDashboardStats(prev => ({
+      ...prev,
+      bronze: statsSemanais.bronze,
+      prata: statsSemanais.prata,
+      ouro: statsSemanais.ouro,
+      diamante: statsSemanais.diamante,
+    }));
+  };
+
   const buscarDadosLojas = async (inicio, fim) => {
     if (!inicio || !fim) return;
 
@@ -2559,37 +2652,6 @@ const MetasVarejo = () => {
               />
             </div>
 
-            {/* Filtro de Tipo de Loja */}
-            <div className="flex flex-col">
-              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                Tipo de Loja
-              </label>
-              <select
-                value={tipoLoja}
-                onChange={(e) => setTipoLoja(e.target.value)}
-                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-              >
-                <option value="Todos">Todos</option>
-                <option value="Proprias">Próprias</option>
-                <option value="Franquias">Franquias</option>
-              </select>
-            </div>
-
-            {/* Filtro de Visualização */}
-            <div className="flex flex-col">
-              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                Visualização
-              </label>
-              <select
-                value={visualizacaoTipo}
-                onChange={(e) => setVisualizacaoTipo(e.target.value)}
-                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-              >
-                <option value="MENSAL">Mensal</option>
-                <option value="SEMANAL">Semanal</option>
-              </select>
-            </div>
-
             {/* Filtro de Mês */}
             <div className="flex flex-col">
               <label className="block text-xs font-semibold mb-1 text-[#000638]">
@@ -2598,16 +2660,13 @@ const MetasVarejo = () => {
 
               {/* Filtro de Ano */}
               <div className="mb-2">
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Ano
-                </label>
                 <select
                   value={filtroAno}
                   onChange={(e) => setFiltroAno(parseInt(e.target.value))}
                   className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
                 >
-                  {Array.from({ length: 5 }, (_, i) => {
-                    const ano = new Date().getFullYear() - 2 + i;
+                  {Array.from({ length: 3 }, (_, i) => {
+                    const ano = new Date().getFullYear() + i;
                     return (
                       <option key={ano} value={ano}>
                         {ano}
@@ -2618,7 +2677,7 @@ const MetasVarejo = () => {
               </div>
 
               {/* Filtro de Mês */}
-              <div className="flex flex-nowrap gap-1">
+              <div className="flex flex-nowrap gap-1 mt-3">
                 {[
                   'ANO',
                   'JAN',
@@ -2648,6 +2707,22 @@ const MetasVarejo = () => {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Filtro de Tipo de Loja */}
+            <div className="flex flex-col">
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Tipo de Loja
+              </label>
+              <select
+                value={tipoLoja}
+                onChange={(e) => setTipoLoja(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              >
+                <option value="Todos">Todos</option>
+                <option value="Proprias">Próprias</option>
+                <option value="Franquias">Franquias</option>
+              </select>
             </div>
 
             {/* Botão de Busca */}
@@ -2712,6 +2787,18 @@ const MetasVarejo = () => {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* Filtro de Visualização */}
+                  <div className="flex flex-col">
+                    <select
+                      value={visualizacaoTipo}
+                      onChange={(e) => setVisualizacaoTipo(e.target.value)}
+                      className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs min-w-[100px]"
+                    >
+                      <option value="MENSAL">Mensal</option>
+                      <option value="SEMANAL">Semanal</option>
+                    </select>
+                  </div>
+
                   <button
                     type="button"
                     onClick={abrirModalMetas}
@@ -3802,67 +3889,438 @@ const MetasVarejo = () => {
               </h3>
               <p className="text-sm text-gray-600">
                 {visualizacaoTipo === 'SEMANAL'
-                  ? 'Acompanhamento detalhado de metas por semana para cada loja'
+                  ? `Acompanhamento detalhado de metas por semana para cada ${
+                      rankingTipo === 'lojas' ? 'loja' : 'vendedor'
+                    }`
                   : 'Acompanhamento de metas atingidas por lojas e vendedores'}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={calcularStatsDashboard}
-              className="text-xs bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] transition-colors"
-            >
-              Recalcular Estatísticas
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Filtro de Visualização */}
+              <div className="flex flex-col">
+                <select
+                  value={visualizacaoTipo}
+                  onChange={(e) => setVisualizacaoTipo(e.target.value)}
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs min-w-[100px]"
+                >
+                  <option value="MENSAL">Mensal</option>
+                  <option value="SEMANAL">Semanal</option>
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (visualizacaoTipo === 'SEMANAL') {
+                    calcularStatsSemanais();
+                  } else {
+                    calcularStatsDashboard();
+                  }
+                }}
+                className="text-xs bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] transition-colors"
+              >
+                Recalcular Estatísticas
+              </button>
+            </div>
           </div>
 
           {visualizacaoTipo === 'SEMANAL' ? (
-            // NOVO LAYOUT SEMANAL - Cards individuais para cada loja
-            <div className="space-y-6">
-              {dashboardStats.lojaDetalhes &&
-              dashboardStats.lojaDetalhes.length > 0 ? (
-                dashboardStats.lojaDetalhes
-                  .filter((loja) => {
-                    // Filtrar por lojas selecionadas se houver
-                    if (lojasSelecionadas.length > 0) {
-                      return lojasSelecionadas.some((l) =>
+            // NOVO LAYOUT SEMANAL - Cards individuais para cada loja ou vendedor
+            <>
+              {/* Cards de Estatísticas Semanais */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                {/* Card Bronze Semanal */}
+                <div className="bg-white p-4 rounded-lg shadow border border-amber-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-sm font-bold text-amber-700">
+                        Meta Bronze Semanal
+                      </p>
+                      <p className="text-xs text-amber-600">
+                        Metas atingidas esta semana
+                      </p>
+                    </div>
+                    <div className="text-2xl">🥉</div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-sm text-gray-700">
+                      <span>Lojas:</span>
+                      <span className="font-bold text-amber-700">
+                        {dashboardStats.bronze.lojas}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm text-gray-700">
+                      <span>Vendedores:</span>
+                      <span className="font-bold text-amber-700">
+                        {dashboardStats.bronze.vendedores}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card Prata Semanal */}
+                <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-sm font-bold text-gray-700">
+                        Meta Prata Semanal
+                      </p>
+                      <p className="text-xs text-gray-600">
+                        Metas atingidas esta semana
+                      </p>
+                    </div>
+                    <div className="text-2xl">🥈</div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-sm text-gray-700">
+                      <span>Lojas:</span>
+                      <span className="font-bold text-gray-700">
+                        {dashboardStats.prata.lojas}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm text-gray-700">
+                      <span>Vendedores:</span>
+                      <span className="font-bold text-gray-700">
+                        {dashboardStats.prata.vendedores}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card Ouro Semanal */}
+                <div className="bg-white p-4 rounded-lg shadow border border-yellow-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-sm font-bold text-yellow-700">
+                        Meta Ouro Semanal
+                      </p>
+                      <p className="text-xs text-yellow-600">
+                        Metas atingidas esta semana
+                      </p>
+                    </div>
+                    <div className="text-2xl">🥇</div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-sm text-gray-700">
+                      <span>Lojas:</span>
+                      <span className="font-bold text-yellow-700">
+                        {dashboardStats.ouro.lojas}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm text-gray-700">
+                      <span>Vendedores:</span>
+                      <span className="font-bold text-yellow-700">
+                        {dashboardStats.ouro.vendedores}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card Diamante Semanal */}
+                <div className="bg-white p-4 rounded-lg shadow border border-blue-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-sm font-bold text-blue-700">
+                        Meta Diamante Semanal
+                      </p>
+                      <p className="text-xs text-blue-600">
+                        Metas atingidas esta semana
+                      </p>
+                    </div>
+                    <div className="text-2xl">💎</div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-sm text-gray-700">
+                      <span>Lojas:</span>
+                      <span className="font-bold text-blue-700">
+                        {dashboardStats.diamante.lojas}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm text-gray-700">
+                      <span>Vendedores:</span>
+                      <span className="font-bold text-blue-700">
+                        {dashboardStats.diamante.vendedores}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botões para alternar entre tabelas semanais */}
+              <div className="mb-4">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTabelaAtiva('lojas')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors text-sm font-medium ${
+                      tabelaAtiva === 'lojas'
+                        ? 'bg-[#000638] border-[#000638] text-white'
+                        : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    Lojas
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTabelaAtiva('vendedores')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors text-sm font-medium ${
+                      tabelaAtiva === 'vendedores'
+                        ? 'bg-[#000638] border-[#000638] text-white'
+                        : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    Vendedores
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+              {tabelaAtiva === 'lojas' ? (
+                // Dashboard Semanal para Lojas
+                dashboardStats.lojaDetalhes &&
+                dashboardStats.lojaDetalhes.length > 0 ? (
+                  dashboardStats.lojaDetalhes
+                    .filter((loja) => {
+                      // Filtrar por lojas selecionadas se houver
+                      if (lojasSelecionadas.length > 0) {
+                        return lojasSelecionadas.some((l) =>
+                          (
+                            l.nome_fantasia ||
+                            l.nome_loja ||
+                            l.loja ||
+                            l.nm_loja ||
+                            l.nome ||
+                            ''
+                          ).includes(loja.nome),
+                        );
+                      }
+                      return true;
+                    })
+                    // Filtrar por tipo de loja
+                    .filter((loja) => {
+                      const nomeLoja = loja.nome;
+
+                      if (tipoLoja === 'Franquias') {
+                        // Considerar franquia se o nome contém "F0" (padrão de código de franquia)
+                        const isFranquia = nomeLoja.includes('F0');
+                        console.log('É franquia?', isFranquia);
+                        return isFranquia;
+                      }
+
+                      if (tipoLoja === 'Proprias') {
+                        // Considerar própria se o nome NÃO contém "F0"
+                        const isFranquia =
+                          nomeLoja.includes('-') ||
+                          nomeLoja.includes('- CROSBY');
+                        console.log('É própria?', !isFranquia);
+                        return !isFranquia;
+                      }
+
+                      return true; // 'Todos'
+                    })
+                    .sort((a, b) => b.faturamento - a.faturamento) // Ordenar por faturamento
+                    .map((loja, index) => {
+                      const dadosSemanas = calcularDadosTodasSemanas(
+                        loja,
+                        'lojas',
+                      );
+
+                      return (
+                        <div
+                          key={index}
+                          className="bg-gray-50 p-4 rounded-lg border border-gray-200"
+                        >
+                          {/* Header da Loja */}
+                          <div className="mb-4 flex items-center justify-between">
+                            <div>
+                              <h4 className="text-lg font-bold text-[#000638]">
+                                {loja.nome}
+                              </h4>
+                              <p className="text-sm text-gray-600">
+                                Faturamento Total: {formatBRL(loja.faturamento)}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-2xl font-bold text-green-600">
+                                {formatBRL(loja.faturamento)}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                Faturamento Mensal
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Tabela de Dados Semanais */}
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Semana
+                                  </th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Faturamento Semanal
+                                  </th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Meta Atual
+                                  </th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Próxima Meta
+                                  </th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Progresso
+                                  </th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Falta
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody className="bg-white divide-y divide-gray-200">
+                                {dadosSemanas.map((semana, semanaIndex) => (
+                                  <tr
+                                    key={semanaIndex}
+                                    className="hover:bg-gray-50"
+                                  >
+                                    {/* Semana */}
+                                    <td className="px-4 py-4 whitespace-nowrap">
+                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-sm font-medium bg-cyan-100 text-cyan-800">
+                                        S{semana.numero}
+                                      </span>
+                                    </td>
+
+                                    {/* Faturamento Semanal */}
+                                    <td className="px-4 py-4 whitespace-nowrap">
+                                      <span className="text-sm font-semibold text-green-600">
+                                        {formatBRL(semana.faturamento)}
+                                      </span>
+                                    </td>
+
+                                    {/* Meta Atual */}
+                                    <td className="px-4 py-4 whitespace-nowrap">
+                                      {semana.metaAtingida > 0 ? (
+                                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                                          {semana.nomeMetaAtingida}
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-gray-400">
+                                          -
+                                        </span>
+                                      )}
+                                    </td>
+
+                                    {/* Próxima Meta */}
+                                    <td className="px-4 py-4 whitespace-nowrap">
+                                      {semana.proximaMeta > 0 ? (
+                                        <div>
+                                          <div className="text-sm font-semibold text-gray-800">
+                                            {semana.nomeProximaMeta}
+                                          </div>
+                                          <div className="text-sm text-gray-600">
+                                            {formatBRL(semana.proximaMeta)}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <span className="text-sm text-gray-400">
+                                          -
+                                        </span>
+                                      )}
+                                    </td>
+
+                                    {/* Progresso */}
+                                    <td className="px-4 py-4 whitespace-nowrap">
+                                      {semana.proximaMeta > 0 ? (
+                                        <div className="flex items-center space-x-2">
+                                          <div className="flex-1 bg-gray-200 rounded-full h-2 w-20">
+                                            <div
+                                              className="bg-yellow-500 h-2 rounded-full transition-all duration-300"
+                                              style={{
+                                                width: `${semana.progresso}%`,
+                                              }}
+                                            ></div>
+                                          </div>
+                                          <span className="text-sm font-medium text-gray-800">
+                                            {semana.progresso}%
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-sm text-gray-400">
+                                          -
+                                        </span>
+                                      )}
+                                    </td>
+
+                                    {/* Falta */}
+                                    <td className="px-4 py-4 whitespace-nowrap">
+                                      {semana.faltante > 0 ? (
+                                        <span className="text-sm font-semibold text-gray-800">
+                                          {formatBRL(semana.faltante)}
+                                        </span>
+                                      ) : semana.metaAtingida > 0 ? (
+                                        <span className="text-sm font-medium text-green-600">
+                                          ✓ Atingida
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-gray-400">
+                                          -
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500">
+                      Nenhuma loja encontrada com dados disponíveis.
+                    </p>
+                  </div>
+                )
+              ) : // Dashboard Semanal para Vendedores
+              dashboardStats.vendedorDetalhes &&
+                dashboardStats.vendedorDetalhes.length > 0 ? (
+                dashboardStats.vendedorDetalhes
+                  .filter((vendedor) => {
+                    // Filtrar por vendedores selecionados se houver
+                    if (vendedoresSelecionados.length > 0) {
+                      return vendedoresSelecionados.some((v) =>
                         (
-                          l.nome_fantasia ||
-                          l.nome_loja ||
-                          l.loja ||
-                          l.nm_loja ||
-                          l.nome ||
+                          v.nome_vendedor ||
+                          v.vendedor ||
+                          v.nm_vendedor ||
+                          v.nome ||
                           ''
-                        ).includes(loja.nome),
+                        ).includes(vendedor.nome),
                       );
                     }
                     return true;
                   })
-                  // Filtrar por tipo de loja
-                  .filter((loja) => {
-                    const nomeLoja = loja.nome;
+                  // Filtrar por tipo de loja (vendedores de franquias vs próprias)
+                  .filter((vendedor) => {
+                    const nomeVendedor = vendedor.nome;
 
                     if (tipoLoja === 'Franquias') {
-                      // Considerar franquia se o nome contém "F0" (padrão de código de franquia)
-                      const isFranquia = nomeLoja.includes('F0');
-                      console.log('É franquia?', isFranquia);
-                      return isFranquia;
+                      // Vendedores de franquias não têm "- INT" no nome
+                      return !nomeVendedor.includes('- INT');
                     }
 
                     if (tipoLoja === 'Proprias') {
-                      // Considerar própria se o nome NÃO contém "F0"
-                      const isFranquia =
-                        nomeLoja.includes('-') || nomeLoja.includes('- CROSBY');
-                      console.log('É própria?', !isFranquia);
-                      return !isFranquia;
+                      // Vendedores de lojas próprias têm "- INT" no nome
+                      return nomeVendedor.includes('- INT');
                     }
 
                     return true; // 'Todos'
                   })
                   .sort((a, b) => b.faturamento - a.faturamento) // Ordenar por faturamento
-                  .map((loja, index) => {
+                  .map((vendedor, index) => {
                     const dadosSemanas = calcularDadosTodasSemanas(
-                      loja,
-                      'lojas',
+                      vendedor,
+                      'vendedores',
                     );
 
                     return (
@@ -3870,19 +4328,20 @@ const MetasVarejo = () => {
                         key={index}
                         className="bg-gray-50 p-4 rounded-lg border border-gray-200"
                       >
-                        {/* Header da Loja */}
+                        {/* Header do Vendedor */}
                         <div className="mb-4 flex items-center justify-between">
                           <div>
                             <h4 className="text-lg font-bold text-[#000638]">
-                              {loja.nome}
+                              {vendedor.nome}
                             </h4>
                             <p className="text-sm text-gray-600">
-                              Faturamento Total: {formatBRL(loja.faturamento)}
+                              Faturamento Total:{' '}
+                              {formatBRL(vendedor.faturamento)}
                             </p>
                           </div>
                           <div className="text-right">
                             <div className="text-2xl font-bold text-green-600">
-                              {formatBRL(loja.faturamento)}
+                              {formatBRL(vendedor.faturamento)}
                             </div>
                             <div className="text-xs text-gray-500">
                               Faturamento Mensal
@@ -4016,11 +4475,12 @@ const MetasVarejo = () => {
               ) : (
                 <div className="text-center py-8">
                   <p className="text-gray-500">
-                    Nenhuma loja encontrada com dados disponíveis.
+                    Nenhum vendedor encontrado com dados disponíveis.
                   </p>
                 </div>
               )}
-            </div>
+              </div>
+            </>
           ) : (
             // LAYOUT MENSAL ORIGINAL
             <>
