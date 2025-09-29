@@ -62,6 +62,7 @@ const MetasVarejo = () => {
 
   // Função para handle do filtro mensal (igual ao DRE)
   const handleFiltroMensalChange = (mesSigla) => {
+    console.log('🎯 handleFiltroMensalChange chamada com:', mesSigla);
     setFiltroMensal(mesSigla);
     if (mesSigla === 'ANO') return; // Não altera datas diretamente
 
@@ -2309,6 +2310,100 @@ const MetasVarejo = () => {
     setDashboardStats(stats);
   };
 
+  // Função auxiliar para obter nome do mês
+  const obterNomeMes = (mesNumero) => {
+    const meses = [
+      'Janeiro',
+      'Fevereiro',
+      'Março',
+      'Abril',
+      'Maio',
+      'Junho',
+      'Julho',
+      'Agosto',
+      'Setembro',
+      'Outubro',
+      'Novembro',
+      'Dezembro',
+    ];
+    return meses[mesNumero - 1] || 'Mês Inválido';
+  };
+
+  // Função para encontrar o último mês com dados
+  const encontrarUltimoMesComDados = async () => {
+    const hoje = new Date();
+    const mesAtual = hoje.getMonth() + 1;
+    const anoAtual = hoje.getFullYear();
+
+    // Tentar buscar dados dos últimos 6 meses
+    for (let i = 0; i < 6; i++) {
+      const dataTeste = new Date(anoAtual, mesAtual - 1 - i, 1);
+      const mesTeste = dataTeste.getMonth() + 1;
+      const anoTeste = dataTeste.getFullYear();
+
+      // Primeiro dia do mês
+      const primeiroDia = `${anoTeste}-${mesTeste
+        .toString()
+        .padStart(2, '0')}-01`;
+      // Último dia do mês
+      const ultimoDia = new Date(anoTeste, mesTeste, 0)
+        .toISOString()
+        .split('T')[0];
+
+      try {
+        console.log(
+          `🔍 Testando mês ${mesTeste}/${anoTeste} para encontrar dados...`,
+        );
+
+        // Testar se há dados de lojas
+        const paramsLojas = {
+          dt_inicio: primeiroDia,
+          dt_fim: ultimoDia,
+          cd_grupoempresa_ini: 1,
+          cd_grupoempresa_fim: 9999,
+        };
+
+        const resultLojas = await apiClient.company.faturamentoLojas(
+          paramsLojas,
+        );
+
+        console.log(`🔍 Estrutura dos dados para ${mesTeste}/${anoTeste}:`, {
+          success: resultLojas.success,
+          hasData: !!resultLojas.data,
+          hasDataData: !!resultLojas.data?.data,
+          dataDataLength: resultLojas.data?.data?.length,
+          dataKeys: resultLojas.data ? Object.keys(resultLojas.data) : [],
+          fullStructure: resultLojas.data,
+        });
+
+        // Verificar se há dados de lojas (com fallback para diferentes estruturas)
+        const dadosLojas = resultLojas.data?.data || resultLojas.data || [];
+        const temDados = Array.isArray(dadosLojas) && dadosLojas.length > 0;
+
+        if (resultLojas.success && temDados) {
+          console.log(
+            `✅ Encontrado dados para ${mesTeste}/${anoTeste} - ${dadosLojas.length} lojas`,
+          );
+          return {
+            mes: mesTeste,
+            ano: anoTeste,
+            primeiroDia,
+            ultimoDia,
+            dadosLojas: dadosLojas,
+          };
+        }
+      } catch (error) {
+        console.log(
+          `❌ Erro ao testar ${mesTeste}/${anoTeste}:`,
+          error.message,
+        );
+      }
+    }
+
+    console.log('⚠️ Nenhum mês com dados encontrado nos últimos 6 meses');
+    return null;
+  };
+
   const calcularStatsSemanais = () => {
     if (!semanasCalculadas || semanasCalculadas.length === 0) return;
 
@@ -2347,7 +2442,10 @@ const MetasVarejo = () => {
     }
 
     // Calcular para vendedores
-    if (dashboardStats.vendedorDetalhes && dashboardStats.vendedorDetalhes.length > 0) {
+    if (
+      dashboardStats.vendedorDetalhes &&
+      dashboardStats.vendedorDetalhes.length > 0
+    ) {
       dashboardStats.vendedorDetalhes.forEach((vendedor) => {
         // Verificar se o vendedor tem dados semanais
         if (vendedor.semanas && vendedor.semanas.length > 0) {
@@ -2373,7 +2471,7 @@ const MetasVarejo = () => {
     }
 
     // Atualizar as estatísticas do dashboard com os dados semanais
-    setDashboardStats(prev => ({
+    setDashboardStats((prev) => ({
       ...prev,
       bronze: statsSemanais.bronze,
       prata: statsSemanais.prata,
@@ -2393,13 +2491,95 @@ const MetasVarejo = () => {
         cd_grupoempresa_fim: 9999,
       };
 
+      console.log('🔍 Buscando dados de lojas para:', { inicio, fim, params });
       const result = await apiClient.company.faturamentoLojas(params);
+      console.log('🔍 Resultado da API:', {
+        success: result.success,
+        dataLength: result.data?.data?.length || result.data?.length || 0,
+      });
 
       if (result.success) {
         // Verifica se há estrutura aninhada (data.data)
         const dadosArray = result.data?.data || result.data || [];
         console.log('🔍 Dados de lojas recebidos:', dadosArray.slice(0, 2));
+        console.log('🔍 Total de lojas encontradas:', dadosArray.length);
         console.log('🔍 Exemplo de item completo:', dadosArray[0]);
+
+        // Se não há dados para o período selecionado, buscar do último mês com dados
+        if (dadosArray.length === 0) {
+          console.log(
+            '⚠️ Nenhuma loja encontrada para o período selecionado. Buscando último mês com dados...',
+          );
+          const ultimoMesComDados = await encontrarUltimoMesComDados();
+
+          if (ultimoMesComDados) {
+            console.log(
+              `📋 Usando dados de referência de ${ultimoMesComDados.mes}/${ultimoMesComDados.ano}`,
+            );
+
+            // Usar os nomes das lojas do último mês, mas com faturamento 0
+            // Inverter a ordem para começar da posição 1
+            const lojasComFaturamentoZero = ultimoMesComDados.dadosLojas
+              .reverse() // Inverter a ordem
+              .map((loja, index) => ({
+                ...loja,
+                rank: index + 1,
+                faturamento: 0, // Faturamento zero para o período atual
+                ticket_medio: 0, // Ticket médio zero para o período atual
+                pa: 0, // PA (Performance de Aplicação) zero para o período atual
+                pa_saida: 0, // PA saída zero para o período atual
+                pa_entrada: 0, // PA entrada zero para o período atual
+                transacoes_saida: 0, // Transações saída zero para o período atual
+                nome_fantasia: loja.nome_fantasia,
+                nm_loja: loja.nm_loja || loja.nome_fantasia,
+                // Marcar como dados de referência
+                isDadosReferencia: true,
+                mesReferencia: ultimoMesComDados.mes,
+                anoReferencia: ultimoMesComDados.ano,
+              }));
+
+            setDadosLojas(lojasComFaturamentoZero);
+
+            // Extrair lojas únicas para o filtro (baseado nos dados de referência)
+            const lojasUnicas = ultimoMesComDados.dadosLojas.reduce(
+              (acc, item) => {
+                const nomeFantasia = item.nome_fantasia;
+                if (
+                  nomeFantasia &&
+                  !acc.find((loja) => loja.nome_fantasia === nomeFantasia)
+                ) {
+                  acc.push({
+                    cd_loja: item.cd_grupoempresa || item.pessoa_empresa,
+                    nome_fantasia: nomeFantasia,
+                    nm_loja: nomeFantasia,
+                  });
+                }
+                return acc;
+              },
+              [],
+            );
+            setDadosLoja(lojasUnicas);
+
+            console.log('🔍 Lojas para filtro atualizadas:', {
+              totalLojas: lojasUnicas.length,
+              primeiraLoja: lojasUnicas[0],
+            });
+
+            // Notificação removida - usuário final não precisa saber sobre dados de referência
+            return;
+          } else {
+            console.log('❌ Não foi possível encontrar dados de referência');
+            setDadosLojas([]);
+            setNotification({
+              type: 'warning',
+              title: 'Sem Dados',
+              message:
+                'Nenhuma loja encontrada para o período selecionado e não há dados de referência disponíveis.',
+            });
+            return;
+          }
+        }
+
         const ordenado = [...dadosArray].sort(
           (a, b) =>
             parseFloat(b.faturamento || 0) - parseFloat(a.faturamento || 0),
@@ -2408,6 +2588,7 @@ const MetasVarejo = () => {
           ...item,
           rank: index + 1,
           faturamento: parseFloat(item.faturamento || 0),
+          isDadosReferencia: false, // Dados reais do período
         }));
 
         setDadosLojas(comRank);
@@ -2446,7 +2627,16 @@ const MetasVarejo = () => {
         fim: fim,
       };
 
+      console.log('🔍 Buscando dados de vendedores para:', {
+        inicio,
+        fim,
+        params,
+      });
       const result = await apiClient.sales.rankingVendedores(params);
+      console.log('🔍 Resultado da API vendedores:', {
+        success: result.success,
+        dataLength: result.data?.data?.length || result.data?.length || 0,
+      });
 
       if (result.success) {
         // Verifica se há estrutura aninhada (data.data)
@@ -2455,6 +2645,122 @@ const MetasVarejo = () => {
           '🔍 Dados de vendedores recebidos:',
           dadosArray.slice(0, 2),
         );
+        console.log('🔍 Total de vendedores encontrados:', dadosArray.length);
+
+        // Se não há dados para o período selecionado, buscar do último mês com dados
+        if (dadosArray.length === 0) {
+          console.log(
+            '⚠️ Nenhum vendedor encontrado para o período selecionado. Buscando último mês com dados...',
+          );
+          const ultimoMesComDados = await encontrarUltimoMesComDados();
+
+          if (ultimoMesComDados) {
+            console.log(
+              `📋 Usando dados de referência de vendedores de ${ultimoMesComDados.mes}/${ultimoMesComDados.ano}`,
+            );
+
+            // Buscar dados de vendedores do último mês com dados
+            const paramsVendedores = {
+              inicio: ultimoMesComDados.primeiroDia,
+              fim: ultimoMesComDados.ultimoDia,
+            };
+
+            const resultVendedores = await apiClient.sales.rankingVendedores(
+              paramsVendedores,
+            );
+
+            console.log('🔍 Estrutura dos dados de vendedores:', {
+              success: resultVendedores.success,
+              hasData: !!resultVendedores.data,
+              hasDataData: !!resultVendedores.data?.data,
+              dataDataLength: resultVendedores.data?.data?.length,
+              dataLength: resultVendedores.data?.length,
+              dataKeys: resultVendedores.data
+                ? Object.keys(resultVendedores.data)
+                : [],
+            });
+
+            // Verificar se há dados de vendedores (com fallback para diferentes estruturas)
+            const dadosVendedoresReferencia =
+              resultVendedores.data?.data || resultVendedores.data || [];
+            const temDadosVendedores =
+              Array.isArray(dadosVendedoresReferencia) &&
+              dadosVendedoresReferencia.length > 0;
+
+            if (resultVendedores.success && temDadosVendedores) {
+              // Usar os nomes dos vendedores do último mês, mas com faturamento 0
+              // Inverter a ordem para começar da posição 1
+              const vendedoresComFaturamentoZero = dadosVendedoresReferencia
+                .reverse() // Inverter a ordem
+                .map((vendedor, index) => ({
+                  ...vendedor,
+                  rank: index + 1,
+                  faturamento: 0, // Faturamento zero para o período atual
+                  ticket_medio: 0, // Ticket médio zero para o período atual
+                  pa: 0, // PA (Performance de Aplicação) zero para o período atual
+                  pa_saida: 0, // PA saída zero para o período atual
+                  pa_entrada: 0, // PA entrada zero para o período atual
+                  transacoes_saida: 0, // Transações saída zero para o período atual
+                  nome_vendedor: vendedor.nome_vendedor,
+                  // Marcar como dados de referência
+                  isDadosReferencia: true,
+                  mesReferencia: ultimoMesComDados.mes,
+                  anoReferencia: ultimoMesComDados.ano,
+                }));
+
+              console.log('🔍 Vendedores processados:', {
+                totalVendedores: vendedoresComFaturamentoZero.length,
+                primeiroVendedor: vendedoresComFaturamentoZero[0],
+                isDadosReferencia:
+                  vendedoresComFaturamentoZero[0]?.isDadosReferencia,
+              });
+
+              setDadosVendedores(vendedoresComFaturamentoZero);
+
+              // Montar lista de vendedores para o filtro
+              const listaVendedores = dadosVendedoresReferencia.reduce(
+                (acc, item) => {
+                  const nome =
+                    item.nome_vendedor ||
+                    item.vendedor ||
+                    item.nm_vendedor ||
+                    item.nome;
+                  if (nome && !acc.find((v) => v.nome_vendedor === nome)) {
+                    acc.push({
+                      id: item.cd_vendedor || item.id,
+                      nome_vendedor: nome,
+                    });
+                  }
+                  return acc;
+                },
+                [],
+              );
+              setDadosVendedor(listaVendedores);
+
+              console.log('🔍 Vendedores para filtro atualizados:', {
+                totalVendedores: listaVendedores.length,
+                primeiroVendedor: listaVendedores[0],
+              });
+
+              // Notificação removida - usuário final não precisa saber sobre dados de referência
+              return;
+            }
+          }
+
+          console.log(
+            '❌ Não foi possível encontrar dados de vendedores de referência',
+          );
+          setDadosVendedores([]);
+          setDadosVendedor([]);
+          setNotification({
+            type: 'warning',
+            title: 'Sem Dados',
+            message:
+              'Nenhum vendedor encontrado para o período selecionado e não há dados de referência disponíveis.',
+          });
+          return;
+        }
+
         const ordenado = [...dadosArray].sort(
           (a, b) =>
             parseFloat(b.faturamento || 0) - parseFloat(a.faturamento || 0),
@@ -2463,6 +2769,7 @@ const MetasVarejo = () => {
           ...item,
           rank: index + 1,
           faturamento: parseFloat(item.faturamento || 0),
+          isDadosReferencia: false, // Dados reais do período
         }));
 
         setDadosVendedores(comRank);
@@ -2531,7 +2838,14 @@ const MetasVarejo = () => {
           }
           return true; // 'Todos'
         })
-        .filter((item) => item.faturamento > 0);
+        .filter((item) => {
+          // Se são dados de referência, não filtrar por faturamento
+          if (item.isDadosReferencia) {
+            return true;
+          }
+          // Para dados reais, filtrar apenas vendedores com faturamento > 0
+          return item.faturamento > 0;
+        });
 
       if (vendedoresSelecionados.length > 0) {
         const nomesSel = vendedoresSelecionados.map(
@@ -2630,7 +2944,10 @@ const MetasVarejo = () => {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 mb-4">
+          <div
+            className="grid grid-cols-2 gap-4 mb-4"
+            style={{ overflow: 'visible' }}
+          >
             {/* Filtro de Loja */}
             <div className="lg:col-span-1">
               <FiltroLoja
@@ -2653,7 +2970,10 @@ const MetasVarejo = () => {
             </div>
 
             {/* Filtro de Mês */}
-            <div className="flex flex-col">
+            <div
+              className="flex flex-col"
+              style={{ overflow: 'visible', zIndex: 1 }}
+            >
               <label className="block text-xs font-semibold mb-1 text-[#000638]">
                 Selecione o período para análise
               </label>
@@ -2665,8 +2985,8 @@ const MetasVarejo = () => {
                   onChange={(e) => setFiltroAno(parseInt(e.target.value))}
                   className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
                 >
-                  {Array.from({ length: 3 }, (_, i) => {
-                    const ano = new Date().getFullYear() + i;
+                  {Array.from({ length: 4 }, (_, i) => {
+                    const ano = new Date().getFullYear() - 1 + i;
                     return (
                       <option key={ano} value={ano}>
                         {ano}
@@ -2677,7 +2997,14 @@ const MetasVarejo = () => {
               </div>
 
               {/* Filtro de Mês */}
-              <div className="flex flex-nowrap gap-1 mt-3">
+              <div
+                className="flex flex-wrap gap-1 mt-3"
+                style={{
+                  overflow: 'visible',
+                  position: 'relative',
+                  zIndex: 10,
+                }}
+              >
                 {[
                   'ANO',
                   'JAN',
@@ -2696,7 +3023,18 @@ const MetasVarejo = () => {
                   <button
                     key={mes}
                     type="button"
-                    onClick={() => handleFiltroMensalChange(mes)}
+                    onClick={() => {
+                      console.log(`Clicou no mês: ${mes}`);
+                      handleFiltroMensalChange(mes);
+                    }}
+                    disabled={false}
+                    style={{
+                      pointerEvents: 'auto',
+                      cursor: 'pointer',
+                      position: 'relative',
+                      zIndex: 10,
+                      userSelect: 'none',
+                    }}
                     className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
                       filtroMensal === mes
                         ? 'bg-[#000638] text-white'
@@ -2785,6 +3123,7 @@ const MetasVarejo = () => {
                     Ranking de{' '}
                     {rankingTipo === 'lojas' ? 'lojas' : 'vendedores'}
                   </span>
+                  {/* Indicador de dados de referência removido - usuário final não precisa saber */}
                 </div>
                 <div className="flex items-center gap-2">
                   {/* Filtro de Visualização */}
@@ -3070,6 +3409,11 @@ const MetasVarejo = () => {
                           </td>
                           <td className="px-1 py-1 text-center text-[9px] whitespace-nowrap">
                             {(() => {
+                              // Se são dados de referência, retornar 0
+                              if (item.isDadosReferencia) {
+                                return '0,00';
+                              }
+
                               const transacoesSaida =
                                 Number(item.transacoes_saida) || 0;
                               if (transacoesSaida === 0) return '-';
@@ -3894,6 +4238,7 @@ const MetasVarejo = () => {
                     }`
                   : 'Acompanhamento de metas atingidas por lojas e vendedores'}
               </p>
+              {/* Indicador de dados de referência removido - usuário final não precisa saber */}
             </div>
             <div className="flex items-center gap-2">
               {/* Filtro de Visualização */}
@@ -4076,54 +4421,252 @@ const MetasVarejo = () => {
               </div>
 
               <div className="space-y-6">
-              {tabelaAtiva === 'lojas' ? (
-                // Dashboard Semanal para Lojas
-                dashboardStats.lojaDetalhes &&
-                dashboardStats.lojaDetalhes.length > 0 ? (
-                  dashboardStats.lojaDetalhes
-                    .filter((loja) => {
-                      // Filtrar por lojas selecionadas se houver
-                      if (lojasSelecionadas.length > 0) {
-                        return lojasSelecionadas.some((l) =>
+                {tabelaAtiva === 'lojas' ? (
+                  // Dashboard Semanal para Lojas
+                  dashboardStats.lojaDetalhes &&
+                  dashboardStats.lojaDetalhes.length > 0 ? (
+                    dashboardStats.lojaDetalhes
+                      .filter((loja) => {
+                        // Filtrar por lojas selecionadas se houver
+                        if (lojasSelecionadas.length > 0) {
+                          return lojasSelecionadas.some((l) =>
+                            (
+                              l.nome_fantasia ||
+                              l.nome_loja ||
+                              l.loja ||
+                              l.nm_loja ||
+                              l.nome ||
+                              ''
+                            ).includes(loja.nome),
+                          );
+                        }
+                        return true;
+                      })
+                      // Filtrar por tipo de loja
+                      .filter((loja) => {
+                        const nomeLoja = loja.nome;
+
+                        if (tipoLoja === 'Franquias') {
+                          // Considerar franquia se o nome contém "F0" (padrão de código de franquia)
+                          const isFranquia = nomeLoja.includes('F0');
+                          console.log('É franquia?', isFranquia);
+                          return isFranquia;
+                        }
+
+                        if (tipoLoja === 'Proprias') {
+                          // Considerar própria se o nome NÃO contém "F0"
+                          const isFranquia =
+                            nomeLoja.includes('-') ||
+                            nomeLoja.includes('- CROSBY');
+                          console.log('É própria?', !isFranquia);
+                          return !isFranquia;
+                        }
+
+                        return true; // 'Todos'
+                      })
+                      .sort((a, b) => b.faturamento - a.faturamento) // Ordenar por faturamento
+                      .map((loja, index) => {
+                        const dadosSemanas = calcularDadosTodasSemanas(
+                          loja,
+                          'lojas',
+                        );
+
+                        return (
+                          <div
+                            key={index}
+                            className="bg-gray-50 p-4 rounded-lg border border-gray-200"
+                          >
+                            {/* Header da Loja */}
+                            <div className="mb-4 flex items-center justify-between">
+                              <div>
+                                <h4 className="text-lg font-bold text-[#000638]">
+                                  {loja.nome}
+                                </h4>
+                                <p className="text-sm text-gray-600">
+                                  Faturamento Total:{' '}
+                                  {formatBRL(loja.faturamento)}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-2xl font-bold text-green-600">
+                                  {formatBRL(loja.faturamento)}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  Faturamento Mensal
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Tabela de Dados Semanais */}
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                  <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      Semana
+                                    </th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      Faturamento Semanal
+                                    </th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      Meta Atual
+                                    </th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      Próxima Meta
+                                    </th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      Progresso
+                                    </th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      Falta
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                  {dadosSemanas.map((semana, semanaIndex) => (
+                                    <tr
+                                      key={semanaIndex}
+                                      className="hover:bg-gray-50"
+                                    >
+                                      {/* Semana */}
+                                      <td className="px-4 py-4 whitespace-nowrap">
+                                        <span className="inline-flex items-center px-2 py-1 rounded-full text-sm font-medium bg-cyan-100 text-cyan-800">
+                                          S{semana.numero}
+                                        </span>
+                                      </td>
+
+                                      {/* Faturamento Semanal */}
+                                      <td className="px-4 py-4 whitespace-nowrap">
+                                        <span className="text-sm font-semibold text-green-600">
+                                          {formatBRL(semana.faturamento)}
+                                        </span>
+                                      </td>
+
+                                      {/* Meta Atual */}
+                                      <td className="px-4 py-4 whitespace-nowrap">
+                                        {semana.metaAtingida > 0 ? (
+                                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                                            {semana.nomeMetaAtingida}
+                                          </span>
+                                        ) : (
+                                          <span className="text-sm text-gray-400">
+                                            -
+                                          </span>
+                                        )}
+                                      </td>
+
+                                      {/* Próxima Meta */}
+                                      <td className="px-4 py-4 whitespace-nowrap">
+                                        {semana.proximaMeta > 0 ? (
+                                          <div>
+                                            <div className="text-sm font-semibold text-gray-800">
+                                              {semana.nomeProximaMeta}
+                                            </div>
+                                            <div className="text-sm text-gray-600">
+                                              {formatBRL(semana.proximaMeta)}
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <span className="text-sm text-gray-400">
+                                            -
+                                          </span>
+                                        )}
+                                      </td>
+
+                                      {/* Progresso */}
+                                      <td className="px-4 py-4 whitespace-nowrap">
+                                        {semana.proximaMeta > 0 ? (
+                                          <div className="flex items-center space-x-2">
+                                            <div className="flex-1 bg-gray-200 rounded-full h-2 w-20">
+                                              <div
+                                                className="bg-yellow-500 h-2 rounded-full transition-all duration-300"
+                                                style={{
+                                                  width: `${semana.progresso}%`,
+                                                }}
+                                              ></div>
+                                            </div>
+                                            <span className="text-sm font-medium text-gray-800">
+                                              {semana.progresso}%
+                                            </span>
+                                          </div>
+                                        ) : (
+                                          <span className="text-sm text-gray-400">
+                                            -
+                                          </span>
+                                        )}
+                                      </td>
+
+                                      {/* Falta */}
+                                      <td className="px-4 py-4 whitespace-nowrap">
+                                        {semana.faltante > 0 ? (
+                                          <span className="text-sm font-semibold text-gray-800">
+                                            {formatBRL(semana.faltante)}
+                                          </span>
+                                        ) : semana.metaAtingida > 0 ? (
+                                          <span className="text-sm font-medium text-green-600">
+                                            ✓ Atingida
+                                          </span>
+                                        ) : (
+                                          <span className="text-sm text-gray-400">
+                                            -
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        );
+                      })
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-gray-500">
+                        Nenhuma loja encontrada com dados disponíveis.
+                      </p>
+                    </div>
+                  )
+                ) : // Dashboard Semanal para Vendedores
+                dashboardStats.vendedorDetalhes &&
+                  dashboardStats.vendedorDetalhes.length > 0 ? (
+                  dashboardStats.vendedorDetalhes
+                    .filter((vendedor) => {
+                      // Filtrar por vendedores selecionados se houver
+                      if (vendedoresSelecionados.length > 0) {
+                        return vendedoresSelecionados.some((v) =>
                           (
-                            l.nome_fantasia ||
-                            l.nome_loja ||
-                            l.loja ||
-                            l.nm_loja ||
-                            l.nome ||
+                            v.nome_vendedor ||
+                            v.vendedor ||
+                            v.nm_vendedor ||
+                            v.nome ||
                             ''
-                          ).includes(loja.nome),
+                          ).includes(vendedor.nome),
                         );
                       }
                       return true;
                     })
-                    // Filtrar por tipo de loja
-                    .filter((loja) => {
-                      const nomeLoja = loja.nome;
+                    // Filtrar por tipo de loja (vendedores de franquias vs próprias)
+                    .filter((vendedor) => {
+                      const nomeVendedor = vendedor.nome;
 
                       if (tipoLoja === 'Franquias') {
-                        // Considerar franquia se o nome contém "F0" (padrão de código de franquia)
-                        const isFranquia = nomeLoja.includes('F0');
-                        console.log('É franquia?', isFranquia);
-                        return isFranquia;
+                        // Vendedores de franquias não têm "- INT" no nome
+                        return !nomeVendedor.includes('- INT');
                       }
 
                       if (tipoLoja === 'Proprias') {
-                        // Considerar própria se o nome NÃO contém "F0"
-                        const isFranquia =
-                          nomeLoja.includes('-') ||
-                          nomeLoja.includes('- CROSBY');
-                        console.log('É própria?', !isFranquia);
-                        return !isFranquia;
+                        // Vendedores de lojas próprias têm "- INT" no nome
+                        return nomeVendedor.includes('- INT');
                       }
 
                       return true; // 'Todos'
                     })
                     .sort((a, b) => b.faturamento - a.faturamento) // Ordenar por faturamento
-                    .map((loja, index) => {
+                    .map((vendedor, index) => {
                       const dadosSemanas = calcularDadosTodasSemanas(
-                        loja,
-                        'lojas',
+                        vendedor,
+                        'vendedores',
                       );
 
                       return (
@@ -4131,19 +4674,20 @@ const MetasVarejo = () => {
                           key={index}
                           className="bg-gray-50 p-4 rounded-lg border border-gray-200"
                         >
-                          {/* Header da Loja */}
+                          {/* Header do Vendedor */}
                           <div className="mb-4 flex items-center justify-between">
                             <div>
                               <h4 className="text-lg font-bold text-[#000638]">
-                                {loja.nome}
+                                {vendedor.nome}
                               </h4>
                               <p className="text-sm text-gray-600">
-                                Faturamento Total: {formatBRL(loja.faturamento)}
+                                Faturamento Total:{' '}
+                                {formatBRL(vendedor.faturamento)}
                               </p>
                             </div>
                             <div className="text-right">
                               <div className="text-2xl font-bold text-green-600">
-                                {formatBRL(loja.faturamento)}
+                                {formatBRL(vendedor.faturamento)}
                               </div>
                               <div className="text-xs text-gray-500">
                                 Faturamento Mensal
@@ -4277,208 +4821,10 @@ const MetasVarejo = () => {
                 ) : (
                   <div className="text-center py-8">
                     <p className="text-gray-500">
-                      Nenhuma loja encontrada com dados disponíveis.
+                      Nenhum vendedor encontrado com dados disponíveis.
                     </p>
                   </div>
-                )
-              ) : // Dashboard Semanal para Vendedores
-              dashboardStats.vendedorDetalhes &&
-                dashboardStats.vendedorDetalhes.length > 0 ? (
-                dashboardStats.vendedorDetalhes
-                  .filter((vendedor) => {
-                    // Filtrar por vendedores selecionados se houver
-                    if (vendedoresSelecionados.length > 0) {
-                      return vendedoresSelecionados.some((v) =>
-                        (
-                          v.nome_vendedor ||
-                          v.vendedor ||
-                          v.nm_vendedor ||
-                          v.nome ||
-                          ''
-                        ).includes(vendedor.nome),
-                      );
-                    }
-                    return true;
-                  })
-                  // Filtrar por tipo de loja (vendedores de franquias vs próprias)
-                  .filter((vendedor) => {
-                    const nomeVendedor = vendedor.nome;
-
-                    if (tipoLoja === 'Franquias') {
-                      // Vendedores de franquias não têm "- INT" no nome
-                      return !nomeVendedor.includes('- INT');
-                    }
-
-                    if (tipoLoja === 'Proprias') {
-                      // Vendedores de lojas próprias têm "- INT" no nome
-                      return nomeVendedor.includes('- INT');
-                    }
-
-                    return true; // 'Todos'
-                  })
-                  .sort((a, b) => b.faturamento - a.faturamento) // Ordenar por faturamento
-                  .map((vendedor, index) => {
-                    const dadosSemanas = calcularDadosTodasSemanas(
-                      vendedor,
-                      'vendedores',
-                    );
-
-                    return (
-                      <div
-                        key={index}
-                        className="bg-gray-50 p-4 rounded-lg border border-gray-200"
-                      >
-                        {/* Header do Vendedor */}
-                        <div className="mb-4 flex items-center justify-between">
-                          <div>
-                            <h4 className="text-lg font-bold text-[#000638]">
-                              {vendedor.nome}
-                            </h4>
-                            <p className="text-sm text-gray-600">
-                              Faturamento Total:{' '}
-                              {formatBRL(vendedor.faturamento)}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-2xl font-bold text-green-600">
-                              {formatBRL(vendedor.faturamento)}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              Faturamento Mensal
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Tabela de Dados Semanais */}
-                        <div className="overflow-x-auto">
-                          <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                              <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  Semana
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  Faturamento Semanal
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  Meta Atual
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  Próxima Meta
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  Progresso
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  Falta
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                              {dadosSemanas.map((semana, semanaIndex) => (
-                                <tr
-                                  key={semanaIndex}
-                                  className="hover:bg-gray-50"
-                                >
-                                  {/* Semana */}
-                                  <td className="px-4 py-4 whitespace-nowrap">
-                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-sm font-medium bg-cyan-100 text-cyan-800">
-                                      S{semana.numero}
-                                    </span>
-                                  </td>
-
-                                  {/* Faturamento Semanal */}
-                                  <td className="px-4 py-4 whitespace-nowrap">
-                                    <span className="text-sm font-semibold text-green-600">
-                                      {formatBRL(semana.faturamento)}
-                                    </span>
-                                  </td>
-
-                                  {/* Meta Atual */}
-                                  <td className="px-4 py-4 whitespace-nowrap">
-                                    {semana.metaAtingida > 0 ? (
-                                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
-                                        {semana.nomeMetaAtingida}
-                                      </span>
-                                    ) : (
-                                      <span className="text-sm text-gray-400">
-                                        -
-                                      </span>
-                                    )}
-                                  </td>
-
-                                  {/* Próxima Meta */}
-                                  <td className="px-4 py-4 whitespace-nowrap">
-                                    {semana.proximaMeta > 0 ? (
-                                      <div>
-                                        <div className="text-sm font-semibold text-gray-800">
-                                          {semana.nomeProximaMeta}
-                                        </div>
-                                        <div className="text-sm text-gray-600">
-                                          {formatBRL(semana.proximaMeta)}
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <span className="text-sm text-gray-400">
-                                        -
-                                      </span>
-                                    )}
-                                  </td>
-
-                                  {/* Progresso */}
-                                  <td className="px-4 py-4 whitespace-nowrap">
-                                    {semana.proximaMeta > 0 ? (
-                                      <div className="flex items-center space-x-2">
-                                        <div className="flex-1 bg-gray-200 rounded-full h-2 w-20">
-                                          <div
-                                            className="bg-yellow-500 h-2 rounded-full transition-all duration-300"
-                                            style={{
-                                              width: `${semana.progresso}%`,
-                                            }}
-                                          ></div>
-                                        </div>
-                                        <span className="text-sm font-medium text-gray-800">
-                                          {semana.progresso}%
-                                        </span>
-                                      </div>
-                                    ) : (
-                                      <span className="text-sm text-gray-400">
-                                        -
-                                      </span>
-                                    )}
-                                  </td>
-
-                                  {/* Falta */}
-                                  <td className="px-4 py-4 whitespace-nowrap">
-                                    {semana.faltante > 0 ? (
-                                      <span className="text-sm font-semibold text-gray-800">
-                                        {formatBRL(semana.faltante)}
-                                      </span>
-                                    ) : semana.metaAtingida > 0 ? (
-                                      <span className="text-sm font-medium text-green-600">
-                                        ✓ Atingida
-                                      </span>
-                                    ) : (
-                                      <span className="text-sm text-gray-400">
-                                        -
-                                      </span>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    );
-                  })
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-gray-500">
-                    Nenhum vendedor encontrado com dados disponíveis.
-                  </p>
-                </div>
-              )}
+                )}
               </div>
             </>
           ) : (
