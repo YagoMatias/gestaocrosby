@@ -126,7 +126,7 @@ const AppRoutes = memo(() => {
     {
       path: '/despesas-por-setor',
       component: DespesasPorSetor,
-      roles: ['owner', 'admin', 'manager', 'user', 'guest'],
+      roles: ['owner', 'admin', 'manager', 'user'],
     },
     {
       path: '/contas-a-receber',

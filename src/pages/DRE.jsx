@@ -56,6 +56,44 @@ const DRE = () => {
   // Despesas Operacionais (Contas a Pagar - Emissão)
   const [planoDespesasNodes, setPlanoDespesasNodes] = useState([]);
   const [planoDespesasTotal, setPlanoDespesasTotal] = useState(0);
+  // Despesas Financeiras separadas do plano de despesas
+  const [planoDespesasFinanceirasNodes, setPlanoDespesasFinanceirasNodes] =
+    useState([]);
+  const [planoDespesasFinanceirasTotal, setPlanoDespesasFinanceirasTotal] =
+    useState(0);
+
+  // Lista de despesas (cd_despesaitem) a serem excluídas do cálculo/visualização
+  const [despesasExcluidas, setDespesasExcluidas] = useState(
+    new Set([117, 124, 270, 271, 272, 5006, 5007, 5013, 5014]),
+  );
+
+  // Utilitário: verifica se um código de despesa deve ser excluído
+  const shouldExcluirDespesa = (cd) => {
+    const n = Number(cd);
+    if (Number.isNaN(n)) return false;
+    return despesasExcluidas.has(n);
+  };
+
+  // API simples para gerenciar exclusões (pode ser chamada de outras partes da app)
+  const excluirDespesaPorCodigo = (codigos) => {
+    setDespesasExcluidas((prev) => {
+      const next = new Set(prev);
+      (Array.isArray(codigos) ? codigos : [codigos]).forEach((c) => {
+        const n = Number(c);
+        if (!Number.isNaN(n)) next.add(n);
+      });
+      return next;
+    });
+  };
+
+  const definirDespesasExcluidas = (lista) => {
+    const next = new Set(
+      (lista || []).map((c) => Number(c)).filter((n) => !Number.isNaN(n)),
+    );
+    setDespesasExcluidas(next);
+  };
+
+  const limparDespesasExcluidas = () => setDespesasExcluidas(new Set());
 
   // Estados para impostos reais
   const [icms, setIcms] = useState(0);
@@ -929,7 +967,12 @@ const DRE = () => {
 
         // Buscar nomes para despesas e fornecedores e agrupar: Categoria -> Despesa -> Fornecedor
         const codigosDespesas = Array.from(
-          new Set((dadosCP || []).map((x) => x.cd_despesaitem).filter(Boolean)),
+          new Set(
+            (dadosCP || [])
+              .map((x) => x.cd_despesaitem)
+              .filter(Boolean)
+              .filter((cd) => !shouldExcluirDespesa(cd)),
+          ),
         );
         const codigosFornecedores = Array.from(
           new Set((dadosCP || []).map((x) => x.cd_fornecedor).filter(Boolean)),
@@ -999,12 +1042,31 @@ const DRE = () => {
         };
 
         for (const item of dadosCP) {
+          // Removido: não alteramos a lista durante o processamento
+
+          // Bloquear itens com centro de custo 999
+          const ccustoRaw =
+            item.cd_ccusto ??
+            item.ccusto ??
+            item.cd_centrocusto ??
+            item.centrocusto ??
+            item.cc_custo ??
+            item.centro_custo ??
+            item.cd_ccusto_padrao;
+          const ccustoNum = Number(ccustoRaw);
+          if (!Number.isNaN(ccustoNum) && ccustoNum === 999) {
+            // Ignorar este lançamento
+            continue;
+          }
+          // Ignorar itens por código de despesa configurado
+          const codigoDespesa = Number(item.cd_despesaitem) || 0;
+          if (shouldExcluirDespesa(codigoDespesa)) {
+            continue;
+          }
           const valorRateio = parseFloat(item.vl_rateio || 0) || 0;
           const valorDuplicata = parseFloat(item.vl_duplicata || 0) || 0;
           const valor = valorRateio !== 0 ? valorRateio : valorDuplicata;
           totalGeral += valor;
-
-          const codigoDespesa = Number(item.cd_despesaitem) || 0;
           const categoriaExcecao = getCategoriaPorCodigo(codigoDespesa);
           const chaveGrupo =
             categoriaExcecao || getCategoriaByCodigo(codigoDespesa);
@@ -1129,8 +1191,28 @@ const DRE = () => {
         });
         grupos.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
 
-        setPlanoDespesasNodes(grupos);
-        setPlanoDespesasTotal(totalGeral);
+        // Separar DESPESAS FINANCEIRAS do restante
+        const gruposFinanceiros = grupos.filter(
+          (g) => g.label === 'DESPESAS FINANCEIRAS',
+        );
+        const gruposOperacionais = grupos.filter(
+          (g) => g.label !== 'DESPESAS FINANCEIRAS',
+        );
+
+        // Totais positivos (valores de grupos são negativos)
+        const totalOperacionais = gruposOperacionais.reduce(
+          (acc, g) => acc + Math.abs(g.value),
+          0,
+        );
+        const totalFinanceiros = gruposFinanceiros.reduce(
+          (acc, g) => acc + Math.abs(g.value),
+          0,
+        );
+
+        setPlanoDespesasNodes(gruposOperacionais);
+        setPlanoDespesasTotal(totalOperacionais);
+        setPlanoDespesasFinanceirasNodes(gruposFinanceiros);
+        setPlanoDespesasFinanceirasTotal(totalFinanceiros);
 
         // Log detalhado dos problemas encontrados
         console.log('🚨 ANÁLISE DE PROBLEMAS - DRE Despesas Operacionais:', {
@@ -1236,7 +1318,7 @@ const DRE = () => {
       'totalImpostos:',
       totalImpostos,
     );
-    // Despesas Operacionais a partir do Contas a Pagar (Emissão)
+    // Despesas Operacionais (exclui módulo de Despesas Financeiras)
     const despesasOperacionaisNode = {
       id: 'despesas-operacionais',
       label: 'Despesas Operacionais',
@@ -1245,6 +1327,16 @@ const DRE = () => {
       value: -planoDespesasTotal,
       type: 'despesa',
       children: planoDespesasNodes,
+    };
+
+    // Novo módulo pai de Despesas Financeiras
+    const despesasFinanceirasNode = {
+      id: 'despesas-financeiras',
+      label: 'Despesas Financeiras',
+      description: 'Encargos, juros e demais despesas financeiras.',
+      value: -planoDespesasFinanceirasTotal,
+      type: 'despesa',
+      children: planoDespesasFinanceirasNodes,
     };
 
     return [
@@ -1693,21 +1785,12 @@ const DRE = () => {
           },
         ],
       },
-      // Seção de Despesas Financeiras removida (AP)
-      {
-        id: 'despesas-financeiras',
-        label: 'Despesas Financeiras',
-        description:
-          'Seção removida (Contas a Pagar não utilizada nesta página).',
-        value: 0,
-        type: 'despesa',
-        children: [],
-      },
+      despesasFinanceirasNode,
       {
         id: 'lucro-antes-impostos',
         label: 'Lucro Antes do IR/CSLL',
         description: 'Resultado antes dos impostos sobre o lucro.',
-        value: lucroBruto - planoDespesasTotal - 0,
+        value: lucroBruto - planoDespesasTotal - planoDespesasFinanceirasTotal,
         type: 'resultado',
         children: [],
       },
@@ -1739,7 +1822,8 @@ const DRE = () => {
         label: 'Lucro Líquido do Exercício',
         description:
           'Resultado Operacional - Despesas Financeiras - Impostos sobre o Lucro',
-        value: lucroBruto - planoDespesasTotal - 0 - 0,
+        value:
+          lucroBruto - planoDespesasTotal - planoDespesasFinanceirasTotal - 0,
         type: 'resultado-final',
         children: [],
       },
@@ -1758,6 +1842,7 @@ const DRE = () => {
     totalImpostos,
     planoDespesasTotal,
     planoDespesasNodes,
+    planoDespesasFinanceirasNodes,
     totaisVarejo,
     totaisMultimarcas,
     totaisFranquias,
@@ -1782,6 +1867,7 @@ const DRE = () => {
     lucroBrutoMultimarcas,
     lucroBrutoFranquias,
     lucroBrutoRevenda,
+    planoDespesasFinanceirasTotal,
   ]);
 
   const toggleNode = (nodeId) => {
