@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import useApiClient from '../hooks/useApiClient';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
 import {
   CaretDown,
   CaretRight,
@@ -14,6 +13,7 @@ import {
   FileText,
   Funnel,
 } from '@phosphor-icons/react';
+import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
 
 const DRE = () => {
   const api = useApiClient();
@@ -53,13 +53,9 @@ const DRE = () => {
     totalCMV: 0,
     totalLiquido: 0,
   });
-  // Plano de Contas (Contas a Pagar - Emissão)
+  // Despesas Operacionais (Contas a Pagar - Emissão)
   const [planoDespesasNodes, setPlanoDespesasNodes] = useState([]);
   const [planoDespesasTotal, setPlanoDespesasTotal] = useState(0);
-
-  // Despesas Financeiras (Contas a Pagar - Emissão)
-  const [despesasFinanceirasNodes, setDespesasFinanceirasNodes] = useState([]);
-  const [despesasFinanceirasTotal, setDespesasFinanceirasTotal] = useState(0);
 
   // Estados para impostos reais
   const [icms, setIcms] = useState(0);
@@ -906,540 +902,295 @@ const DRE = () => {
           dadosCP = contasPagar.data.rows;
         }
 
-        // Agrupar dados idênticos (mesma regra usada em ContasAPagar.jsx)
-        const agruparDadosIdenticosLocal = (dados) => {
-          const grupos = new Map();
-
-          dados.forEach((item) => {
-            // Criar chave única SEM vl_rateio para manter totais corretos
-            const chave = `${item.cd_fornecedor}|${item.nm_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.tp_previsaoreal}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
-
-            if (!grupos.has(chave)) {
-              grupos.set(chave, {
-                item: item,
-                observacoes: [],
-                situacoes: [],
-                datasEmissao: [],
-                datasVencimento: [],
-                datasEntrada: [],
-                datasLiquidacao: [],
-                rateios: [],
-                quantidade: 0,
-              });
-            }
-
-            const grupo = grupos.get(chave);
-            grupo.quantidade += 1;
-
-            // Adicionar rateio se não existir
-            if (item.vl_rateio && !grupo.rateios.includes(item.vl_rateio)) {
-              grupo.rateios.push(item.vl_rateio);
-            }
-
-            // Adicionar observação se existir e for diferente
-            if (
-              item.ds_observacao &&
-              !grupo.observacoes.includes(item.ds_observacao)
-            ) {
-              grupo.observacoes.push(item.ds_observacao);
-            }
-
-            // Adicionar situação se existir e for diferente
-            if (
-              item.tp_situacao &&
-              !grupo.situacoes.includes(item.tp_situacao)
-            ) {
-              grupo.situacoes.push(item.tp_situacao);
-            }
-
-            // Adicionar previsão se existir e for diferente
-            if (item.tp_previsaoreal && !grupo.previsoes) {
-              grupo.previsoes = [];
-            }
-            if (
-              item.tp_previsaoreal &&
-              !grupo.previsoes.includes(item.tp_previsaoreal)
-            ) {
-              grupo.previsoes.push(item.tp_previsaoreal);
-            }
-
-            // Adicionar datas se existirem e forem diferentes
-            if (
-              item.dt_emissao &&
-              !grupo.datasEmissao.includes(item.dt_emissao)
-            ) {
-              grupo.datasEmissao.push(item.dt_emissao);
-            }
-            if (
-              item.dt_vencimento &&
-              !grupo.datasVencimento.includes(item.dt_vencimento)
-            ) {
-              grupo.datasVencimento.push(item.dt_vencimento);
-            }
-            if (
-              item.dt_entrada &&
-              !grupo.datasEntrada.includes(item.dt_entrada)
-            ) {
-              grupo.datasEntrada.push(item.dt_entrada);
-            }
-            if (item.dt_liq && !grupo.datasLiquidacao.includes(item.dt_liq)) {
-              grupo.datasLiquidacao.push(item.dt_liq);
-            }
-          });
-
-          return Array.from(grupos.values()).map((grupo) => {
-            // Priorizar situações
-            let situacaoFinal = grupo.item.tp_situacao;
-            if (grupo.situacoes.length > 1) {
-              if (grupo.situacoes.includes('C')) situacaoFinal = 'C';
-              else if (grupo.situacoes.includes('N')) situacaoFinal = 'N';
-            }
-
-            // Priorizar previsões: R > P > C
-            let previsaoFinal = grupo.item.tp_previsaoreal;
-            if (grupo.previsoes && grupo.previsoes.length > 1) {
-              if (grupo.previsoes.includes('R')) previsaoFinal = 'R';
-              else if (grupo.previsoes.includes('P')) previsaoFinal = 'P';
-              else if (grupo.previsoes.includes('C')) previsaoFinal = 'C';
-            }
-
-            // Datas relevantes (mais recente)
-            const dtEmissaoFinal =
-              grupo.datasEmissao.length > 0
-                ? grupo.datasEmissao.sort(
-                    (a, b) => new Date(b) - new Date(a),
-                  )[0]
-                : grupo.item.dt_emissao;
-            const dtVencimentoFinal =
-              grupo.datasVencimento.length > 0
-                ? grupo.datasVencimento.sort(
-                    (a, b) => new Date(b) - new Date(a),
-                  )[0]
-                : grupo.item.dt_vencimento;
-            const dtEntradaFinal =
-              grupo.datasEntrada.length > 0
-                ? grupo.datasEntrada.sort(
-                    (a, b) => new Date(b) - new Date(a),
-                  )[0]
-                : grupo.item.dt_entrada;
-            const dtLiqFinal =
-              grupo.datasLiquidacao.length > 0
-                ? grupo.datasLiquidacao.sort(
-                    (a, b) => new Date(b) - new Date(a),
-                  )[0]
-                : grupo.item.dt_liq;
-
-            return {
-              ...grupo,
-              item: {
-                ...grupo.item,
-                tp_situacao: situacaoFinal,
-                tp_previsaoreal: previsaoFinal,
-                dt_emissao: dtEmissaoFinal,
-                dt_vencimento: dtVencimentoFinal,
-                dt_entrada: dtEntradaFinal,
-                dt_liq: dtLiqFinal,
-              },
-            };
-          });
+        // Função de categoria por faixa de código (igual Contas a Pagar)
+        const getCategoriaByCodigo = (codigo) => {
+          if (codigo >= 1000 && codigo <= 1999) {
+            return 'CUSTO DAS MERCADORIAS VENDIDAS';
+          } else if (codigo >= 2000 && codigo <= 2999) {
+            return 'DESPESAS OPERACIONAIS';
+          } else if (codigo >= 3000 && codigo <= 3999) {
+            return 'DESPESAS COM PESSOAL';
+          } else if (codigo >= 4001 && codigo <= 4999) {
+            return 'ALUGUÉIS E ARRENDAMENTOS';
+          } else if (codigo >= 5000 && codigo <= 5999) {
+            return 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
+          } else if (codigo >= 6000 && codigo <= 6999) {
+            return 'DESPESAS GERAIS';
+          } else if (codigo >= 7000 && codigo <= 7999) {
+            return 'DESPESAS FINANCEIRAS';
+          } else if (codigo >= 8000 && codigo <= 8999) {
+            return 'OUTRAS DESPESAS OPERACIONAIS';
+          } else if (codigo >= 9000 && codigo <= 9999) {
+            return 'DESPESAS C/ VENDAS';
+          } else {
+            return 'SEM CLASSIFICAÇÃO';
+          }
         };
 
-        console.log('🔍 Debug DRE - dadosCP.length:', dadosCP.length);
-        console.log('🔍 Debug DRE - primeiro item:', dadosCP[0]);
-
-        const dadosAgrupadosCP = agruparDadosIdenticosLocal(dadosCP);
-        console.log(
-          '🔍 Debug DRE - dadosAgrupadosCP.length:',
-          dadosAgrupadosCP.length,
+        // Buscar nomes para despesas e fornecedores e agrupar: Categoria -> Despesa -> Fornecedor
+        const codigosDespesas = Array.from(
+          new Set((dadosCP || []).map((x) => x.cd_despesaitem).filter(Boolean)),
         );
-
-        // Filtrar apenas situação NORMAL (N) e previsão REAL (R ou código '2')
-        const dadosFiltradosCP = dadosAgrupadosCP.filter((g) => {
-          let situacaoFinal = g.item.tp_situacao;
-
-          if (g.situacoes.length > 1) {
-            if (g.situacoes.includes('C')) situacaoFinal = 'C';
-            else if (g.situacoes.includes('N')) situacaoFinal = 'N';
-          }
-
-          let previsaoFinal = g.item.tp_previsaoreal;
-          if (g.previsoes && g.previsoes.length > 1) {
-            if (g.previsoes.includes('R')) previsaoFinal = 'R';
-            else if (g.previsoes.includes('P')) previsaoFinal = 'P';
-            else if (g.previsoes.includes('C')) previsaoFinal = 'C';
-          }
-
-          return (
-            situacaoFinal === 'N' &&
-            (previsaoFinal === 'R' || previsaoFinal === '2')
-          );
-        });
-
-        console.log(
-          '🔍 Debug DRE - dadosFiltradosCP.length:',
-          dadosFiltradosCP.length,
+        const codigosFornecedores = Array.from(
+          new Set((dadosCP || []).map((x) => x.cd_fornecedor).filter(Boolean)),
         );
-
-        // Extrair códigos únicos de despesas e fornecedores
-        const codigosDespesa = [
-          ...new Set(
-            dadosFiltradosCP
-              .map((item) => parseInt(item.item.cd_despesaitem))
-              .filter((codigo) => codigo && !isNaN(codigo)),
-          ),
-        ];
-        const codigosFornecedor = [
-          ...new Set(
-            dadosFiltradosCP
-              .map((item) => parseInt(item.item.cd_fornecedor))
-              .filter((codigo) => codigo && !isNaN(codigo)),
-          ),
-        ];
 
         console.log('🔍 Códigos únicos encontrados:', {
-          despesas: codigosDespesa.length,
-          fornecedores: codigosFornecedor.length,
-          amostraDespesas: codigosDespesa.slice(0, 5),
-          amostraFornecedores: codigosFornecedor.slice(0, 5),
+          totalItens: dadosCP.length,
+          codigosDespesas: codigosDespesas.length,
+          codigosFornecedores: codigosFornecedores.length,
+          amostraCodigosDespesas: codigosDespesas.slice(0, 10),
+          amostraCodigosFornecedores: codigosFornecedores.slice(0, 10),
         });
 
-        // Buscar nomes das despesas
-        const despesasMap = new Map();
-        if (codigosDespesa.length > 0) {
-          try {
-            const despesasResponse = await api.financial.despesa({
-              cd_despesaitem: codigosDespesa,
-            });
-            if (
-              despesasResponse?.data &&
-              Array.isArray(despesasResponse.data)
-            ) {
-              despesasResponse.data.forEach((despesa) => {
-                if (despesa.cd_despesaitem && despesa.ds_despesaitem) {
-                  despesasMap.set(
-                    parseInt(despesa.cd_despesaitem),
-                    despesa.ds_despesaitem,
-                  );
-                }
-              });
-            }
-            console.log('📋 Despesas carregadas:', despesasMap.size);
-          } catch (error) {
-            console.warn('⚠️ Erro ao buscar despesas:', error);
-          }
+        let despesaMap = new Map();
+        let fornecedorMap = new Map();
+        try {
+          const [despesasResp, fornecedoresResp] = await Promise.all([
+            api.financial.despesa({ cd_despesaitem: codigosDespesas }),
+            api.financial.fornecedor({ cd_fornecedor: codigosFornecedores }),
+          ]);
+          const despesasData = Array.isArray(despesasResp?.data)
+            ? despesasResp.data
+            : Array.isArray(despesasResp)
+            ? despesasResp
+            : [];
+          const fornecedoresData = Array.isArray(fornecedoresResp?.data)
+            ? fornecedoresResp.data
+            : Array.isArray(fornecedoresResp)
+            ? fornecedoresResp
+            : [];
+          despesaMap = new Map(
+            despesasData
+              .filter((d) => d && d.cd_despesaitem !== undefined)
+              .map((d) => [d.cd_despesaitem, d]),
+          );
+          fornecedorMap = new Map(
+            fornecedoresData
+              .filter((f) => f && f.cd_fornecedor !== undefined)
+              .map((f) => [f.cd_fornecedor, f]),
+          );
+          console.log('📊 Resultados das buscas de nomes:', {
+            despesasEncontradas: despesaMap.size,
+            fornecedoresEncontrados: fornecedorMap.size,
+            despesasNaoEncontradas: codigosDespesas.filter(
+              (cd) => !despesaMap.has(cd),
+            ),
+            fornecedoresNaoEncontrados: codigosFornecedores.filter(
+              (cd) => !fornecedorMap.has(cd),
+            ),
+          });
+        } catch (errMaps) {
+          console.warn(
+            'Falha ao enriquecer nomes de despesa/fornecedor:',
+            errMaps,
+          );
         }
 
-        // Buscar nomes dos fornecedores
-        const fornecedoresMap = new Map();
-        if (codigosFornecedor.length > 0) {
-          try {
-            const fornecedoresResponse = await api.financial.fornecedor({
-              cd_fornecedor: codigosFornecedor,
-            });
-            if (
-              fornecedoresResponse?.data &&
-              Array.isArray(fornecedoresResponse.data)
-            ) {
-              fornecedoresResponse.data.forEach((fornecedor) => {
-                if (fornecedor.cd_fornecedor && fornecedor.nm_fornecedor) {
-                  fornecedoresMap.set(
-                    parseInt(fornecedor.cd_fornecedor),
-                    fornecedor.nm_fornecedor,
-                  );
-                }
-              });
-            }
-            console.log('👥 Fornecedores carregados:', fornecedoresMap.size);
-          } catch (error) {
-            console.warn('⚠️ Erro ao buscar fornecedores:', error);
-          }
-        }
+        const gruposMap = new Map();
+        let totalGeral = 0;
 
-        // Classificação por categoria (mesma lógica do ContasAPagar)
-        const classificarDespesa = (cdDespesa) => {
-          const codigo = parseInt(cdDespesa) || 0;
-          const categoriaExcecao = getCategoriaPorCodigo(codigo);
-          if (categoriaExcecao) return categoriaExcecao;
-          if (codigo >= 1000 && codigo <= 1999)
-            return 'CUSTO DAS MERCADORIAS VENDIDAS';
-          if (codigo >= 2000 && codigo <= 2999) return 'DESPESAS OPERACIONAIS';
-          if (codigo >= 3000 && codigo <= 3999) return 'DESPESAS COM PESSOAL';
-          if (codigo >= 4001 && codigo <= 4999)
-            return 'ALUGUÉIS E ARRENDAMENTOS';
-          if (codigo >= 5000 && codigo <= 5999)
-            return 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
-          if (codigo >= 6000 && codigo <= 6999) return 'DESPESAS GERAIS';
-          if (codigo >= 7000 && codigo <= 7999) return 'DESPESAS FINANCEIRAS';
-          if (codigo >= 8000 && codigo <= 8999)
-            return 'OUTRAS DESPESAS OPERACIONAIS';
-          if (codigo >= 9000 && codigo <= 9999) return 'DESPESAS C/ VENDAS';
-          return 'SEM CLASSIFICAÇÃO';
+        // Contadores para análise de problemas
+        const problemasAnalise = {
+          semClassificacao: [],
+          semDespesa: [],
+          codigosDespesaInvalidos: [],
+          codigosFornecedorInvalidos: [],
         };
 
-        // Categorias que NÃO devem aparecer nas despesas operacionais da DRE
-        const categoriasExcluidasDRE = [
-          'CUSTO DAS MERCADORIAS VENDIDAS',
-          'IMPOSTOS, TAXAS E CONTRIBUIÇÕES',
-          'ATIVOS',
-          'DESPESAS FINANCEIRAS',
-        ];
+        for (const item of dadosCP) {
+          const valorRateio = parseFloat(item.vl_rateio || 0) || 0;
+          const valorDuplicata = parseFloat(item.vl_duplicata || 0) || 0;
+          const valor = valorRateio !== 0 ? valorRateio : valorDuplicata;
+          totalGeral += valor;
 
-        // Agrupar: Categoria -> Despesa -> Fornecedor (com duplicata/parcela) e somar vl_duplicata
-        const categorias = new Map();
-        for (const grupo of dadosFiltradosCP) {
-          const item = grupo.item;
-          const categoria = classificarDespesa(item.cd_despesaitem);
+          const codigoDespesa = Number(item.cd_despesaitem) || 0;
+          const categoriaExcecao = getCategoriaPorCodigo(codigoDespesa);
+          const chaveGrupo =
+            categoriaExcecao || getCategoriaByCodigo(codigoDespesa);
 
-          // Filtrar categorias excluídas da DRE
-          if (categoriasExcluidasDRE.includes(categoria)) {
-            continue;
-          }
-
-          // Usar nomes reais das despesas e fornecedores
-          const nomeDespesa =
-            despesasMap.get(parseInt(item.cd_despesaitem)) ||
-            item.ds_despesaitem ||
-            'SEM DESCRIÇÃO';
-          const nomeFornecedor =
-            fornecedoresMap.get(parseInt(item.cd_fornecedor)) ||
-            item.nm_fornecedor ||
-            'SEM FORNECEDOR';
-          const nrDuplicata = item.nr_duplicata || '';
-          const nrParcela = item.nr_parcela || '';
-          const valor = parseFloat(item.vl_duplicata || 0) || 0;
-
-          if (!categorias.has(categoria)) {
-            categorias.set(categoria, new Map()); // map de despesas
-          }
-          const despesasMapLocal = categorias.get(categoria);
-          if (!despesasMapLocal.has(nomeDespesa)) {
-            despesasMapLocal.set(nomeDespesa, new Map()); // map de fornecedores/chaves
-          }
-          const fornecedoresMapLocal = despesasMapLocal.get(nomeDespesa);
-          const chaveFornecedor = `${item.cd_empresa || ''}|${
-            item.cd_fornecedor || ''
-          }|${nomeFornecedor}|${nrDuplicata}|${nrParcela}`;
-          fornecedoresMapLocal.set(
-            chaveFornecedor,
-            (fornecedoresMapLocal.get(chaveFornecedor) || 0) + valor,
-          );
-        }
-
-        // Ordem de categorias para DRE (sem CMV, Impostos e Ativos)
-        const ordemCategorias = [
-          'DESPESAS OPERACIONAIS',
-          'DESPESAS COM PESSOAL',
-          'ALUGUÉIS E ARRENDAMENTOS',
-          'DESPESAS GERAIS',
-          'OUTRAS DESPESAS OPERACIONAIS',
-          'DESPESAS C/ VENDAS',
-          'SEM CLASSIFICAÇÃO',
-        ];
-
-        // Transformar em nós do tree view do DRE
-        const nodes = [];
-        let totalGeral = 0;
-        for (const catNome of ordemCategorias) {
-          if (!categorias.has(catNome)) continue;
-          const despesasMapLocal = categorias.get(catNome);
-
-          const despesasNodes = [];
-          let totalCategoria = 0;
-          for (const [
-            despesaNome,
-            fornecedoresMapLocal,
-          ] of despesasMapLocal.entries()) {
-            const fornecedoresNodes = [];
-            let totalDespesa = 0;
-            for (const [chaveForn, vl] of fornecedoresMapLocal.entries()) {
-              const [empCod, fornCod, fornNome, dup, parc] =
-                chaveForn.split('|');
-              totalDespesa += vl;
-              fornecedoresNodes.push({
-                id: `forn-${catNome}-${despesaNome}-${empCod}-${fornCod}-${dup}-${parc}`,
-                label: `${fornNome}`,
-                description: `Empresa: ${empCod} | Fornecedor: ${fornCod} | Duplicata: ${
-                  dup || '-'
-                } | Parcela: ${parc || '-'}`,
-                value: -vl,
-                type: 'despesa',
-                children: [],
-              });
-            }
-            // Ordenar fornecedores desc por valor
-            fornecedoresNodes.sort(
-              (a, b) => Math.abs(b.value) - Math.abs(a.value),
-            );
-
-            totalCategoria += totalDespesa;
-            despesasNodes.push({
-              id: `desp-${catNome}-${despesaNome}`,
-              label: despesaNome,
-              description: `${
-                fornecedoresNodes.length
-              } fornecedor(es) | Total: ${totalDespesa.toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              })}`,
-              value: -totalDespesa,
-              type: 'despesa',
-              children: fornecedoresNodes,
+          // Analisar problemas de classificação
+          if (chaveGrupo === 'SEM CLASSIFICAÇÃO') {
+            problemasAnalise.semClassificacao.push({
+              cd_despesaitem: item.cd_despesaitem,
+              cd_fornecedor: item.cd_fornecedor,
+              nr_duplicata: item.nr_duplicata,
+              valor: valor,
+              motivo: `Código ${codigoDespesa} não está em nenhuma faixa (1000-1999, 2000-2999, etc.) nem nas exceções`,
             });
           }
-          // Ordenar despesas desc por valor
-          despesasNodes.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
 
-          totalGeral += totalCategoria;
-          nodes.push({
-            id: `cat-${catNome}`,
-            label: catNome,
-            description: `${
-              despesasNodes.length
-            } despesa(s) | ${despesasNodes.reduce(
-              (acc, desp) => acc + desp.children.length,
-              0,
-            )} fornecedor(es) | Total: ${totalCategoria.toLocaleString(
-              'pt-BR',
-              { style: 'currency', currency: 'BRL' },
-            )}`,
-            value: -totalCategoria,
-            type: 'despesa',
-            children: despesasNodes,
-          });
+          // Verificar se código de despesa é inválido
+          if (
+            !item.cd_despesaitem ||
+            item.cd_despesaitem === '' ||
+            item.cd_despesaitem === null
+          ) {
+            problemasAnalise.codigosDespesaInvalidos.push({
+              cd_fornecedor: item.cd_fornecedor,
+              nr_duplicata: item.nr_duplicata,
+              valor: valor,
+              motivo: 'cd_despesaitem está vazio, null ou undefined',
+            });
+          }
+          if (!gruposMap.has(chaveGrupo)) {
+            gruposMap.set(chaveGrupo, {
+              id: `grp-${chaveGrupo}`,
+              label: chaveGrupo,
+              description: '',
+              value: 0,
+              type: 'despesa',
+              children: [],
+              _despesas: new Map(),
+            });
+          }
+          const grupo = gruposMap.get(chaveGrupo);
+
+          const nomeDespesa = (
+            despesaMap.get(item.cd_despesaitem)?.ds_despesaitem ||
+            item.ds_despesaitem ||
+            'SEM DESPESA'
+          )
+            .toString()
+            .trim();
+
+          // Analisar problemas de nome de despesa
+          if (nomeDespesa === 'SEM DESPESA') {
+            problemasAnalise.semDespesa.push({
+              cd_despesaitem: item.cd_despesaitem,
+              cd_fornecedor: item.cd_fornecedor,
+              nr_duplicata: item.nr_duplicata,
+              valor: valor,
+              motivo: `Código ${item.cd_despesaitem} não encontrado na API /despesa nem tem ds_despesaitem no item original`,
+              temNaAPI: despesaMap.has(item.cd_despesaitem),
+              temNoItem: !!item.ds_despesaitem,
+            });
+          }
+          if (!grupo._despesas.has(nomeDespesa)) {
+            grupo._despesas.set(nomeDespesa, {
+              id: `desp-${chaveGrupo}-${nomeDespesa}`,
+              label: nomeDespesa,
+              description: '',
+              value: 0,
+              type: 'despesa',
+              children: [],
+              _forn: new Map(),
+              _fornCount: 0,
+            });
+          }
+          const nodoDespesa = grupo._despesas.get(nomeDespesa);
+
+          const fornInfo = fornecedorMap.get(item.cd_fornecedor);
+          const nmFornecedor = (
+            fornInfo?.nm_fornecedor ||
+            item.nm_fornecedor ||
+            item.cd_fornecedor ||
+            'Fornecedor'
+          ).toString();
+          const fornKey = String(item.cd_fornecedor || nmFornecedor);
+          if (!nodoDespesa._forn.has(fornKey)) {
+            nodoDespesa._forn.set(fornKey, {
+              id: `forn-${fornKey}`,
+              label: nmFornecedor,
+              description: [
+                `Empresa: ${item.cd_empresa || '-'}`,
+                `Fornecedor: ${item.cd_fornecedor || '-'}`,
+                `Duplicata: ${item.nr_duplicata || '-'}`,
+                `Parcela: ${item.nr_parcela || '-'}`,
+              ].join(' | '),
+              value: 0,
+              type: 'despesa',
+              children: [],
+            });
+            nodoDespesa._fornCount += 1;
+          }
+          const nodoFornecedor = nodoDespesa._forn.get(fornKey);
+          nodoFornecedor.value += -valor;
+
+          nodoDespesa.value += -valor;
+          grupo.value += -valor;
         }
 
-        console.log('🔍 Debug DRE - nodes.length:', nodes.length);
-        console.log('🔍 Debug DRE - totalGeral:', totalGeral);
-        console.log('🔍 Debug DRE - nodes:', nodes);
+        // Materializar árvores e ordenar
+        const grupos = Array.from(gruposMap.values()).map((g) => {
+          const despesasArr = Array.from(g._despesas.values()).map((d) => {
+            d.description = `${d._fornCount} fornecedor(es) | Total: ${Number(
+              Math.abs(d.value),
+            ).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`;
+            d.children = Array.from(d._forn.values()).sort(
+              (a, b) => Math.abs(b.value) - Math.abs(a.value),
+            );
+            return d;
+          });
+          despesasArr.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+          g.children = despesasArr;
+          delete g._despesas;
+          return g;
+        });
+        grupos.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
 
-        setPlanoDespesasNodes(nodes);
+        setPlanoDespesasNodes(grupos);
         setPlanoDespesasTotal(totalGeral);
 
-        // Processar Despesas Financeiras separadamente
-        const categoriasFinanceiras = new Map();
-        for (const grupo of dadosFiltradosCP) {
-          const item = grupo.item;
-          const categoria = classificarDespesa(item.cd_despesaitem);
+        // Log detalhado dos problemas encontrados
+        console.log('🚨 ANÁLISE DE PROBLEMAS - DRE Despesas Operacionais:', {
+          totalItensProcessados: dadosCP.length,
+          problemas: {
+            semClassificacao: {
+              quantidade: problemasAnalise.semClassificacao.length,
+              itens: problemasAnalise.semClassificacao,
+              resumo: problemasAnalise.semClassificacao.reduce((acc, item) => {
+                const codigo = item.cd_despesaitem;
+                if (!acc[codigo]) acc[codigo] = { count: 0, valor: 0 };
+                acc[codigo].count++;
+                acc[codigo].valor += item.valor;
+                return acc;
+              }, {}),
+            },
+            semDespesa: {
+              quantidade: problemasAnalise.semDespesa.length,
+              itens: problemasAnalise.semDespesa,
+              resumo: problemasAnalise.semDespesa.reduce((acc, item) => {
+                const codigo = item.cd_despesaitem;
+                if (!acc[codigo])
+                  acc[codigo] = {
+                    count: 0,
+                    valor: 0,
+                    temNaAPI: item.temNaAPI,
+                    temNoItem: item.temNoItem,
+                  };
+                acc[codigo].count++;
+                acc[codigo].valor += item.valor;
+                return acc;
+              }, {}),
+            },
+            codigosDespesaInvalidos: {
+              quantidade: problemasAnalise.codigosDespesaInvalidos.length,
+              itens: problemasAnalise.codigosDespesaInvalidos,
+            },
+          },
+          recomendacoes: {
+            paraSemClassificacao:
+              'Adicionar códigos nas exceções de categoriasDespesas.js ou criar nova faixa',
+            paraSemDespesa:
+              'Verificar se códigos existem na tabela de despesas ou adicionar ds_despesaitem nos dados originais',
+            paraCodigosInvalidos:
+              'Verificar integridade dos dados de cd_despesaitem',
+          },
+        });
 
-          // Incluir apenas DESPESAS FINANCEIRAS
-          if (categoria !== 'DESPESAS FINANCEIRAS') {
-            continue;
-          }
-
-          // Usar nomes reais das despesas e fornecedores
-          const nomeDespesa =
-            despesasMap.get(parseInt(item.cd_despesaitem)) ||
-            item.ds_despesaitem ||
-            'SEM DESCRIÇÃO';
-          const nomeFornecedor =
-            fornecedoresMap.get(parseInt(item.cd_fornecedor)) ||
-            item.nm_fornecedor ||
-            'SEM FORNECEDOR';
-
-          // Filtrar despesas que contenham "EMPRÉSTIMO" no nome (case insensitive)
-          if (
-            nomeDespesa.toUpperCase().includes('EMPRÉSTIMO') ||
-            nomeDespesa.toUpperCase().includes('EMPRESTIMO')
-          ) {
-            console.log(
-              '🚫 Despesa financeira bloqueada (empréstimo):',
-              nomeDespesa,
-            );
-            continue;
-          }
-          const nrDuplicata = item.nr_duplicata || '';
-          const nrParcela = item.nr_parcela || '';
-          const valor = parseFloat(item.vl_duplicata || 0) || 0;
-
-          if (!categoriasFinanceiras.has(categoria)) {
-            categoriasFinanceiras.set(categoria, new Map());
-          }
-          const despesasMapLocal = categoriasFinanceiras.get(categoria);
-          if (!despesasMapLocal.has(nomeDespesa)) {
-            despesasMapLocal.set(nomeDespesa, new Map());
-          }
-          const fornecedoresMapLocal = despesasMapLocal.get(nomeDespesa);
-          const chaveFornecedor = `${item.cd_empresa || ''}|${
-            item.cd_fornecedor || ''
-          }|${nomeFornecedor}|${nrDuplicata}|${nrParcela}`;
-          fornecedoresMapLocal.set(
-            chaveFornecedor,
-            (fornecedoresMapLocal.get(chaveFornecedor) || 0) + valor,
+        // Notificação visual se houver problemas
+        if (
+          problemasAnalise.semClassificacao.length > 0 ||
+          problemasAnalise.semDespesa.length > 0
+        ) {
+          const totalProblemas =
+            problemasAnalise.semClassificacao.length +
+            problemasAnalise.semDespesa.length;
+          console.warn(
+            `⚠️ ATENÇÃO: ${totalProblemas} itens com problemas de classificação encontrados. Verifique o console para detalhes.`,
           );
         }
-
-        // Processar nodes das despesas financeiras
-        const financeirasNodes = [];
-        let totalFinanceiras = 0;
-        for (const [
-          catNome,
-          despesasMapLocal,
-        ] of categoriasFinanceiras.entries()) {
-          const despesasNodes = [];
-          let totalCategoria = 0;
-          for (const [
-            despesaNome,
-            fornecedoresMapLocal,
-          ] of despesasMapLocal.entries()) {
-            const fornecedoresNodes = [];
-            let totalDespesa = 0;
-            for (const [chaveForn, vl] of fornecedoresMapLocal.entries()) {
-              const [empCod, fornCod, fornNome, dup, parc] =
-                chaveForn.split('|');
-              totalDespesa += vl;
-              fornecedoresNodes.push({
-                id: `fin-forn-${catNome}-${despesaNome}-${empCod}-${fornCod}-${dup}-${parc}`,
-                label: `${fornNome}`,
-                description: `Empresa: ${empCod} | Fornecedor: ${fornCod} | Duplicata: ${
-                  dup || '-'
-                } | Parcela: ${parc || '-'}`,
-                value: -vl,
-                type: 'despesa',
-                children: [],
-              });
-            }
-            fornecedoresNodes.sort(
-              (a, b) => Math.abs(b.value) - Math.abs(a.value),
-            );
-
-            totalCategoria += totalDespesa;
-            despesasNodes.push({
-              id: `fin-desp-${catNome}-${despesaNome}`,
-              label: despesaNome,
-              description: `${
-                fornecedoresNodes.length
-              } fornecedor(es) | Total: ${totalDespesa.toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              })}`,
-              value: -totalDespesa,
-              type: 'despesa',
-              children: fornecedoresNodes,
-            });
-          }
-          despesasNodes.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
-
-          totalFinanceiras += totalCategoria;
-          financeirasNodes.push({
-            id: `fin-cat-${catNome}`,
-            label: catNome,
-            description: `${
-              despesasNodes.length
-            } despesa(s) | ${despesasNodes.reduce(
-              (acc, desp) => acc + desp.children.length,
-              0,
-            )} fornecedor(es) | Total: ${totalCategoria.toLocaleString(
-              'pt-BR',
-              { style: 'currency', currency: 'BRL' },
-            )}`,
-            value: -totalCategoria,
-            type: 'despesa',
-            children: despesasNodes,
-          });
-        }
-
-        setDespesasFinanceirasNodes(financeirasNodes);
-        setDespesasFinanceirasTotal(totalFinanceiras);
       } catch (error) {
         console.error(
           'Erro ao buscar/gerar Plano de Contas (AP Emissão):',
@@ -1447,8 +1198,6 @@ const DRE = () => {
         );
         setPlanoDespesasNodes([]);
         setPlanoDespesasTotal(0);
-        setDespesasFinanceirasNodes([]);
-        setDespesasFinanceirasTotal(0);
       }
     } catch (err) {
       console.error('Erro ao buscar vendas brutas:', err);
@@ -1487,12 +1236,12 @@ const DRE = () => {
       'totalImpostos:',
       totalImpostos,
     );
-    // Montar nó de Despesas Operacionais a partir do Plano de Contas (AP Emissão)
+    // Despesas Operacionais a partir do Contas a Pagar (Emissão)
     const despesasOperacionaisNode = {
       id: 'despesas-operacionais',
       label: 'Despesas Operacionais',
       description:
-        'Despesas por categorias e despesas oriundas das Contas a Pagar (Emissão).',
+        'Linhas de Contas a Pagar (Emissão), para classificação posterior.',
       value: -planoDespesasTotal,
       type: 'despesa',
       children: planoDespesasNodes,
@@ -1944,21 +1693,21 @@ const DRE = () => {
           },
         ],
       },
-      // Nova aba: Despesas Financeiras
+      // Seção de Despesas Financeiras removida (AP)
       {
         id: 'despesas-financeiras',
         label: 'Despesas Financeiras',
         description:
-          'Despesas financeiras oriundas das Contas a Pagar (Emissão).',
-        value: -despesasFinanceirasTotal,
+          'Seção removida (Contas a Pagar não utilizada nesta página).',
+        value: 0,
         type: 'despesa',
-        children: despesasFinanceirasNodes,
+        children: [],
       },
       {
         id: 'lucro-antes-impostos',
         label: 'Lucro Antes do IR/CSLL',
         description: 'Resultado antes dos impostos sobre o lucro.',
-        value: lucroBruto - planoDespesasTotal - despesasFinanceirasTotal,
+        value: lucroBruto - planoDespesasTotal - 0,
         type: 'resultado',
         children: [],
       },
@@ -1990,7 +1739,7 @@ const DRE = () => {
         label: 'Lucro Líquido do Exercício',
         description:
           'Resultado Operacional - Despesas Financeiras - Impostos sobre o Lucro',
-        value: lucroBruto - planoDespesasTotal - despesasFinanceirasTotal - 0,
+        value: lucroBruto - planoDespesasTotal - 0 - 0,
         type: 'resultado-final',
         children: [],
       },
@@ -2009,8 +1758,6 @@ const DRE = () => {
     totalImpostos,
     planoDespesasTotal,
     planoDespesasNodes,
-    despesasFinanceirasTotal,
-    despesasFinanceirasNodes,
     totaisVarejo,
     totaisMultimarcas,
     totaisFranquias,

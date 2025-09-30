@@ -10,12 +10,13 @@ export const useMetasSemanais = () => {
   // =============================================================================
 
   /**
-   * Obtém o primeiro dia da semana (segunda-feira) de uma data
+   * Obtém o primeiro dia da semana (segunda-feira) de uma data - ISO 8601
    */
   const obterInicioSemana = useCallback((data) => {
     const date = new Date(data);
     const day = date.getDay();
     // Domingo = 0, Segunda = 1, etc.
+    // ISO 8601: Segunda-feira é o primeiro dia da semana
     const diff = day === 0 ? -6 : 1 - day; // Ajusta para segunda-feira
     const inicioSemana = new Date(date);
     inicioSemana.setDate(date.getDate() + diff);
@@ -23,12 +24,13 @@ export const useMetasSemanais = () => {
   }, []);
 
   /**
-   * Obtém o último dia da semana (domingo) de uma data
+   * Obtém o último dia da semana (domingo) de uma data - ISO 8601
    */
   const obterFimSemana = useCallback((data) => {
     const date = new Date(data);
     const day = date.getDay();
     // Domingo = 0, Segunda = 1, etc.
+    // ISO 8601: Domingo é o último dia da semana
     const diff = day === 0 ? 0 : 7 - day; // Ajusta para domingo
     const fimSemana = new Date(date);
     fimSemana.setDate(date.getDate() + diff);
@@ -36,7 +38,24 @@ export const useMetasSemanais = () => {
   }, []);
 
   /**
-   * Obtém o número da semana no mês (1-5)
+   * Obtém o número da semana do ano (método ISO 8601 correto)
+   */
+  const obterSemanaAnoISO = useCallback((data) => {
+    const date = new Date(data);
+    const target = new Date(date.valueOf());
+    const dayNr = (date.getDay() + 6) % 7; // Segunda-feira = 0, Domingo = 6
+    target.setDate(target.getDate() - dayNr + 3); // Vai para a quinta-feira da semana
+    const firstThursday = target.valueOf();
+    target.setMonth(0, 1); // 1º de janeiro
+    if (target.getDay() !== 4) {
+      // Se não for quinta-feira
+      target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
+    }
+    return 1 + Math.ceil((firstThursday - target) / 604800000); // 604800000 = 7 dias em ms
+  }, []);
+
+  /**
+   * Obtém o número da semana no mês (1-5) - mantido para compatibilidade
    */
   const obterNumeroSemanaMes = useCallback(
     (data) => {
@@ -54,62 +73,99 @@ export const useMetasSemanais = () => {
   );
 
   /**
-   * Gera todas as semanas de um mês
+   * Gera todas as semanas de um mês seguindo ISO 8601
    */
-  const gerarSemanasDoMes = useCallback((mes) => {
-    const [ano, mesNum] = mes.split('-');
-    const primeiroDia = new Date(parseInt(ano), parseInt(mesNum) - 1, 1);
-    const ultimoDia = new Date(parseInt(ano), parseInt(mesNum), 0);
-
-    console.log(`🔍 [useMetasSemanais] Gerando semanas para ${mes}:`, {
-      primeiroDia: primeiroDia.toISOString().split('T')[0],
-      ultimoDia: ultimoDia.toISOString().split('T')[0],
-      mesNum,
-    });
-
-    const semanas = [];
-    let semanaAtual = 1;
-    let dataInicio = new Date(primeiroDia);
-
-    // Usar a mesma lógica do componente principal
-    while (dataInicio <= ultimoDia) {
-      const dataFim = new Date(dataInicio);
-      dataFim.setDate(dataInicio.getDate() + 6); // 6 dias depois = 7 dias total
-
-      // Se a data fim ultrapassar o último dia do mês, ajustar
-      if (dataFim > ultimoDia) {
-        dataFim.setTime(ultimoDia.getTime());
-      }
-
-      const semana = {
-        numero: semanaAtual,
-        inicio: dataInicio.toISOString().split('T')[0],
-        fim: dataFim.toISOString().split('T')[0],
-        label: `Semana ${semanaAtual}`,
-        periodo: `${dataInicio.toISOString().split('T')[0]} a ${
-          dataFim.toISOString().split('T')[0]
-        }`,
-      };
-
-      semanas.push(semana);
+  const gerarSemanasDoMes = useCallback(
+    (mes) => {
+      const [ano, mesNum] = mes.split('-');
+      const primeiroDia = new Date(parseInt(ano), parseInt(mesNum) - 1, 1);
+      const ultimoDia = new Date(parseInt(ano), parseInt(mesNum), 0);
 
       console.log(
-        `📅 [useMetasSemanais] Semana ${semanaAtual} gerada:`,
-        semana,
+        `🔍 [useMetasSemanais] Gerando semanas ISO 8601 para ${mes}:`,
+        {
+          primeiroDia: primeiroDia.toISOString().split('T')[0],
+          ultimoDia: ultimoDia.toISOString().split('T')[0],
+          mesNum,
+        },
       );
 
-      // Próxima semana começa 7 dias depois
-      dataInicio.setDate(dataInicio.getDate() + 7);
-      semanaAtual++;
-    }
+      const semanas = [];
 
-    console.log(
-      `✅ [useMetasSemanais] Total de semanas geradas para ${mes}:`,
-      semanas.length,
-      semanas,
-    );
-    return semanas;
-  }, []);
+      // Encontrar a primeira segunda-feira do mês (ou antes, se o mês começar no meio da semana)
+      let dataInicio = new Date(obterInicioSemana(primeiroDia));
+
+      // Se a primeira segunda-feira for antes do primeiro dia do mês, começar do primeiro dia
+      if (dataInicio < primeiroDia) {
+        dataInicio = new Date(primeiroDia);
+      }
+
+      let semanaAtual = 1;
+
+      // Gerar semanas seguindo ISO 8601 (segunda a domingo)
+      while (dataInicio <= ultimoDia) {
+        // Calcular fim da semana (domingo)
+        const dataFim = new Date(obterFimSemana(dataInicio));
+
+        // Se a data fim ultrapassar o último dia do mês, ajustar
+        if (dataFim > ultimoDia) {
+          dataFim.setTime(ultimoDia.getTime());
+        }
+
+        // Obter número da semana do ano (ISO 8601)
+        const semanaAno = obterSemanaAnoISO(dataInicio);
+
+        const semana = {
+          numero: semanaAtual, // Número sequencial no mês (1, 2, 3, 4, 5)
+          numeroAno: semanaAno, // Número da semana no ano (ISO 8601)
+          inicio: dataInicio.toISOString().split('T')[0],
+          fim: dataFim.toISOString().split('T')[0],
+          label: `Semana ${semanaAtual} (${semanaAno})`,
+          periodo: `${dataInicio.toISOString().split('T')[0]} a ${
+            dataFim.toISOString().split('T')[0]
+          }`,
+          diasSemana: {
+            segunda: dataInicio.toISOString().split('T')[0],
+            terca: new Date(dataInicio.getTime() + 24 * 60 * 60 * 1000)
+              .toISOString()
+              .split('T')[0],
+            quarta: new Date(dataInicio.getTime() + 2 * 24 * 60 * 60 * 1000)
+              .toISOString()
+              .split('T')[0],
+            quinta: new Date(dataInicio.getTime() + 3 * 24 * 60 * 60 * 1000)
+              .toISOString()
+              .split('T')[0],
+            sexta: new Date(dataInicio.getTime() + 4 * 24 * 60 * 60 * 1000)
+              .toISOString()
+              .split('T')[0],
+            sabado: new Date(dataInicio.getTime() + 5 * 24 * 60 * 60 * 1000)
+              .toISOString()
+              .split('T')[0],
+            domingo: dataFim.toISOString().split('T')[0],
+          },
+        };
+
+        semanas.push(semana);
+
+        console.log(
+          `📅 [useMetasSemanais] Semana ${semanaAtual} (${semanaAno}) gerada:`,
+          semana,
+        );
+
+        // Próxima semana começa na segunda-feira seguinte
+        dataInicio.setDate(dataInicio.getDate() + 7);
+        semanaAtual++;
+      }
+
+      console.log(
+        `✅ [useMetasSemanais] Total de semanas geradas para ${mes}:`,
+        semanas.length,
+        semanas,
+      );
+      return semanas;
+    },
+    [obterInicioSemana, obterFimSemana, obterSemanaAnoISO],
+  );
 
   // =============================================================================
   // FUNÇÕES AUXILIARES PARA CÁLCULOS DE METAS
@@ -788,6 +844,7 @@ export const useMetasSemanais = () => {
     obterInicioSemana,
     obterFimSemana,
     obterNumeroSemanaMes,
+    obterSemanaAnoISO,
     gerarSemanasDoMes,
     calcularMetasSemanaisDeMensal,
     calcularMetaMensalDeSemanais,

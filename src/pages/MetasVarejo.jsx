@@ -20,6 +20,7 @@ const MetasVarejo = () => {
   } = useMetas();
   const {
     gerarSemanasDoMes,
+    obterSemanaAnoISO,
     buscarMetasSemanaisAgrupadas,
     buscarMetasMensaisCalculadas,
     salvarMetaSemanalIndividual,
@@ -99,7 +100,7 @@ const MetasVarejo = () => {
     }));
   };
 
-  // Função para gerar períodos de semanas baseado no mês selecionado
+  // Função para gerar períodos de semanas baseado no mês selecionado - ISO 8601
   const gerarPeriodosSemanas = (mesSigla, ano) => {
     const mesesMap = {
       JAN: 1,
@@ -122,45 +123,66 @@ const MetasVarejo = () => {
     const primeiroDia = new Date(ano, mesNumero - 1, 1);
     const ultimoDia = new Date(ano, mesNumero, 0); // Último dia do mês
 
-    const semanas = [];
-    let semanaAtual = 1;
-    let dataInicio = new Date(primeiroDia);
-
-    console.log(`🔍 Gerando semanas para ${mesSigla}/${ano}:`, {
+    console.log(`🔍 Gerando semanas ISO 8601 para ${mesSigla}/${ano}:`, {
       primeiroDia: primeiroDia.toISOString().split('T')[0],
       ultimoDia: ultimoDia.toISOString().split('T')[0],
       mesNumero,
     });
 
-    while (dataInicio <= ultimoDia) {
-      const dataFim = new Date(dataInicio);
-      dataFim.setDate(dataInicio.getDate() + 6); // 6 dias depois = 7 dias total
-
-      // Se a data fim ultrapassar o último dia do mês, ajustar
-      if (dataFim > ultimoDia) {
-        dataFim.setTime(ultimoDia.getTime());
-      }
-
-      const semana = {
-        numero: semanaAtual,
-        inicio: dataInicio.toISOString().split('T')[0],
-        fim: dataFim.toISOString().split('T')[0],
-      };
-
-      semanas.push(semana);
-
-      console.log(`📅 Semana ${semanaAtual} gerada:`, semana);
-
-      // Próxima semana começa 7 dias depois
-      dataInicio.setDate(dataInicio.getDate() + 7);
-      semanaAtual++;
-    }
+    // Usar a função do hook que já implementa ISO 8601
+    const mes = `${ano}-${String(mesNumero).padStart(2, '0')}`;
+    const semanas = gerarSemanasDoMes(mes);
 
     console.log(
-      `✅ Total de semanas geradas para ${mesSigla}/${ano}:`,
+      `✅ Total de semanas ISO 8601 geradas para ${mesSigla}/${ano}:`,
       semanas.length,
       semanas,
     );
+    return semanas;
+  };
+
+  // Gera períodos semanais em blocos de 7 dias iniciando na data inicial (ex.: 01→07, 08→14, ...)
+  const gerarPeriodosSemanasPorDatas = (inicioStr, fimStr) => {
+    if (!inicioStr || !fimStr) return [];
+
+    const toDateOnly = (d) => {
+      // Evita deslocamento de timezone ao parsear 'YYYY-MM-DD'
+      if (typeof d === 'string') {
+        const [y, m, day] = d.split('-').map((v) => parseInt(v, 10));
+        return new Date(y, (m || 1) - 1, day || 1);
+      }
+      const x = new Date(d);
+      return new Date(x.getFullYear(), x.getMonth(), x.getDate());
+    };
+
+    const inicio = toDateOnly(inicioStr);
+    const fim = toDateOnly(fimStr);
+    if (inicio > fim) return [];
+
+    const semanas = [];
+    let semanaAtual = 1;
+    let cursor = new Date(inicio);
+    while (cursor <= fim) {
+      const inicioSemana = new Date(cursor);
+      // Garante primeira semana começando exatamente no primeiro dia do período
+      const fimSemana = new Date(inicioSemana);
+      fimSemana.setDate(inicioSemana.getDate() + 6);
+      if (fimSemana > fim) fimSemana.setTime(fim.getTime());
+
+      semanas.push({
+        numero: semanaAtual,
+        inicio: toISODateLocal(inicioSemana),
+        fim: toISODateLocal(fimSemana),
+        numeroAno:
+          typeof obterSemanaAnoISO === 'function'
+            ? obterSemanaAnoISO(inicioSemana)
+            : undefined,
+      });
+
+      cursor.setDate(cursor.getDate() + 7);
+      semanaAtual += 1;
+    }
+
     return semanas;
   };
 
@@ -370,6 +392,58 @@ const MetasVarejo = () => {
     const n = Number(num);
     if (isNaN(n)) return 'R$ 0,00';
     return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
+  // Formata Date para YYYY-MM-DD respeitando fuso local
+  const toISODateLocal = (d) => {
+    const date = new Date(d);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  // Formata data ISO (YYYY-MM-DD) para DD/MM
+  const formatDM = (iso) => {
+    if (!iso || typeof iso !== 'string') return '';
+    const parts = iso.split('-');
+    if (parts.length !== 3) return '';
+    const [yyyy, mm, dd] = parts;
+    return `${dd.padStart(2, '0')}/${mm.padStart(2, '0')}`;
+  };
+
+  // Função para calcular dias restantes da semana
+  const calcularDiasRestantesSemana = (fimSemana) => {
+    const hoje = new Date();
+    const fim = new Date(fimSemana);
+
+    // Normalizar as datas para comparar apenas o dia (sem hora)
+    const hojeNormalizado = new Date(
+      hoje.getFullYear(),
+      hoje.getMonth(),
+      hoje.getDate(),
+    );
+    const fimNormalizado = new Date(
+      fim.getFullYear(),
+      fim.getMonth(),
+      fim.getDate(),
+    );
+
+    const diffTime = fimNormalizado - hojeNormalizado;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    // Se a diferença for negativa, a semana já passou
+    // Se for 0, é o último dia da semana
+    // Se for positiva, são os dias restantes
+    return Math.max(0, diffDays);
+  };
+
+  // Calcula quanto falta por dia para bater a meta semanal
+  const calcularFaltaPorDia = (faltante, fimSemana) => {
+    const falt = Number(faltante) || 0;
+    const dias = calcularDiasRestantesSemana(fimSemana);
+    if (!dias || dias <= 0 || falt <= 0) return 0;
+    return falt / dias;
   };
 
   // Limpa caracteres inválidos, permite números e separadores "," e "."
@@ -1460,7 +1534,7 @@ const MetasVarejo = () => {
           <input
             type="text"
             inputMode="numeric"
-            className="w-20 px-2 py-0.5 border border-blue-400 rounded text-[9px] text-center focus:outline-none focus:ring-1 focus:ring-blue-400 bg-blue-50"
+            className="w-20 px-2 py-0.5 border border-blue-400 rounded text-[11px] text-center focus:outline-none focus:ring-1 focus:ring-blue-400 bg-blue-50"
             value={tempValue}
             placeholder="0,00"
             onChange={(e) => setTempValue(sanitizeInput(e.target.value))}
@@ -1474,7 +1548,7 @@ const MetasVarejo = () => {
           />
           <button
             type="button"
-            className="text-[8px] bg-gray-500 text-white px-2 py-0.5 rounded"
+            className="text-[11px] bg-gray-500 text-white px-2 py-0.5 rounded"
             onClick={cancelarEdicaoMeta}
           >
             Cancelar
@@ -1595,8 +1669,11 @@ const MetasVarejo = () => {
     setLoadingRanking(true);
 
     try {
-      // Gerar períodos de semanas baseado no mês selecionado
-      const periodosSemanas = gerarPeriodosSemanas(filtroMensal, filtroAno);
+      // Gerar períodos de semanas baseado no intervalo de datas selecionado
+      const periodosSemanas = gerarPeriodosSemanasPorDatas(
+        filtros.dt_inicio,
+        filtros.dt_fim,
+      );
       setSemanasCalculadas(periodosSemanas);
 
       console.log('📅 Períodos de semanas gerados:', periodosSemanas);
@@ -1615,10 +1692,22 @@ const MetasVarejo = () => {
         })),
       });
 
-      // Buscar dados de ranking de lojas e vendedores (mensais)
+      // Buscar dados de ranking de lojas e vendedores (usando período das semanas)
+      const periodoInicio = periodosSemanas[0]?.inicio || filtros.dt_inicio;
+      const periodoFim =
+        periodosSemanas[periodosSemanas.length - 1]?.fim || filtros.dt_fim;
+
+      console.log('📅 Período das semanas para busca de dados:', {
+        periodoInicio,
+        periodoFim,
+        semanas: periodosSemanas.length,
+        primeiraSemana: periodosSemanas[0],
+        ultimaSemana: periodosSemanas[periodosSemanas.length - 1],
+      });
+
       await Promise.all([
-        buscarDadosLojas(filtros.dt_inicio, filtros.dt_fim),
-        buscarDadosVendedores(filtros.dt_inicio, filtros.dt_fim),
+        buscarDadosLojas(periodoInicio, periodoFim),
+        buscarDadosVendedores(periodoInicio, periodoFim),
       ]);
 
       // Buscar metas existentes para o período
@@ -1971,6 +2060,7 @@ const MetasVarejo = () => {
 
       return {
         numero: semana.numero,
+        numeroAno: semana.numeroAno,
         inicio: semana.inicio,
         fim: semana.fim,
         faturamento: faturamentoSemanal,
@@ -2009,8 +2099,15 @@ const MetasVarejo = () => {
 
     const dadosSemanaAtual = dadosSemanas[semanaAtual - 1] || dadosSemanas[0];
 
+    // Obter número da semana do ano (ISO 8601) para a semana atual
+    const semanaAnoAtual =
+      dadosSemanaAtual.numeroAno || obterSemanaAnoISO(new Date());
+
     return {
-      semanaAtual: semanaAtual > 0 ? `S${semanaAtual}` : '-',
+      semanaAtual:
+        semanaAtual > 0
+          ? `S${semanaAtual}${semanaAnoAtual ? ` (${semanaAnoAtual})` : ''}`
+          : '-',
       metaSemanaAtual:
         dadosSemanaAtual.metaAtingida || dadosSemanaAtual.proximaMeta || 0,
       metaAtingida: dadosSemanaAtual.metaAtingida,
@@ -2969,82 +3066,37 @@ const MetasVarejo = () => {
               />
             </div>
 
-            {/* Filtro de Mês */}
-            <div
-              className="flex flex-col"
-              style={{ overflow: 'visible', zIndex: 1 }}
-            >
-              <label className="block text-xs font-semibold mb-1 text-[#000638]">
-                Selecione o período para análise
+            {/* Data Inicial */}
+            <div className="mb-2 lg:col-span-1">
+              <label className="block text-xs font-medium mb-1 text-gray-600">
+                Data Inicial
               </label>
+              <input
+                type="date"
+                value={filtros.dt_inicio}
+                onChange={(e) =>
+                  setFiltros((prev) => ({
+                    ...prev,
+                    dt_inicio: e.target.value,
+                  }))
+                }
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              />
+            </div>
 
-              {/* Filtro de Ano */}
-              <div className="mb-2">
-                <select
-                  value={filtroAno}
-                  onChange={(e) => setFiltroAno(parseInt(e.target.value))}
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-                >
-                  {Array.from({ length: 4 }, (_, i) => {
-                    const ano = new Date().getFullYear() - 1 + i;
-                    return (
-                      <option key={ano} value={ano}>
-                        {ano}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-
-              {/* Filtro de Mês */}
-              <div
-                className="flex flex-wrap gap-1 mt-3"
-                style={{
-                  overflow: 'visible',
-                  position: 'relative',
-                  zIndex: 10,
-                }}
-              >
-                {[
-                  'ANO',
-                  'JAN',
-                  'FEV',
-                  'MAR',
-                  'ABR',
-                  'MAI',
-                  'JUN',
-                  'JUL',
-                  'AGO',
-                  'SET',
-                  'OUT',
-                  'NOV',
-                  'DEZ',
-                ].map((mes) => (
-                  <button
-                    key={mes}
-                    type="button"
-                    onClick={() => {
-                      console.log(`Clicou no mês: ${mes}`);
-                      handleFiltroMensalChange(mes);
-                    }}
-                    disabled={false}
-                    style={{
-                      pointerEvents: 'auto',
-                      cursor: 'pointer',
-                      position: 'relative',
-                      zIndex: 10,
-                      userSelect: 'none',
-                    }}
-                    className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
-                      filtroMensal === mes
-                        ? 'bg-[#000638] text-white'
-                        : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
-                    }`}
-                  >
-                    {mes}
-                  </button>
-                ))}
-              </div>
+            {/* Data Final */}
+            <div className="mb-2 lg:col-span-1">
+              <label className="block text-xs font-medium mb-1 text-gray-600">
+                Data Final
+              </label>
+              <input
+                type="date"
+                value={filtros.dt_fim}
+                onChange={(e) =>
+                  setFiltros((prev) => ({ ...prev, dt_fim: e.target.value }))
+                }
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              />
             </div>
 
             {/* Filtro de Tipo de Loja */}
@@ -3067,7 +3119,7 @@ const MetasVarejo = () => {
             <div className="flex items-center">
               <button
                 type="submit"
-                disabled={loading || filtroMensal === 'ANO'}
+                disabled={loading || !filtros.dt_inicio || !filtros.dt_fim}
                 className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase w-full justify-center"
               >
                 {loading ? 'Buscando...' : 'Buscar'}
@@ -3192,11 +3244,11 @@ const MetasVarejo = () => {
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr>
-                      <th className="px-1 py-0.5 text-center text-[9px] whitespace-nowrap">
+                      <th className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap">
                         #
                       </th>
                       <th
-                        className="px-1 py-0.5 text-center text-[9px] cursor-pointer hover:bg-gray-100 transition-colors whitespace-nowrap"
+                        className="px-1 py-0.5 text-center text-[11px] cursor-pointer hover:bg-gray-100 transition-colors whitespace-nowrap"
                         onClick={() => handleOrdenacao('nome')}
                       >
                         <div className="flex items-center justify-center gap-1">
@@ -3209,7 +3261,7 @@ const MetasVarejo = () => {
                         </div>
                       </th>
                       <th
-                        className="px-1 py-0.5 text-center text-[9px] cursor-pointer hover:bg-gray-100 transition-colors whitespace-nowrap"
+                        className="px-1 py-0.5 text-center text-[11px] cursor-pointer hover:bg-gray-100 transition-colors whitespace-nowrap"
                         onClick={() => handleOrdenacao('faturamento')}
                       >
                         <div className="flex items-center justify-center gap-1">
@@ -3221,30 +3273,30 @@ const MetasVarejo = () => {
                           )}
                         </div>
                       </th>
-                      <th className="px-1 py-0.5 text-center text-[9px] whitespace-nowrap">
+                      <th className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap">
                         Ticket Médio
                       </th>
-                      <th className="px-1 py-0.5 text-center text-[9px] whitespace-nowrap">
+                      <th className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap">
                         PA
                       </th>
                       {visualizacaoTipo === 'MENSAL' ? (
                         <>
-                          <th className="px-1 py-0.5 text-center text-[9px] whitespace-nowrap">
+                          <th className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap">
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
                               Bronze
                             </span>
                           </th>
-                          <th className="px-1 py-0.5 text-center text-[9px] whitespace-nowrap">
+                          <th className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap">
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                               Prata
                             </span>
                           </th>
-                          <th className="px-1 py-0.5 text-center text-[9px] whitespace-nowrap">
+                          <th className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap">
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                               Ouro
                             </span>
                           </th>
-                          <th className="px-1 py-0.5 text-center text-[9px] whitespace-nowrap">
+                          <th className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap">
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                               Diamante
                             </span>
@@ -3258,7 +3310,7 @@ const MetasVarejo = () => {
                             semanasCalculadas.map((semana) => (
                               <th
                                 key={`bronze-${semana.numero}`}
-                                className="px-1 py-0.5 text-center text-[8px] whitespace-nowrap"
+                                className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap"
                               >
                                 <div className="flex flex-col">
                                   <span className="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
@@ -3266,12 +3318,21 @@ const MetasVarejo = () => {
                                   </span>
                                   <span className="text-[7px] text-gray-600 mt-0.5">
                                     S{semana.numero}
+                                    {semana.numeroAno && (
+                                      <span className="text-[9px] text-blue-600 ml-1">
+                                        ({semana.numeroAno})
+                                      </span>
+                                    )}
+                                    <span className="text-[9px] text-gray-400 ml-1">
+                                      {formatDM(semana.inicio)} -{' '}
+                                      {formatDM(semana.fim)}
+                                    </span>
                                   </span>
                                 </div>
                               </th>
                             ))
                           ) : (
-                            <th className="px-1 py-0.5 text-center text-[8px] whitespace-nowrap">
+                            <th className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap">
                               <span className="text-red-500 text-xs">
                                 Sem semanas
                               </span>
@@ -3282,7 +3343,7 @@ const MetasVarejo = () => {
                             semanasCalculadas.map((semana) => (
                               <th
                                 key={`prata-${semana.numero}`}
-                                className="px-1 py-0.5 text-center text-[8px] whitespace-nowrap"
+                                className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap"
                               >
                                 <div className="flex flex-col">
                                   <span className="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
@@ -3290,12 +3351,21 @@ const MetasVarejo = () => {
                                   </span>
                                   <span className="text-[7px] text-gray-600 mt-0.5">
                                     S{semana.numero}
+                                    {semana.numeroAno && (
+                                      <span className="text-[9px] text-blue-600 ml-1">
+                                        ({semana.numeroAno})
+                                      </span>
+                                    )}
+                                    <span className="text-[9px] text-gray-400 ml-1">
+                                      {formatDM(semana.inicio)} -{' '}
+                                      {formatDM(semana.fim)}
+                                    </span>
                                   </span>
                                 </div>
                               </th>
                             ))
                           ) : (
-                            <th className="px-1 py-0.5 text-center text-[8px] whitespace-nowrap">
+                            <th className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap">
                               <span className="text-red-500 text-xs">
                                 Sem semanas
                               </span>
@@ -3306,7 +3376,7 @@ const MetasVarejo = () => {
                             semanasCalculadas.map((semana) => (
                               <th
                                 key={`ouro-${semana.numero}`}
-                                className="px-1 py-0.5 text-center text-[8px] whitespace-nowrap"
+                                className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap"
                               >
                                 <div className="flex flex-col">
                                   <span className="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
@@ -3314,12 +3384,21 @@ const MetasVarejo = () => {
                                   </span>
                                   <span className="text-[7px] text-gray-600 mt-0.5">
                                     S{semana.numero}
+                                    {semana.numeroAno && (
+                                      <span className="text-[9px] text-blue-600 ml-1">
+                                        ({semana.numeroAno})
+                                      </span>
+                                    )}
+                                    <span className="text-[9px] text-gray-400 ml-1">
+                                      {formatDM(semana.inicio)} -{' '}
+                                      {formatDM(semana.fim)}
+                                    </span>
                                   </span>
                                 </div>
                               </th>
                             ))
                           ) : (
-                            <th className="px-1 py-0.5 text-center text-[8px] whitespace-nowrap">
+                            <th className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap">
                               <span className="text-red-500 text-xs">
                                 Sem semanas
                               </span>
@@ -3330,7 +3409,7 @@ const MetasVarejo = () => {
                             semanasCalculadas.map((semana) => (
                               <th
                                 key={`diamante-${semana.numero}`}
-                                className="px-1 py-0.5 text-center text-[8px] whitespace-nowrap"
+                                className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap"
                               >
                                 <div className="flex flex-col">
                                   <span className="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
@@ -3338,12 +3417,21 @@ const MetasVarejo = () => {
                                   </span>
                                   <span className="text-[7px] text-gray-600 mt-0.5">
                                     S{semana.numero}
+                                    {semana.numeroAno && (
+                                      <span className="text-[9px] text-blue-600 ml-1">
+                                        ({semana.numeroAno})
+                                      </span>
+                                    )}
+                                    <span className="text-[9px] text-gray-400 ml-1">
+                                      {formatDM(semana.inicio)} -{' '}
+                                      {formatDM(semana.fim)}
+                                    </span>
                                   </span>
                                 </div>
                               </th>
                             ))
                           ) : (
-                            <th className="px-1 py-0.5 text-center text-[8px] whitespace-nowrap">
+                            <th className="px-1 py-0.5 text-center text-[11px] whitespace-nowrap">
                               <span className="text-red-500 text-xs">
                                 Sem semanas
                               </span>
@@ -3362,7 +3450,7 @@ const MetasVarejo = () => {
                               ? 9
                               : 5 + semanasCalculadas.length * 4
                           }
-                          className="px-1 py-2 text-center text-[9px] text-gray-500"
+                          className="px-1 py-2 text-center text-[11px] text-gray-500"
                         >
                           Carregando dados...
                         </td>
@@ -3370,10 +3458,10 @@ const MetasVarejo = () => {
                     ) : (
                       dadosOrdenados().map((item) => (
                         <tr key={item.rank} className="hover:bg-gray-50">
-                          <td className="px-1 py-1 text-center text-[9px] font-medium whitespace-nowrap">
+                          <td className="px-1 py-1 text-center text-[11px] font-medium whitespace-nowrap">
                             {item.rank}
                           </td>
-                          <td className="px-1 py-1 text-center text-[9px] whitespace-nowrap">
+                          <td className="px-1 py-1 text-center text-[11px] whitespace-nowrap">
                             {rankingTipo === 'lojas'
                               ? item.nome_fantasia ||
                                 item.nome_loja ||
@@ -3387,10 +3475,10 @@ const MetasVarejo = () => {
                                 item.nome ||
                                 'N/A'}
                           </td>
-                          <td className="px-1 py-1 text-center text-[9px] font-semibold text-green-600 whitespace-nowrap">
+                          <td className="px-1 py-1 text-center text-[11px] font-semibold text-green-600 whitespace-nowrap">
                             R$ {item.faturamento.toLocaleString('pt-BR')}
                           </td>
-                          <td className="px-1 py-1 text-center text-[9px] whitespace-nowrap">
+                          <td className="px-1 py-1 text-center text-[11px] whitespace-nowrap">
                             {(() => {
                               const transacoesSaida = Number(
                                 rankingTipo === 'lojas'
@@ -3407,7 +3495,7 @@ const MetasVarejo = () => {
                               return '-';
                             })()}
                           </td>
-                          <td className="px-1 py-1 text-center text-[9px] whitespace-nowrap">
+                          <td className="px-1 py-1 text-center text-[11px] whitespace-nowrap">
                             {(() => {
                               // Se são dados de referência, retornar 0
                               if (item.isDadosReferencia) {
@@ -3428,7 +3516,7 @@ const MetasVarejo = () => {
                           </td>
                           {visualizacaoTipo === 'MENSAL' ? (
                             <>
-                              <td className="px-1 py-1 text-center text-[9px] whitespace-nowrap">
+                              <td className="px-1 py-1 text-center text-[11px] whitespace-nowrap">
                                 {renderCellEditor(
                                   `${rankingTipo}-${
                                     item.nome_fantasia ||
@@ -3438,7 +3526,7 @@ const MetasVarejo = () => {
                                   'text-amber-700',
                                 )}
                               </td>
-                              <td className="px-1 py-1 text-center text-[9px] whitespace-nowrap">
+                              <td className="px-1 py-1 text-center text-[11px] whitespace-nowrap">
                                 {renderCellEditor(
                                   `${rankingTipo}-${
                                     item.nome_fantasia ||
@@ -3448,7 +3536,7 @@ const MetasVarejo = () => {
                                   'text-gray-700',
                                 )}
                               </td>
-                              <td className="px-1 py-1 text-center text-[9px] whitespace-nowrap">
+                              <td className="px-1 py-1 text-center text-[11px] whitespace-nowrap">
                                 {renderCellEditor(
                                   `${rankingTipo}-${
                                     item.nome_fantasia ||
@@ -3458,7 +3546,7 @@ const MetasVarejo = () => {
                                   'text-yellow-700',
                                 )}
                               </td>
-                              <td className="px-1 py-1 text-center text-[9px] whitespace-nowrap">
+                              <td className="px-1 py-1 text-center text-[11px] whitespace-nowrap">
                                 {renderCellEditor(
                                   `${rankingTipo}-${
                                     item.nome_fantasia ||
@@ -3478,7 +3566,7 @@ const MetasVarejo = () => {
                                 semanasCalculadas.map((semana) => (
                                   <td
                                     key={`bronze-${semana.numero}`}
-                                    className="px-1 py-1 text-center text-[8px] whitespace-nowrap"
+                                    className="px-1 py-1 text-center text-[11px] whitespace-nowrap"
                                   >
                                     {renderCellEditorSemanal(
                                       rankingTipo,
@@ -3492,7 +3580,7 @@ const MetasVarejo = () => {
                                   </td>
                                 ))
                               ) : (
-                                <td className="px-1 py-1 text-center text-[8px] whitespace-nowrap">
+                                <td className="px-1 py-1 text-center text-[11px] whitespace-nowrap">
                                   <span className="text-red-500 text-xs">
                                     -
                                   </span>
@@ -3504,7 +3592,7 @@ const MetasVarejo = () => {
                                 semanasCalculadas.map((semana) => (
                                   <td
                                     key={`prata-${semana.numero}`}
-                                    className="px-1 py-1 text-center text-[8px] whitespace-nowrap"
+                                    className="px-1 py-1 text-center text-[11px] whitespace-nowrap"
                                   >
                                     {renderCellEditorSemanal(
                                       rankingTipo,
@@ -3518,7 +3606,7 @@ const MetasVarejo = () => {
                                   </td>
                                 ))
                               ) : (
-                                <td className="px-1 py-1 text-center text-[8px] whitespace-nowrap">
+                                <td className="px-1 py-1 text-center text-[11px] whitespace-nowrap">
                                   <span className="text-red-500 text-xs">
                                     -
                                   </span>
@@ -3530,7 +3618,7 @@ const MetasVarejo = () => {
                                 semanasCalculadas.map((semana) => (
                                   <td
                                     key={`ouro-${semana.numero}`}
-                                    className="px-1 py-1 text-center text-[8px] whitespace-nowrap"
+                                    className="px-1 py-1 text-center text-[11px] whitespace-nowrap"
                                   >
                                     {renderCellEditorSemanal(
                                       rankingTipo,
@@ -3544,7 +3632,7 @@ const MetasVarejo = () => {
                                   </td>
                                 ))
                               ) : (
-                                <td className="px-1 py-1 text-center text-[8px] whitespace-nowrap">
+                                <td className="px-1 py-1 text-center text-[11px] whitespace-nowrap">
                                   <span className="text-red-500 text-xs">
                                     -
                                   </span>
@@ -3556,7 +3644,7 @@ const MetasVarejo = () => {
                                 semanasCalculadas.map((semana) => (
                                   <td
                                     key={`diamante-${semana.numero}`}
-                                    className="px-1 py-1 text-center text-[8px] whitespace-nowrap"
+                                    className="px-1 py-1 text-center text-[11px] whitespace-nowrap"
                                   >
                                     {renderCellEditorSemanal(
                                       rankingTipo,
@@ -3570,7 +3658,7 @@ const MetasVarejo = () => {
                                   </td>
                                 ))
                               ) : (
-                                <td className="px-1 py-1 text-center text-[8px] whitespace-nowrap">
+                                <td className="px-1 py-1 text-center text-[11px] whitespace-nowrap">
                                   <span className="text-red-500 text-xs">
                                     -
                                   </span>
@@ -3590,7 +3678,7 @@ const MetasVarejo = () => {
                               ? 9
                               : 5 + semanasCalculadas.length * 4
                           }
-                          className="px-1 py-2 text-center text-[9px] text-gray-500"
+                          className="px-1 py-2 text-center text-[11px] text-gray-500"
                         >
                           Nenhum {rankingTipo === 'lojas' ? 'loja' : 'vendedor'}{' '}
                           encontrado
@@ -3798,6 +3886,15 @@ const MetasVarejo = () => {
                                   className="px-1 py-1 text-center font-semibold text-gray-700 border-b border-l"
                                 >
                                   S{semana.numero}
+                                  {semana.numeroAno && (
+                                    <span className="text-[9px] text-blue-600 ml-1">
+                                      ({semana.numeroAno})
+                                    </span>
+                                  )}
+                                  <span className="block text-[9px] text-gray-400 mt-0.5">
+                                    {formatDM(semana.inicio)} -{' '}
+                                    {formatDM(semana.fim)}
+                                  </span>
                                 </th>
                               ))
                             ) : (
@@ -4136,7 +4233,7 @@ const MetasVarejo = () => {
                                     {log.tipo === 'lojas' ? 'Loja' : 'Vendedor'}
                                   </span>
                                   <span
-                                    className={`px-1 py-0.5 rounded text-[8px] font-medium ${
+                                    className={`px-1 py-0.5 rounded text-[11px] font-medium ${
                                       log.tipo_log === 'mensal'
                                         ? 'bg-purple-100 text-purple-700'
                                         : 'bg-orange-100 text-orange-700'
@@ -4532,6 +4629,17 @@ const MetasVarejo = () => {
                                       <td className="px-4 py-4 whitespace-nowrap">
                                         <span className="inline-flex items-center px-2 py-1 rounded-full text-sm font-medium bg-cyan-100 text-cyan-800">
                                           S{semana.numero}
+                                          {semana.numeroAno && (
+                                            <>
+                                              <span className="text-[10px] text-blue-600 ml-1">
+                                                ({semana.numeroAno})
+                                              </span>
+                                              <span className="text-[10px] text-gray-500 ml-1">
+                                                {formatDM(semana.inicio)} -{' '}
+                                                {formatDM(semana.fim)}
+                                              </span>
+                                            </>
+                                          )}
                                         </span>
                                       </td>
 
@@ -4598,19 +4706,39 @@ const MetasVarejo = () => {
 
                                       {/* Falta */}
                                       <td className="px-4 py-4 whitespace-nowrap">
-                                        {semana.faltante > 0 ? (
-                                          <span className="text-sm font-semibold text-gray-800">
-                                            {formatBRL(semana.faltante)}
+                                        <div className="flex flex-col">
+                                          {semana.faltante > 0 ? (
+                                            <span className="text-sm font-semibold text-gray-800">
+                                              {formatBRL(semana.faltante)}
+                                            </span>
+                                          ) : semana.metaAtingida > 0 ? (
+                                            <span className="text-sm font-medium text-green-600">
+                                              ✓ Atingida
+                                            </span>
+                                          ) : (
+                                            <span className="text-sm text-gray-400">
+                                              -
+                                            </span>
+                                          )}
+                                          <span className="text-[10px] text-blue-600 mt-1">
+                                            {calcularDiasRestantesSemana(
+                                              semana.fim,
+                                            )}{' '}
+                                            dias restantes
                                           </span>
-                                        ) : semana.metaAtingida > 0 ? (
-                                          <span className="text-sm font-medium text-green-600">
-                                            ✓ Atingida
-                                          </span>
-                                        ) : (
-                                          <span className="text-sm text-gray-400">
-                                            -
-                                          </span>
-                                        )}
+                                          {semana.faltante > 0 && (
+                                            <span className="text-[11px] text-gray-600">
+                                              ≈{' '}
+                                              {formatBRL(
+                                                calcularFaltaPorDia(
+                                                  semana.faltante,
+                                                  semana.fim,
+                                                ),
+                                              )}{' '}
+                                              por dia
+                                            </span>
+                                          )}
+                                        </div>
                                       </td>
                                     </tr>
                                   ))}
@@ -4730,6 +4858,17 @@ const MetasVarejo = () => {
                                     <td className="px-4 py-4 whitespace-nowrap">
                                       <span className="inline-flex items-center px-2 py-1 rounded-full text-sm font-medium bg-cyan-100 text-cyan-800">
                                         S{semana.numero}
+                                        {semana.numeroAno && (
+                                          <>
+                                            <span className="text-[10px] text-blue-600 ml-1">
+                                              ({semana.numeroAno})
+                                            </span>
+                                            <span className="text-[10px] text-gray-500 ml-1">
+                                              {formatDM(semana.inicio)} -{' '}
+                                              {formatDM(semana.fim)}
+                                            </span>
+                                          </>
+                                        )}
                                       </span>
                                     </td>
 
@@ -4796,19 +4935,39 @@ const MetasVarejo = () => {
 
                                     {/* Falta */}
                                     <td className="px-4 py-4 whitespace-nowrap">
-                                      {semana.faltante > 0 ? (
-                                        <span className="text-sm font-semibold text-gray-800">
-                                          {formatBRL(semana.faltante)}
+                                      <div className="flex flex-col">
+                                        {semana.faltante > 0 ? (
+                                          <span className="text-sm font-semibold text-gray-800">
+                                            {formatBRL(semana.faltante)}
+                                          </span>
+                                        ) : semana.metaAtingida > 0 ? (
+                                          <span className="text-sm font-medium text-green-600">
+                                            ✓ Atingida
+                                          </span>
+                                        ) : (
+                                          <span className="text-sm text-gray-400">
+                                            -
+                                          </span>
+                                        )}
+                                        <span className="text-[10px] text-blue-600 mt-1">
+                                          {calcularDiasRestantesSemana(
+                                            semana.fim,
+                                          )}{' '}
+                                          dias restantes
                                         </span>
-                                      ) : semana.metaAtingida > 0 ? (
-                                        <span className="text-sm font-medium text-green-600">
-                                          ✓ Atingida
-                                        </span>
-                                      ) : (
-                                        <span className="text-sm text-gray-400">
-                                          -
-                                        </span>
-                                      )}
+                                        {semana.faltante > 0 && (
+                                          <span className="text-[10px] text-gray-600">
+                                            ≈{' '}
+                                            {formatBRL(
+                                              calcularFaltaPorDia(
+                                                semana.faltante,
+                                                semana.fim,
+                                              ),
+                                            )}{' '}
+                                            por dia
+                                          </span>
+                                        )}
+                                      </div>
                                     </td>
                                   </tr>
                                 ))}
