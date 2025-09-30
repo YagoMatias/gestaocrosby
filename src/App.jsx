@@ -166,7 +166,7 @@ const AppRoutes = memo(() => {
     {
       path: '/metas-varejo',
       component: MetasVarejo,
-      roles: ['owner', 'admin', 'manager', 'user'],
+      roles: ['owner', 'admin', 'manager', 'user', 'guest'],
     },
     {
       path: '/manifestacao-nf',
