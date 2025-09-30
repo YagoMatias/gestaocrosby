@@ -361,6 +361,10 @@ const MetasVarejo = () => {
   const [metasMensaisCalculadas, setMetasMensaisCalculadas] = useState({});
   const [detalheSelecionado, setDetalheSelecionado] = useState(null); // Para o modal de detalhes
   const [showDetalheModal, setShowDetalheModal] = useState(false); // Controla a exibição do modal de detalhes
+  // Paginação - Dashboard Semanal
+  const PAGE_SIZE = 15;
+  const [pageLojas, setPageLojas] = useState(0);
+  const [pageVendedores, setPageVendedores] = useState(0);
 
   // Estados para notificações e loading
   const [notification, setNotification] = useState({
@@ -4522,47 +4526,56 @@ const MetasVarejo = () => {
                   // Dashboard Semanal para Lojas
                   dashboardStats.lojaDetalhes &&
                   dashboardStats.lojaDetalhes.length > 0 ? (
-                    dashboardStats.lojaDetalhes
-                      .filter((loja) => {
-                        // Filtrar por lojas selecionadas se houver
-                        if (lojasSelecionadas.length > 0) {
-                          return lojasSelecionadas.some((l) =>
-                            (
-                              l.nome_fantasia ||
-                              l.nome_loja ||
-                              l.loja ||
-                              l.nm_loja ||
-                              l.nome ||
-                              ''
-                            ).includes(loja.nome),
-                          );
-                        }
-                        return true;
-                      })
-                      // Filtrar por tipo de loja
-                      .filter((loja) => {
-                        const nomeLoja = loja.nome;
+                    (() => {
+                      const lista = dashboardStats.lojaDetalhes
+                        .filter((loja) => {
+                          // Filtrar por lojas selecionadas se houver
+                          if (lojasSelecionadas.length > 0) {
+                            return lojasSelecionadas.some((l) =>
+                              (
+                                l.nome_fantasia ||
+                                l.nome_loja ||
+                                l.loja ||
+                                l.nm_loja ||
+                                l.nome ||
+                                ''
+                              ).includes(loja.nome),
+                            );
+                          }
+                          return true;
+                        })
+                        // Filtrar por tipo de loja
+                        .filter((loja) => {
+                          const nomeLoja = loja.nome;
 
-                        if (tipoLoja === 'Franquias') {
-                          // Considerar franquia se o nome contém "F0" (padrão de código de franquia)
-                          const isFranquia = nomeLoja.includes('F0');
-                          console.log('É franquia?', isFranquia);
-                          return isFranquia;
-                        }
+                          if (tipoLoja === 'Franquias') {
+                            // Considerar franquia se o nome contém "F0" (padrão de código de franquia)
+                            const isFranquia = nomeLoja.includes('F0');
+                            console.log('É franquia?', isFranquia);
+                            return isFranquia;
+                          }
 
-                        if (tipoLoja === 'Proprias') {
-                          // Considerar própria se o nome NÃO contém "F0"
-                          const isFranquia =
-                            nomeLoja.includes('-') ||
-                            nomeLoja.includes('- CROSBY');
-                          console.log('É própria?', !isFranquia);
-                          return !isFranquia;
-                        }
+                          if (tipoLoja === 'Proprias') {
+                            // Considerar própria se o nome NÃO contém "F0"
+                            const isFranquia =
+                              nomeLoja.includes('-') ||
+                              nomeLoja.includes('- CROSBY');
+                            console.log('É própria?', !isFranquia);
+                            return !isFranquia;
+                          }
 
-                        return true; // 'Todos'
-                      })
-                      .sort((a, b) => b.faturamento - a.faturamento) // Ordenar por faturamento
-                      .map((loja, index) => {
+                          return true; // 'Todos'
+                        })
+                        .sort((a, b) => b.faturamento - a.faturamento); // Ordenar por faturamento
+
+                      const totalPages = Math.max(
+                        1,
+                        Math.ceil(lista.length / PAGE_SIZE),
+                      );
+                      const start = pageLojas * PAGE_SIZE;
+                      const pageItems = lista.slice(start, start + PAGE_SIZE);
+
+                      const rendered = pageItems.map((loja, index) => {
                         const dadosSemanas = calcularDadosTodasSemanas(
                           loja,
                           'lojas',
@@ -4747,7 +4760,55 @@ const MetasVarejo = () => {
                             </div>
                           </div>
                         );
-                      })
+                      });
+
+                      return (
+                        <>
+                          {rendered}
+                          {/* Paginação Lojas */}
+                          <div className="flex items-center justify-between mt-3">
+                            <button
+                              type="button"
+                              className="px-2 py-1 text-xs rounded border border-gray-300 disabled:opacity-50"
+                              onClick={() =>
+                                setPageLojas((p) => Math.max(0, p - 1))
+                              }
+                              disabled={pageLojas === 0}
+                            >
+                              Anterior
+                            </button>
+                            <div className="flex items-center gap-1">
+                              {Array.from({ length: totalPages }, (_, i) => (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  onClick={() => setPageLojas(i)}
+                                  className={`px-2 py-1 text-xs rounded border ${
+                                    i === pageLojas
+                                      ? 'bg-[#000638] text-white border-[#000638]'
+                                      : 'border-gray-300'
+                                  }`}
+                                >
+                                  {i + 1}
+                                </button>
+                              ))}
+                            </div>
+                            <button
+                              type="button"
+                              className="px-2 py-1 text-xs rounded border border-gray-300 disabled:opacity-50"
+                              onClick={() =>
+                                setPageLojas((p) =>
+                                  Math.min(totalPages - 1, p + 1),
+                                )
+                              }
+                              disabled={pageLojas >= totalPages - 1}
+                            >
+                              Próxima
+                            </button>
+                          </div>
+                        </>
+                      );
+                    })()
                   ) : (
                     <div className="text-center py-8">
                       <p className="text-gray-500">
@@ -4758,40 +4819,49 @@ const MetasVarejo = () => {
                 ) : // Dashboard Semanal para Vendedores
                 dashboardStats.vendedorDetalhes &&
                   dashboardStats.vendedorDetalhes.length > 0 ? (
-                  dashboardStats.vendedorDetalhes
-                    .filter((vendedor) => {
-                      // Filtrar por vendedores selecionados se houver
-                      if (vendedoresSelecionados.length > 0) {
-                        return vendedoresSelecionados.some((v) =>
-                          (
-                            v.nome_vendedor ||
-                            v.vendedor ||
-                            v.nm_vendedor ||
-                            v.nome ||
-                            ''
-                          ).includes(vendedor.nome),
-                        );
-                      }
-                      return true;
-                    })
-                    // Filtrar por tipo de loja (vendedores de franquias vs próprias)
-                    .filter((vendedor) => {
-                      const nomeVendedor = vendedor.nome;
+                  (() => {
+                    const lista = dashboardStats.vendedorDetalhes
+                      .filter((vendedor) => {
+                        // Filtrar por vendedores selecionados se houver
+                        if (vendedoresSelecionados.length > 0) {
+                          return vendedoresSelecionados.some((v) =>
+                            (
+                              v.nome_vendedor ||
+                              v.vendedor ||
+                              v.nm_vendedor ||
+                              v.nome ||
+                              ''
+                            ).includes(vendedor.nome),
+                          );
+                        }
+                        return true;
+                      })
+                      // Filtrar por tipo de loja (vendedores de franquias vs próprias)
+                      .filter((vendedor) => {
+                        const nomeVendedor = vendedor.nome;
 
-                      if (tipoLoja === 'Franquias') {
-                        // Vendedores de franquias não têm "- INT" no nome
-                        return !nomeVendedor.includes('- INT');
-                      }
+                        if (tipoLoja === 'Franquias') {
+                          // Vendedores de franquias não têm "- INT" no nome
+                          return !nomeVendedor.includes('- INT');
+                        }
 
-                      if (tipoLoja === 'Proprias') {
-                        // Vendedores de lojas próprias têm "- INT" no nome
-                        return nomeVendedor.includes('- INT');
-                      }
+                        if (tipoLoja === 'Proprias') {
+                          // Vendedores de lojas próprias têm "- INT" no nome
+                          return nomeVendedor.includes('- INT');
+                        }
 
-                      return true; // 'Todos'
-                    })
-                    .sort((a, b) => b.faturamento - a.faturamento) // Ordenar por faturamento
-                    .map((vendedor, index) => {
+                        return true; // 'Todos'
+                      })
+                      .sort((a, b) => b.faturamento - a.faturamento); // Ordenar por faturamento
+
+                    const totalPages = Math.max(
+                      1,
+                      Math.ceil(lista.length / PAGE_SIZE),
+                    );
+                    const start = pageVendedores * PAGE_SIZE;
+                    const pageItems = lista.slice(start, start + PAGE_SIZE);
+
+                    const rendered = pageItems.map((vendedor, index) => {
                       const dadosSemanas = calcularDadosTodasSemanas(
                         vendedor,
                         'vendedores',
@@ -4976,7 +5046,55 @@ const MetasVarejo = () => {
                           </div>
                         </div>
                       );
-                    })
+                    });
+
+                    return (
+                      <>
+                        {rendered}
+                        {/* Paginação Vendedores */}
+                        <div className="flex items-center justify-between mt-3">
+                          <button
+                            type="button"
+                            className="px-2 py-1 text-xs rounded border border-gray-300 disabled:opacity-50"
+                            onClick={() =>
+                              setPageVendedores((p) => Math.max(0, p - 1))
+                            }
+                            disabled={pageVendedores === 0}
+                          >
+                            Anterior
+                          </button>
+                          <div className="flex items-center gap-1">
+                            {Array.from({ length: totalPages }, (_, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => setPageVendedores(i)}
+                                className={`px-2 py-1 text-xs rounded border ${
+                                  i === pageVendedores
+                                    ? 'bg-[#000638] text-white border-[#000638]'
+                                    : 'border-gray-300'
+                                }`}
+                              >
+                                {i + 1}
+                              </button>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            className="px-2 py-1 text-xs rounded border border-gray-300 disabled:opacity-50"
+                            onClick={() =>
+                              setPageVendedores((p) =>
+                                Math.min(totalPages - 1, p + 1),
+                              )
+                            }
+                            disabled={pageVendedores >= totalPages - 1}
+                          >
+                            Próxima
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()
                 ) : (
                   <div className="text-center py-8">
                     <p className="text-gray-500">
