@@ -9,6 +9,7 @@ import useApiClient from '../hooks/useApiClient';
 import { usePermissions } from '../hooks/usePermissions';
 import PageTitle from '../components/ui/PageTitle';
 import PerformanceModal from '../components/ui/PerformanceModal';
+import FiltroEmpresa from '../components/FiltroEmpresa';
 import { ChartLineUp, Gauge } from '@phosphor-icons/react';
 
 const CMVConsolidado = () => {
@@ -36,6 +37,9 @@ const CMVConsolidado = () => {
     dt_fim: '',
     empresas: [],
   });
+
+  // Estado para controlar as empresas selecionadas no filtro
+  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
 
   // Filtro de Mês/Ano
   const [filtroMensal, setFiltroMensal] = useState('ANO');
@@ -533,20 +537,20 @@ const CMVConsolidado = () => {
         // Classificações fixas: 2 (MULTIMARCAS), 3 (REVENDA), 4 (FRANQUIAS)
         cd_classificacao: [2, 3, 4],
       };
-      if (Array.isArray(filtros.empresas) && filtros.empresas.length > 0) {
-        params.cd_empresa = filtros.empresas;
-      }
 
-      // Empresas fixas para rotas de franquia, multimarcas e revenda
-      const empresasFixas = [1, 2, 6, 11, 31, 75, 85, 92, 99];
+      // Usar empresas selecionadas no filtro se houver, senão usar todas as empresas fixas
+      const empresasParaUsar =
+        empresasSelecionadas.length > 0
+          ? empresasSelecionadas.map((emp) => Number(emp.cd_empresa))
+          : [1, 2, 6, 11, 31, 75, 85, 92, 99]; // Empresas fixas padrão
+
+      params.cd_empresa = empresasParaUsar;
+
+      // Usar as mesmas empresas para todas as rotas (franquia, multimarcas, revenda)
+      const empresasFixas = empresasParaUsar;
 
       // Lista específica de empresas para a rota de varejo
-      const empresasVarejo = [
-        // Lista fornecida pelo usuário
-        1, 2, 5, 6, 7, 11, 31, 55, 65, 75, 85, 90, 91, 92, 93, 94, 95, 96, 97,
-        98, 99, 100, 101, 111, 200, 311, 500, 550, 600, 650, 700, 750, 850, 890,
-        910, 920, 930, 940, 950, 960, 970, 980, 990,
-      ];
+      const empresasVarejo = empresasParaUsar;
 
       // Parâmetros para cada rota específica
       const paramsFranquia = {
@@ -910,7 +914,7 @@ const CMVConsolidado = () => {
       />
 
       <div className="bg-white rounded-lg shadow p-3 mb-4 border border-gray-200">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
           <div>
             <label className="block text-xs font-semibold mb-1">
               Data Início
@@ -933,6 +937,13 @@ const CMVConsolidado = () => {
                 setFiltros((f) => ({ ...f, dt_fim: e.target.value }))
               }
               className="border rounded px-2 py-1.5 w-full text-xs"
+            />
+          </div>
+          <div>
+            <FiltroEmpresa
+              empresasSelecionadas={empresasSelecionadas}
+              onSelectEmpresas={setEmpresasSelecionadas}
+              apenasEmpresa101={false}
             />
           </div>
           <div className="flex items-center gap-2">
@@ -1047,6 +1058,11 @@ const CMVConsolidado = () => {
         <div className="mt-2 text-xs text-gray-500">
           <span className="font-medium">Filtro ativo:</span> {filtroMensal}
           {filtroDia && <span className="ml-1">- Dia {filtroDia}</span>}
+          {empresasSelecionadas.length > 0 && (
+            <span className="ml-2">
+              - Empresas: {empresasSelecionadas.length} selecionada(s)
+            </span>
+          )}
           <span className="ml-2">
             ({dadosFiltrados.length + dadosVarejoFiltrados.length} registro
             {dadosFiltrados.length + dadosVarejoFiltrados.length !== 1
