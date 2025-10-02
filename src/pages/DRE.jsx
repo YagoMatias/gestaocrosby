@@ -64,7 +64,10 @@ const DRE = () => {
 
   // Lista de despesas (cd_despesaitem) a serem excluídas do cálculo/visualização
   const [despesasExcluidas, setDespesasExcluidas] = useState(
-    new Set([117, 124, 270, 271, 272, 5006, 5007, 5013, 5014]),
+    new Set([
+      117, 124, 270, 271, 272, 5006, 5007, 5013, 5014, 11006, 11008, 11004,
+      11003, 11009, 11009, 11007, 11005, 11001, 14000, 13000,
+    ]),
   );
 
   // Utilitário: verifica se um código de despesa deve ser excluído
@@ -907,9 +910,9 @@ const DRE = () => {
         setLoadingStatus('Buscando Contas a Pagar (Emissão)...');
         // Usar exatamente as mesmas empresas do Varejo
         const todasEmpresasCodigos = [
-          1, 2, 5, 6, 7, 11, 31, 55, 65, 75, 85, 90, 91, 92, 93, 94, 95, 96, 97,
-          98, 99, 100, 101, 111, 200, 311, 500, 550, 600, 650, 700, 750, 850,
-          890, 910, 920, 930, 940, 950, 960, 970, 980, 990,
+          1, 2, 6, 7, 11, 31, 65, 75, 85, 90, 91, 92, 93, 94, 95, 96, 97, 98,
+          99, 100, 101, 111, 200, 311, 600, 650, 700, 750, 850, 890, 910, 920,
+          930, 940, 950, 960, 970, 980, 990,
         ];
 
         const paramsCP = {
@@ -1041,6 +1044,78 @@ const DRE = () => {
           codigosFornecedorInvalidos: [],
         };
 
+        // Logs de diagnóstico para divergências reportadas
+        try {
+          const debugRegistroChave = {
+            cd_empresa: '1',
+            cd_fornecedor: '31124',
+            nr_duplicata: '854',
+            nr_parcela: '3',
+            cd_despesaitem: '6031',
+          };
+          const itensChave = (dadosCP || []).filter(
+            (x) =>
+              String(x.cd_empresa) === debugRegistroChave.cd_empresa &&
+              String(x.cd_fornecedor) === debugRegistroChave.cd_fornecedor &&
+              String(x.nr_duplicata) === debugRegistroChave.nr_duplicata &&
+              String(x.nr_parcela) === debugRegistroChave.nr_parcela &&
+              String(x.cd_despesaitem) === debugRegistroChave.cd_despesaitem,
+          );
+          const somaChave = itensChave.reduce((acc, x) => {
+            const vr = parseFloat(x.vl_rateio || 0) || 0;
+            const vd = parseFloat(x.vl_duplicata || 0) || 0;
+            const valor = vr !== 0 ? vr : vd;
+            return acc + valor;
+          }, 0);
+          const itensCod6031 = (dadosCP || []).filter(
+            (x) => String(x.cd_despesaitem) === '6031',
+          );
+          const soma6031 = itensCod6031.reduce((acc, x) => {
+            const vr = parseFloat(x.vl_rateio || 0) || 0;
+            const vd = parseFloat(x.vl_duplicata || 0) || 0;
+            const valor = vr !== 0 ? vr : vd;
+            return acc + valor;
+          }, 0);
+          // Quebras por empresa, fornecedor e por duplicata/parcela
+          const somaPorEmpresaFornecedor = {};
+          const somaPorDuplicataParcela = {};
+          for (const x of itensCod6031) {
+            const vr = parseFloat(x.vl_rateio || 0) || 0;
+            const vd = parseFloat(x.vl_duplicata || 0) || 0;
+            const valor = vr !== 0 ? vr : vd;
+            const kEF = `${String(x.cd_empresa)}|${String(x.cd_fornecedor)}`;
+            const kDP = `${String(x.nr_duplicata)}|${String(x.nr_parcela)}`;
+            somaPorEmpresaFornecedor[kEF] =
+              (somaPorEmpresaFornecedor[kEF] || 0) + valor;
+            somaPorDuplicataParcela[kDP] =
+              (somaPorDuplicataParcela[kDP] || 0) + valor;
+          }
+          const tabelaEF = Object.entries(somaPorEmpresaFornecedor)
+            .map(([k, v]) => {
+              const [empresa, fornecedor] = k.split('|');
+              return { empresa, fornecedor, total: v };
+            })
+            .sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+          const tabelaDP = Object.entries(somaPorDuplicataParcela)
+            .map(([k, v]) => {
+              const [duplicata, parcela] = k.split('|');
+              return { duplicata, parcela, total: v };
+            })
+            .sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+          console.log('🧪 DEBUG DRE - Registro chave e total por código 6031', {
+            filtro: debugRegistroChave,
+            ocorrenciasRegistroChave: itensChave.length,
+            somaRegistroChave: somaChave,
+            ocorrenciasCodigo6031: itensCod6031.length,
+            somaCodigo6031: soma6031,
+            amostraRegistroChave: itensChave.slice(0, 3),
+          });
+          console.table(tabelaEF);
+          console.table(tabelaDP);
+        } catch (e) {
+          console.warn('Falha ao gerar logs de diagnóstico DRE:', e);
+        }
+
         for (const item of dadosCP) {
           // Removido: não alteramos a lista durante o processamento
 
@@ -1157,8 +1232,6 @@ const DRE = () => {
               description: [
                 `Empresa: ${item.cd_empresa || '-'}`,
                 `Fornecedor: ${item.cd_fornecedor || '-'}`,
-                `Duplicata: ${item.nr_duplicata || '-'}`,
-                `Parcela: ${item.nr_parcela || '-'}`,
               ].join(' | '),
               value: 0,
               type: 'despesa',
@@ -1760,30 +1833,6 @@ const DRE = () => {
         value: lucroBruto - planoDespesasTotal,
         type: 'resultado',
         children: [],
-      },
-      {
-        id: 'outras-receitas-despesas',
-        label: 'Outras Receitas e Despesas',
-        description:
-          'Venda de bens da empresa, ganhos ou perdas não recorrentes.',
-        value: 0,
-        type: 'outro',
-        children: [
-          {
-            id: 'venda-bens',
-            label: 'Venda de Bens',
-            description: 'Venda de equipamentos da empresa',
-            value: 0,
-            type: 'receita',
-          },
-          {
-            id: 'perdas-nao-recorrentes',
-            label: 'Perdas Não Recorrentes',
-            description: 'Perdas eventuais não recorrentes',
-            value: 0,
-            type: 'despesa',
-          },
-        ],
       },
       despesasFinanceirasNode,
       {

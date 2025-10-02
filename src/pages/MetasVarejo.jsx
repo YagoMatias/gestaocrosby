@@ -434,7 +434,7 @@ const MetasVarejo = () => {
     );
 
     const diffTime = fimNormalizado - hojeNormalizado;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
     // Se a diferença for negativa, a semana já passou
     // Se for 0, é o último dia da semana
