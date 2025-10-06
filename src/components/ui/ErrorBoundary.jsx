@@ -8,11 +8,11 @@ import { ERROR_MESSAGES } from '../../config/constants';
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { 
-      hasError: false, 
+    this.state = {
+      hasError: false,
       error: null,
       errorInfo: null,
-      retryCount: 0
+      retryCount: 0,
     };
   }
 
@@ -24,7 +24,7 @@ class ErrorBoundary extends React.Component {
   componentDidCatch(error, errorInfo) {
     // Log do erro para monitoramento
     console.error('ErrorBoundary caught an error:', error, errorInfo);
-    
+
     this.setState({
       error,
       errorInfo,
@@ -38,11 +38,11 @@ class ErrorBoundary extends React.Component {
   }
 
   handleRetry = () => {
-    this.setState(prevState => ({
+    this.setState((prevState) => ({
       hasError: false,
       error: null,
       errorInfo: null,
-      retryCount: prevState.retryCount + 1
+      retryCount: prevState.retryCount + 1,
     }));
   };
 
@@ -59,26 +59,28 @@ class ErrorBoundary extends React.Component {
           <div className="text-center max-w-md">
             {/* Ícone de erro */}
             <div className="text-6xl mb-4">⚠️</div>
-            
+
             {/* Título */}
             <h2 className="text-xl font-bold text-red-800 mb-2">
               Oops! Algo deu errado
             </h2>
-            
+
             {/* Mensagem */}
             <p className="text-red-600 mb-6">
               {this.props.message || ERROR_MESSAGES.SERVER_ERROR}
             </p>
-            
+
             {/* Botão de retry */}
             <button
               onClick={this.handleRetry}
               className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors duration-200 font-medium"
               disabled={this.state.retryCount >= 3}
             >
-              {this.state.retryCount >= 3 ? 'Muitas tentativas' : 'Tentar Novamente'}
+              {this.state.retryCount >= 3
+                ? 'Muitas tentativas'
+                : 'Tentar Novamente'}
             </button>
-            
+
             {/* Detalhes do erro (apenas em desenvolvimento) */}
             {process.env.NODE_ENV === 'development' && this.state.error && (
               <details className="mt-4 text-left">

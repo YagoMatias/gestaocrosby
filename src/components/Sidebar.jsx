@@ -547,6 +547,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               isActive={location.pathname === '/clientes'}
             />
 
+            {/* Auditoria de Transações - item independente */}
+            <MenuItem
+              item={{
+                name: 'Auditoria de Transações',
+                href: '/auditoria-transacoes',
+                icon: Shield,
+                color: 'text-purple-600',
+              }}
+              isActive={location.pathname === '/auditoria-transacoes'}
+            />
+
             {/* Ranking Faturamento - fora de seção */}
             <div className="pt-4 border-t border-gray-100">
               <MenuItem

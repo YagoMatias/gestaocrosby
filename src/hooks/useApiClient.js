@@ -204,6 +204,42 @@ const useApiClient = () => {
     }
   }, []);
 
+  // Buscar transações por operação
+  const transacoesPorOperacao = useCallback(async (params = {}) => {
+    const url = new URL('/api/sales/transacoes-por-operacao', API_BASE_URL);
+    Object.keys(params).forEach((key) => {
+      const value = params[key];
+      if (value !== null && value !== undefined && value !== '') {
+        if (Array.isArray(value)) {
+          value.forEach((v) => url.searchParams.append(key, v));
+        } else {
+          url.searchParams.append(key, value);
+        }
+      }
+    });
+    const response = await fetch(url.toString());
+    if (!response.ok) throw new Error('Erro ao buscar transações da operação');
+    return await response.json();
+  }, []);
+
+  // Buscar transações por número da transação
+  const transacoesPorNr = useCallback(async (params = {}) => {
+    const url = new URL('/api/sales/transacoes-por-nr', API_BASE_URL);
+    Object.keys(params).forEach((key) => {
+      const value = params[key];
+      if (value !== null && value !== undefined && value !== '') {
+        if (Array.isArray(value)) {
+          value.forEach((v) => url.searchParams.append(key, v));
+        } else {
+          url.searchParams.append(key, value);
+        }
+      }
+    });
+    const response = await fetch(url.toString());
+    if (!response.ok) throw new Error('Erro ao buscar itens da transação');
+    return await response.json();
+  }, []);
+
   // Métodos específicos para cada tipo de endpoint
   const financial = {
     extrato: (params) => apiCall('/api/financial/extrato', params),
@@ -251,6 +287,75 @@ const useApiClient = () => {
     cmvfranquia: (params) => apiCall('/api/sales/cmvfranquia', params),
     cmvmultimarcas: (params) => apiCall('/api/sales/cmvmultimarcas', params),
     cmvrevenda: (params) => apiCall('/api/sales/cmvrevenda', params),
+    // Nova rota consolidada DRE - substitui as 4 consultas CMV paralelas
+    dreData: (params) => apiCall('/api/sales/dre-data', params),
+    // Versão RAW: retorna a resposta bruta da API, sem processamento
+    dreDataRaw: async (params) => {
+      // Construir URL com parâmetros
+      const url = new URL('/api/sales/dre-data', API_BASE_URL);
+      Object.keys(params).forEach((key) => {
+        const value = params[key];
+        if (value !== null && value !== undefined && value !== '') {
+          if (Array.isArray(value)) {
+            value.forEach((v) => url.searchParams.append(key, v));
+          } else {
+            url.searchParams.append(key, value);
+          }
+        }
+      });
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        let errorBody = null;
+        try {
+          errorBody = await response.json();
+        } catch {}
+        throw new Error(
+          (errorBody && (errorBody.message || errorBody.error)) ||
+            response.statusText ||
+            'Erro ao processar requisição',
+        );
+      }
+      return await response.json();
+    },
+    // Rotas de cache DRE
+    dreCacheClear: () => apiCall('/api/sales/dre-cache', {}, 'DELETE'),
+    dreCacheStats: () => apiCall('/api/sales/dre-cache/stats'),
+    // Nova rota de auditoria de transações (similar ao DADOSTOTVS.TXT)
+    auditoriaTransacoes: async (params) => {
+      // Fazer a chamada diretamente sem o processamento padrão do apiCall
+      const url = new URL(`${API_BASE_URL}/api/sales/auditoria-transacoes`);
+      Object.keys(params).forEach((key) => {
+        const value = params[key];
+        if (value !== null && value !== undefined && value !== '') {
+          if (Array.isArray(value)) {
+            value.forEach((v) => url.searchParams.append(key, v));
+          } else {
+            url.searchParams.append(key, value);
+          }
+        }
+      });
+
+      console.log('🌐 API Call auditoriaTransacoes:', url.toString());
+
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        let errorBody = null;
+        try {
+          errorBody = await response.json();
+        } catch {}
+        throw new Error(
+          (errorBody && (errorBody.message || errorBody.error)) ||
+            response.statusText ||
+            'Erro ao processar requisição',
+        );
+      }
+
+      const result = await response.json();
+      console.log('📦 Auditoria Response:', result);
+
+      // Retornar a resposta original sem transformação
+      return result;
+    },
   };
 
   const company = {
@@ -279,6 +384,8 @@ const useApiClient = () => {
 
   return {
     apiCall,
+    transacoesPorOperacao,
+    transacoesPorNr,
     financial,
     sales,
     company,

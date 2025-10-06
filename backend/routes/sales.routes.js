@@ -14,30 +14,177 @@ import {
 
 const router = express.Router();
 
-// Operações permitidas para faturamento (INCLUSIVAS)
-const ALLOWED_OPERATIONS = [
-  1, 2, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 8750, 9017, 9400,
-  9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405, 1205, 1101,
-];
+// Cache simples para resultados DRE e Auditoria (em produção usar Redis)
+const dreCache = new Map();
+const auditoriaCache = new Map();
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutos
 
-const EXCLUDED_OPERATIONS = [
-  1152, 590, 5153, 660, 9200, 2008, 536, 1153, 599, 5920, 5930, 1711, 7111,
-  2009, 5152, 6029, 530, 5152, 5930, 650, 5010, 600, 620, 40, 1557, 8600, 5910,
-  3336, 9003, 9052, 662, 5909, 5153, 5910, 3336, 9003, 530, 36, 536, 1552, 51,
-  1556, 2500, 1126, 1127, 8160, 1122, 1102, 9986, 1128, 1553, 1556, 9200, 8002,
-  2551, 1557, 8160, 2004, 5912, 1410, 5914, 1407, 5102, 520, 300, 200, 512,
-  1402, 1405, 1409, 5110, 5113, 17, 21, 401, 1201, 1202, 1204, 1206, 1950, 1999,
-  2203, 522, 9001, 9009, 9027, 9017, 2, 1, 548, 555, 521, 599, 1152, 9200, 2008,
-  536, 1153, 599, 5920, 5930, 1711, 7111, 2009, 5152, 6029, 530, 5152, 5930,
-  650, 5010, 600, 620, 40, 1557, 2505, 8600, 590, 5153, 660, 5910, 3336, 9003,
-  9052, 662, 5909, 5153, 5910, 3336, 9003, 530, 36, 536, 1552, 51, 1556, 2500,
-  1126, 1127, 8160, 1122, 1102, 9986, 1128, 1553, 1556, 9200, 8002, 2551, 1557,
-  8160, 2004, 5912, 1410, 1926, 1903, 1122, 1128, 1913, 529, 8160,
-];
+// Função para limpar cache expirado
+const cleanExpiredCache = () => {
+  const now = Date.now();
+  for (const [key, value] of dreCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      dreCache.delete(key);
+    }
+  }
+  for (const [key, value] of auditoriaCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      auditoriaCache.delete(key);
+    }
+  }
+};
+
+// Limpar cache a cada 10 minutos
+setInterval(cleanExpiredCache, 10 * 60 * 1000);
+
+/**
+ * @route GET /sales/transacoes-por-operacao
+ * @desc Buscar todas as transações de uma operação específica
+ * @access Public
+ * @query {cd_operacao, dt_inicio, dt_fim, cd_empresa[]}
+ */
+router.get(
+  '/transacoes-por-operacao',
+  sanitizeInput,
+  asyncHandler(async (req, res) => {
+    const { cd_operacao, dt_inicio, dt_fim, cd_empresa } = req.query;
+    if (!cd_operacao) {
+      return errorResponse(
+        res,
+        'Parâmetro cd_operacao é obrigatório',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+    let params = [cd_operacao];
+    let where = 'vfn.cd_operacao = $1';
+    let idx = 2;
+    if (dt_inicio && dt_fim) {
+      where += ` AND vfn.dt_transacao BETWEEN $${idx} AND $${idx + 1}`;
+      params.push(dt_inicio, dt_fim);
+      idx += 2;
+    }
+    if (cd_empresa) {
+      const empresas = Array.isArray(cd_empresa) ? cd_empresa : [cd_empresa];
+      where += ` AND vfn.cd_empresa IN (${empresas
+        .map((_, i) => `$${idx + i}`)
+        .join(',')})`;
+      params.push(...empresas);
+    }
+    const query = `
+        SELECT
+          vfn.nr_transacao,
+          vfn.vl_unitliquido,
+          vfn.vl_unitbruto,
+          vfn.qt_faturado,
+          vfn.dt_transacao,
+          vfn.cd_empresa,
+          vfn.nm_grupoempresa,
+          vfn.cd_nivel,
+          vfn.ds_nivel,
+          vfn.cd_pessoa,
+          COALESCE(pj.nm_fantasia, pp.nm_pessoa) as nm_pessoa
+        FROM vr_fis_nfitemprod vfn
+  LEFT JOIN pes_pessoa pp ON pp.cd_pessoa = vfn.cd_pessoa
+  LEFT JOIN pes_pesjuridica pj ON pj.cd_pessoa = vfn.cd_pessoa
+  WHERE ${where}
+        ORDER BY vfn.dt_transacao DESC
+        LIMIT 1000
+      `;
+    let rows;
+    try {
+      const result = await pool.query(query, params);
+      rows = result.rows;
+    } catch (err) {
+      console.error('Erro SQL na auditoria-transacoes:', err);
+      return res.status(500).json({
+        error: 'Erro ao executar consulta SQL',
+        message: err.message,
+        detail: err.detail,
+        hint: err.hint,
+        position: err.position,
+        stack: err.stack,
+        query: query,
+        params: params,
+      });
+    }
+    successResponse(
+      res,
+      { transacoes: rows },
+      'Transações da operação obtidas com sucesso',
+    );
+  }),
+);
+
+/**
+ * @route GET /sales/transacoes-por-nr
+ * @desc Buscar itens detalhados por número da transação
+ * @access Public
+ * @query {nr_transacao, dt_inicio, dt_fim, cd_empresa[]}
+ */
+router.get(
+  '/transacoes-por-nr',
+  sanitizeInput,
+  asyncHandler(async (req, res) => {
+    const { nr_transacao, dt_inicio, dt_fim, cd_empresa } = req.query;
+    if (!nr_transacao) {
+      return errorResponse(
+        res,
+        'Parâmetro nr_transacao é obrigatório',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    let params = [nr_transacao];
+    let where = 'vfn.nr_transacao = $1';
+    let idx = 2;
+    if (dt_inicio && dt_fim) {
+      where += ` AND vfn.dt_transacao BETWEEN $${idx} AND $${idx + 1}`;
+      params.push(dt_inicio, dt_fim);
+      idx += 2;
+    }
+    if (cd_empresa) {
+      const empresas = Array.isArray(cd_empresa) ? cd_empresa : [cd_empresa];
+      where += ` AND vfn.cd_empresa IN (${empresas
+        .map((_, i) => `$${idx + i}`)
+        .join(',')})`;
+      params.push(...empresas);
+    }
+
+    const query = `
+          SELECT
+            vfn.nr_transacao,
+            vfn.vl_unitliquido,
+            vfn.vl_unitbruto,
+            vfn.qt_faturado,
+            vfn.dt_transacao,
+            vfn.cd_empresa,
+            vfn.nm_grupoempresa,
+            vfn.cd_nivel,
+            vfn.ds_nivel,
+            vfn.cd_pessoa,
+            COALESCE(pj.nm_fantasia, pp.nm_pessoa) as nm_pessoa
+          FROM vr_fis_nfitemprod vfn
+          LEFT JOIN pes_pesjuridica pj ON pj.cd_pessoa = vfn.cd_pessoa
+          LEFT JOIN pes_pessoa pp ON pp.cd_pessoa = vfn.cd_pessoa
+          WHERE ${where}
+          ORDER BY vfn.dt_transacao DESC
+          LIMIT 2000
+        `;
+
+    const { rows } = await pool.query(query, params);
+    successResponse(
+      res,
+      { transacoes: rows },
+      'Itens da transação obtidos com sucesso',
+    );
+  }),
+);
 
 /**
  * @route GET /sales/faturamento
- * @desc Buscar dados de faturamento geral (apenas operações permitidas)
+ * @desc Buscar dados de faturamento geral (todas as operações)
  * @access Public
  * @query {dt_inicio, dt_fim, cd_empresa[]}
  */
@@ -76,61 +223,59 @@ router.get(
 
     const query = isVeryHeavyQuery
       ? `
-      SELECT
-        vfn.cd_empresa,
-        vfn.nm_grupoempresa,
-        vfn.cd_operacao,
-        vfn.cd_nivel,
-        vfn.ds_nivel,
-        vfn.dt_transacao,
-        vfn.tp_situacao,
-        vfn.vl_unitliquido,
-        vfn.vl_unitbruto,
-        vfn.tp_operacao,
-        vfn.nr_transacao,
-        vfn.qt_faturado,
-        vfn.vl_freterat,
-        prdvl.vl_produto
-      FROM vr_fis_nfitemprod vfn
-      LEFT JOIN vr_prd_valorprod prdvl ON vfn.cd_produto = prdvl.cd_produto
-      WHERE vfn.dt_transacao BETWEEN $1 AND $2
-        AND vfn.cd_empresa IN (${empresaPlaceholders})
-        AND vfn.cd_operacao IN (${ALLOWED_OPERATIONS.join(',')})
-        AND vfn.tp_situacao NOT IN ('C', 'X')
-        AND prdvl.cd_valor = 3
-        AND prdvl.cd_empresa = 1
-        AND prdvl.tp_valor = 'C'
-      ORDER BY vfn.dt_transacao DESC
-      LIMIT 50000
-    `
+        SELECT
+          vfn.cd_empresa,
+          vfn.nm_grupoempresa,
+          vfn.cd_operacao,
+          vfn.cd_nivel,
+          vfn.ds_nivel,
+          vfn.dt_transacao,
+          vfn.tp_situacao,
+          vfn.vl_unitliquido,
+          vfn.vl_unitbruto,
+          vfn.tp_operacao,
+          vfn.nr_transacao,
+          vfn.qt_faturado,
+          vfn.vl_freterat,
+          prdvl.vl_produto
+        FROM vr_fis_nfitemprod vfn
+        LEFT JOIN vr_prd_valorprod prdvl ON vfn.cd_produto = prdvl.cd_produto
+        WHERE vfn.dt_transacao BETWEEN $1 AND $2
+          AND vfn.cd_empresa IN (${empresaPlaceholders})
+          AND vfn.tp_situacao NOT IN ('C', 'X')
+          AND prdvl.cd_valor = 3
+          AND prdvl.cd_empresa = 1
+          AND prdvl.tp_valor = 'C'
+        ORDER BY vfn.dt_transacao DESC
+        LIMIT 50000
+      `
       : `
-      SELECT
-        vfn.cd_empresa,
-        vfn.nm_grupoempresa,
-        vfn.cd_operacao,
-        vfn.cd_nivel,
-        vfn.ds_nivel,
-        vfn.dt_transacao,
-        vfn.tp_situacao,
-        vfn.vl_unitliquido,
-        vfn.vl_unitbruto,
-        vfn.tp_operacao,
-        vfn.nr_transacao,
-        vfn.qt_faturado,
-        vfn.vl_freterat,
-        prdvl.vl_produto
-      FROM vr_fis_nfitemprod vfn
-      LEFT JOIN vr_prd_valorprod prdvl ON vfn.cd_produto = prdvl.cd_produto
-      WHERE vfn.dt_transacao BETWEEN $1 AND $2
-        AND vfn.cd_empresa IN (${empresaPlaceholders})
-        AND vfn.cd_operacao IN (${ALLOWED_OPERATIONS.join(',')})
-        AND vfn.tp_situacao NOT IN ('C', 'X')
-        AND prdvl.cd_valor = 3
-        AND prdvl.cd_empresa = 1
-        AND prdvl.tp_valor = 'C'
-      ORDER BY vfn.dt_transacao DESC
-      ${isHeavyQuery ? 'LIMIT 100000' : ''}
-    `;
+        SELECT
+          vfn.cd_empresa,
+          vfn.nm_grupoempresa,
+          vfn.cd_operacao,
+          vfn.cd_nivel,
+          vfn.ds_nivel,
+          vfn.dt_transacao,
+          vfn.tp_situacao,
+          vfn.vl_unitliquido,
+          vfn.vl_unitbruto,
+          vfn.tp_operacao,
+          vfn.nr_transacao,
+          vfn.qt_faturado,
+          vfn.vl_freterat,
+          prdvl.vl_produto
+        FROM vr_fis_nfitemprod vfn
+        LEFT JOIN vr_prd_valorprod prdvl ON vfn.cd_produto = prdvl.cd_produto
+        WHERE vfn.dt_transacao BETWEEN $1 AND $2
+          AND vfn.cd_empresa IN (${empresaPlaceholders})
+          AND vfn.tp_situacao NOT IN ('C', 'X')
+          AND prdvl.cd_valor = 3
+          AND prdvl.cd_empresa = 1
+          AND prdvl.tp_valor = 'C'
+        ORDER BY vfn.dt_transacao DESC
+        ${isHeavyQuery ? 'LIMIT 100000' : ''}
+      `;
 
     const queryType = isVeryHeavyQuery
       ? 'muito-pesada'
@@ -159,7 +304,6 @@ router.get(
       {
         periodo: { dt_inicio, dt_fim },
         empresas,
-        operacoes_permitidas: ALLOWED_OPERATIONS,
         totals,
         count: rows.length,
         optimized: isHeavyQuery || isVeryHeavyQuery,
@@ -178,7 +322,7 @@ router.get(
         },
         data: rows,
       },
-      `Dados de faturamento obtidos com sucesso (${queryType}) - Operações INCLUSIVAS`,
+      `Dados de faturamento obtidos com sucesso (${queryType}) - Todas as operações`,
     );
   }),
 );
@@ -233,61 +377,61 @@ router.get(
 
     const query = isVeryHeavyQuery
       ? `
-      SELECT
-        vfn.cd_empresa,
-        vfn.nm_grupoempresa,
-        p.nm_fantasia,
-        vfn.cd_operacao,
-        vfn.cd_nivel,
-        vfn.ds_nivel,
-        vfn.dt_transacao,
-        vfn.tp_situacao,
-        vfn.vl_unitliquido,
-        vfn.vl_unitbruto,
-        vfn.tp_operacao,
-        vfn.nr_transacao,
-        vfn.qt_faturado,
-        vfn.vl_freterat
-      FROM vr_fis_nfitemprod vfn
-      LEFT JOIN pes_pesjuridica p ON p.cd_pessoa = vfn.cd_pessoa   
-      WHERE vfn.dt_transacao BETWEEN $1 AND $2
-        AND vfn.cd_empresa IN (${empresaPlaceholders})
-        AND vfn.cd_operacao NOT IN (${EXCLUDED_OPERATIONS.slice(0, 15).join(
-          ',',
-        )})
-        AND vfn.tp_situacao NOT IN ('C', 'X')
-        ${fantasiaWhere}
-      ORDER BY vfn.dt_transacao DESC
-      LIMIT 50000
-    `
+        SELECT
+          vfn.cd_empresa,
+          vfn.nm_grupoempresa,
+          p.nm_fantasia,
+          vfn.cd_operacao,
+          vfn.cd_nivel,
+          vfn.ds_nivel,
+          vfn.dt_transacao,
+          vfn.tp_situacao,
+          vfn.vl_unitliquido,
+          vfn.vl_unitbruto,
+          vfn.tp_operacao,
+          vfn.nr_transacao,
+          vfn.qt_faturado,
+          vfn.vl_freterat
+        FROM vr_fis_nfitemprod vfn
+        LEFT JOIN pes_pesjuridica p ON p.cd_pessoa = vfn.cd_pessoa   
+        WHERE vfn.dt_transacao BETWEEN $1 AND $2
+          AND vfn.cd_empresa IN (${empresaPlaceholders})
+          AND vfn.cd_operacao NOT IN (${EXCLUDED_OPERATIONS.slice(0, 15).join(
+            ',',
+          )})
+          AND vfn.tp_situacao NOT IN ('C', 'X')
+          ${fantasiaWhere}
+        ORDER BY vfn.dt_transacao DESC
+        LIMIT 50000
+      `
       : `
-      SELECT
-        vfn.cd_empresa,
-        vfn.nm_grupoempresa,
-        p.nm_fantasia,
-        vfn.cd_operacao,
-        vfn.cd_nivel,
-        vfn.ds_nivel,
-        vfn.dt_transacao,
-        vfn.tp_situacao,
-        vfn.vl_unitliquido,
-        vfn.vl_unitbruto,
-        vfn.tp_operacao,
-        vfn.nr_transacao,
-        vfn.qt_faturado,
-        vfn.vl_freterat
-      FROM vr_fis_nfitemprod vfn
-      LEFT JOIN pes_pesjuridica p ON p.cd_pessoa = vfn.cd_pessoa   
-      WHERE vfn.dt_transacao BETWEEN $1 AND $2
-        AND vfn.cd_empresa IN (${empresaPlaceholders})
-        AND vfn.cd_operacao NOT IN (${EXCLUDED_OPERATIONS.slice(0, 20).join(
-          ',',
-        )})
-        AND vfn.tp_situacao NOT IN ('C', 'X')
-        ${fantasiaWhere}
-      ORDER BY vfn.dt_transacao DESC
-      ${isHeavyQuery ? 'LIMIT 100000' : ''}
-    `;
+        SELECT
+          vfn.cd_empresa,
+          vfn.nm_grupoempresa,
+          p.nm_fantasia,
+          vfn.cd_operacao,
+          vfn.cd_nivel,
+          vfn.ds_nivel,
+          vfn.dt_transacao,
+          vfn.tp_situacao,
+          vfn.vl_unitliquido,
+          vfn.vl_unitbruto,
+          vfn.tp_operacao,
+          vfn.nr_transacao,
+          vfn.qt_faturado,
+          vfn.vl_freterat
+        FROM vr_fis_nfitemprod vfn
+        LEFT JOIN pes_pesjuridica p ON p.cd_pessoa = vfn.cd_pessoa   
+        WHERE vfn.dt_transacao BETWEEN $1 AND $2
+          AND vfn.cd_empresa IN (${empresaPlaceholders})
+          AND vfn.cd_operacao NOT IN (${EXCLUDED_OPERATIONS.slice(0, 20).join(
+            ',',
+          )})
+          AND vfn.tp_situacao NOT IN ('C', 'X')
+          ${fantasiaWhere}
+        ORDER BY vfn.dt_transacao DESC
+        ${isHeavyQuery ? 'LIMIT 100000' : ''}
+      `;
 
     const queryType = isVeryHeavyQuery
       ? 'muito-pesada'
@@ -385,65 +529,65 @@ router.get(
 
     const query = isVeryHeavyQuery
       ? `
-      SELECT
-        vfn.cd_empresa,
-        vfn.nm_grupoempresa,
-        p.cd_pessoa,
-        p.nm_pessoa,
-        pc.cd_classificacao,
-        vfn.cd_operacao,
-        vfn.tp_operacao,
-        vfn.cd_nivel,
-        vfn.ds_nivel,
-        vfn.dt_transacao,
-        vfn.vl_unitliquido,
-        vfn.vl_unitbruto,
-        vfn.nr_transacao,
-        vfn.qt_faturado,
-        vfn.vl_freterat
-      FROM vr_fis_nfitemprod vfn
-      LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
-      LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
-      WHERE vfn.dt_transacao BETWEEN $1 AND $2
-        AND vfn.cd_empresa IN (${empresaPlaceholders})
-        AND vfn.cd_operacao NOT IN (${EXCLUDED_OPERATIONS.slice(0, 20).join(
-          ',',
-        )})
-        AND vfn.tp_situacao NOT IN ('C', 'X')
-        AND pc.cd_tipoclas = 5
-      ORDER BY vfn.dt_transacao DESC
-      LIMIT 50000
-    `
+        SELECT
+          vfn.cd_empresa,
+          vfn.nm_grupoempresa,
+          p.cd_pessoa,
+          p.nm_pessoa,
+          pc.cd_classificacao,
+          vfn.cd_operacao,
+          vfn.tp_operacao,
+          vfn.cd_nivel,
+          vfn.ds_nivel,
+          vfn.dt_transacao,
+          vfn.vl_unitliquido,
+          vfn.vl_unitbruto,
+          vfn.nr_transacao,
+          vfn.qt_faturado,
+          vfn.vl_freterat
+        FROM vr_fis_nfitemprod vfn
+        LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
+        LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
+        WHERE vfn.dt_transacao BETWEEN $1 AND $2
+          AND vfn.cd_empresa IN (${empresaPlaceholders})
+          AND vfn.cd_operacao NOT IN (${EXCLUDED_OPERATIONS.slice(0, 20).join(
+            ',',
+          )})
+          AND vfn.tp_situacao NOT IN ('C', 'X')
+          AND pc.cd_tipoclas = 5
+        ORDER BY vfn.dt_transacao DESC
+        LIMIT 50000
+      `
       : `
-      SELECT
-        vfn.cd_empresa,
-        vfn.nm_grupoempresa,
-        p.cd_pessoa,
-        p.nm_pessoa,
-        pc.cd_classificacao,
-        vfn.cd_operacao,
-        vfn.tp_operacao,
-        vfn.cd_nivel,
-        vfn.ds_nivel,
-        vfn.dt_transacao,
-        vfn.vl_unitliquido,
-        vfn.vl_unitbruto,
-        vfn.nr_transacao,
-        vfn.qt_faturado,
-        vfn.vl_freterat
-      FROM vr_fis_nfitemprod vfn
-      LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
-      LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
-      WHERE vfn.dt_transacao BETWEEN $1 AND $2
-        AND vfn.cd_empresa IN (${empresaPlaceholders})
-        AND vfn.cd_operacao NOT IN (${EXCLUDED_OPERATIONS.slice(0, 25).join(
-          ',',
-        )})
-        AND vfn.tp_situacao NOT IN ('C', 'X')
-        AND pc.cd_tipoclas = 5
-      ORDER BY vfn.dt_transacao DESC
-      ${isHeavyQuery ? 'LIMIT 100000' : ''}
-    `;
+        SELECT
+          vfn.cd_empresa,
+          vfn.nm_grupoempresa,
+          p.cd_pessoa,
+          p.nm_pessoa,
+          pc.cd_classificacao,
+          vfn.cd_operacao,
+          vfn.tp_operacao,
+          vfn.cd_nivel,
+          vfn.ds_nivel,
+          vfn.dt_transacao,
+          vfn.vl_unitliquido,
+          vfn.vl_unitbruto,
+          vfn.nr_transacao,
+          vfn.qt_faturado,
+          vfn.vl_freterat
+        FROM vr_fis_nfitemprod vfn
+        LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
+        LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
+        WHERE vfn.dt_transacao BETWEEN $1 AND $2
+          AND vfn.cd_empresa IN (${empresaPlaceholders})
+          AND vfn.cd_operacao NOT IN (${EXCLUDED_OPERATIONS.slice(0, 25).join(
+            ',',
+          )})
+          AND vfn.tp_situacao NOT IN ('C', 'X')
+          AND pc.cd_tipoclas = 5
+        ORDER BY vfn.dt_transacao DESC
+        ${isHeavyQuery ? 'LIMIT 100000' : ''}
+      `;
 
     const queryType = isVeryHeavyQuery
       ? 'muito-pesada'
@@ -547,69 +691,69 @@ router.get(
 
     const query = isVeryHeavyQuery
       ? `
-      SELECT
-        vfn.cd_grupoempresa,
-        vfn.nm_grupoempresa,
-        p.cd_pessoa,
-        p.nm_pessoa,
-        pc.cd_tipoclas,
-        pc.cd_classificacao,
-        vfn.cd_operacao,
-        vfn.cd_nivel,
-        vfn.ds_nivel,
-        vfn.dt_transacao,
-        vfn.tp_situacao,
-        vfn.vl_unitliquido,
-        vfn.vl_unitbruto,
-        vfn.tp_operacao,
-        vfn.nr_transacao,
-        vfn.qt_faturado,
-        vfn.vl_freterat
-      FROM vr_fis_nfitemprod vfn
-      LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
-      LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
-      WHERE vfn.dt_transacao BETWEEN $1 AND $2
-        AND vfn.cd_empresa IN (${empresaPlaceholders})
-        AND vfn.cd_operacao NOT IN (${excludedOperationsRevenda
-          .slice(0, 30)
-          .join(',')})
-        AND pc.cd_tipoclas in (20,7)
-        AND pc.cd_classificacao::integer in (3,1)
-        AND vfn.tp_situacao NOT IN ('C', 'X')
-      ORDER BY vfn.dt_transacao DESC
-      LIMIT 50000
-    `
+        SELECT
+          vfn.cd_grupoempresa,
+          vfn.nm_grupoempresa,
+          p.cd_pessoa,
+          p.nm_pessoa,
+          pc.cd_tipoclas,
+          pc.cd_classificacao,
+          vfn.cd_operacao,
+          vfn.cd_nivel,
+          vfn.ds_nivel,
+          vfn.dt_transacao,
+          vfn.tp_situacao,
+          vfn.vl_unitliquido,
+          vfn.vl_unitbruto,
+          vfn.tp_operacao,
+          vfn.nr_transacao,
+          vfn.qt_faturado,
+          vfn.vl_freterat
+        FROM vr_fis_nfitemprod vfn
+        LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
+        LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
+        WHERE vfn.dt_transacao BETWEEN $1 AND $2
+          AND vfn.cd_empresa IN (${empresaPlaceholders})
+          AND vfn.cd_operacao NOT IN (${excludedOperationsRevenda
+            .slice(0, 30)
+            .join(',')})
+          AND pc.cd_tipoclas in (20,7)
+          AND pc.cd_classificacao::integer in (3,1)
+          AND vfn.tp_situacao NOT IN ('C', 'X')
+        ORDER BY vfn.dt_transacao DESC
+        LIMIT 50000
+      `
       : `
-      SELECT
-        vfn.cd_grupoempresa,
-        vfn.nm_grupoempresa,
-        p.cd_pessoa,
-        p.nm_pessoa,
-        pc.cd_tipoclas,
-        pc.cd_classificacao,
-        vfn.cd_operacao,
-        vfn.cd_nivel,
-        vfn.ds_nivel,
-        vfn.dt_transacao,
-        vfn.tp_situacao,
-        vfn.vl_unitliquido,
-        vfn.vl_unitbruto,
-        vfn.tp_operacao,
-        vfn.nr_transacao,
-        vfn.qt_faturado,
-        vfn.vl_freterat
-      FROM vr_fis_nfitemprod vfn
-      LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
-      LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
-      WHERE vfn.dt_transacao BETWEEN $1 AND $2
-        AND vfn.cd_empresa IN (${empresaPlaceholders})
-        AND vfn.cd_operacao NOT IN (${excludedOperationsRevenda.join(',')})
-        AND pc.cd_tipoclas in (20,7)
-        AND pc.cd_classificacao::integer in (3,1)
-        AND vfn.tp_situacao NOT IN ('C', 'X')
-      ORDER BY vfn.dt_transacao DESC
-      ${isHeavyQuery ? 'LIMIT 100000' : ''}
-    `;
+        SELECT
+          vfn.cd_grupoempresa,
+          vfn.nm_grupoempresa,
+          p.cd_pessoa,
+          p.nm_pessoa,
+          pc.cd_tipoclas,
+          pc.cd_classificacao,
+          vfn.cd_operacao,
+          vfn.cd_nivel,
+          vfn.ds_nivel,
+          vfn.dt_transacao,
+          vfn.tp_situacao,
+          vfn.vl_unitliquido,
+          vfn.vl_unitbruto,
+          vfn.tp_operacao,
+          vfn.nr_transacao,
+          vfn.qt_faturado,
+          vfn.vl_freterat
+        FROM vr_fis_nfitemprod vfn
+        LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
+        LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
+        WHERE vfn.dt_transacao BETWEEN $1 AND $2
+          AND vfn.cd_empresa IN (${empresaPlaceholders})
+          AND vfn.cd_operacao NOT IN (${excludedOperationsRevenda.join(',')})
+          AND pc.cd_tipoclas in (20,7)
+          AND pc.cd_classificacao::integer in (3,1)
+          AND vfn.tp_situacao NOT IN ('C', 'X')
+        ORDER BY vfn.dt_transacao DESC
+        ${isHeavyQuery ? 'LIMIT 100000' : ''}
+      `;
 
     const queryType = isVeryHeavyQuery
       ? 'muito-pesada'
@@ -693,25 +837,51 @@ router.get(
 
     // Query otimizada com LIMIT para evitar sobrecarga
     const query = `
-      SELECT
-        A.CD_VENDEDOR AS vendedor,
-        A.NM_VENDEDOR AS nome_vendedor,
-        B.CD_COMPVEND,
-        SUM(
-          CASE
-            WHEN B.TP_OPERACAO = 'E' AND B.TP_SITUACAO = 4 THEN COALESCE(B.QT_SOLICITADA, 0)
-            ELSE 0
-          END
-        ) AS pa_entrada,
-        SUM(
-          CASE
-            WHEN B.TP_OPERACAO = 'S' AND B.TP_SITUACAO = 4 THEN COALESCE(B.QT_SOLICITADA, 0)
-            ELSE 0
-          END
-        ) AS pa_saida,
-        COUNT(*) FILTER (WHERE B.TP_SITUACAO = 4 AND B.TP_OPERACAO = 'S') AS transacoes_saida,
-        COUNT(*) FILTER (WHERE B.TP_SITUACAO = 4 AND B.TP_OPERACAO = 'E') AS transacoes_entrada,
-        COALESCE(
+        SELECT
+          A.CD_VENDEDOR AS vendedor,
+          A.NM_VENDEDOR AS nome_vendedor,
+          B.CD_COMPVEND,
+          SUM(
+            CASE
+              WHEN B.TP_OPERACAO = 'E' AND B.TP_SITUACAO = 4 THEN COALESCE(B.QT_SOLICITADA, 0)
+              ELSE 0
+            END
+          ) AS pa_entrada,
+          SUM(
+            CASE
+              WHEN B.TP_OPERACAO = 'S' AND B.TP_SITUACAO = 4 THEN COALESCE(B.QT_SOLICITADA, 0)
+              ELSE 0
+            END
+          ) AS pa_saida,
+          COUNT(*) FILTER (WHERE B.TP_SITUACAO = 4 AND B.TP_OPERACAO = 'S') AS transacoes_saida,
+          COUNT(*) FILTER (WHERE B.TP_SITUACAO = 4 AND B.TP_OPERACAO = 'E') AS transacoes_entrada,
+          COALESCE(
+            (
+              SUM(
+                CASE
+                  WHEN B.TP_SITUACAO = 4 AND B.TP_OPERACAO = 'S' THEN COALESCE(B.VL_TOTAL, 0)
+                  WHEN B.TP_SITUACAO = 4 AND B.TP_OPERACAO = 'E' THEN -COALESCE(B.VL_TOTAL, 0)
+                  ELSE 0
+                END
+              )
+              -
+              SUM(
+                CASE
+                  WHEN B.TP_SITUACAO = 4 AND B.TP_OPERACAO IN ('S', 'E') THEN COALESCE(B.VL_FRETE, 0)
+                  ELSE 0
+                END
+              )
+            ), 0
+          ) AS faturamento
+        FROM PES_VENDEDOR A
+        INNER JOIN TRA_TRANSACAO B ON A.CD_VENDEDOR = B.CD_COMPVEND
+        WHERE B.TP_SITUACAO = 4
+          AND B.TP_OPERACAO IN ('S', 'E')
+          AND B.CD_GRUPOEMPRESA NOT IN (${excludedGroups.join(',')})
+          AND B.CD_OPERACAO IN (${allowedOperations.join(',')})
+          AND B.DT_TRANSACAO BETWEEN $1::timestamp AND $2::timestamp
+        GROUP BY A.CD_VENDEDOR, A.NM_VENDEDOR, B.CD_COMPVEND
+        HAVING COALESCE(
           (
             SUM(
               CASE
@@ -728,48 +898,22 @@ router.get(
               END
             )
           ), 0
-        ) AS faturamento
-      FROM PES_VENDEDOR A
-      INNER JOIN TRA_TRANSACAO B ON A.CD_VENDEDOR = B.CD_COMPVEND
-      WHERE B.TP_SITUACAO = 4
-        AND B.TP_OPERACAO IN ('S', 'E')
-        AND B.CD_GRUPOEMPRESA NOT IN (${excludedGroups.join(',')})
-        AND B.CD_OPERACAO IN (${allowedOperations.join(',')})
-        AND B.DT_TRANSACAO BETWEEN $1::timestamp AND $2::timestamp
-      GROUP BY A.CD_VENDEDOR, A.NM_VENDEDOR, B.CD_COMPVEND
-      HAVING COALESCE(
-        (
-          SUM(
-            CASE
-              WHEN B.TP_SITUACAO = 4 AND B.TP_OPERACAO = 'S' THEN COALESCE(B.VL_TOTAL, 0)
-              WHEN B.TP_SITUACAO = 4 AND B.TP_OPERACAO = 'E' THEN -COALESCE(B.VL_TOTAL, 0)
-              ELSE 0
-            END
-          )
-          -
-          SUM(
-            CASE
-              WHEN B.TP_SITUACAO = 4 AND B.TP_OPERACAO IN ('S', 'E') THEN COALESCE(B.VL_FRETE, 0)
-              ELSE 0
-            END
-          )
-        ), 0
-      ) > 0
-      ORDER BY faturamento DESC
-      LIMIT $3 OFFSET $4
-    `;
+        ) > 0
+        ORDER BY faturamento DESC
+        LIMIT $3 OFFSET $4
+      `;
 
     // Query de contagem simplificada
     const countQuery = `
-      SELECT COUNT(DISTINCT A.CD_VENDEDOR) as total
-      FROM PES_VENDEDOR A
-      INNER JOIN TRA_TRANSACAO B ON A.CD_VENDEDOR = B.CD_COMPVEND
-      WHERE B.TP_SITUACAO = 4
-        AND B.TP_OPERACAO IN ('S', 'E')
-        AND B.CD_GRUPOEMPRESA NOT IN (${excludedGroups.join(',')})
-        AND B.CD_OPERACAO IN (${allowedOperations.join(',')})
-        AND B.DT_TRANSACAO BETWEEN $1::timestamp AND $2::timestamp
-    `;
+        SELECT COUNT(DISTINCT A.CD_VENDEDOR) as total
+        FROM PES_VENDEDOR A
+        INNER JOIN TRA_TRANSACAO B ON A.CD_VENDEDOR = B.CD_COMPVEND
+        WHERE B.TP_SITUACAO = 4
+          AND B.TP_OPERACAO IN ('S', 'E')
+          AND B.CD_GRUPOEMPRESA NOT IN (${excludedGroups.join(',')})
+          AND B.CD_OPERACAO IN (${allowedOperations.join(',')})
+          AND B.DT_TRANSACAO BETWEEN $1::timestamp AND $2::timestamp
+      `;
 
     console.log(
       `🔍 Ranking-vendedores: período ${dataInicio} a ${dataFim}, limit: ${limit}, offset: ${offset}`,
@@ -821,20 +965,20 @@ router.get(
 
     // Query simplificada para teste
     const query = `
-      SELECT
-        A.CD_VENDEDOR AS vendedor,
-        A.NM_VENDEDOR AS nome_vendedor,
-        COUNT(*) as total_transacoes,
-        SUM(COALESCE(B.VL_TOTAL, 0)) as faturamento_total
-      FROM PES_VENDEDOR A
-      INNER JOIN TRA_TRANSACAO B ON A.CD_VENDEDOR = B.CD_COMPVEND
-      WHERE B.TP_SITUACAO = 4
-        AND B.TP_OPERACAO = 'S'
-        AND B.DT_TRANSACAO BETWEEN $1::timestamp AND $2::timestamp
-      GROUP BY A.CD_VENDEDOR, A.NM_VENDEDOR
-      ORDER BY faturamento_total DESC
-      LIMIT 50
-    `;
+        SELECT
+          A.CD_VENDEDOR AS vendedor,
+          A.NM_VENDEDOR AS nome_vendedor,
+          COUNT(*) as total_transacoes,
+          SUM(COALESCE(B.VL_TOTAL, 0)) as faturamento_total
+        FROM PES_VENDEDOR A
+        INNER JOIN TRA_TRANSACAO B ON A.CD_VENDEDOR = B.CD_COMPVEND
+        WHERE B.TP_SITUACAO = 4
+          AND B.TP_OPERACAO = 'S'
+          AND B.DT_TRANSACAO BETWEEN $1::timestamp AND $2::timestamp
+        GROUP BY A.CD_VENDEDOR, A.NM_VENDEDOR
+        ORDER BY faturamento_total DESC
+        LIMIT 50
+      `;
 
     console.log(
       `🔍 Ranking-vendedores-simples: período ${dataInicio} a ${dataFim}`,
@@ -873,11 +1017,11 @@ router.get(
     try {
       // Teste simples de conexão
       const testQuery = `
-        SELECT 
-          COUNT(*) as total_vendedores
-        FROM PES_VENDEDOR
-        LIMIT 1
-      `;
+          SELECT 
+            COUNT(*) as total_vendedores
+          FROM PES_VENDEDOR
+          LIMIT 1
+        `;
 
       const resultado = await pool.query(testQuery);
 
@@ -930,25 +1074,24 @@ router.get(
       .join(',');
 
     const query = `
-      SELECT
-        p.cd_pessoa,
-        p.nm_pessoa,
-        pc.cd_tipoclas,
-        pc.cd_classificacao,
-        vfn.vl_unitliquido,
-        vfn.vl_unitbruto,
-        vfn.tp_operacao,
-        vfn.nr_transacao,
-        vfn.vl_freterat,
-        vfn.vl_icms
-      FROM vr_fis_nfitemprod vfn
-      LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
-      LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
-      WHERE vfn.dt_transacao BETWEEN $1 AND $2
-        AND vfn.cd_empresa IN (${empresaPlaceholders})
-        AND vfn.cd_operacao IN (${ALLOWED_OPERATIONS.join(',')})
-        AND vfn.tp_situacao NOT IN ('C', 'X')
-    `;
+        SELECT
+          p.cd_pessoa,
+          p.nm_pessoa,
+          pc.cd_tipoclas,
+          pc.cd_classificacao,
+          vfn.vl_unitliquido,
+          vfn.vl_unitbruto,
+          vfn.tp_operacao,
+          vfn.nr_transacao,
+          vfn.vl_freterat,
+          vfn.vl_icms
+        FROM vr_fis_nfitemprod vfn
+        LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
+        LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
+        WHERE vfn.dt_transacao BETWEEN $1 AND $2
+          AND vfn.cd_empresa IN (${empresaPlaceholders})
+          AND vfn.tp_situacao NOT IN ('C', 'X')
+      `;
 
     const { rows } = await pool.query(query, params);
     successResponse(
@@ -1005,27 +1148,27 @@ router.get(
     }
 
     const query = `
-      SELECT
-        p.cd_pessoa,
-        p.nm_pessoa,
-        pc.cd_tipoclas,
-        pc.cd_classificacao,
-        vfn.vl_unitliquido,
-        vfn.vl_unitbruto,
-        vfn.tp_operacao,
-        vfn.nr_transacao,
-        vfn.vl_freterat,
-        vfn.vl_icms
-      FROM vr_fis_nfitemprod vfn
-      LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
-      LEFT JOIN pes_pesjuridica pj ON pj.cd_pessoa = vfn.cd_pessoa
-      LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
-      WHERE vfn.dt_transacao BETWEEN $1 AND $2
-        AND vfn.cd_empresa IN (${empresaPlaceholders})
-        AND vfn.cd_operacao NOT IN (${EXCLUDED_OPERATIONS.join(',')})
-        AND vfn.tp_situacao NOT IN ('C', 'X')
-        ${fantasiaWhere}
-    `;
+        SELECT
+          p.cd_pessoa,
+          p.nm_pessoa,
+          pc.cd_tipoclas,
+          pc.cd_classificacao,
+          vfn.vl_unitliquido,
+          vfn.vl_unitbruto,
+          vfn.tp_operacao,
+          vfn.nr_transacao,
+          vfn.vl_freterat,
+          vfn.vl_icms
+        FROM vr_fis_nfitemprod vfn
+        LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
+        LEFT JOIN pes_pesjuridica pj ON pj.cd_pessoa = vfn.cd_pessoa
+        LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
+        WHERE vfn.dt_transacao BETWEEN $1 AND $2
+          AND vfn.cd_empresa IN (${empresaPlaceholders})
+          AND vfn.cd_operacao NOT IN (${EXCLUDED_OPERATIONS.join(',')})
+          AND vfn.tp_situacao NOT IN ('C', 'X')
+          ${fantasiaWhere}
+      `;
 
     const { rows } = await pool.query(query, params);
     successResponse(
@@ -1073,26 +1216,26 @@ router.get(
       .join(',');
 
     const query = `
-      SELECT
-        p.cd_pessoa,
-        p.nm_pessoa,
-        pc.cd_tipoclas,
-        pc.cd_classificacao,
-        vfn.vl_unitliquido,
-        vfn.vl_unitbruto,
-        vfn.tp_operacao,
-        vfn.nr_transacao,
-        vfn.vl_freterat,
-        vfn.vl_icms
-      FROM vr_fis_nfitemprod vfn
-      LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
-      LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
-      WHERE vfn.dt_transacao BETWEEN $1 AND $2
-        AND vfn.cd_empresa IN (${empresaPlaceholders})
-        AND vfn.cd_operacao NOT IN (${EXCLUDED_OPERATIONS.join(',')})
-        AND vfn.tp_situacao NOT IN ('C', 'X')
-        AND pc.cd_tipoclas = 5
-    `;
+        SELECT
+          p.cd_pessoa,
+          p.nm_pessoa,
+          pc.cd_tipoclas,
+          pc.cd_classificacao,
+          vfn.vl_unitliquido,
+          vfn.vl_unitbruto,
+          vfn.tp_operacao,
+          vfn.nr_transacao,
+          vfn.vl_freterat,
+          vfn.vl_icms
+        FROM vr_fis_nfitemprod vfn
+        LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
+        LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
+        WHERE vfn.dt_transacao BETWEEN $1 AND $2
+          AND vfn.cd_empresa IN (${empresaPlaceholders})
+          AND vfn.cd_operacao NOT IN (${EXCLUDED_OPERATIONS.join(',')})
+          AND vfn.tp_situacao NOT IN ('C', 'X')
+          AND pc.cd_tipoclas = 5
+      `;
 
     const { rows } = await pool.query(query, params);
     successResponse(
@@ -1150,27 +1293,27 @@ router.get(
     ];
 
     const query = `
-      SELECT
-        p.cd_pessoa,
-        p.nm_pessoa,
-        pc.cd_tipoclas,
-        pc.cd_classificacao,
-        vfn.vl_unitliquido,
-        vfn.vl_unitbruto,
-        vfn.tp_operacao,
-        vfn.nr_transacao,
-        vfn.vl_freterat,
-        vfn.vl_icms
-      FROM vr_fis_nfitemprod vfn
-      LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
-      LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
-      WHERE vfn.dt_transacao BETWEEN $1 AND $2
-        AND vfn.cd_empresa IN (${empresaPlaceholders})
-        AND vfn.cd_operacao NOT IN (${excludedOperationsRevenda.join(',')})
-        AND pc.cd_tipoclas in (20,7)
-        AND pc.cd_classificacao::integer in (3,1)
-        AND vfn.tp_situacao NOT IN ('C', 'X')
-    `;
+        SELECT
+          p.cd_pessoa,
+          p.nm_pessoa,
+          pc.cd_tipoclas,
+          pc.cd_classificacao,
+          vfn.vl_unitliquido,
+          vfn.vl_unitbruto,
+          vfn.tp_operacao,
+          vfn.nr_transacao,
+          vfn.vl_freterat,
+          vfn.vl_icms
+        FROM vr_fis_nfitemprod vfn
+        LEFT JOIN pes_pessoa p ON p.cd_pessoa = vfn.cd_pessoa
+        LEFT JOIN vr_pes_pessoaclas pc ON vfn.cd_pessoa = pc.cd_pessoa
+        WHERE vfn.dt_transacao BETWEEN $1 AND $2
+          AND vfn.cd_empresa IN (${empresaPlaceholders})
+          AND vfn.cd_operacao NOT IN (${excludedOperationsRevenda.join(',')})
+          AND pc.cd_tipoclas in (20,7)
+          AND pc.cd_classificacao::integer in (3,1)
+          AND vfn.tp_situacao NOT IN ('C', 'X')
+      `;
 
     const { rows } = await pool.query(query, params);
     successResponse(
@@ -1235,23 +1378,23 @@ router.get(
     const params = transacoesValidas.map((t) => parseInt(t));
 
     const query = `
-      SELECT
-        ti.nr_transacao,
-        ti.dt_transacao,
-        ti.cd_imposto,
-        SUM(ti.vl_imposto) as valorimposto
-      FROM
-        tra_itemimposto ti
-      WHERE
-        ti.nr_transacao IN (${placeholders})
-      GROUP BY
-        ti.nr_transacao,
-        ti.cd_imposto,
-        ti.dt_transacao
-      ORDER BY
-        ti.nr_transacao,
-        ti.cd_imposto
-    `;
+        SELECT
+          ti.nr_transacao,
+          ti.dt_transacao,
+          ti.cd_imposto,
+          SUM(ti.vl_imposto) as valorimposto
+        FROM
+          tra_itemimposto ti
+        WHERE
+          ti.nr_transacao IN (${placeholders})
+        GROUP BY
+          ti.nr_transacao,
+          ti.cd_imposto,
+          ti.dt_transacao
+        ORDER BY
+          ti.nr_transacao,
+          ti.cd_imposto
+      `;
 
     console.log(
       `🔍 Vlimposto: ${transacoesValidas.length} transações consultadas`,
@@ -1335,55 +1478,55 @@ router.get(
     // Lista fixa de empresas e operações (conforme SQL fornecido)
     const empresasFixas = '(1, 2, 6, 11, 31, 75, 85, 92, 99)';
     const excludedOps = `(
-      522, 9001, 9009, 9027, 9017, 2, 1, 548, 555, 521, 599, 1152, 9200, 
-      2008, 536, 1153, 599, 5920, 5930, 1711, 7111, 2009, 5152, 6029, 530, 
-      5152, 5930, 650, 5010, 600, 620, 40, 1557, 2505, 8600, 590, 5153, 660, 
-      5910, 3336, 9003, 9052, 662, 5909, 5153, 5910, 3336, 9003, 530, 36, 536, 
-      1552, 51, 1556, 2500, 1126, 1127, 8160, 1122, 1102, 9986, 1128, 1553, 
-      1556, 9200, 8002, 2551, 1557, 8160, 2004, 5912, 1410, 1926, 1903, 1122, 1128, 1913, 8160, 10, 529
-    )`;
+        522, 9001, 9009, 9027, 9017, 2, 1, 548, 555, 521, 599, 1152, 9200, 
+        2008, 536, 1153, 599, 5920, 5930, 1711, 7111, 2009, 5152, 6029, 530, 
+        5152, 5930, 650, 5010, 600, 620, 40, 1557, 2505, 8600, 590, 5153, 660, 
+        5910, 3336, 9003, 9052, 662, 5909, 5153, 5910, 3336, 9003, 530, 36, 536, 
+        1552, 51, 1556, 2500, 1126, 1127, 8160, 1122, 1102, 9986, 1128, 1553, 
+        1556, 9200, 8002, 2551, 1557, 8160, 2004, 5912, 1410, 1926, 1903, 1122, 1128, 1913, 8160, 10, 529
+      )`;
 
     const query = `
-      SELECT
-        vfn.cd_grupoempresa,
-        vfn.nm_grupoempresa,
-        p.cd_pessoa,
-        p.nm_pessoa,
-        pc.cd_tipoclas,
-        pc.cd_classificacao,
-        vfn.cd_operacao,
-        vfn.cd_nivel,
-        vfn.ds_nivel,
-        prdvl.vl_produto,
-        vfn.dt_transacao,
-        vfn.tp_situacao,
-        vfn.vl_unitliquido,
-        vfn.vl_unitbruto,
-        vfn.tp_operacao,
-        vfn.nr_transacao,
-        vfn.qt_faturado,
-        vfn.vl_freterat
-      FROM
-        vr_fis_nfitemprod vfn
-      LEFT JOIN pes_pessoa p ON
-        p.cd_pessoa = vfn.cd_pessoa
-      LEFT JOIN vr_pes_pessoaclas pc ON
-        vfn.cd_pessoa = pc.cd_pessoa
-      LEFT JOIN vr_prd_valorprod prdvl ON
-        vfn.cd_produto = prdvl.cd_produto
-      WHERE
-        vfn.dt_transacao BETWEEN $1 AND $2
-        AND vfn.cd_empresa IN ${empresasFixas}
-        AND vfn.cd_operacao NOT IN ${excludedOps}
-        AND prdvl.cd_valor = 3
-        AND prdvl.cd_empresa = 1
-        AND prdvl.tp_valor = 'C'
-        AND pc.cd_tipoclas = 20
-        AND pc.cd_classificacao::integer IN (${classPlaceholders})
-        AND vfn.tp_situacao NOT IN ('C', 'X')
-      ORDER BY
-        vfn.dt_transacao DESC
-    `;
+        SELECT
+          vfn.cd_grupoempresa,
+          vfn.nm_grupoempresa,
+          p.cd_pessoa,
+          p.nm_pessoa,
+          pc.cd_tipoclas,
+          pc.cd_classificacao,
+          vfn.cd_operacao,
+          vfn.cd_nivel,
+          vfn.ds_nivel,
+          prdvl.vl_produto,
+          vfn.dt_transacao,
+          vfn.tp_situacao,
+          vfn.vl_unitliquido,
+          vfn.vl_unitbruto,
+          vfn.tp_operacao,
+          vfn.nr_transacao,
+          vfn.qt_faturado,
+          vfn.vl_freterat
+        FROM
+          vr_fis_nfitemprod vfn
+        LEFT JOIN pes_pessoa p ON
+          p.cd_pessoa = vfn.cd_pessoa
+        LEFT JOIN vr_pes_pessoaclas pc ON
+          vfn.cd_pessoa = pc.cd_pessoa
+        LEFT JOIN vr_prd_valorprod prdvl ON
+          vfn.cd_produto = prdvl.cd_produto
+        WHERE
+          vfn.dt_transacao BETWEEN $1 AND $2
+          AND vfn.cd_empresa IN ${empresasFixas}
+          AND vfn.cd_operacao NOT IN ${excludedOps}
+          AND prdvl.cd_valor = 3
+          AND prdvl.cd_empresa = 1
+          AND prdvl.tp_valor = 'C'
+          AND pc.cd_tipoclas = 20
+          AND pc.cd_classificacao::integer IN (${classPlaceholders})
+          AND vfn.tp_situacao NOT IN ('C', 'X')
+        ORDER BY
+          vfn.dt_transacao DESC
+      `;
 
     console.log(
       `🔍 CMVTest: período ${dt_inicio} a ${dt_fim}, classes=${classes.length}`,
@@ -1473,65 +1616,65 @@ router.get(
 
     const query = isVeryHeavyQuery
       ? `
-      SELECT
-        mn.cd_empresa,
-        mn.nm_grupoempresa,
-        mn.cd_pessoa,
-        mn.nm_pessoa,
-        mn.cd_tipoclas,
-        mn.cd_classificacao,
-        mn.cd_operacao,
-        mn.cd_nivel,
-        mn.ds_nivel,
-        mn.vl_produto,
-        mn.dt_transacao,
-        mn.tp_situacao,
-        mn.vl_unitliquido,
-        mn.vl_unitbruto,
-        mn.tp_operacao,
-        mn.nr_transacao,
-        mn.qt_faturado,
-        mn.vl_freterat
-      FROM
-        mv_nfitemprod mn
-      WHERE
-        mn.dt_transacao BETWEEN $1 AND $2
-        AND mn.cd_empresa IN ${empresaPlaceholders}
-        ${classWhere}
-      ORDER BY
-        mn.dt_transacao DESC
-      LIMIT 500000
-    `
+        SELECT
+          mn.cd_empresa,
+          mn.nm_grupoempresa,
+          mn.cd_pessoa,
+          mn.nm_pessoa,
+          mn.cd_tipoclas,
+          mn.cd_classificacao,
+          mn.cd_operacao,
+          mn.cd_nivel,
+          mn.ds_nivel,
+          mn.vl_produto,
+          mn.dt_transacao,
+          mn.tp_situacao,
+          mn.vl_unitliquido,
+          mn.vl_unitbruto,
+          mn.tp_operacao,
+          mn.nr_transacao,
+          mn.qt_faturado,
+          mn.vl_freterat
+        FROM
+          mv_nfitemprod mn
+        WHERE
+          mn.dt_transacao BETWEEN $1 AND $2
+          AND mn.cd_empresa IN ${empresaPlaceholders}
+          ${classWhere}
+        ORDER BY
+          mn.dt_transacao DESC
+        LIMIT 500000
+      `
       : `
-      SELECT
-        mn.cd_empresa,
-        mn.nm_grupoempresa,
-        mn.cd_pessoa,
-        mn.nm_pessoa,
-        mn.cd_tipoclas,
-        mn.cd_classificacao,
-        mn.cd_operacao,
-        mn.cd_nivel,
-        mn.ds_nivel,
-        mn.vl_produto,
-        mn.dt_transacao,
-        mn.tp_situacao,
-        mn.vl_unitliquido,
-        mn.vl_unitbruto,
-        mn.tp_operacao,
-        mn.nr_transacao,
-        mn.qt_faturado,
-        mn.vl_freterat
-      FROM
-        mv_nfitemprod mn
-      WHERE
-        mn.dt_transacao BETWEEN $1 AND $2
-        AND mn.cd_empresa IN ${empresaPlaceholders}
-        ${classWhere}
-      ORDER BY
-        mn.dt_transacao DESC
-      ${isHeavyQuery ? 'LIMIT 1000000' : ''}
-    `;
+        SELECT
+          mn.cd_empresa,
+          mn.nm_grupoempresa,
+          mn.cd_pessoa,
+          mn.nm_pessoa,
+          mn.cd_tipoclas,
+          mn.cd_classificacao,
+          mn.cd_operacao,
+          mn.cd_nivel,
+          mn.ds_nivel,
+          mn.vl_produto,
+          mn.dt_transacao,
+          mn.tp_situacao,
+          mn.vl_unitliquido,
+          mn.vl_unitbruto,
+          mn.tp_operacao,
+          mn.nr_transacao,
+          mn.qt_faturado,
+          mn.vl_freterat
+        FROM
+          mv_nfitemprod mn
+        WHERE
+          mn.dt_transacao BETWEEN $1 AND $2
+          AND mn.cd_empresa IN ${empresaPlaceholders}
+          ${classWhere}
+        ORDER BY
+          mn.dt_transacao DESC
+        ${isHeavyQuery ? 'LIMIT 1000000' : ''}
+      `;
 
     const queryType = isVeryHeavyQuery
       ? 'muito-pesada'
@@ -1643,7 +1786,8 @@ router.get(
       }
     }
 
-    // Otimização baseada no número de empresas e período (igual à rota faturamento)
+    // Otimização: Para DRE não precisamos de ORDER BY, apenas dos dados para cálculo
+    // Reduzir LIMIT para evitar timeouts, focando em performance
     const isHeavyQuery =
       empresas.length > 10 ||
       new Date(dt_fim) - new Date(dt_inicio) > 30 * 24 * 60 * 60 * 1000; // 30 dias
@@ -1653,57 +1797,53 @@ router.get(
 
     const query = isVeryHeavyQuery
       ? `
-      SELECT
-        c.cd_empresa,
-        c.nm_grupoempresa,
-        c.cd_operacao,
-        c.cd_nivel,
-        c.ds_nivel,
-        c.dt_transacao,
-        c.tp_situacao,
-        c.vl_unitliquido,
-        c.vl_unitbruto,
-        c.tp_operacao,
-        c.nr_transacao,
-        c.qt_faturado,
-        c.vl_freterat,
-        c.vl_produto
-      FROM
-        cmvvarejo c
-      WHERE
-        c.dt_transacao BETWEEN $1 AND $2
-        AND c.cd_empresa IN (${empresaPlaceholders})
-        ${classWhere}
-      ORDER BY
-        c.dt_transacao DESC
-      LIMIT 500000
-    `
+        SELECT
+          c.cd_empresa,
+          c.nm_grupoempresa,
+          c.cd_operacao,
+          c.cd_nivel,
+          c.ds_nivel,
+          c.dt_transacao,
+          c.tp_situacao,
+          c.vl_unitliquido,
+          c.vl_unitbruto,
+          c.tp_operacao,
+          c.nr_transacao,
+          c.qt_faturado,
+          c.vl_freterat,
+          c.vl_produto
+        FROM
+          cmvvarejo c
+        WHERE
+          c.dt_transacao BETWEEN $1 AND $2
+          AND c.cd_empresa IN (${empresaPlaceholders})
+          ${classWhere}
+        LIMIT 100000
+      `
       : `
-      SELECT
-        c.cd_empresa,
-        c.nm_grupoempresa,
-        c.cd_operacao,
-        c.cd_nivel,
-        c.ds_nivel,
-        c.dt_transacao,
-        c.tp_situacao,
-        c.vl_unitliquido,
-        c.vl_unitbruto,
-        c.tp_operacao,
-        c.nr_transacao,
-        c.qt_faturado,
-        c.vl_freterat,
-        c.vl_produto
-      FROM
-        cmvvarejo c
-      WHERE
-        c.dt_transacao BETWEEN $1 AND $2
-        AND c.cd_empresa IN (${empresaPlaceholders})
-        ${classWhere}
-      ORDER BY
-        c.dt_transacao DESC
-      ${isHeavyQuery ? 'LIMIT 1000000' : ''}
-    `;
+        SELECT
+          c.cd_empresa,
+          c.nm_grupoempresa,
+          c.cd_operacao,
+          c.cd_nivel,
+          c.ds_nivel,
+          c.dt_transacao,
+          c.tp_situacao,
+          c.vl_unitliquido,
+          c.vl_unitbruto,
+          c.tp_operacao,
+          c.nr_transacao,
+          c.qt_faturado,
+          c.vl_freterat,
+          c.vl_produto
+        FROM
+          cmvvarejo c
+        WHERE
+          c.dt_transacao BETWEEN $1 AND $2
+          AND c.cd_empresa IN (${empresaPlaceholders})
+          ${classWhere}
+        ${isHeavyQuery ? 'LIMIT 200000' : 'LIMIT 300000'}
+      `;
 
     const queryType = isVeryHeavyQuery
       ? 'muito-pesada'
@@ -1745,10 +1885,11 @@ router.get(
             (new Date(dt_fim) - new Date(dt_inicio)) / (1000 * 60 * 60 * 24),
           ),
           limiteAplicado: isVeryHeavyQuery
-            ? 500000
+            ? '100k (otimizado)'
             : isHeavyQuery
-            ? 1000000
-            : 'sem limite',
+            ? '200k (otimizado)'
+            : '300k (otimizado)',
+          orderByRemovido: true,
         },
         data: rows,
       },
@@ -1815,7 +1956,7 @@ router.get(
       }
     }
 
-    // Otimização baseada no número de empresas e período (igual à rota faturamento)
+    // Otimização: Para DRE não precisamos de ORDER BY, apenas dos dados para cálculo
     const isHeavyQuery =
       empresas.length > 10 ||
       new Date(dt_fim) - new Date(dt_inicio) > 30 * 24 * 60 * 60 * 1000; // 30 dias
@@ -1825,65 +1966,61 @@ router.get(
 
     const query = isVeryHeavyQuery
       ? `
-      SELECT
-        c.cd_empresa,
-        c.nm_grupoempresa,
-        c.cd_pessoa,
-        c.nm_pessoa,
-        c.cd_tipoclas,
-        c.cd_classificacao,
-        c.cd_operacao,
-        c.cd_nivel,
-        c.ds_nivel,
-        c.vl_produto,
-        c.dt_transacao,
-        c.tp_situacao,
-        c.vl_unitliquido,
-        c.vl_unitbruto,
-        c.tp_operacao,
-        c.nr_transacao,
-        c.qt_faturado,
-        c.vl_freterat
-      FROM
-        cmvfranquia c
-      WHERE
-        c.dt_transacao BETWEEN $1 AND $2
-        AND c.cd_empresa IN (${empresaPlaceholders})
-        ${classWhere}
-      ORDER BY
-        c.dt_transacao DESC
-      LIMIT 500000
-    `
+        SELECT
+          c.cd_empresa,
+          c.nm_grupoempresa,
+          c.cd_pessoa,
+          c.nm_pessoa,
+          c.cd_tipoclas,
+          c.cd_classificacao,
+          c.cd_operacao,
+          c.cd_nivel,
+          c.ds_nivel,
+          c.vl_produto,
+          c.dt_transacao,
+          c.tp_situacao,
+          c.vl_unitliquido,
+          c.vl_unitbruto,
+          c.tp_operacao,
+          c.nr_transacao,
+          c.qt_faturado,
+          c.vl_freterat
+        FROM
+          cmvfranquia c
+        WHERE
+          c.dt_transacao BETWEEN $1 AND $2
+          AND c.cd_empresa IN (${empresaPlaceholders})
+          ${classWhere}
+        LIMIT 100000
+      `
       : `
-      SELECT
-        c.cd_empresa,
-        c.nm_grupoempresa,
-        c.cd_pessoa,
-        c.nm_pessoa,
-        c.cd_tipoclas,
-        c.cd_classificacao,
-        c.cd_operacao,
-        c.cd_nivel,
-        c.ds_nivel,
-        c.vl_produto,
-        c.dt_transacao,
-        c.tp_situacao,
-        c.vl_unitliquido,
-        c.vl_unitbruto,
-        c.tp_operacao,
-        c.nr_transacao,
-        c.qt_faturado,
-        c.vl_freterat
-      FROM
-        cmvfranquia c
-      WHERE
-        c.dt_transacao BETWEEN $1 AND $2
-        AND c.cd_empresa IN (${empresaPlaceholders})
-        ${classWhere}
-      ORDER BY
-        c.dt_transacao DESC
-      ${isHeavyQuery ? 'LIMIT 1000000' : ''}
-    `;
+        SELECT
+          c.cd_empresa,
+          c.nm_grupoempresa,
+          c.cd_pessoa,
+          c.nm_pessoa,
+          c.cd_tipoclas,
+          c.cd_classificacao,
+          c.cd_operacao,
+          c.cd_nivel,
+          c.ds_nivel,
+          c.vl_produto,
+          c.dt_transacao,
+          c.tp_situacao,
+          c.vl_unitliquido,
+          c.vl_unitbruto,
+          c.tp_operacao,
+          c.nr_transacao,
+          c.qt_faturado,
+          c.vl_freterat
+        FROM
+          cmvfranquia c
+        WHERE
+          c.dt_transacao BETWEEN $1 AND $2
+          AND c.cd_empresa IN (${empresaPlaceholders})
+          ${classWhere}
+        ${isHeavyQuery ? 'LIMIT 200000' : 'LIMIT 300000'}
+      `;
 
     const queryType = isVeryHeavyQuery
       ? 'muito-pesada'
@@ -1925,10 +2062,11 @@ router.get(
             (new Date(dt_fim) - new Date(dt_inicio)) / (1000 * 60 * 60 * 24),
           ),
           limiteAplicado: isVeryHeavyQuery
-            ? 500000
+            ? '100k (otimizado)'
             : isHeavyQuery
-            ? 1000000
-            : 'sem limite',
+            ? '200k (otimizado)'
+            : '300k (otimizado)',
+          orderByRemovido: true,
         },
         data: rows,
       },
@@ -2005,65 +2143,61 @@ router.get(
 
     const query = isVeryHeavyQuery
       ? `
-      SELECT
-        c.cd_empresa,
-        c.nm_grupoempresa,
-        c.cd_pessoa,
-        c.nm_pessoa,
-        c.cd_tipoclas,
-        c.cd_classificacao,
-        c.cd_operacao,
-        c.cd_nivel,
-        c.ds_nivel,
-        c.vl_produto,
-        c.dt_transacao,
-        c.tp_situacao,
-        c.vl_unitliquido,
-        c.vl_unitbruto,
-        c.tp_operacao,
-        c.nr_transacao,
-        c.qt_faturado,
-        c.vl_freterat
-      FROM
-        cmvmultimarcas c
-      WHERE
-        c.dt_transacao BETWEEN $1 AND $2
-        AND c.cd_empresa IN (${empresaPlaceholders})
-        ${classWhere}
-      ORDER BY
-        c.dt_transacao DESC
-      LIMIT 500000
-    `
+        SELECT
+          c.cd_empresa,
+          c.nm_grupoempresa,
+          c.cd_pessoa,
+          c.nm_pessoa,
+          c.cd_tipoclas,
+          c.cd_classificacao,
+          c.cd_operacao,
+          c.cd_nivel,
+          c.ds_nivel,
+          c.vl_produto,
+          c.dt_transacao,
+          c.tp_situacao,
+          c.vl_unitliquido,
+          c.vl_unitbruto,
+          c.tp_operacao,
+          c.nr_transacao,
+          c.qt_faturado,
+          c.vl_freterat
+        FROM
+          cmvmultimarcas c
+        WHERE
+          c.dt_transacao BETWEEN $1 AND $2
+          AND c.cd_empresa IN (${empresaPlaceholders})
+          ${classWhere}
+        LIMIT 50000
+      `
       : `
-      SELECT
-        c.cd_empresa,
-        c.nm_grupoempresa,
-        c.cd_pessoa,
-        c.nm_pessoa,
-        c.cd_tipoclas,
-        c.cd_classificacao,
-        c.cd_operacao,
-        c.cd_nivel,
-        c.ds_nivel,
-        c.vl_produto,
-        c.dt_transacao,
-        c.tp_situacao,
-        c.vl_unitliquido,
-        c.vl_unitbruto,
-        c.tp_operacao,
-        c.nr_transacao,
-        c.qt_faturado,
-        c.vl_freterat
-      FROM
-        cmvmultimarcas c
-      WHERE
-        c.dt_transacao BETWEEN $1 AND $2
-        AND c.cd_empresa IN (${empresaPlaceholders})
-        ${classWhere}
-      ORDER BY
-        c.dt_transacao DESC
-      ${isHeavyQuery ? 'LIMIT 1000000' : ''}
-    `;
+        SELECT
+          c.cd_empresa,
+          c.nm_grupoempresa,
+          c.cd_pessoa,
+          c.nm_pessoa,
+          c.cd_tipoclas,
+          c.cd_classificacao,
+          c.cd_operacao,
+          c.cd_nivel,
+          c.ds_nivel,
+          c.vl_produto,
+          c.dt_transacao,
+          c.tp_situacao,
+          c.vl_unitliquido,
+          c.vl_unitbruto,
+          c.tp_operacao,
+          c.nr_transacao,
+          c.qt_faturado,
+          c.vl_freterat
+        FROM
+          cmvmultimarcas c
+        WHERE
+          c.dt_transacao BETWEEN $1 AND $2
+          AND c.cd_empresa IN (${empresaPlaceholders})
+          ${classWhere}
+        ${isHeavyQuery ? 'LIMIT 100000' : 'LIMIT 150000'}
+      `;
 
     const queryType = isVeryHeavyQuery
       ? 'muito-pesada'
@@ -2105,10 +2239,11 @@ router.get(
             (new Date(dt_fim) - new Date(dt_inicio)) / (1000 * 60 * 60 * 24),
           ),
           limiteAplicado: isVeryHeavyQuery
-            ? 500000
+            ? '50k (otimizado)'
             : isHeavyQuery
-            ? 1000000
-            : 'sem limite',
+            ? '100k (otimizado)'
+            : '150k (otimizado)',
+          orderByRemovido: true,
         },
         data: rows,
       },
@@ -2185,65 +2320,61 @@ router.get(
 
     const query = isVeryHeavyQuery
       ? `
-      SELECT
-        c.cd_empresa,
-        c.nm_grupoempresa,
-        c.cd_pessoa,
-        c.nm_pessoa,
-        c.cd_tipoclas,
-        c.cd_classificacao,
-        c.cd_operacao,
-        c.cd_nivel,
-        c.ds_nivel,
-        c.vl_produto,
-        c.dt_transacao,
-        c.tp_situacao,
-        c.vl_unitliquido,
-        c.vl_unitbruto,
-        c.tp_operacao,
-        c.nr_transacao,
-        c.qt_faturado,
-        c.vl_freterat
-      FROM
-        cmvrevenda c
-      WHERE
-        c.dt_transacao BETWEEN $1 AND $2
-        AND c.cd_empresa IN (${empresaPlaceholders})
-        ${classWhere}
-      ORDER BY
-        c.dt_transacao DESC
-      LIMIT 500000
-    `
+        SELECT
+          c.cd_empresa,
+          c.nm_grupoempresa,
+          c.cd_pessoa,
+          c.nm_pessoa,
+          c.cd_tipoclas,
+          c.cd_classificacao,
+          c.cd_operacao,
+          c.cd_nivel,
+          c.ds_nivel,
+          c.vl_produto,
+          c.dt_transacao,
+          c.tp_situacao,
+          c.vl_unitliquido,
+          c.vl_unitbruto,
+          c.tp_operacao,
+          c.nr_transacao,
+          c.qt_faturado,
+          c.vl_freterat
+        FROM
+          cmvrevenda c
+        WHERE
+          c.dt_transacao BETWEEN $1 AND $2
+          AND c.cd_empresa IN (${empresaPlaceholders})
+          ${classWhere}
+        LIMIT 50000
+      `
       : `
-      SELECT
-        c.cd_empresa,
-        c.nm_grupoempresa,
-        c.cd_pessoa,
-        c.nm_pessoa,
-        c.cd_tipoclas,
-        c.cd_classificacao,
-        c.cd_operacao,
-        c.cd_nivel,
-        c.ds_nivel,
-        c.vl_produto,
-        c.dt_transacao,
-        c.tp_situacao,
-        c.vl_unitliquido,
-        c.vl_unitbruto,
-        c.tp_operacao,
-        c.nr_transacao,
-        c.qt_faturado,
-        c.vl_freterat
-      FROM
-        cmvrevenda c
-      WHERE
-        c.dt_transacao BETWEEN $1 AND $2
-        AND c.cd_empresa IN (${empresaPlaceholders})
-        ${classWhere}
-      ORDER BY
-        c.dt_transacao DESC
-      ${isHeavyQuery ? 'LIMIT 1000000' : ''}
-    `;
+        SELECT
+          c.cd_empresa,
+          c.nm_grupoempresa,
+          c.cd_pessoa,
+          c.nm_pessoa,
+          c.cd_tipoclas,
+          c.cd_classificacao,
+          c.cd_operacao,
+          c.cd_nivel,
+          c.ds_nivel,
+          c.vl_produto,
+          c.dt_transacao,
+          c.tp_situacao,
+          c.vl_unitliquido,
+          c.vl_unitbruto,
+          c.tp_operacao,
+          c.nr_transacao,
+          c.qt_faturado,
+          c.vl_freterat
+        FROM
+          cmvrevenda c
+        WHERE
+          c.dt_transacao BETWEEN $1 AND $2
+          AND c.cd_empresa IN (${empresaPlaceholders})
+          ${classWhere}
+        ${isHeavyQuery ? 'LIMIT 100000' : 'LIMIT 150000'}
+      `;
 
     const queryType = isVeryHeavyQuery
       ? 'muito-pesada'
@@ -2285,14 +2416,532 @@ router.get(
             (new Date(dt_fim) - new Date(dt_inicio)) / (1000 * 60 * 60 * 24),
           ),
           limiteAplicado: isVeryHeavyQuery
-            ? 500000
+            ? '50k (otimizado)'
             : isHeavyQuery
-            ? 1000000
-            : 'sem limite',
+            ? '100k (otimizado)'
+            : '150k (otimizado)',
+          orderByRemovido: true,
         },
         data: rows,
       },
       `CMV Revenda obtido com sucesso usando view cmvrevenda (${queryType})`,
+    );
+  }),
+);
+
+/**
+ * @route GET /sales/dre-data
+ * @desc Rota consolidada para DRE - executa todas as 4 consultas CMV em paralelo no backend
+ * @access Public
+ * @query {dt_inicio, dt_fim, cd_empresa[]}
+ */
+router.get(
+  '/dre-data',
+  sanitizeInput,
+  validateDateFormat(['dt_inicio', 'dt_fim']),
+  asyncHandler(async (req, res) => {
+    const {
+      dt_inicio = '2025-01-01',
+      dt_fim = '2025-09-18',
+      cd_empresa,
+    } = req.query;
+
+    // Empresas para CMV (Varejo usa lista específica, outros usam fixa)
+    const empresasVarejo = cd_empresa
+      ? Array.isArray(cd_empresa)
+        ? cd_empresa
+        : [cd_empresa]
+      : [
+          1, 2, 6, 7, 11, 31, 65, 75, 85, 90, 91, 92, 93, 94, 95, 96, 97, 98,
+          99, 100, 101, 111, 200, 311, 600, 650, 700, 750, 850, 890, 910, 920,
+          930, 940, 950, 960, 970, 980, 990,
+        ];
+
+    const empresasFixas = [1, 2, 6, 11, 31, 75, 85, 92, 99];
+
+    // Otimização: queries agregadas em vez de retornar todos os registros
+    const createAggregatedQuery = (
+      viewName,
+      empresas,
+      classificacao = null,
+    ) => {
+      const empresaList = empresas.join(',');
+      const classFilter = classificacao
+        ? `AND cd_classificacao::integer = ${classificacao}`
+        : '';
+
+      return `
+          SELECT 
+            '${viewName}' as canal,
+            COUNT(*) as total_registros,
+            SUM(CASE WHEN tp_operacao = 'S' THEN vl_unitbruto * qt_faturado + COALESCE(vl_freterat, 0) ELSE 0 END) as receita_bruta,
+            SUM(CASE WHEN tp_operacao = 'E' THEN ABS(vl_unitbruto * qt_faturado + COALESCE(vl_freterat, 0)) ELSE 0 END) as devolucoes,
+            SUM(CASE WHEN tp_operacao = 'S' THEN vl_unitliquido * qt_faturado + COALESCE(vl_freterat, 0) ELSE 0 END) as receita_liquida,
+            SUM(CASE WHEN tp_operacao = 'S' THEN vl_produto * qt_faturado ELSE 0 END) as cmv_total,
+            ARRAY_AGG(DISTINCT CASE WHEN tp_operacao = 'S' THEN nr_transacao END) FILTER (WHERE tp_operacao = 'S' AND nr_transacao IS NOT NULL) as nr_transacoes
+          FROM ${viewName}
+          WHERE dt_transacao BETWEEN $1 AND $2
+            AND cd_empresa IN (${empresaList})
+            AND tp_situacao NOT IN ('C', 'X')
+            ${classFilter}
+        `;
+    };
+
+    const params = [dt_inicio, dt_fim];
+
+    // Verificar cache primeiro
+    const cacheKey = `dre_${dt_inicio}_${dt_fim}_${JSON.stringify(cd_empresa)}`;
+    const cachedResult = dreCache.get(cacheKey);
+
+    if (cachedResult && Date.now() - cachedResult.timestamp < CACHE_TTL) {
+      console.log(`📦 DRE-DATA: Retornando dados do cache para ${cacheKey}`);
+      return successResponse(
+        res,
+        {
+          ...cachedResult.data,
+          cached: true,
+          cacheAge: Math.round((Date.now() - cachedResult.timestamp) / 1000),
+        },
+        'Dados DRE consolidados do cache (consultas paralelas agregadas)',
+      );
+    }
+
+    try {
+      console.log(
+        `🚀 DRE-DATA: Executando consultas consolidadas em paralelo para período ${dt_inicio} a ${dt_fim}`,
+      );
+
+      // Executar todas as 4 consultas CMV em paralelo no backend
+      const [varejoResult, multimarcasResult, franquiasResult, revendaResult] =
+        await Promise.all([
+          pool.query(
+            createAggregatedQuery('cmvvarejo', empresasVarejo),
+            params,
+          ),
+          pool.query(
+            createAggregatedQuery('cmvmultimarcas', empresasFixas, 2),
+            params,
+          ),
+          pool.query(
+            createAggregatedQuery('cmvfranquia', empresasFixas, 4),
+            params,
+          ),
+          pool.query(
+            createAggregatedQuery('cmvrevenda', empresasFixas, 3),
+            params,
+          ),
+        ]);
+
+      // Processar resultados
+      const processResult = (result, canal) => {
+        const row = result.rows[0] || {};
+        return {
+          canal,
+          totalRegistros: parseInt(row.total_registros) || 0,
+          receitaBruta: parseFloat(row.receita_bruta) || 0,
+          devolucoes: parseFloat(row.devolucoes) || 0,
+          receitaLiquida: parseFloat(row.receita_liquida) || 0,
+          cmvTotal: parseFloat(row.cmv_total) || 0,
+          nrTransacoes: row.nr_transacoes || [],
+        };
+      };
+
+      const varejo = processResult(varejoResult, 'varejo');
+      const multimarcas = processResult(multimarcasResult, 'multimarcas');
+      const franquias = processResult(franquiasResult, 'franquias');
+      const revenda = processResult(revendaResult, 'revenda');
+
+      // Totais consolidados
+      const totals = {
+        receitaBrutaTotal:
+          varejo.receitaBruta +
+          multimarcas.receitaBruta +
+          franquias.receitaBruta +
+          revenda.receitaBruta,
+        devolucoesTotal:
+          varejo.devolucoes +
+          multimarcas.devolucoes +
+          franquias.devolucoes +
+          revenda.devolucoes,
+        receitaLiquidaTotal:
+          varejo.receitaLiquida +
+          multimarcas.receitaLiquida +
+          franquias.receitaLiquida +
+          revenda.receitaLiquida,
+        cmvTotal:
+          varejo.cmvTotal +
+          multimarcas.cmvTotal +
+          franquias.cmvTotal +
+          revenda.cmvTotal,
+        registrosTotal:
+          varejo.totalRegistros +
+          multimarcas.totalRegistros +
+          franquias.totalRegistros +
+          revenda.totalRegistros,
+      };
+
+      // Vendas Brutas = Receita Bruta + Devoluções (conforme DRE.jsx)
+      totals.vendasBrutasTotal =
+        totals.receitaBrutaTotal + totals.devolucoesTotal;
+
+      // Lucro Bruto = Receita Líquida - CMV
+      totals.lucroBrutoTotal = totals.receitaLiquidaTotal - totals.cmvTotal;
+
+      console.log(
+        `✅ DRE-DATA: Consultas consolidadas concluídas - ${totals.registrosTotal} registros processados`,
+      );
+
+      const responseData = {
+        periodo: { dt_inicio, dt_fim },
+        empresas: {
+          varejo: empresasVarejo.length,
+          outros: empresasFixas.length,
+        },
+        canais: {
+          varejo,
+          multimarcas,
+          franquias,
+          revenda,
+        },
+        totals,
+        performance: {
+          queryType: 'consolidada-agregada',
+          backend_parallel: true,
+          dados_pre_processados: true,
+          tempo_estimado: '5-10s',
+        },
+      };
+
+      // Salvar no cache
+      dreCache.set(cacheKey, {
+        data: responseData,
+        timestamp: Date.now(),
+      });
+
+      console.log(`💾 DRE-DATA: Dados salvos no cache - ${cacheKey}`);
+
+      successResponse(
+        res,
+        responseData,
+        'Dados DRE consolidados obtidos com sucesso (consultas paralelas agregadas)',
+      );
+    } catch (error) {
+      console.error('Erro na rota DRE consolidada:', error);
+      throw error;
+    }
+  }),
+);
+
+/**
+ * @route DELETE /sales/dre-cache
+ * @desc Limpar cache DRE
+ * @access Public
+ */
+router.delete(
+  '/dre-cache',
+  asyncHandler(async (req, res) => {
+    const cacheSize = dreCache.size;
+    dreCache.clear();
+
+    successResponse(
+      res,
+      {
+        cleared: cacheSize,
+        timestamp: new Date().toISOString(),
+      },
+      `Cache DRE limpo - ${cacheSize} entradas removidas`,
+    );
+  }),
+);
+
+/**
+ * @route GET /sales/dre-cache/stats
+ * @desc Estatísticas do cache DRE
+ * @access Public
+ */
+router.get(
+  '/dre-cache/stats',
+  asyncHandler(async (req, res) => {
+    const now = Date.now();
+    const cacheStats = Array.from(dreCache.entries()).map(([key, value]) => ({
+      key,
+      age: Math.round((now - value.timestamp) / 1000),
+      expired: now - value.timestamp > CACHE_TTL,
+    }));
+
+    successResponse(
+      res,
+      {
+        total: dreCache.size,
+        ttl: CACHE_TTL / 1000,
+        entries: cacheStats,
+      },
+      'Estatísticas do cache DRE',
+    );
+  }),
+);
+
+/**
+ * @route GET /sales/auditoria-transacoes
+ * @desc Auditoria de transações similar ao DADOSTOTVS.TXT - versão otimizada com cache e agregação
+ * @access Public
+ * @query {dt_inicio, dt_fim, cd_empresa[]}
+ */
+router.get(
+  '/auditoria-transacoes',
+  sanitizeInput,
+  validateDateFormat(['dt_inicio', 'dt_fim']),
+  asyncHandler(async (req, res) => {
+    const {
+      dt_inicio = '2025-06-01',
+      dt_fim = '2025-06-30',
+      cd_empresa,
+    } = req.query;
+
+    // Empresas padrão se não especificadas
+    const empresas = cd_empresa
+      ? Array.isArray(cd_empresa)
+        ? cd_empresa
+        : [cd_empresa]
+      : [
+          1, 2, 6, 7, 11, 31, 65, 75, 85, 90, 91, 92, 93, 94, 95, 96, 97, 98,
+          99, 100, 101, 111, 200, 311, 600, 650, 700, 750, 850, 890, 910, 920,
+          930, 940, 950, 960, 970, 980, 990,
+        ];
+
+    // Verificar cache primeiro
+    const cacheKey = `auditoria_${dt_inicio}_${dt_fim}_${JSON.stringify(
+      empresas,
+    )}`;
+    const cachedResult = auditoriaCache.get(cacheKey);
+
+    // TEMPORÁRIO: Forçar limpeza do cache para garantir dados atualizados
+    console.log(`🗑️ AUDITORIA: Limpando cache para garantir dados atualizados`);
+    auditoriaCache.delete(cacheKey);
+
+    // if (cachedResult && Date.now() - cachedResult.timestamp < CACHE_TTL) {
+    //   console.log(`📦 AUDITORIA: Retornando dados do cache para ${cacheKey}`);
+    //   return successResponse(
+    //     res,
+    //     {
+    //       ...cachedResult.data,
+    //       cached: true,
+    //       cacheAge: Math.round((Date.now() - cachedResult.timestamp) / 1000),
+    //     },
+    //     'Auditoria de transações do cache (consulta otimizada)',
+    //   );
+    // }
+
+    const startTime = Date.now();
+    console.log(
+      `🚀 AUDITORIA: Executando consulta otimizada para ${empresas.length} empresas, período: ${dt_inicio} a ${dt_fim}`,
+    );
+
+    const empresaPlaceholders = empresas
+      .map((_, idx) => `$${3 + idx}`)
+      .join(',');
+    const params = [dt_inicio, dt_fim, ...empresas];
+
+    // Query super simplificada para evitar qualquer divisão por zero
+    const query = `
+        WITH operacoes_agregadas AS (
+          SELECT 
+            cd_operacao,
+            tp_operacao,
+            COUNT(DISTINCT nr_transacao) as nr_transacoes,
+            COALESCE(SUM(CASE WHEN qt_faturado IS NOT NULL AND qt_faturado != 0 THEN qt_faturado ELSE 0 END), 0) as quantidade_total,
+            COALESCE(SUM(
+              CASE 
+                WHEN vl_unitbruto IS NOT NULL AND qt_faturado IS NOT NULL AND qt_faturado != 0 
+                THEN vl_unitbruto * qt_faturado + COALESCE(vl_freterat, 0)
+                ELSE 0 
+              END
+            ), 0) as valor_bruto,
+            COALESCE(SUM(
+              CASE 
+                WHEN vl_unitliquido IS NOT NULL AND qt_faturado IS NOT NULL AND qt_faturado != 0 
+                THEN vl_unitliquido * qt_faturado + COALESCE(vl_freterat, 0)
+                ELSE 0 
+              END
+            ), 0) as valor_liquido,
+            -- Classificação otimizada por operação
+            CASE
+          -- VENDA
+          WHEN cd_operacao IN (200,300,400,510,511,512,521,522,545,546,548,660,661,960,961,1400,1402,1403,1405,1406,5102,5106,5107,5110,5111,5113) THEN 'VENDA'
+          -- DEVOLUCAO VENDA
+          WHEN cd_operacao IN (1,2,17,21,401,555,1017,1201,1202,1204,1209,1210,1950,1999,2203,2204,2207,9005,9991) THEN 'DEVOLUCAO VENDA'
+          -- COMPRA
+          WHEN cd_operacao IN (10,662,1102,1103,1122,1126,1128,1556,1558,9052,9200) THEN 'COMPRA'
+          -- DEVOLUCAO COMPRA
+          WHEN cd_operacao IN (9003) THEN 'DEVOLUCAO COMPRA'
+          -- TRANSFERENCIA SAIDA
+          WHEN cd_operacao IN (530,711,4002,5152,5153,6029) THEN 'TRANSFERENCIA SAIDA'
+          -- TRANSFERENCIA ENTRADA
+          WHEN cd_operacao IN (4,536,1152,1153,3336,4001) THEN 'TRANSFERENCIA ENTRADA'
+          -- OUTRAS SAIDAS
+          WHEN cd_operacao IN (590,599,600,1916,1959,5909,5910,5914,5920,620,6913,6905,6908,6914,6949) THEN 'OUTRAS SAIDAS'
+          -- OUTRAS ENTRADAS
+          WHEN cd_operacao IN (529,1127,1557,1912,1947,1949,1951,1954,1956,1957,1958,2551,2914,8160) THEN 'OUTRAS ENTRADAS'
+          -- SERVICO ENTRADA
+          WHEN cd_operacao IN (1124,1125,2004,7000) THEN 'SERVICO ENTRADA'
+          ELSE 'OUTRAS OPERACOES'
+            END as categoria_operacao
+          FROM vr_fis_nfitemprod
+          WHERE dt_transacao BETWEEN $1 AND $2
+            AND cd_empresa IN (${empresaPlaceholders})
+            AND tp_situacao NOT IN ('C', 'X')
+            AND vl_unitbruto IS NOT NULL
+            AND vl_unitliquido IS NOT NULL
+            AND qt_faturado IS NOT NULL
+            AND qt_faturado != 0
+          GROUP BY cd_operacao, tp_operacao
+          HAVING SUM(CASE WHEN qt_faturado IS NOT NULL AND qt_faturado != 0 THEN qt_faturado ELSE 0 END) > 0
+        )
+        SELECT * FROM operacoes_agregadas
+        ORDER BY categoria_operacao, cd_operacao
+      `;
+
+    let rows;
+    try {
+      console.log(
+        `🔍 AUDITORIA: Executando query para ${empresas.length} empresas...`,
+      );
+      const result = await pool.query(query, params);
+      rows = result.rows;
+      console.log(
+        `✅ AUDITORIA: Query executada com sucesso, ${rows.length} registros retornados`,
+      );
+    } catch (err) {
+      console.error('❌ ERRO SQL na auditoria-transacoes:', {
+        message: err.message,
+        detail: err.detail,
+        hint: err.hint,
+        position: err.position,
+        code: err.code,
+        query: query,
+        params: params,
+      });
+
+      // Retornar erro detalhado para debug
+      return res.status(500).json({
+        error: 'Erro ao executar consulta SQL de auditoria',
+        message: err.message,
+        detail: err.detail,
+        hint: err.hint,
+        position: err.position,
+        code: err.code,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Agrupar dados por categoria de forma eficiente
+    const dadosAgrupados = {};
+    const totaisGerais = {
+      nr_transacoes: 0,
+      quantidade_total: 0,
+      valor_bruto: 0,
+      valor_liquido: 0,
+    };
+
+    // Parsing seguro com fallback para 0
+    const safeInt = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.round(n) : 0;
+    };
+    const safeFloat = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    rows.forEach((row) => {
+      const categoria = row.categoria_operacao;
+
+      if (!dadosAgrupados[categoria]) {
+        dadosAgrupados[categoria] = {
+          operacoes: [],
+          totais: {
+            nr_transacoes: 0,
+            quantidade_total: 0,
+            valor_bruto: 0,
+            valor_liquido: 0,
+          },
+        };
+      }
+
+      const operacao = {
+        cd_operacao: row.cd_operacao,
+        tp_operacao: row.tp_operacao,
+        nr_transacoes: safeInt(row.nr_transacoes),
+        quantidade_total: safeFloat(row.quantidade_total),
+        valor_bruto: safeFloat(row.valor_bruto),
+        valor_liquido: safeFloat(row.valor_liquido),
+        // Calcular ticket médio no JavaScript de forma segura
+        ticket_medio:
+          row.quantidade_total && row.quantidade_total > 0
+            ? safeFloat(row.valor_liquido) / safeFloat(row.quantidade_total)
+            : 0,
+      };
+
+      dadosAgrupados[categoria].operacoes.push(operacao);
+
+      // Acumular totais da categoria
+      dadosAgrupados[categoria].totais.nr_transacoes += operacao.nr_transacoes;
+      dadosAgrupados[categoria].totais.quantidade_total +=
+        operacao.quantidade_total;
+      dadosAgrupados[categoria].totais.valor_bruto += operacao.valor_bruto;
+      dadosAgrupados[categoria].totais.valor_liquido += operacao.valor_liquido;
+
+      // Acumular totais gerais
+      totaisGerais.nr_transacoes += operacao.nr_transacoes;
+      totaisGerais.quantidade_total += operacao.quantidade_total;
+      totaisGerais.valor_bruto += operacao.valor_bruto;
+      totaisGerais.valor_liquido += operacao.valor_liquido;
+
+      // Debug: log da primeira operação para verificar valores
+      if (dadosAgrupados[categoria].operacoes.length === 1) {
+        console.log(
+          `🔍 AUDITORIA: Primeira operação da categoria ${categoria}:`,
+          {
+            operacao,
+            totaisGeraisAteAgora: { ...totaisGerais },
+          },
+        );
+      }
+    });
+
+    const queryTime = Date.now() - startTime;
+    console.log(
+      `✅ AUDITORIA: Consulta concluída em ${queryTime}ms - ${rows.length} operações processadas`,
+    );
+    console.log(`🧮 AUDITORIA: Totais finais calculados:`, totaisGerais);
+
+    const responseData = {
+      periodo: { dt_inicio, dt_fim },
+      empresas,
+      categorias: dadosAgrupados,
+      totais_gerais: totaisGerais,
+      count: rows.length,
+      estrutura_similar_dadostotvs: true,
+      performance: {
+        queryType: 'otimizada-agregada',
+        tempo_execucao: `${queryTime}ms`,
+        cached: false,
+        registros_processados: rows.length,
+      },
+    };
+
+    // Salvar no cache
+    auditoriaCache.set(cacheKey, {
+      data: responseData,
+      timestamp: Date.now(),
+    });
+
+    console.log(`💾 AUDITORIA: Dados salvos no cache - ${cacheKey}`);
+
+    successResponse(
+      res,
+      responseData,
+      'Auditoria de transações obtida com sucesso (consulta otimizada)',
     );
   }),
 );

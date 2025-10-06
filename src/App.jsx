@@ -45,6 +45,7 @@ const CMVRevenda = lazy(() => import('./pages/CMVRevenda'));
 const CMVFranquia = lazy(() => import('./pages/CMVFranquia'));
 const CMVVarejo = lazy(() => import('./pages/CMVVarejo'));
 const DRE = lazy(() => import('./pages/DRE'));
+const AuditoriaTransacoes = lazy(() => import('./pages/AuditoriaTransacoes'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -76,6 +77,11 @@ const AppRoutes = memo(() => {
     {
       path: '/clientes',
       component: Clientes,
+      roles: ['owner', 'admin', 'manager', 'user'],
+    },
+    {
+      path: '/auditoria-transacoes',
+      component: AuditoriaTransacoes,
       roles: ['owner', 'admin', 'manager', 'user'],
     },
     {
