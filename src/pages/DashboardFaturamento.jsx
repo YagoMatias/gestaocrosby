@@ -332,6 +332,7 @@ const DashboardFaturamento = () => {
         if (!empresas.has(empresa)) {
           empresas.set(empresa, {
             empresa,
+            nm_grupoempresa: item.nm_grupoempresa,
             varejo: 0,
             mtm: 0,
             franquias: 0,
@@ -347,7 +348,7 @@ const DashboardFaturamento = () => {
     );
 
     return {
-      labels: dadosArray.map((item) => `Empresa ${item.empresa}`),
+      labels: dadosArray.map((item) => item.nm_grupoempresa || `Empresa ${item.empresa}`),
       datasets: [
         {
           label: 'Varejo',
@@ -1068,10 +1069,10 @@ const DashboardFaturamento = () => {
             {['varejo', 'mtm', 'franquias', 'revenda'].map((canal) => {
               // Agrupa faturamento por empresa para o canal
               const dados = dadosFaturamento[canal] || [];
-              const empresas = dados.map((item) => item.cd_empresa);
+              const empresas = dados.map((item) => item.nm_grupoempresa || `Empresa ${item.cd_empresa}`);
               const valores = dados.map((item) => parseFloat(item.total) || 0);
               const pizzaData = {
-                labels: empresas.map((e) => `Empresa ${e}`),
+                labels: empresas,
                 datasets: [
                   {
                     data: valores,

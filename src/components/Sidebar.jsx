@@ -201,12 +201,6 @@ const faturamento = [
     icon: FileText,
     color: 'text-indigo-600',
   },
-  {
-    name: 'Dashboard Faturamento',
-    href: '/dashboard-faturamento',
-    icon: ChartLineUp,
-    color: 'text-indigo-600',
-  },
 ];
 
 const franquias = [
@@ -486,6 +480,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                 color: 'text-indigo-600',
               }}
               isActive={location.pathname === '/dashboard'}
+            />
+
+            {/* Dashboard Faturamento - NOVO */}
+            <MenuItem
+              item={{
+                name: 'Dashboard Faturamento',
+                href: '/dashboard-faturamento',
+                icon: ChartLineUp,
+                color: 'text-indigo-600',
+              }}
+              isActive={location.pathname === '/dashboard-faturamento'}
             />
 
             {/* Seções principais */}

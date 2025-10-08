@@ -39,6 +39,7 @@ router.get(
     const query = `
       SELECT
         f.cd_empresa,
+        f.nm_grupoempresa,
         SUM(f.vendas) as vendas,
         SUM(f.devolucoes) as devolucoes,
         SUM(f.total) as venda_liquida,
@@ -46,7 +47,7 @@ router.get(
         SUM(f.total + f.frete) as total
       FROM faturamentovarejo f
       ${whereClause}
-      GROUP BY f.cd_empresa
+      GROUP BY f.cd_empresa, f.nm_grupoempresa
       ORDER BY f.cd_empresa
     `;
 
@@ -89,6 +90,7 @@ router.get(
     const query = `
       SELECT
         f.cd_empresa,
+        f.nm_grupoempresa,
         SUM(f.vendas) as vendas,
         SUM(f.devolucoes) as devolucoes,
         SUM(f.total) as venda_liquida,
@@ -96,7 +98,7 @@ router.get(
         SUM(f.total + f.frete) as total
       FROM faturamentomtm f
       ${whereClause}
-      GROUP BY f.cd_empresa
+      GROUP BY f.cd_empresa, f.nm_grupoempresa
       ORDER BY f.cd_empresa
     `;
 
@@ -139,6 +141,7 @@ router.get(
     const query = `
       SELECT
         f.cd_empresa,
+        f.nm_grupoempresa,
         SUM(f.vendas) as vendas,
         SUM(f.devolucoes) as devolucoes,
         SUM(f.total) as venda_liquida,
@@ -146,7 +149,7 @@ router.get(
         SUM(f.total + f.frete) as total
       FROM faturamentofranquia f
       ${whereClause}
-      GROUP BY f.cd_empresa
+      GROUP BY f.cd_empresa, f.nm_grupoempresa
       ORDER BY f.cd_empresa
     `;
 
@@ -189,6 +192,7 @@ router.get(
     const query = `
       SELECT
         f.cd_empresa,
+        f.nm_grupoempresa,
         SUM(f.vendas) as vendas,
         SUM(f.devolucoes) as devolucoes,
         SUM(f.total) as venda_liquida,
@@ -196,7 +200,7 @@ router.get(
         SUM(f.total + f.frete) as total
       FROM faturamentorevenda f
       ${whereClause}
-      GROUP BY f.cd_empresa
+      GROUP BY f.cd_empresa, f.nm_grupoempresa
       ORDER BY f.cd_empresa
     `;
 
@@ -241,6 +245,7 @@ router.get(
       SELECT 
         'varejo' as tipo,
         cd_empresa,
+        nm_grupoempresa,
         SUM(vendas) as vendas,
         SUM(devolucoes) as devolucoes,
         SUM(total) as venda_liquida,
@@ -248,13 +253,14 @@ router.get(
         SUM(total + frete) as total
       FROM faturamentovarejo 
       ${whereClause}
-      GROUP BY cd_empresa
+      GROUP BY cd_empresa, nm_grupoempresa
     `;
 
     const mtmQuery = `
       SELECT 
         'mtm' as tipo,
         cd_empresa,
+        nm_grupoempresa,
         SUM(vendas) as vendas,
         SUM(devolucoes) as devolucoes,
         SUM(total) as venda_liquida,
@@ -262,13 +268,14 @@ router.get(
         SUM(total + frete) as total
       FROM faturamentomtm 
       ${whereClause}
-      GROUP BY cd_empresa
+      GROUP BY cd_empresa, nm_grupoempresa
     `;
 
     const franquiasQuery = `
       SELECT 
         'franquias' as tipo,
         cd_empresa,
+        nm_grupoempresa,
         SUM(vendas) as vendas,
         SUM(devolucoes) as devolucoes,
         SUM(total) as venda_liquida,
@@ -276,13 +283,14 @@ router.get(
         SUM(total + frete) as total
       FROM faturamentofranquia 
       ${whereClause}
-      GROUP BY cd_empresa
+      GROUP BY cd_empresa, nm_grupoempresa
     `;
 
     const revendaQuery = `
       SELECT 
         'revenda' as tipo,
         cd_empresa,
+        nm_grupoempresa,
         SUM(vendas) as vendas,
         SUM(devolucoes) as devolucoes,
         SUM(total) as venda_liquida,
@@ -290,7 +298,7 @@ router.get(
         SUM(total + frete) as total
       FROM faturamentorevenda 
       ${whereClause}
-      GROUP BY cd_empresa
+      GROUP BY cd_empresa, nm_grupoempresa
     `;
 
     // Executar todas as queries em paralelo
