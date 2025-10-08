@@ -2,15 +2,15 @@
   "name": "api-gestao-crosby",
   "version": "2.0.0",
   "description": "API refatorada para sistema de gestão Crosby",
-  "main": "index.refatorado.js",
+  "main": "index.js",
   "type": "module",
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=8.0.0"
   },
   "scripts": {
-    "start": "node index.refatorado.js",
-    "dev": "NODE_ENV=development nodemon index.refatorado.js",
+    "start": "node index.js",
+    "dev": "NODE_ENV=development nodemon index.js",
     "test": "NODE_ENV=test jest",
     "lint": "eslint . --ext .js",
     "lint:fix": "eslint . --ext .js --fix",

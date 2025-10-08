@@ -820,7 +820,8 @@ router.get(
   validatePagination,
   asyncHandler(async (req, res) => {
     const { inicio, fim } = req.query;
-    const limit = parseInt(req.query.limit, 10) || 100; // Limite padrão mais razoável
+    const limit =
+      req.query.limit !== undefined ? parseInt(req.query.limit, 10) : undefined; // Sem limite padrão
     const offset = parseInt(req.query.offset, 10) || 0;
 
     const dataInicio = `${inicio} 00:00:00`;
@@ -900,7 +901,7 @@ router.get(
           ), 0
         ) > 0
         ORDER BY faturamento DESC
-        LIMIT $3 OFFSET $4
+  ${limit !== undefined ? `LIMIT $3 OFFSET $4` : ''}
       `;
 
     // Query de contagem simplificada

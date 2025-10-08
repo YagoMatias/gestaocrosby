@@ -201,6 +201,12 @@ const faturamento = [
     icon: FileText,
     color: 'text-indigo-600',
   },
+  {
+    name: 'Dashboard Faturamento',
+    href: '/dashboard-faturamento',
+    icon: ChartLineUp,
+    color: 'text-indigo-600',
+  },
 ];
 
 const franquias = [

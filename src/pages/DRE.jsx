@@ -245,14 +245,12 @@ const DRE = () => {
 
     try {
       // Empresas fixas para rotas de franquia, multimarcas e revenda
-      const empresasFixas = [1, 2, 6, 11, 31, 75, 85, 92, 99];
+      const empresasFixas = [95, 950];
 
       // Lista específica de empresas para a rota de varejo
       const empresasVarejo = [
         // Lista fornecida pelo usuário
-        1, 2, 6, 7, 11, 31, 65, 75, 85, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99,
-        100, 101, 111, 200, 311, 600, 650, 700, 750, 850, 890, 910, 920, 930,
-        940, 950, 960, 970, 980, 990,
+        95, 950,
       ];
 
       // Parâmetros específicos para cada rota

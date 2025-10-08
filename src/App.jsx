@@ -43,6 +43,7 @@ const CMVConsolidado = lazy(() => import('./pages/CMVConsolidado'));
 const CMVMultimarcas = lazy(() => import('./pages/CMVMultimarcas'));
 const CMVRevenda = lazy(() => import('./pages/CMVRevenda'));
 const CMVFranquia = lazy(() => import('./pages/CMVFranquia'));
+const DashboardFaturamento = lazy(() => import('./pages/DashboardFaturamento'));
 const CMVVarejo = lazy(() => import('./pages/CMVVarejo'));
 const DRE = lazy(() => import('./pages/DRE'));
 const AuditoriaTransacoes = lazy(() => import('./pages/AuditoriaTransacoes'));
@@ -227,6 +228,11 @@ const AppRoutes = memo(() => {
     {
       path: '/credev',
       component: Credev,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
+    {
+      path: '/dashboard-faturamento',
+      component: DashboardFaturamento,
       roles: ['admin', 'manager', 'guest', 'owner', 'user'],
     },
     { path: '/painel-admin', component: PainelAdmin, roles: ['owner'] },
