@@ -257,6 +257,9 @@ const useApiClient = () => {
     saldoConta: (params) => apiCall('/api/financial/saldo-conta', params),
     credevAdiantamento: (params) =>
       apiCall('/api/financial/credev-adiantamento', params),
+    credevRevenda: (params) => apiCall('/api/financial/credev-revenda', params),
+    credevVarejo: (params) => apiCall('/api/financial/credev-varejo', params),
+    credevMtm: (params) => apiCall('/api/financial/credev-mtm', params),
     auditorCredev: (params) => apiCall('/api/financial/auditor-credev', params),
     fornecedor: (params) => apiCall('/api/financial/fornecedor', params),
     centrocusto: (params) => apiCall('/api/financial/centrocusto', params),

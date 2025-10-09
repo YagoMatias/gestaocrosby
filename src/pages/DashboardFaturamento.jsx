@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import useApiClient from '../hooks/useApiClient';
 import PageTitle from '../components/ui/PageTitle';
 import {
@@ -170,11 +170,6 @@ const DashboardFaturamento = () => {
       setLoading(false);
     }
   };
-
-  // Efeito para buscar dados iniciais
-  useEffect(() => {
-    buscarDados();
-  }, []);
 
   // Cálculos consolidados
   const dadosConsolidados = useMemo(() => {
@@ -348,7 +343,9 @@ const DashboardFaturamento = () => {
     );
 
     return {
-      labels: dadosArray.map((item) => item.nm_grupoempresa || `Empresa ${item.empresa}`),
+      labels: dadosArray.map(
+        (item) => item.nm_grupoempresa || `Empresa ${item.empresa}`,
+      ),
       datasets: [
         {
           label: 'Varejo',
@@ -637,7 +634,7 @@ const DashboardFaturamento = () => {
         <div className="flex items-center justify-center py-12">
           <LoadingSpinner />
         </div>
-      ) : (
+      ) : Object.values(dadosFaturamento).some((dados) => dados.length > 0) ? (
         <>
           {/* Cards de Resumo */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
@@ -1069,7 +1066,9 @@ const DashboardFaturamento = () => {
             {['varejo', 'mtm', 'franquias', 'revenda'].map((canal) => {
               // Agrupa faturamento por empresa para o canal
               const dados = dadosFaturamento[canal] || [];
-              const empresas = dados.map((item) => item.nm_grupoempresa || `Empresa ${item.cd_empresa}`);
+              const empresas = dados.map(
+                (item) => item.nm_grupoempresa || `Empresa ${item.cd_empresa}`,
+              );
               const valores = dados.map((item) => parseFloat(item.total) || 0);
               const pizzaData = {
                 labels: empresas,
@@ -1165,6 +1164,19 @@ const DashboardFaturamento = () => {
             </div>
           )}
         </>
+      ) : (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="bg-gray-50 rounded-xl p-8 max-w-md">
+            <ChartLineUp size={48} className="text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">
+              Nenhum dado encontrado
+            </h3>
+            <p className="text-gray-500 text-sm mb-4">
+              Selecione um período e clique em "Buscar Dados" para visualizar o
+              dashboard de faturamento.
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );

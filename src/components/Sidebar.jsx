@@ -203,13 +203,40 @@ const faturamento = [
   },
 ];
 
-const franquias = [
+const varejo = [
   {
     name: 'Metas Varejo',
     href: '/metas-varejo',
     icon: Target,
     color: 'text-orange-600',
   },
+  {
+    name: 'CREDEV VAREJO',
+    href: '/credev-varejo',
+    icon: Buildings,
+    color: 'text-green-600',
+  },
+];
+
+const multimarcas = [
+  {
+    name: 'CREDEV MULTIMARCAS',
+    href: '/credev-multimarcas',
+    icon: Buildings,
+    color: 'text-purple-600',
+  },
+];
+
+const revenda = [
+  {
+    name: 'CREDEV REVENDA',
+    href: '/credev-revenda',
+    icon: Buildings,
+    color: 'text-blue-600',
+  },
+];
+
+const franquias = [
   {
     name: 'Compras Franquias',
     href: '/compras-franquias',
@@ -247,6 +274,9 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const [financeiroOpen, setFinanceiroOpen] = useState(false);
   const [dashboardFinanceiroOpen, setDashboardFinanceiroOpen] = useState(false);
   const [faturamentoOpen, setFaturamentoOpen] = useState(false);
+  const [varejoOpen, setVarejoOpen] = useState(false);
+  const [multimarcasOpen, setMultimarcasOpen] = useState(false);
+  const [revendaOpen, setRevendaOpen] = useState(false);
   const [franquiasOpen, setFranquiasOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const { user } = useAuth();
@@ -257,6 +287,9 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       const next = !financeiroOpen;
       setFinanceiroOpen(next);
       setFaturamentoOpen(false);
+      setVarejoOpen(false);
+      setMultimarcasOpen(false);
+      setRevendaOpen(false);
       setFranquiasOpen(false);
       setAdminOpen(false);
       if (!next) setDashboardFinanceiroOpen(false);
@@ -267,6 +300,45 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setFaturamentoOpen(next);
       setFinanceiroOpen(false);
       setDashboardFinanceiroOpen(false);
+      setVarejoOpen(false);
+      setMultimarcasOpen(false);
+      setRevendaOpen(false);
+      setFranquiasOpen(false);
+      setAdminOpen(false);
+      return;
+    }
+    if (section === 'varejo') {
+      const next = !varejoOpen;
+      setVarejoOpen(next);
+      setFinanceiroOpen(false);
+      setDashboardFinanceiroOpen(false);
+      setFaturamentoOpen(false);
+      setMultimarcasOpen(false);
+      setRevendaOpen(false);
+      setFranquiasOpen(false);
+      setAdminOpen(false);
+      return;
+    }
+    if (section === 'multimarcas') {
+      const next = !multimarcasOpen;
+      setMultimarcasOpen(next);
+      setFinanceiroOpen(false);
+      setDashboardFinanceiroOpen(false);
+      setFaturamentoOpen(false);
+      setVarejoOpen(false);
+      setRevendaOpen(false);
+      setFranquiasOpen(false);
+      setAdminOpen(false);
+      return;
+    }
+    if (section === 'revenda') {
+      const next = !revendaOpen;
+      setRevendaOpen(next);
+      setFinanceiroOpen(false);
+      setDashboardFinanceiroOpen(false);
+      setFaturamentoOpen(false);
+      setVarejoOpen(false);
+      setMultimarcasOpen(false);
       setFranquiasOpen(false);
       setAdminOpen(false);
       return;
@@ -277,6 +349,9 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setFinanceiroOpen(false);
       setDashboardFinanceiroOpen(false);
       setFaturamentoOpen(false);
+      setVarejoOpen(false);
+      setMultimarcasOpen(false);
+      setRevendaOpen(false);
       setAdminOpen(false);
       return;
     }
@@ -286,6 +361,9 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setFinanceiroOpen(false);
       setDashboardFinanceiroOpen(false);
       setFaturamentoOpen(false);
+      setVarejoOpen(false);
+      setMultimarcasOpen(false);
+      setRevendaOpen(false);
       setFranquiasOpen(false);
       return;
     }
@@ -528,11 +606,38 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
 
             <MenuSection
               title="Varejo"
+              items={varejo}
+              isOpen={varejoOpen}
+              onToggle={() => handleSectionToggle('varejo')}
+              icon={Storefront}
+              color="text-green-600"
+            />
+
+            <MenuSection
+              title="Multimarcas"
+              items={multimarcas}
+              isOpen={multimarcasOpen}
+              onToggle={() => handleSectionToggle('multimarcas')}
+              icon={Buildings}
+              color="text-purple-600"
+            />
+
+            <MenuSection
+              title="Revenda"
+              items={revenda}
+              isOpen={revendaOpen}
+              onToggle={() => handleSectionToggle('revenda')}
+              icon={TrendUp}
+              color="text-blue-600"
+            />
+
+            <MenuSection
+              title="Franquias"
               items={franquias}
               isOpen={franquiasOpen}
               onToggle={() => handleSectionToggle('franquias')}
-              icon={Buildings}
-              color="text-purple-600"
+              icon={Users}
+              color="text-amber-600"
             />
 
             {/* VIGIA - item independente */}
@@ -704,11 +809,38 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
 
             <MenuSection
               title="Varejo"
-              items={franquias}
-              isOpen={franquiasOpen}
-              onToggle={() => setFranquiasOpen(!franquiasOpen)}
+              items={varejo}
+              isOpen={varejoOpen}
+              onToggle={() => handleSectionToggle('varejo')}
+              icon={Storefront}
+              color="text-green-600"
+            />
+
+            <MenuSection
+              title="Multimarcas"
+              items={multimarcas}
+              isOpen={multimarcasOpen}
+              onToggle={() => handleSectionToggle('multimarcas')}
               icon={Buildings}
               color="text-purple-600"
+            />
+
+            <MenuSection
+              title="Revenda"
+              items={revenda}
+              isOpen={revendaOpen}
+              onToggle={() => handleSectionToggle('revenda')}
+              icon={TrendUp}
+              color="text-blue-600"
+            />
+
+            <MenuSection
+              title="Franquias"
+              items={franquias}
+              isOpen={franquiasOpen}
+              onToggle={() => handleSectionToggle('franquias')}
+              icon={Users}
+              color="text-amber-600"
             />
 
             {/* VIGIA - item independente */}
@@ -867,11 +999,38 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
 
             <MenuSection
               title="Varejo"
-              items={franquias}
-              isOpen={franquiasOpen}
-              onToggle={() => setFranquiasOpen(!franquiasOpen)}
+              items={varejo}
+              isOpen={varejoOpen}
+              onToggle={() => handleSectionToggle('varejo')}
+              icon={Storefront}
+              color="text-green-600"
+            />
+
+            <MenuSection
+              title="Multimarcas"
+              items={multimarcas}
+              isOpen={multimarcasOpen}
+              onToggle={() => handleSectionToggle('multimarcas')}
               icon={Buildings}
               color="text-purple-600"
+            />
+
+            <MenuSection
+              title="Revenda"
+              items={revenda}
+              isOpen={revendaOpen}
+              onToggle={() => handleSectionToggle('revenda')}
+              icon={TrendUp}
+              color="text-blue-600"
+            />
+
+            <MenuSection
+              title="Franquias"
+              items={franquias}
+              isOpen={franquiasOpen}
+              onToggle={() => handleSectionToggle('franquias')}
+              icon={Users}
+              color="text-amber-600"
             />
 
             {/* VIGIA - item independente */}
@@ -1013,11 +1172,41 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             {/* Seção Varejo */}
             <MenuSection
               title="Varejo"
-              items={franquias}
-              isOpen={franquiasOpen}
-              onToggle={() => setFranquiasOpen(!franquiasOpen)}
+              items={varejo}
+              isOpen={varejoOpen}
+              onToggle={() => handleSectionToggle('varejo')}
+              icon={Storefront}
+              color="text-green-600"
+            />
+
+            {/* Seção Multimarcas */}
+            <MenuSection
+              title="Multimarcas"
+              items={multimarcas}
+              isOpen={multimarcasOpen}
+              onToggle={() => handleSectionToggle('multimarcas')}
               icon={Buildings}
               color="text-purple-600"
+            />
+
+            {/* Seção Revenda */}
+            <MenuSection
+              title="Revenda"
+              items={revenda}
+              isOpen={revendaOpen}
+              onToggle={() => handleSectionToggle('revenda')}
+              icon={TrendUp}
+              color="text-blue-600"
+            />
+
+            {/* Seção Franquias */}
+            <MenuSection
+              title="Franquias"
+              items={franquias}
+              isOpen={franquiasOpen}
+              onToggle={() => handleSectionToggle('franquias')}
+              icon={Users}
+              color="text-amber-600"
             />
           </nav>
 
@@ -1099,11 +1288,38 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             {/* Seção Varejo */}
             <MenuSection
               title="Varejo"
-              items={franquias}
-              isOpen={franquiasOpen}
-              onToggle={() => setFranquiasOpen(!franquiasOpen)}
+              items={varejo}
+              isOpen={varejoOpen}
+              onToggle={() => handleSectionToggle('varejo')}
+              icon={Storefront}
+              color="text-green-600"
+            />
+
+            <MenuSection
+              title="Multimarcas"
+              items={multimarcas}
+              isOpen={multimarcasOpen}
+              onToggle={() => handleSectionToggle('multimarcas')}
               icon={Buildings}
               color="text-purple-600"
+            />
+
+            <MenuSection
+              title="Revenda"
+              items={revenda}
+              isOpen={revendaOpen}
+              onToggle={() => handleSectionToggle('revenda')}
+              icon={TrendUp}
+              color="text-blue-600"
+            />
+
+            <MenuSection
+              title="Franquias"
+              items={franquias}
+              isOpen={franquiasOpen}
+              onToggle={() => handleSectionToggle('franquias')}
+              icon={Users}
+              color="text-amber-600"
             />
 
             {/* VIGIA - item independente */}

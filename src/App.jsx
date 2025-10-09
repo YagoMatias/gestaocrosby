@@ -29,6 +29,9 @@ const RankingFaturamento = lazy(() => import('./pages/RankingFaturamento'));
 const AuditoriaCMV = lazy(() => import('./pages/AuditoriaCMV'));
 const ComprasFranquias = lazy(() => import('./pages/ComprasFranquias'));
 const Credev = lazy(() => import('./pages/Credev'));
+const CredevRevenda = lazy(() => import('./pages/CredevRevenda'));
+const CredevVarejo = lazy(() => import('./pages/CredevVarejo'));
+const CredevMultimarcas = lazy(() => import('./pages/CredevMultimarcas'));
 const PainelAdmin = lazy(() => import('./pages/PainelAdmin'));
 const UserPanel = lazy(() => import('./pages/UserPanel'));
 const ManifestacaoNF = lazy(() => import('./pages/ManifestacaoNF'));
@@ -228,6 +231,21 @@ const AppRoutes = memo(() => {
     {
       path: '/credev',
       component: Credev,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
+    {
+      path: '/credev-revenda',
+      component: CredevRevenda,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
+    {
+      path: '/credev-varejo',
+      component: CredevVarejo,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
+    {
+      path: '/credev-multimarcas',
+      component: CredevMultimarcas,
       roles: ['admin', 'manager', 'guest', 'owner', 'user'],
     },
     {
