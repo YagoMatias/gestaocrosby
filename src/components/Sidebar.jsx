@@ -267,6 +267,14 @@ const dashboardFinanceiro = [
     color: 'text-purple-600',
   },
 ];
+const DashboardFaturamento = [
+  {
+    name: 'Dashboard Faturamento',
+    href: '/dashboard-faturamento',
+    icon: ChartLineUp,
+    color: 'text-indigo-600',
+  },
+];
 
 const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const navigate = useNavigate();
@@ -766,12 +774,23 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             {/* Dashboard */}
             <MenuItem
               item={{
-                name: 'Dashboard',
+                name: 'BI Externo',
                 href: '/dashboard',
                 icon: ChartLineUp,
                 color: 'text-indigo-600',
               }}
               isActive={location.pathname === '/dashboard'}
+            />
+
+            {/* Dashboard Faturamento - disponível para todos os roles */}
+            <MenuItem
+              item={{
+                name: 'Dashboard Faturamento',
+                href: '/dashboard-faturamento',
+                icon: ChartLineUp,
+                color: 'text-indigo-600',
+              }}
+              isActive={location.pathname === '/dashboard-faturamento'}
             />
 
             {/* Seções principais */}
@@ -956,7 +975,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             {/* Dashboard */}
             <MenuItem
               item={{
-                name: 'Dashboard',
+                name: 'BI Externo',
                 href: '/dashboard',
                 icon: ChartLineUp,
                 color: 'text-indigo-600',
@@ -1127,12 +1146,23 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             {/* Dashboard */}
             <MenuItem
               item={{
-                name: 'Dashboard',
+                name: 'BI Externo',
                 href: '/dashboard',
                 icon: ChartLineUp,
                 color: 'text-indigo-600',
               }}
               isActive={location.pathname === '/dashboard'}
+            />
+
+            {/* Dashboard Faturamento - disponível para todos os roles */}
+            <MenuItem
+              item={{
+                name: 'Dashboard Faturamento',
+                href: '/dashboard-faturamento',
+                icon: ChartLineUp,
+                color: 'text-indigo-600',
+              }}
+              isActive={location.pathname === '/dashboard-faturamento'}
             />
 
             {/* Seção Financeiro */}
@@ -1267,12 +1297,22 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             {/* Dashboard */}
             <MenuItem
               item={{
-                name: 'Dashboard',
+                name: 'BI Externo',
                 href: '/dashboard',
                 icon: ChartLineUp,
                 color: 'text-indigo-600',
               }}
               isActive={location.pathname === '/dashboard'}
+            />
+            {/* Dashboard Faturament */}
+            <MenuItem
+              item={{
+                name: 'Dashboard Faturamento',
+                href: '/dashboard-faturamento',
+                icon: ChartLineUp,
+                color: 'text-indigo-600',
+              }}
+              isActive={location.pathname === '/dashboard-faturamento'}
             />
 
             {/* Seção Financeiro - visível para PADRÃO apenas com filtros por role */}
