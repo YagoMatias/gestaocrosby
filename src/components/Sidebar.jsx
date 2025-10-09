@@ -1283,16 +1283,6 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               isActive={location.pathname === '/dashboard-faturamento'}
             />
 
-            {/* Seção Financeiro - visível para PADRÃO apenas com filtros por role */}
-            <MenuSection
-              title="Financeiro"
-              items={financeiro}
-              isOpen={financeiroOpen}
-              onToggle={() => setFinanceiroOpen(!financeiroOpen)}
-              icon={Money}
-              color="text-emerald-600"
-            />
-
             {/* Seção Varejo */}
             <MenuSection
               title="Varejo"
