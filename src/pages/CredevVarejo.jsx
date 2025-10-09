@@ -35,6 +35,8 @@ const CredevVarejo = () => {
 
   // Estados dos filtros
   const [filtroDocumento, setFiltroDocumento] = useState('CREDEV');
+  const [filtroEmpresa, setFiltroEmpresa] = useState('');
+  const [empresas, setEmpresas] = useState([]);
 
   // Estados para o modal de auditoria
   const [modalAuditoriaOpen, setModalAuditoriaOpen] = useState(false);
@@ -49,8 +51,81 @@ const CredevVarejo = () => {
   // Buscar dados ao carregar a página
   useEffect(() => {
     fetchDados();
+    fetchEmpresas();
   }, []);
 
+  const fetchEmpresas = async () => {
+    try {
+      console.log('🔍 Buscando empresas...');
+      const result = await apiClient.company.empresas();
+
+      console.log('📊 Resposta completa da API empresas:', result);
+
+      if (result.success && result.data) {
+        console.log('📊 Estrutura do result.data:', result.data);
+
+        // Extrair array de empresas dependendo da estrutura retornada
+        let empresasArray = [];
+        if (result.data.data && Array.isArray(result.data.data)) {
+          empresasArray = result.data.data;
+          console.log(
+            '📊 Usando result.data.data:',
+            empresasArray.length,
+            'empresas',
+          );
+        } else if (Array.isArray(result.data)) {
+          empresasArray = result.data;
+          console.log(
+            '📊 Usando result.data diretamente:',
+            empresasArray.length,
+            'empresas',
+          );
+        } else {
+          console.log(
+            '📊 Estrutura não reconhecida. Propriedades disponíveis:',
+            Object.keys(result.data),
+          );
+        }
+
+        console.log('📊 Amostra de empresasArray:', empresasArray.slice(0, 3));
+
+        // Filtrar apenas empresas com código menor que 5999 (seguindo a lógica dos dados)
+        const empresasFiltradas = empresasArray.filter((empresa) => {
+          const codigo = parseInt(empresa.cd_empresa);
+          return !isNaN(codigo) && codigo < 5999;
+        });
+
+        console.log(
+          '📊 Empresas após filtro < 5999:',
+          empresasFiltradas.length,
+        );
+
+        // Ordenar por código
+        const empresasOrdenadas = empresasFiltradas.sort(
+          (a, b) => parseInt(a.cd_empresa) - parseInt(b.cd_empresa),
+        );
+
+        setEmpresas(empresasOrdenadas);
+        console.log(
+          '✅ Empresas carregadas no estado:',
+          empresasOrdenadas.length,
+        );
+        console.log(
+          '✅ Amostra das empresas ordenadas:',
+          empresasOrdenadas.slice(0, 5),
+        );
+      } else {
+        console.log(
+          '❌ result.success:',
+          result.success,
+          'result.data:',
+          result.data,
+        );
+      }
+    } catch (err) {
+      console.error('❌ Erro ao buscar empresas:', err);
+    }
+  };
   const fetchDados = async () => {
     setLoading(true);
     setErro('');
@@ -196,14 +271,24 @@ const CredevVarejo = () => {
         return false;
       }
 
+      // Filtro por empresa
+      if (
+        filtroEmpresa &&
+        item.cd_empresa &&
+        !item.cd_empresa.toString().includes(filtroEmpresa)
+      ) {
+        return false;
+      }
+
       return true;
     });
-  }, [dados, filtroDocumento]);
+  }, [dados, filtroDocumento, filtroEmpresa]);
 
   // Limpar filtros
   const limparFiltros = () => {
     setNomesFantasiaSelecionados([]);
     setFiltroDocumento('CREDEV');
+    setFiltroEmpresa('');
   };
 
   // Obter opções únicas para os filtros (apenas de registros CREDEV com saldo positivo, data >= 2025 e empresa < 5999)
@@ -250,7 +335,59 @@ const CredevVarejo = () => {
     return documentos.sort();
   }, [dados]);
 
-  // Função para ordenar os dados
+  // Obter empresas que aparecem nos dados filtrados
+  const empresasDisponiveis = useMemo(() => {
+    console.log('🔄 Recalculando empresasDisponiveis...');
+    console.log('📊 Estado empresas:', empresas.length, 'empresas');
+    console.log('📊 Estado dados:', dados.length, 'registros');
+
+    const codigosNoDados = [
+      ...new Set(
+        dados
+          .filter((item) => {
+            const temSaldoPositivo = isSaldoPositivo(item.vl_saldo);
+
+            // Verificar se a data é a partir de 2025
+            let temDataValida = true;
+            if (item.dt_ultimocredito) {
+              const dataUltimaMovimentacao = new Date(item.dt_ultimocredito);
+              const ano2025 = new Date('2025-01-01');
+              temDataValida = dataUltimaMovimentacao >= ano2025;
+            }
+
+            // Verificar se a empresa tem código abaixo de 5999
+            const codigoEmpresa = parseInt(item.cd_empresa);
+            const temEmpresaValida =
+              !isNaN(codigoEmpresa) && codigoEmpresa < 5999;
+
+            // Verificar se não é código de pessoa 56
+            const codigoPessoa = parseInt(item.cd_pessoa);
+            const naoEhPessoa56 = isNaN(codigoPessoa) || codigoPessoa !== 56;
+
+            return (
+              temSaldoPositivo &&
+              temDataValida &&
+              temEmpresaValida &&
+              naoEhPessoa56
+            );
+          })
+          .map((item) => item.cd_empresa)
+          .filter(Boolean),
+      ),
+    ];
+
+    console.log('📊 Códigos únicos encontrados nos dados:', codigosNoDados);
+
+    // Filtrar empresas que existem nos dados
+    const resultado = empresas.filter((empresa) =>
+      codigosNoDados.includes(empresa.cd_empresa.toString()),
+    );
+
+    console.log('📊 Empresas disponíveis para o filtro:', resultado.length);
+    console.log('📊 Amostra empresas disponíveis:', resultado.slice(0, 3));
+
+    return resultado;
+  }, [dados, empresas]); // Função para ordenar os dados
   const handleSort = (key) => {
     let direction = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -382,7 +519,7 @@ const CredevVarejo = () => {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 mb-3">
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                 Tipo de Documento
@@ -395,6 +532,30 @@ const CredevVarejo = () => {
                 <option value="TODOS">TODOS</option>
                 <option value="CREDEV">CREDEV</option>
                 <option value="ADIANTAMENTO">ADIANTAMENTO</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Empresa
+              </label>
+              {console.log(
+                '🎯 empresasDisponiveis no render:',
+                empresasDisponiveis,
+              )}
+              <select
+                value={filtroEmpresa}
+                onChange={(e) => setFiltroEmpresa(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              >
+                <option value="">Todas as Empresas</option>
+                {empresasDisponiveis.map((empresa) => {
+                  console.log('🔧 Renderizando empresa:', empresa);
+                  return (
+                    <option key={empresa.cd_empresa} value={empresa.cd_empresa}>
+                      {empresa.cd_empresa} - {empresa.nm_grupoempresa}
+                    </option>
+                  );
+                })}
               </select>
             </div>
             <div className="flex items-end">
@@ -508,7 +669,7 @@ const CredevVarejo = () => {
             <thead className="bg-[#000638]">
               <tr>
                 <th
-                  className="px-2 py-2 text-left text-[10px] font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                  className="px-2 py-2 text-left text-[10px] font-medium text-white uppercase tracking-wider cursor-pointer "
                   onClick={() => handleSort('cd_empresa')}
                 >
                   <div className="flex items-center">
@@ -517,7 +678,7 @@ const CredevVarejo = () => {
                   </div>
                 </th>
                 <th
-                  className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                  className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider cursor-pointer "
                   onClick={() => handleSort('cd_pessoa')}
                 >
                   <div className="flex items-center justify-center">
@@ -526,7 +687,7 @@ const CredevVarejo = () => {
                   </div>
                 </th>
                 <th
-                  className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                  className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider cursor-pointer "
                   onClick={() => handleSort('nr_ctapes')}
                 >
                   <div className="flex items-center justify-center">
@@ -535,7 +696,7 @@ const CredevVarejo = () => {
                   </div>
                 </th>
                 <th
-                  className="px-2 py-2 text-left text-[10px] font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                  className="px-2 py-2 text-left text-[10px] font-medium text-white uppercase tracking-wider cursor-pointer "
                   onClick={() => handleSort('nm_pessoa')}
                 >
                   <div className="flex items-center">
@@ -544,7 +705,7 @@ const CredevVarejo = () => {
                   </div>
                 </th>
                 <th
-                  className="px-2 py-2 text-left text-[10px] font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                  className="px-2 py-2 text-left text-[10px] font-medium text-white uppercase tracking-wider cursor-pointer "
                   onClick={() => handleSort('tp_documento')}
                 >
                   <div className="flex items-center">
@@ -553,7 +714,7 @@ const CredevVarejo = () => {
                   </div>
                 </th>
                 <th
-                  className="px-2 py-2 text-right text-[10px] font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                  className="px-2 py-2 text-right text-[10px] font-medium text-white uppercase tracking-wider cursor-pointer "
                   onClick={() => handleSort('vl_saldo')}
                 >
                   <div className="flex items-center justify-end">
@@ -562,7 +723,7 @@ const CredevVarejo = () => {
                   </div>
                 </th>
                 <th
-                  className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                  className="px-2 py-2 text-center text-[10px] font-medium text-white uppercase tracking-wider cursor-pointer "
                   onClick={() => handleSort('dt_ultimocredito')}
                 >
                   <div className="flex items-center justify-center">
@@ -604,7 +765,7 @@ const CredevVarejo = () => {
                 sortDados(dadosFiltrados).map((item, index) => (
                   <tr
                     key={index}
-                    className="hover:bg-blue-50 hover:border-l-4 hover:border-l-blue-500 transition-all duration-200 cursor-pointer group"
+                    className="hover:bg-blue-50 cursor-pointer group"
                     onClick={() => handleRowClick(item)}
                     title={`Clique para ver detalhes de auditoria da conta ${
                       item.nr_ctapes || 'N/A'

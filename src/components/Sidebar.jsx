@@ -549,10 +549,10 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               isActive={location.pathname === '/home'}
             />
 
-            {/* Dashboard */}
+            {/* BI EXTERNO */}
             <MenuItem
               item={{
-                name: 'Dashboard',
+                name: 'BI Externo',
                 href: '/dashboard',
                 icon: ChartLineUp,
                 color: 'text-indigo-600',
