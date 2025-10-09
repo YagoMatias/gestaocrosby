@@ -972,17 +972,6 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               isActive={location.pathname === '/home'}
             />
 
-            {/* Dashboard */}
-            <MenuItem
-              item={{
-                name: 'BI Externo',
-                href: '/dashboard',
-                icon: ChartLineUp,
-                color: 'text-indigo-600',
-              }}
-              isActive={location.pathname === '/dashboard'}
-            />
-
             {/* Seção Financeiro */}
             <MenuSection
               title="Financeiro"
@@ -1143,17 +1132,6 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               isActive={location.pathname === '/home'}
             />
 
-            {/* Dashboard */}
-            <MenuItem
-              item={{
-                name: 'BI Externo',
-                href: '/dashboard',
-                icon: ChartLineUp,
-                color: 'text-indigo-600',
-              }}
-              isActive={location.pathname === '/dashboard'}
-            />
-
             {/* Dashboard Faturamento - disponível para todos os roles */}
             <MenuItem
               item={{
@@ -1294,16 +1272,6 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               isActive={location.pathname === '/home'}
             />
 
-            {/* Dashboard */}
-            <MenuItem
-              item={{
-                name: 'BI Externo',
-                href: '/dashboard',
-                icon: ChartLineUp,
-                color: 'text-indigo-600',
-              }}
-              isActive={location.pathname === '/dashboard'}
-            />
             {/* Dashboard Faturament */}
             <MenuItem
               item={{
