@@ -50,6 +50,10 @@ const DashboardFaturamento = lazy(() => import('./pages/DashboardFaturamento'));
 const InadimplentesMultimarcas = lazy(() =>
   import('./pages/InadimplentesMultimarcas'),
 );
+const InadimplentesRevenda = lazy(() => import('./pages/InadimplentesRevenda'));
+const InadimplentesFranquias = lazy(() =>
+  import('./pages/InadimplentesFranquias'),
+);
 const CMVVarejo = lazy(() => import('./pages/CMVVarejo'));
 const DRE = lazy(() => import('./pages/DRE'));
 const AuditoriaTransacoes = lazy(() => import('./pages/AuditoriaTransacoes'));
@@ -254,6 +258,16 @@ const AppRoutes = memo(() => {
     {
       path: '/inadimplentes-multimarcas',
       component: InadimplentesMultimarcas,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
+    {
+      path: '/inadimplentes-revenda',
+      component: InadimplentesRevenda,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
+    {
+      path: '/inadimplentes-franquias',
+      component: InadimplentesFranquias,
       roles: ['admin', 'manager', 'guest', 'owner', 'user'],
     },
     {

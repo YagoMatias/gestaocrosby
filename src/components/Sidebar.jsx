@@ -240,6 +240,12 @@ const revenda = [
     icon: Buildings,
     color: 'text-blue-600',
   },
+  {
+    name: 'Inadimplentes Revenda',
+    href: '/inadimplentes-revenda',
+    icon: ChartBar,
+    color: 'text-purple-600',
+  },
 ];
 
 const franquias = [
@@ -250,6 +256,12 @@ const franquias = [
     color: 'text-emerald-600',
   },
   { name: 'CREDEV', href: '/credev', icon: Buildings, color: 'text-blue-600' },
+  {
+    name: 'Inadimplentes Franquias',
+    href: '/inadimplentes-franquias',
+    icon: ChartBar,
+    color: 'text-purple-600',
+  },
 ];
 
 // Sub-seção: Dashboard Financeiro (itens internos)
