@@ -43,6 +43,7 @@ import {
   Gavel,
   TrendUp,
   Smiley,
+  ClockClockwise,
 } from '@phosphor-icons/react';
 
 // Registrar componentes do Chart.js
@@ -63,8 +64,9 @@ const InadimplentesMultimarcas = () => {
     salvarClassificacao,
     buscarClassificacoes,
     deletarClassificacao,
+    buscarHistorico,
   } = useClassificacoesInadimplentes();
-  
+
   const [dados, setDados] = useState([]);
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
@@ -84,6 +86,11 @@ const InadimplentesMultimarcas = () => {
   const [modalListaAberto, setModalListaAberto] = useState(false);
   const [tituloModalLista, setTituloModalLista] = useState('');
   const [clientesFiltradosModal, setClientesFiltradosModal] = useState([]);
+
+  // Estado para o modal de histórico
+  const [modalHistoricoAberto, setModalHistoricoAberto] = useState(false);
+  const [historicoSelecionado, setHistoricoSelecionado] = useState([]);
+  const [loadingHistorico, setLoadingHistorico] = useState(false);
 
   // Estado para Feeling e Status de cada cliente (valores salvos)
   const [clienteFeeling, setClienteFeeling] = useState({}); // { cd_cliente: 'POSSÍVEL PAGAMENTO' | 'ATRASO' }
@@ -123,7 +130,7 @@ const InadimplentesMultimarcas = () => {
 
     // SALVAR NO SUPABASE
     const cliente = clientesAgrupados.find((c) => c.cd_cliente === cdCliente);
-    
+
     if (cliente && user) {
       const classificacao = {
         cd_cliente: cliente.cd_cliente,
@@ -167,7 +174,7 @@ const InadimplentesMultimarcas = () => {
 
     // SALVAR NO SUPABASE
     const cliente = clientesAgrupados.find((c) => c.cd_cliente === cdCliente);
-    
+
     if (cliente && user) {
       const classificacao = {
         cd_cliente: cliente.cd_cliente,
@@ -342,12 +349,13 @@ const InadimplentesMultimarcas = () => {
 
       // CARREGAR CLASSIFICAÇÕES DO SUPABASE
       if (dadosRecebidos.length > 0) {
-        const { success, data: classificacoesSalvas } = await buscarClassificacoes();
-        
+        const { success, data: classificacoesSalvas } =
+          await buscarClassificacoes();
+
         if (success && classificacoesSalvas) {
           const feelingMap = {};
           const statusMap = {};
-          
+
           classificacoesSalvas.forEach((c) => {
             if (c.feeling) {
               feelingMap[c.cd_cliente] = c.feeling;
@@ -356,12 +364,12 @@ const InadimplentesMultimarcas = () => {
               statusMap[c.cd_cliente] = c.status;
             }
           });
-          
+
           setClienteFeeling(feelingMap);
           setClienteStatus(statusMap);
           console.log('✅ Classificações carregadas do Supabase:', {
             feeling: Object.keys(feelingMap).length,
-            status: Object.keys(statusMap).length
+            status: Object.keys(statusMap).length,
           });
         }
       }
@@ -808,6 +816,32 @@ const InadimplentesMultimarcas = () => {
     setModalAberto(false);
     setClienteSelecionado(null);
     setFaturasSelecionadas([]);
+  };
+
+  // Funções do modal de histórico
+  const abrirModalHistorico = async (cdCliente) => {
+    setLoadingHistorico(true);
+    setModalHistoricoAberto(true);
+    setHistoricoSelecionado([]);
+
+    const { success, data } = await buscarHistorico(cdCliente);
+
+    if (success && data) {
+      setHistoricoSelecionado(data);
+    } else {
+      setNotification({
+        type: 'error',
+        message: 'Erro ao carregar histórico',
+      });
+      setTimeout(() => setNotification(null), 3000);
+    }
+
+    setLoadingHistorico(false);
+  };
+
+  const fecharModalHistorico = () => {
+    setModalHistoricoAberto(false);
+    setHistoricoSelecionado([]);
   };
 
   return (
@@ -1440,11 +1474,21 @@ const InadimplentesMultimarcas = () => {
       {/* Tabela */}
       <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
         <CardHeader className="pb-2">
-          <div className="flex items-center gap-2">
-            <Receipt size={18} className="text-[#000638]" />
-            <CardTitle className="text-sm font-bold text-[#000638]">
-              Lista de Clientes Inadimplentes
-            </CardTitle>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Receipt size={18} className="text-[#000638]" />
+              <CardTitle className="text-sm font-bold text-[#000638]">
+                Lista de Clientes Inadimplentes
+              </CardTitle>
+            </div>
+            <button
+              onClick={() => abrirModalHistorico(null)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[#000638] text-white text-xs font-medium rounded hover:bg-[#fe0000] transition-colors"
+              title="Ver histórico completo de alterações"
+            >
+              <ClockClockwise size={16} weight="bold" />
+              Log
+            </button>
           </div>
         </CardHeader>
         <CardContent className="pt-0 px-4 pb-4">
@@ -1703,6 +1747,156 @@ const InadimplentesMultimarcas = () => {
             <div className="mt-4 flex justify-end">
               <button
                 onClick={fecharModalLista}
+                className="px-4 py-2 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Histórico de Alterações */}
+      {modalHistoricoAberto && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg p-6 max-w-7xl w-full max-h-[90vh] overflow-y-auto mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-2">
+                <ClockClockwise
+                  size={24}
+                  weight="bold"
+                  className="text-[#000638]"
+                />
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Histórico Completo de Alterações
+                </h3>
+              </div>
+              <button
+                onClick={fecharModalHistorico}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-600 mb-4">
+              Registro de todas as alterações de classificação realizadas
+            </p>
+
+            {loadingHistorico ? (
+              <div className="flex justify-center items-center py-8">
+                <CircleNotch
+                  size={32}
+                  className="animate-spin text-[#000638]"
+                />
+              </div>
+            ) : historicoSelecionado.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <ClockClockwise size={48} className="mx-auto mb-2 opacity-50" />
+                <p>Nenhuma alteração de classificação foi registrada ainda</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3">Data/Hora</th>
+                      <th className="px-4 py-3">Cliente</th>
+                      <th className="px-4 py-3">Valor</th>
+                      <th className="px-4 py-3">Situação</th>
+                      <th className="px-4 py-3">Feeling</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Usuário</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historicoSelecionado.map((item, index) => (
+                      <tr
+                        key={index}
+                        className="bg-white border-b hover:bg-gray-50"
+                      >
+                        <td className="px-4 py-3 text-xs">
+                          {new Date(item.data_alteracao).toLocaleString(
+                            'pt-BR',
+                            {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            },
+                          )}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-gray-900">
+                          <div className="text-xs font-bold">
+                            {item.cd_cliente}
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            {item.nm_cliente}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-medium text-green-600">
+                          {formatarMoeda(item.valor_total)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`text-xs font-semibold px-2 py-1 rounded ${
+                              item.situacao === 'INADIMPLENTE'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-yellow-100 text-yellow-800'
+                            }`}
+                          >
+                            {item.situacao || 'N/A'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`text-xs font-semibold px-2 py-1 rounded ${getFeelingBadgeClass(
+                              item.feeling,
+                            )}`}
+                          >
+                            {item.feeling || '---'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`text-xs font-semibold px-2 py-1 rounded ${getStatusBadgeClass(
+                              item.status,
+                            )}`}
+                          >
+                            {item.status || '---'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs">
+                          <div className="flex items-center gap-1">
+                            <Users size={14} className="text-gray-400" />
+                            <span className="text-gray-700">
+                              {item.usuario}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={fecharModalHistorico}
                 className="px-4 py-2 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors"
               >
                 Fechar
