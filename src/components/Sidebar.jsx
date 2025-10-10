@@ -225,6 +225,12 @@ const multimarcas = [
     icon: Buildings,
     color: 'text-purple-600',
   },
+  {
+    name: 'Inadimplentes Multimarcas',
+    href: '/inadimplentes-multimarcas',
+    icon: ChartBar,
+    color: 'text-purple-600',
+  },
 ];
 
 const revenda = [

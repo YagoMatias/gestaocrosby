@@ -264,6 +264,8 @@ const useApiClient = () => {
     fornecedor: (params) => apiCall('/api/financial/fornecedor', params),
     centrocusto: (params) => apiCall('/api/financial/centrocusto', params),
     despesa: (params) => apiCall('/api/financial/despesa', params),
+    inadimplentesMultimarcas: (params) =>
+      apiCall('/api/financial/inadimplentes-multimarcas', params),
   };
 
   const sales = {

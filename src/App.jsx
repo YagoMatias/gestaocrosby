@@ -47,6 +47,9 @@ const CMVMultimarcas = lazy(() => import('./pages/CMVMultimarcas'));
 const CMVRevenda = lazy(() => import('./pages/CMVRevenda'));
 const CMVFranquia = lazy(() => import('./pages/CMVFranquia'));
 const DashboardFaturamento = lazy(() => import('./pages/DashboardFaturamento'));
+const InadimplentesMultimarcas = lazy(() =>
+  import('./pages/InadimplentesMultimarcas'),
+);
 const CMVVarejo = lazy(() => import('./pages/CMVVarejo'));
 const DRE = lazy(() => import('./pages/DRE'));
 const AuditoriaTransacoes = lazy(() => import('./pages/AuditoriaTransacoes'));
@@ -246,6 +249,11 @@ const AppRoutes = memo(() => {
     {
       path: '/credev-multimarcas',
       component: CredevMultimarcas,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
+    {
+      path: '/inadimplentes-multimarcas',
+      component: InadimplentesMultimarcas,
       roles: ['admin', 'manager', 'guest', 'owner', 'user'],
     },
     {
