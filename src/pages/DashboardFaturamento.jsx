@@ -133,35 +133,68 @@ const DashboardFaturamento = () => {
       console.log('Params atual:', params);
       console.log('Params anterior:', paramsAnterior);
 
-      // Buscar dados de todos os tipos de faturamento - período atual
+      // Buscar dados de todos os tipos de faturamento - período atual (novas rotas)
       const [varejoRes, mtmRes, franquiasRes, revendaRes] = await Promise.all([
-        apiClient.apiCall('/api/faturamento/varejo', params),
-        apiClient.apiCall('/api/faturamento/mtm', params),
-        apiClient.apiCall('/api/faturamento/franquias', params),
-        apiClient.apiCall('/api/faturamento/revenda', params),
+        apiClient.sales.faturamentoVarejo(params),
+        apiClient.sales.faturamentoMtm(params),
+        apiClient.sales.faturamentoFranquias(params),
+        apiClient.sales.faturamentoRevenda(params),
       ]);
 
       // Buscar dados do mês anterior
       const [varejoAntRes, mtmAntRes, franquiasAntRes, revendaAntRes] =
         await Promise.all([
-          apiClient.apiCall('/api/faturamento/varejo', paramsAnterior),
-          apiClient.apiCall('/api/faturamento/mtm', paramsAnterior),
-          apiClient.apiCall('/api/faturamento/franquias', paramsAnterior),
-          apiClient.apiCall('/api/faturamento/revenda', paramsAnterior),
+          apiClient.sales.faturamentoVarejo(paramsAnterior),
+          apiClient.sales.faturamentoMtm(paramsAnterior),
+          apiClient.sales.faturamentoFranquias(paramsAnterior),
+          apiClient.sales.faturamentoRevenda(paramsAnterior),
         ]);
 
+      console.log('📊 Dados Varejo recebidos:', varejoRes);
+      console.log('📊 Dados MTM recebidos:', mtmRes);
+      console.log('📊 Dados Franquias recebidos:', franquiasRes);
+      console.log('📊 Dados Revenda recebidos:', revendaRes);
+
+      // Extrair dados corretamente
+      const varejoData = varejoRes.data || [];
+      const mtmData = mtmRes.data || [];
+      const franquiasData = franquiasRes.data || [];
+      const revendaData = revendaRes.data || [];
+
+      console.log('📊 Dados Varejo extraídos:', varejoData);
+      console.log('📊 Dados MTM extraídos:', mtmData);
+      console.log('📊 Dados Franquias extraídos:', franquiasData);
+      console.log('📊 Dados Revenda extraídos:', revendaData);
+
+      // Log detalhado da primeira linha de cada dataset para debug
+      if (varejoData.length > 0)
+        console.log('📊 Varejo - Primeira linha:', varejoData[0]);
+      if (mtmData.length > 0)
+        console.log('📊 MTM - Primeira linha:', mtmData[0]);
+      if (franquiasData.length > 0)
+        console.log('📊 Franquias - Primeira linha:', franquiasData[0]);
+      if (revendaData.length > 0)
+        console.log('📊 Revenda - Primeira linha:', revendaData[0]);
+
+      console.log('📊 Quantidade de registros:', {
+        varejo: varejoData.length,
+        mtm: mtmData.length,
+        franquias: franquiasData.length,
+        revenda: revendaData.length,
+      });
+
       setDadosFaturamento({
-        varejo: varejoRes.data?.data || varejoRes.data || [],
-        mtm: mtmRes.data?.data || mtmRes.data || [],
-        franquias: franquiasRes.data?.data || franquiasRes.data || [],
-        revenda: revendaRes.data?.data || revendaRes.data || [],
+        varejo: varejoData,
+        mtm: mtmData,
+        franquias: franquiasData,
+        revenda: revendaData,
       });
 
       setDadosMesAnterior({
-        varejo: varejoAntRes.data?.data || varejoAntRes.data || [],
-        mtm: mtmAntRes.data?.data || mtmAntRes.data || [],
-        franquias: franquiasAntRes.data?.data || franquiasAntRes.data || [],
-        revenda: revendaAntRes.data?.data || revendaAntRes.data || [],
+        varejo: varejoAntRes.data || [],
+        mtm: mtmAntRes.data || [],
+        franquias: franquiasAntRes.data || [],
+        revenda: revendaAntRes.data || [],
       });
     } catch (err) {
       console.error('Erro ao buscar dados:', err);
@@ -171,54 +204,183 @@ const DashboardFaturamento = () => {
     }
   };
 
-  // Cálculos consolidados
+  // Cálculos consolidados com nova estrutura de desconto
   const dadosConsolidados = useMemo(() => {
     const tipos = ['varejo', 'mtm', 'franquias', 'revenda'];
     const resultado = {};
 
     tipos.forEach((tipo) => {
       const dados = dadosFaturamento[tipo] || [];
+      console.log(`📊 Processando ${tipo}:`, dados);
+
+      // Log do primeiro item para ver todos os campos disponíveis
+      if (dados.length > 0) {
+        console.log(
+          `📊 ${tipo.toUpperCase()} - Primeiro item completo:`,
+          dados[0],
+        );
+        console.log(
+          `📊 ${tipo.toUpperCase()} - Campos disponíveis:`,
+          Object.keys(dados[0]),
+        );
+      }
+
       resultado[tipo] = dados.reduce(
-        (acc, item) => ({
-          vendas: acc.vendas + (parseFloat(item.vendas) || 0),
-          devolucoes: acc.devolucoes + (parseFloat(item.devolucoes) || 0),
-          venda_liquida:
-            acc.venda_liquida + (parseFloat(item.venda_liquida) || 0),
-          frete: acc.frete + (parseFloat(item.frete) || 0),
-          total: acc.total + (parseFloat(item.total) || 0),
-        }),
+        (acc, item) => {
+          // MTM e Revenda agora também retornam valor_sem_desconto_* e valor_com_desconto_*
+          // Varejo e Franquias também retornam essa estrutura
+
+          // Valores brutos (sem desconto) - tentar múltiplos formatos
+          const valorBrutoSaida =
+            parseFloat(item.valor_sem_desconto_saida) ||
+            parseFloat(item.valorSemDescontoSaida) ||
+            parseFloat(item.valor_bruto_saida) ||
+            0;
+          const valorBrutoEntrada =
+            parseFloat(item.valor_sem_desconto_entrada) ||
+            parseFloat(item.valorSemDescontoEntrada) ||
+            parseFloat(item.valor_bruto_entrada) ||
+            0;
+          const valorBrutoTotal =
+            parseFloat(item.valor_sem_desconto) ||
+            parseFloat(item.valorSemDesconto) ||
+            parseFloat(item.valor_bruto_total) ||
+            0;
+
+          // Valores líquidos (com desconto) - tentar múltiplos formatos
+          const valorLiquidoSaida =
+            parseFloat(item.valor_com_desconto_saida) ||
+            parseFloat(item.valorComDescontoSaida) ||
+            parseFloat(item.valor_liquido_saida) ||
+            0;
+          const valorLiquidoEntrada =
+            parseFloat(item.valor_com_desconto_entrada) ||
+            parseFloat(item.valorComDescontoEntrada) ||
+            parseFloat(item.valor_liquido_entrada) ||
+            0;
+          const valorLiquidoTotal =
+            parseFloat(item.valor_com_desconto) ||
+            parseFloat(item.valorComDesconto) ||
+            parseFloat(item.valor_liquido_total) ||
+            0;
+
+          // Descontos dados (diferença entre bruto e líquido)
+          const descontoSaida = valorBrutoSaida - valorLiquidoSaida;
+          const descontoEntrada = valorBrutoEntrada - valorLiquidoEntrada;
+          const descontoTotal = valorBrutoTotal - valorLiquidoTotal;
+
+          // Para MTM/Revenda que não têm estrutura de desconto mas têm CMV
+          const cmvItem = parseFloat(item.cmv) || 0;
+          const qtdSaida = parseFloat(item.quantidade_total_saida) || 0;
+          const qtdEntrada = parseFloat(item.quantidade_total_entrada) || 0;
+
+          // Log detalhado para debug
+          if (valorBrutoSaida > 0 || valorLiquidoSaida > 0 || cmvItem > 0) {
+            console.log(`  Item ${tipo}:`, {
+              valorBrutoSaida,
+              valorLiquidoSaida,
+              valorBrutoEntrada,
+              valorLiquidoEntrada,
+              valorBrutoTotal,
+              valorLiquidoTotal,
+              descontoTotal,
+              cmv: cmvItem,
+              qtdSaida,
+              qtdEntrada,
+            });
+          }
+
+          return {
+            // Saída (vendas)
+            valor_bruto_saida: acc.valor_bruto_saida + valorBrutoSaida,
+            valor_liquido_saida: acc.valor_liquido_saida + valorLiquidoSaida,
+            desconto_saida: acc.desconto_saida + descontoSaida,
+
+            // Entrada (devoluções)
+            valor_bruto_entrada: acc.valor_bruto_entrada + valorBrutoEntrada,
+            valor_liquido_entrada:
+              acc.valor_liquido_entrada + valorLiquidoEntrada,
+            desconto_entrada: acc.desconto_entrada + descontoEntrada,
+
+            // Totais
+            valor_bruto_total: acc.valor_bruto_total + valorBrutoTotal,
+            valor_liquido_total: acc.valor_liquido_total + valorLiquidoTotal,
+            desconto_total: acc.desconto_total + descontoTotal,
+
+            // Quantidade (para MTM e Revenda que têm quantidade)
+            quantidade_saida:
+              acc.quantidade_saida +
+              (parseFloat(item.quantidade_total_saida) || 0),
+            quantidade_entrada:
+              acc.quantidade_entrada +
+              (parseFloat(item.quantidade_total_entrada) || 0),
+            cmv: acc.cmv + (parseFloat(item.cmv) || 0),
+          };
+        },
         {
-          vendas: 0,
-          devolucoes: 0,
-          venda_liquida: 0,
-          frete: 0,
-          total: 0,
+          valor_bruto_saida: 0,
+          valor_liquido_saida: 0,
+          desconto_saida: 0,
+          valor_bruto_entrada: 0,
+          valor_liquido_entrada: 0,
+          desconto_entrada: 0,
+          valor_bruto_total: 0,
+          valor_liquido_total: 0,
+          desconto_total: 0,
+          quantidade_saida: 0,
+          quantidade_entrada: 0,
+          cmv: 0,
         },
       );
+
+      console.log(`📊 Resultado consolidado para ${tipo}:`, resultado[tipo]);
     });
 
     // Totais gerais
     resultado.totais = tipos.reduce(
       (acc, tipo) => ({
-        vendas: acc.vendas + resultado[tipo].vendas,
-        devolucoes: acc.devolucoes + resultado[tipo].devolucoes,
-        venda_liquida: acc.venda_liquida + resultado[tipo].venda_liquida,
-        frete: acc.frete + resultado[tipo].frete,
-        total: acc.total + resultado[tipo].total,
+        valor_bruto_saida:
+          acc.valor_bruto_saida + resultado[tipo].valor_bruto_saida,
+        valor_liquido_saida:
+          acc.valor_liquido_saida + resultado[tipo].valor_liquido_saida,
+        desconto_saida: acc.desconto_saida + resultado[tipo].desconto_saida,
+        valor_bruto_entrada:
+          acc.valor_bruto_entrada + resultado[tipo].valor_bruto_entrada,
+        valor_liquido_entrada:
+          acc.valor_liquido_entrada + resultado[tipo].valor_liquido_entrada,
+        desconto_entrada:
+          acc.desconto_entrada + resultado[tipo].desconto_entrada,
+        valor_bruto_total:
+          acc.valor_bruto_total + resultado[tipo].valor_bruto_total,
+        valor_liquido_total:
+          acc.valor_liquido_total + resultado[tipo].valor_liquido_total,
+        desconto_total: acc.desconto_total + resultado[tipo].desconto_total,
+        quantidade_saida:
+          acc.quantidade_saida + resultado[tipo].quantidade_saida,
+        quantidade_entrada:
+          acc.quantidade_entrada + resultado[tipo].quantidade_entrada,
+        cmv: acc.cmv + resultado[tipo].cmv,
       }),
       {
-        vendas: 0,
-        devolucoes: 0,
-        venda_liquida: 0,
-        frete: 0,
-        total: 0,
+        valor_bruto_saida: 0,
+        valor_liquido_saida: 0,
+        desconto_saida: 0,
+        valor_bruto_entrada: 0,
+        valor_liquido_entrada: 0,
+        desconto_entrada: 0,
+        valor_bruto_total: 0,
+        valor_liquido_total: 0,
+        desconto_total: 0,
+        quantidade_saida: 0,
+        quantidade_entrada: 0,
+        cmv: 0,
       },
     );
 
     return resultado;
   }, [dadosFaturamento]);
 
-  // Cálculos consolidados do mês anterior
+  // Cálculos consolidados do mês anterior com nova estrutura
   const dadosConsolidadosMesAnterior = useMemo(() => {
     const tipos = ['varejo', 'mtm', 'franquias', 'revenda'];
     const resultado = {};
@@ -226,20 +388,21 @@ const DashboardFaturamento = () => {
     tipos.forEach((tipo) => {
       const dados = dadosMesAnterior[tipo] || [];
       resultado[tipo] = dados.reduce(
-        (acc, item) => ({
-          vendas: acc.vendas + (parseFloat(item.vendas) || 0),
-          devolucoes: acc.devolucoes + (parseFloat(item.devolucoes) || 0),
-          venda_liquida:
-            acc.venda_liquida + (parseFloat(item.venda_liquida) || 0),
-          frete: acc.frete + (parseFloat(item.frete) || 0),
-          total: acc.total + (parseFloat(item.total) || 0),
-        }),
+        (acc, item) => {
+          const valorBrutoTotal = parseFloat(item.valor_sem_desconto) || 0;
+          const valorLiquidoTotal = parseFloat(item.valor_com_desconto) || 0;
+          const descontoTotal = valorBrutoTotal - valorLiquidoTotal;
+
+          return {
+            valor_bruto_total: acc.valor_bruto_total + valorBrutoTotal,
+            valor_liquido_total: acc.valor_liquido_total + valorLiquidoTotal,
+            desconto_total: acc.desconto_total + descontoTotal,
+          };
+        },
         {
-          vendas: 0,
-          devolucoes: 0,
-          venda_liquida: 0,
-          frete: 0,
-          total: 0,
+          valor_bruto_total: 0,
+          valor_liquido_total: 0,
+          desconto_total: 0,
         },
       );
     });
@@ -247,14 +410,14 @@ const DashboardFaturamento = () => {
     return resultado;
   }, [dadosMesAnterior]);
 
-  // Dados para gráfico de pizza - Faturamento por tipo
+  // Dados para gráfico de pizza - Faturamento por tipo (valor líquido)
   const dadosPizza = useMemo(() => {
     const labels = ['Varejo', 'MTM', 'Franquias', 'Revenda'];
     const dados = [
-      dadosConsolidados.varejo?.total || 0,
-      dadosConsolidados.mtm?.total || 0,
-      dadosConsolidados.franquias?.total || 0,
-      dadosConsolidados.revenda?.total || 0,
+      dadosConsolidados.varejo?.valor_liquido_total || 0,
+      dadosConsolidados.mtm?.valor_liquido_total || 0,
+      dadosConsolidados.franquias?.valor_liquido_total || 0,
+      dadosConsolidados.revenda?.valor_liquido_total || 0,
     ];
 
     return {
@@ -275,7 +438,7 @@ const DashboardFaturamento = () => {
     };
   }, [dadosConsolidados]);
 
-  // Dados para gráfico de barras - Vendas vs Devoluções
+  // Dados para gráfico de barras - Valor Bruto, Líquido e Descontos
   const dadosBarras = useMemo(() => {
     const labels = ['Varejo', 'MTM', 'Franquias', 'Revenda'];
 
@@ -283,58 +446,69 @@ const DashboardFaturamento = () => {
       labels,
       datasets: [
         {
-          label: 'Vendas',
+          label: 'Valor Bruto (Saída)',
           data: [
-            dadosConsolidados.varejo?.vendas || 0,
-            dadosConsolidados.mtm?.vendas || 0,
-            dadosConsolidados.franquias?.vendas || 0,
-            dadosConsolidados.revenda?.vendas || 0,
+            dadosConsolidados.varejo?.valor_bruto_saida || 0,
+            dadosConsolidados.mtm?.valor_bruto_saida || 0,
+            dadosConsolidados.franquias?.valor_bruto_saida || 0,
+            dadosConsolidados.revenda?.valor_bruto_saida || 0,
           ],
           backgroundColor: '#3B82F6',
         },
         {
-          label: 'Devoluções',
+          label: 'Valor Líquido (Saída)',
           data: [
-            Math.abs(dadosConsolidados.varejo?.devolucoes || 0),
-            Math.abs(dadosConsolidados.mtm?.devolucoes || 0),
-            Math.abs(dadosConsolidados.franquias?.devolucoes || 0),
-            Math.abs(dadosConsolidados.revenda?.devolucoes || 0),
-          ],
-          backgroundColor: '#EF4444',
-        },
-        {
-          label: 'Frete',
-          data: [
-            dadosConsolidados.varejo?.frete || 0,
-            dadosConsolidados.mtm?.frete || 0,
-            dadosConsolidados.franquias?.frete || 0,
-            dadosConsolidados.revenda?.frete || 0,
+            dadosConsolidados.varejo?.valor_liquido_saida || 0,
+            dadosConsolidados.mtm?.valor_liquido_saida || 0,
+            dadosConsolidados.franquias?.valor_liquido_saida || 0,
+            dadosConsolidados.revenda?.valor_liquido_saida || 0,
           ],
           backgroundColor: '#10B981',
+        },
+        {
+          label: 'Descontos Dados',
+          data: [
+            dadosConsolidados.varejo?.desconto_saida || 0,
+            dadosConsolidados.mtm?.desconto_saida || 0,
+            dadosConsolidados.franquias?.desconto_saida || 0,
+            dadosConsolidados.revenda?.desconto_saida || 0,
+          ],
+          backgroundColor: '#F59E0B',
+        },
+        {
+          label: 'Devoluções (Entrada)',
+          data: [
+            Math.abs(dadosConsolidados.varejo?.valor_liquido_entrada || 0),
+            Math.abs(dadosConsolidados.mtm?.valor_liquido_entrada || 0),
+            Math.abs(dadosConsolidados.franquias?.valor_liquido_entrada || 0),
+            Math.abs(dadosConsolidados.revenda?.valor_liquido_entrada || 0),
+          ],
+          backgroundColor: '#EF4444',
         },
       ],
     };
   }, [dadosConsolidados]);
 
-  // Dados para gráfico de linha - Faturamento por empresa
+  // Dados para gráfico de linha - Faturamento por empresa (valor líquido)
   const dadosLinha = useMemo(() => {
     // Combinar todos os dados por empresa
     const empresas = new Map();
 
     Object.keys(dadosFaturamento).forEach((tipo) => {
       dadosFaturamento[tipo].forEach((item) => {
-        const empresa = item.cd_empresa;
+        const empresa = item.cd_grupoempresa || item.cd_empresa;
         if (!empresas.has(empresa)) {
           empresas.set(empresa, {
             empresa,
-            nm_grupoempresa: item.nm_grupoempresa,
+            nm_grupoempresa: item.nm_grupoempresa || empresa,
             varejo: 0,
             mtm: 0,
             franquias: 0,
             revenda: 0,
           });
         }
-        empresas.get(empresa)[tipo] = parseFloat(item.total) || 0;
+        const valorLiquido = parseFloat(item.valor_com_desconto) || 0;
+        empresas.get(empresa)[tipo] += valorLiquido;
       });
     });
 
@@ -344,7 +518,7 @@ const DashboardFaturamento = () => {
 
     return {
       labels: dadosArray.map(
-        (item) => item.nm_grupoempresa || `Empresa ${item.empresa}`,
+        (item) => item.nm_grupoempresa || `Grupo ${item.empresa}`,
       ),
       datasets: [
         {
@@ -449,8 +623,8 @@ const DashboardFaturamento = () => {
     },
   };
 
-  // Campo para comparar crescimento (total ou venda_liquida)
-  const campoCrescimento = 'venda_liquida'; // altere para 'total' se quiser comparar pelo total
+  // Campo para comparar crescimento (valor_liquido_total)
+  const campoCrescimento = 'valor_liquido_total';
 
   // Função para calcular crescimento mensal
   const calcularCrescimentoMensal = (canal) => {
@@ -636,9 +810,9 @@ const DashboardFaturamento = () => {
         </div>
       ) : Object.values(dadosFaturamento).some((dados) => dados.length > 0) ? (
         <>
-          {/* Cards de Resumo */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-            {/* Total Geral */}
+          {/* Cards de Resumo - Nova Estrutura */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
+            {/* Valor Bruto Total */}
             <Card
               className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
               onClick={() =>
@@ -653,41 +827,101 @@ const DashboardFaturamento = () => {
                 <div className="flex items-center gap-2">
                   <Money size={18} className="text-blue-600" />
                   <CardTitle className="text-sm font-bold text-blue-700">
-                    Total Geral
+                    Valor Bruto Total
                   </CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-base font-extrabold text-blue-600 mb-0.5">
-                  {formatBRL(dadosConsolidados.totais?.total)}
+                  {formatBRL(dadosConsolidados.totais?.valor_bruto_total)}
                 </div>
                 <CardDescription className="text-xs text-gray-500">
-                  Faturamento consolidado
+                  Sem descontos
                 </CardDescription>
               </CardContent>
             </Card>
 
-            {/* Vendas */}
+            {/* Valor Líquido Total */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
-                  <ArrowUp size={18} className="text-green-600" />
+                  <Receipt size={18} className="text-green-600" />
                   <CardTitle className="text-sm font-bold text-green-700">
-                    Vendas
+                    Valor Líquido Total
                   </CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-base font-extrabold text-green-600 mb-0.5">
-                  {formatBRL(dadosConsolidados.totais?.vendas)}
+                  {formatBRL(dadosConsolidados.totais?.valor_liquido_total)}
                 </div>
                 <CardDescription className="text-xs text-gray-500">
-                  Vendas brutas
+                  Com descontos
                 </CardDescription>
               </CardContent>
             </Card>
 
-            {/* Devoluções */}
+            {/* Descontos Dados */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <TrendUp size={18} className="text-orange-600" />
+                  <CardTitle className="text-sm font-bold text-orange-700">
+                    Descontos Dados
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-base font-extrabold text-orange-600 mb-0.5">
+                  {formatBRL(dadosConsolidados.totais?.desconto_total)}
+                </div>
+                <CardDescription className="text-xs text-gray-500">
+                  Total de descontos
+                </CardDescription>
+              </CardContent>
+            </Card>
+
+            {/* Vendas Bruto (Saída) */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <ArrowUp size={18} className="text-blue-600" />
+                  <CardTitle className="text-sm font-bold text-blue-700">
+                    Vendas (Bruto)
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-base font-extrabold text-blue-600 mb-0.5">
+                  {formatBRL(dadosConsolidados.totais?.valor_bruto_saida)}
+                </div>
+                <CardDescription className="text-xs text-gray-500">
+                  Saídas sem desconto
+                </CardDescription>
+              </CardContent>
+            </Card>
+
+            {/* Vendas Líquido (Saída) */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <ArrowUp size={18} className="text-green-600" />
+                  <CardTitle className="text-sm font-bold text-green-700">
+                    Vendas (Líquido)
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-base font-extrabold text-green-600 mb-0.5">
+                  {formatBRL(dadosConsolidados.totais?.valor_liquido_saida)}
+                </div>
+                <CardDescription className="text-xs text-gray-500">
+                  Saídas com desconto
+                </CardDescription>
+              </CardContent>
+            </Card>
+
+            {/* Devoluções (Entrada) */}
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
@@ -699,50 +933,12 @@ const DashboardFaturamento = () => {
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-base font-extrabold text-red-600 mb-0.5">
-                  {formatBRL(Math.abs(dadosConsolidados.totais?.devolucoes))}
+                  {formatBRL(
+                    Math.abs(dadosConsolidados.totais?.valor_liquido_entrada),
+                  )}
                 </div>
                 <CardDescription className="text-xs text-gray-500">
                   Valores devolvidos
-                </CardDescription>
-              </CardContent>
-            </Card>
-
-            {/* Frete */}
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2">
-                  <ShoppingCart size={18} className="text-purple-600" />
-                  <CardTitle className="text-sm font-bold text-purple-700">
-                    Frete
-                  </CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-base font-extrabold text-purple-600 mb-0.5">
-                  {formatBRL(dadosConsolidados.totais?.frete)}
-                </div>
-                <CardDescription className="text-xs text-gray-500">
-                  Valores de frete
-                </CardDescription>
-              </CardContent>
-            </Card>
-
-            {/* Venda Líquida */}
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2">
-                  <Receipt size={18} className="text-gray-600" />
-                  <CardTitle className="text-sm font-bold text-gray-700">
-                    Venda Líquida
-                  </CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-base font-extrabold text-gray-600 mb-0.5">
-                  {formatBRL(dadosConsolidados.totais?.venda_liquida)}
-                </div>
-                <CardDescription className="text-xs text-gray-500">
-                  Vendas após devoluções
                 </CardDescription>
               </CardContent>
             </Card>
@@ -775,9 +971,13 @@ const DashboardFaturamento = () => {
                 valueClass: 'text-purple-600',
               },
             ].map((canal) => {
-              const faturamento = formatBRL(
-                dadosConsolidados[canal.key]?.venda_liquida || 0,
-              );
+              // Receita Líquida = Valor Líquido Saída - Valor Líquido Entrada (devoluções)
+              const receitaLiquida =
+                (dadosConsolidados[canal.key]?.valor_liquido_saida || 0) -
+                Math.abs(
+                  dadosConsolidados[canal.key]?.valor_liquido_entrada || 0,
+                );
+              const faturamento = formatBRL(receitaLiquida);
               const crescimento = calcularCrescimentoMensal(canal.key);
               // Se anterior for negativo, exibe swing, multiplicador e variação
               if (crescimento.anterior < 0) {
@@ -881,47 +1081,121 @@ const DashboardFaturamento = () => {
                   </CardHeader>
                   <CardContent className="bg-white">
                     <div className="space-y-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium text-gray-600">
-                          Vendas:
-                        </span>
-                        <span className="font-bold text-green-600">
-                          {formatBRL(dadosConsolidados[tipo]?.vendas)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium text-gray-600">
-                          Devoluções:
-                        </span>
-                        <span className="font-bold text-red-600">
-                          {formatBRL(
-                            Math.abs(dadosConsolidados[tipo]?.devolucoes),
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium text-gray-600">
-                          Venda Líquida:
-                        </span>
-                        <span className="font-bold text-blue-600">
-                          {formatBRL(dadosConsolidados[tipo]?.venda_liquida)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium text-gray-600">
-                          Frete:
-                        </span>
-                        <span className="font-bold text-purple-600">
-                          {formatBRL(dadosConsolidados[tipo]?.frete)}
-                        </span>
-                      </div>
-                      <div className="border-t pt-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-bold text-gray-800">
-                            Total:
+                      {/* Vendas - Saída */}
+                      <div className="border-b pb-2">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm font-semibold text-blue-700">
+                            VENDAS (SAÍDA)
                           </span>
-                          <span className="font-bold text-[#000638] text-lg">
-                            {formatBRL(dadosConsolidados[tipo]?.total)}
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-medium text-gray-600">
+                            Valor Bruto:
+                          </span>
+                          <span className="font-bold text-blue-600 text-sm">
+                            {formatBRL(
+                              dadosConsolidados[tipo]?.valor_bruto_saida,
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-medium text-gray-600">
+                            Valor Líquido:
+                          </span>
+                          <span className="font-bold text-green-600 text-sm">
+                            {formatBRL(
+                              dadosConsolidados[tipo]?.valor_liquido_saida,
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-medium text-gray-600">
+                            Descontos:
+                          </span>
+                          <span className="font-bold text-orange-600 text-sm">
+                            {formatBRL(dadosConsolidados[tipo]?.desconto_saida)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Devoluções - Entrada */}
+                      <div className="border-b pb-2">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm font-semibold text-red-700">
+                            DEVOLUÇÕES (ENTRADA)
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-medium text-gray-600">
+                            Valor Bruto:
+                          </span>
+                          <span className="font-bold text-red-600 text-sm">
+                            {formatBRL(
+                              Math.abs(
+                                dadosConsolidados[tipo]?.valor_bruto_entrada,
+                              ),
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-medium text-gray-600">
+                            Valor Líquido:
+                          </span>
+                          <span className="font-bold text-red-500 text-sm">
+                            {formatBRL(
+                              Math.abs(
+                                dadosConsolidados[tipo]?.valor_liquido_entrada,
+                              ),
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-medium text-gray-600">
+                            Descontos:
+                          </span>
+                          <span className="font-bold text-orange-600 text-sm">
+                            {formatBRL(
+                              Math.abs(
+                                dadosConsolidados[tipo]?.desconto_entrada,
+                              ),
+                            )}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Totais */}
+                      <div className="border-t pt-2">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm font-bold text-gray-800">
+                            TOTAL GERAL
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-medium text-gray-600">
+                            Valor Bruto:
+                          </span>
+                          <span className="font-bold text-blue-600">
+                            {formatBRL(
+                              dadosConsolidados[tipo]?.valor_bruto_total,
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-medium text-gray-600">
+                            Valor Líquido:
+                          </span>
+                          <span className="font-bold text-green-600">
+                            {formatBRL(
+                              dadosConsolidados[tipo]?.valor_liquido_total,
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-medium text-gray-600">
+                            Total Descontos:
+                          </span>
+                          <span className="font-bold text-orange-600 text-lg">
+                            {formatBRL(dadosConsolidados[tipo]?.desconto_total)}
                           </span>
                         </div>
                       </div>
@@ -965,12 +1239,21 @@ const DashboardFaturamento = () => {
                     datasets: [
                       {
                         data: [
-                          Math.abs(dadosConsolidados.varejo?.devolucoes || 0),
-                          Math.abs(dadosConsolidados.mtm?.devolucoes || 0),
                           Math.abs(
-                            dadosConsolidados.franquias?.devolucoes || 0,
+                            dadosConsolidados.varejo?.valor_liquido_entrada ||
+                              0,
                           ),
-                          Math.abs(dadosConsolidados.revenda?.devolucoes || 0),
+                          Math.abs(
+                            dadosConsolidados.mtm?.valor_liquido_entrada || 0,
+                          ),
+                          Math.abs(
+                            dadosConsolidados.franquias
+                              ?.valor_liquido_entrada || 0,
+                          ),
+                          Math.abs(
+                            dadosConsolidados.revenda?.valor_liquido_entrada ||
+                              0,
+                          ),
                         ],
                         backgroundColor: [
                           '#3B82F6',
@@ -1034,13 +1317,20 @@ const DashboardFaturamento = () => {
                       datasets: [
                         {
                           data: [
-                            Math.abs(dadosConsolidados.varejo?.devolucoes || 0),
-                            Math.abs(dadosConsolidados.mtm?.devolucoes || 0),
                             Math.abs(
-                              dadosConsolidados.franquias?.devolucoes || 0,
+                              dadosConsolidados.varejo?.valor_liquido_entrada ||
+                                0,
                             ),
                             Math.abs(
-                              dadosConsolidados.revenda?.devolucoes || 0,
+                              dadosConsolidados.mtm?.valor_liquido_entrada || 0,
+                            ),
+                            Math.abs(
+                              dadosConsolidados.franquias
+                                ?.valor_liquido_entrada || 0,
+                            ),
+                            Math.abs(
+                              dadosConsolidados.revenda
+                                ?.valor_liquido_entrada || 0,
                             ),
                           ],
                           backgroundColor: [
@@ -1064,12 +1354,17 @@ const DashboardFaturamento = () => {
           {/* 4 Gráficos de Pizza - Faturamento por Empresa para cada Canal */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 mt-10">
             {['varejo', 'mtm', 'franquias', 'revenda'].map((canal) => {
-              // Agrupa faturamento por empresa para o canal
+              // Agrupa faturamento por empresa para o canal (valor líquido)
               const dados = dadosFaturamento[canal] || [];
               const empresas = dados.map(
-                (item) => item.nm_grupoempresa || `Empresa ${item.cd_empresa}`,
+                (item) =>
+                  item.nm_grupoempresa ||
+                  item.cd_grupoempresa ||
+                  `Empresa ${item.cd_empresa}`,
               );
-              const valores = dados.map((item) => parseFloat(item.total) || 0);
+              const valores = dados.map(
+                (item) => parseFloat(item.valor_com_desconto) || 0,
+              );
               const pizzaData = {
                 labels: empresas,
                 datasets: [

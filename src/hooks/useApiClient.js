@@ -266,15 +266,24 @@ const useApiClient = () => {
     despesa: (params) => apiCall('/api/financial/despesa', params),
     inadimplentesMultimarcas: (params) =>
       apiCall('/api/financial/inadimplentes-multimarcas', params),
+    // Nova rota para inadimplentes (franquias)
+    inadimplentesFranquias: (params) =>
+      apiCall('/api/financial/inadimplentes-franquias', params),
   };
 
   const sales = {
+    // Novas rotas de faturamento com estrutura de desconto
+    faturamentoVarejo: (params) => apiCall('/api/faturamento/varejo', params),
+    faturamentoMtm: (params) => apiCall('/api/faturamento/mtm', params),
+    faturamentoFranquias: (params) =>
+      apiCall('/api/faturamento/franquias', params),
+    faturamentoRevenda: (params) => apiCall('/api/faturamento/revenda', params),
+    faturamentoConsolidado: (params) =>
+      apiCall('/api/faturamento/consolidado', params),
+    // Rotas antigas mantidas para compatibilidade (deprecadas)
     faturamento: (params) => apiCall('/api/sales/faturamento', params),
     faturamentoFranquia: (params) =>
       apiCall('/api/sales/faturamento-franquia', params),
-    faturamentoMtm: (params) => apiCall('/api/sales/faturamento-mtm', params),
-    faturamentoRevenda: (params) =>
-      apiCall('/api/sales/faturamento-revenda', params),
     receitaliquidaFaturamento: (params) =>
       apiCall('/api/sales/receitaliquida-faturamento', params),
     receitaliquidaFranquias: (params) =>

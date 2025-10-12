@@ -46,7 +46,7 @@ const InadimplentesFranquias = () => {
   const apiClient = useApiClient();
   const [dados, setDados] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [filtroDataInicial, setFiltroDataInicial] = useState('2024-04-01');
+  const [filtroDataInicial, setFiltroDataInicial] = useState('2023-10-01');
   const hojeStr = new Date().toISOString().slice(0, 10);
   const [filtroDataFinal, setFiltroDataFinal] = useState(hojeStr);
   const [filtroClientes, setFiltroClientes] = useState([]);
@@ -64,18 +64,26 @@ const InadimplentesFranquias = () => {
         dt_vencimento_ini: '2024-01-01',
       };
 
+      // sempre solicitar apenas situações ativas (tp_situacao = 1)
+      params.tp_situacao = 1;
+
       if (filtroDataInicial) params.dt_inicio = filtroDataInicial;
       if (filtroDataFinal) params.dt_fim = filtroDataFinal;
 
-      const response = await apiClient.financial.inadimplentesMultimarcas(
-        params,
-      );
+      // Rota específica para franquias (inclui pp.ds_uf e nome fantasia)
+      const response = await apiClient.financial.inadimplentesFranquias(params);
 
       let dadosRecebidos = [];
       if (response?.success && response?.data) {
         dadosRecebidos = Array.isArray(response.data) ? response.data : [];
+        // garantir que retornamos apenas registros com tp_situacao = 1
+        dadosRecebidos = dadosRecebidos.filter(
+          (it) => String(it.tp_situacao) === '1' || it.tp_situacao === 1,
+        );
       } else if (Array.isArray(response)) {
-        dadosRecebidos = response;
+        dadosRecebidos = response.filter(
+          (it) => String(it.tp_situacao) === '1' || it.tp_situacao === 1,
+        );
       }
 
       console.log(
@@ -97,10 +105,24 @@ const InadimplentesFranquias = () => {
 
   const dadosFiltrados = useMemo(() => {
     return dados.filter((item) => {
+      // Apenas situações ativas (defensivo caso a API não filtre)
+      if (
+        item.tp_situacao &&
+        String(item.tp_situacao) !== '1' &&
+        item.tp_situacao !== 1
+      ) {
+        return false;
+      }
+
       const matchCliente =
         filtroClientes.length === 0 ||
         filtroClientes.includes(String(item.cd_cliente));
-      const sigla = item.ds_siglaest?.trim() || '';
+
+      // Para franquias o estado vem em pp.ds_uf (campo aninhado). Priorize pp.ds_uf
+      const sigla =
+        item.pp && item.pp.ds_uf
+          ? String(item.pp.ds_uf).trim()
+          : (item.ds_uf || '').trim();
       const matchEstado =
         filtroEstados.length === 0 || filtroEstados.includes(sigla);
 
@@ -119,7 +141,9 @@ const InadimplentesFranquias = () => {
   const estadosDisponiveis = useMemo(() => {
     const setEstados = new Set();
     dados.forEach((d) => {
-      if (d.ds_siglaest) setEstados.add(d.ds_siglaest.trim());
+      const sigla =
+        d.pp && d.pp.ds_uf ? String(d.pp.ds_uf).trim() : (d.ds_uf || '').trim();
+      if (sigla) setEstados.add(sigla);
     });
     return Array.from(setEstados).filter(Boolean).sort();
   }, [dados]);
@@ -130,7 +154,9 @@ const InadimplentesFranquias = () => {
       if (d.cd_cliente) {
         const key = String(d.cd_cliente);
         if (!map.has(key)) {
-          map.set(key, { cd_cliente: key, nm_cliente: d.nm_cliente || key });
+          // Para franquias, exibir nome fantasia quando disponível
+          const nome = d.nm_fantasia || d.nm_cliente || key;
+          map.set(key, { cd_cliente: key, nm_cliente: nome });
         }
       }
     });
@@ -145,8 +171,14 @@ const InadimplentesFranquias = () => {
       if (!acc[cdCliente]) {
         acc[cdCliente] = {
           cd_cliente: cdCliente,
-          nm_cliente: item.nm_cliente,
-          ds_siglaest: item.ds_siglaest,
+          // guardar nome fantasia separadamente e nome legal
+          nm_fantasia: item.nm_fantasia || null,
+          nm_cliente: item.nm_cliente || null,
+          // estado usando pp.ds_uf quando disponível
+          ds_uf:
+            item.pp && item.pp.ds_uf
+              ? String(item.pp.ds_uf).trim()
+              : item.ds_uf || null,
           valor_total: 0,
           faturas: [],
         };
@@ -174,7 +206,11 @@ const InadimplentesFranquias = () => {
 
   const dadosPorEstado = useMemo(() => {
     const agrupado = dadosFiltrados.reduce((acc, item) => {
-      const estado = item.ds_siglaest?.trim() || 'Não informado';
+      const estado =
+        (item.pp && item.pp.ds_uf
+          ? String(item.pp.ds_uf).trim()
+          : item.ds_uf || ''
+        ).trim() || 'Não informado';
       if (!acc[estado]) {
         acc[estado] = { clientes: 0, valor: 0 };
       }
@@ -290,7 +326,6 @@ const InadimplentesFranquias = () => {
         icon={ChartBar}
         iconColor="text-purple-600"
       />
-
       <div className="bg-white p-6 rounded-lg shadow-sm border mb-6">
         <form
           onSubmit={(e) => {
@@ -350,15 +385,12 @@ const InadimplentesFranquias = () => {
               className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
             >
               {loading ? (
-                <>
+                <div className="inline-flex items-center gap-2">
                   <CircleNotch size={16} className="animate-spin" />
-                  Carregando...
-                </>
+                  <span>Carregando...</span>
+                </div>
               ) : (
-                <>
-                  <ChartBar size={16} />
-                  Buscar Dados
-                </>
+                'Buscar Dados'
               )}
             </button>
           </div>
@@ -509,6 +541,7 @@ const InadimplentesFranquias = () => {
                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                   <tr>
                     <th className="px-4 py-3">Código Cliente</th>
+                    <th className="px-4 py-3">Nome Fantasia</th>
                     <th className="px-4 py-3">Nome Cliente</th>
                     <th className="px-4 py-3">Estado</th>
                     <th className="px-4 py-3">Valor Total</th>
@@ -518,7 +551,7 @@ const InadimplentesFranquias = () => {
                   {clientesAgrupados.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={4}
+                        colSpan={5}
                         className="px-4 py-8 text-center text-gray-500"
                       >
                         Nenhum cliente inadimplente encontrado
@@ -535,11 +568,14 @@ const InadimplentesFranquias = () => {
                           {cliente.cd_cliente || 'N/A'}
                         </td>
                         <td className="px-4 py-3 font-medium text-gray-900">
+                          {cliente.nm_fantasia || '---'}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-gray-900">
                           {cliente.nm_cliente || 'N/A'}
                         </td>
                         <td className="px-4 py-3">
                           <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded">
-                            {cliente.ds_siglaest?.trim() || 'N/A'}
+                            {cliente.ds_uf || 'N/A'}
                           </span>
                         </td>
                         <td className="px-4 py-3 font-medium text-green-600">
@@ -560,7 +596,9 @@ const InadimplentesFranquias = () => {
           <div className="bg-white rounded-lg p-6 max-w-6xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                Detalhes das Faturas - {clienteSelecionado?.nm_cliente}
+                Detalhes das Faturas -{' '}
+                {clienteSelecionado?.nm_fantasia ||
+                  clienteSelecionado?.nm_cliente}
               </h3>
               <button
                 onClick={fecharModal}
