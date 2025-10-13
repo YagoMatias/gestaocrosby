@@ -458,13 +458,9 @@ const CrosbyBot = () => {
       // Criar uma linha para CADA contato (não um JSON)
       const registrosParaInserir = contatos.map((contato) => ({
         tp_mensagem: messagesPayload,
-        nr_contato: Math.abs(
-          contato.telefone.split('').reduce((hash, char) => {
-            hash = (hash << 5) - hash + char.charCodeAt(0);
-            return hash & hash; // Convert to 32-bit integer
-          }, 0),
-        ), // Hash do telefone para caber em integer (limitação do schema atual)
-        nm_nome: `${contato.nome} (Tel: ${contato.telefone})`, // Incluindo telefone completo no nome para não perder a informação
+        nr_contato:
+          parseInt(contato.telefone.replace(/\D/g, '').slice(-9)) || 0, // Usar apenas os últimos 9 dígitos para caber em integer
+        nm_nome: contato.nome, // Nome como VARCHAR
         cd_user: user.id,
       }));
 
