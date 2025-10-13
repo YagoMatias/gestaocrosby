@@ -46,7 +46,7 @@ const InadimplentesFranquias = () => {
   const apiClient = useApiClient();
   const [dados, setDados] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [filtroDataInicial, setFiltroDataInicial] = useState('2023-10-01');
+  const [filtroDataInicial, setFiltroDataInicial] = useState('2024-04-01');
   const hojeStr = new Date().toISOString().slice(0, 10);
   const [filtroDataFinal, setFiltroDataFinal] = useState(hojeStr);
   const [filtroClientes, setFiltroClientes] = useState([]);
@@ -64,9 +64,6 @@ const InadimplentesFranquias = () => {
         dt_vencimento_ini: '2024-01-01',
       };
 
-      // sempre solicitar apenas situações ativas (tp_situacao = 1)
-      params.tp_situacao = 1;
-
       if (filtroDataInicial) params.dt_inicio = filtroDataInicial;
       if (filtroDataFinal) params.dt_fim = filtroDataFinal;
 
@@ -76,14 +73,8 @@ const InadimplentesFranquias = () => {
       let dadosRecebidos = [];
       if (response?.success && response?.data) {
         dadosRecebidos = Array.isArray(response.data) ? response.data : [];
-        // garantir que retornamos apenas registros com tp_situacao = 1
-        dadosRecebidos = dadosRecebidos.filter(
-          (it) => String(it.tp_situacao) === '1' || it.tp_situacao === 1,
-        );
       } else if (Array.isArray(response)) {
-        dadosRecebidos = response.filter(
-          (it) => String(it.tp_situacao) === '1' || it.tp_situacao === 1,
-        );
+        dadosRecebidos = response;
       }
 
       console.log(
@@ -105,15 +96,6 @@ const InadimplentesFranquias = () => {
 
   const dadosFiltrados = useMemo(() => {
     return dados.filter((item) => {
-      // Apenas situações ativas (defensivo caso a API não filtre)
-      if (
-        item.tp_situacao &&
-        String(item.tp_situacao) !== '1' &&
-        item.tp_situacao !== 1
-      ) {
-        return false;
-      }
-
       const matchCliente =
         filtroClientes.length === 0 ||
         filtroClientes.includes(String(item.cd_cliente));

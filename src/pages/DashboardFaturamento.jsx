@@ -166,23 +166,6 @@ const DashboardFaturamento = () => {
       console.log('📊 Dados Franquias extraídos:', franquiasData);
       console.log('📊 Dados Revenda extraídos:', revendaData);
 
-      // Log detalhado da primeira linha de cada dataset para debug
-      if (varejoData.length > 0)
-        console.log('📊 Varejo - Primeira linha:', varejoData[0]);
-      if (mtmData.length > 0)
-        console.log('📊 MTM - Primeira linha:', mtmData[0]);
-      if (franquiasData.length > 0)
-        console.log('📊 Franquias - Primeira linha:', franquiasData[0]);
-      if (revendaData.length > 0)
-        console.log('📊 Revenda - Primeira linha:', revendaData[0]);
-
-      console.log('📊 Quantidade de registros:', {
-        varejo: varejoData.length,
-        mtm: mtmData.length,
-        franquias: franquiasData.length,
-        revenda: revendaData.length,
-      });
-
       setDadosFaturamento({
         varejo: varejoData,
         mtm: mtmData,
@@ -213,56 +196,24 @@ const DashboardFaturamento = () => {
       const dados = dadosFaturamento[tipo] || [];
       console.log(`📊 Processando ${tipo}:`, dados);
 
-      // Log do primeiro item para ver todos os campos disponíveis
-      if (dados.length > 0) {
-        console.log(
-          `📊 ${tipo.toUpperCase()} - Primeiro item completo:`,
-          dados[0],
-        );
-        console.log(
-          `📊 ${tipo.toUpperCase()} - Campos disponíveis:`,
-          Object.keys(dados[0]),
-        );
-      }
-
       resultado[tipo] = dados.reduce(
         (acc, item) => {
-          // MTM e Revenda agora também retornam valor_sem_desconto_* e valor_com_desconto_*
-          // Varejo e Franquias também retornam essa estrutura
+          // MTM e Revenda retornam estrutura diferente (quantidade e CMV, não valor_sem/com_desconto)
+          // Varejo e Franquias retornam valor_sem_desconto_* e valor_com_desconto_*
 
-          // Valores brutos (sem desconto) - tentar múltiplos formatos
+          // Valores brutos (sem desconto)
           const valorBrutoSaida =
-            parseFloat(item.valor_sem_desconto_saida) ||
-            parseFloat(item.valorSemDescontoSaida) ||
-            parseFloat(item.valor_bruto_saida) ||
-            0;
+            parseFloat(item.valor_sem_desconto_saida) || 0;
           const valorBrutoEntrada =
-            parseFloat(item.valor_sem_desconto_entrada) ||
-            parseFloat(item.valorSemDescontoEntrada) ||
-            parseFloat(item.valor_bruto_entrada) ||
-            0;
-          const valorBrutoTotal =
-            parseFloat(item.valor_sem_desconto) ||
-            parseFloat(item.valorSemDesconto) ||
-            parseFloat(item.valor_bruto_total) ||
-            0;
+            parseFloat(item.valor_sem_desconto_entrada) || 0;
+          const valorBrutoTotal = parseFloat(item.valor_sem_desconto) || 0;
 
-          // Valores líquidos (com desconto) - tentar múltiplos formatos
+          // Valores líquidos (com desconto)
           const valorLiquidoSaida =
-            parseFloat(item.valor_com_desconto_saida) ||
-            parseFloat(item.valorComDescontoSaida) ||
-            parseFloat(item.valor_liquido_saida) ||
-            0;
+            parseFloat(item.valor_com_desconto_saida) || 0;
           const valorLiquidoEntrada =
-            parseFloat(item.valor_com_desconto_entrada) ||
-            parseFloat(item.valorComDescontoEntrada) ||
-            parseFloat(item.valor_liquido_entrada) ||
-            0;
-          const valorLiquidoTotal =
-            parseFloat(item.valor_com_desconto) ||
-            parseFloat(item.valorComDesconto) ||
-            parseFloat(item.valor_liquido_total) ||
-            0;
+            parseFloat(item.valor_com_desconto_entrada) || 0;
+          const valorLiquidoTotal = parseFloat(item.valor_com_desconto) || 0;
 
           // Descontos dados (diferença entre bruto e líquido)
           const descontoSaida = valorBrutoSaida - valorLiquidoSaida;
@@ -507,8 +458,11 @@ const DashboardFaturamento = () => {
             revenda: 0,
           });
         }
-        const valorLiquido = parseFloat(item.valor_com_desconto) || 0;
-        empresas.get(empresa)[tipo] += valorLiquido;
+        // Receita Líquida = valor_com_desconto_saida - valor_com_desconto_entrada
+        const valorSaida = parseFloat(item.valor_com_desconto_saida) || 0;
+        const valorEntrada = parseFloat(item.valor_com_desconto_entrada) || 0;
+        const receitaLiquida = valorSaida - Math.abs(valorEntrada);
+        empresas.get(empresa)[tipo] += receitaLiquida;
       });
     });
 
@@ -827,7 +781,7 @@ const DashboardFaturamento = () => {
                 <div className="flex items-center gap-2">
                   <Money size={18} className="text-blue-600" />
                   <CardTitle className="text-sm font-bold text-blue-700">
-                    Valor Bruto Total
+                    Faturamento Bruto Total
                   </CardTitle>
                 </div>
               </CardHeader>
@@ -847,7 +801,7 @@ const DashboardFaturamento = () => {
                 <div className="flex items-center gap-2">
                   <Receipt size={18} className="text-green-600" />
                   <CardTitle className="text-sm font-bold text-green-700">
-                    Valor Líquido Total
+                    Faturamento Líquido Total
                   </CardTitle>
                 </div>
               </CardHeader>
@@ -887,16 +841,19 @@ const DashboardFaturamento = () => {
                 <div className="flex items-center gap-2">
                   <ArrowUp size={18} className="text-blue-600" />
                   <CardTitle className="text-sm font-bold text-blue-700">
-                    Vendas (Bruto)
+                    Receita Bruta
                   </CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-base font-extrabold text-blue-600 mb-0.5">
-                  {formatBRL(dadosConsolidados.totais?.valor_bruto_saida)}
+                  {formatBRL(
+                    dadosConsolidados.totais?.valor_bruto_saida -
+                      dadosConsolidados.totais?.valor_bruto_entrada,
+                  )}
                 </div>
                 <CardDescription className="text-xs text-gray-500">
-                  Saídas sem desconto
+                  Saída - Entrada com descontos
                 </CardDescription>
               </CardContent>
             </Card>
@@ -907,16 +864,19 @@ const DashboardFaturamento = () => {
                 <div className="flex items-center gap-2">
                   <ArrowUp size={18} className="text-green-600" />
                   <CardTitle className="text-sm font-bold text-green-700">
-                    Vendas (Líquido)
+                    Receita Líquida
                   </CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
                 <div className="text-base font-extrabold text-green-600 mb-0.5">
-                  {formatBRL(dadosConsolidados.totais?.valor_liquido_saida)}
+                  {formatBRL(
+                    dadosConsolidados.totais?.valor_liquido_saida -
+                      Math.abs(dadosConsolidados.totais?.valor_liquido_entrada),
+                  )}
                 </div>
                 <CardDescription className="text-xs text-gray-500">
-                  Saídas com desconto
+                  Saídas - Entradas sem desconto
                 </CardDescription>
               </CardContent>
             </Card>
@@ -1172,30 +1132,17 @@ const DashboardFaturamento = () => {
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-xs font-medium text-gray-600">
-                            Valor Bruto:
+                            Receita Líquida:
                           </span>
-                          <span className="font-bold text-blue-600">
+                          <span className="font-bold text-green-600 text-lg">
                             {formatBRL(
-                              dadosConsolidados[tipo]?.valor_bruto_total,
+                              (dadosConsolidados[tipo]?.valor_liquido_saida ||
+                                0) -
+                                Math.abs(
+                                  dadosConsolidados[tipo]
+                                    ?.valor_liquido_entrada || 0,
+                                ),
                             )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs font-medium text-gray-600">
-                            Valor Líquido:
-                          </span>
-                          <span className="font-bold text-green-600">
-                            {formatBRL(
-                              dadosConsolidados[tipo]?.valor_liquido_total,
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs font-medium text-gray-600">
-                            Total Descontos:
-                          </span>
-                          <span className="font-bold text-orange-600 text-lg">
-                            {formatBRL(dadosConsolidados[tipo]?.desconto_total)}
                           </span>
                         </div>
                       </div>
@@ -1356,15 +1303,37 @@ const DashboardFaturamento = () => {
             {['varejo', 'mtm', 'franquias', 'revenda'].map((canal) => {
               // Agrupa faturamento por empresa para o canal (valor líquido)
               const dados = dadosFaturamento[canal] || [];
-              const empresas = dados.map(
-                (item) =>
+
+              // Consolida os dados agrupando por empresa e somando todas as datas
+              const empresasMap = new Map();
+              dados.forEach((item) => {
+                const empresaKey = item.cd_grupoempresa || item.cd_empresa;
+                const empresaNome =
                   item.nm_grupoempresa ||
                   item.cd_grupoempresa ||
-                  `Empresa ${item.cd_empresa}`,
-              );
-              const valores = dados.map(
-                (item) => parseFloat(item.valor_com_desconto) || 0,
-              );
+                  `Empresa ${item.cd_empresa}`;
+                // Receita Líquida = valor_com_desconto_saida - valor_com_desconto_entrada
+                const valorSaida =
+                  parseFloat(item.valor_com_desconto_saida) || 0;
+                const valorEntrada =
+                  parseFloat(item.valor_com_desconto_entrada) || 0;
+                const receitaLiquida = valorSaida - Math.abs(valorEntrada);
+
+                if (empresasMap.has(empresaKey)) {
+                  empresasMap.get(empresaKey).valor += receitaLiquida;
+                } else {
+                  empresasMap.set(empresaKey, {
+                    nome: empresaNome,
+                    valor: receitaLiquida,
+                  });
+                }
+              });
+
+              // Converte o Map em arrays para o gráfico
+              const empresasArray = Array.from(empresasMap.values());
+              const empresas = empresasArray.map((e) => e.nome);
+              const valores = empresasArray.map((e) => e.valor);
+
               const pizzaData = {
                 labels: empresas,
                 datasets: [
