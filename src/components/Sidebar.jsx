@@ -610,6 +610,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               isActive={location.pathname === '/dashboard'}
             />
 
+            {/* Crosby Bot - página pública para todos */}
+            <MenuItem
+              item={{
+                name: 'Crosby Bot',
+                href: '/crosby-bot',
+                icon: Megaphone,
+                color: 'text-indigo-600',
+              }}
+              isActive={location.pathname === '/crosby-bot'}
+            />
+
             {/* Dashboard Faturamento - NOVO */}
             <MenuItem
               item={{

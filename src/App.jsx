@@ -51,6 +51,7 @@ const DashboardVarejo = lazy(() => import('./pages/DashboardVarejo'));
 const DashboardMultimarcas = lazy(() => import('./pages/DashboardMultimarcas'));
 const DashboardFranquias = lazy(() => import('./pages/DashboardFranquias'));
 const DashboardRevenda = lazy(() => import('./pages/DashboardRevenda'));
+const CrosbyBot = lazy(() => import('./pages/CrosbyBot'));
 const InadimplentesMultimarcas = lazy(() =>
   import('./pages/InadimplentesMultimarcas'),
 );
@@ -297,6 +298,11 @@ const AppRoutes = memo(() => {
     {
       path: '/dashboard-revenda',
       component: DashboardRevenda,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
+    {
+      path: '/crosby-bot',
+      component: CrosbyBot,
       roles: ['admin', 'manager', 'guest', 'owner', 'user'],
     },
     { path: '/painel-admin', component: PainelAdmin, roles: ['owner'] },

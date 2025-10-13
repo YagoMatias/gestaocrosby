@@ -1,0 +1,82 @@
+// Nova função uploadMidia baseada em endividamentoApi.js
+const uploadMidia = async (file, messageId) => {
+  if (!file) return null;
+
+  const BUCKET_NAME = 'midias_bot';
+
+  try {
+    // Gerar nome único para o arquivo (mesmo método do endividamentoApi.js)
+    const uid =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : String(Date.now());
+
+    // Determinar pasta baseado no tipo de arquivo
+    let folder = '';
+    if (file.type.includes('image')) {
+      folder = 'imagens';
+    } else if (file.type.includes('video')) {
+      folder = 'videos';
+    } else if (file.type.includes('audio')) {
+      folder = 'audios';
+    } else if (file.type.includes('pdf')) {
+      folder = 'pdfs';
+    } else {
+      folder = 'outros';
+    }
+
+    // Caminho completo: folder/userId/uuid_filename
+    const path = `${folder}/${user.id}/${uid}_${file.name}`;
+
+    console.log(`📤 Fazendo upload de ${file.name} para ${path}...`);
+
+    // Fazer upload para o Storage (método idêntico ao endividamentoApi.js)
+    const { error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .upload(path, file, { upsert: false });
+
+    if (error) {
+      // Tratamento de erro similar ao endividamentoApi.js
+      if (
+        String(error.message || '')
+          .toLowerCase()
+          .includes('bucket') &&
+        String(error.message || '')
+          .toLowerCase()
+          .includes('not') &&
+        String(error.message || '')
+          .toLowerCase()
+          .includes('found')
+      ) {
+        throw new Error(
+          `Bucket "${BUCKET_NAME}" não encontrado. Crie o bucket no Storage do Supabase (público) ou altere o nome no código.`,
+        );
+      }
+      console.error('❌ Erro no upload:', error);
+      throw error;
+    }
+
+    console.log('✅ Upload realizado com sucesso!');
+
+    // Obter URL pública do arquivo
+    const { data: urlData } = supabase.storage
+      .from(BUCKET_NAME)
+      .getPublicUrl(path);
+
+    const urlPublica = urlData.publicUrl;
+
+    console.log('🔗 URL pública:', urlPublica);
+
+    return {
+      url: urlPublica,
+      caminho: path,
+      bucket: BUCKET_NAME,
+      nomeOriginal: file.name,
+      tipo: file.type,
+      tamanho: file.size,
+    };
+  } catch (error) {
+    console.error('❌ Erro ao fazer upload da mídia:', error);
+    throw error;
+  }
+};
