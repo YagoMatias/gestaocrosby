@@ -47,6 +47,10 @@ const CMVMultimarcas = lazy(() => import('./pages/CMVMultimarcas'));
 const CMVRevenda = lazy(() => import('./pages/CMVRevenda'));
 const CMVFranquia = lazy(() => import('./pages/CMVFranquia'));
 const DashboardFaturamento = lazy(() => import('./pages/DashboardFaturamento'));
+const DashboardVarejo = lazy(() => import('./pages/DashboardVarejo'));
+const DashboardMultimarcas = lazy(() => import('./pages/DashboardMultimarcas'));
+const DashboardFranquias = lazy(() => import('./pages/DashboardFranquias'));
+const DashboardRevenda = lazy(() => import('./pages/DashboardRevenda'));
 const InadimplentesMultimarcas = lazy(() =>
   import('./pages/InadimplentesMultimarcas'),
 );
@@ -273,6 +277,26 @@ const AppRoutes = memo(() => {
     {
       path: '/dashboard-faturamento',
       component: DashboardFaturamento,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
+    {
+      path: '/dashboard-varejo',
+      component: DashboardVarejo,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
+    {
+      path: '/dashboard-multimarcas',
+      component: DashboardMultimarcas,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
+    {
+      path: '/dashboard-franquias',
+      component: DashboardFranquias,
+      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+    },
+    {
+      path: '/dashboard-revenda',
+      component: DashboardRevenda,
       roles: ['admin', 'manager', 'guest', 'owner', 'user'],
     },
     { path: '/painel-admin', component: PainelAdmin, roles: ['owner'] },

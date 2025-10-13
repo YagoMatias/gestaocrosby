@@ -205,6 +205,12 @@ const faturamento = [
 
 const varejo = [
   {
+    name: 'Dashboard Varejo',
+    href: '/dashboard-varejo',
+    icon: ChartLineUp,
+    color: 'text-indigo-600',
+  },
+  {
     name: 'Metas Varejo',
     href: '/metas-varejo',
     icon: Target,
@@ -219,6 +225,12 @@ const varejo = [
 ];
 
 const multimarcas = [
+  {
+    name: 'Dashboard Multimarcas',
+    href: '/dashboard-multimarcas',
+    icon: ChartLineUp,
+    color: 'text-indigo-600',
+  },
   {
     name: 'CREDEV MULTIMARCAS',
     href: '/credev-multimarcas',
@@ -235,6 +247,12 @@ const multimarcas = [
 
 const revenda = [
   {
+    name: 'Dashboard Revenda',
+    href: '/dashboard-revenda',
+    icon: ChartLineUp,
+    color: 'text-indigo-600',
+  },
+  {
     name: 'CREDEV REVENDA',
     href: '/credev-revenda',
     icon: Buildings,
@@ -249,6 +267,12 @@ const revenda = [
 ];
 
 const franquias = [
+  {
+    name: 'Dashboard Franquias',
+    href: '/dashboard-franquias',
+    icon: ChartLineUp,
+    color: 'text-indigo-600',
+  },
   {
     name: 'Compras Franquias',
     href: '/compras-franquias',

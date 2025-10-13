@@ -22,7 +22,7 @@
   "telemetry.telemetryLevel": "off",
   "color-highlight.markerType": "dot-before",
   "editor.renderWhitespace": "selection",
-  "workbench.statusBar.visible": false,
+  "workbench.statusBar.visible": true,
   "prettier.trailingComma": "all",
   "[javascriptreact]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
