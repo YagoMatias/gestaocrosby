@@ -108,34 +108,37 @@ const AnaliseCashback = () => {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // Função para buscar nomes das empresas baseado nos nm_grupoempresa das transações
+  // Função para buscar nomes das empresas baseado nos cd_empresa das transações
   const fetchEmpresaNames = async (transacoes) => {
     try {
-      // Coletar nm_grupoempresa únicos das transações
+      // Coletar cd_empresa únicos das transações
       const empresasUnicas = [
         ...new Set(
           transacoes
-            .map((item) => item.nm_grupoempresa)
-            .filter((nm) => nm !== null && nm !== undefined),
+            .map((item) => item.cd_empresa)
+            .filter((cd) => cd !== null && cd !== undefined),
         ),
       ];
 
-      if (empresasUnicas.length === 0) return;
+      if (empresasUnicas.length === 0) return {};
 
       // Buscar nomes apenas das empresas que aparecem nas transações
       const resp = await apiCall('/api/company/empresas', {
-        nm_grupoempresa: empresasUnicas.join(','),
+        cd_empresa: empresasUnicas.join(','),
       });
 
       if (resp.success && Array.isArray(resp.data)) {
         const map = {};
         resp.data.forEach((e) => {
-          map[String(e.nm_grupoempresa)] = e.nm_grupoempresa;
+          map[String(e.cd_empresa)] = e.nm_grupoempresa;
         });
         setEmpresaNames(map);
+        return map;
       }
+      return {};
     } catch (err) {
       console.warn('Erro ao buscar nomes de empresas:', err);
+      return {};
     }
   };
 
@@ -151,7 +154,7 @@ const AnaliseCashback = () => {
         ),
       ];
 
-      if (vendedoresUnicos.length === 0) return;
+      if (vendedoresUnicos.length === 0) return {};
 
       // Buscar nomes apenas dos vendedores que aparecem nas transações
       const resp = await apiCall('/api/faturamento/pes_vendedor', {
@@ -164,9 +167,12 @@ const AnaliseCashback = () => {
           map[String(v.cd_vendedor)] = v.nm_vendedor;
         });
         setVendedorNames(map);
+        return map;
       }
+      return {};
     } catch (err) {
       console.warn('Erro ao buscar nomes de vendedores:', err);
+      return {};
     }
   };
 
@@ -204,28 +210,30 @@ const AnaliseCashback = () => {
         if (options.append) {
           const combined = [...data, ...cashbackData];
           setData(combined);
+
+          // Buscar nomes das empresas e vendedores das transações
+          const empresasMap = await fetchEmpresaNames(combined);
+          const vendedoresMap = await fetchVendedorNames(combined);
+
           processMetrics(combined);
-          processEmpresaData(combined);
+          processEmpresaData(combined, empresasMap);
           processTimeSeriesData(combined);
-          processAbove35ByLoja(combined);
-
-          // Buscar vendedores únicos das transações e atualizar nomes
-          await fetchVendedorNames(combined);
-
-          processVendedorData(combined);
-          processVendedorAbove35(combined);
+          processAbove35ByLoja(combined, empresasMap);
+          processVendedorData(combined, vendedoresMap);
+          processVendedorAbove35(combined, vendedoresMap);
         } else {
           setData(cashbackData);
+
+          // Buscar nomes das empresas e vendedores das transações
+          const empresasMap = await fetchEmpresaNames(cashbackData);
+          const vendedoresMap = await fetchVendedorNames(cashbackData);
+
           processMetrics(cashbackData);
-          processEmpresaData(cashbackData);
+          processEmpresaData(cashbackData, empresasMap);
           processTimeSeriesData(cashbackData);
-          processAbove35ByLoja(cashbackData);
-
-          // Buscar vendedores únicos das transações e atualizar nomes
-          await fetchVendedorNames(cashbackData);
-
-          processVendedorData(cashbackData);
-          processVendedorAbove35(cashbackData);
+          processAbove35ByLoja(cashbackData, empresasMap);
+          processVendedorData(cashbackData, vendedoresMap);
+          processVendedorAbove35(cashbackData, vendedoresMap);
         }
 
         // Atualiza offset e hasMore conforme resposta
@@ -310,15 +318,16 @@ const AnaliseCashback = () => {
   };
 
   // Processar dados por empresa
-  const processEmpresaData = (data) => {
+  const processEmpresaData = (data, namesMap = null) => {
     const empresaMap = new Map();
+    const useNames = namesMap || empresaNames;
 
     data.forEach((item) => {
       const empresa = item.cd_empresa;
       if (!empresaMap.has(empresa)) {
         empresaMap.set(empresa, {
           cd_empresa: empresa,
-          nome_empresa: empresaNames[String(empresa)],
+          nome_empresa: useNames[String(empresa)] || `Empresa ${empresa}`,
           vouchers: 0,
           transacoesBruto: 0,
           transacoesLiquido: 0,
@@ -496,8 +505,9 @@ const AnaliseCashback = () => {
   }, [empresaData, empresaSortField, empresaSortOrder]);
 
   // Processar transações com desconto acima de 35% por loja
-  const processAbove35ByLoja = (data) => {
+  const processAbove35ByLoja = (data, namesMap = null) => {
     const map = new Map();
+    const useNames = namesMap || empresaNames;
 
     data.forEach((item) => {
       // determinar porcentagem de desconto
@@ -521,7 +531,7 @@ const AnaliseCashback = () => {
         if (!map.has(loja)) {
           map.set(loja, {
             cd_empresa: loja,
-            nome_loja: empresaNames[loja] || `Loja ${loja}`,
+            nome_loja: useNames[loja] || `Loja ${loja}`,
             descontoTotal: 0,
             valorTransacoes: 0,
             transacoes: 0,
@@ -548,15 +558,16 @@ const AnaliseCashback = () => {
   };
 
   // Processar dados por vendedor (todas as transações com voucher)
-  const processVendedorData = (data) => {
+  const processVendedorData = (data, namesMap = null) => {
     const map = new Map();
+    const useNames = namesMap || vendedorNames;
 
     data.forEach((item) => {
       const vendedor = String(item.cd_compvend || 'unknown');
       if (!map.has(vendedor)) {
         map.set(vendedor, {
           cd_vendedor: vendedor,
-          nome_vendedor: vendedorNames[vendedor] || `Vendedor ${vendedor}`,
+          nome_vendedor: useNames[vendedor] || `Vendedor ${vendedor}`,
           descontoTotal: 0,
           valorTransacoes: 0,
           transacoes: 0,
@@ -580,8 +591,9 @@ const AnaliseCashback = () => {
   };
 
   // Processar vendedores com desconto acima de 35%
-  const processVendedorAbove35 = (data) => {
+  const processVendedorAbove35 = (data, namesMap = null) => {
     const map = new Map();
+    const useNames = namesMap || vendedorNames;
 
     data.forEach((item) => {
       // determinar porcentagem de desconto
@@ -605,7 +617,7 @@ const AnaliseCashback = () => {
         if (!map.has(vendedor)) {
           map.set(vendedor, {
             cd_vendedor: vendedor,
-            nome_vendedor: vendedorNames[vendedor] || `Vendedor ${vendedor}`,
+            nome_vendedor: useNames[vendedor] || `Vendedor ${vendedor}`,
             descontoTotal: 0,
             valorTransacoes: 0,
             transacoes: 0,
@@ -682,7 +694,7 @@ const AnaliseCashback = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Se os nomes chegarem depois dos dados, reprocessar empresaData para aplicar os nomes
+  // Se os nomes de empresas chegarem depois dos dados, reprocessar empresaData para aplicar os nomes
   useEffect(() => {
     if (Object.keys(empresaNames).length > 0 && data.length > 0) {
       processEmpresaData(data);
@@ -1737,7 +1749,7 @@ const AnaliseCashback = () => {
                                 <Buildings className="w-4 h-4 text-green-600" />
                               </div>
                               <span className="text-sm font-medium text-gray-900">
-                                {empresaNames[String(item.nm_grupoempresa)] ||
+                                {empresaNames[String(item.cd_empresa)] ||
                                   `Loja ${item.cd_empresa}`}
                               </span>
                             </div>

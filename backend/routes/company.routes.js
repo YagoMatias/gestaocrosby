@@ -1,7 +1,16 @@
 import express from 'express';
 import pool from '../config/database.js';
-import { validateRequired, validateDateFormat, validatePagination, sanitizeInput } from '../middlewares/validation.middleware.js';
-import { asyncHandler, successResponse, errorResponse } from '../utils/errorHandler.js';
+import {
+  validateRequired,
+  validateDateFormat,
+  validatePagination,
+  sanitizeInput,
+} from '../middlewares/validation.middleware.js';
+import {
+  asyncHandler,
+  successResponse,
+  errorResponse,
+} from '../utils/errorHandler.js';
 
 const router = express.Router();
 
@@ -10,23 +19,45 @@ const router = express.Router();
  * @desc Buscar lista de empresas
  * @access Public
  */
-router.get('/empresas',
+router.get(
+  '/empresas',
   sanitizeInput,
   asyncHandler(async (req, res) => {
-    const query = `
+    const { cd_empresa } = req.query;
+
+    let query = `
       SELECT cd_empresa, nm_grupoempresa 
       FROM vr_ger_empresa 
-      WHERE cd_grupoempresa < 5999 
-      ORDER BY cd_grupoempresa ASC
+      WHERE cd_grupoempresa < 5999
     `;
-    
-    const { rows } = await pool.query(query);
 
-    successResponse(res, {
-      count: rows.length,
-      data: rows
-    }, 'Lista de empresas obtida com sucesso');
-  })
+    const params = [];
+
+    // Se cd_empresa foi fornecido, filtrar por lista de códigos
+    if (cd_empresa) {
+      const empresaIds = cd_empresa
+        .split(',')
+        .map((id) => id.trim())
+        .filter((id) => id);
+      if (empresaIds.length > 0) {
+        query += ` AND cd_empresa = ANY($1)`;
+        params.push(empresaIds);
+      }
+    }
+
+    query += ` ORDER BY cd_grupoempresa ASC`;
+
+    const { rows } = await pool.query(query, params);
+
+    successResponse(
+      res,
+      {
+        count: rows.length,
+        data: rows,
+      },
+      'Lista de empresas obtida com sucesso',
+    );
+  }),
 );
 
 /**
@@ -34,7 +65,8 @@ router.get('/empresas',
  * @desc Buscar grupos de empresas
  * @access Public
  */
-router.get('/grupo-empresas',
+router.get(
+  '/grupo-empresas',
   sanitizeInput,
   asyncHandler(async (req, res) => {
     const query = `
@@ -44,14 +76,18 @@ router.get('/grupo-empresas',
         AND cd_empresa % 2 = 0 
       ORDER BY cd_grupoempresa ASC
     `;
-    
+
     const { rows } = await pool.query(query);
 
-    successResponse(res, {
-      count: rows.length,
-      data: rows
-    }, 'Lista de grupos de empresas obtida com sucesso');
-  })
+    successResponse(
+      res,
+      {
+        count: rows.length,
+        data: rows,
+      },
+      'Lista de grupos de empresas obtida com sucesso',
+    );
+  }),
 );
 
 /**
@@ -60,20 +96,32 @@ router.get('/grupo-empresas',
  * @access Public
  * @query {cd_grupoempresa_ini, cd_grupoempresa_fim, dt_inicio, dt_fim}
  */
-router.get('/faturamento-lojas',
+router.get(
+  '/faturamento-lojas',
   sanitizeInput,
-  validateRequired(['cd_grupoempresa_ini', 'cd_grupoempresa_fim', 'dt_inicio', 'dt_fim']),
+  validateRequired([
+    'cd_grupoempresa_ini',
+    'cd_grupoempresa_fim',
+    'dt_inicio',
+    'dt_fim',
+  ]),
   validateDateFormat(['dt_inicio', 'dt_fim']),
   asyncHandler(async (req, res) => {
-    const { cd_grupoempresa_ini, cd_grupoempresa_fim, dt_inicio, dt_fim } = req.query;
+    const { cd_grupoempresa_ini, cd_grupoempresa_fim, dt_inicio, dt_fim } =
+      req.query;
 
     const allowedOperations = [
-      1,2,510,511,1511,521,1521,522,960,9001,9009,9027,8750,9017,9400,
-      9401,9402,9403,9404,9005,545,546,555,548,1210,9405,1205
+      1, 2, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 8750, 9017,
+      9400, 9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405, 1205,
     ];
 
-    const excludedGroups = [1,3,4,6,7,8,9,10,31,50,51,45,75,85,99];
-    const excludedPersons = [69994,70596,110000001,73469,61000007,61000008,61000009,61000010,45832];
+    const excludedGroups = [
+      1, 3, 4, 6, 7, 8, 9, 10, 31, 50, 51, 45, 75, 85, 99,
+    ];
+    const excludedPersons = [
+      69994, 70596, 110000001, 73469, 61000007, 61000008, 61000009, 61000010,
+      45832,
+    ];
 
     const query = `
       SELECT
@@ -131,24 +179,36 @@ router.get('/faturamento-lojas',
       ORDER BY faturamento DESC, B.NM_FANTASIA
     `;
 
-    const { rows } = await pool.query(query, [cd_grupoempresa_ini, cd_grupoempresa_fim, dt_inicio, dt_fim]);
+    const { rows } = await pool.query(query, [
+      cd_grupoempresa_ini,
+      cd_grupoempresa_fim,
+      dt_inicio,
+      dt_fim,
+    ]);
 
     // Calcular estatísticas
-    const stats = rows.reduce((acc, row) => {
-      acc.totalFaturamento += parseFloat(row.faturamento || 0);
-      acc.totalLojas = rows.length;
-      acc.mediaFaturamento = acc.totalFaturamento / acc.totalLojas;
-      return acc;
-    }, { totalFaturamento: 0, totalLojas: 0, mediaFaturamento: 0 });
+    const stats = rows.reduce(
+      (acc, row) => {
+        acc.totalFaturamento += parseFloat(row.faturamento || 0);
+        acc.totalLojas = rows.length;
+        acc.mediaFaturamento = acc.totalFaturamento / acc.totalLojas;
+        return acc;
+      },
+      { totalFaturamento: 0, totalLojas: 0, mediaFaturamento: 0 },
+    );
 
-    successResponse(res, {
-      periodo: { dt_inicio, dt_fim },
-      range_grupo: { ini: cd_grupoempresa_ini, fim: cd_grupoempresa_fim },
-      estatisticas: stats,
-      count: rows.length,
-      data: rows
-    }, 'Faturamento por lojas obtido com sucesso');
-  })
+    successResponse(
+      res,
+      {
+        periodo: { dt_inicio, dt_fim },
+        range_grupo: { ini: cd_grupoempresa_ini, fim: cd_grupoempresa_fim },
+        estatisticas: stats,
+        count: rows.length,
+        data: rows,
+      },
+      'Faturamento por lojas obtido com sucesso',
+    );
+  }),
 );
 
 /**
@@ -156,7 +216,8 @@ router.get('/faturamento-lojas',
  * @desc Buscar dados para expedição
  * @access Public
  */
-router.get('/expedicao',
+router.get(
+  '/expedicao',
   asyncHandler(async (req, res) => {
     const query = `
       SELECT * 
@@ -165,16 +226,20 @@ router.get('/expedicao',
         AND cd_tabpreco IN (21, 22)
       ORDER BY dt_pedido DESC
     `;
-    
+
     const { rows } = await pool.query(query);
 
-    successResponse(res, {
-      empresa: 850,
-      tabelas_preco: [21, 22],
-      count: rows.length,
-      data: rows
-    }, 'Dados de expedição obtidos com sucesso');
-  })
+    successResponse(
+      res,
+      {
+        empresa: 850,
+        tabelas_preco: [21, 22],
+        count: rows.length,
+        data: rows,
+      },
+      'Dados de expedição obtidos com sucesso',
+    );
+  }),
 );
 
 /**
@@ -183,7 +248,8 @@ router.get('/expedicao',
  * @access Public
  * @query {limit, offset}
  */
-router.get('/pcp',
+router.get(
+  '/pcp',
   sanitizeInput,
   validatePagination,
   asyncHandler(async (req, res) => {
@@ -197,7 +263,7 @@ router.get('/pcp',
       ORDER BY dt_pedido DESC
       LIMIT $1 OFFSET $2
     `;
-    
+
     const countQuery = `
       SELECT COUNT(*) as total
       FROM vw_detalhe_pedido_completo 
@@ -206,20 +272,24 @@ router.get('/pcp',
 
     const [resultado, totalResult] = await Promise.all([
       pool.query(query, [limit, offset]),
-      pool.query(countQuery)
+      pool.query(countQuery),
     ]);
 
     const total = parseInt(totalResult.rows[0].total, 10);
 
-    successResponse(res, {
-      empresa: 111,
-      total,
-      limit,
-      offset,
-      hasMore: (offset + limit) < total,
-      data: resultado.rows
-    }, 'Dados de PCP obtidos com sucesso');
-  })
+    successResponse(
+      res,
+      {
+        empresa: 111,
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total,
+        data: resultado.rows,
+      },
+      'Dados de PCP obtidos com sucesso',
+    );
+  }),
 );
 
 export default router;
