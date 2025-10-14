@@ -224,7 +224,7 @@ const varejo = [
     color: 'text-green-600',
   },
   {
-    name: 'Análise Reativação Cashback',
+    name: 'Análise Reativação CB',
     href: '/analise-cashback',
     icon: CurrencyCircleDollar,
     color: 'text-green-600',
