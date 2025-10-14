@@ -48,42 +48,42 @@ router.get(
         COALESCE(SUM(
           CASE 
             WHEN fisnf.vl_unitbruto IS NOT NULL AND fisnf.qt_faturado IS NOT NULL AND fisnf.qt_faturado != 0 AND fisnf.tp_operacao = 'S' 
-            THEN fisnf.vl_unitbruto * fisnf.qt_faturado + COALESCE(fisnf.vl_freterat, 0)
+            THEN fisnf.vl_unitbruto * fisnf.qt_faturado 
             ELSE 0 
           END
         ), 0) AS valor_sem_desconto_saida,
         COALESCE(SUM(
           CASE 
             WHEN fisnf.vl_unitbruto IS NOT NULL AND fisnf.qt_faturado IS NOT NULL AND fisnf.qt_faturado != 0 AND fisnf.tp_operacao = 'E' 
-            THEN fisnf.vl_unitbruto * fisnf.qt_faturado + COALESCE(fisnf.vl_freterat, 0)
+            THEN fisnf.vl_unitbruto * fisnf.qt_faturado 
             ELSE 0 
           END
         ), 0) AS valor_sem_desconto_entrada,
         COALESCE(SUM(
           CASE
             WHEN fisnf.vl_unitliquido IS NOT NULL AND fisnf.qt_faturado IS NOT NULL AND fisnf.qt_faturado != 0 AND fisnf.tp_operacao = 'S' 
-            THEN fisnf.vl_unitliquido * fisnf.qt_faturado + COALESCE(fisnf.vl_freterat, 0)
+            THEN fisnf.vl_unitliquido * fisnf.qt_faturado 
             ELSE 0 
           END
         ), 0) AS valor_com_desconto_saida,
         COALESCE(SUM(
           CASE 
             WHEN fisnf.vl_unitliquido IS NOT NULL AND fisnf.qt_faturado IS NOT NULL AND fisnf.qt_faturado != 0 AND fisnf.tp_operacao = 'E' 
-            THEN fisnf.vl_unitliquido * fisnf.qt_faturado + COALESCE(fisnf.vl_freterat, 0)
+            THEN fisnf.vl_unitliquido * fisnf.qt_faturado 
             ELSE 0 
           END
         ), 0) AS valor_com_desconto_entrada,
         COALESCE(SUM(
           CASE 
             WHEN fisnf.vl_unitbruto IS NOT NULL AND fisnf.qt_faturado IS NOT NULL AND fisnf.qt_faturado != 0 
-            THEN fisnf.vl_unitbruto * fisnf.qt_faturado + COALESCE(fisnf.vl_freterat, 0)
+            THEN fisnf.vl_unitbruto * fisnf.qt_faturado 
             ELSE 0 
           END
         ), 0) AS valor_sem_desconto,
         COALESCE(SUM(
           CASE 
             WHEN fisnf.vl_unitliquido IS NOT NULL AND fisnf.qt_faturado IS NOT NULL AND fisnf.qt_faturado != 0
-            THEN fisnf.vl_unitliquido * fisnf.qt_faturado + COALESCE(fisnf.vl_freterat, 0)
+            THEN fisnf.vl_unitliquido * fisnf.qt_faturado 
             ELSE 0 
           END
         ), 0) AS valor_com_desconto
@@ -556,6 +556,191 @@ router.get(
       res,
       data,
       'Faturamento consolidado recuperado com sucesso',
+    );
+  }),
+);
+
+// Endpoint para análise de cashback
+router.get(
+  '/analise-cashback',
+  asyncHandler(async (req, res) => {
+    const {
+      dataInicio,
+      dataFim,
+      cd_empresa,
+      dateField,
+      limit = 1000,
+      offset = 0,
+    } = req.query;
+
+    // dateField: 'dt_transacao' or 'dt_voucher' (v.dt_cadastro)
+    const useVoucherDate = dateField === 'dt_voucher';
+
+    // Construir cláusula WHERE dinamicamente
+    const whereClauses = ['v.tp_situacao = 4'];
+    const params = [];
+
+    // Filtrar por empresa se informado
+    if (cd_empresa) {
+      const empresas = cd_empresa.split(',').map((s) => s.trim());
+      const placeholders = empresas
+        .map((_, i) => `$${params.length + i + 1}`)
+        .join(',');
+      whereClauses.push(`t.cd_empresa IN (${placeholders})`);
+      params.push(...empresas);
+    }
+
+    // Filtrar por período (usando o campo de data escolhido)
+    if (dataInicio && dataFim) {
+      const startIdx = params.length + 1;
+      const endIdx = params.length + 2;
+      if (useVoucherDate) {
+        whereClauses.push(
+          `v.dt_cadastro >= $${startIdx} AND v.dt_cadastro <= $${endIdx}::date + INTERVAL '1 day'`,
+        );
+      } else {
+        whereClauses.push(
+          `t.dt_transacao >= $${startIdx} AND t.dt_transacao <= $${endIdx}::date + INTERVAL '1 day'`,
+        );
+      }
+      params.push(dataInicio, dataFim);
+    }
+
+    // Adicionar LIMIT e OFFSET para paginação
+    const limitParam = `$${params.length + 1}`;
+    const offsetParam = `$${params.length + 2}`;
+    params.push(parseInt(limit), parseInt(offset));
+
+    const query = `
+      WITH voucher_filtrado AS (
+        SELECT 
+          v.cd_pessoa,
+          v.nr_voucher,
+          v.vl_voucher,
+          v.tp_situacao,
+          v.dt_cadastro,
+          DATE(v.dt_cadastro) AS d_voucher
+        FROM pdv_voucher v
+        WHERE v.tp_situacao = 4
+          ${
+            useVoucherDate && dataInicio && dataFim
+              ? `AND v.dt_cadastro >= $1 AND v.dt_cadastro <= $2::date + INTERVAL '1 day'`
+              : ''
+          }
+      ),
+      trx_otimizada AS (
+        SELECT DISTINCT ON (t.cd_pessoa, DATE(t.dt_transacao))
+          t.cd_pessoa,
+          t.nr_transacao,
+          t.dt_transacao,
+          t.vl_total,
+          t.vl_desconto,
+          t.cd_empresa,
+          t.tp_operacao,
+          t.tp_situacao,
+	        t.cd_compvend,
+          DATE(t.dt_transacao) AS d_trans
+        FROM tra_transacao t
+        WHERE t.tp_situacao = 4
+          AND t.cd_operacao <> 599
+          AND t.tp_operacao = 'S'
+          AND t.cd_empresa < 5999
+          ${
+            !useVoucherDate && dataInicio && dataFim
+              ? `AND t.dt_transacao >= $1 AND t.dt_transacao <= $2::date + INTERVAL '1 day'`
+              : ''
+          }
+        ORDER BY t.cd_pessoa, DATE(t.dt_transacao), t.dt_transacao DESC, t.nr_transacao DESC
+      )
+      SELECT
+        v.cd_pessoa,
+        v.nr_voucher,
+        v.vl_voucher,
+        v.tp_situacao AS tp_situacao_voucher,
+        v.dt_cadastro AS dt_voucher,
+        t.nr_transacao,
+        t.dt_transacao,
+        t.vl_total,
+        t.vl_desconto,
+        (COALESCE(t.vl_total,0) + COALESCE(t.vl_desconto,0)) AS vl_bruto,
+        ROUND(
+          100.0 * COALESCE(t.vl_desconto,0)
+          / NULLIF(COALESCE(t.vl_total,0) + COALESCE(t.vl_desconto,0), 0)
+        , 2) AS pct_desconto_bruto,
+        t.cd_empresa,
+        t.tp_operacao,
+        t.tp_situacao AS tp_situacao_transacao
+      FROM voucher_filtrado v
+      INNER JOIN trx_otimizada t
+        ON t.cd_pessoa = v.cd_pessoa
+       AND t.d_trans = v.d_voucher
+      ${
+        cd_empresa
+          ? `WHERE t.cd_empresa IN (${cd_empresa
+              .split(',')
+              .map((_, i) => `$${i + 3}`)
+              .join(',')})`
+          : ''
+      }
+      ORDER BY t.dt_transacao DESC
+      LIMIT ${limitParam} OFFSET ${offsetParam}
+    `;
+
+    const result = await pool.query(query, params);
+
+    return successResponse(
+      res,
+      {
+        data: result.rows,
+        total: result.rows.length,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        hasMore: result.rows.length === parseInt(limit),
+      },
+      'Análise de cashback recuperada com sucesso',
+    );
+  }),
+);
+
+// Endpoint para buscar vendedores
+router.get(
+  '/pes_vendedor',
+  asyncHandler(async (req, res) => {
+    const { cd_vendedor } = req.query;
+
+    let whereClause = '';
+    let queryParams = [];
+
+    if (cd_vendedor) {
+      // Se cd_vendedor é uma string com vírgulas, trata como array
+      const vendedores = cd_vendedor.includes(',')
+        ? cd_vendedor.split(',').map((s) => s.trim())
+        : [cd_vendedor];
+      const placeholders = vendedores
+        .map((_, index) => `$${index + 1}`)
+        .join(',');
+      whereClause = `WHERE pv.cd_vendedor IN (${placeholders})`;
+      queryParams.push(...vendedores);
+    }
+
+    const query = `
+      SELECT
+        pv.cd_vendedor,
+        pv.nm_vendedor
+      FROM pes_vendedor pv
+      ${whereClause}
+      ORDER BY pv.nm_vendedor
+    `;
+
+    const result = await pool.query(query, queryParams);
+
+    return successResponse(
+      res,
+      {
+        data: result.rows,
+        total: result.rows.length,
+      },
+      'Vendedores recuperados com sucesso',
     );
   }),
 );

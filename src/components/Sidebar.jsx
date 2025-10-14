@@ -29,6 +29,7 @@ import {
   ChartBar,
   Target,
   IdentificationCard,
+  CurrencyCircleDollar,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -220,6 +221,12 @@ const varejo = [
     name: 'CREDEV VAREJO',
     href: '/credev-varejo',
     icon: Buildings,
+    color: 'text-green-600',
+  },
+  {
+    name: 'Análise de Cashback',
+    href: '/analise-cashback',
+    icon: CurrencyCircleDollar,
     color: 'text-green-600',
   },
 ];
@@ -824,7 +831,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               isActive={location.pathname === '/home'}
             />
 
-            {/* Dashboard */}
+            {/* BI Externo */}
             <MenuItem
               item={{
                 name: 'BI Externo',
