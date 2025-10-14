@@ -745,4 +745,448 @@ router.get(
   }),
 );
 
+// Endpoint para buscar faturamento do varejo (view materializada)
+router.get(
+  '/fat-varejo',
+  validateRequired(['dataInicio', 'dataFim']),
+  validateDateFormat(['dataInicio', 'dataFim']),
+  asyncHandler(async (req, res) => {
+    const { dataInicio, dataFim, cd_empresa } = req.query;
+
+    let queryParams = [dataInicio, dataFim];
+    let empresaWhereClause = '';
+
+    if (cd_empresa) {
+      const empresas = cd_empresa.includes(',')
+        ? cd_empresa.split(',').map((s) => s.trim())
+        : [cd_empresa];
+      const placeholders = empresas
+        .map((_, index) => `$${index + 3}`)
+        .join(',');
+      empresaWhereClause = `AND fv.cd_grupoempresa IN (${placeholders})`;
+      queryParams.push(...empresas);
+    }
+
+    const query = `
+      SELECT
+        fv.cd_grupoempresa,
+        fv.dt_transacao,
+        fv.nm_grupoempresa,
+        fv.valor_com_desconto,
+        fv.valor_com_desconto_entrada,
+        fv.valor_com_desconto_saida,
+        fv.valor_sem_desconto,
+        fv.valor_sem_desconto_entrada,
+        fv.valor_sem_desconto_saida
+      FROM fatvarejo fv
+      WHERE fv.dt_transacao BETWEEN $1 AND $2
+      ${empresaWhereClause}
+      ORDER BY fv.dt_transacao, fv.cd_grupoempresa
+    `;
+
+    const result = await pool.query(query, queryParams);
+
+    return successResponse(
+      res,
+      {
+        data: result.rows,
+        total: result.rows.length,
+      },
+      'Faturamento varejo recuperado com sucesso',
+    );
+  }),
+);
+
+// Endpoint para buscar faturamento multimarcas (view materializada)
+router.get(
+  '/fat-multimarcas',
+  validateRequired(['dataInicio', 'dataFim']),
+  validateDateFormat(['dataInicio', 'dataFim']),
+  asyncHandler(async (req, res) => {
+    const { dataInicio, dataFim, cd_empresa } = req.query;
+
+    let queryParams = [dataInicio, dataFim];
+    let empresaWhereClause = '';
+
+    if (cd_empresa) {
+      const empresas = cd_empresa.includes(',')
+        ? cd_empresa.split(',').map((s) => s.trim())
+        : [cd_empresa];
+      const placeholders = empresas
+        .map((_, index) => `$${index + 3}`)
+        .join(',');
+      empresaWhereClause = `AND fm.cd_grupoempresa IN (${placeholders})`;
+      queryParams.push(...empresas);
+    }
+
+    const query = `
+      SELECT
+        fm.cd_grupoempresa,
+        fm.dt_transacao,
+        fm.nm_grupoempresa,
+        fm.valor_com_desconto,
+        fm.valor_com_desconto_entrada,
+        fm.valor_com_desconto_saida,
+        fm.valor_sem_desconto,
+        fm.valor_sem_desconto_entrada,
+        fm.valor_sem_desconto_saida
+      FROM fatmtm fm
+      WHERE fm.dt_transacao BETWEEN $1 AND $2
+      ${empresaWhereClause}
+      ORDER BY fm.dt_transacao, fm.cd_grupoempresa
+    `;
+
+    const result = await pool.query(query, queryParams);
+
+    return successResponse(
+      res,
+      {
+        data: result.rows,
+        total: result.rows.length,
+      },
+      'Faturamento multimarcas recuperado com sucesso',
+    );
+  }),
+);
+
+// Endpoint para buscar faturamento revenda (view materializada)
+router.get(
+  '/fat-revenda',
+  validateRequired(['dataInicio', 'dataFim']),
+  validateDateFormat(['dataInicio', 'dataFim']),
+  asyncHandler(async (req, res) => {
+    const { dataInicio, dataFim, cd_empresa } = req.query;
+
+    let queryParams = [dataInicio, dataFim];
+    let empresaWhereClause = '';
+
+    if (cd_empresa) {
+      const empresas = cd_empresa.includes(',')
+        ? cd_empresa.split(',').map((s) => s.trim())
+        : [cd_empresa];
+      const placeholders = empresas
+        .map((_, index) => `$${index + 3}`)
+        .join(',');
+      empresaWhereClause = `AND fr.cd_grupoempresa IN (${placeholders})`;
+      queryParams.push(...empresas);
+    }
+
+    const query = `
+      SELECT
+        fr.cd_grupoempresa,
+        fr.dt_transacao,
+        fr.nm_grupoempresa,
+        fr.valor_com_desconto,
+        fr.valor_com_desconto_entrada,
+        fr.valor_com_desconto_saida,
+        fr.valor_sem_desconto,
+        fr.valor_sem_desconto_entrada,
+        fr.valor_sem_desconto_saida
+      FROM fatrevenda fr
+      WHERE fr.dt_transacao BETWEEN $1 AND $2
+      ${empresaWhereClause}
+      ORDER BY fr.dt_transacao, fr.cd_grupoempresa
+    `;
+
+    const result = await pool.query(query, queryParams);
+
+    return successResponse(
+      res,
+      {
+        data: result.rows,
+        total: result.rows.length,
+      },
+      'Faturamento revenda recuperado com sucesso',
+    );
+  }),
+);
+
+// Endpoint para buscar faturamento franquias (view materializada)
+router.get(
+  '/fat-franquias',
+  validateRequired(['dataInicio', 'dataFim']),
+  validateDateFormat(['dataInicio', 'dataFim']),
+  asyncHandler(async (req, res) => {
+    const { dataInicio, dataFim, cd_empresa } = req.query;
+
+    let queryParams = [dataInicio, dataFim];
+    let empresaWhereClause = '';
+
+    if (cd_empresa) {
+      const empresas = cd_empresa.includes(',')
+        ? cd_empresa.split(',').map((s) => s.trim())
+        : [cd_empresa];
+      const placeholders = empresas
+        .map((_, index) => `$${index + 3}`)
+        .join(',');
+      empresaWhereClause = `AND ff.cd_grupoempresa IN (${placeholders})`;
+      queryParams.push(...empresas);
+    }
+
+    const query = `
+      SELECT
+        ff.cd_grupoempresa,
+        ff.dt_transacao,
+        ff.nm_grupoempresa,
+        ff.valor_com_desconto,
+        ff.valor_com_desconto_entrada,
+        ff.valor_com_desconto_saida,
+        ff.valor_sem_desconto,
+        ff.valor_sem_desconto_entrada,
+        ff.valor_sem_desconto_saida
+      FROM fatfranquias ff
+      WHERE ff.dt_transacao BETWEEN $1 AND $2
+      ${empresaWhereClause}
+      ORDER BY ff.dt_transacao, ff.cd_grupoempresa
+    `;
+
+    const result = await pool.query(query, queryParams);
+
+    return successResponse(
+      res,
+      {
+        data: result.rows,
+        total: result.rows.length,
+      },
+      'Faturamento franquias recuperado com sucesso',
+    );
+  }),
+);
+
+// ============================================================================
+// ROTAS CMV (Custo de Mercadoria Vendida) - Views Materializadas
+// ============================================================================
+
+/**
+ * GET /api/faturamento/cmv-varejo
+ * Retorna dados de CMV do Varejo da view materializada cmv_varejo
+ * Query params:
+ *  - dataInicio (obrigatório): data inicial YYYY-MM-DD
+ *  - dataFim (obrigatório): data final YYYY-MM-DD
+ *  - cd_grupoempresa (opcional): filtro por grupo empresa (string ou array)
+ */
+router.get(
+  '/cmv-varejo',
+  validateRequired(['dataInicio', 'dataFim']),
+  validateDateFormat(['dataInicio', 'dataFim']),
+  asyncHandler(async (req, res) => {
+    const { dataInicio, dataFim, cd_grupoempresa } = req.query;
+
+    let query = `
+      SELECT
+        cv.cd_grupoempresa,
+        cv.cmv,
+        cv.dt_transacao,
+        cv.nm_grupoempresa,
+        cv.produtos_entrada,
+        cv.produtos_saida
+      FROM cmv_varejo cv
+      WHERE cv.dt_transacao BETWEEN $1 AND $2
+    `;
+
+    const queryParams = [dataInicio, dataFim];
+
+    // Filtro opcional por cd_grupoempresa
+    if (cd_grupoempresa) {
+      const empresas = Array.isArray(cd_grupoempresa)
+        ? cd_grupoempresa
+        : cd_grupoempresa.split(',').map((e) => e.trim());
+
+      if (empresas.length > 0) {
+        query += ` AND cv.cd_grupoempresa = ANY($3)`;
+        queryParams.push(empresas);
+      }
+    }
+
+    query += `
+      ORDER BY cv.dt_transacao, cv.cd_grupoempresa
+    `;
+
+    const result = await pool.query(query, queryParams);
+
+    return successResponse(
+      res,
+      {
+        data: result.rows,
+        total: result.rows.length,
+      },
+      'CMV Varejo recuperado com sucesso',
+    );
+  }),
+);
+
+/**
+ * GET /api/faturamento/cmv-multimarcas
+ * Retorna dados de CMV de Multimarcas da view materializada cmv_mtm
+ * Query params:
+ *  - dataInicio (obrigatório): data inicial YYYY-MM-DD
+ *  - dataFim (obrigatório): data final YYYY-MM-DD
+ *  - cd_grupoempresa (opcional): filtro por grupo empresa (string ou array)
+ */
+router.get(
+  '/cmv-multimarcas',
+  validateRequired(['dataInicio', 'dataFim']),
+  validateDateFormat(['dataInicio', 'dataFim']),
+  asyncHandler(async (req, res) => {
+    const { dataInicio, dataFim, cd_grupoempresa } = req.query;
+
+    let query = `
+      SELECT
+        cm.cd_grupoempresa,
+        cm.cmv,
+        cm.dt_transacao,
+        cm.nm_grupoempresa,
+        cm.produtos_entrada,
+        cm.produtos_saida
+      FROM cmv_mtm cm
+      WHERE cm.dt_transacao BETWEEN $1 AND $2
+    `;
+
+    const queryParams = [dataInicio, dataFim];
+
+    // Filtro opcional por cd_grupoempresa
+    if (cd_grupoempresa) {
+      const empresas = Array.isArray(cd_grupoempresa)
+        ? cd_grupoempresa
+        : cd_grupoempresa.split(',').map((e) => e.trim());
+
+      if (empresas.length > 0) {
+        query += ` AND cm.cd_grupoempresa = ANY($3)`;
+        queryParams.push(empresas);
+      }
+    }
+
+    query += `
+      ORDER BY cm.dt_transacao, cm.cd_grupoempresa
+    `;
+
+    const result = await pool.query(query, queryParams);
+
+    return successResponse(
+      res,
+      {
+        data: result.rows,
+        total: result.rows.length,
+      },
+      'CMV Multimarcas recuperado com sucesso',
+    );
+  }),
+);
+
+/**
+ * GET /api/faturamento/cmv-revenda
+ * Retorna dados de CMV de Revenda da view materializada cmv_revenda
+ * Query params:
+ *  - dataInicio (obrigatório): data inicial YYYY-MM-DD
+ *  - dataFim (obrigatório): data final YYYY-MM-DD
+ *  - cd_grupoempresa (opcional): filtro por grupo empresa (string ou array)
+ */
+router.get(
+  '/cmv-revenda',
+  validateRequired(['dataInicio', 'dataFim']),
+  validateDateFormat(['dataInicio', 'dataFim']),
+  asyncHandler(async (req, res) => {
+    const { dataInicio, dataFim, cd_grupoempresa } = req.query;
+
+    let query = `
+      SELECT
+        cr.cd_grupoempresa,
+        cr.cmv,
+        cr.dt_transacao,
+        cr.nm_grupoempresa,
+        cr.produtos_entrada,
+        cr.produtos_saida
+      FROM cmv_revenda cr
+      WHERE cr.dt_transacao BETWEEN $1 AND $2
+    `;
+
+    const queryParams = [dataInicio, dataFim];
+
+    // Filtro opcional por cd_grupoempresa
+    if (cd_grupoempresa) {
+      const empresas = Array.isArray(cd_grupoempresa)
+        ? cd_grupoempresa
+        : cd_grupoempresa.split(',').map((e) => e.trim());
+
+      if (empresas.length > 0) {
+        query += ` AND cr.cd_grupoempresa = ANY($3)`;
+        queryParams.push(empresas);
+      }
+    }
+
+    query += `
+      ORDER BY cr.dt_transacao, cr.cd_grupoempresa
+    `;
+
+    const result = await pool.query(query, queryParams);
+
+    return successResponse(
+      res,
+      {
+        data: result.rows,
+        total: result.rows.length,
+      },
+      'CMV Revenda recuperado com sucesso',
+    );
+  }),
+);
+
+/**
+ * GET /api/faturamento/cmv-franquias
+ * Retorna dados de CMV de Franquias da view materializada cmv_franquias
+ * Query params:
+ *  - dataInicio (obrigatório): data inicial YYYY-MM-DD
+ *  - dataFim (obrigatório): data final YYYY-MM-DD
+ *  - cd_grupoempresa (opcional): filtro por grupo empresa (string ou array)
+ */
+router.get(
+  '/cmv-franquias',
+  validateRequired(['dataInicio', 'dataFim']),
+  validateDateFormat(['dataInicio', 'dataFim']),
+  asyncHandler(async (req, res) => {
+    const { dataInicio, dataFim, cd_grupoempresa } = req.query;
+
+    let query = `
+      SELECT
+        cf.cd_grupoempresa,
+        cf.cmv,
+        cf.dt_transacao,
+        cf.nm_grupoempresa,
+        cf.produtos_entrada,
+        cf.produtos_saida
+      FROM cmv_franquias cf
+      WHERE cf.dt_transacao BETWEEN $1 AND $2
+    `;
+
+    const queryParams = [dataInicio, dataFim];
+
+    // Filtro opcional por cd_grupoempresa
+    if (cd_grupoempresa) {
+      const empresas = Array.isArray(cd_grupoempresa)
+        ? cd_grupoempresa
+        : cd_grupoempresa.split(',').map((e) => e.trim());
+
+      if (empresas.length > 0) {
+        query += ` AND cf.cd_grupoempresa = ANY($3)`;
+        queryParams.push(empresas);
+      }
+    }
+
+    query += `
+      ORDER BY cf.dt_transacao, cf.cd_grupoempresa
+    `;
+
+    const result = await pool.query(query, queryParams);
+
+    return successResponse(
+      res,
+      {
+        data: result.rows,
+        total: result.rows.length,
+      },
+      'CMV Franquias recuperado com sucesso',
+    );
+  }),
+);
+
 export default router;

@@ -32,7 +32,7 @@ const FinanceiroPorCanal = memo(() => {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
 
-  // Dados dos canais
+  // Dados dos canais (agora vêm das views materializadas)
   const [dadosVarejo, setDadosVarejo] = useState([]);
   const [dadosFranquia, setDadosFranquia] = useState([]);
   const [dadosMultimarcas, setDadosMultimarcas] = useState([]);
@@ -47,77 +47,83 @@ const FinanceiroPorCanal = memo(() => {
     matriz: 0,
     diversos: 0,
   });
-  const [modalAberto, setModalAberto] = useState(null); // 'VAREJO' | 'MULTIMARCAS' | 'FRANQUIAS_REVENDA' | 'MATRIZ' | 'DIVERSOS'
+  const [modalAberto, setModalAberto] = useState(null);
   const [modalDadosCpDiversos, setModalDadosCpDiversos] = useState([]);
 
-  const calcularVendasAposDesconto = useCallback((rows) => {
-    if (!Array.isArray(rows)) return 0;
-    return rows.reduce((acc, row) => {
-      const qt = Number(row.qt_faturado) || 1;
-      const liq = (Number(row.vl_unitliquido) || 0) * qt;
-      if (row.tp_operacao === 'S') return acc + liq;
-      if (row.tp_operacao === 'E') return acc - liq;
-      return acc;
-    }, 0);
-  }, []);
+  // Cálculos simplificados usando as views materializadas
+  // valor_sem_desconto - valor_com_desconto = valor bruto
+  // valor_com_desconto_saida - valor_com_desconto_entrada = receita liquida
+  // valor_com_desconto_entrada = devoluções liquidas
+  // valor_sem_desconto_entrada = devoluções brutas
 
-  const totais = useMemo(
-    () => ({
-      varejo: calcularVendasAposDesconto(dadosVarejo),
-      franquia: calcularVendasAposDesconto(dadosFranquia),
-      multimarcas: calcularVendasAposDesconto(dadosMultimarcas),
-      revenda: calcularVendasAposDesconto(dadosRevenda),
-    }),
-    [
-      dadosVarejo,
-      dadosFranquia,
-      dadosMultimarcas,
-      dadosRevenda,
-      calcularVendasAposDesconto,
-    ],
-  );
+  const totais = useMemo(() => {
+    const calcularReceita = (dados) => {
+      if (!Array.isArray(dados)) return 0;
+      return dados.reduce((acc, row) => {
+        const receita =
+          (Number(row.valor_com_desconto_saida) || 0) -
+          (Number(row.valor_com_desconto_entrada) || 0);
+        return acc + receita;
+      }, 0);
+    };
 
-  // Mesma lógica do Consolidado: Frete por canal (S - E)
-  const calcularFrete = useCallback((rows) => {
-    if (!Array.isArray(rows)) return 0;
-    return rows.reduce((acc, row) => {
-      const frete = Number(row.vl_freterat) || 0;
-      if (row.tp_operacao === 'S') return acc + frete;
-      if (row.tp_operacao === 'E') return acc - frete;
-      return acc;
-    }, 0);
-  }, []);
+    return {
+      varejo: calcularReceita(dadosVarejo),
+      franquia: calcularReceita(dadosFranquia),
+      multimarcas: calcularReceita(dadosMultimarcas),
+      revenda: calcularReceita(dadosRevenda),
+    };
+  }, [dadosVarejo, dadosFranquia, dadosMultimarcas, dadosRevenda]);
 
-  const fretePorCanal = useMemo(
-    () => ({
-      varejo: calcularFrete(dadosVarejo),
-      franquia: calcularFrete(dadosFranquia),
-      multimarcas: calcularFrete(dadosMultimarcas),
-      revenda: calcularFrete(dadosRevenda),
-    }),
-    [dadosVarejo, dadosFranquia, dadosMultimarcas, dadosRevenda, calcularFrete],
-  );
+  const totaisBrutos = useMemo(() => {
+    const calcularValorBruto = (dados) => {
+      if (!Array.isArray(dados)) return 0;
+      return dados.reduce((acc, row) => {
+        const bruto =
+          (Number(row.valor_sem_desconto) || 0) -
+          (Number(row.valor_com_desconto) || 0);
+        return acc + bruto;
+      }, 0);
+    };
 
-  // Vendas após desconto + frete (S - E de frete) – igual ao Consolidado
-  const vendasComFrete = useMemo(
-    () => ({
-      varejo: (totais.varejo || 0) + (fretePorCanal.varejo || 0),
-      franquia: (totais.franquia || 0) + (fretePorCanal.franquia || 0),
-      multimarcas: (totais.multimarcas || 0) + (fretePorCanal.multimarcas || 0),
-      revenda: (totais.revenda || 0) + (fretePorCanal.revenda || 0),
-    }),
-    [totais, fretePorCanal],
-  );
+    return {
+      varejo: calcularValorBruto(dadosVarejo),
+      franquia: calcularValorBruto(dadosFranquia),
+      multimarcas: calcularValorBruto(dadosMultimarcas),
+      revenda: calcularValorBruto(dadosRevenda),
+    };
+  }, [dadosVarejo, dadosFranquia, dadosMultimarcas, dadosRevenda]);
+
+  const devolucoes = useMemo(() => {
+    const calcularDevolucoes = (dados) => {
+      if (!Array.isArray(dados)) return { liquidas: 0, brutas: 0 };
+      return dados.reduce(
+        (acc, row) => {
+          acc.liquidas += Number(row.valor_com_desconto_entrada) || 0;
+          acc.brutas += Number(row.valor_sem_desconto_entrada) || 0;
+          return acc;
+        },
+        { liquidas: 0, brutas: 0 },
+      );
+    };
+
+    return {
+      varejo: calcularDevolucoes(dadosVarejo),
+      franquia: calcularDevolucoes(dadosFranquia),
+      multimarcas: calcularDevolucoes(dadosMultimarcas),
+      revenda: calcularDevolucoes(dadosRevenda),
+    };
+  }, [dadosVarejo, dadosFranquia, dadosMultimarcas, dadosRevenda]);
 
   // Pie por empresa Varejo
   const pieVarejoData = useMemo(() => {
     if (!Array.isArray(dadosVarejo)) return [];
-    // Agrupa por nm_grupoempresa
     const map = new Map();
     dadosVarejo.forEach((row) => {
-      const nome = row.nm_grupoempresa || `Empresa ${row.cd_empresa}`;
+      const nome = row.nm_grupoempresa || `Empresa ${row.cd_grupoempresa}`;
       const valor =
-        (Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1);
+        (Number(row.valor_com_desconto_saida) || 0) -
+        (Number(row.valor_com_desconto_entrada) || 0);
       if (!map.has(nome)) map.set(nome, 0);
       map.set(nome, map.get(nome) + valor);
     });
@@ -132,9 +138,10 @@ const FinanceiroPorCanal = memo(() => {
     if (!Array.isArray(dadosMultimarcas)) return [];
     const map = new Map();
     dadosMultimarcas.forEach((row) => {
-      const nome = row.nm_grupoempresa || `Empresa ${row.cd_empresa}`;
+      const nome = row.nm_grupoempresa || `Empresa ${row.cd_grupoempresa}`;
       const valor =
-        (Number(row.vl_unitliquido) || 0) * (Number(row.qt_faturado) || 1);
+        (Number(row.valor_com_desconto_saida) || 0) -
+        (Number(row.valor_com_desconto_entrada) || 0);
       if (!map.has(nome)) map.set(nome, 0);
       map.set(nome, map.get(nome) + valor);
     });
@@ -171,21 +178,24 @@ const FinanceiroPorCanal = memo(() => {
     () => [
       {
         canal: 'VAREJO',
-        vendas: Math.max(0, totais.varejo),
+        receitaLiquida: Math.max(0, totais.varejo),
+        valorBruto: Math.max(0, totaisBrutos.varejo),
         contasPagar: Math.max(0, ccTotaisPorCanal.varejo),
       },
       {
         canal: 'MULTIMARCAS',
-        vendas: Math.max(0, totais.multimarcas),
+        receitaLiquida: Math.max(0, totais.multimarcas),
+        valorBruto: Math.max(0, totaisBrutos.multimarcas),
         contasPagar: Math.max(0, ccTotaisPorCanal.multimarcas),
       },
       {
         canal: 'FRANQUIAS + REVENDA',
-        vendas: Math.max(0, totais.franquia + totais.revenda),
+        receitaLiquida: Math.max(0, totais.franquia + totais.revenda),
+        valorBruto: Math.max(0, totaisBrutos.franquia + totaisBrutos.revenda),
         contasPagar: Math.max(0, ccTotaisPorCanal.franquiasRevenda),
       },
     ],
-    [totais, ccTotaisPorCanal],
+    [totais, totaisBrutos, ccTotaisPorCanal],
   );
 
   const handleBuscar = useCallback(
@@ -205,65 +215,22 @@ const FinanceiroPorCanal = memo(() => {
       }
       setLoading(true);
       try {
-        // Mesmas listas do Consolidado
-        const empresasFixas = [
-          '1',
-          '2',
-          '200',
-          '75',
-          '31',
-          '6',
-          '85',
-          '11',
-          '99',
-          '85',
-          '92',
-        ];
-        const empresasVarejoFixas = [
-          '2',
-          '5',
-          '500',
-          '55',
-          '550',
-          '65',
-          '650',
-          '93',
-          '930',
-          '94',
-          '940',
-          '95',
-          '950',
-          '96',
-          '960',
-          '97',
-          '970',
-          '90',
-          '91',
-          '92',
-          '890',
-          '910',
-          '920',
-        ];
-
-        const paramsRevenda = {
-          dt_inicio: dtInicio,
-          dt_fim: dtFim,
-          cd_empresa: empresasFixas,
+        // Parâmetros para as novas rotas materializadas
+        const paramsVarejo = {
+          dataInicio: dtInicio,
+          dataFim: dtFim,
         };
         const paramsFranquia = {
-          dt_inicio: dtInicio,
-          dt_fim: dtFim,
-          cd_empresa: empresasFixas,
-        };
-        const paramsVarejo = {
-          dt_inicio: dtInicio,
-          dt_fim: dtFim,
-          cd_empresa: empresasVarejoFixas,
+          dataInicio: dtInicio,
+          dataFim: dtFim,
         };
         const paramsMtm = {
-          dt_inicio: dtInicio,
-          dt_fim: dtFim,
-          cd_empresa: empresasFixas,
+          dataInicio: dtInicio,
+          dataFim: dtFim,
+        };
+        const paramsRevenda = {
+          dataInicio: dtInicio,
+          dataFim: dtFim,
         };
         const paramsCp = {
           dt_inicio: dtInicio,
@@ -273,37 +240,18 @@ const FinanceiroPorCanal = memo(() => {
 
         const [resVarejo, resFranquia, resMtm, resRev, resCp] =
           await Promise.all([
-            api.sales.faturamento(paramsVarejo),
-            api.sales.faturamentoFranquia(paramsFranquia),
+            api.sales.faturamentoVarejo(paramsVarejo),
+            api.sales.faturamentoFranquias(paramsFranquia),
             api.sales.faturamentoMtm(paramsMtm),
             api.sales.faturamentoRevenda(paramsRevenda),
             api.financial.contasPagar(paramsCp),
           ]);
+
         setDadosVarejo(resVarejo?.data || []);
         setDadosFranquia(resFranquia?.data || []);
         setDadosMultimarcas(resMtm?.data || []);
-        // Aplica a mesma lógica do Consolidado para Revenda (classificação 1 e 3, priorizando 3)
-        const dadosRevRaw = Array.isArray(resRev?.data) ? resRev.data : [];
-        const dadosRevFiltrados = dadosRevRaw
-          .filter((row) => {
-            const cls = String(row.cd_classificacao ?? '').trim();
-            return cls === '1' || cls === '3';
-          })
-          .filter((row, index, array) => {
-            const currentPessoa = row.cd_pessoa;
-            const currentClass = String(row.cd_classificacao ?? '').trim();
-            if (currentClass === '3') return true;
-            if (currentClass === '1') {
-              const hasClass3 = array.some(
-                (item) =>
-                  item.cd_pessoa === currentPessoa &&
-                  String(item.cd_classificacao ?? '').trim() === '3',
-              );
-              return !hasClass3;
-            }
-            return false;
-          });
-        setDadosRevenda(dadosRevFiltrados);
+        setDadosRevenda(resRev?.data || []);
+
         const linhasCp = resCp?.data || [];
         setDadosContasPagar(linhasCp);
 
@@ -733,10 +681,10 @@ const FinanceiroPorCanal = memo(() => {
         )}
       </form>
 
-      {/* Seção: Venda após Desconto */}
+      {/* Seção: Receita Líquida */}
       <div className="mb-3">
         <h2 className="text-sm font-bold tracking-wide text-gray-700">
-          VENDA APÓS DESCONTO
+          RECEITA LÍQUIDA (Saída - Entrada)
         </h2>
       </div>
 
@@ -745,47 +693,41 @@ const FinanceiroPorCanal = memo(() => {
         {/* Cards (coluna esquerda) */}
         <div className="grid grid-cols-1 gap-4">
           <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-md">
-            <div className="text-sm font-semibold text-gray-600">
-              Varejo (R$)
-            </div>
+            <div className="text-sm font-semibold text-gray-600">Varejo</div>
             <div className="text-2xl font-extrabold text-green-700 mt-2">
-              {vendasComFrete.varejo.toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              })}
+              {formatBRL(totais.varejo)}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              Devoluções: {formatBRL(devolucoes.varejo.liquidas)}
             </div>
           </div>
           <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-md">
-            <div className="text-sm font-semibold text-gray-600">
-              Franquias (R$)
-            </div>
+            <div className="text-sm font-semibold text-gray-600">Franquias</div>
             <div className="text-2xl font-extrabold text-blue-700 mt-2">
-              {vendasComFrete.franquia.toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              })}
+              {formatBRL(totais.franquia)}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              Devoluções: {formatBRL(devolucoes.franquia.liquidas)}
             </div>
           </div>
           <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-md">
             <div className="text-sm font-semibold text-gray-600">
-              Multimarcas (R$)
+              Multimarcas
             </div>
             <div className="text-2xl font-extrabold text-purple-700 mt-2">
-              {vendasComFrete.multimarcas.toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              })}
+              {formatBRL(totais.multimarcas)}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              Devoluções: {formatBRL(devolucoes.multimarcas.liquidas)}
             </div>
           </div>
           <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-md">
-            <div className="text-sm font-semibold text-gray-600">
-              Revenda (R$)
-            </div>
+            <div className="text-sm font-semibold text-gray-600">Revenda</div>
             <div className="text-2xl font-extrabold text-orange-700 mt-2">
-              {vendasComFrete.revenda.toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              })}
+              {formatBRL(totais.revenda)}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              Devoluções: {formatBRL(devolucoes.revenda.liquidas)}
             </div>
           </div>
         </div>
@@ -793,10 +735,10 @@ const FinanceiroPorCanal = memo(() => {
         {/* Gráfico Pizza por Canal (coluna direita) */}
         <div className="rounded-2xl bg-white border border-gray-200 p-4 shadow-md">
           <div className="text-sm font-semibold text-gray-700 mb-2">
-            Varejo - Faturamento por Empresa
+            Varejo - Receita por Empresa
           </div>
           <div className="text-xs text-gray-500 mb-2">
-            Distribuição do faturamento por empresa (Varejo)
+            Distribuição da receita líquida por empresa (Varejo)
           </div>
           <div style={{ width: '100%', height: 360 }}>
             <ResponsiveContainer>
@@ -819,6 +761,110 @@ const FinanceiroPorCanal = memo(() => {
                 <RechartsTooltip formatter={(v) => formatBRL(v)} />
               </PieChart>
             </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* Seção: Resumo Consolidado */}
+      <div className="mt-8 mb-3">
+        <h2 className="text-sm font-bold tracking-wide text-gray-700">
+          RESUMO CONSOLIDADO
+        </h2>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <div className="rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 p-6 shadow-md">
+          <div className="text-sm font-semibold text-blue-900 mb-3">
+            Total Receita Líquida
+          </div>
+          <div className="text-3xl font-extrabold text-blue-700">
+            {formatBRL(
+              totais.varejo +
+                totais.franquia +
+                totais.multimarcas +
+                totais.revenda,
+            )}
+          </div>
+          <div className="text-xs text-blue-600 mt-2">
+            Saídas - Entradas (com desconto)
+          </div>
+        </div>
+        <div className="rounded-xl bg-gradient-to-br from-green-50 to-green-100 border border-green-200 p-6 shadow-md">
+          <div className="text-sm font-semibold text-green-900 mb-3">
+            Total Descontos Concedidos
+          </div>
+          <div className="text-3xl font-extrabold text-green-700">
+            {formatBRL(
+              totaisBrutos.varejo +
+                totaisBrutos.franquia +
+                totaisBrutos.multimarcas +
+                totaisBrutos.revenda,
+            )}
+          </div>
+          <div className="text-xs text-green-600 mt-2">
+            Valor sem desconto - Valor com desconto
+          </div>
+        </div>
+        <div className="rounded-xl bg-gradient-to-br from-red-50 to-red-100 border border-red-200 p-6 shadow-md">
+          <div className="text-sm font-semibold text-red-900 mb-3">
+            Total Devoluções Líquidas
+          </div>
+          <div className="text-3xl font-extrabold text-red-700">
+            {formatBRL(
+              devolucoes.varejo.liquidas +
+                devolucoes.franquia.liquidas +
+                devolucoes.multimarcas.liquidas +
+                devolucoes.revenda.liquidas,
+            )}
+          </div>
+          <div className="text-xs text-red-600 mt-2">
+            Entradas com desconto (valor negativo)
+          </div>
+        </div>
+      </div>
+
+      {/* Seção: Devoluções */}
+      <div className="mt-8 mb-3">
+        <h2 className="text-sm font-bold tracking-wide text-gray-700">
+          DEVOLUÇÕES POR CANAL
+        </h2>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-8">
+        <div className="rounded-xl bg-white border border-red-200 p-4 shadow-md">
+          <div className="text-sm font-semibold text-gray-600">Varejo</div>
+          <div className="text-xl font-bold text-red-600 mt-2">
+            {formatBRL(devolucoes.varejo.liquidas)}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            Brutas: {formatBRL(devolucoes.varejo.brutas)}
+          </div>
+        </div>
+        <div className="rounded-xl bg-white border border-red-200 p-4 shadow-md">
+          <div className="text-sm font-semibold text-gray-600">Franquias</div>
+          <div className="text-xl font-bold text-red-600 mt-2">
+            {formatBRL(devolucoes.franquia.liquidas)}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            Brutas: {formatBRL(devolucoes.franquia.brutas)}
+          </div>
+        </div>
+        <div className="rounded-xl bg-white border border-red-200 p-4 shadow-md">
+          <div className="text-sm font-semibold text-gray-600">Multimarcas</div>
+          <div className="text-xl font-bold text-red-600 mt-2">
+            {formatBRL(devolucoes.multimarcas.liquidas)}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            Brutas: {formatBRL(devolucoes.multimarcas.brutas)}
+          </div>
+        </div>
+        <div className="rounded-xl bg-white border border-red-200 p-4 shadow-md">
+          <div className="text-sm font-semibold text-gray-600">Revenda</div>
+          <div className="text-xl font-bold text-red-600 mt-2">
+            {formatBRL(devolucoes.revenda.liquidas)}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            Brutas: {formatBRL(devolucoes.revenda.brutas)}
           </div>
         </div>
       </div>
@@ -904,10 +950,10 @@ const FinanceiroPorCanal = memo(() => {
 
         <div className="rounded-2xl bg-white border border-gray-200 p-4 shadow-md">
           <div className="text-sm font-semibold text-gray-700 mb-2">
-            Multimarcas - Faturamento por Empresa
+            Multimarcas - Receita por Empresa
           </div>
           <div className="text-xs text-gray-500 mb-2">
-            Distribuição do faturamento por empresa (Multimarcas)
+            Distribuição da receita líquida por empresa (Multimarcas)
           </div>
           <div style={{ width: '100%', height: 360 }}>
             <ResponsiveContainer>
@@ -1012,11 +1058,12 @@ const FinanceiroPorCanal = memo(() => {
         </div>
       </div>
 
-      {/* Gráfico de Barras Comparativo - Vendas vs Contas a Pagar */}
+      {/* Gráfico de Barras Comparativo - Receita Líquida vs Valor Bruto vs Contas a Pagar */}
       <div className="mt-8">
         <div className="rounded-2xl bg-white border border-gray-200 p-8 shadow-md">
           <div className="text-base font-semibold text-gray-700 mb-4 text-center">
-            Comparativo: Vendas vs Contas a Pagar por Canal
+            Comparativo: Receita Líquida vs Valor Bruto vs Contas a Pagar por
+            Canal
           </div>
           <div style={{ width: '100%', height: 400, padding: '20px' }}>
             <ResponsiveContainer>
@@ -1033,35 +1080,20 @@ const FinanceiroPorCanal = memo(() => {
                 <RechartsTooltip formatter={(value) => formatBRL(value)} />
                 <Legend fontSize={11} />
                 <Bar
-                  dataKey="vendas"
-                  name="Vendas após Desconto"
+                  dataKey="receitaLiquida"
+                  name="Receita Líquida"
                   fill="#1d4ed8"
-                >
-                  {barChartData.map((entry, index) => (
-                    <text
-                      x={entry.vendas > 0 ? entry.vendas : 0}
-                      y={entry.vendas > 0 ? entry.vendas : 0}
-                      textAnchor="middle"
-                      fill="#1d4ed8"
-                      fontSize="10"
-                    >
-                      {formatBRL(entry.vendas)}
-                    </text>
-                  ))}
-                </Bar>
-                <Bar dataKey="contasPagar" name="Contas a Pagar" fill="#dc2626">
-                  {barChartData.map((entry, index) => (
-                    <text
-                      x={entry.contasPagar > 0 ? entry.contasPagar : 0}
-                      y={entry.contasPagar > 0 ? entry.contasPagar : 0}
-                      textAnchor="middle"
-                      fill="#dc2626"
-                      fontSize="10"
-                    >
-                      {formatBRL(entry.contasPagar)}
-                    </text>
-                  ))}
-                </Bar>
+                />
+                <Bar
+                  dataKey="valorBruto"
+                  name="Valor Bruto (Descontos)"
+                  fill="#16a34a"
+                />
+                <Bar
+                  dataKey="contasPagar"
+                  name="Contas a Pagar"
+                  fill="#dc2626"
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>

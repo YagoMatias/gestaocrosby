@@ -272,14 +272,33 @@ const useApiClient = () => {
   };
 
   const sales = {
-    // Novas rotas de faturamento com estrutura de desconto
-    faturamentoVarejo: (params) => apiCall('/api/faturamento/varejo', params),
-    faturamentoMtm: (params) => apiCall('/api/faturamento/mtm', params),
+    // Rotas de faturamento usando views materializadas (otimizadas)
+    faturamentoVarejo: (params) =>
+      apiCall('/api/faturamento/fat-varejo', params),
+    faturamentoMtm: (params) =>
+      apiCall('/api/faturamento/fat-multimarcas', params),
     faturamentoFranquias: (params) =>
-      apiCall('/api/faturamento/franquias', params),
-    faturamentoRevenda: (params) => apiCall('/api/faturamento/revenda', params),
+      apiCall('/api/faturamento/fat-franquias', params),
+    faturamentoRevenda: (params) =>
+      apiCall('/api/faturamento/fat-revenda', params),
     faturamentoConsolidado: (params) =>
       apiCall('/api/faturamento/consolidado', params),
+    // Rotas antigas mantidas para compatibilidade (caso precisem ser usadas novamente)
+    faturamentoVarejoOld: (params) =>
+      apiCall('/api/faturamento/varejo', params),
+    faturamentoMtmOld: (params) => apiCall('/api/faturamento/mtm', params),
+    faturamentoFranquiasOld: (params) =>
+      apiCall('/api/faturamento/franquias', params),
+    faturamentoRevendaOld: (params) =>
+      apiCall('/api/faturamento/revenda', params),
+
+    // Rotas de CMV usando views materializadas (otimizadas)
+    cmvVarejo: (params) => apiCall('/api/faturamento/cmv-varejo', params),
+    cmvMultimarcas: (params) =>
+      apiCall('/api/faturamento/cmv-multimarcas', params),
+    cmvFranquias: (params) => apiCall('/api/faturamento/cmv-franquias', params),
+    cmvRevenda: (params) => apiCall('/api/faturamento/cmv-revenda', params),
+
     // Rotas antigas mantidas para compatibilidade (deprecadas)
     faturamento: (params) => apiCall('/api/sales/faturamento', params),
     faturamentoFranquia: (params) =>
