@@ -108,23 +108,56 @@ const AnaliseCashback = () => {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  // Função para buscar nomes das empresas baseado nos nm_grupoempresa das transações
+  const fetchEmpresaNames = async (transacoes) => {
+    try {
+      // Coletar nm_grupoempresa únicos das transações
+      const empresasUnicas = [
+        ...new Set(
+          transacoes
+            .map((item) => item.nm_grupoempresa)
+            .filter((nm) => nm !== null && nm !== undefined),
+        ),
+      ];
+
+      if (empresasUnicas.length === 0) return;
+
+      // Buscar nomes apenas das empresas que aparecem nas transações
+      const resp = await apiCall('/api/company/empresas', {
+        nm_grupoempresa: empresasUnicas.join(','),
+      });
+
+      if (resp.success && Array.isArray(resp.data)) {
+        const map = {};
+        resp.data.forEach((e) => {
+          map[String(e.nm_grupoempresa)] = e.nm_grupoempresa;
+        });
+        setEmpresaNames(map);
+      }
+    } catch (err) {
+      console.warn('Erro ao buscar nomes de empresas:', err);
+    }
+  };
+
   // Função para buscar nomes dos vendedores baseado nos cd_compvend das transações
   const fetchVendedorNames = async (transacoes) => {
     try {
       // Coletar cd_compvend únicos das transações
-      const vendedoresUnicos = [...new Set(
-        transacoes
-          .map(item => item.cd_compvend)
-          .filter(cd => cd !== null && cd !== undefined)
-      )];
+      const vendedoresUnicos = [
+        ...new Set(
+          transacoes
+            .map((item) => item.cd_compvend)
+            .filter((cd) => cd !== null && cd !== undefined),
+        ),
+      ];
 
       if (vendedoresUnicos.length === 0) return;
 
       // Buscar nomes apenas dos vendedores que aparecem nas transações
       const resp = await apiCall('/api/faturamento/pes_vendedor', {
-        cd_vendedor: vendedoresUnicos.join(',')
+        cd_vendedor: vendedoresUnicos.join(','),
       });
-      
+
       if (resp.success && Array.isArray(resp.data)) {
         const map = {};
         resp.data.forEach((v) => {
@@ -175,10 +208,10 @@ const AnaliseCashback = () => {
           processEmpresaData(combined);
           processTimeSeriesData(combined);
           processAbove35ByLoja(combined);
-          
+
           // Buscar vendedores únicos das transações e atualizar nomes
           await fetchVendedorNames(combined);
-          
+
           processVendedorData(combined);
           processVendedorAbove35(combined);
         } else {
@@ -187,10 +220,10 @@ const AnaliseCashback = () => {
           processEmpresaData(cashbackData);
           processTimeSeriesData(cashbackData);
           processAbove35ByLoja(cashbackData);
-          
+
           // Buscar vendedores únicos das transações e atualizar nomes
           await fetchVendedorNames(cashbackData);
-          
+
           processVendedorData(cashbackData);
           processVendedorAbove35(cashbackData);
         }
@@ -285,7 +318,7 @@ const AnaliseCashback = () => {
       if (!empresaMap.has(empresa)) {
         empresaMap.set(empresa, {
           cd_empresa: empresa,
-          nome_empresa: empresaNames[String(empresa)] || `Empresa ${empresa}`,
+          nome_empresa: empresaNames[String(empresa)],
           vouchers: 0,
           transacoesBruto: 0,
           transacoesLiquido: 0,
@@ -1155,7 +1188,11 @@ const AnaliseCashback = () => {
                           `R$ ${(value / 1000).toFixed(0)}k`
                         }
                       />
-                      <YAxis type="category" dataKey="nome_loja_label" width={260} />
+                      <YAxis
+                        type="category"
+                        dataKey="nome_loja_label"
+                        width={260}
+                      />
                       <Tooltip
                         formatter={(value, name) => [
                           formatCurrency(value),
@@ -1204,7 +1241,10 @@ const AnaliseCashback = () => {
               <CardContent>
                 <div className="bg-white rounded-2xl shadow-lg p-4 border border-[#000638]/10">
                   <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={vendedorData.slice(0, 10)} layout="vertical">
+                    <BarChart
+                      data={vendedorData.slice(0, 10)}
+                      layout="vertical"
+                    >
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis
                         type="number"
@@ -1212,7 +1252,11 @@ const AnaliseCashback = () => {
                           `R$ ${(value / 1000).toFixed(0)}k`
                         }
                       />
-                      <YAxis type="category" dataKey="nome_vendedor_label" width={260} />
+                      <YAxis
+                        type="category"
+                        dataKey="nome_vendedor_label"
+                        width={260}
+                      />
                       <Tooltip
                         formatter={(value, name) => [
                           formatCurrency(value),
@@ -1261,7 +1305,10 @@ const AnaliseCashback = () => {
               <CardContent>
                 <div className="bg-white rounded-2xl shadow-lg p-4 border border-[#000638]/10">
                   <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={vendedorAbove35Data.slice(0, 10)} layout="vertical">
+                    <BarChart
+                      data={vendedorAbove35Data.slice(0, 10)}
+                      layout="vertical"
+                    >
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis
                         type="number"
@@ -1269,7 +1316,11 @@ const AnaliseCashback = () => {
                           `R$ ${(value / 1000).toFixed(0)}k`
                         }
                       />
-                      <YAxis type="category" dataKey="nome_vendedor_label" width={260} />
+                      <YAxis
+                        type="category"
+                        dataKey="nome_vendedor_label"
+                        width={260}
+                      />
                       <Tooltip
                         formatter={(value, name) => [
                           formatCurrency(value),
@@ -1686,7 +1737,7 @@ const AnaliseCashback = () => {
                                 <Buildings className="w-4 h-4 text-green-600" />
                               </div>
                               <span className="text-sm font-medium text-gray-900">
-                                {empresaNames[String(item.cd_empresa)] ||
+                                {empresaNames[String(item.nm_grupoempresa)] ||
                                   `Loja ${item.cd_empresa}`}
                               </span>
                             </div>
