@@ -129,7 +129,7 @@ const AppRoutes = memo(() => {
     {
       path: '/home',
       component: Home,
-      roles: ['admin', 'manager', 'user', 'guest', 'owner'],
+      roles: ['admin', 'manager', 'user', 'guest', 'owner', 'vendedor'],
     },
     {
       path: '/dashboard',
@@ -304,7 +304,7 @@ const AppRoutes = memo(() => {
     {
       path: '/crosby-bot',
       component: CrosbyBot,
-      roles: ['admin', 'manager', 'guest', 'owner', 'user'],
+      roles: ['admin', 'manager', 'owner', 'user', 'guest', 'vendedor'],
     },
     {
       path: '/analise-cashback',
@@ -315,7 +315,7 @@ const AppRoutes = memo(() => {
     {
       path: '/user-panel',
       component: UserPanel,
-      roles: ['admin', 'manager', 'user', 'guest', 'owner'],
+      roles: ['admin', 'manager', 'user', 'guest', 'owner', 'vendedor'],
     },
     { path: '/auth-test', component: AuthTest, roles: ['owner'] },
   ];

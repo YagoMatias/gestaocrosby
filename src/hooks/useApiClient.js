@@ -316,10 +316,8 @@ const useApiClient = () => {
     vlimposto: (params) => apiCall('/api/sales/vlimposto', params),
     cmvtest: (params) => apiCall('/api/sales/cmvtest', params),
     cmv: (params) => apiCall('/api/sales/cmv', params),
-    cmvvarejo: (params) => apiCall('/api/sales/cmvvarejo', params),
-    cmvfranquia: (params) => apiCall('/api/sales/cmvfranquia', params),
-    cmvmultimarcas: (params) => apiCall('/api/sales/cmvmultimarcas', params),
-    cmvrevenda: (params) => apiCall('/api/sales/cmvrevenda', params),
+    // Rotas antigas de CMV removidas (cmvvarejo, cmvfranquia, cmvmultimarcas, cmvrevenda)
+    // Use as novas rotas com views materializadas: cmvVarejo, cmvFranquias, cmvMultimarcas, cmvRevenda
     // Nova rota consolidada DRE - substitui as 4 consultas CMV paralelas
     dreData: (params) => apiCall('/api/sales/dre-data', params),
     // Versão RAW: retorna a resposta bruta da API, sem processamento

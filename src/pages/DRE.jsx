@@ -251,8 +251,14 @@ const DRE = () => {
       };
 
       // Parâmetros para as rotas de CMV (mantidas para calcular CMV)
-      const empresasFixas = [95, 950];
-      const empresasVarejo = [95, 950];
+      const empresasFixas = [
+        91, 2, 5, 6, 7, 11, 31, 55, 65, 75, 85, 90, 91, 92, 93, 94, 95, 96, 97,
+        98, 99,
+      ];
+      const empresasVarejo = [
+        2, 5, 55, 65, 90, 91, 92, 93, 94, 95, 96, 97, 98, 200, 500, 550, 650,
+        890, 910, 920, 930, 940, 950, 960, 970, 980,
+      ];
 
       const paramsCMVVarejo = {
         dataInicio: periodo.dt_inicio,
@@ -280,23 +286,33 @@ const DRE = () => {
 
       // Buscar dados de FATURAMENTO (Receitas) das 4 rotas materializadas
       setLoadingStatus('Buscando dados de faturamento do Varejo...');
-      const faturamentoVarejo = await api.sales.faturamentoVarejo(paramsFaturamento);
+      const faturamentoVarejo = await api.sales.faturamentoVarejo(
+        paramsFaturamento,
+      );
 
       setLoadingStatus('Buscando dados de faturamento do Multimarcas...');
-      const faturamentoMultimarcas = await api.sales.faturamentoMtm(paramsFaturamento);
+      const faturamentoMultimarcas = await api.sales.faturamentoMtm(
+        paramsFaturamento,
+      );
 
       setLoadingStatus('Buscando dados de faturamento das Franquias...');
-      const faturamentoFranquias = await api.sales.faturamentoFranquias(paramsFaturamento);
+      const faturamentoFranquias = await api.sales.faturamentoFranquias(
+        paramsFaturamento,
+      );
 
       setLoadingStatus('Buscando dados de faturamento da Revenda...');
-      const faturamentoRevenda = await api.sales.faturamentoRevenda(paramsFaturamento);
+      const faturamentoRevenda = await api.sales.faturamentoRevenda(
+        paramsFaturamento,
+      );
 
       // Buscar dados de CMV das 4 rotas materializadas (para calcular CMV)
       setLoadingStatus('Buscando CMV do Varejo...');
       const cmvVarejo = await api.sales.cmvVarejo(paramsCMVVarejo);
 
       setLoadingStatus('Buscando CMV do Multimarcas...');
-      const cmvMultimarcas = await api.sales.cmvMultimarcas(paramsCMVMultimarcas);
+      const cmvMultimarcas = await api.sales.cmvMultimarcas(
+        paramsCMVMultimarcas,
+      );
 
       setLoadingStatus('Buscando CMV das Franquias...');
       const cmvFranquias = await api.sales.cmvFranquias(paramsCMVFranquias);
@@ -306,95 +322,23 @@ const DRE = () => {
 
       setLoadingStatus('Processando dados...');
 
-      // Função para buscar dados de impostos da rota VLIMPOSTO (baseada na Receita Líquida)
-      const buscarImpostos = async (nrTransacoes, onProgress) => {
-        if (!nrTransacoes || nrTransacoes.length === 0)
-          return { byTransacao: {}, totals: { icms: 0, pis: 0, cofins: 0 } };
-
-        try {
-          const TAMANHO_LOTE = 500;
-          const lotes = [];
-          for (let i = 0; i < nrTransacoes.length; i += TAMANHO_LOTE)
-            lotes.push(nrTransacoes.slice(i, i + TAMANHO_LOTE));
-
-          console.log(
-            `🔍 Buscando impostos reais em ${lotes.length} lotes de até ${TAMANHO_LOTE} transações cada`,
-          );
-
-          const MAX_CONCURRENT_BATCHES = 3;
-          const resultados = [];
-          for (let i = 0; i < lotes.length; i += MAX_CONCURRENT_BATCHES) {
-            const batchGroup = lotes.slice(i, i + MAX_CONCURRENT_BATCHES);
-            const batchPromises = batchGroup.map(async (lote) => {
-              const response = await api.sales.vlimposto({
-                nr_transacao: lote,
-              });
-              if (response.success && response.data) return response.data;
-              console.warn('Resposta inválida para lote:', response);
-              return [];
-            });
-            try {
-              const batchResults = await Promise.all(batchPromises);
-              resultados.push(...batchResults.flat());
-            } catch (error) {
-              console.error(
-                `Erro em lote ${i}-${i + MAX_CONCURRENT_BATCHES}:`,
-                error,
-              );
-            }
-            const progress = Math.round(
-              ((i + MAX_CONCURRENT_BATCHES) / lotes.length) * 100,
-            );
-            if (onProgress) onProgress(Math.min(progress, 100));
-          }
-
-          // Montar mapa por transação e totais gerais
-          const byTransacao = {};
-          const totals = { icms: 0, pis: 0, cofins: 0 };
-          for (const item of resultados) {
-            const nr = String(item.nr_transacao);
-            const valor = parseFloat(item.valorimposto || 0) || 0;
-            const cd = Number(item.cd_imposto);
-            if (!byTransacao[nr])
-              byTransacao[nr] = { icms: 0, pis: 0, cofins: 0 };
-            if (cd === 1) {
-              byTransacao[nr].icms += valor;
-              totals.icms += valor;
-            } else if (cd === 5) {
-              byTransacao[nr].cofins += valor;
-              totals.cofins += valor;
-            } else if (cd === 6) {
-              byTransacao[nr].pis += valor;
-              totals.pis += valor;
-            }
-          }
-
-          console.log('✅ Impostos reais agregados:', {
-            totals,
-            sample: Object.entries(byTransacao).slice(0, 2),
-          });
-          return { byTransacao, totals };
-        } catch (error) {
-          console.error('Erro crítico ao buscar impostos:', error);
-          throw error;
-        }
-      };
-
       // Calcular dados de faturamento usando views materializadas
-      // Estrutura das views: valor_sem_desconto, valor_com_desconto, 
+      // Estrutura das views: valor_sem_desconto, valor_com_desconto,
       //                      valor_sem_desconto_saida, valor_sem_desconto_entrada,
       //                      valor_com_desconto_saida, valor_com_desconto_entrada
       const calcularDadosFaturamento = (responseFaturamento) => {
         if (!responseFaturamento?.success || !responseFaturamento?.data)
           return {
-            receitaBruta: 0,        // valor_sem_desconto_saida
-            devolucoesBrutas: 0,    // valor_sem_desconto_entrada
-            receitaLiquida: 0,      // valor_com_desconto_saida
-            devolucoesLiquidas: 0,  // valor_com_desconto_entrada
-            descontos: 0,           // valor_sem_desconto - valor_com_desconto
+            receitaBruta: 0, // valor_sem_desconto (SOMA TOTAL)
+            devolucoesBrutas: 0, // valor_sem_desconto_entrada
+            receitaLiquida: 0, // valor_com_desconto
+            devolucoesLiquidas: 0, // valor_com_desconto_entrada
+            descontos: 0, // valor_sem_desconto - valor_com_desconto
           };
 
-        const data = Array.isArray(responseFaturamento.data) ? responseFaturamento.data : [];
+        const data = Array.isArray(responseFaturamento.data)
+          ? responseFaturamento.data
+          : [];
 
         let receitaBruta = 0;
         let devolucoesBrutas = 0;
@@ -402,15 +346,19 @@ const DRE = () => {
         let devolucoesLiquidas = 0;
 
         for (const row of data) {
-          // Valores da view materializada
-          receitaBruta += parseFloat(row?.valor_sem_desconto_saida || 0);
+          // RECEITAS BRUTAS = apenas a coluna VALOR_SEM_DESCONTO (soma total)
+          receitaBruta += parseFloat(row?.valor_sem_desconto || 0);
+
+          // Outros valores da view materializada
           devolucoesBrutas += parseFloat(row?.valor_sem_desconto_entrada || 0);
-          receitaLiquida += parseFloat(row?.valor_com_desconto_saida || 0);
-          devolucoesLiquidas += parseFloat(row?.valor_com_desconto_entrada || 0);
+          receitaLiquida += parseFloat(row?.valor_com_desconto || 0);
+          devolucoesLiquidas += parseFloat(
+            row?.valor_com_desconto_entrada || 0,
+          );
         }
 
-        // Descontos = (Receita Bruta - Devoluções Brutas) - (Receita Líquida - Devoluções Líquidas)
-        const descontos = (receitaBruta - devolucoesBrutas) - (receitaLiquida - devolucoesLiquidas);
+        // Descontos = Receita Bruta - Receita Líquida (direto da diferença das colunas)
+        const descontos = receitaBruta - receitaLiquida;
 
         return {
           receitaBruta,
@@ -422,6 +370,7 @@ const DRE = () => {
       };
 
       // Calcular CMV usando views materializadas de CMV
+      // CUSTO DE MERCADORIA VENDIDA = somatório apenas da coluna CMV
       const calcularCMV = (responseCMV) => {
         if (!responseCMV?.success || !responseCMV?.data)
           return {
@@ -437,6 +386,7 @@ const DRE = () => {
         let produtosEntrada = 0;
 
         for (const row of data) {
+          // CMV Total = somatório da coluna 'cmv' das views materializadas
           cmvTotal += parseFloat(row?.cmv || 0);
           produtosSaida += parseFloat(row?.produtos_saida || 0);
           produtosEntrada += parseFloat(row?.produtos_entrada || 0);
@@ -450,10 +400,15 @@ const DRE = () => {
       };
 
       // Calcular dados de faturamento por canal
-      const dadosFaturamentoVarejo = calcularDadosFaturamento(faturamentoVarejo);
-      const dadosFaturamentoMultimarcas = calcularDadosFaturamento(faturamentoMultimarcas);
-      const dadosFaturamentoFranquias = calcularDadosFaturamento(faturamentoFranquias);
-      const dadosFaturamentoRevenda = calcularDadosFaturamento(faturamentoRevenda);
+      const dadosFaturamentoVarejo =
+        calcularDadosFaturamento(faturamentoVarejo);
+      const dadosFaturamentoMultimarcas = calcularDadosFaturamento(
+        faturamentoMultimarcas,
+      );
+      const dadosFaturamentoFranquias =
+        calcularDadosFaturamento(faturamentoFranquias);
+      const dadosFaturamentoRevenda =
+        calcularDadosFaturamento(faturamentoRevenda);
 
       // Calcular CMV por canal
       const dadosCMVVarejo = calcularCMV(cmvVarejo);
@@ -463,7 +418,7 @@ const DRE = () => {
 
       // ========== RECEITAS BRUTAS ==========
       // Receita Bruta = Soma das saídas sem desconto de todos os canais
-      const totalReceitaBruta = 
+      const totalReceitaBruta =
         dadosFaturamentoVarejo.receitaBruta +
         dadosFaturamentoMultimarcas.receitaBruta +
         dadosFaturamentoFranquias.receitaBruta +
@@ -473,7 +428,7 @@ const DRE = () => {
       const totalVendasBrutas = totalReceitaBruta;
 
       // ========== DEDUÇÕES SOBRE VENDAS ==========
-      
+
       // 1) DEVOLUÇÕES = Soma das devoluções líquidas (com desconto já aplicado)
       const totalDevolucoesLiquidas =
         dadosFaturamentoVarejo.devolucoesLiquidas +
@@ -496,12 +451,23 @@ const DRE = () => {
         dadosFaturamentoRevenda.receitaLiquida;
 
       // ========== CMV ==========
-      // CMV Total = Soma do CMV de todas as rotas
+      // CUSTO DE MERCADORIA VENDIDA = somatório da coluna 'cmv' das views materializadas
+      // Rotas utilizadas: cmv-varejo, cmv-multimarcas, cmv-franquias, cmv-revenda
       const totalCMV =
         dadosCMVVarejo.cmv +
         dadosCMVMultimarcas.cmv +
         dadosCMVFranquias.cmv +
         dadosCMVRevenda.cmv;
+
+      console.log('📊 CMV calculado das views materializadas:', {
+        varejo: dadosCMVVarejo.cmv,
+        multimarcas: dadosCMVMultimarcas.cmv,
+        franquias: dadosCMVFranquias.cmv,
+        revenda: dadosCMVRevenda.cmv,
+        total: totalCMV,
+        observacao:
+          'Usa apenas a coluna CMV das views cmv_varejo, cmv_mtm, cmv_franquias, cmv_revenda',
+      });
 
       // Criar estrutura de totais por canal para compatibilidade com o resto do código
       const totaisVarejo = {
@@ -536,182 +502,29 @@ const DRE = () => {
         descontos: dadosFaturamentoRevenda.descontos,
       };
 
-      // ========== BUSCAR IMPOSTOS ==========
-      // Como as views materializadas não retornam nr_transacao, 
-      // vamos buscar impostos usando as rotas antigas de CMV apenas para obter nr_transacao
-      
-      setLoadingStatus('Buscando transações para impostos...');
-      
-      const paramsVarejoOld = {
-        dt_inicio: periodo.dt_inicio,
-        dt_fim: periodo.dt_fim,
-        cd_empresa: empresasVarejo,
-      };
+      // ========== IMPOSTOS ZERADOS ==========
+      // Impostos configurados como zero (rotas antigas de CMV removidas)
+      setLoadingStatus('Configurando impostos...');
 
-      const paramsMultimarcasOld = {
-        dt_inicio: periodo.dt_inicio,
-        dt_fim: periodo.dt_fim,
-        cd_empresa: empresasFixas,
-        cd_classificacao: [2],
-      };
+      const impostosZerados = { icms: 0, pis: 0, cofins: 0 };
 
-      const paramsFranquiasOld = {
-        dt_inicio: periodo.dt_inicio,
-        dt_fim: periodo.dt_fim,
-        cd_empresa: empresasFixas,
-        cd_classificacao: [4],
-      };
+      // Atualizar estados com impostos zerados por canal
+      setImpostosVarejo(impostosZerados);
+      setImpostosMultimarcas(impostosZerados);
+      setImpostosFranquias(impostosZerados);
+      setImpostosRevenda(impostosZerados);
 
-      const paramsRevendaOld = {
-        dt_inicio: periodo.dt_inicio,
-        dt_fim: periodo.dt_fim,
-        cd_empresa: empresasFixas,
-        cd_classificacao: [3],
-      };
+      // Totais gerais (todos zerados)
+      const icmsReal = 0;
+      const pisReal = 0;
+      const cofinsReal = 0;
+      const totalImpostosReal = 0;
 
-      // Buscar apenas para pegar nr_transacao
-      const [varejoOld, multimarcasOld, franquiasOld, revendaOld] = await Promise.all([
-        api.sales.cmvvarejo(paramsVarejoOld),
-        api.sales.cmvmultimarcas(paramsMultimarcasOld),
-        api.sales.cmvfranquia(paramsFranquiasOld),
-        api.sales.cmvrevenda(paramsRevendaOld),
-      ]);
-
-      // Extrair nr_transacao das respostas antigas
-      const varejoData = Array.isArray(varejoOld?.data) ? varejoOld.data : [];
-      const multimarcasData = Array.isArray(multimarcasOld?.data) ? multimarcasOld.data : [];
-      const franquiasData = Array.isArray(franquiasOld?.data) ? franquiasOld.data : [];
-      const revendaData = Array.isArray(revendaOld?.data) ? revendaOld.data : [];
-
-      // Coletar nr_transacao separadamente por canal para buscar impostos específicos
-      const transacoesVarejo = varejoData
-        .filter((r) => r.tp_operacao === 'S')
-        .map((r) => r.nr_transacao)
-        .filter((nr, index, arr) => nr && arr.indexOf(nr) === index);
-
-      const transacoesMultimarcas = multimarcasData
-        .filter((r) => r.tp_operacao === 'S')
-        .map((r) => r.nr_transacao)
-        .filter((nr, index, arr) => nr && arr.indexOf(nr) === index);
-
-      const transacoesFranquias = franquiasData
-        .filter((r) => r.tp_operacao === 'S')
-        .map((r) => r.nr_transacao)
-        .filter((nr, index, arr) => nr && arr.indexOf(nr) === index);
-
-      const transacoesRevenda = revendaData
-        .filter((r) => r.tp_operacao === 'S')
-        .map((r) => r.nr_transacao)
-        .filter((nr, index, arr) => nr && arr.indexOf(nr) === index);
-
-      console.log(`📋 Transações por canal para buscar impostos:`, {
-        varejo: transacoesVarejo.length,
-        multimarcas: transacoesMultimarcas.length,
-        franquias: transacoesFranquias.length,
-        revenda: transacoesRevenda.length,
-      });
-
-      // Buscar impostos separadamente por canal
-      let impostosPorCanal = {};
-      try {
-        setLoadingStatus('Buscando impostos por canal...');
-
-        // Buscar impostos do Varejo
-        if (transacoesVarejo.length > 0) {
-          setLoadingStatus('Buscando impostos do Varejo...');
-          impostosPorCanal.varejo = await buscarImpostos(
-            transacoesVarejo,
-            (progress) => {
-              setLoadingStatus(`Buscando impostos do Varejo... ${progress}%`);
-            },
-          );
-        } else {
-          impostosPorCanal.varejo = { totals: { icms: 0, pis: 0, cofins: 0 } };
-        }
-
-        // Buscar impostos do Multimarcas
-        if (transacoesMultimarcas.length > 0) {
-          setLoadingStatus('Buscando impostos do Multimarcas...');
-          impostosPorCanal.multimarcas = await buscarImpostos(
-            transacoesMultimarcas,
-            (progress) => {
-              setLoadingStatus(
-                `Buscando impostos do Multimarcas... ${progress}%`,
-              );
-            },
-          );
-        } else {
-          impostosPorCanal.multimarcas = {
-            totals: { icms: 0, pis: 0, cofins: 0 },
-          };
-        }
-
-        // Buscar impostos das Franquias
-        if (transacoesFranquias.length > 0) {
-          setLoadingStatus('Buscando impostos das Franquias...');
-          impostosPorCanal.franquias = await buscarImpostos(
-            transacoesFranquias,
-            (progress) => {
-              setLoadingStatus(
-                `Buscando impostos das Franquias... ${progress}%`,
-              );
-            },
-          );
-        } else {
-          impostosPorCanal.franquias = {
-            totals: { icms: 0, pis: 0, cofins: 0 },
-          };
-        }
-
-        // Buscar impostos da Revenda
-        if (transacoesRevenda.length > 0) {
-          setLoadingStatus('Buscando impostos da Revenda...');
-          impostosPorCanal.revenda = await buscarImpostos(
-            transacoesRevenda,
-            (progress) => {
-              setLoadingStatus(`Buscando impostos da Revenda... ${progress}%`);
-            },
-          );
-        } else {
-          impostosPorCanal.revenda = { totals: { icms: 0, pis: 0, cofins: 0 } };
-        }
-      } catch (error) {
-        console.error('Falha crítica ao buscar impostos por canal:', error);
-        setErro(
-          'Erro ao buscar dados de impostos. Verifique a conexão e tente novamente.',
-        );
-        return;
-      }
-
-      // Atualizar estados com impostos por canal
-      setImpostosVarejo(impostosPorCanal.varejo.totals);
-      setImpostosMultimarcas(impostosPorCanal.multimarcas.totals);
-      setImpostosFranquias(impostosPorCanal.franquias.totals);
-      setImpostosRevenda(impostosPorCanal.revenda.totals);
-
-      // Totais gerais (soma de todos os canais)
-      const icmsReal =
-        impostosPorCanal.varejo.totals.icms +
-        impostosPorCanal.multimarcas.totals.icms +
-        impostosPorCanal.franquias.totals.icms +
-        impostosPorCanal.revenda.totals.icms;
-      const pisReal =
-        impostosPorCanal.varejo.totals.pis +
-        impostosPorCanal.multimarcas.totals.pis +
-        impostosPorCanal.franquias.totals.pis +
-        impostosPorCanal.revenda.totals.pis;
-      const cofinsReal =
-        impostosPorCanal.varejo.totals.cofins +
-        impostosPorCanal.multimarcas.totals.cofins +
-        impostosPorCanal.franquias.totals.cofins +
-        impostosPorCanal.revenda.totals.cofins;
-      const totalImpostosReal = icmsReal + pisReal + cofinsReal;
-
-      console.log('💰 Impostos reais por canal:', {
-        varejo: impostosPorCanal.varejo.totals,
-        multimarcas: impostosPorCanal.multimarcas.totals,
-        franquias: impostosPorCanal.franquias.totals,
-        revenda: impostosPorCanal.revenda.totals,
+      console.log('💰 Impostos zerados (rotas antigas de CMV removidas):', {
+        varejo: impostosZerados,
+        multimarcas: impostosZerados,
+        franquias: impostosZerados,
+        revenda: impostosZerados,
         totais: {
           icms: icmsReal,
           pis: pisReal,
@@ -721,26 +534,31 @@ const DRE = () => {
       });
 
       // ========== CÁLCULO FINAL DA DRE ==========
-      
-      // Total das Deduções = Devoluções Líquidas + Descontos Concedidos + Impostos
-      const totalDeducoesCalculado = totalDevolucoesLiquidas + totalDescontos + totalImpostosReal;
 
-      console.log('📊 Cálculo das Deduções sobre Vendas (Views Materializadas):', {
-        devolucoes: totalDevolucoesLiquidas,
-        descontos: totalDescontos,
-        impostos: totalImpostosReal,
-        totalDeducoes: totalDeducoesCalculado,
-        formula: 'Devoluções Líquidas + Descontos Concedidos + Impostos',
-        detalhamento: {
-          vendas_brutas: totalVendasBrutas,
-          devolucoes_liquidas: totalDevolucoesLiquidas,
-          descontos_concedidos: totalDescontos,
+      // Total das Deduções = Devoluções Líquidas + Descontos Concedidos + Impostos
+      const totalDeducoesCalculado =
+        totalDevolucoesLiquidas + totalDescontos + totalImpostosReal;
+
+      console.log(
+        '📊 Cálculo das Deduções sobre Vendas (Views Materializadas):',
+        {
+          devolucoes: totalDevolucoesLiquidas,
+          descontos: totalDescontos,
           impostos: totalImpostosReal,
+          totalDeducoes: totalDeducoesCalculado,
+          formula: 'Devoluções Líquidas + Descontos Concedidos + Impostos',
+          detalhamento: {
+            vendas_brutas: totalVendasBrutas,
+            devolucoes_liquidas: totalDevolucoesLiquidas,
+            descontos_concedidos: totalDescontos,
+            impostos: totalImpostosReal,
+          },
         },
-      });
+      );
 
       // Receita Líquida = Vendas Brutas - Deduções
-      const receitaLiquidaCalculada = totalVendasBrutas - totalDeducoesCalculado;
+      const receitaLiquidaCalculada =
+        totalVendasBrutas - totalDeducoesCalculado;
 
       // Lucro Bruto = Receita Líquida - CMV
       const lucroBrutoCalculado = receitaLiquidaCalculada - totalCMV;
@@ -751,35 +569,27 @@ const DRE = () => {
       // Receita Líquida = Receita Bruta - (Devoluções + Descontos + Impostos)
       const receitaLiquidaVarejoCalc =
         totaisVarejo.totalBruto -
-        (totaisVarejo.totalDevolucoes +
-          totaisVarejo.descontos +
-          impostosPorCanal.varejo.totals.icms +
-          impostosPorCanal.varejo.totals.pis +
-          impostosPorCanal.varejo.totals.cofins);
+        (totaisVarejo.totalDevolucoes + totaisVarejo.descontos + 0 + 0 + 0);
 
       const receitaLiquidaMultimarcasCalc =
         totaisMultimarcas.totalBruto -
         (totaisMultimarcas.totalDevolucoes +
           totaisMultimarcas.descontos +
-          impostosPorCanal.multimarcas.totals.icms +
-          impostosPorCanal.multimarcas.totals.pis +
-          impostosPorCanal.multimarcas.totals.cofins);
+          0 +
+          0 +
+          0);
 
       const receitaLiquidaFranquiasCalc =
         totaisFranquias.totalBruto -
         (totaisFranquias.totalDevolucoes +
           totaisFranquias.descontos +
-          impostosPorCanal.franquias.totals.icms +
-          impostosPorCanal.franquias.totals.pis +
-          impostosPorCanal.franquias.totals.cofins);
+          0 +
+          0 +
+          0);
 
       const receitaLiquidaRevendaCalc =
         totaisRevenda.totalBruto -
-        (totaisRevenda.totalDevolucoes +
-          totaisRevenda.descontos +
-          impostosPorCanal.revenda.totals.icms +
-          impostosPorCanal.revenda.totals.pis +
-          impostosPorCanal.revenda.totals.cofins);
+        (totaisRevenda.totalDevolucoes + totaisRevenda.descontos + 0 + 0 + 0);
 
       // CMV por canal (já calculado)
       const cmvVarejoCalc = totaisVarejo.totalCMV;
@@ -789,8 +599,10 @@ const DRE = () => {
 
       // Calcular lucro bruto por canal: RECEITA LÍQUIDA - CMV
       const lucroBrutoVarejoCalc = receitaLiquidaVarejoCalc - cmvVarejoCalc;
-      const lucroBrutoMultimarcasCalc = receitaLiquidaMultimarcasCalc - cmvMultimarcasCalc;
-      const lucroBrutoFranquiasCalc = receitaLiquidaFranquiasCalc - cmvFranquiasCalc;
+      const lucroBrutoMultimarcasCalc =
+        receitaLiquidaMultimarcasCalc - cmvMultimarcasCalc;
+      const lucroBrutoFranquiasCalc =
+        receitaLiquidaFranquiasCalc - cmvFranquiasCalc;
       const lucroBrutoRevendaCalc = receitaLiquidaRevendaCalc - cmvRevendaCalc;
 
       // Atualizar estados com valores por canal
@@ -845,26 +657,54 @@ const DRE = () => {
         faturamento: {
           varejo: {
             success: faturamentoVarejo?.success,
-            dataLength: Array.isArray(faturamentoVarejo?.data) ? faturamentoVarejo.data.length : 0,
+            dataLength: Array.isArray(faturamentoVarejo?.data)
+              ? faturamentoVarejo.data.length
+              : 0,
           },
           multimarcas: {
             success: faturamentoMultimarcas?.success,
-            dataLength: Array.isArray(faturamentoMultimarcas?.data) ? faturamentoMultimarcas.data.length : 0,
+            dataLength: Array.isArray(faturamentoMultimarcas?.data)
+              ? faturamentoMultimarcas.data.length
+              : 0,
           },
           franquias: {
             success: faturamentoFranquias?.success,
-            dataLength: Array.isArray(faturamentoFranquias?.data) ? faturamentoFranquias.data.length : 0,
+            dataLength: Array.isArray(faturamentoFranquias?.data)
+              ? faturamentoFranquias.data.length
+              : 0,
           },
           revenda: {
             success: faturamentoRevenda?.success,
-            dataLength: Array.isArray(faturamentoRevenda?.data) ? faturamentoRevenda.data.length : 0,
+            dataLength: Array.isArray(faturamentoRevenda?.data)
+              ? faturamentoRevenda.data.length
+              : 0,
           },
         },
         cmv: {
-          varejo: { success: cmvVarejo?.success, dataLength: Array.isArray(cmvVarejo?.data) ? cmvVarejo.data.length : 0 },
-          multimarcas: { success: cmvMultimarcas?.success, dataLength: Array.isArray(cmvMultimarcas?.data) ? cmvMultimarcas.data.length : 0 },
-          franquias: { success: cmvFranquias?.success, dataLength: Array.isArray(cmvFranquias?.data) ? cmvFranquias.data.length : 0 },
-          revenda: { success: cmvRevenda?.success, dataLength: Array.isArray(cmvRevenda?.data) ? cmvRevenda.data.length : 0 },
+          varejo: {
+            success: cmvVarejo?.success,
+            dataLength: Array.isArray(cmvVarejo?.data)
+              ? cmvVarejo.data.length
+              : 0,
+          },
+          multimarcas: {
+            success: cmvMultimarcas?.success,
+            dataLength: Array.isArray(cmvMultimarcas?.data)
+              ? cmvMultimarcas.data.length
+              : 0,
+          },
+          franquias: {
+            success: cmvFranquias?.success,
+            dataLength: Array.isArray(cmvFranquias?.data)
+              ? cmvFranquias.data.length
+              : 0,
+          },
+          revenda: {
+            success: cmvRevenda?.success,
+            dataLength: Array.isArray(cmvRevenda?.data)
+              ? cmvRevenda.data.length
+              : 0,
+          },
         },
       });
 
@@ -895,9 +735,10 @@ const DRE = () => {
         },
       });
 
-      console.log('📊 RECEITAS BRUTAS (valor_sem_desconto_saida):', {
+      console.log('📊 RECEITAS BRUTAS (coluna valor_sem_desconto):', {
         total: totalVendasBrutas,
-        formula: 'Soma das saídas sem desconto de todos os canais',
+        formula: 'Soma APENAS da coluna VALOR_SEM_DESCONTO de todos os canais',
+        observacao: 'Usa a soma total (saída - entrada já calculada na view)',
       });
 
       console.log('📊 DEVOLUÇÕES (valor_com_desconto_entrada):', {
@@ -907,7 +748,7 @@ const DRE = () => {
 
       console.log('📊 DESCONTOS CONCEDIDOS:', {
         total: totalDescontos,
-        formula: '(valor_sem_desconto - valor_com_desconto) de todos os canais',
+        formula: 'valor_sem_desconto - valor_com_desconto (direto das colunas)',
         porCanal: {
           varejo: totaisVarejo.descontos,
           multimarcas: totaisMultimarcas.descontos,
@@ -966,9 +807,9 @@ const DRE = () => {
         setLoadingStatus('Buscando Contas a Pagar (Emissão)...');
         // Usar exatamente as mesmas empresas do Varejo
         const todasEmpresasCodigos = [
-          1, 2, 6, 7, 11, 31, 65, 75, 85, 90, 91, 92, 93, 94, 95, 96, 97, 98,
-          99, 100, 101, 111, 200, 311, 600, 650, 700, 750, 850, 890, 910, 920,
-          930, 940, 950, 960, 970, 980, 990,
+          1, 2, 5, 6, 7, 11, 31, 55, 65, 75, 85, 90, 91, 92, 93, 94, 95, 96, 97,
+          98, 99, 100, 101, 111, 200, 311, 500, 550, 600, 650, 700, 750, 850,
+          890, 910, 920, 930, 940, 950, 960, 970, 980, 990,
         ];
 
         const paramsCP = {

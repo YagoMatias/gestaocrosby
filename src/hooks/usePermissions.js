@@ -9,6 +9,7 @@ const usePermissions = () => {
   const isManager = () => user?.role === 'manager';
   const isUser = () => user?.role === 'user';
   const isGuest = () => user?.role === 'guest';
+  const isVendedor = () => user?.role === 'vendedor';
 
   // Verificações de permissões baseadas em níveis
   const canAccessAdmin = () => isOwner() || isAdmin();
@@ -22,6 +23,15 @@ const usePermissions = () => {
     isOwner() || isAdmin() || isManager() || isUser() || isGuest(); // Guest tem acesso às compras franquias
   const canAccessDashboard = () => true; // Todos os roles podem acessar o dashboard
 
+  // Permissão específica para Crosby Bot (Vendedor tem acesso apenas a isso)
+  const canAccessCrosbyBot = () =>
+    isOwner() ||
+    isAdmin() ||
+    isManager() ||
+    isUser() ||
+    isGuest() ||
+    isVendedor();
+
   // Funções auxiliares
   const hasRole = (role) => user?.role === role;
   const hasAnyRole = (roles) => roles.includes(user?.role);
@@ -32,8 +42,9 @@ const usePermissions = () => {
       manager: 3,
       user: 4,
       guest: 5,
+      vendedor: 6, // Vendedor tem nível mais baixo, acesso apenas ao Crosby Bot
     };
-    return (levelMap[user?.role] || 6) <= minLevel;
+    return (levelMap[user?.role] || 7) <= minLevel;
   };
 
   return {
@@ -43,6 +54,7 @@ const usePermissions = () => {
     isManager,
     isUser,
     isGuest,
+    isVendedor,
     canAccessAdmin,
     canAccessManager,
     canAccessFinancial,
@@ -50,6 +62,7 @@ const usePermissions = () => {
     canAccessFranchise,
     canAccessComprasFranquias,
     canAccessDashboard,
+    canAccessCrosbyBot,
     hasRole,
     hasAnyRole,
     hasPermissionLevel,

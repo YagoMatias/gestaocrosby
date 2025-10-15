@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, supabaseSession } from '../lib/supabase';
 
 // Roles disponíveis no sistema (ordenados por hierarquia)
-const ROLES = ['owner', 'admin', 'manager', 'user', 'guest'];
+const ROLES = ['owner', 'admin', 'manager', 'user', 'guest', 'vendedor'];
 
 // Configuração de roles com labels e níveis
 const ROLE_CONFIG = {
@@ -30,6 +30,11 @@ const ROLE_CONFIG = {
     label: 'Convidado',
     level: 5,
     color: '#757575',
+  },
+  vendedor: {
+    label: 'Vendedor',
+    level: 60,
+    color: '#10b981',
   },
 };
 
