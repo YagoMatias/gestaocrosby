@@ -502,29 +502,82 @@ const DRE = () => {
         descontos: dadosFaturamentoRevenda.descontos,
       };
 
-      // ========== IMPOSTOS ZERADOS ==========
-      // Impostos configurados como zero (rotas antigas de CMV removidas)
-      setLoadingStatus('Configurando impostos...');
+      // ========== BUSCAR IMPOSTOS ==========
+      // Buscar impostos usando a nova rota de impostos-por-canal
+      setLoadingStatus('Buscando impostos por canal...');
 
-      const impostosZerados = { icms: 0, pis: 0, cofins: 0 };
+      let impostosData = null;
+      try {
+        const responseImpostos = await api.sales.impostosPorCanal({
+          dataInicio: periodo.dt_inicio,
+          dataFim: periodo.dt_fim,
+        });
 
-      // Atualizar estados com impostos zerados por canal
-      setImpostosVarejo(impostosZerados);
-      setImpostosMultimarcas(impostosZerados);
-      setImpostosFranquias(impostosZerados);
-      setImpostosRevenda(impostosZerados);
+        if (responseImpostos?.success && responseImpostos?.data) {
+          impostosData = responseImpostos.data;
+          console.log('💰 Impostos recebidos da API:', impostosData);
+        }
+      } catch (error) {
+        console.error(
+          '⚠️ Erro ao buscar impostos, usando valores zerados:',
+          error,
+        );
+      }
 
-      // Totais gerais (todos zerados)
-      const icmsReal = 0;
-      const pisReal = 0;
-      const cofinsReal = 0;
-      const totalImpostosReal = 0;
+      // Processar impostos por canal (a API retorna impostos separados por tipo)
+      const impostosVarejoData = {
+        icms: impostosData?.varejo?.icms || 0,
+        pis: impostosData?.varejo?.pis || 0,
+        cofins: impostosData?.varejo?.cofins || 0,
+      };
 
-      console.log('💰 Impostos zerados (rotas antigas de CMV removidas):', {
-        varejo: impostosZerados,
-        multimarcas: impostosZerados,
-        franquias: impostosZerados,
-        revenda: impostosZerados,
+      const impostosMultimarcasData = {
+        icms: impostosData?.multimarcas?.icms || 0,
+        pis: impostosData?.multimarcas?.pis || 0,
+        cofins: impostosData?.multimarcas?.cofins || 0,
+      };
+
+      const impostosFranquiasData = {
+        icms: impostosData?.franquias?.icms || 0,
+        pis: impostosData?.franquias?.pis || 0,
+        cofins: impostosData?.franquias?.cofins || 0,
+      };
+
+      const impostosRevendaData = {
+        icms: impostosData?.revenda?.icms || 0,
+        pis: impostosData?.revenda?.pis || 0,
+        cofins: impostosData?.revenda?.cofins || 0,
+      };
+
+      // Atualizar estados com impostos por canal
+      setImpostosVarejo(impostosVarejoData);
+      setImpostosMultimarcas(impostosMultimarcasData);
+      setImpostosFranquias(impostosFranquiasData);
+      setImpostosRevenda(impostosRevendaData);
+
+      // Totais gerais
+      const icmsReal =
+        impostosVarejoData.icms +
+        impostosMultimarcasData.icms +
+        impostosFranquiasData.icms +
+        impostosRevendaData.icms;
+      const pisReal =
+        impostosVarejoData.pis +
+        impostosMultimarcasData.pis +
+        impostosFranquiasData.pis +
+        impostosRevendaData.pis;
+      const cofinsReal =
+        impostosVarejoData.cofins +
+        impostosMultimarcasData.cofins +
+        impostosFranquiasData.cofins +
+        impostosRevendaData.cofins;
+      const totalImpostosReal = icmsReal + pisReal + cofinsReal;
+
+      console.log('💰 Impostos processados:', {
+        varejo: impostosVarejoData,
+        multimarcas: impostosMultimarcasData,
+        franquias: impostosFranquiasData,
+        revenda: impostosRevendaData,
         totais: {
           icms: icmsReal,
           pis: pisReal,
@@ -569,27 +622,35 @@ const DRE = () => {
       // Receita Líquida = Receita Bruta - (Devoluções + Descontos + Impostos)
       const receitaLiquidaVarejoCalc =
         totaisVarejo.totalBruto -
-        (totaisVarejo.totalDevolucoes + totaisVarejo.descontos + 0 + 0 + 0);
+        (totaisVarejo.totalDevolucoes +
+          totaisVarejo.descontos +
+          impostosVarejoData.icms +
+          impostosVarejoData.pis +
+          impostosVarejoData.cofins);
 
       const receitaLiquidaMultimarcasCalc =
         totaisMultimarcas.totalBruto -
         (totaisMultimarcas.totalDevolucoes +
           totaisMultimarcas.descontos +
-          0 +
-          0 +
-          0);
+          impostosMultimarcasData.icms +
+          impostosMultimarcasData.pis +
+          impostosMultimarcasData.cofins);
 
       const receitaLiquidaFranquiasCalc =
         totaisFranquias.totalBruto -
         (totaisFranquias.totalDevolucoes +
           totaisFranquias.descontos +
-          0 +
-          0 +
-          0);
+          impostosFranquiasData.icms +
+          impostosFranquiasData.pis +
+          impostosFranquiasData.cofins);
 
       const receitaLiquidaRevendaCalc =
         totaisRevenda.totalBruto -
-        (totaisRevenda.totalDevolucoes + totaisRevenda.descontos + 0 + 0 + 0);
+        (totaisRevenda.totalDevolucoes +
+          totaisRevenda.descontos +
+          impostosRevendaData.icms +
+          impostosRevendaData.pis +
+          impostosRevendaData.cofins);
 
       // CMV por canal (já calculado)
       const cmvVarejoCalc = totaisVarejo.totalCMV;

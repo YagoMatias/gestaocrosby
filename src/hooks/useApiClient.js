@@ -73,6 +73,15 @@ const useApiClient = () => {
               // Estrutura aninhada: { data: { data: [...] } }
               actualData = result.data.data;
               console.log('🔍 Detectada estrutura aninhada (data.data)');
+            } else if (
+              result.data.data &&
+              typeof result.data.data === 'object'
+            ) {
+              // Estrutura de objeto aninhado: { data: { data: { varejo: {...}, ... } } }
+              actualData = result.data.data;
+              console.log(
+                '🔍 Detectada estrutura de objeto aninhado (data.data como objeto)',
+              );
             } else if (Array.isArray(result.data)) {
               // Estrutura direta: { data: [...] }
               actualData = result.data;
@@ -93,15 +102,12 @@ const useApiClient = () => {
                 '🔍 Detectada estrutura de franquias (data.groupedData)',
               );
             } else if (
-              result.data.data &&
-              typeof result.data.data === 'object' &&
-              result.data.data.saldo !== undefined
+              typeof result.data === 'object' &&
+              !Array.isArray(result.data)
             ) {
-              // Estrutura de saldo-conta: { data: { data: { saldo: number } } }
-              actualData = result.data.data;
-              console.log(
-                '🔍 Detectada estrutura de saldo-conta (data.data.saldo)',
-              );
+              // Estrutura de objeto direto: { data: { varejo: {...}, ... } }
+              actualData = result.data;
+              console.log('🔍 Detectada estrutura de objeto direto');
             }
           }
 
@@ -387,6 +393,11 @@ const useApiClient = () => {
       // Retornar a resposta original sem transformação
       return result;
     },
+    // Rotas de impostos
+    impostosPorCanal: (params) =>
+      apiCall('/api/faturamento/impostos-por-canal', params),
+    impostosDetalhados: (params) =>
+      apiCall('/api/faturamento/impostos-detalhados', params),
   };
 
   const company = {
