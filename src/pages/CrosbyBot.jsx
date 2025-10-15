@@ -57,7 +57,7 @@ const CrosbyBot = () => {
     },
     { type: 'image', label: 'Foto', icon: Image, color: 'bg-purple-500' },
     { type: 'video', label: 'Vídeo', icon: VideoCamera, color: 'bg-red-500' },
-    { type: 'pdf', label: 'PDF', icon: FilePdf, color: 'bg-orange-500' },
+    // { type: 'pdf', label: 'PDF', icon: FilePdf, color: 'bg-orange-500' },
   ];
 
   // Adicionar nova mensagem
@@ -207,7 +207,12 @@ const CrosbyBot = () => {
             const columns = line.split(/[;,]/);
 
             if (columns.length >= 2) {
-              const telefone = columns[0].trim();
+              // Remover apóstrofo inicial (') que o Excel usa para forçar texto
+              let telefone = columns[0].trim();
+              if (telefone.startsWith("'")) {
+                telefone = telefone.substring(1);
+              }
+
               const nome = columns[1].trim();
 
               if (telefone && nome) {
@@ -499,6 +504,26 @@ const CrosbyBot = () => {
     }
   };
 
+  // Função para baixar o CSV de exemplo
+  const downloadExemploCSV = () => {
+    // Usando apóstrofo (') antes dos números para forçar Excel a tratar como texto
+    const csvContent =
+      "telefone;nome\n'11999887766660;João Silva\n'11988776655;Maria Santos\n'11977665544;Pedro Oliveira";
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'exemplo_para_envio_em_massa.csv');
+    link.style.visibility = 'hidden';
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="w-full h-full bg-gray-50">
       <div className="max-w-7xl mx-auto p-6 h-full flex flex-col">
@@ -585,7 +610,7 @@ const CrosbyBot = () => {
                     className="hidden"
                   />
                   <FileXls size={18} weight="fill" />
-                  Importar Excel/CSV
+                  Importar CSV
                 </label>
 
                 {/* Instruções */}
@@ -594,15 +619,25 @@ const CrosbyBot = () => {
                     📋 Formato do arquivo:
                   </p>
                   <p className="ml-2">
-                    • Coluna A: <strong>telefone</strong> (ex: 11999887766)
+                    • Coluna A: <strong>telefone</strong> (ex: '11999887766)
                   </p>
                   <p className="ml-2">
                     • Coluna B: <strong>nome</strong> (ex: João Silva)
                   </p>
-                  <p className="mt-1 text-indigo-600">
-                    💡 Aceita arquivos CSV ou Excel
+                  <p className="mt-1 text-orange-600 font-semibold">
+                    ⚠️ No Excel, coloque <strong>'</strong> antes do telefone!
                   </p>
+                  <p className="mt-1 text-indigo-600">💡 Aceita arquivos CSV</p>
                 </div>
+
+                {/* Botão Download Exemplo */}
+                <button
+                  onClick={downloadExemploCSV}
+                  className="w-full mt-2 flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold text-xs shadow-md transition-all duration-200 hover:scale-105"
+                >
+                  <FileXls size={16} weight="fill" />
+                  Baixar CSV de Exemplo
+                </button>
 
                 {/* Lista de Contatos */}
                 {contatos.length > 0 && (
