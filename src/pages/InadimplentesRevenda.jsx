@@ -67,9 +67,7 @@ const InadimplentesRevenda = () => {
       if (filtroDataInicial) params.dt_inicio = filtroDataInicial;
       if (filtroDataFinal) params.dt_fim = filtroDataFinal;
 
-      const response = await apiClient.financial.inadimplentesMultimarcas(
-        params,
-      );
+      const response = await apiClient.financial.inadimplentesRevenda(params);
 
       let dadosRecebidos = [];
       if (response?.success && response?.data) {

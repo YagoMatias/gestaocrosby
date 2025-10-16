@@ -69,6 +69,66 @@ const Dashboard = () => {
       description: 'Painel de ações dos cartões',
       url: 'https://app.clickup.com/9011116713/v/db/8chnen9-886151',
     },
+    {
+      id: 8,
+      title: 'RELATÓRIO DE VENDAS PROMO',
+      description: 'Relatório de vendas promocionais',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiMjFjZTZlZjAtMmViYy00NTNlLWJiNWItM2I4MzE1OTQ1ZjgzIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9',
+    },
+    {
+      id: 9,
+      title: 'FATURAMENTO REVENDA',
+      description: 'Faturamento Revenda',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiYmM1ODkyNWEtMzJkZC00YjFmLWE5YmEtMDQ4MzkxOGFkNGU5IiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9',
+    },
+    {
+      id: 10,
+      title: 'CAC B2C',
+      description: 'CAC B2C',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiYTMyMmExMWEtMGYzZS00MTNkLWIyMGYtMDg1NjZmZjc0OTQ3IiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9',
+    },
+    {
+      id: 11,
+      title: 'REATIVACAO CASHBACK',
+      description: 'Relatório de reativação por cashback',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiYzE4NzZjZTEtYzRhNS00Y2I0LWEwYzEtMmI1ZDU3MThmNGQyIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9',
+    },
+    {
+      id: 12,
+      title: 'TIPO CLIENTE',
+      description: 'Análise por tipo de cliente',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiNjA1YjhkOGItYTgxYi00OGIzLTk4MDEtNTUyNzE0MjE2N2ZhIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9',
+    },
+    {
+      id: 13,
+      title: 'COHORT',
+      description: 'Análise de cohort',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiZDcxODA0OTMtYWY3ZC00MzY2LWFmODAtZGRiMzY4MTYwMzE3IiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9',
+    },
+    {
+      id: 14,
+      title: 'CRONOGRAMA SHOWROOM',
+      description: 'Cronograma do showroom',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiYmI2NDQ0MTQtMjdiNy00M2MxLWFmYjYtYTE5YzY0N2YwMThmIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9',
+    },
+    {
+      id: 15,
+      title: 'RH',
+      description: 'Relatórios de RH',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiNDJmMmMyY2MtNDM4ZC00MzQ4LWI2ZTQtNWYwMjc0Y2QzYzFmIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9',
+    },
+    {
+      id: 16,
+      title: 'ESTOQUE FILIAIS E LV',
+      description: 'Estoque filiais e LV',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiYmY4MGQxMzItNDJiNi00MDQ3LWJkMjAtZjJlZTM2OTRiYTdlIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9',
+    },
+    {
+      id: 17,
+      title: 'DASHBOARD EXPEDIÇÃO',
+      description: 'Dashboard de expedição',
+      url: 'https://app.powerbi.com/view?r=eyJrIjoiYmY4MGQxMzItNDJiNi00MDQ3LWJkMjAtZjJlZTM2OTRiYTdlIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9',
+    },
   ];
 
   // Função para formatar valores monetários
