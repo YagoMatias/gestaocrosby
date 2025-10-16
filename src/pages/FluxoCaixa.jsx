@@ -3,21 +3,30 @@ import FiltroEmpresa from '../components/FiltroEmpresa';
 import FiltroFornecedor from '../components/FiltroFornecedor';
 import FiltroCentroCusto from '../components/FiltroCentroCusto';
 import FiltroDespesas from '../components/FiltroDespesas';
-import DropdownContas from '../components/DropdownContas';
-import { contas } from "../utils/contas";
 import useApiClient from '../hooks/useApiClient';
 import PageTitle from '../components/ui/PageTitle';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/cards';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '../components/ui/cards';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '../components/ui/tooltip';
 
 import ModalDetalhesConta from '../components/ModalDetalhesConta';
 import Modal from '../components/ui/Modal';
 import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
 
-import { 
-  Receipt, 
-  Calendar, 
-  Funnel, 
+import {
+  Receipt,
+  Calendar,
+  Funnel,
   Spinner,
   CurrencyDollar,
   Clock,
@@ -29,7 +38,7 @@ import {
   CaretRight,
   CaretUp,
   CaretDown,
-  TrendUp
+  TrendUp,
 } from '@phosphor-icons/react';
 
 const FluxoCaixa = () => {
@@ -43,7 +52,7 @@ const FluxoCaixa = () => {
       const onlyDate = raw.slice(0, 10); // YYYY-MM-DD
       const [y, m, d] = onlyDate.split('-');
       if (!y || !m || !d) return '';
-      return `${d.padStart(2,'0')}/${m.padStart(2,'0')}/${y}`;
+      return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
     } catch (e) {
       return '';
     }
@@ -55,10 +64,9 @@ const FluxoCaixa = () => {
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
 
-
   const [duplicata, setDuplicata] = useState('');
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
-  
+
   // Estados para filtros dropdown
   const [dadosFornecedor, setDadosFornecedor] = useState([]);
   const [fornecedoresSelecionados, setFornecedoresSelecionados] = useState([]);
@@ -66,40 +74,38 @@ const FluxoCaixa = () => {
   const [centrosCustoSelecionados, setCentrosCustoSelecionados] = useState([]);
   const [dadosDespesa, setDadosDespesa] = useState([]);
   const [despesasSelecionadas, setDespesasSelecionadas] = useState([]);
-  
+
   // Empresas pré-selecionadas
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
-  
+
   // Estados para o modal de observações
   const [modalAberto, setModalAberto] = useState(false);
   const [dadosModal, setDadosModal] = useState(null);
-  
+
   // Estados para o modal de detalhes da conta
-  const [modalDetalhes, setModalDetalhes] = useState({ isOpen: false, conta: null });
-  
+  const [modalDetalhes, setModalDetalhes] = useState({
+    isOpen: false,
+    conta: null,
+  });
+
   // Estados para paginação
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [itensPorPagina] = useState(30);
-  
+
   // Estados para Saídas (FluxoCaixa-Saida)
   const [dadosSaida, setDadosSaida] = useState([]);
   const [loadingSaida, setLoadingSaida] = useState(false);
   const [dadosSaidaCarregados, setDadosSaidaCarregados] = useState(false);
   const [mostrarTabelaSaida, setMostrarTabelaSaida] = useState(false);
-  const [sortSaidaConfig, setSortSaidaConfig] = useState({ key: 'dt_liq', direction: 'desc' });
+  const [sortSaidaConfig, setSortSaidaConfig] = useState({
+    key: 'dt_liq',
+    direction: 'desc',
+  });
 
   // Estados para modais de detalhamento
   const [modalDespesasOpen, setModalDespesasOpen] = useState(false);
   const [modalContasReceberOpen, setModalContasReceberOpen] = useState(false);
-  
-  // Estados para Saldo Bancário
-  const [dadosSaldoBancario, setDadosSaldoBancario] = useState([]);
-  const [dadosTotvsSaldo, setDadosTotvsSaldo] = useState([]);
-  const [loadingSaldoBancario, setLoadingSaldoBancario] = useState(false);
-  const [erroSaldoBancario, setErroSaldoBancario] = useState('');
-  const [contasSelecionadasSaldo, setContasSelecionadasSaldo] = useState([]);
-  const [dataFinalSaldo, setDataFinalSaldo] = useState('');
-  
+
   // Estados para Contas a Receber
   const [dadosContasReceber, setDadosContasReceber] = useState([]);
   const [loadingContasReceber, setLoadingContasReceber] = useState(false);
@@ -107,10 +113,8 @@ const FluxoCaixa = () => {
   // Estados para ordenação
   const [sortConfig, setSortConfig] = useState({
     key: 'dt_liq',
-    direction: 'asc'
+    direction: 'asc',
   });
-
-
 
   // Função para lidar com seleção de fornecedores
   const handleSelectFornecedores = (fornecedores) => {
@@ -127,14 +131,8 @@ const FluxoCaixa = () => {
     setDespesasSelecionadas([...despesas]); // Garantir que é um novo array
   };
 
-
-
-
-
   // Estado para controlar exibição da tabela de despesas
   const [mostrarTabela, setMostrarTabela] = useState(false);
-
-
 
   // Estados para filtro mensal
   const [filtroMensal, setFiltroMensal] = useState('ANO'); // 'ANO', 'JAN', 'FEV', etc.
@@ -202,9 +200,9 @@ const FluxoCaixa = () => {
         position: relative;
       }
     `;
-    
+
     document.head.appendChild(styleElement);
-    
+
     return () => {
       if (styleElement && styleElement.parentNode) {
         styleElement.parentNode.removeChild(styleElement);
@@ -214,7 +212,7 @@ const FluxoCaixa = () => {
 
   // Funções para seleção de linhas
   const toggleLinhaSelecionada = (index) => {
-    setLinhasSelecionadas(prev => {
+    setLinhasSelecionadas((prev) => {
       const novoSet = new Set(prev);
       if (novoSet.has(index)) {
         novoSet.delete(index);
@@ -236,7 +234,9 @@ const FluxoCaixa = () => {
 
   const selecionarTodasLinhas = () => {
     const dadosPagina = dadosOrdenados.slice(indiceInicial, indiceFinal);
-    const todasLinhas = new Set(dadosPagina.map((_, index) => indiceInicial + index));
+    const todasLinhas = new Set(
+      dadosPagina.map((_, index) => indiceInicial + index),
+    );
     setLinhasSelecionadas(todasLinhas);
   };
 
@@ -268,59 +268,61 @@ const FluxoCaixa = () => {
     if (sortConfig.key !== key) {
       return <CaretDown size={12} className="ml-1 opacity-50" />;
     }
-    return sortConfig.direction === 'asc' 
-      ? <CaretUp size={12} className="ml-1" />
-      : <CaretDown size={12} className="ml-1" />;
+    return sortConfig.direction === 'asc' ? (
+      <CaretUp size={12} className="ml-1" />
+    ) : (
+      <CaretDown size={12} className="ml-1" />
+    );
   };
 
   const buscarDados = async (inicio = dataInicio, fim = dataFim) => {
     if (!inicio || !fim) return;
-    
+
     if (empresasSelecionadas.length === 0) {
       alert('Selecione pelo menos uma empresa para consultar!');
       return;
     }
-    
+
     setLoading(true);
     setPaginaAtual(1); // Reset para primeira página ao buscar novos dados
     try {
       console.log('🔍 Iniciando busca de contas a pagar...');
       console.log('📅 Período (Data Liquidação):', { inicio, fim });
       console.log('🏢 Empresas selecionadas:', empresasSelecionadas);
-      
+
       // Buscar dados usando a rota contas-pagar
       const params = {
         dt_inicio: inicio,
-        dt_fim: fim
+        dt_fim: fim,
       };
 
       // Adicionar códigos das empresas selecionadas como array
       const codigosEmpresas = empresasSelecionadas
-        .filter(empresa => empresa.cd_empresa)
-        .map(empresa => empresa.cd_empresa);
-      
+        .filter((empresa) => empresa.cd_empresa)
+        .map((empresa) => empresa.cd_empresa);
+
       if (codigosEmpresas.length > 0) {
         params.cd_empresa = codigosEmpresas;
       }
-      
+
       console.log('📋 Parâmetros da requisição:', params);
       console.log('🏢 Códigos das empresas:', codigosEmpresas);
-      
+
       const result = await apiClient.financial.contasPagar(params);
-      
+
       let todosOsDados = [];
-      
+
       if (result.success) {
         // Nova estrutura de resposta do backend refatorado
         // Aceitar tanto array direto (result.data) quanto objeto aninhado (result.data.data)
         const rawData = result.data;
         const dadosArray = Array.isArray(rawData)
           ? rawData
-          : (rawData && Array.isArray(rawData.data))
-            ? rawData.data
-            : [];
-        const responseData = Array.isArray(rawData) ? {} : (rawData || {});
-        
+          : rawData && Array.isArray(rawData.data)
+          ? rawData.data
+          : [];
+        const responseData = Array.isArray(rawData) ? {} : rawData || {};
+
         console.log('✅ Dados obtidos com rota contas-pagar:', {
           total: dadosArray.length,
           amostra: dadosArray.slice(0, 2),
@@ -328,48 +330,52 @@ const FluxoCaixa = () => {
           totais: responseData.totals,
           periodo: responseData.periodo,
           performance: responseData.performance,
-          queryType: responseData.queryType
+          queryType: responseData.queryType,
         });
-        
+
         // Armazenar informações adicionais do backend
         if (responseData.totals) {
           console.log('💰 Totais do período:', responseData.totals);
         }
-        
+
         if (responseData.performance) {
           console.log('⚡ Performance da query:', responseData.performance);
         }
-        
+
         todosOsDados = dadosArray;
       } else {
-        console.error('❌ Falha ao buscar dados de contas a pagar:', result.message);
+        console.error(
+          '❌ Falha ao buscar dados de contas a pagar:',
+          result.message,
+        );
         setDados([]);
         setDadosCarregados(false);
         return;
       }
-      
+
       console.log('📊 Resultado final:', {
         totalRegistros: todosOsDados.length,
         empresas: codigosEmpresas.length,
-        primeirosRegistros: todosOsDados.slice(0, 3)
+        primeirosRegistros: todosOsDados.slice(0, 3),
       });
-      
+
       // Carregar dados de fornecedor, centro de custo e despesas
-      const [dadosFornecedor, dadosCentroCusto, dadosDespesa] = await Promise.all([
-        carregarDadosFornecedor(todosOsDados),
-        carregarDadosCentroCusto(todosOsDados),
-        carregarDadosDespesas(todosOsDados)
-      ]);
-      
+      const [dadosFornecedor, dadosCentroCusto, dadosDespesa] =
+        await Promise.all([
+          carregarDadosFornecedor(todosOsDados),
+          carregarDadosCentroCusto(todosOsDados),
+          carregarDadosDespesas(todosOsDados),
+        ]);
+
       // Criar mapas para buscar rapidamente por código (normalizando como string)
       const fornecedorMap = new Map(
-        (dadosFornecedor || []).map((f) => [String(f.cd_fornecedor), f])
+        (dadosFornecedor || []).map((f) => [String(f.cd_fornecedor), f]),
       );
       const centroCustoMap = new Map(
-        (dadosCentroCusto || []).map((c) => [String(c.cd_ccusto), c])
+        (dadosCentroCusto || []).map((c) => [String(c.cd_ccusto), c]),
       );
       const despesaMap = new Map(
-        (dadosDespesa || []).map((d) => [String(d.cd_despesaitem), d])
+        (dadosDespesa || []).map((d) => [String(d.cd_despesaitem), d]),
       );
 
       console.log('🗺️ Map sizes:', {
@@ -378,11 +384,11 @@ const FluxoCaixa = () => {
         despesas: despesaMap.size,
         amostraFornecedor: Array.from(fornecedorMap.entries()).slice(0, 2),
         amostraCentroCusto: Array.from(centroCustoMap.entries()).slice(0, 2),
-        amostraDespesa: Array.from(despesaMap.entries()).slice(0, 2)
+        amostraDespesa: Array.from(despesaMap.entries()).slice(0, 2),
       });
 
       // Mapear os dados de fornecedor, centro de custo e despesas aos dados principais
-      const dadosCompletos = todosOsDados.map(item => {
+      const dadosCompletos = todosOsDados.map((item) => {
         const chaveFornecedor = String(item.cd_fornecedor ?? '');
         const chaveCentroCusto = String(item.cd_ccusto ?? '');
         const chaveDespesa = String(item.cd_despesaitem ?? '');
@@ -395,27 +401,30 @@ const FluxoCaixa = () => {
           ...item,
           nm_fornecedor: fornecedor?.nm_fornecedor || item.nm_fornecedor || '',
           ds_ccusto: centroCusto?.ds_ccusto || item.ds_ccusto || '',
-          ds_despesaitem: despesa?.ds_despesaitem || item.ds_despesaitem || ''
+          ds_despesaitem: despesa?.ds_despesaitem || item.ds_despesaitem || '',
         };
         return resultado;
       });
 
-      console.log('🧪 Amostra mapeada:', dadosCompletos.slice(0, 3).map(x => ({
-        cd_fornecedor: x.cd_fornecedor,
-        nm_fornecedor: x.nm_fornecedor,
-        cd_ccusto: x.cd_ccusto,
-        ds_ccusto: x.ds_ccusto,
-        cd_despesaitem: x.cd_despesaitem,
-        ds_despesaitem: x.ds_despesaitem
-      })));
-      
+      console.log(
+        '🧪 Amostra mapeada:',
+        dadosCompletos.slice(0, 3).map((x) => ({
+          cd_fornecedor: x.cd_fornecedor,
+          nm_fornecedor: x.nm_fornecedor,
+          cd_ccusto: x.cd_ccusto,
+          ds_ccusto: x.ds_ccusto,
+          cd_despesaitem: x.cd_despesaitem,
+          ds_despesaitem: x.ds_despesaitem,
+        })),
+      );
+
       console.log('✅ Dados mapeados com sucesso:', {
         total: dadosCompletos.length,
         fornecedores_encontrados: dadosFornecedor.length,
         centros_custo_encontrados: dadosCentroCusto.length,
-        despesas_encontradas: dadosDespesa.length
+        despesas_encontradas: dadosDespesa.length,
       });
-      
+
       setDados(dadosCompletos);
       setDadosCarregados(true);
     } catch (err) {
@@ -431,45 +440,56 @@ const FluxoCaixa = () => {
   const carregarDadosFornecedor = async (dadosPrincipais) => {
     try {
       console.log('🔍 Carregando dados de fornecedor...');
-      
+
       // Extrair códigos únicos de fornecedor dos dados principais
-      const codigosFornecedor = [...new Set(dadosPrincipais.map(item => item.cd_fornecedor).filter(Boolean))];
-      
+      const codigosFornecedor = [
+        ...new Set(
+          dadosPrincipais.map((item) => item.cd_fornecedor).filter(Boolean),
+        ),
+      ];
+
       console.log('🔍 Códigos de fornecedor extraídos:', {
         total: codigosFornecedor.length,
-        amostra: codigosFornecedor.slice(0, 5)
+        amostra: codigosFornecedor.slice(0, 5),
       });
-      
+
       if (codigosFornecedor.length === 0) {
-        console.log('⚠️ Nenhum código de fornecedor encontrado, retornando array vazio');
+        console.log(
+          '⚠️ Nenhum código de fornecedor encontrado, retornando array vazio',
+        );
         setDadosFornecedor([]);
         return [];
       }
-      
-      const resultFornecedor = await apiClient.financial.fornecedor({ cd_fornecedor: codigosFornecedor });
-      
+
+      const resultFornecedor = await apiClient.financial.fornecedor({
+        cd_fornecedor: codigosFornecedor,
+      });
+
       let dadosFornecedorArray = [];
-      
+
       if (resultFornecedor.success) {
         // Aceitar array direto ou estrutura aninhada
         const rawData = resultFornecedor.data;
         dadosFornecedorArray = Array.isArray(rawData)
           ? rawData
-          : (rawData && Array.isArray(rawData.data))
-            ? rawData.data
-            : [];
-        const responseData = Array.isArray(rawData) ? {} : (rawData || {});
+          : rawData && Array.isArray(rawData.data)
+          ? rawData.data
+          : [];
+        const responseData = Array.isArray(rawData) ? {} : rawData || {};
         console.log('✅ Dados de fornecedor carregados:', {
           total: dadosFornecedorArray.length,
           amostra: dadosFornecedorArray.slice(0, 2),
           fornecedores_buscados: responseData.fornecedores_buscados,
-          fornecedores_encontrados: responseData.fornecedores_encontrados
+          fornecedores_encontrados: responseData.fornecedores_encontrados,
         });
-        
+
         setDadosFornecedor(dadosFornecedorArray);
         return dadosFornecedorArray;
       } else {
-        console.warn('⚠️ Falha ao carregar dados de fornecedor:', resultFornecedor.message);
+        console.warn(
+          '⚠️ Falha ao carregar dados de fornecedor:',
+          resultFornecedor.message,
+        );
         setDadosFornecedor([]);
         return [];
       }
@@ -484,108 +504,132 @@ const FluxoCaixa = () => {
   const carregarDadosCentroCusto = async (dadosPrincipais) => {
     try {
       console.log('🔍 Carregando dados de centro de custo...');
-      
+
       // Extrair códigos únicos de centro de custo dos dados principais
-      const codigosCentroCusto = [...new Set(dadosPrincipais.map(item => item.cd_ccusto).filter(Boolean))];
-      
+      const codigosCentroCusto = [
+        ...new Set(
+          dadosPrincipais.map((item) => item.cd_ccusto).filter(Boolean),
+        ),
+      ];
+
       console.log('🔍 Códigos de centro de custo extraídos:', {
         total: codigosCentroCusto.length,
-        amostra: codigosCentroCusto.slice(0, 5)
+        amostra: codigosCentroCusto.slice(0, 5),
       });
-      
+
       if (codigosCentroCusto.length === 0) {
-        console.log('⚠️ Nenhum código de centro de custo encontrado, retornando array vazio');
+        console.log(
+          '⚠️ Nenhum código de centro de custo encontrado, retornando array vazio',
+        );
         setDadosCentroCusto([]);
         return [];
       }
-      
-      const resultCentroCusto = await apiClient.financial.centrocusto({ cd_ccusto: codigosCentroCusto });
-      
+
+      const resultCentroCusto = await apiClient.financial.centrocusto({
+        cd_ccusto: codigosCentroCusto,
+      });
+
       let dadosCentroCustoArray = [];
-      
+
       if (resultCentroCusto.success) {
         // Aceitar array direto ou estrutura aninhada
         const rawData = resultCentroCusto.data;
         dadosCentroCustoArray = Array.isArray(rawData)
           ? rawData
-          : (rawData && Array.isArray(rawData.data))
-            ? rawData.data
-            : [];
+          : rawData && Array.isArray(rawData.data)
+          ? rawData.data
+          : [];
 
-        const responseData = Array.isArray(rawData) ? {} : (rawData || {});
+        const responseData = Array.isArray(rawData) ? {} : rawData || {};
         console.log('✅ Dados de centro de custo carregados:', {
           total: dadosCentroCustoArray.length,
           amostra: dadosCentroCustoArray.slice(0, 2),
           centros_custo_buscados: responseData.centros_custo_buscados,
-          centros_custo_encontrados: responseData.centros_custo_encontrados
+          centros_custo_encontrados: responseData.centros_custo_encontrados,
         });
-        
+
         setDadosCentroCusto(dadosCentroCustoArray);
         return dadosCentroCustoArray;
-            } else {
-        console.warn('⚠️ Falha ao carregar dados de centro de custo:', resultCentroCusto.message);
+      } else {
+        console.warn(
+          '⚠️ Falha ao carregar dados de centro de custo:',
+          resultCentroCusto.message,
+        );
         setDadosCentroCusto([]);
-              return [];
-            }
-          } catch (err) {
+        return [];
+      }
+    } catch (err) {
       console.error('❌ Erro ao carregar dados de centro de custo:', err);
       setDadosCentroCusto([]);
-            return [];
-          }
+      return [];
+    }
   };
 
   // Função para carregar dados de despesas
   const carregarDadosDespesas = async (dadosPrincipais) => {
     try {
       console.log('🔍 Carregando dados de despesas...');
-      
+
       // Extrair códigos únicos de despesa dos dados principais
-      const codigosDespesa = [...new Set(dadosPrincipais.map(item => item.cd_despesaitem).filter(Boolean))];
-      
+      const codigosDespesa = [
+        ...new Set(
+          dadosPrincipais.map((item) => item.cd_despesaitem).filter(Boolean),
+        ),
+      ];
+
       console.log('🔍 Códigos de despesa extraídos:', {
         total: codigosDespesa.length,
-        amostra: codigosDespesa.slice(0, 5)
+        amostra: codigosDespesa.slice(0, 5),
       });
-      
+
       if (codigosDespesa.length === 0) {
-        console.log('⚠️ Nenhum código de despesa encontrado, retornando array vazio');
+        console.log(
+          '⚠️ Nenhum código de despesa encontrado, retornando array vazio',
+        );
         setDadosDespesa([]);
         return [];
       }
-      
+
       // Compatibilidade: tentar /despesa e, se disponível, fallback para /despesas
-      let resultDespesas = await apiClient.financial.despesa({ cd_despesaitem: codigosDespesa });
+      let resultDespesas = await apiClient.financial.despesa({
+        cd_despesaitem: codigosDespesa,
+      });
       if (!resultDespesas?.success && apiClient.financial.despesas) {
         try {
-          resultDespesas = await apiClient.financial.despesas({ cd_despesaitem: codigosDespesa });
+          resultDespesas = await apiClient.financial.despesas({
+            cd_despesaitem: codigosDespesa,
+          });
         } catch (e) {
           // manter o primeiro resultado
         }
       }
-      
+
       let dadosDespesasArray = [];
-      
+
       if (resultDespesas.success) {
         // Aceitar array direto ou estrutura aninhada
         const rawData = resultDespesas.data;
         dadosDespesasArray = Array.isArray(rawData)
           ? rawData
-          : (rawData && Array.isArray(rawData.data))
-            ? rawData.data
-            : [];
+          : rawData && Array.isArray(rawData.data)
+          ? rawData.data
+          : [];
 
-        const responseData = Array.isArray(rawData) ? {} : (rawData || {});
+        const responseData = Array.isArray(rawData) ? {} : rawData || {};
         console.log('✅ Dados de despesas carregados:', {
           total: dadosDespesasArray.length,
           amostra: dadosDespesasArray.slice(0, 2),
           despesas_buscadas: responseData.despesas_buscadas,
-          despesas_encontradas: responseData.despesas_encontradas
+          despesas_encontradas: responseData.despesas_encontradas,
         });
-        
+
         setDadosDespesa(dadosDespesasArray);
         return dadosDespesasArray;
       } else {
-        console.warn('⚠️ Falha ao carregar dados de despesas:', resultDespesas.message);
+        console.warn(
+          '⚠️ Falha ao carregar dados de despesas:',
+          resultDespesas.message,
+        );
         setDadosDespesa([]);
         return [];
       }
@@ -601,21 +645,21 @@ const FluxoCaixa = () => {
     if (item.dt_liq) {
       return 'Pago';
     }
-    
+
     // Se tem vencimento, verificar se está vencido
     if (item.dt_vencimento) {
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
       const vencimento = new Date(item.dt_vencimento);
       vencimento.setHours(0, 0, 0, 0);
-      
+
       if (vencimento < hoje) {
         return 'Vencido';
       } else {
         return 'A Vencer';
       }
     }
-    
+
     // Verificar tp_situacao se disponível
     if (item.tp_situacao) {
       switch (item.tp_situacao.toString()) {
@@ -632,7 +676,7 @@ const FluxoCaixa = () => {
           return 'Pendente';
       }
     }
-    
+
     return 'Pendente';
   };
 
@@ -677,16 +721,13 @@ const FluxoCaixa = () => {
     const hoje = new Date();
     const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
     const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
-    
+
     setDataInicio(primeiroDia.toISOString().split('T')[0]);
     setDataFim(ultimoDia.toISOString().split('T')[0]);
-    setDataFinalSaldo(hoje.toISOString().split('T')[0]); // Data atual para saldo bancário
   }, []);
 
   // Executar preparação dos dados quando dados, situação ou status mudarem
-  useEffect(() => {
-
-  }, [dados]);
+  useEffect(() => {}, [dados]);
 
   // Função para lidar com seleção de empresas
   const handleSelectEmpresas = (empresas) => {
@@ -698,10 +739,9 @@ const FluxoCaixa = () => {
     buscarDados();
     buscarSaidas();
     buscarContasReceber();
-    buscarSaldoBancario();
   };
 
-  // Buscar dados de Saída (por liquidação) usando rota fluxocaixa-saida
+  // Buscar dados de Saída (por emissão) usando rota contas-pagar-emissao
   const buscarSaidas = async (inicio = dataInicio, fim = dataFim) => {
     if (!inicio || !fim) return;
     if (empresasSelecionadas.length === 0) {
@@ -710,55 +750,91 @@ const FluxoCaixa = () => {
     }
     try {
       setLoadingSaida(true);
-      
-      // Buscar dados de TODAS as empresas selecionadas
-      const todasEmpresas = empresasSelecionadas.filter(e => e.cd_empresa);
-      if (todasEmpresas.length === 0) {
-        alert('Empresas selecionadas inválidas.');
-        setLoadingSaida(false);
-        return;
-      }
-      
-      // Fazer requisições para todas as empresas em paralelo
-      const promises = todasEmpresas.map(async (empresa) => {
-        const params = new URLSearchParams();
-        params.append('dt_inicio', inicio);
-        params.append('dt_fim', fim);
-        params.append('cd_empresa', empresa.cd_empresa);
-        
-        const url = `https://apigestaocrosby-bw2v.onrender.com/api/financial/fluxocaixa-saida?${params.toString()}`;
-        const res = await fetch(url);
-        
-        if (!res.ok) {
-          console.warn(`⚠️ Erro HTTP em fluxocaixa-saida para empresa ${empresa.cd_empresa}:`, res.status, res.statusText);
+
+      console.log('🔍 Iniciando busca de contas a pagar (emissão)...');
+      console.log('📅 Período (Data Emissão):', { inicio, fim });
+      console.log('🏢 Empresas selecionadas:', empresasSelecionadas);
+
+      // Fazer requisições separadas para cada empresa
+      const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
+        try {
+          const res = await fetch(
+            `https://apigestaocrosby-bw2v.onrender.com/api/financial/contas-pagar-emissao?dt_inicio=${inicio}&dt_fim=${fim}&cd_empresa=${empresa.cd_empresa}`,
+          );
+
+          if (!res.ok) {
+            console.warn(
+              `⚠️ Erro ao buscar empresa ${empresa.cd_empresa}: HTTP ${res.status}`,
+            );
+            return [];
+          }
+
+          const data = await res.json();
+
+          let dadosArray = [];
+          if (Array.isArray(data)) {
+            dadosArray = data;
+          } else if (data && typeof data === 'object') {
+            if (data.dados && Array.isArray(data.dados)) {
+              dadosArray = data.dados;
+            } else if (data.data && Array.isArray(data.data)) {
+              dadosArray = data.data;
+            } else if (
+              data.data &&
+              data.data.data &&
+              Array.isArray(data.data.data)
+            ) {
+              dadosArray = data.data.data;
+            } else if (data.result && Array.isArray(data.result)) {
+              dadosArray = data.result;
+            } else {
+              dadosArray = Object.values(data).filter(Array.isArray).flat();
+            }
+          }
+
+          return dadosArray.filter((item) => item && typeof item === 'object');
+        } catch (err) {
+          console.warn(`⚠️ Erro ao buscar empresa ${empresa.cd_empresa}:`, err);
           return [];
         }
-        
-        const body = await res.json();
-        // Aceitar tanto array direto quanto estrutura aninhada { data: { data: [...] } }
-        let lista = [];
-        if (Array.isArray(body)) lista = body;
-        else if (Array.isArray(body?.data)) lista = body.data;
-        else if (Array.isArray(body?.data?.data)) lista = body.data.data;
-        else if (Array.isArray(body?.result)) lista = body.result;
-        
-        return lista || [];
       });
-      
-      // Aguardar todas as requisições e combinar os resultados
-      const resultados = await Promise.all(promises);
-      const todasSaidas = resultados.flat();
-      
-      // Aplicar filtro para mostrar apenas contas com situação NORMAL
-      const todasSaidasFiltradas = todasSaidas.filter(item => item.tp_situacao === 'N');
-      
-      console.log(`📊 Saídas carregadas: ${todasSaidas.length} registros de ${todasEmpresas.length} empresa(s)`);
-      console.log(`📊 Saídas filtradas (apenas NORMAL): ${todasSaidasFiltradas.length} registros`);
-      
-      setDadosSaida(todasSaidasFiltradas);
+
+      const resultados = await Promise.all(todasAsPromises);
+      let todosOsDados = resultados.flat();
+
+      // Aplicar filtro para mostrar apenas contas com situação NORMAL e que foram pagas (dt_liq)
+      todosOsDados = todosOsDados.filter(
+        (item) => item.tp_situacao === 'N' && item.dt_liq,
+      );
+
+      // Carregar nomes de fornecedor e mapear para os itens de saída
+      try {
+        const fornecedoresArray = await carregarDadosFornecedor(todosOsDados);
+        const fornecedorMap = new Map(
+          (fornecedoresArray || []).map((f) => [String(f.cd_fornecedor), f]),
+        );
+
+        todosOsDados = todosOsDados.map((item) => {
+          const key = String(item.cd_fornecedor);
+          const f = fornecedorMap.get(key);
+          return {
+            ...item,
+            nm_fornecedor: f?.nm_fornecedor || item.nm_fornecedor || 'N/A',
+          };
+        });
+      } catch (err) {
+        console.warn('⚠️ Não foi possível carregar nomes de fornecedor:', err);
+      }
+
+      console.log('📊 Saídas carregadas:', {
+        totalRegistros: todosOsDados.length,
+        empresas: empresasSelecionadas.length,
+      });
+
+      setDadosSaida(todosOsDados);
       setDadosSaidaCarregados(true);
     } catch (err) {
-      console.error('❌ Erro ao buscar fluxocaixa-saida:', err);
+      console.error('❌ Erro ao buscar contas-pagar-emissao:', err);
       setDadosSaida([]);
       setDadosSaidaCarregados(false);
     } finally {
@@ -766,7 +842,7 @@ const FluxoCaixa = () => {
     }
   };
 
-  // Buscar dados de Contas a Receber (por liquidação) usando rota fluxocaixa-entradas
+  // Buscar dados de Contas a Receber (por emissão) usando rota contas-receberemiss
   const buscarContasReceber = async (inicio = dataInicio, fim = dataFim) => {
     if (!inicio || !fim) return;
     if (empresasSelecionadas.length === 0) {
@@ -775,63 +851,82 @@ const FluxoCaixa = () => {
     }
     try {
       setLoadingContasReceber(true);
-      
-      // Buscar dados de TODAS as empresas selecionadas
-      const todasEmpresas = empresasSelecionadas.filter(e => e.cd_empresa);
-      if (todasEmpresas.length === 0) {
-        alert('Empresas selecionadas inválidas.');
-        setLoadingContasReceber(false);
-        return;
-      }
-      
-      // Fazer requisições para todas as empresas em paralelo
-      const promises = todasEmpresas.map(async (empresa) => {
-        const params = new URLSearchParams();
-        params.append('dt_inicio', inicio);
-        params.append('dt_fim', fim);
-        params.append('cd_empresa', empresa.cd_empresa);
-        
-        const url = `https://apigestaocrosby-bw2v.onrender.com/api/financial/fluxocaixa-entradas?${params.toString()}`;
-        const res = await fetch(url);
-        
-        if (!res.ok) {
-          console.warn(`⚠️ Erro HTTP em fluxocaixa-entradas para empresa ${empresa.cd_empresa}:`, res.status, res.statusText);
+
+      console.log('🔍 Iniciando busca de contas a receber (emissão)...');
+      console.log('📅 Período (Data Emissão):', { inicio, fim });
+      console.log('🏢 Empresas selecionadas:', empresasSelecionadas);
+
+      // Fazer requisições separadas para cada empresa
+      const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
+        try {
+          const res = await fetch(
+            `https://apigestaocrosby-bw2v.onrender.com/api/financial/contas-receberemiss?dt_inicio=${inicio}&dt_fim=${fim}&cd_empresa=${empresa.cd_empresa}`,
+          );
+
+          if (!res.ok) {
+            console.warn(
+              `⚠️ Erro ao buscar empresa ${empresa.cd_empresa}: HTTP ${res.status}`,
+            );
+            return [];
+          }
+
+          const data = await res.json();
+
+          let dadosArray = [];
+          if (Array.isArray(data)) {
+            dadosArray = data;
+          } else if (data && typeof data === 'object') {
+            if (data.dados && Array.isArray(data.dados)) {
+              dadosArray = data.dados;
+            } else if (data.data && Array.isArray(data.data)) {
+              dadosArray = data.data;
+            } else if (
+              data.data &&
+              data.data.data &&
+              Array.isArray(data.data.data)
+            ) {
+              dadosArray = data.data.data;
+            } else if (data.result && Array.isArray(data.result)) {
+              dadosArray = data.result;
+            } else {
+              dadosArray = Object.values(data).filter(Array.isArray).flat();
+            }
+          }
+
+          return dadosArray.filter((item) => item && typeof item === 'object');
+        } catch (err) {
+          console.warn(`⚠️ Erro ao buscar empresa ${empresa.cd_empresa}:`, err);
           return [];
         }
-        
-        const body = await res.json();
-        // Aceitar tanto array direto quanto estrutura aninhada { data: { data: [...] } }
-        let lista = [];
-        if (Array.isArray(body)) lista = body;
-        else if (Array.isArray(body?.data)) lista = body.data;
-        else if (Array.isArray(body?.data?.data)) lista = body.data.data;
-        else if (Array.isArray(body?.result)) lista = body.result;
-        
-        return lista || [];
       });
-      
-      // Aguardar todas as requisições e combinar os resultados
-      const resultados = await Promise.all(promises);
-      const todasEntradas = resultados.flat();
-      
-      console.log(`📊 Contas a Receber carregadas: ${todasEntradas.length} registros de ${todasEmpresas.length} empresa(s)`);
-      
-      setDadosContasReceber(todasEntradas);
+
+      const resultados = await Promise.all(todasAsPromises);
+      let todosOsDados = resultados.flat();
+
+      // Aplicar filtro para mostrar apenas contas com situação 1 e que foram pagas (dt_liq)
+      todosOsDados = todosOsDados.filter(
+        (item) => item.tp_situacao === '1' && item.dt_liq,
+      );
+
+      console.log('📊 Contas a Receber carregadas:', {
+        totalRegistros: todosOsDados.length,
+        empresas: empresasSelecionadas.length,
+      });
+
+      setDadosContasReceber(todosOsDados);
     } catch (err) {
-      console.error('❌ Erro ao buscar fluxocaixa-entradas:', err);
+      console.error('❌ Erro ao buscar contas-receberemiss:', err);
       setDadosContasReceber([]);
     } finally {
       setLoadingContasReceber(false);
     }
   };
 
-
-
   // Função para aplicar filtro mensal
   const aplicarFiltroMensal = (dados, filtro) => {
     // Determinar o ano baseado nas datas de liquidação selecionadas
     let anoFiltro = null;
-    
+
     if (dataInicio && dataFim) {
       // Usar o ano da data de início como referência
       const dataInicioObj = new Date(dataInicio);
@@ -840,40 +935,46 @@ const FluxoCaixa = () => {
       // Fallback para ano atual se não houver datas selecionadas
       anoFiltro = new Date().getFullYear();
     }
-    
+
     console.log('🔍 Filtro Mensal:', {
       filtro,
       anoFiltro,
       dataInicio,
       dataFim,
-      totalDados: dados.length
+      totalDados: dados.length,
     });
-    
+
     // Log adicional para debug dos dados
     if (dados.length > 0) {
-      const anosPresentes = [...new Set(dados.map(item => {
-        if (item.dt_liq) {
-          return new Date(item.dt_liq).getFullYear();
-        }
-        return null;
-      }).filter(ano => ano !== null))];
-      
+      const anosPresentes = [
+        ...new Set(
+          dados
+            .map((item) => {
+              if (item.dt_liq) {
+                return new Date(item.dt_liq).getFullYear();
+              }
+              return null;
+            })
+            .filter((ano) => ano !== null),
+        ),
+      ];
+
       console.log('📊 Anos presentes nos dados:', anosPresentes.sort());
-      
+
       // Log adicional para verificar dados de 2025 especificamente
-      const dados2025 = dados.filter(item => {
+      const dados2025 = dados.filter((item) => {
         if (item.dt_liq) {
           return new Date(item.dt_liq).getFullYear() === 2025;
         }
         return false;
       });
-      
+
       console.log('🔍 Dados de 2025 encontrados:', dados2025.length);
       if (dados2025.length > 0) {
         console.log('📋 Amostra de dados 2025:', dados2025.slice(0, 2));
       }
     }
-    
+
     return dados.filter((item) => {
       // Usar dt_liq como base para o filtro mensal (data de liquidação)
       const dataLiquidacao = item.dt_liq;
@@ -890,9 +991,18 @@ const FluxoCaixa = () => {
 
       // Filtros por mês específico (do ano selecionado)
       const mesesMap = {
-        'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4,
-        'MAI': 5, 'JUN': 6, 'JUL': 7, 'AGO': 8,
-        'SET': 9, 'OUT': 10, 'NOV': 11, 'DEZ': 12
+        JAN: 1,
+        FEV: 2,
+        MAR: 3,
+        ABR: 4,
+        MAI: 5,
+        JUN: 6,
+        JUL: 7,
+        AGO: 8,
+        SET: 9,
+        OUT: 10,
+        NOV: 11,
+        DEZ: 12,
       };
 
       const mesDoFiltro = mesesMap[filtro];
@@ -907,17 +1017,18 @@ const FluxoCaixa = () => {
 
   // Aplicar filtros adicionais aos dados já filtrados por situação e status
   const dadosComFiltrosAdicionais = dados.filter((item) => {
-    
     // Filtro fixo para mostrar apenas contas com situação NORMAL
     if (item.tp_situacao !== 'N') {
       return false;
     }
-    
+
     // Filtro por fornecedor (dropdown)
     if (fornecedoresSelecionados.length > 0) {
       const cdFornecedor = item.cd_fornecedor || '';
-      const isSelected = fornecedoresSelecionados.some(fornecedor => fornecedor.cd_fornecedor === cdFornecedor);
-      
+      const isSelected = fornecedoresSelecionados.some(
+        (fornecedor) => fornecedor.cd_fornecedor === cdFornecedor,
+      );
+
       if (!isSelected) {
         return false;
       }
@@ -926,17 +1037,21 @@ const FluxoCaixa = () => {
     // Filtro por despesa (dropdown)
     if (despesasSelecionadas.length > 0) {
       const cdDespesa = item.cd_despesaitem || '';
-      const isSelected = despesasSelecionadas.some(despesa => despesa.cd_despesaitem === cdDespesa);
-      
+      const isSelected = despesasSelecionadas.some(
+        (despesa) => despesa.cd_despesaitem === cdDespesa,
+      );
+
       if (!isSelected) {
         return false;
       }
     }
-    
+
     // Filtro por duplicata
     if (duplicata) {
       const nrDuplicata = item.nr_duplicata || '';
-      if (!nrDuplicata.toString().toLowerCase().includes(duplicata.toLowerCase())) {
+      if (
+        !nrDuplicata.toString().toLowerCase().includes(duplicata.toLowerCase())
+      ) {
         return false;
       }
     }
@@ -944,13 +1059,15 @@ const FluxoCaixa = () => {
     // Filtro por centro de custo (dropdown)
     if (centrosCustoSelecionados.length > 0) {
       const cdCentroCusto = item.cd_ccusto || '';
-      const isSelected = centrosCustoSelecionados.some(centro => centro.cd_ccusto === cdCentroCusto);
-      
+      const isSelected = centrosCustoSelecionados.some(
+        (centro) => centro.cd_ccusto === cdCentroCusto,
+      );
+
       if (!isSelected) {
         return false;
       }
     }
-    
+
     return true;
   });
 
@@ -991,16 +1108,28 @@ const FluxoCaixa = () => {
           bValue = b.item.nr_portador || '';
           break;
         case 'dt_emissao':
-          aValue = a.item.dt_emissao ? new Date(a.item.dt_emissao) : new Date(0);
-          bValue = b.item.dt_emissao ? new Date(b.item.dt_emissao) : new Date(0);
+          aValue = a.item.dt_emissao
+            ? new Date(a.item.dt_emissao)
+            : new Date(0);
+          bValue = b.item.dt_emissao
+            ? new Date(b.item.dt_emissao)
+            : new Date(0);
           break;
         case 'dt_vencimento':
-          aValue = a.item.dt_vencimento ? new Date(a.item.dt_vencimento) : new Date(0);
-          bValue = b.item.dt_vencimento ? new Date(b.item.dt_vencimento) : new Date(0);
+          aValue = a.item.dt_vencimento
+            ? new Date(a.item.dt_vencimento)
+            : new Date(0);
+          bValue = b.item.dt_vencimento
+            ? new Date(b.item.dt_vencimento)
+            : new Date(0);
           break;
         case 'dt_entrada':
-          aValue = a.item.dt_entrada ? new Date(a.item.dt_entrada) : new Date(0);
-          bValue = b.item.dt_entrada ? new Date(b.item.dt_entrada) : new Date(0);
+          aValue = a.item.dt_entrada
+            ? new Date(a.item.dt_entrada)
+            : new Date(0);
+          bValue = b.item.dt_entrada
+            ? new Date(b.item.dt_entrada)
+            : new Date(0);
           break;
         case 'dt_liq':
           aValue = a.item.dt_liq ? new Date(a.item.dt_liq) : new Date(0);
@@ -1063,14 +1192,14 @@ const FluxoCaixa = () => {
   // Função para agrupar dados idênticos (igual à ContasAPagar)
   const agruparDadosIdenticos = (dados) => {
     const grupos = new Map();
-    
+
     dados.forEach((item) => {
       // Criar chave única baseada APENAS em FORNECEDOR e DUPLICATA
       // Se FORNECEDOR e DUPLICATA são iguais = AGRUPA
       // Se FORNECEDOR igual mas DUPLICATA diferente = NÃO AGRUPA
       // Se FORNECEDOR diferente mas DUPLICATA igual = NÃO AGRUPA
       const chave = `${item.cd_fornecedor}|${item.nm_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
-      
+
       if (!grupos.has(chave)) {
         grupos.set(chave, {
           item: item,
@@ -1080,28 +1209,34 @@ const FluxoCaixa = () => {
           datasVencimento: [],
           datasEntrada: [],
           datasLiquidacao: [],
-          quantidade: 0
+          quantidade: 0,
         });
       }
-      
+
       const grupo = grupos.get(chave);
       grupo.quantidade += 1;
-      
+
       // Adicionar observação se existir e for diferente
-      if (item.ds_observacao && !grupo.observacoes.includes(item.ds_observacao)) {
+      if (
+        item.ds_observacao &&
+        !grupo.observacoes.includes(item.ds_observacao)
+      ) {
         grupo.observacoes.push(item.ds_observacao);
       }
-      
+
       // Adicionar situação se existir e for diferente
       if (item.tp_situacao && !grupo.situacoes.includes(item.tp_situacao)) {
         grupo.situacoes.push(item.tp_situacao);
       }
-      
+
       // Adicionar datas se existirem e forem diferentes
       if (item.dt_emissao && !grupo.datasEmissao.includes(item.dt_emissao)) {
         grupo.datasEmissao.push(item.dt_emissao);
       }
-      if (item.dt_vencimento && !grupo.datasVencimento.includes(item.dt_vencimento)) {
+      if (
+        item.dt_vencimento &&
+        !grupo.datasVencimento.includes(item.dt_vencimento)
+      ) {
         grupo.datasVencimento.push(item.dt_vencimento);
       }
       if (item.dt_entrada && !grupo.datasEntrada.includes(item.dt_entrada)) {
@@ -1111,12 +1246,12 @@ const FluxoCaixa = () => {
         grupo.datasLiquidacao.push(item.dt_liq);
       }
     });
-    
+
     // Processar os grupos para determinar a situação final e datas mais relevantes
-    return Array.from(grupos.values()).map(grupo => {
+    return Array.from(grupos.values()).map((grupo) => {
       // Se há múltiplas situações, priorizar CANCELADAS (C) sobre NORMAIS (N)
       let situacaoFinal = grupo.item.tp_situacao;
-      
+
       if (grupo.situacoes.length > 1) {
         // Se há 'C' entre as situações, usar 'C' (cancelada tem prioridade)
         if (grupo.situacoes.includes('C')) {
@@ -1126,24 +1261,28 @@ const FluxoCaixa = () => {
         }
         // Se não há nem 'C' nem 'N', manter a primeira situação
       }
-      
+
       // Para as datas, usar a mais recente ou a mais relevante
-      const dtEmissaoFinal = grupo.datasEmissao.length > 0 ? 
-        grupo.datasEmissao.sort((a, b) => new Date(b) - new Date(a))[0] : 
-        grupo.item.dt_emissao;
-      
-      const dtVencimentoFinal = grupo.datasVencimento.length > 0 ? 
-        grupo.datasVencimento.sort((a, b) => new Date(b) - new Date(a))[0] : 
-        grupo.item.dt_vencimento;
-      
-      const dtEntradaFinal = grupo.datasEntrada.length > 0 ? 
-        grupo.datasEntrada.sort((a, b) => new Date(b) - new Date(a))[0] : 
-        grupo.item.dt_entrada;
-      
-      const dtLiquidacaoFinal = grupo.datasLiquidacao.length > 0 ? 
-        grupo.datasLiquidacao.sort((a, b) => new Date(b) - new Date(a))[0] : 
-        grupo.item.dt_liq;
-      
+      const dtEmissaoFinal =
+        grupo.datasEmissao.length > 0
+          ? grupo.datasEmissao.sort((a, b) => new Date(b) - new Date(a))[0]
+          : grupo.item.dt_emissao;
+
+      const dtVencimentoFinal =
+        grupo.datasVencimento.length > 0
+          ? grupo.datasVencimento.sort((a, b) => new Date(b) - new Date(a))[0]
+          : grupo.item.dt_vencimento;
+
+      const dtEntradaFinal =
+        grupo.datasEntrada.length > 0
+          ? grupo.datasEntrada.sort((a, b) => new Date(b) - new Date(a))[0]
+          : grupo.item.dt_entrada;
+
+      const dtLiquidacaoFinal =
+        grupo.datasLiquidacao.length > 0
+          ? grupo.datasLiquidacao.sort((a, b) => new Date(b) - new Date(a))[0]
+          : grupo.item.dt_liq;
+
       return {
         ...grupo,
         item: {
@@ -1152,25 +1291,31 @@ const FluxoCaixa = () => {
           dt_emissao: dtEmissaoFinal,
           dt_vencimento: dtVencimentoFinal,
           dt_entrada: dtEntradaFinal,
-          dt_liq: dtLiquidacaoFinal
-        }
+          dt_liq: dtLiquidacaoFinal,
+        },
       };
     });
   };
 
   // Aplicar filtro mensal aos dados filtrados
-  const dadosComFiltroMensal = aplicarFiltroMensal(dadosComFiltrosAdicionais, filtroMensal);
+  const dadosComFiltroMensal = aplicarFiltroMensal(
+    dadosComFiltrosAdicionais,
+    filtroMensal,
+  );
 
   // Log para verificar dados de 2025 após filtro mensal
   if (dadosComFiltroMensal.length > 0) {
-    const dados2025AposFiltro = dadosComFiltroMensal.filter(item => {
+    const dados2025AposFiltro = dadosComFiltroMensal.filter((item) => {
       if (item.dt_liq) {
         return new Date(item.dt_liq).getFullYear() === 2025;
       }
       return false;
     });
-    
-    console.log('🔍 Dados de 2025 após filtro mensal:', dados2025AposFiltro.length);
+
+    console.log(
+      '🔍 Dados de 2025 após filtro mensal:',
+      dados2025AposFiltro.length,
+    );
   }
 
   // Agrupar dados filtrados (incluindo filtro mensal)
@@ -1182,22 +1327,25 @@ const FluxoCaixa = () => {
   // Logs de debug para monitorar dados
   console.log('🔍 Debug Contas a Pagar:', {
     dadosOriginais: dados.length,
-            dadosFiltrados: dados.length,
+    dadosFiltrados: dados.length,
     dadosComFiltroMensal: dadosComFiltroMensal.length,
     dadosAgrupados: dadosAgrupados.length,
     dadosOrdenados: dadosOrdenados.length,
-            filtrosAtivos: { duplicata, filtroMensal },
-    amostraDados: dados.slice(0, 2)
+    filtrosAtivos: { duplicata, filtroMensal },
+    amostraDados: dados.slice(0, 2),
   });
 
   // Cálculos dos totais (baseados em dados agrupados - apenas uma linha por grupo)
   const totalContas = dadosOrdenados.length;
-  const totalValor = dadosOrdenados.reduce((acc, grupo) => acc + (parseFloat(grupo.item.vl_duplicata) || 0), 0);
-  const contasVencidas = dadosOrdenados.filter(grupo => {
+  const totalValor = dadosOrdenados.reduce(
+    (acc, grupo) => acc + (parseFloat(grupo.item.vl_duplicata) || 0),
+    0,
+  );
+  const contasVencidas = dadosOrdenados.filter((grupo) => {
     const status = getStatusFromData(grupo.item);
     return status.toLowerCase().includes('vencido');
   }).length;
-  const contasAVencer = dadosOrdenados.filter(grupo => {
+  const contasAVencer = dadosOrdenados.filter((grupo) => {
     const status = getStatusFromData(grupo.item);
     return status.toLowerCase().includes('vencer');
   }).length;
@@ -1206,50 +1354,111 @@ const FluxoCaixa = () => {
   const hoje = new Date();
   const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
   const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
-  
-  const contasProximasVencer = dadosOrdenados.filter(grupo => {
+
+  const contasProximasVencer = dadosOrdenados.filter((grupo) => {
     if (!grupo.item.dt_vencimento) return false;
-    
+
     const dataVencimento = new Date(grupo.item.dt_vencimento);
     const status = getStatusFromData(grupo.item);
-    
+
     // Verificar se está no mês atual E ainda não venceu E não foi pago
-    return dataVencimento >= hoje && 
-           dataVencimento <= fimMes && 
-           !status.toLowerCase().includes('pago') &&
-           !status.toLowerCase().includes('vencido');
+    return (
+      dataVencimento >= hoje &&
+      dataVencimento <= fimMes &&
+      !status.toLowerCase().includes('pago') &&
+      !status.toLowerCase().includes('vencido')
+    );
   });
-  
+
   const totalContasProximasVencer = contasProximasVencer.length;
-  const valorContasProximasVencer = contasProximasVencer.reduce((acc, grupo) => 
-    acc + (parseFloat(grupo.item.vl_duplicata) || 0), 0
+  const valorContasProximasVencer = contasProximasVencer.reduce(
+    (acc, grupo) => acc + (parseFloat(grupo.item.vl_duplicata) || 0),
+    0,
   );
 
   // Cálculo para contas pagas
-  const contasPagas = dadosOrdenados.filter(grupo => {
+  const contasPagas = dadosOrdenados.filter((grupo) => {
     const status = getStatusFromData(grupo.item);
     return status.toLowerCase().includes('pago');
   });
-  
+
   const totalContasPagas = contasPagas.length;
-  const valorContasPagas = contasPagas.reduce((acc, grupo) => 
-    acc + (parseFloat(grupo.item.vl_pago) || 0), 0
+  const valorContasPagas = contasPagas.reduce(
+    (acc, grupo) => acc + (parseFloat(grupo.item.vl_pago) || 0),
+    0,
   );
 
   // Cálculo para valor que falta pagar
   const valorFaltaPagar = totalValor - valorContasPagas;
 
+  // Função genérica para aplicar filtros de fornecedor, despesa, duplicata e centro de custo
+  const aplicarFiltrosExtras = (arr) => {
+    if (!arr || arr.length === 0) return [];
 
+    return arr.filter((item) => {
+      if (!item) return false;
 
-  // Total de Contas a Pagar (soma dos valores pagos do detalhamento de saídas)
+      // Fornecedor
+      if (fornecedoresSelecionados.length > 0 && item.cd_fornecedor) {
+        const selected = fornecedoresSelecionados
+          .map((f) => String(f.cd_fornecedor || f.value || f))
+          .filter(Boolean);
+        if (
+          selected.length > 0 &&
+          !selected.includes(String(item.cd_fornecedor))
+        ) {
+          return false;
+        }
+      }
+
+      // Despesa
+      if (despesasSelecionadas.length > 0 && item.cd_despesaitem) {
+        const selected = despesasSelecionadas
+          .map((d) => String(d.cd_despesaitem || d.value || d))
+          .filter(Boolean);
+        if (
+          selected.length > 0 &&
+          !selected.includes(String(item.cd_despesaitem))
+        ) {
+          return false;
+        }
+      }
+
+      // Centro de custo
+      if (centrosCustoSelecionados.length > 0 && item.cd_ccusto) {
+        const selected = centrosCustoSelecionados
+          .map((c) => String(c.cd_ccusto || c.value || c))
+          .filter(Boolean);
+        if (selected.length > 0 && !selected.includes(String(item.cd_ccusto))) {
+          return false;
+        }
+      }
+
+      // Duplicata (busca por substring)
+      if (duplicata) {
+        const dup = String(item.nr_duplicata || '').toLowerCase();
+        if (!dup.includes(String(duplicata).toLowerCase())) return false;
+      }
+
+      return true;
+    });
+  };
+
+  // Aplicar filtros extras aos arrays de saídas e entradas antes de cálculos/agrupamentos
+  const dadosSaidaFiltrados = aplicarFiltrosExtras(dadosSaida || []);
+  const dadosContasReceberFiltrados = aplicarFiltrosExtras(
+    dadosContasReceber || [],
+  );
+
+  // Total de Contas a Pagar (soma dos valores pagos do detalhamento de saídas filtradas)
   const totalSaidas = React.useMemo(() => {
     // Agrupar dados para evitar duplicação (igual à página Contas a Pagar)
     const agruparDadosIdenticos = (dados) => {
       const grupos = new Map();
-      
+
       dados.forEach((item) => {
         const chave = `${item.cd_fornecedor}|${item.nm_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.tp_previsaoreal}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
-        
+
         if (!grupos.has(chave)) {
           grupos.set(chave, {
             item: item,
@@ -1260,23 +1469,23 @@ const FluxoCaixa = () => {
             datasEntrada: [],
             datasLiquidacao: [],
             rateios: [],
-            quantidade: 0
+            quantidade: 0,
           });
         }
-        
+
         const grupo = grupos.get(chave);
         grupo.quantidade += 1;
-        
+
         // Adicionar situação se existir e for diferente
         if (item.tp_situacao && !grupo.situacoes.includes(item.tp_situacao)) {
           grupo.situacoes.push(item.tp_situacao);
         }
       });
-      
+
       // Processar os grupos para determinar a situação final
-      return Array.from(grupos.values()).map(grupo => {
+      return Array.from(grupos.values()).map((grupo) => {
         let situacaoFinal = grupo.item.tp_situacao;
-        
+
         if (grupo.situacoes.length > 1) {
           if (grupo.situacoes.includes('C')) {
             situacaoFinal = 'C';
@@ -1284,19 +1493,19 @@ const FluxoCaixa = () => {
             situacaoFinal = 'N';
           }
         }
-        
+
         return {
           ...grupo,
           item: {
             ...grupo.item,
-            tp_situacao: situacaoFinal
-          }
+            tp_situacao: situacaoFinal,
+          },
         };
       });
     };
 
-    const dadosAgrupados = agruparDadosIdenticos(dadosSaida || []);
-    
+    const dadosAgrupados = agruparDadosIdenticos(dadosSaidaFiltrados || []);
+
     return dadosAgrupados.reduce((acc, grupo) => {
       const valor = parseFloat(grupo.item?.vl_pago) || 0;
       return acc + valor;
@@ -1305,101 +1514,13 @@ const FluxoCaixa = () => {
 
   // Total de Contas a Receber (soma dos valores pagos do detalhamento de entradas)
   const totalContasReceber = React.useMemo(() => {
-    return (dadosContasReceber || [])
-      .filter(item => item.tp_situacao === '1') // Filtrar apenas tp_situacao = 1
+    return (dadosContasReceberFiltrados || [])
+      .filter((item) => item.tp_situacao === '1') // Filtrar apenas tp_situacao = 1
       .reduce((acc, item) => {
         const valor = parseFloat(item?.vl_pago) || 0;
         return acc + valor;
       }, 0);
-  }, [dadosContasReceber]);
-
-  // Função para buscar dados do saldo bancário
-  const buscarSaldoBancario = async () => {
-    if (!dataFinalSaldo) return;
-    
-    setLoadingSaldoBancario(true);
-    setErroSaldoBancario('');
-    
-    try {
-      const contasUsadas = contasSelecionadasSaldo.length > 0 
-        ? contasSelecionadasSaldo 
-        : contas.map(c => c.numero);
-      
-      const params = { 
-        nr_ctapes: contasUsadas, 
-        dt_movim_ini: '2024-01-01', 
-        dt_movim_fim: dataFinalSaldo, 
-        limit: 1000000, 
-        offset: 0 
-      };
-      
-      // Buscar dados financeiros
-      const result = await apiClient.financial.extrato(params);
-      if (result.success) {
-        setDadosSaldoBancario(result.data || []);
-      } else {
-        throw new Error(result.message || 'Erro ao buscar dados financeiros');
-      }
-      
-      // Buscar dados TOTVS
-      const resultTotvs = await apiClient.financial.extratoTotvs(params);
-      if (resultTotvs.success) {
-        setDadosTotvsSaldo(resultTotvs.data || []);
-      } else {
-        throw new Error(resultTotvs.message || 'Erro ao buscar dados TOTVS');
-      }
-      
-    } catch (err) {
-      console.error('Erro ao buscar saldo bancário:', err);
-      setErroSaldoBancario('Erro ao buscar dados do saldo bancário.');
-      setDadosSaldoBancario([]);
-      setDadosTotvsSaldo([]);
-    } finally {
-      setLoadingSaldoBancario(false);
-    }
-  };
-
-
-
-
-
-  // Cálculo do saldo bancário total (soma de todos os saldos de extrato)
-  const saldoBancarioTotal = React.useMemo(() => {
-    const saldo = {};
-    
-    // Processar dados financeiros
-    dadosSaldoBancario.forEach(row => {
-      const contaNumero = String(row.nr_ctapes);
-      if (!saldo[contaNumero]) {
-        saldo[contaNumero] = {
-          creditosTotvs: 0,
-          debitosTotvs: 0,
-          saldoExtrato: 0
-        };
-      }
-    });
-    
-    // Processar dados TOTVS
-    dadosTotvsSaldo.forEach(row => {
-      const contaNumero = String(row.nr_ctapes);
-      if (!saldo[contaNumero]) {
-        saldo[contaNumero] = {
-          creditosTotvs: 0,
-          debitosTotvs: 0,
-          saldoExtrato: 0
-        };
-      }
-      if (row.tp_operacao === 'C') {
-        saldo[contaNumero].creditosTotvs += parseFloat(row.vl_lancto) || 0;
-      } else if (row.tp_operacao === 'D') {
-        saldo[contaNumero].debitosTotvs += parseFloat(row.vl_lancto) || 0;
-      }
-      saldo[contaNumero].saldoExtrato = saldo[contaNumero].creditosTotvs - saldo[contaNumero].debitosTotvs;
-    });
-    
-    // Somar todos os saldos de extrato
-    return Object.values(saldo).reduce((total, conta) => total + conta.saldoExtrato, 0);
-  }, [dadosSaldoBancario, dadosTotvsSaldo]);
+  }, [dadosContasReceberFiltrados]);
 
   // Cálculos para paginação (usando dados ordenados)
   const totalPaginas = Math.ceil(dadosOrdenados.length / itensPorPagina);
@@ -1409,10 +1530,13 @@ const FluxoCaixa = () => {
 
   // Calcular total das linhas selecionadas
   const totalLinhasSelecionadas = linhasSelecionadas.size;
-  const valorTotalSelecionado = Array.from(linhasSelecionadas).reduce((total, index) => {
-    const linha = dadosPaginaAtual[index - indiceInicial];
-    return total + (parseFloat(linha?.item?.vl_duplicata) || 0);
-  }, 0);
+  const valorTotalSelecionado = Array.from(linhasSelecionadas).reduce(
+    (total, index) => {
+      const linha = dadosPaginaAtual[index - indiceInicial];
+      return total + (parseFloat(linha?.item?.vl_duplicata) || 0);
+    },
+    0,
+  );
 
   // Funções para navegação
   const irParaPagina = (pagina) => {
@@ -1435,7 +1559,7 @@ const FluxoCaixa = () => {
   const gerarPaginas = () => {
     const paginas = [];
     const maxPaginasVisiveis = 5;
-    
+
     if (totalPaginas <= maxPaginasVisiveis) {
       // Mostrar todas as páginas se houver 5 ou menos
       for (let i = 1; i <= totalPaginas; i++) {
@@ -1468,325 +1592,310 @@ const FluxoCaixa = () => {
         paginas.push(totalPaginas);
       }
     }
-    
+
     return paginas;
   };
 
   return (
     <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
-        <PageTitle 
-          title="Fluxo de Caixa"
-          subtitle="Visualize entradas, saídas e controle financeiro em tempo real"
-          icon={TrendUp}
-          iconColor="text-indigo-600"
-        />
-        
-        {/* Filtros */}
-        <div className="mb-4">
-          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full max-w-4xl mx-auto border border-[#000638]/10">
-            <div className="mb-2">
-              <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
-                <Funnel size={18} weight="bold" />
-                Filtros
-              </span>
-              <span className="text-xs text-gray-500 mt-1">Selecione o período e empresa para análise</span>
+      <PageTitle
+        title="Fluxo de Caixa"
+        subtitle="Visualize entradas, saídas e controle financeiro em tempo real"
+        icon={TrendUp}
+        iconColor="text-indigo-600"
+      />
+
+      {/* Filtros */}
+      <div className="mb-4">
+        <form
+          onSubmit={handleFiltrar}
+          className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full max-w-4xl mx-auto border border-[#000638]/10"
+        >
+          <div className="mb-2">
+            <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
+              <Funnel size={18} weight="bold" />
+              Filtros
+            </span>
+            <span className="text-xs text-gray-500 mt-1">
+              Selecione o período e empresa para análise
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+            <div className="lg:col-span-2">
+              <FiltroEmpresa
+                empresasSelecionadas={empresasSelecionadas}
+                onSelectEmpresas={handleSelectEmpresas}
+              />
             </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
-              <div className="lg:col-span-2">
-                <FiltroEmpresa
-                  empresasSelecionadas={empresasSelecionadas}
-                  onSelectEmpresas={handleSelectEmpresas}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                  Data Liquidação Início
-                </label>
-                <input
-                  type="date"
-                  value={dataInicio}
-                  onChange={(e) => setDataInicio(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                  Data Liquidação Fim
-                </label>
-                <input
-                  type="date"
-                  value={dataFim}
-                  onChange={(e) => setDataFim(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
-                />
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Data Emissão Início
+              </label>
+              <input
+                type="date"
+                value={dataInicio}
+                onChange={(e) => setDataInicio(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Data Emissão Fim
+              </label>
+              <input
+                type="date"
+                value={dataFim}
+                onChange={(e) => setDataFim(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+            <div>
+              <FiltroFornecedor
+                fornecedoresSelecionados={fornecedoresSelecionados}
+                onSelectFornecedores={handleSelectFornecedores}
+                dadosFornecedor={dadosFornecedor}
+              />
+            </div>
+            <div>
+              <FiltroDespesas
+                despesasSelecionadas={despesasSelecionadas}
+                onSelectDespesas={handleSelectDespesas}
+                dadosDespesa={dadosDespesa}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Duplicata
+              </label>
+              <input
+                type="text"
+                value={duplicata}
+                onChange={(e) => setDuplicata(e.target.value)}
+                placeholder="Buscar duplicata..."
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
+              />
+            </div>
+            <div>
+              <FiltroCentroCusto
+                centrosCustoSelecionados={centrosCustoSelecionados}
+                onSelectCentrosCusto={handleSelectCentrosCusto}
+                dadosCentroCusto={dadosCentroCusto}
+              />
+            </div>
+            <div className="flex items-center">
+              <button
+                type="submit"
+                className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
+                disabled={loading || !dataInicio || !dataFim}
+              >
+                {loading ? (
+                  <>
+                    <Spinner size={10} className="animate-spin" />
+                    <span>Buscando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Calendar size={10} />
+                    <span>Buscar Dados</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      {/* Cards de Resumo */}
+      <div className="flex flex-wrap gap-4 mb-8 justify-center">
+        {/* Card Saldo */}
+
+        <Card
+          className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer"
+          onClick={() => setModalDespesasOpen(true)}
+        >
+          <CardHeader className="pb-0">
+            <div className="flex items-center gap-2">
+              <CurrencyDollar size={18} className="text-red-600" />
+              <CardTitle className="text-sm font-bold text-red-700">
+                Contas a Pagar
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-4">
+            <div className="text-2xl font-extrabold text-red-600 mb-1 break-words">
+              {loadingSaida ? (
+                <Spinner size={24} className="animate-spin text-red-600" />
+              ) : (
+                totalSaidas.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })
+              )}
+            </div>
+            <CardDescription className="text-xs text-gray-500">
+              Valor total pago - contas por emissão
+            </CardDescription>
+          </CardContent>
+        </Card>
+
+        {/* Card Contas a Receber */}
+        <Card
+          className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer"
+          onClick={() => setModalContasReceberOpen(true)}
+        >
+          <CardHeader className="pb-0">
+            <div className="flex items-center gap-2">
+              <CurrencyDollar size={18} className="text-green-600" />
+              <CardTitle className="text-sm font-bold text-green-700">
+                Contas a Receber
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-4">
+            <div className="text-2xl font-extrabold text-green-600 mb-1 break-words">
+              {loadingContasReceber ? (
+                <Spinner size={24} className="animate-spin text-green-600" />
+              ) : (
+                totalContasReceber.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })
+              )}
+            </div>
+            <CardDescription className="text-xs text-gray-500">
+              Valor total recebido - contas por emissão
+            </CardDescription>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Modal de Detalhes da Conta */}
+      <ModalDetalhesConta
+        conta={modalDetalhes.conta}
+        isOpen={modalDetalhes.isOpen}
+        onClose={fecharModalDetalhes}
+      />
+
+      {/* Modal de Detalhamento de Contas a Pagar */}
+      <Modal
+        isOpen={modalDespesasOpen}
+        onClose={() => setModalDespesasOpen(false)}
+        title="Detalhamento de Contas a Pagar"
+        size="full"
+      >
+        <div className="p-3">
+          {loadingSaida ? (
+            <div className="flex justify-center items-center py-12">
+              <div className="flex items-center gap-3">
+                <Spinner size={18} className="animate-spin text-blue-600" />
+                <span className="text-sm text-gray-600">
+                  Carregando saídas...
+                </span>
               </div>
             </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-              <div>
-                <FiltroFornecedor
-                  fornecedoresSelecionados={fornecedoresSelecionados}
-                  onSelectFornecedores={handleSelectFornecedores}
-                  dadosFornecedor={dadosFornecedor}
-                />
-              </div>
-              <div>
-                <FiltroDespesas
-                  despesasSelecionadas={despesasSelecionadas}
-                  onSelectDespesas={handleSelectDespesas}
-                  dadosDespesa={dadosDespesa}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Duplicata</label>
-                <input
-                  type="text"
-                  value={duplicata}
-                  onChange={(e) => setDuplicata(e.target.value)}
-                  placeholder="Buscar duplicata..."
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
-                />
-              </div>
-              <div>
-                <FiltroCentroCusto
-                  centrosCustoSelecionados={centrosCustoSelecionados}
-                  onSelectCentrosCusto={handleSelectCentrosCusto}
-                  dadosCentroCusto={dadosCentroCusto}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Contas (Saldo Bancário)</label>
-                <DropdownContas 
-                  contas={contas} 
-                  contasSelecionadas={contasSelecionadasSaldo} 
-                  setContasSelecionadas={setContasSelecionadasSaldo} 
-                  minWidth={200} 
-                  maxWidth={400} 
-                  placeholder="Selecione as contas" 
-                  hideLabel={true} 
-                  className="!bg-[#f8f9fb] !text-[#000638] !placeholder:text-gray-400 !px-3 !py-2 !w-full !rounded-lg !border !border-[#000638]/30 focus:!outline-none focus:!ring-2 focus:!ring-[#000638] !h-[42px] !text-base" 
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Data Final do Saldo</label>
-                <input
-                  type="date"
-                  value={dataFinalSaldo}
-                  onChange={(e) => setDataFinalSaldo(e.target.value)}
-                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
-                />
-              </div>
-              <div className="flex items-center">
-                <button 
-                  type="submit"
-                  className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
-                  disabled={loading || !dataInicio || !dataFim}
-                >
-                  {loading ? (
-                    <>
-                      <Spinner size={10} className="animate-spin" />
-                      <span>Buscando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Calendar size={10} />
-                      <span>Buscar Dados</span>
-                    </>
-                  )}
-                </button>
+          ) : !dadosSaidaCarregados ? (
+            <div className="flex justify-center items-center py-12">
+              <div className="text-center">
+                <div className="text-gray-500 text-sm mb-2">
+                  Clique em "Buscar Dados" para carregar as saídas
+                </div>
+                <div className="text-gray-400 text-xs">
+                  Selecione o período e empresa desejados
+                </div>
               </div>
             </div>
-          </form>
-          {erroSaldoBancario && (
-            <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">
-              {erroSaldoBancario}
+          ) : dadosSaida.length === 0 ? (
+            <div className="flex justify-center items-center py-12">
+              <div className="text-center">
+                <div className="text-gray-500 text-sm mb-2">
+                  Nenhuma saída encontrada
+                </div>
+                <div className="text-gray-400 text-xs">
+                  Verifique o período selecionado ou tente novamente
+                </div>
+              </div>
             </div>
+          ) : (
+            <SaidasPorCategoria
+              dados={dadosSaidaFiltrados}
+              totalSaidas={totalSaidas}
+              dataInicio={dataInicio}
+              dataFim={dataFim}
+            />
           )}
         </div>
+      </Modal>
 
-        
-
-        {/* Cards de Resumo */}
-        <div className="flex flex-wrap gap-4 mb-8 justify-center">
-          {/* Card Saldo */}
-
-
-
-
-          <Card 
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer"
-            onClick={() => setModalDespesasOpen(true)}
-          >
-            <CardHeader className="pb-0">
-              <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-red-600" />
-                <CardTitle className="text-sm font-bold text-red-700">Contas a Pagar</CardTitle>
+      {/* Modal de Detalhamento de Contas a Receber */}
+      <Modal
+        isOpen={modalContasReceberOpen}
+        onClose={() => setModalContasReceberOpen(false)}
+        title="Detalhamento de Contas a Receber"
+        size="full"
+      >
+        <div className="p-3">
+          {loadingContasReceber ? (
+            <div className="flex justify-center items-center py-12">
+              <div className="flex items-center gap-3">
+                <Spinner size={18} className="animate-spin text-green-600" />
+                <span className="text-sm text-gray-600">
+                  Carregando contas a receber...
+                </span>
               </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-red-600 mb-1 break-words">
-                {loadingSaida ? <Spinner size={24} className="animate-spin text-red-600" /> : totalSaidas.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                })}
-              </div>
-              <CardDescription className="text-xs text-gray-500">Valor total das saídas (vl_pago)</CardDescription>
-            </CardContent>
-          </Card>
-
-          {/* Card Contas a Receber */}
-          <Card 
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white cursor-pointer"
-            onClick={() => setModalContasReceberOpen(true)}
-          >
-            <CardHeader className="pb-0">
-              <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-green-600" />
-                <CardTitle className="text-sm font-bold text-green-700">Contas a Receber</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-green-600 mb-1 break-words">
-                {loadingContasReceber ? <Spinner size={24} className="animate-spin text-green-600" /> : totalContasReceber.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                })}
-              </div>
-              <CardDescription className="text-xs text-gray-500">Valor total das entradas (vl_pago)</CardDescription>
-            </CardContent>
-          </Card>
-
-          {/* Card Saldo Bancário */}
-          <Card 
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white"
-          >
-            <CardHeader className="pb-0">
-              <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-purple-600" />
-                <CardTitle className="text-sm font-bold text-purple-700">Saldo Bancário</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-2xl font-extrabold text-purple-600 mb-1 break-words">
-                {loadingSaldoBancario ? (
-                  <Spinner size={24} className="animate-spin text-purple-600" />
-                ) : (
-                  saldoBancarioTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                )}
-              </div>
-              <CardDescription className="text-xs text-gray-500">Soma dos saldos de extrato de todos os bancos</CardDescription>
-            </CardContent>
-          </Card>
-              </div>
-
-
-
-
-
-
-
-
-        {/* Modal de Detalhes da Conta */}
-        <ModalDetalhesConta
-          conta={modalDetalhes.conta}
-          isOpen={modalDetalhes.isOpen}
-          onClose={fecharModalDetalhes}
-        />
-
-
-
-        {/* Modal de Detalhamento de Contas a Pagar */}
-        <Modal
-          isOpen={modalDespesasOpen}
-          onClose={() => setModalDespesasOpen(false)}
-          title="Detalhamento de Contas a Pagar"
-          size="full"
-        >
-          <div className="p-3">
-            {loadingSaida ? (
-              <div className="flex justify-center items-center py-12">
-                <div className="flex items-center gap-3">
-                  <Spinner size={18} className="animate-spin text-blue-600" />
-                  <span className="text-sm text-gray-600">Carregando saídas...</span>
+            </div>
+          ) : dadosContasReceberFiltrados.length === 0 ? (
+            <div className="flex justify-center items-center py-12">
+              <div className="text-center">
+                <div className="text-gray-500 text-sm mb-2">
+                  Clique em "Buscar Dados" para carregar as contas a receber
+                </div>
+                <div className="text-gray-400 text-xs">
+                  Selecione o período e empresa desejados
                 </div>
               </div>
-            ) : !dadosSaidaCarregados ? (
-              <div className="flex justify-center items-center py-12">
-                <div className="text-center">
-                  <div className="text-gray-500 text-sm mb-2">Clique em "Buscar Dados" para carregar as saídas</div>
-                  <div className="text-gray-400 text-xs">Selecione o período e empresa desejados</div>
-                </div>
-              </div>
-            ) : dadosSaida.length === 0 ? (
-              <div className="flex justify-center items-center py-12">
-                <div className="text-center">
-                  <div className="text-gray-500 text-sm mb-2">Nenhuma saída encontrada</div>
-                  <div className="text-gray-400 text-xs">Verifique o período selecionado ou tente novamente</div>
-                </div>
-              </div>
-            ) : (
-              <SaidasPorCategoria 
-                dados={dadosSaida}
-                totalSaidas={totalSaidas}
-                dataInicio={dataInicio}
-                dataFim={dataFim}
-              />
-            )}
-          </div>
-        </Modal>
-
-        {/* Modal de Detalhamento de Contas a Receber */}
-        <Modal
-          isOpen={modalContasReceberOpen}
-          onClose={() => setModalContasReceberOpen(false)}
-          title="Detalhamento de Contas a Receber"
-          size="full"
-        >
-          <div className="p-3">
-            {loadingContasReceber ? (
-              <div className="flex justify-center items-center py-12">
-                <div className="flex items-center gap-3">
-                  <Spinner size={18} className="animate-spin text-green-600" />
-                  <span className="text-sm text-gray-600">Carregando contas a receber...</span>
-                </div>
-              </div>
-            ) : dadosContasReceber.length === 0 ? (
-              <div className="flex justify-center items-center py-12">
-                <div className="text-center">
-                  <div className="text-gray-500 text-sm mb-2">Clique em "Buscar Dados" para carregar as contas a receber</div>
-                  <div className="text-gray-400 text-xs">Selecione o período e empresa desejados</div>
-                </div>
-              </div>
-            ) : (
-              <ContasReceberDetalhamento 
-                dados={dadosContasReceber}
-                totalContasReceber={totalContasReceber}
-                dataInicio={dataInicio}
-                dataFim={dataFim}
-              />
-            )}
-          </div>
-        </Modal>
-
-
+            </div>
+          ) : (
+            <ContasReceberDetalhamento
+              dados={dadosContasReceberFiltrados}
+              totalContasReceber={totalContasReceber}
+              dataInicio={dataInicio}
+              dataFim={dataFim}
+            />
+          )}
         </div>
+      </Modal>
+    </div>
   );
 };
 
-
-
 // Componente para agrupar contas a pagar por categoria
-const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLinhaSelecionada, filtroMensal, setFiltroMensal, dadosOriginais, dataInicio, dataFim, abrirModalDetalhes }) => {
+const DespesasPorCategoria = ({
+  dados,
+  totalContas,
+  linhasSelecionadas,
+  toggleLinhaSelecionada,
+  filtroMensal,
+  setFiltroMensal,
+  dadosOriginais,
+  dataInicio,
+  dataFim,
+  abrirModalDetalhes,
+}) => {
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(new Set());
   const [despesasExpandidas, setDespesasExpandidas] = useState(new Set());
-  const [fornecedoresExpandidos, setFornecedoresExpandidos] = useState(new Set());
+  const [fornecedoresExpandidos, setFornecedoresExpandidos] = useState(
+    new Set(),
+  );
   const [todosExpandidos, setTodosExpandidos] = useState(false);
 
   // Função para classificar despesa por código
   const classificarDespesa = (cdDespesa) => {
     const codigo = parseInt(cdDespesa) || 0;
-    
+
     // 1) exceções
     const categoriaExcecao = getCategoriaPorCodigo(codigo);
     if (categoriaExcecao) {
@@ -1820,14 +1929,14 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
   // Agrupar dados por classificação de despesa, nome da despesa e fornecedor
   const dadosAgrupados = React.useMemo(() => {
     const categorias = {};
-    
+
     dados.forEach((grupo, index) => {
       const cdDespesa = grupo.item.cd_despesaitem;
       const nomeDespesa = grupo.item.ds_despesaitem || 'SEM DESCRIÇÃO';
       const nomeFornecedor = grupo.item.nm_fornecedor || 'SEM FORNECEDOR';
       const vlRateio = grupo.item.vl_rateio || 0;
       const categoria = classificarDespesa(cdDespesa);
-      
+
       // Criar categoria principal se não existir
       if (!categorias[categoria]) {
         categorias[categoria] = {
@@ -1835,10 +1944,10 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
           despesas: {},
           total: 0,
           quantidade: 0,
-          expandida: false
+          expandida: false,
         };
       }
-      
+
       // Criar sub-tópico da despesa se não existir
       if (!categorias[categoria].despesas[nomeDespesa]) {
         categorias[categoria].despesas[nomeDespesa] = {
@@ -1846,37 +1955,51 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
           fornecedores: {},
           total: 0,
           quantidade: 0,
-          expandida: false
+          expandida: false,
         };
       }
-      
+
       // Criar chave única para o fornecedor incluindo duplicata e rateio
       const chaveFornecedor = `${nomeFornecedor}|${grupo.item.nr_duplicata}|${vlRateio}`;
-      
+
       // Criar sub-tópico do fornecedor se não existir
-      if (!categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor]) {
-        categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor] = {
+      if (
+        !categorias[categoria].despesas[nomeDespesa].fornecedores[
+          chaveFornecedor
+        ]
+      ) {
+        categorias[categoria].despesas[nomeDespesa].fornecedores[
+          chaveFornecedor
+        ] = {
           nome: nomeFornecedor,
           nrDuplicata: grupo.item.nr_duplicata,
           vlRateio: vlRateio,
           itens: [],
           total: 0,
           quantidade: 0,
-          expandida: false
+          expandida: false,
         };
       }
-      
+
       // Adicionar item ao fornecedor específico
-      categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor].itens.push({ ...grupo, indiceOriginal: index });
-      
+      categorias[categoria].despesas[nomeDespesa].fornecedores[
+        chaveFornecedor
+      ].itens.push({ ...grupo, indiceOriginal: index });
+
       // Usar o valor de rateio como total para este item específico
-      categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor].total = parseFloat(vlRateio || 0);
-      categorias[categoria].despesas[nomeDespesa].fornecedores[chaveFornecedor].quantidade = 1;
-      
+      categorias[categoria].despesas[nomeDespesa].fornecedores[
+        chaveFornecedor
+      ].total = parseFloat(vlRateio || 0);
+      categorias[categoria].despesas[nomeDespesa].fornecedores[
+        chaveFornecedor
+      ].quantidade = 1;
+
       // Atualizar totais da despesa usando o rateio
-      categorias[categoria].despesas[nomeDespesa].total += parseFloat(vlRateio || 0);
+      categorias[categoria].despesas[nomeDespesa].total += parseFloat(
+        vlRateio || 0,
+      );
       categorias[categoria].despesas[nomeDespesa].quantidade += 1;
-      
+
       // Atualizar totais da categoria principal usando o rateio
       categorias[categoria].total += parseFloat(vlRateio || 0);
       categorias[categoria].quantidade += 1;
@@ -1893,19 +2016,21 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
       'DESPESAS FINANCEIRAS',
       'OUTRAS DESPESAS OPERACIONAIS',
       'DESPESAS C/ VENDAS',
-      'SEM CLASSIFICAÇÃO'
+      'SEM CLASSIFICAÇÃO',
     ];
 
     // Converter para array e ordenar pela ordem definida
     return ordemCategorias
-      .filter(categoria => categorias[categoria]) // Só incluir categorias que têm dados
-      .map(categoria => {
+      .filter((categoria) => categorias[categoria]) // Só incluir categorias que têm dados
+      .map((categoria) => {
         const cat = categorias[categoria];
         // Converter despesas em array e ordenar por valor (maior primeiro)
         cat.despesasArray = Object.values(cat.despesas)
-          .map(despesa => {
+          .map((despesa) => {
             // Converter fornecedores em array e ordenar por valor (maior primeiro)
-            despesa.fornecedoresArray = Object.values(despesa.fornecedores).sort((a, b) => b.total - a.total);
+            despesa.fornecedoresArray = Object.values(
+              despesa.fornecedores,
+            ).sort((a, b) => b.total - a.total);
             return despesa;
           })
           .sort((a, b) => b.total - a.total);
@@ -1914,7 +2039,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
   }, [dados]);
 
   const toggleCategoria = (nomeCategoria) => {
-    setCategoriasExpandidas(prev => {
+    setCategoriasExpandidas((prev) => {
       const novoSet = new Set(prev);
       if (novoSet.has(nomeCategoria)) {
         novoSet.delete(nomeCategoria);
@@ -1927,7 +2052,7 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
 
   const toggleDespesa = (nomeCategoria, nomeDespesa) => {
     const chave = `${nomeCategoria}|${nomeDespesa}`;
-    setCategoriasExpandidas(prev => {
+    setCategoriasExpandidas((prev) => {
       const novoSet = new Set(prev);
       if (novoSet.has(chave)) {
         novoSet.delete(chave);
@@ -1938,9 +2063,15 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
     });
   };
 
-  const toggleFornecedor = (nomeCategoria, nomeDespesa, nomeFornecedor, nrDuplicata, vlRateio) => {
+  const toggleFornecedor = (
+    nomeCategoria,
+    nomeDespesa,
+    nomeFornecedor,
+    nrDuplicata,
+    vlRateio,
+  ) => {
     const chave = `${nomeCategoria}|${nomeDespesa}|${nomeFornecedor}|${nrDuplicata}|${vlRateio}`;
-    setCategoriasExpandidas(prev => {
+    setCategoriasExpandidas((prev) => {
       const novoSet = new Set(prev);
       if (novoSet.has(chave)) {
         novoSet.delete(chave);
@@ -1958,7 +2089,9 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
       setTodosExpandidos(false);
     } else {
       // Expandir todos
-      const todasCategorias = new Set(dadosAgrupados.map(categoria => categoria.nome));
+      const todasCategorias = new Set(
+        dadosAgrupados.map((categoria) => categoria.nome),
+      );
       setCategoriasExpandidas(todasCategorias);
       setTodosExpandidos(true);
     }
@@ -1974,12 +2107,25 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
 
   // Calcular dados mensais para mostrar quantidades nos botões
   const calcularDadosMensais = () => {
-    const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    const meses = [
+      'JAN',
+      'FEV',
+      'MAR',
+      'ABR',
+      'MAI',
+      'JUN',
+      'JUL',
+      'AGO',
+      'SET',
+      'OUT',
+      'NOV',
+      'DEZ',
+    ];
     const dadosMensais = {};
-    
+
     // Determinar o ano baseado nas datas de liquidação selecionadas
     let anoFiltro = null;
-    
+
     if (dataInicio && dataFim) {
       // Usar o ano da data de início como referência
       const dataInicioObj = new Date(dataInicio);
@@ -1988,43 +2134,54 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
       // Fallback para ano atual se não houver datas selecionadas
       anoFiltro = new Date().getFullYear();
     }
-    
+
     console.log('🔍 DespesasPorCategoria - calcularDadosMensais:', {
       anoFiltro,
       dataInicio,
       dataFim,
-      totalDadosOriginais: dadosOriginais.length
+      totalDadosOriginais: dadosOriginais.length,
     });
-    
+
     // Log para verificar anos presentes nos dadosOriginais
     if (dadosOriginais.length > 0) {
-      const anosPresentesOriginais = [...new Set(dadosOriginais.map(item => {
-        if (item.dt_liq) {
-          return new Date(item.dt_liq).getFullYear();
-        }
-        return null;
-      }).filter(ano => ano !== null))];
-      
-      console.log('📊 Anos presentes nos dadosOriginais:', anosPresentesOriginais.sort());
+      const anosPresentesOriginais = [
+        ...new Set(
+          dadosOriginais
+            .map((item) => {
+              if (item.dt_liq) {
+                return new Date(item.dt_liq).getFullYear();
+              }
+              return null;
+            })
+            .filter((ano) => ano !== null),
+        ),
+      ];
+
+      console.log(
+        '📊 Anos presentes nos dadosOriginais:',
+        anosPresentesOriginais.sort(),
+      );
     }
-    
+
     // Calcular ANO (baseado nas datas selecionadas)
-    dadosMensais['ANO'] = dadosOriginais.filter(item => {
+    dadosMensais['ANO'] = dadosOriginais.filter((item) => {
       if (!item.dt_liq) return false;
       const ano = new Date(item.dt_liq).getFullYear();
       return ano === anoFiltro;
     }).length;
-    
+
     // Calcular cada mês (do ano selecionado)
     meses.forEach((mes, index) => {
       const numeroMes = index + 1;
-      dadosMensais[mes] = dadosOriginais.filter(item => {
+      dadosMensais[mes] = dadosOriginais.filter((item) => {
         if (!item.dt_liq) return false;
         const data = new Date(item.dt_liq);
-        return data.getMonth() + 1 === numeroMes && data.getFullYear() === anoFiltro;
+        return (
+          data.getMonth() + 1 === numeroMes && data.getFullYear() === anoFiltro
+        );
       }).length;
     });
-    
+
     return dadosMensais;
   };
 
@@ -2036,9 +2193,11 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
       <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
         <div className="flex items-center gap-2 mb-2">
           <Calendar size={14} className="text-[#000638]" />
-          <h3 className="font-bold text-xs text-[#000638]">Filtro por Período (Data Liquidação)</h3>
+          <h3 className="font-bold text-xs text-[#000638]">
+            Filtro por Período (Data Liquidação)
+          </h3>
         </div>
-        
+
         <div className="flex flex-wrap gap-1">
           {/* Botão ANO */}
           <button
@@ -2051,9 +2210,22 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
           >
             ANO
           </button>
-          
+
           {/* Botões dos Meses */}
-          {['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'].map((mes) => (
+          {[
+            'JAN',
+            'FEV',
+            'MAR',
+            'ABR',
+            'MAI',
+            'JUN',
+            'JUL',
+            'AGO',
+            'SET',
+            'OUT',
+            'NOV',
+            'DEZ',
+          ].map((mes) => (
             <button
               key={mes}
               onClick={() => setFiltroMensal(mes)}
@@ -2067,16 +2239,18 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
             </button>
           ))}
         </div>
-        
+
         {/* Informação do filtro ativo */}
         <div className="mt-3 text-xs text-gray-500">
-          <span className="font-medium">Filtro ativo:</span> {filtroMensal} 
+          <span className="font-medium">Filtro ativo:</span> {filtroMensal}
           {dataInicio && dataFim && filtroMensal !== 'ANO' && (
             <span className="ml-1 text-blue-600">
               ({new Date(dataInicio).getFullYear()})
             </span>
           )}
-          <span className="ml-2">({dados.length} registro{dados.length !== 1 ? 's' : ''})</span>
+          <span className="ml-2">
+            ({dados.length} registro{dados.length !== 1 ? 's' : ''})
+          </span>
         </div>
       </div>
 
@@ -2088,7 +2262,11 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
             <button
               onClick={toggleTodosTopicos}
               className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded transition-colors flex items-center gap-1"
-              title={todosExpandidos ? "Colapsar todos os tópicos" : "Expandir todos os tópicos"}
+              title={
+                todosExpandidos
+                  ? 'Colapsar todos os tópicos'
+                  : 'Expandir todos os tópicos'
+              }
             >
               {todosExpandidos ? (
                 <>
@@ -2104,274 +2282,499 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
             </button>
           </div>
         )}
-        
+
         {dadosAgrupados.map((categoria) => {
-        const isCategoriaExpanded = categoriasExpandidas.has(categoria.nome);
-        
-        return (
-          <div key={categoria.nome} className="border border-gray-200 rounded-lg overflow-hidden">
-            {/* Cabeçalho da categoria principal */}
+          const isCategoriaExpanded = categoriasExpandidas.has(categoria.nome);
+
+          return (
             <div
-              className="bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors px-3 py-2 flex items-center justify-between"
-              onClick={() => toggleCategoria(categoria.nome)}
+              key={categoria.nome}
+              className="border border-gray-200 rounded-lg overflow-hidden"
             >
-              <div className="flex items-center space-x-2">
-                {isCategoriaExpanded ? (
-                  <CaretDown size={16} className="text-gray-600" />
-                ) : (
-                  <CaretRight size={16} className="text-gray-600" />
-                )}
-                <div>
-                  <h3 className="font-medium text-sm text-gray-800">{categoria.nome}</h3>
-                  <div className="flex items-center space-x-3 text-xs text-gray-600">
-                    <span>{categoria.quantidade} conta(s)</span>
-                    <span>{categoria.despesasArray.length} despesa(s)</span>
-                    <span className="font-medium text-red-600">
-                      {categoria.total.toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL',
-                      })}
-                    </span>
+              {/* Cabeçalho da categoria principal */}
+              <div
+                className="bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors px-3 py-2 flex items-center justify-between"
+                onClick={() => toggleCategoria(categoria.nome)}
+              >
+                <div className="flex items-center space-x-2">
+                  {isCategoriaExpanded ? (
+                    <CaretDown size={16} className="text-gray-600" />
+                  ) : (
+                    <CaretRight size={16} className="text-gray-600" />
+                  )}
+                  <div>
+                    <h3 className="font-medium text-sm text-gray-800">
+                      {categoria.nome}
+                    </h3>
+                    <div className="flex items-center space-x-3 text-xs text-gray-600">
+                      <span>{categoria.quantidade} conta(s)</span>
+                      <span>{categoria.despesasArray.length} despesa(s)</span>
+                      <span className="font-medium text-red-600">
+                        {categoria.total.toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        })}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Sub-tópicos de despesas */}
-            {isCategoriaExpanded && (
-              <div className="bg-white border-t border-gray-100">
-                {categoria.despesasArray.map((despesa) => {
-                  const chaveExpansao = `${categoria.nome}|${despesa.nome}`;
-                  const isDespesaExpanded = categoriasExpandidas.has(chaveExpansao);
-                  
-                  return (
-                    <div key={despesa.nome} className="border-b border-gray-100 last:border-b-0">
-                      {/* Cabeçalho da despesa específica */}
+              {/* Sub-tópicos de despesas */}
+              {isCategoriaExpanded && (
+                <div className="bg-white border-t border-gray-100">
+                  {categoria.despesasArray.map((despesa) => {
+                    const chaveExpansao = `${categoria.nome}|${despesa.nome}`;
+                    const isDespesaExpanded =
+                      categoriasExpandidas.has(chaveExpansao);
+
+                    return (
                       <div
-                        className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-6 py-2 flex items-center justify-between"
-                        onClick={() => toggleDespesa(categoria.nome, despesa.nome)}
+                        key={despesa.nome}
+                        className="border-b border-gray-100 last:border-b-0"
                       >
-                        <div className="flex items-center space-x-2">
-                          {isDespesaExpanded ? (
-                            <CaretDown size={14} className="text-gray-500" />
-                          ) : (
-                            <CaretRight size={14} className="text-gray-500" />
-                          )}
-                          <div>
-                            <h4 className="font-medium text-xs text-gray-700">{despesa.nome}</h4>
-                            <div className="flex items-center space-x-3 text-xs text-gray-500">
-                              <span>{despesa.quantidade} conta(s)</span>
-                              <span>{despesa.fornecedoresArray.length} fornecedor(es)</span>
-                              <span className="font-medium text-red-500">
-                                {despesa.total.toLocaleString('pt-BR', {
-                                  style: 'currency',
-                                  currency: 'BRL',
-                                })}
-                              </span>
+                        {/* Cabeçalho da despesa específica */}
+                        <div
+                          className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-6 py-2 flex items-center justify-between"
+                          onClick={() =>
+                            toggleDespesa(categoria.nome, despesa.nome)
+                          }
+                        >
+                          <div className="flex items-center space-x-2">
+                            {isDespesaExpanded ? (
+                              <CaretDown size={14} className="text-gray-500" />
+                            ) : (
+                              <CaretRight size={14} className="text-gray-500" />
+                            )}
+                            <div>
+                              <h4 className="font-medium text-xs text-gray-700">
+                                {despesa.nome}
+                              </h4>
+                              <div className="flex items-center space-x-3 text-xs text-gray-500">
+                                <span>{despesa.quantidade} conta(s)</span>
+                                <span>
+                                  {despesa.fornecedoresArray.length}{' '}
+                                  fornecedor(es)
+                                </span>
+                                <span className="font-medium text-red-500">
+                                  {despesa.total.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Sub-tópicos de fornecedores */}
-                      {isDespesaExpanded && (
-                        <div className="bg-white border-t border-gray-50">
-                          {despesa.fornecedoresArray.map((fornecedor) => {
-                                                          const chaveExpansaoFornecedor = `${categoria.nome}|${despesa.nome}|${fornecedor.nome}|${fornecedor.nrDuplicata}|${fornecedor.vlRateio}`;
-                            const isFornecedorExpanded = categoriasExpandidas.has(chaveExpansaoFornecedor);
-                            
-                            return (
-                              <div key={`${fornecedor.nome}|${fornecedor.nrDuplicata}|${fornecedor.vlRateio}`} className="border-b border-gray-50 last:border-b-0">
-                                {/* Cabeçalho do fornecedor */}
+                        {/* Sub-tópicos de fornecedores */}
+                        {isDespesaExpanded && (
+                          <div className="bg-white border-t border-gray-50">
+                            {despesa.fornecedoresArray.map((fornecedor) => {
+                              const chaveExpansaoFornecedor = `${categoria.nome}|${despesa.nome}|${fornecedor.nome}|${fornecedor.nrDuplicata}|${fornecedor.vlRateio}`;
+                              const isFornecedorExpanded =
+                                categoriasExpandidas.has(
+                                  chaveExpansaoFornecedor,
+                                );
+
+                              return (
                                 <div
-                                  className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-9 py-2 flex items-center justify-between"
-                                                                      onClick={() => toggleFornecedor(categoria.nome, despesa.nome, fornecedor.nome, fornecedor.nrDuplicata, fornecedor.vlRateio)}
+                                  key={`${fornecedor.nome}|${fornecedor.nrDuplicata}|${fornecedor.vlRateio}`}
+                                  className="border-b border-gray-50 last:border-b-0"
                                 >
-                                  <div className="flex items-center space-x-2">
-                                    {isFornecedorExpanded ? (
-                                      <CaretDown size={12} className="text-gray-400" />
-                                    ) : (
-                                      <CaretRight size={12} className="text-gray-400" />
-                                    )}
-                                    <div>
-                                      <h5 className="font-medium text-xs text-gray-600">
-                                        {fornecedor.nome}
-                                        <span className="ml-1 text-gray-400">
-                                          (Dup: {fornecedor.nrDuplicata})
-                                        </span>
-                                        {fornecedor.vlRateio > 0 && (
+                                  {/* Cabeçalho do fornecedor */}
+                                  <div
+                                    className="bg-gray-25 hover:bg-gray-50 cursor-pointer transition-colors px-9 py-2 flex items-center justify-between"
+                                    onClick={() =>
+                                      toggleFornecedor(
+                                        categoria.nome,
+                                        despesa.nome,
+                                        fornecedor.nome,
+                                        fornecedor.nrDuplicata,
+                                        fornecedor.vlRateio,
+                                      )
+                                    }
+                                  >
+                                    <div className="flex items-center space-x-2">
+                                      {isFornecedorExpanded ? (
+                                        <CaretDown
+                                          size={12}
+                                          className="text-gray-400"
+                                        />
+                                      ) : (
+                                        <CaretRight
+                                          size={12}
+                                          className="text-gray-400"
+                                        />
+                                      )}
+                                      <div>
+                                        <h5 className="font-medium text-xs text-gray-600">
+                                          {fornecedor.nome}
                                           <span className="ml-1 text-gray-400">
-                                            - Rateio: {parseFloat(fornecedor.vlRateio).toLocaleString('pt-BR', {
-                                              style: 'currency',
-                                              currency: 'BRL',
-                                            })}
+                                            (Dup: {fornecedor.nrDuplicata})
                                           </span>
-                                        )}
-                                      </h5>
-                                      <div className="flex items-center space-x-3 text-xs text-gray-400">
-                                        <span>{fornecedor.quantidade} conta(s)</span>
-                                        <span className="font-medium text-red-400">
-                                          {fornecedor.total.toLocaleString('pt-BR', {
-                                            style: 'currency',
-                                            currency: 'BRL',
-                                          })}
-                                        </span>
+                                          {fornecedor.vlRateio > 0 && (
+                                            <span className="ml-1 text-gray-400">
+                                              - Rateio:{' '}
+                                              {parseFloat(
+                                                fornecedor.vlRateio,
+                                              ).toLocaleString('pt-BR', {
+                                                style: 'currency',
+                                                currency: 'BRL',
+                                              })}
+                                            </span>
+                                          )}
+                                        </h5>
+                                        <div className="flex items-center space-x-3 text-xs text-gray-400">
+                                          <span>
+                                            {fornecedor.quantidade} conta(s)
+                                          </span>
+                                          <span className="font-medium text-red-400">
+                                            {fornecedor.total.toLocaleString(
+                                              'pt-BR',
+                                              {
+                                                style: 'currency',
+                                                currency: 'BRL',
+                                              },
+                                            )}
+                                          </span>
+                                        </div>
                                       </div>
                                     </div>
                                   </div>
-                                </div>
 
-                                {/* Tabela de detalhes do fornecedor */}
-                                {isFornecedorExpanded && (
-                                  <div className="bg-white">
-                                    <div className="overflow-x-auto">
-                                      <table className="contas-table w-full border-collapse">
-                                        <thead>
-                                          <tr className="bg-[#000638] text-white text-[10px]">
-                                            <th className="px-2 py-1 text-center text-[10px]" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: '#000638' }}>
-                                              Selecionar
-                                            </th>
-                                            <th className="px-2 py-1 text-center text-[10px]">Vencimento</th>
-                                            <th className="px-2 py-1 text-center text-[10px]">Valor</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Fornecedor</th>
-                                            <th className="px-3 py-1 text-center text-[10px]">NM Fornecedor</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Despesa</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">NM CUSTO</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Empresa</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Duplicata</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Portador</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Emissão</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Entrada</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Liquidação</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Situação</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Estágio</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Juros</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Acréscimo</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Desconto</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Pago</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Aceite</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Parcela</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Rateio</th>
-                                            <th className="px-1 py-1 text-center text-[10px]">Observação</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          {fornecedor.itens.map((grupo, index) => {
-                                            const indiceReal = grupo.indiceOriginal;
-                                            const isSelected = linhasSelecionadas.has(indiceReal);
-                                            
-                                            return (
-                                              <tr
-                                                key={`${grupo.item.cd_empresa}-${grupo.item.nr_duplicata}-${index}`}
-                                                className={`text-[10px] border-b transition-colors cursor-pointer ${
-                                                  isSelected
-                                                    ? 'bg-blue-100 hover:bg-blue-200'
-                                                    : index % 2 === 0
-                                                    ? 'bg-white hover:bg-gray-100'
-                                                    : 'bg-gray-50 hover:bg-gray-100'
-                                                }`}
-                                                onClick={() => abrirModalDetalhes(grupo.item)}
-                                                title="Clique para ver detalhes da conta"
+                                  {/* Tabela de detalhes do fornecedor */}
+                                  {isFornecedorExpanded && (
+                                    <div className="bg-white">
+                                      <div className="overflow-x-auto">
+                                        <table className="contas-table w-full border-collapse">
+                                          <thead>
+                                            <tr className="bg-[#000638] text-white text-[10px]">
+                                              <th
+                                                className="px-2 py-1 text-center text-[10px]"
+                                                style={{
+                                                  width: '50px',
+                                                  minWidth: '50px',
+                                                  position: 'sticky',
+                                                  left: 0,
+                                                  zIndex: 10,
+                                                  background: '#000638',
+                                                }}
                                               >
-                                                <td className="px-2 py-1 text-center" style={{ width: '50px', minWidth: '50px', position: 'sticky', left: 0, zIndex: 10, background: isSelected ? '#dbeafe' : 'inherit' }}>
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={isSelected}
-                                                    onChange={(e) => {
-                                                      e.stopPropagation();
-                                                      toggleLinhaSelecionada(indiceReal);
-                                                    }}
-                                                    className="rounded"
-                                                    onClick={(e) => e.stopPropagation()}
-                                                  />
-                                                </td>
-                                                <td className="px-2 py-1 text-center">{formatarData(grupo.item.dt_vencimento)}</td>
-                                                <td className="px-2 py-1 text-right font-medium text-green-600">
-                                                  {parseFloat(grupo.item.vl_duplicata || 0).toLocaleString('pt-BR', {
-                                                    style: 'currency',
-                                                    currency: 'BRL',
-                                                  })}
-                                                </td>
-                                                <td className="px-1 py-1 text-center">{grupo.item.cd_fornecedor || ''}</td>
-                                                <td className="px-3 py-1 text-left max-w-32 truncate" title={grupo.item.nm_fornecedor}>
-                                                  {grupo.item.nm_fornecedor || ''}
-                                                </td>
-                                                <td className="px-1 py-1 text-left max-w-24 truncate" title={grupo.item.ds_despesaitem}>
-                                                  {grupo.item.ds_despesaitem || ''}
-                                                </td>
-                                                <td className="px-1 py-1 text-left max-w-24 truncate" title={grupo.item.ds_ccusto}>
-                                                  {grupo.item.ds_ccusto || ''}
-                                                </td>
-                                                <td className="px-1 py-1 text-center">{grupo.item.cd_empresa || ''}</td>
-                                                <td className="px-1 py-1 text-center">{grupo.item.nr_duplicata || ''}</td>
-                                                <td className="px-1 py-1 text-center">{grupo.item.nr_portador || ''}</td>
-                                                <td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_emissao)}</td>
-                                                <td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_entrada)}</td>
-                                                <td className="px-1 py-1 text-center">{formatarData(grupo.item.dt_liq)}</td>
-                                                <td className="px-1 py-1 text-center">{grupo.item.tp_situacao || ''}</td>
-                                                <td className="px-1 py-1 text-center">{grupo.item.tp_estagio || ''}</td>
-                                                <td className="px-1 py-1 text-right">
-                                                  {parseFloat(grupo.item.vl_juros || 0).toLocaleString('pt-BR', {
-                                                    style: 'currency',
-                                                    currency: 'BRL',
-                                                  })}
-                                                </td>
-                                                <td className="px-1 py-1 text-right">
-                                                  {parseFloat(grupo.item.vl_acrescimo || 0).toLocaleString('pt-BR', {
-                                                    style: 'currency',
-                                                    currency: 'BRL',
-                                                  })}
-                                                </td>
-                                                <td className="px-1 py-1 text-right">
-                                                  {parseFloat(grupo.item.vl_desconto || 0).toLocaleString('pt-BR', {
-                                                    style: 'currency',
-                                                    currency: 'BRL',
-                                                  })}
-                                                </td>
-                                                <td className="px-1 py-1 text-right">
-                                                  {parseFloat(grupo.item.vl_pago || 0).toLocaleString('pt-BR', {
-                                                    style: 'currency',
-                                                    currency: 'BRL',
-                                                  })}
-                                                </td>
-                                                <td className="px-1 py-1 text-center">{grupo.item.in_aceite || ''}</td>
-                                                <td className="px-1 py-1 text-center">{grupo.item.nr_parcela || ''}</td>
-                                                <td className="px-1 py-1 text-right">
-                                                  {parseFloat(grupo.item.vl_rateio || 0).toLocaleString('pt-BR', {
-                                                    style: 'currency',
-                                                    currency: 'BRL',
-                                                  })}
-                                                </td>
-                                                <td className="px-1 py-1 text-left max-w-32 truncate" title={grupo.item.ds_observacao}>
-                                                  {grupo.item.ds_observacao || ''}
-                                                </td>
-                                              </tr>
-                                            );
-                                          })}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })}
+                                                Selecionar
+                                              </th>
+                                              <th className="px-2 py-1 text-center text-[10px]">
+                                                Vencimento
+                                              </th>
+                                              <th className="px-2 py-1 text-center text-[10px]">
+                                                Valor
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Fornecedor
+                                              </th>
+                                              <th className="px-3 py-1 text-center text-[10px]">
+                                                NM Fornecedor
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Despesa
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                NM CUSTO
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Empresa
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Duplicata
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Portador
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Emissão
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Entrada
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Liquidação
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Situação
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Estágio
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Juros
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Acréscimo
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Desconto
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Pago
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Aceite
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Parcela
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Rateio
+                                              </th>
+                                              <th className="px-1 py-1 text-center text-[10px]">
+                                                Observação
+                                              </th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {fornecedor.itens.map(
+                                              (grupo, index) => {
+                                                const indiceReal =
+                                                  grupo.indiceOriginal;
+                                                const isSelected =
+                                                  linhasSelecionadas.has(
+                                                    indiceReal,
+                                                  );
 
-      {dadosAgrupados.length === 0 && (
-        <div className="text-center py-8 text-gray-500">
-          Nenhuma despesa encontrada para os filtros selecionados
-        </div>
-      )}
+                                                return (
+                                                  <tr
+                                                    key={`${grupo.item.cd_empresa}-${grupo.item.nr_duplicata}-${index}`}
+                                                    className={`text-[10px] border-b transition-colors cursor-pointer ${
+                                                      isSelected
+                                                        ? 'bg-blue-100 hover:bg-blue-200'
+                                                        : index % 2 === 0
+                                                        ? 'bg-white hover:bg-gray-100'
+                                                        : 'bg-gray-50 hover:bg-gray-100'
+                                                    }`}
+                                                    onClick={() =>
+                                                      abrirModalDetalhes(
+                                                        grupo.item,
+                                                      )
+                                                    }
+                                                    title="Clique para ver detalhes da conta"
+                                                  >
+                                                    <td
+                                                      className="px-2 py-1 text-center"
+                                                      style={{
+                                                        width: '50px',
+                                                        minWidth: '50px',
+                                                        position: 'sticky',
+                                                        left: 0,
+                                                        zIndex: 10,
+                                                        background: isSelected
+                                                          ? '#dbeafe'
+                                                          : 'inherit',
+                                                      }}
+                                                    >
+                                                      <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={(e) => {
+                                                          e.stopPropagation();
+                                                          toggleLinhaSelecionada(
+                                                            indiceReal,
+                                                          );
+                                                        }}
+                                                        className="rounded"
+                                                        onClick={(e) =>
+                                                          e.stopPropagation()
+                                                        }
+                                                      />
+                                                    </td>
+                                                    <td className="px-2 py-1 text-center">
+                                                      {formatarData(
+                                                        grupo.item
+                                                          .dt_vencimento,
+                                                      )}
+                                                    </td>
+                                                    <td className="px-2 py-1 text-right font-medium text-green-600">
+                                                      {parseFloat(
+                                                        grupo.item
+                                                          .vl_duplicata || 0,
+                                                      ).toLocaleString(
+                                                        'pt-BR',
+                                                        {
+                                                          style: 'currency',
+                                                          currency: 'BRL',
+                                                        },
+                                                      )}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-center">
+                                                      {grupo.item
+                                                        .cd_fornecedor || ''}
+                                                    </td>
+                                                    <td
+                                                      className="px-3 py-1 text-left max-w-32 truncate"
+                                                      title={
+                                                        grupo.item.nm_fornecedor
+                                                      }
+                                                    >
+                                                      {grupo.item
+                                                        .nm_fornecedor || ''}
+                                                    </td>
+                                                    <td
+                                                      className="px-1 py-1 text-left max-w-24 truncate"
+                                                      title={
+                                                        grupo.item
+                                                          .ds_despesaitem
+                                                      }
+                                                    >
+                                                      {grupo.item
+                                                        .ds_despesaitem || ''}
+                                                    </td>
+                                                    <td
+                                                      className="px-1 py-1 text-left max-w-24 truncate"
+                                                      title={
+                                                        grupo.item.ds_ccusto
+                                                      }
+                                                    >
+                                                      {grupo.item.ds_ccusto ||
+                                                        ''}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-center">
+                                                      {grupo.item.cd_empresa ||
+                                                        ''}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-center">
+                                                      {grupo.item
+                                                        .nr_duplicata || ''}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-center">
+                                                      {grupo.item.nr_portador ||
+                                                        ''}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-center">
+                                                      {formatarData(
+                                                        grupo.item.dt_emissao,
+                                                      )}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-center">
+                                                      {formatarData(
+                                                        grupo.item.dt_entrada,
+                                                      )}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-center">
+                                                      {formatarData(
+                                                        grupo.item.dt_liq,
+                                                      )}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-center">
+                                                      {grupo.item.tp_situacao ||
+                                                        ''}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-center">
+                                                      {grupo.item.tp_estagio ||
+                                                        ''}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-right">
+                                                      {parseFloat(
+                                                        grupo.item.vl_juros ||
+                                                          0,
+                                                      ).toLocaleString(
+                                                        'pt-BR',
+                                                        {
+                                                          style: 'currency',
+                                                          currency: 'BRL',
+                                                        },
+                                                      )}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-right">
+                                                      {parseFloat(
+                                                        grupo.item
+                                                          .vl_acrescimo || 0,
+                                                      ).toLocaleString(
+                                                        'pt-BR',
+                                                        {
+                                                          style: 'currency',
+                                                          currency: 'BRL',
+                                                        },
+                                                      )}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-right">
+                                                      {parseFloat(
+                                                        grupo.item
+                                                          .vl_desconto || 0,
+                                                      ).toLocaleString(
+                                                        'pt-BR',
+                                                        {
+                                                          style: 'currency',
+                                                          currency: 'BRL',
+                                                        },
+                                                      )}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-right">
+                                                      {parseFloat(
+                                                        grupo.item.vl_pago || 0,
+                                                      ).toLocaleString(
+                                                        'pt-BR',
+                                                        {
+                                                          style: 'currency',
+                                                          currency: 'BRL',
+                                                        },
+                                                      )}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-center">
+                                                      {grupo.item.in_aceite ||
+                                                        ''}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-center">
+                                                      {grupo.item.nr_parcela ||
+                                                        ''}
+                                                    </td>
+                                                    <td className="px-1 py-1 text-right">
+                                                      {parseFloat(
+                                                        grupo.item.vl_rateio ||
+                                                          0,
+                                                      ).toLocaleString(
+                                                        'pt-BR',
+                                                        {
+                                                          style: 'currency',
+                                                          currency: 'BRL',
+                                                        },
+                                                      )}
+                                                    </td>
+                                                    <td
+                                                      className="px-1 py-1 text-left max-w-32 truncate"
+                                                      title={
+                                                        grupo.item.ds_observacao
+                                                      }
+                                                    >
+                                                      {grupo.item
+                                                        .ds_observacao || ''}
+                                                    </td>
+                                                  </tr>
+                                                );
+                                              },
+                                            )}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {dadosAgrupados.length === 0 && (
+          <div className="text-center py-8 text-gray-500">
+            Nenhuma despesa encontrada para os filtros selecionados
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2379,17 +2782,20 @@ const DespesasPorCategoria = ({ dados, totalContas, linhasSelecionadas, toggleLi
 
 // Componente para exibir saídas em tabela simples
 const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
-  const [ordenacao, setOrdenacao] = useState({ campo: 'dt_liq', direcao: 'desc' });
+  const [ordenacao, setOrdenacao] = useState({
+    campo: 'dt_liq',
+    direcao: 'desc',
+  });
 
   // Função para agrupar dados idênticos (igual à página Contas a Pagar)
   const agruparDadosIdenticos = (dados) => {
     const grupos = new Map();
-    
+
     dados.forEach((item) => {
       // Criar chave única SEM vl_rateio para manter totais corretos
       // O vl_rateio será usado apenas para separação visual no componente
       const chave = `${item.cd_fornecedor}|${item.nm_fornecedor}|${item.nr_duplicata}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_entrada}|${item.dt_liq}|${item.tp_situacao}|${item.tp_previsaoreal}|${item.vl_duplicata}|${item.vl_juros}|${item.vl_acrescimo}|${item.vl_desconto}|${item.vl_pago}`;
-      
+
       if (!grupos.has(chave)) {
         grupos.set(chave, {
           item: item,
@@ -2400,41 +2806,50 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
           datasEntrada: [],
           datasLiquidacao: [],
           rateios: [], // Array para armazenar diferentes rateios
-          quantidade: 0
+          quantidade: 0,
         });
       }
-      
+
       const grupo = grupos.get(chave);
       grupo.quantidade += 1;
-      
+
       // Adicionar rateio se não existir
       if (item.vl_rateio && !grupo.rateios.includes(item.vl_rateio)) {
         grupo.rateios.push(item.vl_rateio);
       }
-      
+
       // Adicionar observação se existir e for diferente
-      if (item.ds_observacao && !grupo.observacoes.includes(item.ds_observacao)) {
+      if (
+        item.ds_observacao &&
+        !grupo.observacoes.includes(item.ds_observacao)
+      ) {
         grupo.observacoes.push(item.ds_observacao);
       }
-      
+
       // Adicionar situação se existir e for diferente
       if (item.tp_situacao && !grupo.situacoes.includes(item.tp_situacao)) {
         grupo.situacoes.push(item.tp_situacao);
       }
-      
+
       // Adicionar previsão se existir e for diferente
       if (item.tp_previsaoreal && !grupo.previsoes) {
         grupo.previsoes = [];
       }
-      if (item.tp_previsaoreal && !grupo.previsoes.includes(item.tp_previsaoreal)) {
+      if (
+        item.tp_previsaoreal &&
+        !grupo.previsoes.includes(item.tp_previsaoreal)
+      ) {
         grupo.previsoes.push(item.tp_previsaoreal);
       }
-      
+
       // Adicionar datas se existirem e forem diferentes
       if (item.dt_emissao && !grupo.datasEmissao.includes(item.dt_emissao)) {
         grupo.datasEmissao.push(item.dt_emissao);
       }
-      if (item.dt_vencimento && !grupo.datasVencimento.includes(item.dt_vencimento)) {
+      if (
+        item.dt_vencimento &&
+        !grupo.datasVencimento.includes(item.dt_vencimento)
+      ) {
         grupo.datasVencimento.push(item.dt_vencimento);
       }
       if (item.dt_entrada && !grupo.datasEntrada.includes(item.dt_entrada)) {
@@ -2444,12 +2859,12 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
         grupo.datasLiquidacao.push(item.dt_liq);
       }
     });
-    
+
     // Processar os grupos para determinar a situação final e datas mais relevantes
-    return Array.from(grupos.values()).map(grupo => {
+    return Array.from(grupos.values()).map((grupo) => {
       // Se há múltiplas situações, priorizar CANCELADAS (C) sobre NORMAIS (N)
       let situacaoFinal = grupo.item.tp_situacao;
-      
+
       if (grupo.situacoes.length > 1) {
         // Se há 'C' entre as situações, usar 'C' (cancelada tem prioridade)
         if (grupo.situacoes.includes('C')) {
@@ -2459,10 +2874,10 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
         }
         // Se não há nem 'C' nem 'N', manter a primeira situação
       }
-      
+
       // Se há múltiplas previsões, priorizar REAL (R) sobre PREVISÃO (P) sobre CONSIGNADO (C)
       let previsaoFinal = grupo.item.tp_previsaoreal;
-      
+
       if (grupo.previsoes && grupo.previsoes.length > 1) {
         // Prioridade: REAL > PREVISÃO > CONSIGNADO
         if (grupo.previsoes.includes('R')) {
@@ -2474,24 +2889,28 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
         }
         // Se não há nenhum dos valores esperados, manter o primeiro
       }
-      
+
       // Para as datas, usar a mais recente ou a mais relevante
-      const dtEmissaoFinal = grupo.datasEmissao.length > 0 ? 
-        grupo.datasEmissao.sort((a, b) => new Date(b) - new Date(a))[0] : 
-        grupo.item.dt_emissao;
-      
-      const dtVencimentoFinal = grupo.datasVencimento.length > 0 ? 
-        grupo.datasVencimento.sort((a, b) => new Date(b) - new Date(a))[0] : 
-        grupo.item.dt_vencimento;
-      
-      const dtEntradaFinal = grupo.datasEntrada.length > 0 ? 
-        grupo.datasEntrada.sort((a, b) => new Date(b) - new Date(a))[0] : 
-        grupo.item.dt_entrada;
-      
-      const dtLiquidacaoFinal = grupo.datasLiquidacao.length > 0 ? 
-        grupo.datasLiquidacao.sort((a, b) => new Date(b) - new Date(a))[0] : 
-        grupo.item.dt_liq;
-      
+      const dtEmissaoFinal =
+        grupo.datasEmissao.length > 0
+          ? grupo.datasEmissao.sort((a, b) => new Date(b) - new Date(a))[0]
+          : grupo.item.dt_emissao;
+
+      const dtVencimentoFinal =
+        grupo.datasVencimento.length > 0
+          ? grupo.datasVencimento.sort((a, b) => new Date(b) - new Date(a))[0]
+          : grupo.item.dt_vencimento;
+
+      const dtEntradaFinal =
+        grupo.datasEntrada.length > 0
+          ? grupo.datasEntrada.sort((a, b) => new Date(b) - new Date(a))[0]
+          : grupo.item.dt_entrada;
+
+      const dtLiquidacaoFinal =
+        grupo.datasLiquidacao.length > 0
+          ? grupo.datasLiquidacao.sort((a, b) => new Date(b) - new Date(a))[0]
+          : grupo.item.dt_liq;
+
       // Atualizar o item do grupo com os valores finais
       return {
         ...grupo,
@@ -2502,8 +2921,8 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
           dt_emissao: dtEmissaoFinal,
           dt_vencimento: dtVencimentoFinal,
           dt_entrada: dtEntradaFinal,
-          dt_liq: dtLiquidacaoFinal
-        }
+          dt_liq: dtLiquidacaoFinal,
+        },
       };
     });
   };
@@ -2546,9 +2965,9 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
   }, [dadosAgrupados, ordenacao]);
 
   const handleSort = (campo) => {
-    setOrdenacao(prev => ({
+    setOrdenacao((prev) => ({
       campo,
-      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc'
+      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc',
     }));
   };
 
@@ -2556,9 +2975,11 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
     if (ordenacao.campo !== campo) {
       return <CaretDown size={12} className="ml-1 opacity-50" />;
     }
-    return ordenacao.direcao === 'asc' 
-      ? <CaretUp size={12} className="ml-1" />
-      : <CaretDown size={12} className="ml-1" />;
+    return ordenacao.direcao === 'asc' ? (
+      <CaretUp size={12} className="ml-1" />
+    ) : (
+      <CaretDown size={12} className="ml-1" />
+    );
   };
 
   const formatarData = (data) => {
@@ -2574,16 +2995,23 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
     <div className="space-y-6">
       {/* Resumo */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
           <div className="text-center">
             <div className="font-semibold text-gray-700">Total de Saídas</div>
-            <div className="text-blue-600 font-bold">{dadosAgrupados.length}</div>
-            <div className="text-xs text-gray-500">({dados.length} registros originais)</div>
+            <div className="text-blue-600 font-bold">
+              {dadosAgrupados.length}
+            </div>
+            <div className="text-xs text-gray-500">
+              ({dados.length} registros originais)
+            </div>
           </div>
           <div className="text-center">
             <div className="font-semibold text-gray-700">Valor Total Pago</div>
             <div className="text-green-600 font-bold">
-              {totalSaidas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              {totalSaidas.toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+              })}
             </div>
           </div>
           <div className="text-center">
@@ -2595,37 +3023,42 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
           <div className="text-center">
             <div className="font-semibold text-gray-700">Média por Saída</div>
             <div className="text-purple-600 font-bold">
-              {dadosAgrupados.length > 0 
-                ? (totalSaidas / dadosAgrupados.length).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                : 'R$ 0,00'
-              }
+              {dadosAgrupados.length > 0
+                ? (totalSaidas / dadosAgrupados.length).toLocaleString(
+                    'pt-BR',
+                    { style: 'currency', currency: 'BRL' },
+                  )
+                : 'R$ 0,00'}
             </div>
           </div>
           <div className="text-center">
-            <div className="font-semibold text-gray-700">Registros Agrupados</div>
+            <div className="font-semibold text-gray-700">
+              Registros Agrupados
+            </div>
             <div className="text-orange-600 font-bold">
               {dados.length - dadosAgrupados.length}
             </div>
             <div className="text-xs text-gray-500">duplicatas removidas</div>
           </div>
-
         </div>
       </div>
 
       {/* Tabela de Saídas */}
       <div className="bg-white rounded-lg border border-gray-200">
         <div className="p-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">Detalhamento de Saídas</h3>
+          <h3 className="text-lg font-semibold text-gray-900">
+            Detalhamento de Saídas
+          </h3>
           <p className="text-sm text-gray-500 mt-1">
             Lista de todas as saídas do período selecionado
           </p>
         </div>
-        
+
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th 
+                <th
                   className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('dt_liq')}
                 >
@@ -2634,7 +3067,7 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
                     {getSortIcon('dt_liq')}
                   </div>
                 </th>
-                <th 
+                <th
                   className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('cd_fornecedor')}
                 >
@@ -2649,7 +3082,7 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Empresa
                 </th>
-                <th 
+                <th
                   className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('vl_pago')}
                 >
@@ -2668,14 +3101,21 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {dadosOrdenados.map((grupo, index) => (
-                <tr key={`${grupo.item.cd_empresa}-${grupo.item.nr_duplicata}-${index}`} className="hover:bg-gray-50">
+                <tr
+                  key={`${grupo.item.cd_empresa}-${grupo.item.nr_duplicata}-${index}`}
+                  className="hover:bg-gray-50"
+                >
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
                     {formatarData(grupo.item.dt_liq)}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
                     <div className="flex flex-col">
-                      <span className="font-medium">{grupo.item.cd_fornecedor}</span>
-                      <span className="text-xs text-gray-500">{grupo.item.nm_fornecedor || 'N/A'}</span>
+                      <span className="font-medium">
+                        {grupo.item.cd_fornecedor}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {grupo.item.nm_fornecedor || 'N/A'}
+                      </span>
                     </div>
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
@@ -2685,20 +3125,29 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
                     {grupo.item.cd_empresa}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-right font-medium text-green-600">
-                    {parseFloat(grupo.item.vl_pago || 0).toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })}
+                    {parseFloat(grupo.item.vl_pago || 0).toLocaleString(
+                      'pt-BR',
+                      {
+                        style: 'currency',
+                        currency: 'BRL',
+                      },
+                    )}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                      grupo.item.tp_situacao === 'N' ? 'bg-green-100 text-green-800' :
-                      grupo.item.tp_situacao === 'C' ? 'bg-red-100 text-red-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {grupo.item.tp_situacao === 'N' ? 'Normal' :
-                       grupo.item.tp_situacao === 'C' ? 'Cancelada' :
-                       grupo.item.tp_situacao || 'N/A'}
+                    <span
+                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        grupo.item.tp_situacao === 'N'
+                          ? 'bg-green-100 text-green-800'
+                          : grupo.item.tp_situacao === 'C'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}
+                    >
+                      {grupo.item.tp_situacao === 'N'
+                        ? 'Normal'
+                        : grupo.item.tp_situacao === 'C'
+                        ? 'Cancelada'
+                        : grupo.item.tp_situacao || 'N/A'}
                     </span>
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
@@ -2714,33 +3163,39 @@ const SaidasPorCategoria = ({ dados, totalSaidas, dataInicio, dataFim }) => {
   );
 };
 
-
-
 // Componente para detalhamento de Contas a Receber
-const ContasReceberDetalhamento = ({ dados, totalContasReceber, dataInicio, dataFim }) => {
-  const [ordenacao, setOrdenacao] = useState({ campo: 'dt_liq', direcao: 'desc' });
+const ContasReceberDetalhamento = ({
+  dados,
+  totalContasReceber,
+  dataInicio,
+  dataFim,
+}) => {
+  const [ordenacao, setOrdenacao] = useState({
+    campo: 'dt_liq',
+    direcao: 'desc',
+  });
 
   // Filtrar apenas dados com tp_situacao = 1
-  const dadosFiltrados = dados.filter(item => item.tp_situacao === '1');
+  const dadosFiltrados = dados.filter((item) => item.tp_situacao === '1');
 
   // Função para agrupar dados idênticos (evitar duplicação)
   const agruparDadosIdenticos = (dados) => {
     const grupos = new Map();
-    
+
     dados.forEach((item) => {
       const chave = `${item.cd_cliente}|${item.nm_cliente}|${item.nr_parcela}|${item.cd_empresa}|${item.dt_emissao}|${item.dt_vencimento}|${item.dt_liq}|${item.tp_situacao}|${item.vl_fatura}|${item.vl_pago}`;
-      
+
       if (!grupos.has(chave)) {
         grupos.set(chave, {
           item: item,
-          quantidade: 0
+          quantidade: 0,
         });
       }
-      
+
       const grupo = grupos.get(chave);
       grupo.quantidade += 1;
     });
-    
+
     return Array.from(grupos.values());
   };
 
@@ -2782,9 +3237,9 @@ const ContasReceberDetalhamento = ({ dados, totalContasReceber, dataInicio, data
   }, [dadosAgrupados, ordenacao]);
 
   const handleSort = (campo) => {
-    setOrdenacao(prev => ({
+    setOrdenacao((prev) => ({
       campo,
-      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc'
+      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc',
     }));
   };
 
@@ -2792,9 +3247,11 @@ const ContasReceberDetalhamento = ({ dados, totalContasReceber, dataInicio, data
     if (ordenacao.campo !== campo) {
       return <CaretDown size={12} className="ml-1 opacity-50" />;
     }
-    return ordenacao.direcao === 'asc' 
-      ? <CaretUp size={12} className="ml-1" />
-      : <CaretDown size={12} className="ml-1" />;
+    return ordenacao.direcao === 'asc' ? (
+      <CaretUp size={12} className="ml-1" />
+    ) : (
+      <CaretDown size={12} className="ml-1" />
+    );
   };
 
   const formatarData = (data) => {
@@ -2813,13 +3270,22 @@ const ContasReceberDetalhamento = ({ dados, totalContasReceber, dataInicio, data
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
           <div className="text-center">
             <div className="font-semibold text-gray-700">Total de Entradas</div>
-            <div className="text-green-600 font-bold">{dadosAgrupados.length}</div>
-            <div className="text-xs text-gray-500">({dados.length} registros originais)</div>
+            <div className="text-green-600 font-bold">
+              {dadosAgrupados.length}
+            </div>
+            <div className="text-xs text-gray-500">
+              ({dados.length} registros originais)
+            </div>
           </div>
           <div className="text-center">
-            <div className="font-semibold text-gray-700">Valor Total Recebido</div>
+            <div className="font-semibold text-gray-700">
+              Valor Total Recebido
+            </div>
             <div className="text-green-600 font-bold">
-              {totalContasReceber.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              {totalContasReceber.toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+              })}
             </div>
           </div>
           <div className="text-center">
@@ -2831,10 +3297,12 @@ const ContasReceberDetalhamento = ({ dados, totalContasReceber, dataInicio, data
           <div className="text-center">
             <div className="font-semibold text-gray-700">Média por Entrada</div>
             <div className="text-purple-600 font-bold">
-              {dadosAgrupados.length > 0 
-                ? (totalContasReceber / dadosAgrupados.length).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                : 'R$ 0,00'
-              }
+              {dadosAgrupados.length > 0
+                ? (totalContasReceber / dadosAgrupados.length).toLocaleString(
+                    'pt-BR',
+                    { style: 'currency', currency: 'BRL' },
+                  )
+                : 'R$ 0,00'}
             </div>
           </div>
           <div className="text-center">
@@ -2850,17 +3318,20 @@ const ContasReceberDetalhamento = ({ dados, totalContasReceber, dataInicio, data
       {/* Tabela de Contas a Receber */}
       <div className="bg-white rounded-lg border border-gray-200">
         <div className="p-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">Detalhamento de Contas a Receber</h3>
+          <h3 className="text-lg font-semibold text-gray-900">
+            Detalhamento de Contas a Receber
+          </h3>
           <p className="text-sm text-gray-500 mt-1">
-            Lista de todas as entradas do período selecionado (apenas tp_situacao = 1)
+            Lista de todas as entradas do período selecionado (apenas
+            tp_situacao = 1)
           </p>
         </div>
-        
+
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th 
+                <th
                   className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('dt_liq')}
                 >
@@ -2869,7 +3340,7 @@ const ContasReceberDetalhamento = ({ dados, totalContasReceber, dataInicio, data
                     {getSortIcon('dt_liq')}
                   </div>
                 </th>
-                <th 
+                <th
                   className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('cd_cliente')}
                 >
@@ -2878,7 +3349,7 @@ const ContasReceberDetalhamento = ({ dados, totalContasReceber, dataInicio, data
                     {getSortIcon('cd_cliente')}
                   </div>
                 </th>
-                <th 
+                <th
                   className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('nm_cliente')}
                 >
@@ -2893,7 +3364,7 @@ const ContasReceberDetalhamento = ({ dados, totalContasReceber, dataInicio, data
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Empresa
                 </th>
-                <th 
+                <th
                   className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('vl_pago')}
                 >
@@ -2912,13 +3383,18 @@ const ContasReceberDetalhamento = ({ dados, totalContasReceber, dataInicio, data
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {dadosOrdenados.map((grupo, index) => (
-                <tr key={`${grupo.item.cd_empresa}-${grupo.item.cd_cliente}-${grupo.item.nr_parcela}-${index}`} className="hover:bg-gray-50">
+                <tr
+                  key={`${grupo.item.cd_empresa}-${grupo.item.cd_cliente}-${grupo.item.nr_parcela}-${index}`}
+                  className="hover:bg-gray-50"
+                >
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
                     {formatarData(grupo.item.dt_liq)}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
                     <div className="flex flex-col">
-                      <span className="font-medium">{grupo.item.cd_cliente}</span>
+                      <span className="font-medium">
+                        {grupo.item.cd_cliente}
+                      </span>
                     </div>
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
@@ -2933,10 +3409,13 @@ const ContasReceberDetalhamento = ({ dados, totalContasReceber, dataInicio, data
                     {grupo.item.cd_empresa}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-right font-medium text-green-600">
-                    {parseFloat(grupo.item.vl_pago || 0).toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })}
+                    {parseFloat(grupo.item.vl_pago || 0).toLocaleString(
+                      'pt-BR',
+                      {
+                        style: 'currency',
+                        currency: 'BRL',
+                      },
+                    )}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
                     <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
