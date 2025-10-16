@@ -55,6 +55,9 @@ const InadimplentesFranquias = () => {
   const [modalAberto, setModalAberto] = useState(false);
   const [clienteSelecionado, setClienteSelecionado] = useState(null);
   const [faturasSelecionadas, setFaturasSelecionadas] = useState([]);
+  const [obsModalAberto, setObsModalAberto] = useState(false);
+  const [obsFatura, setObsFatura] = useState([]);
+  const [obsLoading, setObsLoading] = useState(false);
 
   const fetchDados = async () => {
     try {
@@ -292,6 +295,37 @@ const InadimplentesFranquias = () => {
     setClienteSelecionado(cliente);
     setFaturasSelecionadas(cliente.faturas);
     setModalAberto(true);
+  };
+
+  const abrirObsFatura = async (fatura) => {
+    // Chamar rota obsfati com cd_cliente e nr_fat
+    try {
+      setObsLoading(true);
+      const cd_cliente =
+        clienteSelecionado?.cd_cliente || fatura.cd_cliente || '';
+      const nr_fat = fatura.nr_fat || fatura.nr_fatura || '';
+
+      const response = await apiClient.financial.obsFati({
+        cd_cliente,
+        nr_fat,
+      });
+
+      let rows = [];
+      if (response && response.success && Array.isArray(response.data)) {
+        rows = response.data;
+      } else if (Array.isArray(response)) {
+        rows = response;
+      }
+
+      setObsFatura(rows);
+      setObsModalAberto(true);
+    } catch (error) {
+      console.error('Erro ao carregar observações da fatura', error);
+      setObsFatura([]);
+      setObsModalAberto(true);
+    } finally {
+      setObsLoading(false);
+    }
   };
 
   const fecharModal = () => {
@@ -607,6 +641,7 @@ const InadimplentesFranquias = () => {
                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                   <tr>
                     <th className="px-4 py-3">Empresa</th>
+                    <th className="px-4 py-3">Nº Fatura</th>
                     <th className="px-4 py-3">Emissão</th>
                     <th className="px-4 py-3">Vencimento</th>
                     <th className="px-4 py-3">Valor Fatura</th>
@@ -617,9 +652,16 @@ const InadimplentesFranquias = () => {
                 </thead>
                 <tbody>
                   {faturasSelecionadas.map((fatura, index) => (
-                    <tr key={index} className="bg-white border-b">
+                    <tr
+                      key={index}
+                      className="bg-white border-b hover:bg-gray-50 cursor-pointer"
+                      onClick={() => abrirObsFatura(fatura)}
+                    >
                       <td className="px-4 py-3">
                         {fatura.cd_empresa || 'N/A'}
+                      </td>
+                      <td className="px-4 py-3">
+                        {fatura.nr_fat || fatura.nr_fatura || 'N/A'}
                       </td>
                       <td className="px-4 py-3">
                         {formatarData(fatura.dt_emissao)}
@@ -650,6 +692,68 @@ const InadimplentesFranquias = () => {
             <div className="mt-4 flex justify-end">
               <button
                 onClick={fecharModal}
+                className="px-4 py-2 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {obsModalAberto && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          style={{ zIndex: 99999 }}
+        >
+          <div className="bg-white rounded-lg p-6 max-w-3xl max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Observações da Fatura
+              </h3>
+              <button
+                onClick={() => setObsModalAberto(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mb-4">
+              {obsLoading ? (
+                <div className="flex items-center justify-center py-6">
+                  <LoadingSpinner size="sm" text="Carregando observações..." />
+                </div>
+              ) : obsFatura && obsFatura.length > 0 ? (
+                <ul className="list-disc pl-5 space-y-2">
+                  {obsFatura.map((o, idx) => (
+                    <li key={idx} className="text-sm text-gray-700">
+                      {o.ds_observacao}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-sm text-gray-500">
+                  Nenhuma observação encontrada para esta fatura.
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setObsModalAberto(false)}
                 className="px-4 py-2 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors"
               >
                 Fechar

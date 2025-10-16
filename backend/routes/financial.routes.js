@@ -1330,12 +1330,44 @@ router.get(
         AND vff.dt_cancelamento IS NULL
         AND vff.vl_pago = 0
         AND pp.nm_fantasia LIKE '%F%CROSBY%'
+      GROUP BY
+        vff.cd_cliente,
+        vff.cd_empresa,
+        vff.nr_fat,
+        vff.nm_cliente,
+        pp.nm_fantasia,
+        pp.ds_uf,
+        vff.nr_parcela,
+        vff.dt_emissao,
+        vff.dt_vencimento,
+        vff.dt_cancelamento,
+        vff.dt_liq,
+        vff.tp_cobranca,
+        vff.tp_documento,
+        vff.tp_faturamento,
+        vff.tp_inclusao,
+        vff.tp_baixa,
+        vff.tp_situacao,
+        vff.vl_fatura,
+        vff.vl_original,
+        vff.vl_abatimento,
+        vff.vl_pago,
+        vff.vl_desconto,
+        vff.vl_liquido,
+        vff.vl_acrescimo,
+        vff.vl_multa,
+        vff.nr_portador,
+        vff.vl_renegociacao,
+        vff.vl_corrigido,
+        vff.vl_juros,
+        vff.pr_juromes,
+        vff.pr_multa
       ORDER BY vff.dt_emissao DESC
       LIMIT $3 OFFSET $4
     `;
 
     const countQuery = `
-      SELECT COUNT(*) as total
+      SELECT COUNT(DISTINCT vff.cd_cliente) as total
       FROM vr_fcr_faturai vff
       LEFT JOIN vr_pes_pessoaclas vpp ON vff.cd_cliente = vpp.cd_pessoa
       LEFT JOIN pes_pesjuridica pp ON vpp.cd_pessoa = pp.cd_pessoa
@@ -2128,6 +2160,66 @@ router.get(
         data: rows,
       },
       'Dados de auditoria de crédito e débito obtidos com sucesso',
+    );
+  }),
+);
+
+/**
+ * @route GET /financial/obsfati
+ * @desc Buscar observações das faturas
+ * @access Public
+ * @query {cd_cliente, nr_fat}
+ */
+router.get(
+  '/obsfati',
+  sanitizeInput,
+  asyncHandler(async (req, res) => {
+    const { cd_cliente, nr_fat } = req.query;
+
+    // Validar parâmetros obrigatórios
+    if (!cd_cliente) {
+      return errorResponse(
+        res,
+        'O parâmetro cd_cliente é obrigatório',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    if (!nr_fat) {
+      return errorResponse(
+        res,
+        'O parâmetro nr_fat é obrigatório',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    const query = `
+      SELECT
+        t.nr_fat,
+        t.ds_observacao
+      FROM
+        obs_fati t
+      WHERE
+        t.cd_cliente = $1
+        AND t.nr_fat = $2
+      GROUP BY
+        t.nr_fat,
+        t.ds_observacao
+    `;
+
+    const { rows } = await pool.query(query, [cd_cliente, nr_fat]);
+
+    successResponse(
+      res,
+      {
+        cd_cliente,
+        nr_fat,
+        count: rows.length,
+        data: rows,
+      },
+      'Observações das faturas obtidas com sucesso',
     );
   }),
 );

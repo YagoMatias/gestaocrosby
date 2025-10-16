@@ -277,6 +277,8 @@ const useApiClient = () => {
     // Nova rota para inadimplentes (franquias)
     inadimplentesFranquias: (params) =>
       apiCall('/api/financial/inadimplentes-franquias', params),
+    // Observações de faturas (obsfati)
+    obsFati: (params) => apiCall('/api/financial/obsfati', params),
   };
 
   const sales = {
