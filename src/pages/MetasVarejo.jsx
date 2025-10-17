@@ -9,6 +9,8 @@ import useMetasSemanais from '../hooks/useMetasSemanais';
 import { useAuth } from '../components/AuthContext';
 import Notification from '../components/ui/Notification';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 const MetasVarejo = () => {
   const apiClient = useApiClient();
@@ -1684,18 +1686,20 @@ const MetasVarejo = () => {
       .filter((entidade) => {
         const metaNivel = entidade.metas[nivel] || 0;
         // Usar faturamentoSemanal se em modo SEMANAL, senão usar faturamento (mensal)
-        const faturamentoParaComparar = visualizacaoTipo === 'SEMANAL' 
-          ? entidade.faturamentoSemanal 
-          : entidade.faturamento;
+        const faturamentoParaComparar =
+          visualizacaoTipo === 'SEMANAL'
+            ? entidade.faturamentoSemanal
+            : entidade.faturamento;
         return metaNivel > 0 && faturamentoParaComparar >= metaNivel;
       })
       .map((entidade) => ({
         nome: entidade.nome,
         meta: entidade.metas[nivel],
         // Exibir faturamentoSemanal se em modo SEMANAL, senão faturamento (mensal)
-        faturamento: visualizacaoTipo === 'SEMANAL' 
-          ? entidade.faturamentoSemanal 
-          : entidade.faturamento,
+        faturamento:
+          visualizacaoTipo === 'SEMANAL'
+            ? entidade.faturamentoSemanal
+            : entidade.faturamento,
         semana: `S${calcularSemanaAtual(
           filtros.dt_inicio
             ? filtros.dt_inicio.substring(0, 7)
@@ -1709,6 +1713,308 @@ const MetasVarejo = () => {
       entidades: entidadesFiltradas,
     });
     setShowModalMetasDetalhes(true);
+  };
+
+  // Função para gerar relatório PDF com lojas por semana e nível de meta
+  const gerarRelatorioPDF = () => {
+    console.log('🔍 Iniciando geração de relatório PDF...');
+
+    if (!dadosPorSemana || Object.keys(dadosPorSemana).length === 0) {
+      alert(
+        'Nenhum dado disponível para gerar relatório. Por favor, execute a busca primeiro.',
+      );
+      return;
+    }
+
+    const doc = new jsPDF();
+    let yPosition = 15;
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 12;
+    const maxYPosition = pageHeight - 15;
+
+    // Cores e estilos para cada nível
+    const nivelConfig = {
+      bronze: { color: [184, 134, 11], textColor: [139, 101, 8] },
+      prata: { color: [192, 192, 192], textColor: [100, 100, 100] },
+      ouro: { color: [255, 215, 0], textColor: [184, 134, 11] },
+      diamante: { color: [30, 144, 255], textColor: [0, 102, 204] },
+    };
+
+    const niveisEmoji = {
+      bronze: '🥉',
+      prata: '🥈',
+      ouro: '🥇',
+      diamante: '💎',
+    };
+
+    // Helper: normalizar nomes
+    const normalize = (s) =>
+      (s || '')
+        .toString()
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .toLowerCase()
+        .trim();
+
+    // Construir mapas de metas semanais
+    const metaSemanaisMap = { lojas: new Map(), vendedores: new Map() };
+    Object.keys(metasSemanais || {}).forEach((k) => {
+      const parts = k.split('-');
+      const tipo = parts[0];
+      const nome = parts.slice(1).join('-');
+      const nk = normalize(nome);
+      if (!metaSemanaisMap[tipo]) metaSemanaisMap[tipo] = new Map();
+      metaSemanaisMap[tipo].set(nk, metasSemanais[k]);
+    });
+
+    // ========== CABEÇALHO ==========
+    doc.setFillColor(6, 6, 56); // Azul escuro
+    doc.rect(0, 0, pageWidth, 25, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(20);
+    doc.setFont(undefined, 'bold');
+    doc.text('RELATÓRIO DE METAS', margin, 12);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Período: ${filtros.dt_inicio} a ${filtros.dt_fim}`, margin, 20);
+
+    doc.setTextColor(0, 0, 0);
+    yPosition = 30;
+
+    // ========== PROCESSAR SEMANAS ==========
+    const semanas = Object.keys(dadosPorSemana).sort(
+      (a, b) => parseInt(a) - parseInt(b),
+    );
+
+    semanas.forEach((semanaKey, semanaIdx) => {
+      const dadosSemana = dadosPorSemana[semanaKey];
+      const semanaNum = parseInt(semanaKey, 10);
+
+      // Verificar se precisa de nova página
+      if (yPosition > maxYPosition - 60) {
+        doc.addPage();
+        yPosition = 15;
+      }
+
+      // ===== CABEÇALHO DA SEMANA =====
+      doc.setFillColor(100, 149, 237); // Cornflower blue
+      doc.rect(margin, yPosition, pageWidth - margin * 2, 7, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text(`SEMANA ${semanaKey}`, margin + 3, yPosition + 5);
+
+      yPosition += 10;
+      doc.setTextColor(0, 0, 0);
+
+      // Processar cada nível de meta
+      const niveis = ['bronze', 'prata', 'ouro', 'diamante'];
+      let totalLojasNivel = 0;
+
+      niveis.forEach((nivel) => {
+        const lojasNivel = [];
+
+        // Filtrar lojas que atingiram esta meta
+        dadosSemana.lojas?.forEach((loja) => {
+          const nomeFantasia =
+            loja.nome_fantasia ||
+            loja.nome_loja ||
+            loja.loja ||
+            loja.nome ||
+            '';
+          const nk = normalize(nomeFantasia);
+
+          const weeklyObj = metaSemanaisMap.lojas?.get(nk) || null;
+          const weeklyMetas = weeklyObj?.semanas?.[semanaNum]?.metas || {};
+          const metaNivel = toNumber(weeklyMetas[nivel]) || 0;
+          const faturamentoSemanal = Number(loja.faturamento) || 0;
+
+          if (metaNivel > 0 && faturamentoSemanal >= metaNivel) {
+            const percentualAtingido = Math.round(
+              (faturamentoSemanal / metaNivel) * 100,
+            );
+            lojasNivel.push({
+              loja: nomeFantasia,
+              meta: metaNivel,
+              metaFormatada: formatBRL(metaNivel),
+              faturamento: faturamentoSemanal,
+              faturamentoFormatado: formatBRL(faturamentoSemanal),
+              percentual: percentualAtingido,
+            });
+          }
+        });
+
+        if (lojasNivel.length > 0) {
+          totalLojasNivel += lojasNivel.length;
+
+          // Verificar se precisa de nova página
+          if (yPosition > maxYPosition - 40) {
+            doc.addPage();
+            yPosition = 15;
+          }
+
+          // ===== CARD DO NÍVEL =====
+          const cardHeight = lojasNivel.length * 8 + 12;
+          const config = nivelConfig[nivel];
+
+          // Fundo do card
+          doc.setFillColor(...config.color);
+          doc.rect(margin, yPosition, pageWidth - margin * 2, 6, 'F');
+
+          // Título do nível
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(11);
+          doc.setFont(undefined, 'bold');
+          doc.text(
+            `${niveisEmoji[nivel]} ${nivel.toUpperCase()} (${
+              lojasNivel.length
+            } lojas)`,
+            margin + 3,
+            yPosition + 4.5,
+          );
+
+          yPosition += 8;
+
+          // Cabeçalho da tabela
+          doc.setTextColor(...config.textColor);
+          doc.setFontSize(8);
+          doc.setFont(undefined, 'bold');
+
+          const colLoja = margin + 2;
+          const colMeta = pageWidth - margin - 60;
+          const colFaturamento = pageWidth - margin - 30;
+          const colPercentual = pageWidth - margin - 8;
+
+          doc.text('Loja', colLoja, yPosition);
+          doc.text('Meta', colMeta, yPosition);
+          doc.text('Faturamento', colFaturamento, yPosition);
+          doc.text('%', colPercentual, yPosition);
+
+          yPosition += 3;
+
+          // Linha separadora
+          doc.setDrawColor(...config.textColor);
+          doc.setLineWidth(0.3);
+          doc.line(margin + 2, yPosition, pageWidth - margin - 2, yPosition);
+
+          yPosition += 2;
+
+          // Linhas de dados
+          doc.setTextColor(0, 0, 0);
+          doc.setFontSize(8);
+          doc.setFont(undefined, 'normal');
+
+          lojasNivel.forEach((item, idx) => {
+            if (yPosition > maxYPosition - 5) {
+              doc.addPage();
+              yPosition = 15;
+
+              // Repetir cabeçalho na próxima página
+              doc.setFillColor(...config.color);
+              doc.rect(margin, yPosition, pageWidth - margin * 2, 6, 'F');
+
+              doc.setTextColor(255, 255, 255);
+              doc.setFontSize(11);
+              doc.setFont(undefined, 'bold');
+              doc.text(
+                `${niveisEmoji[nivel]} ${nivel.toUpperCase()} (continuação)`,
+                margin + 3,
+                yPosition + 4.5,
+              );
+
+              yPosition += 8;
+
+              doc.setTextColor(...config.textColor);
+              doc.setFontSize(8);
+              doc.setFont(undefined, 'bold');
+              doc.text('Loja', colLoja, yPosition);
+              doc.text('Meta', colMeta, yPosition);
+              doc.text('Faturamento', colFaturamento, yPosition);
+              doc.text('%', colPercentual, yPosition);
+
+              yPosition += 3;
+              doc.setDrawColor(...config.textColor);
+              doc.setLineWidth(0.3);
+              doc.line(
+                margin + 2,
+                yPosition,
+                pageWidth - margin - 2,
+                yPosition,
+              );
+
+              yPosition += 2;
+              doc.setTextColor(0, 0, 0);
+              doc.setFontSize(8);
+              doc.setFont(undefined, 'normal');
+            }
+
+            // Fundo alternado para melhor legibilidade
+            if (idx % 2 === 0) {
+              doc.setFillColor(240, 240, 240);
+              doc.rect(
+                margin + 1,
+                yPosition - 1.5,
+                pageWidth - margin * 2 - 2,
+                3.5,
+                'F',
+              );
+            }
+
+            // Dados da loja
+            const lojaText =
+              item.loja.length > 25
+                ? item.loja.substring(0, 22) + '...'
+                : item.loja;
+            doc.text(lojaText, colLoja, yPosition);
+            doc.text(item.metaFormatada, colMeta, yPosition);
+            doc.text(item.faturamentoFormatado, colFaturamento, yPosition);
+
+            // Percentual com cor
+            const corPercentual =
+              item.percentual >= 100
+                ? [34, 139, 34]
+                : item.percentual >= 80
+                ? [255, 140, 0]
+                : [220, 20, 60];
+            doc.setTextColor(...corPercentual);
+            doc.setFont(undefined, 'bold');
+            doc.text(`${item.percentual}%`, colPercentual, yPosition);
+            doc.setTextColor(0, 0, 0);
+            doc.setFont(undefined, 'normal');
+
+            yPosition += 3.5;
+          });
+
+          yPosition += 2;
+        }
+      });
+
+      yPosition += 5;
+    });
+
+    // ========== RODAPÉ ==========
+    doc.setFontSize(8);
+    doc.setTextColor(128, 128, 128);
+    const dataGeracao = new Date().toLocaleString('pt-BR');
+    doc.text(`Relatório gerado em: ${dataGeracao}`, margin, pageHeight - 10);
+
+    // Salvar PDF
+    doc.save(`relatorio-metas-${new Date().toISOString().slice(0, 10)}.pdf`);
+    console.log('✅ PDF gerado com sucesso!');
+  };
+
+  // Helper para obter cor do nível
+  const getNivelColor = (nivel) => {
+    const cores = {
+      bronze: [184, 134, 11],
+      prata: [192, 192, 192],
+      ouro: [255, 215, 0],
+      diamante: [30, 144, 255],
+    };
+    return cores[nivel] || [100, 100, 100];
   };
 
   const handleBuscar = async () => {
@@ -4374,6 +4680,14 @@ const MetasVarejo = () => {
                 className="text-xs bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] transition-colors"
               >
                 Recalcular Estatísticas
+              </button>
+
+              <button
+                type="button"
+                onClick={gerarRelatorioPDF}
+                className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700 transition-colors"
+              >
+                Baixar Relatório
               </button>
             </div>
           </div>
