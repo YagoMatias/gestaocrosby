@@ -42,7 +42,8 @@ const useApiClient = () => {
         });
         return {
           success: false,
-          data: [],
+          faturamentoBazar: (params) =>
+            apiCall('/api/faturamento/fatbazar', params),
           total: 0,
           message,
           status: response.status,
@@ -289,6 +290,11 @@ const useApiClient = () => {
       apiCall('/api/faturamento/fat-varejo', params),
     faturamentoMtm: (params) =>
       apiCall('/api/faturamento/fat-multimarcas', params),
+    // Novo: faturamento Bazar
+    faturamentoBazar: (params) => apiCall('/api/faturamento/fatbazar', params),
+    // Novo: faturamento Fatsellect
+    faturamentoFatsellect: (params) =>
+      apiCall('/api/faturamento/fatsellect', params),
     faturamentoFranquias: (params) =>
       apiCall('/api/faturamento/fat-franquias', params),
     faturamentoRevenda: (params) =>

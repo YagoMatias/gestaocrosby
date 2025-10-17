@@ -70,12 +70,16 @@ const DashboardFaturamento = () => {
     mtm: [],
     franquias: [],
     revenda: [],
+    bazar: [],
+    fatsellect: [],
   });
   const [dadosMesAnterior, setDadosMesAnterior] = useState({
     varejo: [],
     mtm: [],
     franquias: [],
     revenda: [],
+    bazar: [],
+    fatsellect: [],
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -134,21 +138,38 @@ const DashboardFaturamento = () => {
       console.log('Params anterior:', paramsAnterior);
 
       // Buscar dados de todos os tipos de faturamento - período atual (novas rotas)
-      const [varejoRes, mtmRes, franquiasRes, revendaRes] = await Promise.all([
+      const [
+        varejoRes,
+        mtmRes,
+        franquiasRes,
+        revendaRes,
+        bazarRes,
+        fatsellectRes,
+      ] = await Promise.all([
         apiClient.sales.faturamentoVarejo(params),
         apiClient.sales.faturamentoMtm(params),
         apiClient.sales.faturamentoFranquias(params),
         apiClient.sales.faturamentoRevenda(params),
+        apiClient.sales.faturamentoBazar(params),
+        apiClient.sales.faturamentoFatsellect(params),
       ]);
 
       // Buscar dados do mês anterior
-      const [varejoAntRes, mtmAntRes, franquiasAntRes, revendaAntRes] =
-        await Promise.all([
-          apiClient.sales.faturamentoVarejo(paramsAnterior),
-          apiClient.sales.faturamentoMtm(paramsAnterior),
-          apiClient.sales.faturamentoFranquias(paramsAnterior),
-          apiClient.sales.faturamentoRevenda(paramsAnterior),
-        ]);
+      const [
+        varejoAntRes,
+        mtmAntRes,
+        franquiasAntRes,
+        revendaAntRes,
+        bazarAntRes,
+        fatsellectAntRes,
+      ] = await Promise.all([
+        apiClient.sales.faturamentoVarejo(paramsAnterior),
+        apiClient.sales.faturamentoMtm(paramsAnterior),
+        apiClient.sales.faturamentoFranquias(paramsAnterior),
+        apiClient.sales.faturamentoRevenda(paramsAnterior),
+        apiClient.sales.faturamentoBazar(paramsAnterior),
+        apiClient.sales.faturamentoFatsellect(paramsAnterior),
+      ]);
 
       console.log('📊 Dados Varejo recebidos:', varejoRes);
       console.log('📊 Dados MTM recebidos:', mtmRes);
@@ -160,6 +181,8 @@ const DashboardFaturamento = () => {
       const mtmData = mtmRes.data || [];
       const franquiasData = franquiasRes.data || [];
       const revendaData = revendaRes.data || [];
+      const bazarData = bazarRes.data || [];
+      const fatsellectData = fatsellectRes.data || [];
 
       console.log('📊 Dados Varejo extraídos:', varejoData);
       console.log('📊 Dados MTM extraídos:', mtmData);
@@ -171,6 +194,8 @@ const DashboardFaturamento = () => {
         mtm: mtmData,
         franquias: franquiasData,
         revenda: revendaData,
+        bazar: bazarData,
+        fatsellect: fatsellectData,
       });
 
       setDadosMesAnterior({
@@ -178,6 +203,8 @@ const DashboardFaturamento = () => {
         mtm: mtmAntRes.data || [],
         franquias: franquiasAntRes.data || [],
         revenda: revendaAntRes.data || [],
+        bazar: bazarAntRes.data || [],
+        fatsellect: fatsellectAntRes.data || [],
       });
     } catch (err) {
       console.error('Erro ao buscar dados:', err);
@@ -189,7 +216,14 @@ const DashboardFaturamento = () => {
 
   // Cálculos consolidados com nova estrutura de desconto
   const dadosConsolidados = useMemo(() => {
-    const tipos = ['varejo', 'mtm', 'franquias', 'revenda'];
+    const tipos = [
+      'varejo',
+      'mtm',
+      'franquias',
+      'revenda',
+      'bazar',
+      'fatsellect',
+    ];
     const resultado = {};
 
     tipos.forEach((tipo) => {
@@ -333,7 +367,14 @@ const DashboardFaturamento = () => {
 
   // Cálculos consolidados do mês anterior com nova estrutura
   const dadosConsolidadosMesAnterior = useMemo(() => {
-    const tipos = ['varejo', 'mtm', 'franquias', 'revenda'];
+    const tipos = [
+      'varejo',
+      'mtm',
+      'franquias',
+      'revenda',
+      'bazar',
+      'fatsellect',
+    ];
     const resultado = {};
 
     tipos.forEach((tipo) => {
@@ -363,12 +404,21 @@ const DashboardFaturamento = () => {
 
   // Dados para gráfico de pizza - Faturamento por tipo (valor líquido)
   const dadosPizza = useMemo(() => {
-    const labels = ['Varejo', 'MTM', 'Franquias', 'Revenda'];
+    const labels = [
+      'Varejo',
+      'MTM',
+      'Franquias',
+      'Revenda',
+      'Bazar',
+      'Sellect',
+    ];
     const dados = [
       dadosConsolidados.varejo?.valor_liquido_total || 0,
       dadosConsolidados.mtm?.valor_liquido_total || 0,
       dadosConsolidados.franquias?.valor_liquido_total || 0,
       dadosConsolidados.revenda?.valor_liquido_total || 0,
+      dadosConsolidados.bazar?.valor_liquido_total || 0,
+      dadosConsolidados.fatsellect?.valor_liquido_total || 0,
     ];
 
     return {
@@ -381,6 +431,8 @@ const DashboardFaturamento = () => {
             '#10B981', // Verde
             '#F59E0B', // Amarelo
             '#EF4444', // Vermelho
+            '#6366F1', // Indigo para Bazar
+            '#06B6D4', // Cyan para Sellect
           ],
           borderWidth: 2,
           borderColor: '#fff',
@@ -391,12 +443,21 @@ const DashboardFaturamento = () => {
 
   // Dados para gráfico de pizza - Devoluções por Canal
   const dadosPizzaDevolucoes = useMemo(() => {
-    const labels = ['Varejo', 'Multimarcas', 'Franquias', 'Revenda'];
+    const labels = [
+      'Varejo',
+      'Multimarcas',
+      'Franquias',
+      'Revenda',
+      'Bazar',
+      'Sellect',
+    ];
     const dados = [
       Math.abs(dadosConsolidados.varejo?.valor_liquido_entrada || 0),
       Math.abs(dadosConsolidados.mtm?.valor_liquido_entrada || 0),
       Math.abs(dadosConsolidados.franquias?.valor_liquido_entrada || 0),
       Math.abs(dadosConsolidados.revenda?.valor_liquido_entrada || 0),
+      Math.abs(dadosConsolidados.bazar?.valor_liquido_entrada || 0),
+      Math.abs(dadosConsolidados.fatsellect?.valor_liquido_entrada || 0),
     ];
 
     return {
@@ -404,7 +465,14 @@ const DashboardFaturamento = () => {
       datasets: [
         {
           data: dados,
-          backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'],
+          backgroundColor: [
+            '#3B82F6',
+            '#10B981',
+            '#F59E0B',
+            '#EF4444',
+            '#6366F1',
+            '#06B6D4',
+          ],
           borderWidth: 2,
           borderColor: '#fff',
         },
@@ -414,7 +482,14 @@ const DashboardFaturamento = () => {
 
   // Dados para gráfico de barras - Valor Bruto, Líquido e Descontos
   const dadosBarras = useMemo(() => {
-    const labels = ['Varejo', 'MTM', 'Franquias', 'Revenda'];
+    const labels = [
+      'Varejo',
+      'MTM',
+      'Franquias',
+      'Revenda',
+      'Bazar',
+      'Fatsellect',
+    ];
 
     return {
       labels,
@@ -426,6 +501,8 @@ const DashboardFaturamento = () => {
             dadosConsolidados.mtm?.valor_bruto_saida || 0,
             dadosConsolidados.franquias?.valor_bruto_saida || 0,
             dadosConsolidados.revenda?.valor_bruto_saida || 0,
+            dadosConsolidados.bazar?.valor_bruto_saida || 0,
+            dadosConsolidados.fatsellect?.valor_bruto_saida || 0,
           ],
           backgroundColor: '#3B82F6',
         },
@@ -436,6 +513,8 @@ const DashboardFaturamento = () => {
             dadosConsolidados.mtm?.valor_liquido_saida || 0,
             dadosConsolidados.franquias?.valor_liquido_saida || 0,
             dadosConsolidados.revenda?.valor_liquido_saida || 0,
+            dadosConsolidados.bazar?.valor_liquido_saida || 0,
+            dadosConsolidados.fatsellect?.valor_liquido_saida || 0,
           ],
           backgroundColor: '#10B981',
         },
@@ -446,6 +525,8 @@ const DashboardFaturamento = () => {
             dadosConsolidados.mtm?.desconto_saida || 0,
             dadosConsolidados.franquias?.desconto_saida || 0,
             dadosConsolidados.revenda?.desconto_saida || 0,
+            dadosConsolidados.bazar?.desconto_saida || 0,
+            dadosConsolidados.fatsellect?.desconto_saida || 0,
           ],
           backgroundColor: '#F59E0B',
         },
@@ -456,6 +537,8 @@ const DashboardFaturamento = () => {
             Math.abs(dadosConsolidados.mtm?.valor_liquido_entrada || 0),
             Math.abs(dadosConsolidados.franquias?.valor_liquido_entrada || 0),
             Math.abs(dadosConsolidados.revenda?.valor_liquido_entrada || 0),
+            Math.abs(dadosConsolidados.bazar?.valor_liquido_entrada || 0),
+            Math.abs(dadosConsolidados.fatsellect?.valor_liquido_entrada || 0),
           ],
           backgroundColor: '#EF4444',
         },
@@ -479,6 +562,8 @@ const DashboardFaturamento = () => {
             mtm: 0,
             franquias: 0,
             revenda: 0,
+            bazar: 0,
+            fatsellect: 0,
           });
         }
         // Receita Líquida = valor_com_desconto_saida - valor_com_desconto_entrada
@@ -524,6 +609,13 @@ const DashboardFaturamento = () => {
           data: dadosArray.map((item) => item.revenda),
           borderColor: '#EF4444',
           backgroundColor: '#EF4444',
+          tension: 0.1,
+        },
+        {
+          label: 'Fatsellect',
+          data: dadosArray.map((item) => item.fatsellect),
+          borderColor: '#06B6D4',
+          backgroundColor: '#06B6D4',
           tension: 0.1,
         },
       ],
@@ -927,7 +1019,7 @@ const DashboardFaturamento = () => {
             </Card>
           </div>
           {/* Cards por Canal - Faturamento e Crescimento */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
             {[
               {
                 key: 'varejo',
@@ -952,6 +1044,18 @@ const DashboardFaturamento = () => {
                 label: 'Revenda',
                 colorClass: 'text-purple-700',
                 valueClass: 'text-purple-600',
+              },
+              {
+                key: 'bazar',
+                label: 'Bazar',
+                colorClass: 'text-purple-700',
+                valueClass: 'text-purple-600',
+              },
+              {
+                key: 'sellect',
+                label: 'Sellect',
+                colorClass: 'text-cyan-700',
+                valueClass: 'text-cyan-600',
               },
             ].map((canal) => {
               // Receita Líquida = Valor Líquido Saída - Valor Líquido Entrada (devoluções)
