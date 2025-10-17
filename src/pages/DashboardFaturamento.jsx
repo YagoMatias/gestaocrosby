@@ -389,6 +389,29 @@ const DashboardFaturamento = () => {
     };
   }, [dadosConsolidados]);
 
+  // Dados para gráfico de pizza - Devoluções por Canal
+  const dadosPizzaDevolucoes = useMemo(() => {
+    const labels = ['Varejo', 'Multimarcas', 'Franquias', 'Revenda'];
+    const dados = [
+      Math.abs(dadosConsolidados.varejo?.valor_liquido_entrada || 0),
+      Math.abs(dadosConsolidados.mtm?.valor_liquido_entrada || 0),
+      Math.abs(dadosConsolidados.franquias?.valor_liquido_entrada || 0),
+      Math.abs(dadosConsolidados.revenda?.valor_liquido_entrada || 0),
+    ];
+
+    return {
+      labels,
+      datasets: [
+        {
+          data: dados,
+          backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'],
+          borderWidth: 2,
+          borderColor: '#fff',
+        },
+      ],
+    };
+  }, [dadosConsolidados]);
+
   // Dados para gráfico de barras - Valor Bruto, Líquido e Descontos
   const dadosBarras = useMemo(() => {
     const labels = ['Varejo', 'MTM', 'Franquias', 'Revenda'];
@@ -1155,7 +1178,16 @@ const DashboardFaturamento = () => {
           {/* Gráficos */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 mt-10">
             {/* Gráfico de Pizza - Distribuição por Tipo */}
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+            <Card
+              className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+              onClick={() =>
+                setModalGrafico({
+                  tipo: 'distribuicao',
+                  title: 'Distribuição do Faturamento por Canal',
+                  data: dadosPizza,
+                })
+              }
+            >
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <ChartPieSlice size={20} className="text-[#000638]" />
@@ -1169,7 +1201,15 @@ const DashboardFaturamento = () => {
               </CardHeader>
               <CardContent>
                 <div className="h-80 bg-white rounded">
-                  <Pie data={dadosPizza} options={opcoesPizza} />
+                  {dadosPizza &&
+                  dadosPizza.labels &&
+                  dadosPizza.labels.length > 0 ? (
+                    <Pie data={dadosPizza} options={opcoesPizza} />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-gray-400">
+                      Sem dados para exibir
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1181,70 +1221,10 @@ const DashboardFaturamento = () => {
                 setModalGrafico({
                   tipo: 'devolucao',
                   title: 'Frequência de Devoluções por Canal',
-                  data: {
-                    labels: ['Varejo', 'Multimarcas', 'Franquias', 'Revenda'],
-                    datasets: [
-                      {
-                        data: [
-                          Math.abs(
-                            dadosConsolidados.varejo?.valor_liquido_entrada ||
-                              0,
-                          ),
-                          Math.abs(
-                            dadosConsolidados.mtm?.valor_liquido_entrada || 0,
-                          ),
-                          Math.abs(
-                            dadosConsolidados.franquias
-                              ?.valor_liquido_entrada || 0,
-                          ),
-                          Math.abs(
-                            dadosConsolidados.revenda?.valor_liquido_entrada ||
-                              0,
-                          ),
-                        ],
-                        backgroundColor: [
-                          '#3B82F6',
-                          '#10B981',
-                          '#F59E0B',
-                          '#EF4444',
-                        ],
-                        borderWidth: 2,
-                        borderColor: '#fff',
-                      },
-                    ],
-                  },
+                  data: dadosPizzaDevolucoes,
                 })
               }
             >
-              {/* Modal para gráfico ampliado - agora também para os cards de canal e devolução */}
-              {modalGrafico && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
-                  <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-3xl w-full flex flex-col items-center relative">
-                    <button
-                      onClick={() => setModalGrafico(null)}
-                      className="absolute top-4 right-4 text-gray-500 hover:text-red-600 text-2xl font-bold"
-                      aria-label="Fechar"
-                    >
-                      &times;
-                    </button>
-                    <div className="mb-4 flex items-center gap-2">
-                      <ChartPieSlice size={28} className="text-[#000638]" />
-                      <span className="text-2xl font-bold text-[#000638]">
-                        {modalGrafico.title || modalGrafico.canalLabel}
-                      </span>
-                    </div>
-                    <div
-                      className="w-full flex items-center justify-center"
-                      style={{ height: '480px' }}
-                    >
-                      <Pie
-                        data={modalGrafico.data || modalGrafico.pizzaData}
-                        options={opcoesPizza}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <ChartPieSlice size={20} className="text-[#000638]" />
@@ -1258,41 +1238,15 @@ const DashboardFaturamento = () => {
               </CardHeader>
               <CardContent>
                 <div className="h-[320px] w-full flex items-center justify-center">
-                  <Pie
-                    data={{
-                      labels: ['Varejo', 'Multimarcas', 'Franquias', 'Revenda'],
-                      datasets: [
-                        {
-                          data: [
-                            Math.abs(
-                              dadosConsolidados.varejo?.valor_liquido_entrada ||
-                                0,
-                            ),
-                            Math.abs(
-                              dadosConsolidados.mtm?.valor_liquido_entrada || 0,
-                            ),
-                            Math.abs(
-                              dadosConsolidados.franquias
-                                ?.valor_liquido_entrada || 0,
-                            ),
-                            Math.abs(
-                              dadosConsolidados.revenda
-                                ?.valor_liquido_entrada || 0,
-                            ),
-                          ],
-                          backgroundColor: [
-                            '#3B82F6',
-                            '#10B981',
-                            '#F59E0B',
-                            '#EF4444',
-                          ],
-                          borderWidth: 2,
-                          borderColor: '#fff',
-                        },
-                      ],
-                    }}
-                    options={opcoesPizza}
-                  />
+                  {dadosPizzaDevolucoes &&
+                  dadosPizzaDevolucoes.labels &&
+                  dadosPizzaDevolucoes.labels.length > 0 ? (
+                    <Pie data={dadosPizzaDevolucoes} options={opcoesPizza} />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-gray-400">
+                      Sem dados para exibir
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1331,8 +1285,14 @@ const DashboardFaturamento = () => {
 
               // Converte o Map em arrays para o gráfico
               const empresasArray = Array.from(empresasMap.values());
-              const empresas = empresasArray.map((e) => e.nome);
-              const valores = empresasArray.map((e) => e.valor);
+              const empresas =
+                empresasArray.length > 0
+                  ? empresasArray.map((e) => e.nome)
+                  : ['Sem dados'];
+              const valores =
+                empresasArray.length > 0
+                  ? empresasArray.map((e) => e.valor)
+                  : [0];
 
               const pizzaData = {
                 labels: empresas,
@@ -1393,7 +1353,15 @@ const DashboardFaturamento = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="h-80 bg-white rounded">
-                      <Pie data={pizzaData} options={opcoesPizza} />
+                      {pizzaData &&
+                      pizzaData.labels &&
+                      pizzaData.labels.length > 0 ? (
+                        <Pie data={pizzaData} options={opcoesPizza} />
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-400">
+                          Sem dados para exibir
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -1401,7 +1369,7 @@ const DashboardFaturamento = () => {
             })}
           </div>
 
-          {/* Modal para gráfico ampliado */}
+          {/* Modal único para todos os gráficos ampliados */}
           {modalGrafico && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
               <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-3xl w-full flex flex-col items-center relative">
@@ -1415,14 +1383,30 @@ const DashboardFaturamento = () => {
                 <div className="mb-4 flex items-center gap-2">
                   <ChartPieSlice size={28} className="text-[#000638]" />
                   <span className="text-2xl font-bold text-[#000638]">
-                    {modalGrafico.canalLabel} - Faturamento por Empresa
+                    {modalGrafico.title ||
+                      (modalGrafico.canalLabel &&
+                        `${modalGrafico.canalLabel} - Faturamento por Empresa`)}
                   </span>
                 </div>
                 <div
                   className="w-full flex items-center justify-center"
                   style={{ height: '480px' }}
                 >
-                  <Pie data={modalGrafico.pizzaData} options={opcoesPizza} />
+                  {(modalGrafico.data &&
+                    modalGrafico.data.labels &&
+                    modalGrafico.data.labels.length > 0) ||
+                  (modalGrafico.pizzaData &&
+                    modalGrafico.pizzaData.labels &&
+                    modalGrafico.pizzaData.labels.length > 0) ? (
+                    <Pie
+                      data={modalGrafico.data || modalGrafico.pizzaData}
+                      options={opcoesPizza}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-gray-400">
+                      Sem dados para exibir
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

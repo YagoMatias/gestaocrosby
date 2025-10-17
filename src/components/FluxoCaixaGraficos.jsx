@@ -12,14 +12,20 @@ import {
   LineElement,
 } from 'chart.js';
 import { Bar, Pie, Line } from 'react-chartjs-2';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/cards';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from './ui/cards';
 import {
   ChartBar,
   ChartPieSlice,
   Building,
   Receipt,
   CreditCard,
-  TrendUp
+  TrendUp,
 } from '@phosphor-icons/react';
 
 ChartJS.register(
@@ -31,7 +37,7 @@ ChartJS.register(
   Legend,
   ArcElement,
   PointElement,
-  LineElement
+  LineElement,
 );
 
 const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
@@ -42,7 +48,7 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
         fornecedores: { labels: [], data: [] },
         centrosCusto: { labels: [], data: [] },
         despesas: { labels: [], data: [] },
-        temporal: { labels: [], data: [] }
+        temporal: { labels: [], data: [] },
       };
     }
 
@@ -52,8 +58,11 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
     const dadosDespesas = {};
     const dadosTemporais = {};
 
-    dadosAgrupados.forEach(grupo => {
-      const fornecedor = grupo.item.nm_fornecedor || grupo.item.cd_fornecedor || 'Sem Fornecedor';
+    dadosAgrupados.forEach((grupo) => {
+      const fornecedor =
+        grupo.item.nm_fornecedor ||
+        grupo.item.cd_fornecedor ||
+        'Sem Fornecedor';
       const centroCusto = grupo.item.ds_ccusto || 'Sem Centro de Custo';
       const despesa = grupo.item.ds_despesaitem || 'Sem Despesa';
       const valor = parseFloat(grupo.item.vl_pago) || 0;
@@ -62,23 +71,26 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
       // Só incluir se tem valor pago
       if (valor > 0) {
         // Fornecedores
-        dadosFornecedores[fornecedor] = (dadosFornecedores[fornecedor] || 0) + valor;
-        
+        dadosFornecedores[fornecedor] =
+          (dadosFornecedores[fornecedor] || 0) + valor;
+
         // Centros de Custo
-        dadosCentrosCusto[centroCusto] = (dadosCentrosCusto[centroCusto] || 0) + valor;
-        
+        dadosCentrosCusto[centroCusto] =
+          (dadosCentrosCusto[centroCusto] || 0) + valor;
+
         // Despesas
         dadosDespesas[despesa] = (dadosDespesas[despesa] || 0) + valor;
 
         // Dados temporais (por data de liquidação)
         if (dataLiquidacao) {
           const data = new Date(dataLiquidacao);
-          const dataFormatada = data.toLocaleDateString('pt-BR', { 
-            day: '2-digit', 
-            month: '2-digit', 
-            year: 'numeric' 
+          const dataFormatada = data.toLocaleDateString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
           });
-          dadosTemporais[dataFormatada] = (dadosTemporais[dataFormatada] || 0) + valor;
+          dadosTemporais[dataFormatada] =
+            (dadosTemporais[dataFormatada] || 0) + valor;
         }
       }
     });
@@ -86,29 +98,39 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
     // Ordenar e limitar aos top 10
     const ordenarElimitar = (dados) => {
       return Object.entries(dados)
-        .sort(([,a], [,b]) => b - a)
+        .sort(([, a], [, b]) => b - a)
         .slice(0, 10)
-        .reduce((acc, [label, value]) => {
-          acc.labels.push(label);
-          acc.data.push(value);
-          return acc;
-        }, { labels: [], data: [] });
+        .reduce(
+          (acc, [label, value]) => {
+            acc.labels.push(label);
+            acc.data.push(value);
+            return acc;
+          },
+          { labels: [], data: [] },
+        );
     };
 
     // Para dados temporais, ordenar por data
     const dadosTemporaisOrdenados = Object.entries(dadosTemporais)
-      .sort(([a], [b]) => new Date(a.split('/').reverse().join('-')) - new Date(b.split('/').reverse().join('-')))
-      .reduce((acc, [label, value]) => {
-        acc.labels.push(label);
-        acc.data.push(value);
-        return acc;
-      }, { labels: [], data: [] });
+      .sort(
+        ([a], [b]) =>
+          new Date(a.split('/').reverse().join('-')) -
+          new Date(b.split('/').reverse().join('-')),
+      )
+      .reduce(
+        (acc, [label, value]) => {
+          acc.labels.push(label);
+          acc.data.push(value);
+          return acc;
+        },
+        { labels: [], data: [] },
+      );
 
     return {
       fornecedores: ordenarElimitar(dadosFornecedores),
       centrosCusto: ordenarElimitar(dadosCentrosCusto),
       despesas: ordenarElimitar(dadosDespesas),
-      temporal: dadosTemporaisOrdenados
+      temporal: dadosTemporaisOrdenados,
     };
   };
 
@@ -129,17 +151,17 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
       y: {
         beginAtZero: true,
         ticks: {
-          callback: function(value) {
+          callback: function (value) {
             return new Intl.NumberFormat('pt-BR', {
               style: 'currency',
               currency: 'BRL',
               minimumFractionDigits: 0,
               maximumFractionDigits: 0,
             }).format(value);
-          }
-        }
-      }
-    }
+          },
+        },
+      },
+    },
   };
 
   const opcoesPizza = {
@@ -150,7 +172,7 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
       },
       tooltip: {
         callbacks: {
-          label: function(context) {
+          label: function (context) {
             const label = context.label || '';
             const value = context.parsed;
             const total = context.dataset.data.reduce((a, b) => a + b, 0);
@@ -159,10 +181,10 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
               style: 'currency',
               currency: 'BRL',
             }).format(value)} (${percentage}%)`;
-          }
-        }
-      }
-    }
+          },
+        },
+      },
+    },
   };
 
   const opcoesLinha = {
@@ -179,29 +201,37 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
       y: {
         beginAtZero: true,
         ticks: {
-          callback: function(value) {
+          callback: function (value) {
             return new Intl.NumberFormat('pt-BR', {
               style: 'currency',
               currency: 'BRL',
               minimumFractionDigits: 0,
               maximumFractionDigits: 0,
             }).format(value);
-          }
-        }
+          },
+        },
       },
       x: {
         ticks: {
           maxRotation: 45,
-          minRotation: 45
-        }
-      }
-    }
+          minRotation: 45,
+        },
+      },
+    },
   };
 
   // Cores para os gráficos
   const cores = [
-    '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
-    '#06B6D4', '#84CC16', '#F97316', '#EC4899', '#6366F1'
+    '#3B82F6',
+    '#EF4444',
+    '#10B981',
+    '#F59E0B',
+    '#8B5CF6',
+    '#06B6D4',
+    '#84CC16',
+    '#F97316',
+    '#EC4899',
+    '#6366F1',
   ];
 
   // Dados para gráfico de fornecedores
@@ -211,7 +241,10 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
       {
         label: 'Valor Pago por Fornecedor',
         data: dadosGraficos.fornecedores.data,
-        backgroundColor: cores.slice(0, dadosGraficos.fornecedores.labels.length),
+        backgroundColor: cores.slice(
+          0,
+          dadosGraficos.fornecedores.labels.length,
+        ),
         borderColor: cores.slice(0, dadosGraficos.fornecedores.labels.length),
         borderWidth: 1,
       },
@@ -223,7 +256,10 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
     datasets: [
       {
         data: dadosGraficos.fornecedores.data,
-        backgroundColor: cores.slice(0, dadosGraficos.fornecedores.labels.length),
+        backgroundColor: cores.slice(
+          0,
+          dadosGraficos.fornecedores.labels.length,
+        ),
         borderColor: '#ffffff',
         borderWidth: 2,
       },
@@ -237,7 +273,10 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
       {
         label: 'Valor Pago por Centro de Custo',
         data: dadosGraficos.centrosCusto.data,
-        backgroundColor: cores.slice(0, dadosGraficos.centrosCusto.labels.length),
+        backgroundColor: cores.slice(
+          0,
+          dadosGraficos.centrosCusto.labels.length,
+        ),
         borderColor: cores.slice(0, dadosGraficos.centrosCusto.labels.length),
         borderWidth: 1,
       },
@@ -249,7 +288,10 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
     datasets: [
       {
         data: dadosGraficos.centrosCusto.data,
-        backgroundColor: cores.slice(0, dadosGraficos.centrosCusto.labels.length),
+        backgroundColor: cores.slice(
+          0,
+          dadosGraficos.centrosCusto.labels.length,
+        ),
         borderColor: '#ffffff',
         borderWidth: 2,
       },
@@ -307,16 +349,20 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
     return (
       <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10 max-w-6xl mx-auto w-full mb-8">
         <div className="p-6 border-b border-[#000638]/10">
-                            <h2 className="text-xl font-bold text-[#000638] flex items-center gap-2">
-                    <ChartBar size={24} />
-                    Análise Gráfica do Fluxo de Caixa
-                  </h2>
+          <h2 className="text-xl font-bold text-[#000638] flex items-center gap-2">
+            <ChartBar size={24} />
+            Análise Gráfica do Fluxo de Caixa
+          </h2>
         </div>
         <div className="p-6">
           <div className="text-center py-8 text-gray-500">
-                                <ChartBar size={48} className="mx-auto mb-4 text-gray-300" />
-            <p className="text-lg font-medium">Nenhum dado disponível para gráficos</p>
-            <p className="text-sm">Busque dados para visualizar as análises gráficas</p>
+            <ChartBar size={48} className="mx-auto mb-4 text-gray-300" />
+            <p className="text-lg font-medium">
+              Nenhum dado disponível para gráficos
+            </p>
+            <p className="text-sm">
+              Busque dados para visualizar as análises gráficas
+            </p>
           </div>
         </div>
       </div>
@@ -457,10 +503,10 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
       {/* Resumo Estatístico */}
       <Card className="shadow-lg">
         <CardHeader>
-                            <CardTitle className="flex items-center gap-2 text-[#000638]">
-                    <ChartBar size={20} />
-                    Resumo Estatístico
-                  </CardTitle>
+          <CardTitle className="flex items-center gap-2 text-[#000638]">
+            <ChartBar size={20} />
+            Resumo Estatístico
+          </CardTitle>
           <CardDescription>
             Informações gerais sobre os dados analisados
           </CardDescription>
@@ -471,7 +517,9 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
               <div className="text-2xl font-bold text-blue-600">
                 {dadosGraficos.fornecedores.labels.length}
               </div>
-              <div className="text-sm text-gray-600">Fornecedores Analisados</div>
+              <div className="text-sm text-gray-600">
+                Fornecedores Analisados
+              </div>
             </div>
             <div className="text-center p-4 bg-green-50 rounded-lg">
               <div className="text-2xl font-bold text-green-600">
@@ -498,4 +546,4 @@ const FluxoCaixaGraficos = ({ dadosAgrupados }) => {
   );
 };
 
-export default FluxoCaixaGraficos; 
+export default FluxoCaixaGraficos;

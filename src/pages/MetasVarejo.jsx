@@ -1628,11 +1628,8 @@ const MetasVarejo = () => {
       viewMode === 'dashboard' &&
       (dadosLojas.length > 0 || dadosVendedores.length > 0)
     ) {
-      if (visualizacaoTipo === 'SEMANAL') {
-        calcularStatsSemanais();
-      } else {
-        calcularStatsDashboard();
-      }
+      // Sempre chamar calcularStatsDashboard - ela agora verifica visualizacaoTipo internamente
+      calcularStatsDashboard();
     }
   }, [
     metaValores,
@@ -1644,8 +1641,7 @@ const MetasVarejo = () => {
     vendedoresSelecionados,
     visualizacaoTipo,
     semanasCalculadas,
-    dashboardStats.lojaDetalhes,
-    dashboardStats.vendedorDetalhes,
+    metasSemanais,
   ]);
 
   // Carregar dados semanais quando visualização mudar para SEMANAL
@@ -2126,286 +2122,251 @@ const MetasVarejo = () => {
   const calcularStatsDashboard = () => {
     if (!filtros.dt_inicio || !filtros.dt_fim) return;
 
-    // Inicializar estatísticas
+    console.log('🎯 calcularStatsDashboard chamada:', {
+      visualizacaoTipo,
+      filtrosDataInicio: filtros.dt_inicio,
+      dadosLojasCount: dadosLojas.length,
+      dadosVendedoresCount: dadosVendedores.length,
+      metaValoresCount: Object.keys(metaValores || {}).length,
+      metasSemanaisCount: Object.keys(metasSemanais || {}).length,
+    });
 
+    // Helper: normalizar nomes (remove acentos, minuscula, trim)
+    const normalize = (s) =>
+      (s || '')
+        .toString()
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .toLowerCase()
+        .trim();
+
+    // Construir mapas de metas mensais (metaValores) indexados por tipo -> nomeNormalizado -> niveis
+    const metaMonthlyByTypeName = { lojas: new Map(), vendedores: new Map() };
+    Object.keys(metaValores || {}).forEach((k) => {
+      const parts = k.split('-');
+      const tipo = parts[0];
+      const nivel = parts[parts.length - 1];
+      const nome = parts.slice(1, parts.length - 1).join('-');
+      const nk = normalize(nome);
+      if (!metaMonthlyByTypeName[tipo]) metaMonthlyByTypeName[tipo] = new Map();
+      const map = metaMonthlyByTypeName[tipo];
+      if (!map.has(nk)) map.set(nk, {});
+      map.get(nk)[nivel] = toNumber(metaValores[k]);
+    });
+
+    // Construir mapa de metas semanais (metasSemanais) indexado por tipo -> nomeNormalizado -> objeto
+    const metaSemanaisMap = { lojas: new Map(), vendedores: new Map() };
+    Object.keys(metasSemanais || {}).forEach((k) => {
+      const parts = k.split('-');
+      const tipo = parts[0];
+      const nome = parts.slice(1).join('-');
+      const nk = normalize(nome);
+      if (!metaSemanaisMap[tipo]) metaSemanaisMap[tipo] = new Map();
+      metaSemanaisMap[tipo].set(nk, metasSemanais[k]);
+    });
+
+    // Semana atual usada para metas semanais
+    const semanaAtualNum = calcularSemanaAtual(
+      filtros.dt_inicio
+        ? filtros.dt_inicio.substring(0, 7)
+        : new Date().toISOString().substring(0, 7),
+    );
+
+    // Inicializar estatísticas
     const stats = {
       bronze: { lojas: 0, vendedores: 0 },
       prata: { lojas: 0, vendedores: 0 },
       ouro: { lojas: 0, vendedores: 0 },
       diamante: { lojas: 0, vendedores: 0 },
-      // Dados detalhados para as tabelas de progresso
       lojaDetalhes: [],
       vendedorDetalhes: [],
     };
 
-    // Calcular para lojas
-    dadosLojas.forEach((loja, index) => {
-      const nomeLoja =
-        loja.nome_fantasia ||
-        loja.nome_loja ||
-        loja.loja ||
-        loja.nm_loja ||
-        loja.nome ||
-        '';
-      const faturamento = Number(loja.faturamento) || 0;
+    // Função utilitária para processar uma entidade (loja/vendedor)
+    const processEntity = (item, tipo) => {
+      const nome =
+        tipo === 'lojas'
+          ? item.nome_fantasia ||
+            item.nome_loja ||
+            item.loja ||
+            item.nm_loja ||
+            item.nome ||
+            ''
+          : item.nome_vendedor ||
+            item.vendedor ||
+            item.nm_vendedor ||
+            item.nome ||
+            '';
+      const faturamento = Number(item.faturamento) || 0;
+      const nk = normalize(nome);
 
-      // Procurar metas para esta loja
-      let metaBronze = 0;
-      let metaPrata = 0;
-      let metaOuro = 0;
-      let metaDiamante = 0;
+      // Obter metas mensais e semanais para esta entidade
+      const monthly =
+        (metaMonthlyByTypeName[tipo] && metaMonthlyByTypeName[tipo].get(nk)) ||
+        {};
+      const weeklyObj =
+        (metaSemanaisMap[tipo] && metaSemanaisMap[tipo].get(nk)) || null;
+      const weeklyMetas =
+        weeklyObj && weeklyObj.semanas && weeklyObj.semanas[semanaAtualNum]
+          ? weeklyObj.semanas[semanaAtualNum].metas || {}
+          : {};
 
-      // Procurar em todas as chaves de metaValores
-      Object.keys(metaValores).forEach((chave) => {
-        if (chave.startsWith('lojas-') && chave.includes(nomeLoja)) {
-          if (chave.endsWith('-bronze')) {
-            metaBronze = toNumber(metaValores[chave]);
-          } else if (chave.endsWith('-prata')) {
-            metaPrata = toNumber(metaValores[chave]);
-          } else if (chave.endsWith('-ouro')) {
-            metaOuro = toNumber(metaValores[chave]);
-          } else if (chave.endsWith('-diamante')) {
-            metaDiamante = toNumber(metaValores[chave]);
-          }
+      // Se visualizacao for semanal, precisamos do faturamento semanal real
+      let faturamentoParaComparar = faturamento;
+      if (visualizacaoTipo === 'SEMANAL') {
+        try {
+          const weeklyData = calcularDadosSemanaisDashboard(item, tipo);
+          faturamentoParaComparar = weeklyData.faturamentoSemanal || 0;
+        } catch (e) {
+          faturamentoParaComparar = faturamento;
+        }
+      }
+
+      // Para cada nivel, verificar se atingiu (usa weekly metas se visualizacao for semanal)
+      ['bronze', 'prata', 'ouro', 'diamante'].forEach((nivel) => {
+        const metaNum =
+          visualizacaoTipo === 'SEMANAL'
+            ? toNumber(weeklyMetas[nivel]) || 0
+            : monthly[nivel] || 0;
+        if (metaNum > 0 && faturamentoParaComparar >= metaNum) {
+          stats[nivel][tipo] = (stats[nivel][tipo] || 0) + 1;
         }
       });
 
-      // Verificar cada tipo de meta
-      ['bronze', 'prata', 'ouro', 'diamante'].forEach((tipoMeta) => {
-        // Procurar a meta para esta loja em todas as chaves que contêm o nome da loja
-        let metaEncontrada = null;
-        let chaveEncontrada = null;
+      // Calcular meta atual / proxima para detalhes (usar o mesmo faturamentoParaComparar)
+      const metaBronze =
+        visualizacaoTipo === 'SEMANAL'
+          ? toNumber(weeklyMetas.bronze) || 0
+          : monthly.bronze || 0;
+      const metaPrata =
+        visualizacaoTipo === 'SEMANAL'
+          ? toNumber(weeklyMetas.prata) || 0
+          : monthly.prata || 0;
+      const metaOuro =
+        visualizacaoTipo === 'SEMANAL'
+          ? toNumber(weeklyMetas.ouro) || 0
+          : monthly.ouro || 0;
+      const metaDiamante =
+        visualizacaoTipo === 'SEMANAL'
+          ? toNumber(weeklyMetas.diamante) || 0
+          : monthly.diamante || 0;
 
-        // Procurar em todas as chaves de metaValores
-        Object.keys(metaValores).forEach((chave) => {
-          if (
-            chave.startsWith('lojas-') &&
-            chave.endsWith(`-${tipoMeta}`) &&
-            chave.includes(nomeLoja)
-          ) {
-            metaEncontrada = metaValores[chave];
-            chaveEncontrada = chave;
-          }
-        });
-
-        if (metaEncontrada && metaEncontrada !== 'R$ 0,00') {
-          // Converter meta para número (remover formatação R$)
-          const metaNumero = toNumber(metaEncontrada);
-
-          // Se faturamento >= meta, atingiu a meta
-          if (faturamento >= metaNumero && metaNumero > 0) {
-            stats[tipoMeta].lojas++;
-          }
-        }
-      });
-
-      // Determinar meta atual e próxima meta
-      let metaAtual = 'Sem meta';
+      let metaAtual = 'Abaixo de Bronze';
       let proximaMeta = 'Bronze';
       let valorProximaMeta = metaBronze;
       let percentualAtingido = 0;
       let valorFaltante = 0;
 
-      // Calcular a meta atual e a próxima meta
-      if (metaDiamante > 0 && faturamento >= metaDiamante) {
+      if (metaDiamante > 0 && faturamentoParaComparar >= metaDiamante) {
         metaAtual = 'Diamante';
         proximaMeta = 'Meta máxima atingida';
         valorProximaMeta = 0;
         percentualAtingido = 100;
         valorFaltante = 0;
-      } else if (metaOuro > 0 && faturamento >= metaOuro) {
+      } else if (metaOuro > 0 && faturamentoParaComparar >= metaOuro) {
         metaAtual = 'Ouro';
         proximaMeta = 'Diamante';
         valorProximaMeta = metaDiamante;
         percentualAtingido =
           metaDiamante > 0
-            ? Math.min(100, Math.round((faturamento / metaDiamante) * 100))
+            ? Math.min(
+                100,
+                Math.round((faturamentoParaComparar / metaDiamante) * 100),
+              )
             : 0;
         valorFaltante =
-          metaDiamante > 0 ? Math.max(0, metaDiamante - faturamento) : 0;
-      } else if (metaPrata > 0 && faturamento >= metaPrata) {
+          metaDiamante > 0
+            ? Math.max(0, metaDiamante - faturamentoParaComparar)
+            : 0;
+      } else if (metaPrata > 0 && faturamentoParaComparar >= metaPrata) {
         metaAtual = 'Prata';
         proximaMeta = 'Ouro';
         valorProximaMeta = metaOuro;
         percentualAtingido =
           metaOuro > 0
-            ? Math.min(100, Math.round((faturamento / metaOuro) * 100))
+            ? Math.min(
+                100,
+                Math.round((faturamentoParaComparar / metaOuro) * 100),
+              )
             : 0;
-        valorFaltante = metaOuro > 0 ? Math.max(0, metaOuro - faturamento) : 0;
-      } else if (metaBronze > 0 && faturamento >= metaBronze) {
+        valorFaltante =
+          metaOuro > 0 ? Math.max(0, metaOuro - faturamentoParaComparar) : 0;
+      } else if (metaBronze > 0 && faturamentoParaComparar >= metaBronze) {
         metaAtual = 'Bronze';
         proximaMeta = 'Prata';
         valorProximaMeta = metaPrata;
         percentualAtingido =
           metaPrata > 0
-            ? Math.min(100, Math.round((faturamento / metaPrata) * 100))
+            ? Math.min(
+                100,
+                Math.round((faturamentoParaComparar / metaPrata) * 100),
+              )
             : 0;
         valorFaltante =
-          metaPrata > 0 ? Math.max(0, metaPrata - faturamento) : 0;
+          metaPrata > 0 ? Math.max(0, metaPrata - faturamentoParaComparar) : 0;
       } else {
         metaAtual = 'Abaixo de Bronze';
         proximaMeta = 'Bronze';
         valorProximaMeta = metaBronze;
         percentualAtingido =
           metaBronze > 0
-            ? Math.min(100, Math.round((faturamento / metaBronze) * 100))
+            ? Math.min(
+                100,
+                Math.round((faturamentoParaComparar / metaBronze) * 100),
+              )
             : 0;
         valorFaltante =
-          metaBronze > 0 ? Math.max(0, metaBronze - faturamento) : 0;
+          metaBronze > 0
+            ? Math.max(0, metaBronze - faturamentoParaComparar)
+            : 0;
       }
 
-      // Adicionar aos detalhes para a tabela
-      stats.lojaDetalhes.push({
-        nome: nomeLoja,
-        faturamento,
+      return {
+        nome,
+        faturamento: faturamento, // Sempre faturamento total mensal
+        faturamentoSemanal: faturamentoParaComparar, // Faturamento semanal (se aplicável)
         metaAtual,
         proximaMeta,
         valorProximaMeta,
         percentualAtingido,
         valorFaltante,
-        // Valores de todas as metas para referência
         metas: {
           bronze: metaBronze,
           prata: metaPrata,
           ouro: metaOuro,
           diamante: metaDiamante,
         },
-      });
+      };
+    };
+
+    // Processar lojas
+    dadosLojas.forEach((loja) => {
+      const detalhe = processEntity(loja, 'lojas');
+      stats.lojaDetalhes.push(detalhe);
     });
 
-    // Calcular para vendedores
-    dadosVendedores.forEach((vendedor, index) => {
-      const nomeVendedor =
-        vendedor.nome_vendedor ||
-        vendedor.vendedor ||
-        vendedor.nm_vendedor ||
-        vendedor.nome ||
-        '';
-      const faturamento = Number(vendedor.faturamento) || 0;
+    // Processar vendedores
+    dadosVendedores.forEach((vendedor) => {
+      const detalhe = processEntity(vendedor, 'vendedores');
+      stats.vendedorDetalhes.push(detalhe);
+    });
 
-      // Procurar metas para este vendedor
-      let metaBronze = 0;
-      let metaPrata = 0;
-      let metaOuro = 0;
-      let metaDiamante = 0;
-
-      // Procurar em todas as chaves de metaValores
-      Object.keys(metaValores).forEach((chave) => {
-        if (chave.startsWith('vendedores-') && chave.includes(nomeVendedor)) {
-          if (chave.endsWith('-bronze')) {
-            metaBronze = toNumber(metaValores[chave]);
-          } else if (chave.endsWith('-prata')) {
-            metaPrata = toNumber(metaValores[chave]);
-          } else if (chave.endsWith('-ouro')) {
-            metaOuro = toNumber(metaValores[chave]);
-          } else if (chave.endsWith('-diamante')) {
-            metaDiamante = toNumber(metaValores[chave]);
-          }
-        }
-      });
-
-      // Verificar cada tipo de meta
-      ['bronze', 'prata', 'ouro', 'diamante'].forEach((tipoMeta) => {
-        // Procurar a meta para este vendedor em todas as chaves que contêm o nome do vendedor
-        let metaEncontrada = null;
-        let chaveEncontrada = null;
-
-        // Procurar em todas as chaves de metaValores
-        Object.keys(metaValores).forEach((chave) => {
-          if (
-            chave.startsWith('vendedores-') &&
-            chave.endsWith(`-${tipoMeta}`) &&
-            chave.includes(nomeVendedor)
-          ) {
-            metaEncontrada = metaValores[chave];
-            chaveEncontrada = chave;
-          }
-        });
-
-        if (metaEncontrada && metaEncontrada !== 'R$ 0,00') {
-          // Converter meta para número (remover formatação R$)
-          const metaNumero = toNumber(metaEncontrada);
-
-          // Se faturamento >= meta, atingiu a meta
-          if (faturamento >= metaNumero && metaNumero > 0) {
-            stats[tipoMeta].vendedores++;
-          }
-        }
-      });
-
-      // Determinar meta atual e próxima meta
-      let metaAtual = 'Sem meta';
-      let proximaMeta = 'Bronze';
-      let valorProximaMeta = metaBronze;
-      let percentualAtingido = 0;
-      let valorFaltante = 0;
-
-      // Calcular a meta atual e a próxima meta
-      if (metaDiamante > 0 && faturamento >= metaDiamante) {
-        metaAtual = 'Diamante';
-        proximaMeta = 'Meta máxima atingida';
-        valorProximaMeta = 0;
-        percentualAtingido = 100;
-        valorFaltante = 0;
-      } else if (metaOuro > 0 && faturamento >= metaOuro) {
-        metaAtual = 'Ouro';
-        proximaMeta = 'Diamante';
-        valorProximaMeta = metaDiamante;
-        percentualAtingido =
-          metaDiamante > 0
-            ? Math.min(100, Math.round((faturamento / metaDiamante) * 100))
-            : 0;
-        valorFaltante =
-          metaDiamante > 0 ? Math.max(0, metaDiamante - faturamento) : 0;
-      } else if (metaPrata > 0 && faturamento >= metaPrata) {
-        metaAtual = 'Prata';
-        proximaMeta = 'Ouro';
-        valorProximaMeta = metaOuro;
-        percentualAtingido =
-          metaOuro > 0
-            ? Math.min(100, Math.round((faturamento / metaOuro) * 100))
-            : 0;
-        valorFaltante = metaOuro > 0 ? Math.max(0, metaOuro - faturamento) : 0;
-      } else if (metaBronze > 0 && faturamento >= metaBronze) {
-        metaAtual = 'Bronze';
-        proximaMeta = 'Prata';
-        valorProximaMeta = metaPrata;
-        percentualAtingido =
-          metaPrata > 0
-            ? Math.min(100, Math.round((faturamento / metaPrata) * 100))
-            : 0;
-        valorFaltante =
-          metaPrata > 0 ? Math.max(0, metaPrata - faturamento) : 0;
-      } else {
-        metaAtual = 'Abaixo de Bronze';
-        proximaMeta = 'Bronze';
-        valorProximaMeta = metaBronze;
-        percentualAtingido =
-          metaBronze > 0
-            ? Math.min(100, Math.round((faturamento / metaBronze) * 100))
-            : 0;
-        valorFaltante =
-          metaBronze > 0 ? Math.max(0, metaBronze - faturamento) : 0;
-      }
-
-      // Adicionar aos detalhes para a tabela
-      stats.vendedorDetalhes = stats.vendedorDetalhes || [];
-      stats.vendedorDetalhes.push({
-        nome: nomeVendedor,
-        faturamento,
-        metaAtual,
-        proximaMeta,
-        valorProximaMeta,
-        percentualAtingido,
-        valorFaltante,
-        // Valores de todas as metas para referência
-        metas: {
-          bronze: metaBronze,
-          prata: metaPrata,
-          ouro: metaOuro,
-          diamante: metaDiamante,
-        },
-      });
+    console.log('✅ calcularStatsDashboard resultado final:', {
+      visualizacaoTipo,
+      lojasPorMeta: {
+        bronze: stats.bronze.lojas,
+        prata: stats.prata.lojas,
+        ouro: stats.ouro.lojas,
+        diamante: stats.diamante.lojas,
+      },
+      vendedoresPorMeta: {
+        bronze: stats.bronze.vendedores,
+        prata: stats.prata.vendedores,
+        ouro: stats.ouro.vendedores,
+        diamante: stats.diamante.vendedores,
+      },
+      totalLojasDetalhes: stats.lojaDetalhes.length,
+      totalVendedoresDetalhes: stats.vendedorDetalhes.length,
     });
 
     setDashboardStats(stats);
