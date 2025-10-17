@@ -352,6 +352,14 @@ const MetasVarejo = () => {
     lojaDetalhes: [],
     vendedorDetalhes: [],
   });
+
+  // Estados para modal de detalhes de metas
+  const [showModalMetasDetalhes, setShowModalMetasDetalhes] = useState(false);
+  const [metasDetalhesData, setMetasDetalhesData] = useState({
+    nivel: null, // 'bronze', 'prata', 'ouro', 'diamante'
+    tipo: null, // 'lojas', 'vendedores'
+    entidades: [], // Lista de lojas/vendedores que atingiram essa meta
+  });
   const [tabelaAtiva, setTabelaAtiva] = useState('lojas'); // 'lojas' ou 'vendedores'
 
   // Estados para metas semanais
@@ -1663,6 +1671,45 @@ const MetasVarejo = () => {
       carregarDadosSemanais();
     }
   }, [filtros.dt_inicio]);
+
+  // Função para abrir modal de detalhes de metas
+  const abrirModalMetasDetalhes = (nivel, tipo) => {
+    const detalhes =
+      tipo === 'lojas'
+        ? dashboardStats.lojaDetalhes
+        : dashboardStats.vendedorDetalhes;
+
+    // Filtrar entidades que atingiram ou ultrapassaram a meta do nível especificado
+    const entidadesFiltradas = detalhes
+      .filter((entidade) => {
+        const metaNivel = entidade.metas[nivel] || 0;
+        // Usar faturamentoSemanal se em modo SEMANAL, senão usar faturamento (mensal)
+        const faturamentoParaComparar = visualizacaoTipo === 'SEMANAL' 
+          ? entidade.faturamentoSemanal 
+          : entidade.faturamento;
+        return metaNivel > 0 && faturamentoParaComparar >= metaNivel;
+      })
+      .map((entidade) => ({
+        nome: entidade.nome,
+        meta: entidade.metas[nivel],
+        // Exibir faturamentoSemanal se em modo SEMANAL, senão faturamento (mensal)
+        faturamento: visualizacaoTipo === 'SEMANAL' 
+          ? entidade.faturamentoSemanal 
+          : entidade.faturamento,
+        semana: `S${calcularSemanaAtual(
+          filtros.dt_inicio
+            ? filtros.dt_inicio.substring(0, 7)
+            : new Date().toISOString().substring(0, 7),
+        )}`,
+      }));
+
+    setMetasDetalhesData({
+      nivel,
+      tipo,
+      entidades: entidadesFiltradas,
+    });
+    setShowModalMetasDetalhes(true);
+  };
 
   const handleBuscar = async () => {
     setLoading(true);
@@ -4337,14 +4384,17 @@ const MetasVarejo = () => {
               {/* Cards de Estatísticas Semanais */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 {/* Card Bronze Semanal */}
-                <div className="bg-white p-4 rounded-lg shadow border border-amber-200">
+                <div
+                  className="bg-white p-4 rounded-lg shadow border border-amber-200 cursor-pointer hover:shadow-lg hover:border-amber-400 transition-all"
+                  onClick={() => abrirModalMetasDetalhes('bronze', 'lojas')}
+                >
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <p className="text-sm font-bold text-amber-700">
                         Meta Bronze Semanal
                       </p>
                       <p className="text-xs text-amber-600">
-                        Metas atingidas esta semana
+                        Clique para detalhes
                       </p>
                     </div>
                     <div className="text-2xl">🥉</div>
@@ -4366,14 +4416,17 @@ const MetasVarejo = () => {
                 </div>
 
                 {/* Card Prata Semanal */}
-                <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
+                <div
+                  className="bg-white p-4 rounded-lg shadow border border-gray-200 cursor-pointer hover:shadow-lg hover:border-gray-400 transition-all"
+                  onClick={() => abrirModalMetasDetalhes('prata', 'lojas')}
+                >
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <p className="text-sm font-bold text-gray-700">
                         Meta Prata Semanal
                       </p>
                       <p className="text-xs text-gray-600">
-                        Metas atingidas esta semana
+                        Clique para detalhes
                       </p>
                     </div>
                     <div className="text-2xl">🥈</div>
@@ -4395,14 +4448,17 @@ const MetasVarejo = () => {
                 </div>
 
                 {/* Card Ouro Semanal */}
-                <div className="bg-white p-4 rounded-lg shadow border border-yellow-200">
+                <div
+                  onClick={() => abrirModalMetasDetalhes('ouro', 'lojas')}
+                  className="bg-white p-4 rounded-lg shadow border border-yellow-200 cursor-pointer hover:shadow-lg hover:border-yellow-400 transition-all"
+                >
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <p className="text-sm font-bold text-yellow-700">
-                        Meta Ouro Semanal
+                        Meta Ouro
                       </p>
                       <p className="text-xs text-yellow-600">
-                        Metas atingidas esta semana
+                        Clique para detalhes
                       </p>
                     </div>
                     <div className="text-2xl">🥇</div>
@@ -4424,14 +4480,17 @@ const MetasVarejo = () => {
                 </div>
 
                 {/* Card Diamante Semanal */}
-                <div className="bg-white p-4 rounded-lg shadow border border-blue-200">
+                <div
+                  onClick={() => abrirModalMetasDetalhes('diamante', 'lojas')}
+                  className="bg-white p-4 rounded-lg shadow border border-blue-200 cursor-pointer hover:shadow-lg hover:border-blue-400 transition-all"
+                >
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <p className="text-sm font-bold text-blue-700">
-                        Meta Diamante Semanal
+                        Meta Diamante
                       </p>
                       <p className="text-xs text-blue-600">
-                        Metas atingidas esta semana
+                        Clique para detalhes
                       </p>
                     </div>
                     <div className="text-2xl">💎</div>
@@ -4452,6 +4511,133 @@ const MetasVarejo = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Modal de Detalhes de Metas */}
+              {showModalMetasDetalhes && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-96 overflow-y-auto">
+                    {/* Header */}
+                    <div className="sticky top-0 bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                      <h2 className="text-xl font-bold text-gray-800">
+                        {metasDetalhesData.nivel === 'bronze' &&
+                          '🥉 Detalhes Meta Bronze'}
+                        {metasDetalhesData.nivel === 'prata' &&
+                          '🥈 Detalhes Meta Prata'}
+                        {metasDetalhesData.nivel === 'ouro' &&
+                          '🥇 Detalhes Meta Ouro'}
+                        {metasDetalhesData.nivel === 'diamante' &&
+                          '💎 Detalhes Meta Diamante'}
+                      </h2>
+                      <button
+                        onClick={() => setShowModalMetasDetalhes(false)}
+                        className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    {/* Content */}
+                    <div className="p-6">
+                      {metasDetalhesData.entidades &&
+                      metasDetalhesData.entidades.length > 0 ? (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="bg-gray-100 border-b border-gray-200">
+                                <th className="px-4 py-2 text-left font-semibold text-gray-700">
+                                  {metasDetalhesData.tipo === 'lojas'
+                                    ? 'Loja'
+                                    : 'Vendedor'}
+                                </th>
+                                <th className="px-4 py-2 text-right font-semibold text-gray-700">
+                                  Meta
+                                </th>
+                                <th className="px-4 py-2 text-right font-semibold text-gray-700">
+                                  Faturamento
+                                </th>
+                                <th className="px-4 py-2 text-right font-semibold text-gray-700">
+                                  % Atingido
+                                </th>
+                                {metasDetalhesData.tipo === 'lojas' && (
+                                  <th className="px-4 py-2 text-center font-semibold text-gray-700">
+                                    Semana
+                                  </th>
+                                )}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {metasDetalhesData.entidades.map(
+                                (entidade, idx) => {
+                                  const percentualAtingido =
+                                    entidade.faturamento && entidade.meta
+                                      ? Math.round(
+                                          (entidade.faturamento /
+                                            entidade.meta) *
+                                            100,
+                                        )
+                                      : 0;
+                                  return (
+                                    <tr
+                                      key={idx}
+                                      className="border-b border-gray-100 hover:bg-gray-50"
+                                    >
+                                      <td className="px-4 py-3 text-gray-800">
+                                        {entidade.nome}
+                                      </td>
+                                      <td className="px-4 py-3 text-right text-gray-700">
+                                        {formatBRL(entidade.meta)}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-semibold text-gray-800">
+                                        {formatBRL(entidade.faturamento)}
+                                      </td>
+                                      <td className="px-4 py-3 text-right">
+                                        <span
+                                          className={`font-bold ${
+                                            percentualAtingido >= 100
+                                              ? 'text-green-600'
+                                              : percentualAtingido >= 80
+                                              ? 'text-blue-600'
+                                              : 'text-orange-600'
+                                          }`}
+                                        >
+                                          {percentualAtingido}%
+                                        </span>
+                                      </td>
+                                      {metasDetalhesData.tipo === 'lojas' && (
+                                        <td className="px-4 py-3 text-center text-gray-600">
+                                          {entidade.semana || '—'}
+                                        </td>
+                                      )}
+                                    </tr>
+                                  );
+                                },
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-gray-500">
+                          Nenhum{' '}
+                          {metasDetalhesData.tipo === 'lojas'
+                            ? 'loja'
+                            : 'vendedor'}{' '}
+                          encontrado neste nível de meta.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-right">
+                      <button
+                        onClick={() => setShowModalMetasDetalhes(false)}
+                        className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Botões para alternar entre tabelas semanais */}
               <div className="mb-4">
