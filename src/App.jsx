@@ -63,6 +63,10 @@ const InadimplentesFranquias = lazy(() =>
 const CMVVarejo = lazy(() => import('./pages/CMVVarejo'));
 const DRE = lazy(() => import('./pages/DRE'));
 const AuditoriaTransacoes = lazy(() => import('./pages/AuditoriaTransacoes'));
+const DashboardPersonalizado = lazy(() =>
+  import('./pages/DashboardPersonalizado'),
+);
+const GerenciarDashboards = lazy(() => import('./pages/GerenciarDashboards'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -317,7 +321,17 @@ const AppRoutes = memo(() => {
       component: UserPanel,
       roles: ['admin', 'manager', 'user', 'guest', 'owner', 'vendedor'],
     },
-    { path: '/auth-test', component: AuthTest, roles: ['owner'] },
+    { path: '/auth-test', component: AuthTest, roles: ['owner', 'admin'] },
+    {
+      path: '/dashboard-personalizado',
+      component: DashboardPersonalizado,
+      roles: ['owner', 'admin', 'ownier'],
+    },
+    {
+      path: '/gerenciar-dashboards',
+      component: GerenciarDashboards,
+      roles: ['owner', 'admin', 'ownier'],
+    },
   ];
 
   // Componente de layout para rotas protegidas

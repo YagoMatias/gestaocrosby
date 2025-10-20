@@ -1,8 +1,5 @@
 import express from 'express';
-import pool, {
-  checkConnectionHealth,
-  executeQueryWithRetry,
-} from '../config/database.js';
+import pool, { checkConnectionHealth } from '../config/database.js';
 import {
   validateRequired,
   validateDateFormat,
@@ -1224,6 +1221,7 @@ router.get(
         AND vff.dt_vencimento > $3
         AND vff.dt_liq IS NULL
         AND vff.dt_cancelamento IS NULL
+        AND vff.cd_empresa < 5999
         AND vff.vl_pago = 0
         AND (
           (vpp.cd_tipoclas = 20 AND vpp.cd_classificacao::integer = 2)
@@ -1242,6 +1240,7 @@ router.get(
         AND vff.dt_vencimento > $3
         AND vff.dt_liq IS NULL
         AND vff.dt_cancelamento IS NULL
+        AND vff.cd_empresa < 5999
         AND vff.vl_pago = 0
         AND (
           (vpp.cd_tipoclas = 20 AND vpp.cd_classificacao::integer = 2)
@@ -1285,8 +1284,22 @@ router.get(
   validatePagination,
   asyncHandler(async (req, res) => {
     const { dt_inicio, dt_fim, dt_vencimento_ini } = req.query;
-    const limit = parseInt(req.query.limit, 10) || 50000000;
+    const limit = parseInt(req.query.limit, 10) || 10000; // Reduzido de 50M para 10K
     const offset = parseInt(req.query.offset, 10) || 0;
+
+    // Validação adicional para evitar períodos muito longos
+    const inicioDate = new Date(dt_inicio);
+    const fimDate = new Date(dt_fim);
+    const diffDays = (fimDate - inicioDate) / (1000 * 60 * 60 * 24);
+
+    if (diffDays > 365) {
+      return errorResponse(
+        res,
+        'Período muito longo. Máximo permitido: 365 dias',
+        400,
+        'PERIOD_TOO_LONG',
+      );
+    }
 
     const query = `
       SELECT
@@ -1326,6 +1339,7 @@ router.get(
         AND vff.dt_vencimento > $3
         AND vff.dt_liq IS NULL
         AND vff.dt_cancelamento IS NULL
+        AND vff.cd_empresa < 5999
         AND vff.vl_pago = 0
         AND (
           (vpp.cd_tipoclas = 20 AND vpp.cd_classificacao::integer = 3)
@@ -1346,8 +1360,8 @@ router.get(
         AND vff.dt_cancelamento IS NULL
         AND vff.vl_pago = 0
         AND (
-          (vpp.cd_tipoclas = 20 AND vpp.cd_classificacao::integer = 2)
-          OR (vpp.cd_tipoclas = 5 AND vpp.cd_classificacao::integer = 1)
+          (vpp.cd_tipoclas = 20 AND vpp.cd_classificacao::integer = 3)
+          OR (vpp.cd_tipoclas = 7 AND vpp.cd_classificacao::integer = 1)
         )
     `;
 
@@ -1430,6 +1444,7 @@ router.get(
         AND vff.dt_vencimento < CURRENT_DATE
         AND vff.dt_liq IS NULL
         AND vff.dt_cancelamento IS NULL
+        AND vff.cd_empresa < 5999
         AND vff.vl_pago = 0
         AND pp.nm_fantasia LIKE '%F%CROSBY%'
       GROUP BY
@@ -1477,6 +1492,7 @@ router.get(
         AND vff.dt_vencimento < CURRENT_DATE
         AND vff.dt_liq IS NULL
         AND vff.dt_cancelamento IS NULL
+        AND vff.cd_empresa < 5999
         AND vff.vl_pago = 0
         AND pp.nm_fantasia LIKE '%F%CROSBY%'
     `;

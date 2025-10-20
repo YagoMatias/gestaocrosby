@@ -12,8 +12,11 @@ const pool = new Pool({
   database: process.env.PGDATABASE || 'crosby',
   password: process.env.PGPASSWORD || 'wKspo98IU2eswq',
   port: process.env.PGPORT ? parseInt(process.env.PGPORT) : 20187,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  
+  ssl:
+    process.env.NODE_ENV === 'production'
+      ? { rejectUnauthorized: false }
+      : false,
+
   // Configurações sem limites de tempo
   max: 1000, // Máximo de conexões no pool
   min: 200, // Mínimo de conexões mantidas
@@ -24,13 +27,13 @@ const pool = new Pool({
   destroyTimeoutMillis: 0, // Sem timeout para destruir conexão (ilimitado)
   reapIntervalMillis: 0, // Sem limpeza automática de conexões
   createRetryIntervalMillis: 0, // Sem intervalo entre tentativas
-  
+
   // Configurações específicas do PostgreSQL - SEM TIMEOUTS
   statement_timeout: 0, // Sem timeout para statements (ilimitado)
   query_timeout: 0, // Sem timeout para queries (ilimitado)
   idle_in_transaction_session_timeout: 0, // Sem timeout para transações ociosas
   application_name: 'apigestaocrosby',
-  
+
   // Keep alive para conexões permanentes
   keepAlive: true,
   keepAliveInitialDelayMillis: 0, // Sem delay inicial
@@ -43,17 +46,19 @@ pool.on('connect', () => {
 
 pool.on('error', (err) => {
   console.error('Erro na conexão com o banco de dados:', err);
-  
+
   // Log específico para timeouts
   if (err.message.includes('timeout') || err.code === 'ECONNRESET') {
-    console.error('⚠️  Timeout de conexão detectado. Verifique a latência de rede.');
+    console.error(
+      '⚠️  Timeout de conexão detectado. Verifique a latência de rede.',
+    );
   }
 });
 
 // Helper para executar queries com retry infinito para timeouts
 const queryWithRetry = async (text, params, maxRetries = 10) => {
   let lastError;
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const result = await originalQuery(text, params);
@@ -63,32 +68,33 @@ const queryWithRetry = async (text, params, maxRetries = 10) => {
       return result;
     } catch (error) {
       lastError = error;
-      
+
       // Se é timeout ou conexão perdida, tenta novamente indefinidamente
-      if (error.message.includes('timeout') || 
-          error.code === 'ECONNRESET' || 
-          error.code === 'ENOTFOUND' ||
-          error.code === 'ECONNREFUSED') {
-        
+      if (
+        error.message.includes('timeout') ||
+        error.code === 'ECONNRESET' ||
+        error.code === 'ENOTFOUND' ||
+        error.code === 'ECONNREFUSED'
+      ) {
         console.log(`⚠️  Tentativa ${attempt} falhou: ${error.message}`);
         console.log(`🔄 Tentando novamente em ${attempt * 2000}ms...`);
-        
+
         // Se chegou no máximo de tentativas para timeout, continua tentando
         if (attempt === maxRetries) {
           console.log(`♾️  Continuando tentativas infinitas para timeout...`);
           maxRetries += 10; // Aumenta o limite para continuar tentando
         }
-        
-        await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+
+        await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
         continue;
       }
-      
+
       // Se não é erro de conexão/timeout, falha imediatamente
       console.error(`❌ Erro definitivo na query:`, error.message);
       throw error;
     }
   }
-  
+
   throw lastError;
 };
 
@@ -115,6 +121,25 @@ export const closePool = async () => {
     console.log('🔒 Pool de conexões fechado');
   } catch (error) {
     console.error('❌ Erro ao fechar pool:', error);
+  }
+};
+
+// Health check da conexão
+export const checkConnectionHealth = async () => {
+  try {
+    const result = await pool.query(
+      'SELECT NOW() as time, version() as version',
+    );
+    return {
+      healthy: true,
+      time: result.rows[0].time,
+      version: result.rows[0].version,
+    };
+  } catch (error) {
+    return {
+      healthy: false,
+      error: error.message,
+    };
   }
 };
 
