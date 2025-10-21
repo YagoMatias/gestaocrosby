@@ -30,6 +30,7 @@ import {
   Target,
   IdentificationCard,
   CurrencyCircleDollar,
+  SquaresFour,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -746,6 +747,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                   isActive={location.pathname === '/auditoria-transacoes'}
                 />
 
+                {/* Widgets - item independente */}
+                <MenuItem
+                  item={{
+                    name: 'Meus Widgets',
+                    href: '/widgets',
+                    icon: SquaresFour,
+                    color: 'text-indigo-600',
+                  }}
+                  isActive={location.pathname === '/widgets'}
+                />
+
                 {/* Ranking Faturamento - fora de seção */}
                 <div className="pt-4 border-t border-gray-100">
                   <MenuItem
@@ -770,6 +782,12 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                           href: '/painel-admin',
                           icon: UserGear,
                           color: 'text-red-600',
+                        },
+                        {
+                          name: 'Gerenciador de Dashboards',
+                          href: '/gerenciador-dashboards',
+                          icon: SquaresFour,
+                          color: 'text-blue-600',
                         },
                       ]}
                       isOpen={adminOpen}
@@ -951,6 +969,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               isActive={location.pathname === '/clientes'}
             />
 
+            {/* Widgets - item independente */}
+            <MenuItem
+              item={{
+                name: 'Meus Widgets',
+                href: '/widgets',
+                icon: SquaresFour,
+                color: 'text-indigo-600',
+              }}
+              isActive={location.pathname === '/widgets'}
+            />
+
             {/* Ranking Faturamento - fora de seção */}
             <div className="pt-4 border-t border-gray-100">
               <MenuItem
@@ -974,6 +1003,12 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                     href: '/painel-admin',
                     icon: UserGear,
                     color: 'text-red-600',
+                  },
+                  {
+                    name: 'Gerenciador de Dashboards',
+                    href: '/gerenciador-dashboards',
+                    icon: SquaresFour,
+                    color: 'text-blue-600',
                   },
                 ]}
                 isOpen={adminOpen}

@@ -124,23 +124,4 @@ export const closePool = async () => {
   }
 };
 
-// Health check da conexão
-export const checkConnectionHealth = async () => {
-  try {
-    const result = await pool.query(
-      'SELECT NOW() as time, version() as version',
-    );
-    return {
-      healthy: true,
-      time: result.rows[0].time,
-      version: result.rows[0].version,
-    };
-  } catch (error) {
-    return {
-      healthy: false,
-      error: error.message,
-    };
-  }
-};
-
 export default pool;
