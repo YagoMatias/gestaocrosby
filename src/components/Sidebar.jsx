@@ -1073,6 +1073,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               isActive={location.pathname === '/home'}
             />
 
+            {/*Crosby Bot */}
+            <MenuItem
+              item={{
+                name: 'Crosby Bot',
+                href: '/crosby-bot',
+                icon: Megaphone,
+                color: 'text-indigo-600',
+              }}
+              isActive={location.pathname === '/crosby-bot'}
+            />
+
             {/* Seção Financeiro */}
             <MenuSection
               title="Financeiro"
@@ -1244,6 +1255,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               isActive={location.pathname === '/dashboard-faturamento'}
             />
 
+            {/*Crosby Bot */}
+            <MenuItem
+              item={{
+                name: 'Crosby Bot',
+                href: '/crosby-bot',
+                icon: Megaphone,
+                color: 'text-indigo-600',
+              }}
+              isActive={location.pathname === '/crosby-bot'}
+            />
+
             {/* Seção Financeiro */}
             <MenuSection
               title="Financeiro"
@@ -1382,6 +1404,16 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                 color: 'text-indigo-600',
               }}
               isActive={location.pathname === '/dashboard-faturamento'}
+            />
+            {/*Crosby Bot */}
+            <MenuItem
+              item={{
+                name: 'Crosby Bot',
+                href: '/crosby-bot',
+                icon: Megaphone,
+                color: 'text-indigo-600',
+              }}
+              isActive={location.pathname === '/crosby-bot'}
             />
 
             {/* Seção Varejo */}
