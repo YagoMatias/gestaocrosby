@@ -436,11 +436,30 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     }
   };
 
+  // Função helper para verificar se o usuário tem acesso a uma página
+  const hasAccessToPage = (href) => {
+    if (!user) return false;
+
+    // Owner tem acesso total
+    if (user.allowedPages === '*') {
+      return true;
+    }
+
+    // Verificar se a página está nas permissões do usuário
+    if (user.allowedPages && Array.isArray(user.allowedPages)) {
+      return user.allowedPages.includes(href);
+    }
+
+    return false;
+  };
+
   // Componente para renderizar itens de menu
   const MenuItem = ({ item, isActive, level = 0 }) => {
     const IconComponent = item.icon;
     const paddingLeft = level === 0 ? 'pl-3' : 'pl-6';
-    const canSee = !item.roles || item.roles.includes(user?.role);
+
+    // Verificar permissão baseada em allowedPages
+    const canSee = item.href === '#' || hasAccessToPage(item.href);
 
     if (!canSee) return null;
 
@@ -532,31 +551,46 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     onToggle,
     icon: SectionIcon,
     color = 'text-gray-600',
-  }) => (
-    <div className="mb-2">
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 hover:bg-gray-200 group font-barlow"
-      >
-        <SectionIcon size={14} className="text-gray-500" />
-        <span className="flex-1 text-left text-gray-800">{title}</span>
-        <ChevronIcon open={isOpen} />
-      </button>
+  }) => {
+    // Verificar se há pelo menos um item visível nesta seção
+    const hasVisibleItems = items.some((item) => {
+      // Se o item tem children, verificar se algum child é visível
+      if (item.children && Array.isArray(item.children)) {
+        return item.children.some((child) => hasAccessToPage(child.href));
+      }
+      // Se é item simples, verificar se tem acesso
+      return item.href === '#' || hasAccessToPage(item.href);
+    });
 
-      {isOpen && (
-        <div className="mt-2 space-y-1 animate-in slide-in-from-top-2 duration-200">
-          {items.map((item) => (
-            <MenuItem
-              key={item.name}
-              item={item}
-              isActive={location.pathname === item.href}
-              level={1}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
+    // Se não há itens visíveis, não renderizar a seção
+    if (!hasVisibleItems) return null;
+
+    return (
+      <div className="mb-2">
+        <button
+          onClick={onToggle}
+          className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 hover:bg-gray-200 group font-barlow"
+        >
+          <SectionIcon size={14} className="text-gray-500" />
+          <span className="flex-1 text-left text-gray-800">{title}</span>
+          <ChevronIcon open={isOpen} />
+        </button>
+
+        {isOpen && (
+          <div className="mt-2 space-y-1 animate-in slide-in-from-top-2 duration-200">
+            {items.map((item) => (
+              <MenuItem
+                key={item.name}
+                item={item}
+                isActive={location.pathname === item.href}
+                level={1}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const SidebarContent = () => {
     if (!user) return null;
@@ -567,616 +601,203 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
         admin: 'Administrador',
         manager: 'Gerente',
         user: 'Financeiro',
-        guest: 'Padrão', // Alterado visualmente
+        guest: 'Padrão',
         owner: 'Proprietário',
         vendedor: 'Vendedor',
       };
       return roleConfig[role] || role;
     };
 
-    // Owner: acesso total
-    if (user.role === 'owner') {
-      return (
-        <div className="w-60 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
-          {/* Header com logo e close button */}
-          <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
-            <div className="flex items-center gap-3">
-              <img
-                src="/crosbyazul.png"
-                alt="Logo Crosby"
-                className="h-8 w-auto"
-              />
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
-            {/* Dashboard/Home */}
-            <MenuItem
-              item={{
-                name: 'Home',
-                href: '/home',
-                icon: House,
-                color: 'text-blue-600',
-              }}
-              isActive={location.pathname === '/home'}
+    // Sidebar dinâmica única para todos os usuários
+    // Os itens são filtrados automaticamente pelo MenuItem baseado em allowedPages
+    return (
+      <div className="w-60 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
+        {/* Header com logo e close button */}
+        <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
+          <div className="flex items-center gap-3">
+            <img
+              src="/crosbyazul.png"
+              alt="Logo Crosby"
+              className="h-8 w-auto"
             />
-
-            {/* Crosby Bot - acessível para todos incluindo vendedores */}
-            <MenuItem
-              item={{
-                name: 'Crosby Bot',
-                href: '/crosby-bot',
-                icon: Megaphone,
-                color: 'text-indigo-600',
-              }}
-              isActive={location.pathname === '/crosby-bot'}
-            />
-
-            {/* Resto do menu - apenas para roles que não são vendedor */}
-            {user?.role !== 'vendedor' && (
-              <>
-                {/* BI EXTERNO */}
-                <MenuItem
-                  item={{
-                    name: 'BI Externo',
-                    href: '/dashboard',
-                    icon: ChartLineUp,
-                    color: 'text-indigo-600',
-                  }}
-                  isActive={location.pathname === '/dashboard'}
-                />
-
-                {/* Dashboard Faturamento - NOVO */}
-                <MenuItem
-                  item={{
-                    name: 'Dashboard Faturamento',
-                    href: '/dashboard-faturamento',
-                    icon: ChartLineUp,
-                    color: 'text-indigo-600',
-                  }}
-                  isActive={location.pathname === '/dashboard-faturamento'}
-                />
-
-                {/* Seções principais */}
-                <MenuSection
-                  title="Financeiro"
-                  items={financeiro}
-                  isOpen={financeiroOpen}
-                  onToggle={() => handleSectionToggle('financeiro')}
-                  icon={Money}
-                  color="text-emerald-600"
-                />
-                {financeiroOpen && (
-                  <div className="ml-4">
-                    <MenuSection
-                      title="Dashboard Financeiro"
-                      items={dashboardFinanceiro}
-                      isOpen={dashboardFinanceiroOpen}
-                      onToggle={() =>
-                        setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)
-                      }
-                      icon={ChartBar}
-                      color="text-purple-600"
-                    />
-                  </div>
-                )}
-
-                <MenuSection
-                  title="CMV"
-                  items={faturamento}
-                  isOpen={faturamentoOpen}
-                  onToggle={() => handleSectionToggle('faturamento')}
-                  icon={ChartLineUp}
-                  color="text-blue-600"
-                />
-
-                <MenuSection
-                  title="Varejo"
-                  items={varejo}
-                  isOpen={varejoOpen}
-                  onToggle={() => handleSectionToggle('varejo')}
-                  icon={Storefront}
-                  color="text-green-600"
-                />
-
-                <MenuSection
-                  title="Multimarcas"
-                  items={multimarcas}
-                  isOpen={multimarcasOpen}
-                  onToggle={() => handleSectionToggle('multimarcas')}
-                  icon={Buildings}
-                  color="text-purple-600"
-                />
-
-                <MenuSection
-                  title="Revenda"
-                  items={revenda}
-                  isOpen={revendaOpen}
-                  onToggle={() => handleSectionToggle('revenda')}
-                  icon={TrendUp}
-                  color="text-blue-600"
-                />
-
-                <MenuSection
-                  title="Franquias"
-                  items={franquias}
-                  isOpen={franquiasOpen}
-                  onToggle={() => handleSectionToggle('franquias')}
-                  icon={Users}
-                  color="text-amber-600"
-                />
-
-                {/* VIGIA - item independente */}
-                <MenuItem
-                  item={{
-                    name: 'Vigia',
-                    href: 'https://vigia.crosbytech.com.br/',
-                    icon: Eye,
-                    color: 'text-blue-600',
-                    external: true,
-                  }}
-                  isActive={false}
-                />
-
-                {/* Clientes - item independente */}
-                <MenuItem
-                  item={{
-                    name: 'Clientes',
-                    href: '/clientes',
-                    icon: IdentificationCard,
-                    color: 'text-blue-600',
-                  }}
-                  isActive={location.pathname === '/clientes'}
-                />
-
-                {/* Auditoria de Transações - item independente */}
-                <MenuItem
-                  item={{
-                    name: 'Auditoria de Transações',
-                    href: '/auditoria-transacoes',
-                    icon: Shield,
-                    color: 'text-purple-600',
-                  }}
-                  isActive={location.pathname === '/auditoria-transacoes'}
-                />
-
-                {/* Widgets - item independente */}
-                <MenuItem
-                  item={{
-                    name: 'Meus Widgets',
-                    href: '/widgets',
-                    icon: SquaresFour,
-                    color: 'text-indigo-600',
-                  }}
-                  isActive={location.pathname === '/widgets'}
-                />
-
-                {/* Ranking Faturamento - fora de seção */}
-                <div className="pt-4 border-t border-gray-100">
-                  <MenuItem
-                    item={{
-                      name: 'Ranking Faturamento',
-                      href: '/ranking-faturamento',
-                      icon: Trophy,
-                      color: 'text-yellow-600',
-                    }}
-                    isActive={location.pathname === '/ranking-faturamento'}
-                  />
-                </div>
-
-                {/* Seção Administrativa - apenas para owner */}
-                {user.role === 'owner' && (
-                  <div className="pt-6 border-t border-gray-200">
-                    <MenuSection
-                      title="Administração"
-                      items={[
-                        {
-                          name: 'Painel Admin',
-                          href: '/painel-admin',
-                          icon: UserGear,
-                          color: 'text-red-600',
-                        },
-                        {
-                          name: 'Gerenciador de Dashboards',
-                          href: '/gerenciador-dashboards',
-                          icon: SquaresFour,
-                          color: 'text-blue-600',
-                        },
-                      ]}
-                      isOpen={adminOpen}
-                      onToggle={() => handleSectionToggle('admin')}
-                      icon={Shield}
-                      color="text-red-600"
-                    />
-                  </div>
-                )}
-              </>
-            )}
-          </nav>
-
-          {/* Footer com info do usuário - Owner */}
-          <div className="p-4 border-t border-gray-100 bg-gray-50">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <UserGear size={16} className="text-blue-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate font-barlow">
-                  {user.email}
-                </p>
-                <p className="text-xs text-gray-500 font-barlow">
-                  {getRoleLabel(user.role)}
-                </p>
-              </div>
-            </div>
           </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X size={20} />
+          </button>
         </div>
-      );
-    }
 
-    // Admin: acesso total (igual ao owner)
-    if (user.role === 'admin') {
-      return (
-        <div className="w-60 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
-          {/* Header com logo e close button */}
-          <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
-            <div className="flex items-center gap-3">
-              <img
-                src="/crosbyazul.png"
-                alt="Logo Crosby"
-                className="h-8 w-auto"
-              />
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
+        {/* Navigation */}
+        <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
+          {/* Home */}
+          <MenuItem
+            item={{
+              name: 'Home',
+              href: '/home',
+              icon: House,
+              color: 'text-blue-600',
+            }}
+            isActive={location.pathname === '/home'}
+          />
 
-          {/* Navigation */}
-          <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
-            {/* Dashboard/Home */}
-            <MenuItem
-              item={{
-                name: 'Home',
-                href: '/home',
-                icon: House,
-                color: 'text-blue-600',
-              }}
-              isActive={location.pathname === '/home'}
-            />
+          {/* Crosby Bot */}
+          <MenuItem
+            item={{
+              name: 'Crosby Bot',
+              href: '/crosby-bot',
+              icon: Megaphone,
+              color: 'text-indigo-600',
+            }}
+            isActive={location.pathname === '/crosby-bot'}
+          />
 
-            {/* BI Externo */}
-            <MenuItem
-              item={{
-                name: 'BI Externo',
-                href: '/dashboard',
-                icon: ChartLineUp,
-                color: 'text-indigo-600',
-              }}
-              isActive={location.pathname === '/dashboard'}
-            />
+          {/* BI EXTERNO */}
+          <MenuItem
+            item={{
+              name: 'BI Externo',
+              href: '/dashboard',
+              icon: ChartLineUp,
+              color: 'text-indigo-600',
+            }}
+            isActive={location.pathname === '/dashboard'}
+          />
 
-            {/* Dashboard Faturamento - disponível para todos os roles */}
-            <MenuItem
-              item={{
-                name: 'Dashboard Faturamento',
-                href: '/dashboard-faturamento',
-                icon: ChartLineUp,
-                color: 'text-indigo-600',
-              }}
-              isActive={location.pathname === '/dashboard-faturamento'}
-            />
+          {/* Dashboard Faturamento */}
+          <MenuItem
+            item={{
+              name: 'Dashboard Faturamento',
+              href: '/dashboard-faturamento',
+              icon: ChartLineUp,
+              color: 'text-indigo-600',
+            }}
+            isActive={location.pathname === '/dashboard-faturamento'}
+          />
 
-            {/* Seções principais */}
-            <MenuSection
-              title="Financeiro"
-              items={financeiro}
-              isOpen={financeiroOpen}
-              onToggle={() => setFinanceiroOpen(!financeiroOpen)}
-              icon={Money}
-              color="text-emerald-600"
-            />
-            {financeiroOpen && (
-              <div className="ml-4">
-                <MenuSection
-                  title="Dashboard Financeiro"
-                  items={dashboardFinanceiro}
-                  isOpen={dashboardFinanceiroOpen}
-                  onToggle={() =>
-                    setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)
-                  }
-                  icon={ChartBar}
-                  color="text-purple-600"
-                />
-              </div>
-            )}
+          {/* Seção Financeiro */}
+          <MenuSection
+            title="Financeiro"
+            items={financeiro}
+            isOpen={financeiroOpen}
+            onToggle={() => handleSectionToggle('financeiro')}
+            icon={Money}
+            color="text-emerald-600"
+          />
 
-            <MenuSection
-              title="CMV"
-              items={faturamento}
-              isOpen={faturamentoOpen}
-              onToggle={() => setFaturamentoOpen(!faturamentoOpen)}
-              icon={ChartLineUp}
-              color="text-blue-600"
-            />
-
-            <MenuSection
-              title="Varejo"
-              items={varejo}
-              isOpen={varejoOpen}
-              onToggle={() => handleSectionToggle('varejo')}
-              icon={Storefront}
-              color="text-green-600"
-            />
-
-            <MenuSection
-              title="Multimarcas"
-              items={multimarcas}
-              isOpen={multimarcasOpen}
-              onToggle={() => handleSectionToggle('multimarcas')}
-              icon={Buildings}
-              color="text-purple-600"
-            />
-
-            <MenuSection
-              title="Revenda"
-              items={revenda}
-              isOpen={revendaOpen}
-              onToggle={() => handleSectionToggle('revenda')}
-              icon={TrendUp}
-              color="text-blue-600"
-            />
-
-            <MenuSection
-              title="Franquias"
-              items={franquias}
-              isOpen={franquiasOpen}
-              onToggle={() => handleSectionToggle('franquias')}
-              icon={Users}
-              color="text-amber-600"
-            />
-
-            {/* VIGIA - item independente */}
-            <MenuItem
-              item={{
-                name: 'VIGIA',
-                href: 'https://vigia.crosbytech.com.br/',
-                icon: Eye,
-                color: 'text-blue-600',
-                external: true,
-              }}
-              isActive={false}
-            />
-
-            {/* Clientes - item independente */}
-            <MenuItem
-              item={{
-                name: 'Clientes',
-                href: '/clientes',
-                icon: IdentificationCard,
-                color: 'text-blue-600',
-              }}
-              isActive={location.pathname === '/clientes'}
-            />
-
-            {/* Widgets - item independente */}
-            <MenuItem
-              item={{
-                name: 'Meus Widgets',
-                href: '/widgets',
-                icon: SquaresFour,
-                color: 'text-indigo-600',
-              }}
-              isActive={location.pathname === '/widgets'}
-            />
-
-            {/* Ranking Faturamento - fora de seção */}
-            <div className="pt-4 border-t border-gray-100">
-              <MenuItem
-                item={{
-                  name: 'Ranking Faturamento',
-                  href: '/ranking-faturamento',
-                  icon: Trophy,
-                  color: 'text-yellow-600',
-                }}
-                isActive={location.pathname === '/ranking-faturamento'}
-              />
-            </div>
-
-            {/* Seção Administrativa - apenas para owner e admin */}
-            <div className="pt-6 border-t border-gray-200">
+          {/* Dashboard Financeiro (submenu do Financeiro) */}
+          {financeiroOpen && (
+            <div className="ml-4">
               <MenuSection
-                title="Administração"
-                items={[
-                  {
-                    name: 'Painel Admin',
-                    href: '/painel-admin',
-                    icon: UserGear,
-                    color: 'text-red-600',
-                  },
-                  {
-                    name: 'Gerenciador de Dashboards',
-                    href: '/gerenciador-dashboards',
-                    icon: SquaresFour,
-                    color: 'text-blue-600',
-                  },
-                ]}
-                isOpen={adminOpen}
-                onToggle={() => setAdminOpen(!adminOpen)}
-                icon={Shield}
-                color="text-red-600"
+                title="Dashboard Financeiro"
+                items={dashboardFinanceiro}
+                isOpen={dashboardFinanceiroOpen}
+                onToggle={() =>
+                  setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)
+                }
+                icon={ChartBar}
+                color="text-purple-600"
               />
             </div>
-          </nav>
+          )}
 
-          {/* Footer com info do usuário - Admin */}
-          <div className="p-4 border-t border-gray-100 bg-gray-50">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <UserGear size={16} className="text-blue-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate font-barlow">
-                  {user.email}
-                </p>
-                <p className="text-xs text-gray-500 font-barlow">
-                  {getRoleLabel(user.role)}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
+          {/* Seção CMV */}
+          <MenuSection
+            title="CMV"
+            items={faturamento}
+            isOpen={faturamentoOpen}
+            onToggle={() => handleSectionToggle('faturamento')}
+            icon={ChartLineUp}
+            color="text-blue-600"
+          />
 
-    // Manager: acesso total exceto administração
-    if (user.role === 'manager') {
-      return (
-        <div className="w-60 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
-          {/* Header com logo e close button */}
-          <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
-            <div className="flex items-center gap-3">
-              <img
-                src="/crosbyazul.png"
-                alt="Logo Crosby"
-                className="h-8 w-auto"
-              />
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
+          {/* Seção Varejo */}
+          <MenuSection
+            title="Varejo"
+            items={varejo}
+            isOpen={varejoOpen}
+            onToggle={() => handleSectionToggle('varejo')}
+            icon={Storefront}
+            color="text-green-600"
+          />
 
-          {/* Navigation */}
-          <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
-            {/* Dashboard/Home */}
-            <MenuItem
-              item={{
-                name: 'Home',
-                href: '/home',
-                icon: House,
-                color: 'text-blue-600',
-              }}
-              isActive={location.pathname === '/home'}
-            />
+          {/* Seção Multimarcas */}
+          <MenuSection
+            title="Multimarcas"
+            items={multimarcas}
+            isOpen={multimarcasOpen}
+            onToggle={() => handleSectionToggle('multimarcas')}
+            icon={Buildings}
+            color="text-purple-600"
+          />
 
-            {/*Crosby Bot */}
-            <MenuItem
-              item={{
-                name: 'Crosby Bot',
-                href: '/crosby-bot',
-                icon: Megaphone,
-                color: 'text-indigo-600',
-              }}
-              isActive={location.pathname === '/crosby-bot'}
-            />
+          {/* Seção Revenda */}
+          <MenuSection
+            title="Revenda"
+            items={revenda}
+            isOpen={revendaOpen}
+            onToggle={() => handleSectionToggle('revenda')}
+            icon={TrendUp}
+            color="text-blue-600"
+          />
 
-            {/* Seção Financeiro */}
-            <MenuSection
-              title="Financeiro"
-              items={financeiro}
-              isOpen={financeiroOpen}
-              onToggle={() => setFinanceiroOpen(!financeiroOpen)}
-              icon={Money}
-              color="text-emerald-600"
-            />
-            {financeiroOpen && (
-              <div className="ml-4">
-                <MenuSection
-                  title="Dashboard Financeiro"
-                  items={dashboardFinanceiro}
-                  isOpen={dashboardFinanceiroOpen}
-                  onToggle={() =>
-                    setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)
-                  }
-                  icon={ChartBar}
-                  color="text-purple-600"
-                />
-              </div>
-            )}
+          {/* Seção Franquias */}
+          <MenuSection
+            title="Franquias"
+            items={franquias}
+            isOpen={franquiasOpen}
+            onToggle={() => handleSectionToggle('franquias')}
+            icon={Users}
+            color="text-amber-600"
+          />
 
-            <MenuSection
-              title="CMV"
-              items={faturamento}
-              isOpen={faturamentoOpen}
-              onToggle={() => setFaturamentoOpen(!faturamentoOpen)}
-              icon={ChartLineUp}
-              color="text-blue-600"
-            />
+          {/* VIGIA - item independente */}
+          <MenuItem
+            item={{
+              name: 'Vigia',
+              href: 'https://vigia.crosbytech.com.br/',
+              icon: Eye,
+              color: 'text-blue-600',
+              external: true,
+            }}
+            isActive={false}
+          />
 
-            <MenuSection
-              title="Varejo"
-              items={varejo}
-              isOpen={varejoOpen}
-              onToggle={() => handleSectionToggle('varejo')}
-              icon={Storefront}
-              color="text-green-600"
-            />
+          {/* Clientes */}
+          <MenuItem
+            item={{
+              name: 'Clientes',
+              href: '/clientes',
+              icon: IdentificationCard,
+              color: 'text-blue-600',
+            }}
+            isActive={location.pathname === '/clientes'}
+          />
 
-            <MenuSection
-              title="Multimarcas"
-              items={multimarcas}
-              isOpen={multimarcasOpen}
-              onToggle={() => handleSectionToggle('multimarcas')}
-              icon={Buildings}
-              color="text-purple-600"
-            />
+          {/* Auditoria de Transações */}
+          <MenuItem
+            item={{
+              name: 'Auditoria de Transações',
+              href: '/auditoria-transacoes',
+              icon: Shield,
+              color: 'text-purple-600',
+            }}
+            isActive={location.pathname === '/auditoria-transacoes'}
+          />
 
-            <MenuSection
-              title="Revenda"
-              items={revenda}
-              isOpen={revendaOpen}
-              onToggle={() => handleSectionToggle('revenda')}
-              icon={TrendUp}
-              color="text-blue-600"
-            />
+          {/* Widgets */}
+          <MenuItem
+            item={{
+              name: 'Meus Widgets',
+              href: '/widgets',
+              icon: SquaresFour,
+              color: 'text-indigo-600',
+            }}
+            isActive={location.pathname === '/widgets'}
+          />
 
-            <MenuSection
-              title="Franquias"
-              items={franquias}
-              isOpen={franquiasOpen}
-              onToggle={() => handleSectionToggle('franquias')}
-              icon={Users}
-              color="text-amber-600"
-            />
-
-            {/* VIGIA - item independente */}
-            <MenuItem
-              item={{
-                name: 'VIGIA',
-                href: 'https://vigia.crosbytech.com.br/',
-                icon: Eye,
-                color: 'text-blue-600',
-                external: true,
-              }}
-              isActive={false}
-            />
-
-            {/* Clientes - item independente */}
-            <MenuItem
-              item={{
-                name: 'Clientes',
-                href: '/clientes',
-                icon: IdentificationCard,
-                color: 'text-blue-600',
-              }}
-              isActive={location.pathname === '/clientes'}
-            />
-
-            {/* Ranking Faturamento - fora de seção */}
+          {/* Ranking Faturamento */}
+          {hasAccessToPage('/ranking-faturamento') && (
             <div className="pt-4 border-t border-gray-100">
               <MenuItem
                 item={{
@@ -1188,382 +809,69 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                 isActive={location.pathname === '/ranking-faturamento'}
               />
             </div>
-          </nav>
+          )}
 
-          {/* Footer com info do usuário - Manager */}
-          <div className="p-4 border-t border-gray-100 bg-gray-50">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <UserGear size={16} className="text-blue-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate font-barlow">
-                  {user.email}
-                </p>
-                <p className="text-xs text-gray-500 font-barlow">
-                  {getRoleLabel(user.role)}
-                </p>
-              </div>
+          {/* Seção Administrativa */}
+          <div className="pt-6 border-t border-gray-200">
+            <MenuSection
+              title="Administração"
+              items={[
+                {
+                  name: 'Painel Admin',
+                  href: '/painel-admin',
+                  icon: UserGear,
+                  color: 'text-red-600',
+                },
+                {
+                  name: 'Gerenciador de Dashboards',
+                  href: '/gerenciador-dashboards',
+                  icon: SquaresFour,
+                  color: 'text-blue-600',
+                },
+                {
+                  name: 'Gerenciador de Acessos',
+                  href: '/gerenciador-acessos',
+                  icon: Shield,
+                  color: 'text-purple-600',
+                },
+              ]}
+              isOpen={adminOpen}
+              onToggle={() => handleSectionToggle('admin')}
+              icon={Shield}
+              color="text-red-600"
+            />
+          </div>
+
+          {/* User Panel */}
+          <MenuItem
+            item={{
+              name: 'Configurações',
+              href: '/user-panel',
+              icon: UserGear,
+              color: 'text-gray-600',
+            }}
+            isActive={location.pathname === '/user-panel'}
+          />
+        </nav>
+
+        {/* Footer com info do usuário */}
+        <div className="p-4 border-t border-gray-100 bg-gray-50">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+              <UserGear size={16} className="text-blue-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-gray-900 truncate font-barlow">
+                {user.email}
+              </p>
+              <p className="text-xs text-gray-500 font-barlow">
+                {getRoleLabel(user.role)}
+              </p>
             </div>
           </div>
         </div>
-      );
-    }
-
-    // User: acesso ao financeiro e franquias
-    if (user.role === 'user') {
-      return (
-        <div className="w-60 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
-          {/* Header com logo e close button */}
-          <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
-            <div className="flex items-center gap-3">
-              <img
-                src="/crosbyazul.png"
-                alt="Logo Crosby"
-                className="h-8 w-auto"
-              />
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
-            {/* Dashboard/Home */}
-            <MenuItem
-              item={{
-                name: 'Home',
-                href: '/home',
-                icon: House,
-                color: 'text-blue-600',
-              }}
-              isActive={location.pathname === '/home'}
-            />
-
-            {/* Dashboard Faturamento - disponível para todos os roles */}
-            <MenuItem
-              item={{
-                name: 'Dashboard Faturamento',
-                href: '/dashboard-faturamento',
-                icon: ChartLineUp,
-                color: 'text-indigo-600',
-              }}
-              isActive={location.pathname === '/dashboard-faturamento'}
-            />
-
-            {/*Crosby Bot */}
-            <MenuItem
-              item={{
-                name: 'Crosby Bot',
-                href: '/crosby-bot',
-                icon: Megaphone,
-                color: 'text-indigo-600',
-              }}
-              isActive={location.pathname === '/crosby-bot'}
-            />
-
-            {/* Seção Financeiro */}
-            <MenuSection
-              title="Financeiro"
-              items={financeiro}
-              isOpen={financeiroOpen}
-              onToggle={() => setFinanceiroOpen(!financeiroOpen)}
-              icon={Money}
-              color="text-emerald-600"
-            />
-            {financeiroOpen && (
-              <div className="ml-4">
-                <MenuSection
-                  title="Dashboard Financeiro"
-                  items={dashboardFinanceiro}
-                  isOpen={dashboardFinanceiroOpen}
-                  onToggle={() =>
-                    setDashboardFinanceiroOpen(!dashboardFinanceiroOpen)
-                  }
-                  icon={ChartBar}
-                  color="text-purple-600"
-                />
-              </div>
-            )}
-
-            {/* Seção CMV */}
-            <MenuSection
-              title="CMV"
-              items={faturamento}
-              isOpen={faturamentoOpen}
-              onToggle={() => setFaturamentoOpen(!faturamentoOpen)}
-              icon={ChartLineUp}
-              color="text-blue-600"
-            />
-
-            {/* Seção Varejo */}
-            <MenuSection
-              title="Varejo"
-              items={varejo}
-              isOpen={varejoOpen}
-              onToggle={() => handleSectionToggle('varejo')}
-              icon={Storefront}
-              color="text-green-600"
-            />
-
-            {/* Seção Multimarcas */}
-            <MenuSection
-              title="Multimarcas"
-              items={multimarcas}
-              isOpen={multimarcasOpen}
-              onToggle={() => handleSectionToggle('multimarcas')}
-              icon={Buildings}
-              color="text-purple-600"
-            />
-
-            {/* Seção Revenda */}
-            <MenuSection
-              title="Revenda"
-              items={revenda}
-              isOpen={revendaOpen}
-              onToggle={() => handleSectionToggle('revenda')}
-              icon={TrendUp}
-              color="text-blue-600"
-            />
-
-            {/* Seção Franquias */}
-            <MenuSection
-              title="Franquias"
-              items={franquias}
-              isOpen={franquiasOpen}
-              onToggle={() => handleSectionToggle('franquias')}
-              icon={Users}
-              color="text-amber-600"
-            />
-          </nav>
-
-          {/* Footer com info do usuário - User */}
-          <div className="p-4 border-t border-gray-100 bg-gray-50">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <UserGear size={16} className="text-blue-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate font-barlow">
-                  {user.email}
-                </p>
-                <p className="text-xs text-gray-500 font-barlow">
-                  {getRoleLabel(user.role)}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // Guest (Varejo): acesso a franquias e ranking faturamento
-    if (user.role === 'guest') {
-      return (
-        <div className="w-60 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
-          {/* Header com logo e close button */}
-          <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
-            <div className="flex items-center gap-3">
-              <img
-                src="/crosbyazul.png"
-                alt="Logo Crosby"
-                className="h-8 w-auto"
-              />
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
-            {/* Dashboard/Home */}
-            <MenuItem
-              item={{
-                name: 'Home',
-                href: '/home',
-                icon: House,
-                color: 'text-blue-600',
-              }}
-              isActive={location.pathname === '/home'}
-            />
-
-            {/* Dashboard Faturament */}
-            <MenuItem
-              item={{
-                name: 'Dashboard Faturamento',
-                href: '/dashboard-faturamento',
-                icon: ChartLineUp,
-                color: 'text-indigo-600',
-              }}
-              isActive={location.pathname === '/dashboard-faturamento'}
-            />
-            {/*Crosby Bot */}
-            <MenuItem
-              item={{
-                name: 'Crosby Bot',
-                href: '/crosby-bot',
-                icon: Megaphone,
-                color: 'text-indigo-600',
-              }}
-              isActive={location.pathname === '/crosby-bot'}
-            />
-
-            {/* Seção Varejo */}
-            <MenuSection
-              title="Varejo"
-              items={varejo}
-              isOpen={varejoOpen}
-              onToggle={() => handleSectionToggle('varejo')}
-              icon={Storefront}
-              color="text-green-600"
-            />
-
-            <MenuSection
-              title="Multimarcas"
-              items={multimarcas}
-              isOpen={multimarcasOpen}
-              onToggle={() => handleSectionToggle('multimarcas')}
-              icon={Buildings}
-              color="text-purple-600"
-            />
-
-            <MenuSection
-              title="Revenda"
-              items={revenda}
-              isOpen={revendaOpen}
-              onToggle={() => handleSectionToggle('revenda')}
-              icon={TrendUp}
-              color="text-blue-600"
-            />
-
-            <MenuSection
-              title="Franquias"
-              items={franquias}
-              isOpen={franquiasOpen}
-              onToggle={() => handleSectionToggle('franquias')}
-              icon={Users}
-              color="text-amber-600"
-            />
-
-            {/* VIGIA - item independente */}
-            <MenuItem
-              item={{
-                name: 'VIGIA',
-                href: 'https://vigia.crosbytech.com.br/',
-                icon: Eye,
-                color: 'text-blue-600',
-                external: true,
-              }}
-              isActive={false}
-            />
-
-            {/* Ranking Faturamento */}
-            <div className="pt-4 border-t border-gray-100">
-              <MenuItem
-                item={{
-                  name: 'Ranking Faturamento',
-                  href: '/ranking-faturamento',
-                  icon: Trophy,
-                  color: 'text-yellow-600',
-                }}
-                isActive={location.pathname === '/ranking-faturamento'}
-              />
-            </div>
-          </nav>
-
-          {/* Footer com info do usuário - Guest */}
-          <div className="p-4 border-t border-gray-100 bg-gray-50">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <UserGear size={16} className="text-blue-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate font-barlow">
-                  {user.email}
-                </p>
-                <p className="text-xs text-gray-500 font-barlow">
-                  {getRoleLabel(user.role)}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (user.role === 'vendedor') {
-      return (
-        <div className="w-60 h-full bg-white shadow-xl border-r border-gray-200 flex flex-col">
-          {/* Header com logo e close button */}
-          <div className="h-16 px-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
-            <div className="flex items-center gap-3">
-              <img
-                src="/crosbyazul.png"
-                alt="Logo Crosby"
-                className="h-8 w-auto"
-              />
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 px-2 py-4 space-y-3 overflow-y-auto overflow-x-hidden">
-            {/* Dashboard/Home */}
-            <MenuItem
-              item={{
-                name: 'Home',
-                href: '/home',
-                icon: House,
-                color: 'text-blue-600',
-              }}
-              isActive={location.pathname === '/home'}
-            />
-            <MenuItem
-              item={{
-                name: 'Crosby Bot',
-                href: '/crosby-bot',
-                icon: Megaphone,
-                color: 'text-indigo-600',
-              }}
-              isActive={location.pathname === '/crosby-bot'}
-            />
-          </nav>
-
-          {/* Footer com info do usuário - Guest */}
-          <div className="p-4 border-t border-gray-100 bg-gray-50">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <UserGear size={16} className="text-blue-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate font-barlow">
-                  {user.email}
-                </p>
-                <p className="text-xs text-gray-500 font-barlow">
-                  {getRoleLabel(user.role)}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // Caso não reconhecido
-    return null;
+      </div>
+    );
   };
 
   return (

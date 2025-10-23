@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, supabaseSession } from '../lib/supabase';
+import { getUserPermissions } from '../services/permissionsService';
 
 // Roles disponíveis no sistema (ordenados por hierarquia)
 const ROLES = ['owner', 'admin', 'manager', 'user', 'guest', 'vendedor'];
@@ -52,6 +53,34 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Função auxiliar para carregar permissões do banco
+  const loadUserPermissions = async (userId, userRole) => {
+    try {
+      // Owner tem acesso a todas as páginas (não precisa carregar do banco)
+      if (userRole === 'owner') {
+        console.log('👑 Owner detectado - acesso total concedido');
+        return '*'; // '*' significa acesso a todas as páginas
+      }
+
+      // Para outros usuários, buscar permissões do banco
+      console.log('📋 Carregando permissões do banco para:', userId);
+      const { data, error } = await getUserPermissions(userId);
+
+      if (error) {
+        console.error('❌ Erro ao carregar permissões:', error);
+        return []; // Sem permissões em caso de erro
+      }
+
+      // getUserPermissions já retorna array de strings (ex: ['/home', '/crosby-bot'])
+      console.log('✅ Permissões carregadas:', data);
+
+      return data || [];
+    } catch (error) {
+      console.error('❌ Erro ao carregar permissões:', error);
+      return [];
+    }
+  };
+
   // Função de login
   const login = async (email, password, rememberMe = true) => {
     try {
@@ -80,12 +109,19 @@ export const AuthProvider = ({ children }) => {
       const validRole = ROLES.includes(userRole) ? userRole : 'guest';
       const roleConfig = ROLE_CONFIG[validRole];
 
+      // Carregar permissões do banco
+      const allowedPages = await loadUserPermissions(
+        authData.user.id,
+        validRole,
+      );
+
       // Configurar usuário
       const userData = {
         id: authData.user.id,
         email: authData.user.email,
         name: authData.user.user_metadata?.name || 'Usuário',
         role: validRole,
+        allowedPages, // Adicionar permissões customizadas
         profile: {
           name: validRole,
           label: roleConfig.label,
@@ -117,6 +153,25 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Função para recarregar permissões (sem fazer logout)
+  const refreshPermissions = async () => {
+    if (!user) return;
+
+    try {
+      console.log('🔄 Recarregando permissões...');
+      const allowedPages = await loadUserPermissions(user.id, user.role);
+
+      setUser((prev) => ({
+        ...prev,
+        allowedPages,
+      }));
+
+      console.log('✅ Permissões atualizadas');
+    } catch (error) {
+      console.error('❌ Erro ao recarregar permissões:', error);
+    }
+  };
+
   // Verificar sessão inicial
   useEffect(() => {
     const checkSession = async () => {
@@ -134,11 +189,18 @@ export const AuthProvider = ({ children }) => {
           const validRole = ROLES.includes(userRole) ? userRole : 'guest';
           const roleConfig = ROLE_CONFIG[validRole];
 
+          // Carregar permissões do banco
+          const allowedPages = await loadUserPermissions(
+            session.user.id,
+            validRole,
+          );
+
           setUser({
             id: session.user.id,
             email: session.user.email,
             name: session.user.user_metadata?.name || 'Usuário',
             role: validRole,
+            allowedPages, // Adicionar permissões customizadas
             profile: {
               name: validRole,
               label: roleConfig.label,
@@ -172,11 +234,18 @@ export const AuthProvider = ({ children }) => {
         const validRole = ROLES.includes(userRole) ? userRole : 'guest';
         const roleConfig = ROLE_CONFIG[validRole];
 
+        // Carregar permissões do banco
+        const allowedPages = await loadUserPermissions(
+          session.user.id,
+          validRole,
+        );
+
         setUser({
           id: session.user.id,
           email: session.user.email,
           name: session.user.user_metadata?.name || 'Usuário',
           role: validRole,
+          allowedPages, // Adicionar permissões customizadas
           profile: {
             name: validRole,
             label: roleConfig.label,
@@ -201,11 +270,19 @@ export const AuthProvider = ({ children }) => {
         const userRole = session.user.user_metadata?.role || 'guest';
         const validRole = ROLES.includes(userRole) ? userRole : 'guest';
         const roleConfig = ROLE_CONFIG[validRole];
+
+        // Carregar permissões do banco
+        const allowedPages = await loadUserPermissions(
+          session.user.id,
+          validRole,
+        );
+
         setUser({
           id: session.user.id,
           email: session.user.email,
           name: session.user.user_metadata?.name || 'Usuário',
           role: validRole,
+          allowedPages, // Adicionar permissões customizadas
           profile: {
             name: validRole,
             label: roleConfig.label,
@@ -253,6 +330,7 @@ export const AuthProvider = ({ children }) => {
     loading,
     login,
     logout,
+    refreshPermissions,
     hasRole,
     hasAnyRole,
     hasPermission,
