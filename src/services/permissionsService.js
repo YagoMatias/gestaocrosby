@@ -30,20 +30,33 @@ export const getAllUsers = async () => {
  */
 export const getUserPermissions = async (userId) => {
   try {
+    console.log('🔍 Buscando permissões no Supabase para:', userId);
     const { data, error } = await supabase
       .from('user_page_permissions')
       .select('page_path')
       .eq('user_id', userId)
       .order('page_path');
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Erro do Supabase ao buscar permissões:', error);
+      throw error;
+    }
+
+    console.log('📦 Dados recebidos do Supabase:', data);
 
     // Retornar apenas array de caminhos
-    const pagePaths = data.map((item) => item.page_path);
+    const pagePaths = data ? data.map((item) => item.page_path) : [];
+    console.log('✅ Permissões processadas:', pagePaths);
 
     return { data: pagePaths, error: null };
   } catch (error) {
-    console.error('Erro ao buscar permissões do usuário:', error);
+    console.error('❌ Erro crítico ao buscar permissões:', error);
+    console.error('Detalhes do erro:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    });
     return { data: [], error };
   }
 };

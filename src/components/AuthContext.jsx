@@ -64,19 +64,41 @@ export const AuthProvider = ({ children }) => {
 
       // Para outros usuários, buscar permissões do banco
       console.log('📋 Carregando permissões do banco para:', userId);
-      const { data, error } = await getUserPermissions(userId);
 
-      if (error) {
-        console.error('❌ Erro ao carregar permissões:', error);
-        return []; // Sem permissões em caso de erro
+      // Adicionar timeout de 8 segundos para evitar travamentos
+      const timeoutPromise = new Promise((resolve) =>
+        setTimeout(() => {
+          console.warn(
+            '⏱️ TIMEOUT: Permissões demoraram mais de 8s para carregar',
+          );
+          resolve({ data: [], error: new Error('Timeout') });
+        }, 8000),
+      );
+
+      const permissionsPromise = getUserPermissions(userId);
+
+      try {
+        const result = await Promise.race([permissionsPromise, timeoutPromise]);
+
+        const { data, error } = result;
+
+        if (error) {
+          console.error('❌ Erro ao carregar permissões:', error);
+          console.log('⚠️ Usuário continuará sem permissões customizadas');
+          return []; // Sem permissões em caso de erro
+        }
+
+        // getUserPermissions já retorna array de strings (ex: ['/home', '/crosby-bot'])
+        console.log('✅ Permissões carregadas:', data);
+
+        return data || [];
+      } catch (err) {
+        console.error('❌ Erro ao aguardar permissões:', err);
+        return [];
       }
-
-      // getUserPermissions já retorna array de strings (ex: ['/home', '/crosby-bot'])
-      console.log('✅ Permissões carregadas:', data);
-
-      return data || [];
     } catch (error) {
-      console.error('❌ Erro ao carregar permissões:', error);
+      console.error('❌ Erro crítico ao carregar permissões:', error);
+      console.log('⚠️ Usuário continuará sem permissões customizadas');
       return [];
     }
   };
@@ -110,10 +132,12 @@ export const AuthProvider = ({ children }) => {
       const roleConfig = ROLE_CONFIG[validRole];
 
       // Carregar permissões do banco
+      console.log('🔄 Iniciando carregamento de permissões...');
       const allowedPages = await loadUserPermissions(
         authData.user.id,
         validRole,
       );
+      console.log('✅ Permissões carregadas, configurando usuário...');
 
       // Configurar usuário
       const userData = {
@@ -131,9 +155,11 @@ export const AuthProvider = ({ children }) => {
       };
 
       console.log('✅ Dados do usuário configurados:', userData);
+      console.log('🎯 Setando usuário e finalizando login...');
       setUser(userData);
       setLoading(false);
 
+      console.log('✅ Login finalizado com sucesso!');
       return { success: true, user: userData };
     } catch (error) {
       console.error('❌ Erro no login:', error);
