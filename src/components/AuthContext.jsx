@@ -66,6 +66,9 @@ export const AuthProvider = ({ children }) => {
   const permissionsCache = useRef({});
   const loadingPermissions = useRef(new Set());
 
+  // Flag para controlar se estamos no carregamento inicial
+  const isInitialLoad = useRef(true);
+
   // Helper para atualizar usuário (state + ref)
   const updateUser = (userData) => {
     userRef.current = userData;
@@ -94,16 +97,30 @@ export const AuthProvider = ({ children }) => {
       // Evitar múltiplas chamadas simultâneas para o mesmo usuário
       if (loadingPermissions.current.has(userId)) {
         console.log('⏳ Já existe um carregamento em andamento, aguardando...');
-        // Aguardar um pouco e tentar pegar do cache
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        const cachedAfterWait = permissionsCache.current[userId];
-        if (cachedAfterWait) {
-          console.log(
-            '💾 Usando permissões após aguardar:',
-            cachedAfterWait.permissions,
-          );
-          return cachedAfterWait.permissions;
+        // Aguardar até 12 segundos checando o cache a cada 500ms
+        const maxWaitTime = 12000; // 12 segundos
+        const checkInterval = 500; // 500ms
+        const startTime = Date.now();
+
+        while (Date.now() - startTime < maxWaitTime) {
+          await new Promise((resolve) => setTimeout(resolve, checkInterval));
+          const cachedAfterWait = permissionsCache.current[userId];
+          if (cachedAfterWait) {
+            console.log(
+              '💾 Usando permissões após aguardar:',
+              cachedAfterWait.permissions,
+            );
+            return cachedAfterWait.permissions;
+          }
+          // Se o carregamento já terminou mas não há cache, sair do loop
+          if (!loadingPermissions.current.has(userId)) {
+            break;
+          }
         }
+
+        // Se chegou aqui, timeout ou erro no carregamento original
+        console.warn('⏱️ Timeout ao aguardar carregamento em andamento');
+        return [];
       }
 
       // Marcar que estamos carregando
@@ -112,19 +129,20 @@ export const AuthProvider = ({ children }) => {
       // Para outros usuários, buscar permissões do banco
       console.log('📋 Carregando permissões do banco para:', userId);
 
-      // Adicionar timeout de 10 segundos para evitar travamentos
+      // Adicionar timeout de 15 segundos para evitar travamentos
       const timeoutPromise = new Promise((resolve) =>
         setTimeout(() => {
-          console.warn('⏱️ TIMEOUT: Permissões demoraram mais de 10s');
+          console.warn('⏱️ TIMEOUT: Permissões demoraram mais de 15s');
           loadingPermissions.current.delete(userId);
           // Se temos cache antigo, usar ele mesmo expirado
           if (cached) {
             console.log('💾 Usando cache expirado como fallback');
             resolve({ data: cached.permissions, error: null });
           } else {
+            console.warn('⚠️ Sem cache disponível, retornando array vazio');
             resolve({ data: [], error: new Error('Timeout') });
           }
-        }, 10000),
+        }, 15000),
       );
 
       const permissionsPromise = getUserPermissions(userId);
@@ -248,6 +266,8 @@ export const AuthProvider = ({ children }) => {
       // Limpar cache
       permissionsCache.current = {};
       loadingPermissions.current.clear();
+      // Resetar flag de carregamento inicial
+      isInitialLoad.current = true;
     } catch (error) {
       console.error('Erro no logout:', error);
     }
@@ -316,6 +336,11 @@ export const AuthProvider = ({ children }) => {
         console.error('❌ Erro ao verificar sessão:', error);
       } finally {
         setLoading(false);
+        // Marcar que o carregamento inicial foi concluído
+        setTimeout(() => {
+          isInitialLoad.current = false;
+          console.log('✅ Carregamento inicial concluído');
+        }, 500);
       }
     };
 
@@ -326,6 +351,15 @@ export const AuthProvider = ({ children }) => {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('🔄 Evento de autenticação:', event);
+
+      // Ignorar eventos durante carregamento inicial (checkSession cuida disso)
+      if (
+        isInitialLoad.current &&
+        (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')
+      ) {
+        console.log('⏭️ Ignorando evento durante carregamento inicial');
+        return;
+      }
 
       if (event === 'SIGNED_IN' && session?.user) {
         // Evitar recarregar se já temos o mesmo usuário logado (evita loops)
@@ -367,6 +401,7 @@ export const AuthProvider = ({ children }) => {
         // Limpar cache de permissões ao fazer logout
         permissionsCache.current = {};
         loadingPermissions.current.clear();
+        isInitialLoad.current = true; // Resetar para próximo login
         setLoading(false);
       }
     });
@@ -376,6 +411,18 @@ export const AuthProvider = ({ children }) => {
       data: { subscription: subscriptionSession },
     } = supabaseSession.auth.onAuthStateChange(async (event, session) => {
       console.log('🔄 Evento de autenticação (session):', event);
+
+      // Ignorar eventos durante carregamento inicial (checkSession cuida disso)
+      if (
+        isInitialLoad.current &&
+        (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')
+      ) {
+        console.log(
+          '⏭️ Ignorando evento (session) durante carregamento inicial',
+        );
+        return;
+      }
+
       if (event === 'SIGNED_IN' && session?.user) {
         // Evitar recarregar se já temos o mesmo usuário logado
         if (userRef.current && userRef.current.id === session.user.id) {
@@ -412,6 +459,7 @@ export const AuthProvider = ({ children }) => {
         // Limpar cache ao fazer logout (session)
         permissionsCache.current = {};
         loadingPermissions.current.clear();
+        isInitialLoad.current = true; // Resetar para próximo login
         setLoading(false);
       }
     });
