@@ -44,6 +44,7 @@ import {
   TrendUp,
   Smiley,
   ClockClockwise,
+  CheckCircle,
 } from '@phosphor-icons/react';
 
 // Registrar componentes do Chart.js
@@ -239,6 +240,16 @@ const InadimplentesMultimarcas = () => {
         return 'bg-purple-100 text-purple-800';
       case 'PROTESTADO':
         return 'bg-red-100 text-red-800';
+      case 'PAGO PENDENTE DE BAIXA':
+        return 'bg-green-100 text-green-800';
+      case 'LOJA FECHADA (Tentando ACORDO)':
+        return 'bg-orange-100 text-orange-800';
+      case 'ACORDO CONCLUÍDO':
+        return 'bg-emerald-100 text-emerald-800';
+      case 'NOTIFICAÇÃO JURÍDICA':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'EM AÇÃO JUDICIAL':
+        return 'bg-red-200 text-red-900';
       default:
         return 'bg-gray-100 text-gray-600';
     }
@@ -312,6 +323,45 @@ const InadimplentesMultimarcas = () => {
       (c) => clienteStatus[c.cd_cliente] === 'PROTESTADO',
     );
     abrirModalLista('Clientes com Status: Protestado', clientes);
+  };
+
+  // Handlers para os novos status
+  const abrirModalStatusPagoPendente = () => {
+    const clientes = clientesAgrupados.filter(
+      (c) => clienteStatus[c.cd_cliente] === 'PAGO PENDENTE DE BAIXA',
+    );
+    abrirModalLista('Clientes com Status: Pago Pendente de Baixa', clientes);
+  };
+
+  const abrirModalStatusLojaFechada = () => {
+    const clientes = clientesAgrupados.filter(
+      (c) => clienteStatus[c.cd_cliente] === 'LOJA FECHADA (Tentando ACORDO)',
+    );
+    abrirModalLista(
+      'Clientes com Status: Loja Fechada (Tentando Acordo)',
+      clientes,
+    );
+  };
+
+  const abrirModalStatusAcordoConcluido = () => {
+    const clientes = clientesAgrupados.filter(
+      (c) => clienteStatus[c.cd_cliente] === 'ACORDO CONCLUÍDO',
+    );
+    abrirModalLista('Clientes com Status: Acordo Concluído', clientes);
+  };
+
+  const abrirModalStatusNotificacaoJuridica = () => {
+    const clientes = clientesAgrupados.filter(
+      (c) => clienteStatus[c.cd_cliente] === 'NOTIFICAÇÃO JURÍDICA',
+    );
+    abrirModalLista('Clientes com Status: Notificação Jurídica', clientes);
+  };
+
+  const abrirModalStatusAcaoJudicial = () => {
+    const clientes = clientesAgrupados.filter(
+      (c) => clienteStatus[c.cd_cliente] === 'EM AÇÃO JUDICIAL',
+    );
+    abrirModalLista('Clientes com Status: Em Ação Judicial', clientes);
   };
 
   // Handlers para matriz cruzada (Situação x Status)
@@ -561,6 +611,49 @@ const InadimplentesMultimarcas = () => {
       0,
     );
 
+    // Métricas para os novos status
+    const statusPagoPendente = clientesAgrupados.filter(
+      (c) => clienteStatus[c.cd_cliente] === 'PAGO PENDENTE DE BAIXA',
+    );
+    const statusLojaFechada = clientesAgrupados.filter(
+      (c) => clienteStatus[c.cd_cliente] === 'LOJA FECHADA (Tentando ACORDO)',
+    );
+    const statusAcordoConcluido = clientesAgrupados.filter(
+      (c) => clienteStatus[c.cd_cliente] === 'ACORDO CONCLUÍDO',
+    );
+    const statusNotificacaoJuridica = clientesAgrupados.filter(
+      (c) => clienteStatus[c.cd_cliente] === 'NOTIFICAÇÃO JURÍDICA',
+    );
+    const statusAcaoJudicial = clientesAgrupados.filter(
+      (c) => clienteStatus[c.cd_cliente] === 'EM AÇÃO JUDICIAL',
+    );
+
+    const qtdPagoPendente = statusPagoPendente.length;
+    const valorPagoPendente = statusPagoPendente.reduce(
+      (acc, c) => acc + c.valor_total,
+      0,
+    );
+    const qtdLojaFechada = statusLojaFechada.length;
+    const valorLojaFechada = statusLojaFechada.reduce(
+      (acc, c) => acc + c.valor_total,
+      0,
+    );
+    const qtdAcordoConcluido = statusAcordoConcluido.length;
+    const valorAcordoConcluido = statusAcordoConcluido.reduce(
+      (acc, c) => acc + c.valor_total,
+      0,
+    );
+    const qtdNotificacaoJuridica = statusNotificacaoJuridica.length;
+    const valorNotificacaoJuridica = statusNotificacaoJuridica.reduce(
+      (acc, c) => acc + c.valor_total,
+      0,
+    );
+    const qtdAcaoJudicial = statusAcaoJudicial.length;
+    const valorAcaoJudicial = statusAcaoJudicial.reduce(
+      (acc, c) => acc + c.valor_total,
+      0,
+    );
+
     return {
       totalClientes,
       valorTotal,
@@ -585,6 +678,17 @@ const InadimplentesMultimarcas = () => {
       valorCobranca,
       qtdProtestado,
       valorProtestado,
+      // Novos Status
+      qtdPagoPendente,
+      valorPagoPendente,
+      qtdLojaFechada,
+      valorLojaFechada,
+      qtdAcordoConcluido,
+      valorAcordoConcluido,
+      qtdNotificacaoJuridica,
+      valorNotificacaoJuridica,
+      qtdAcaoJudicial,
+      valorAcaoJudicial,
     };
   }, [clientesAgrupados, dadosFiltrados, clienteFeeling, clienteStatus]);
 
@@ -1216,6 +1320,122 @@ const InadimplentesMultimarcas = () => {
               </CardDescription>
             </CardContent>
           </Card>
+
+          {/* Novos cards de status */}
+          <Card
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+            onClick={abrirModalStatusPagoPendente}
+          >
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={18} className="text-green-600" />
+                <CardTitle className="text-sm font-bold text-green-700">
+                  Pago Pendente de Baixa
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-base font-extrabold text-green-600 mb-0.5">
+                {metricas.qtdPagoPendente}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                {metricas.qtdPagoPendente !== 1 ? 'Clientes' : 'Cliente'} -{' '}
+                {formatarMoeda(metricas.valorPagoPendente)}
+              </CardDescription>
+            </CardContent>
+          </Card>
+
+          <Card
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+            onClick={abrirModalStatusLojaFechada}
+          >
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <Warning size={18} className="text-orange-600" />
+                <CardTitle className="text-sm font-bold text-orange-700">
+                  Loja Fechada (Tentando Acordo)
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-base font-extrabold text-orange-600 mb-0.5">
+                {metricas.qtdLojaFechada}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                {metricas.qtdLojaFechada !== 1 ? 'Clientes' : 'Cliente'} -{' '}
+                {formatarMoeda(metricas.valorLojaFechada)}
+              </CardDescription>
+            </CardContent>
+          </Card>
+
+          <Card
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+            onClick={abrirModalStatusAcordoConcluido}
+          >
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <Smiley size={18} className="text-emerald-600" />
+                <CardTitle className="text-sm font-bold text-emerald-700">
+                  Acordo Concluído
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-base font-extrabold text-emerald-600 mb-0.5">
+                {metricas.qtdAcordoConcluido}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                {metricas.qtdAcordoConcluido !== 1 ? 'Clientes' : 'Cliente'} -{' '}
+                {formatarMoeda(metricas.valorAcordoConcluido)}
+              </CardDescription>
+            </CardContent>
+          </Card>
+
+          <Card
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+            onClick={abrirModalStatusNotificacaoJuridica}
+          >
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <FileText size={18} className="text-yellow-600" />
+                <CardTitle className="text-sm font-bold text-yellow-700">
+                  Notificação Jurídica
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-base font-extrabold text-yellow-600 mb-0.5">
+                {metricas.qtdNotificacaoJuridica}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                {metricas.qtdNotificacaoJuridica !== 1 ? 'Clientes' : 'Cliente'}{' '}
+                - {formatarMoeda(metricas.valorNotificacaoJuridica)}
+              </CardDescription>
+            </CardContent>
+          </Card>
+
+          <Card
+            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+            onClick={abrirModalStatusAcaoJudicial}
+          >
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <Gavel size={18} className="text-red-700" />
+                <CardTitle className="text-sm font-bold text-red-800">
+                  Em Ação Judicial
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <div className="text-base font-extrabold text-red-700 mb-0.5">
+                {metricas.qtdAcaoJudicial}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                {metricas.qtdAcaoJudicial !== 1 ? 'Clientes' : 'Cliente'} -{' '}
+                {formatarMoeda(metricas.valorAcaoJudicial)}
+              </CardDescription>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
@@ -1620,6 +1840,21 @@ const InadimplentesMultimarcas = () => {
                                 </option>
                                 <option value="COBRANÇA">COBRANÇA</option>
                                 <option value="PROTESTADO">PROTESTADO</option>
+                                <option value="PAGO PENDENTE DE BAIXA">
+                                  PAGO PENDENTE DE BAIXA
+                                </option>
+                                <option value="LOJA FECHADA (Tentando ACORDO)">
+                                  LOJA FECHADA (Tentando ACORDO)
+                                </option>
+                                <option value="ACORDO CONCLUÍDO">
+                                  ACORDO CONCLUÍDO
+                                </option>
+                                <option value="NOTIFICAÇÃO JURÍDICA">
+                                  NOTIFICAÇÃO JURÍDICA
+                                </option>
+                                <option value="EM AÇÃO JUDICIAL">
+                                  EM AÇÃO JUDICIAL
+                                </option>
                               </select>
                               <button
                                 onClick={(e) =>
