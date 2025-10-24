@@ -6,6 +6,7 @@ import LoadingSpinner from './components/LoadingSpinner';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
+import AcaoCartoes from './pages/AcaoCartoes';
 
 // Lazy loading de todas as páginas para otimizar bundle
 const Home = lazy(() => import('./pages/Home'));
@@ -146,6 +147,7 @@ const AppRoutes = memo(() => {
     { path: '/gerenciador-acessos', component: GerenciadorAcessos },
     { path: '/user-panel', component: UserPanel },
     { path: '/auth-test', component: AuthTest },
+    { path: '/acao-cartoes', component: AcaoCartoes },
   ];
 
   // Componente de layout para rotas protegidas

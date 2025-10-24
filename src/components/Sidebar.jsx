@@ -230,6 +230,12 @@ const varejo = [
     icon: CurrencyCircleDollar,
     color: 'text-green-600',
   },
+  {
+    name: 'Ação Cartões',
+    href: '/acao-cartoes',
+    icon: CreditCard,
+    color: 'text-green-600',
+  },
 ];
 
 const multimarcas = [
