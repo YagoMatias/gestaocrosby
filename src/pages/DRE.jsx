@@ -1795,6 +1795,22 @@ const DRE = () => {
 
   // Remover busca automática - só buscar quando clicar no botão
 
+  // Funções auxiliares de formatação
+  const formatCurrency = (value) => {
+    const formatted = new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(Math.abs(value));
+
+    return value < 0 ? `-${formatted}` : formatted;
+  };
+
+  // Função auxiliar para calcular porcentagem
+  const calcularPorcentagem = (valor, total) => {
+    if (total === 0) return 0;
+    return Math.abs((valor / total) * 100);
+  };
+
   // Função auxiliar para gerar estrutura DRE com base em dados específicos
   const gerarEstruturaDRE = useCallback((dados) => {
     const {
@@ -1864,30 +1880,39 @@ const DRE = () => {
         children: [
           {
             id: 'varejo',
-            label: 'Varejo',
+            label: `Varejo ${calcularPorcentagem(tv.totalBruto, vb).toFixed(
+              1,
+            )}%`,
             description: 'Vendas do canal Varejo',
-            value: tv.totalBruto + tv.totalDevolucoes,
+            value: tv.totalBruto,
             type: 'receita',
           },
           {
             id: 'multimarcas',
-            label: 'Multimarcas',
+            label: `Multimarcas ${calcularPorcentagem(
+              tm.totalBruto,
+              vb,
+            ).toFixed(1)}%`,
             description: 'Vendas do canal Multimarcas',
-            value: tm.totalBruto + tm.totalDevolucoes,
+            value: tm.totalBruto,
             type: 'receita',
           },
           {
             id: 'revenda',
-            label: 'Revenda',
+            label: `Revenda ${calcularPorcentagem(tr.totalBruto, vb).toFixed(
+              1,
+            )}%`,
             description: 'Vendas do canal Revenda',
-            value: tr.totalBruto + tr.totalDevolucoes,
+            value: tr.totalBruto,
             type: 'receita',
           },
           {
             id: 'franquias',
-            label: 'Franquias',
+            label: `Franquias ${calcularPorcentagem(tf.totalBruto, vb).toFixed(
+              1,
+            )}%`,
             description: 'Vendas do canal Franquias',
-            value: tf.totalBruto + tf.totalDevolucoes,
+            value: tf.totalBruto,
             type: 'receita',
           },
         ],
@@ -1909,28 +1934,40 @@ const DRE = () => {
             children: [
               {
                 id: 'devolucoes-varejo',
-                label: 'Varejo',
+                label: `Varejo ${calcularPorcentagem(
+                  tv.totalDevolucoes,
+                  dev,
+                ).toFixed(1)}%`,
                 description: 'Devoluções do canal Varejo',
                 value: -tv.totalDevolucoes,
                 type: 'deducao',
               },
               {
                 id: 'devolucoes-multimarcas',
-                label: 'Multimarcas',
+                label: `Multimarcas ${calcularPorcentagem(
+                  tm.totalDevolucoes,
+                  dev,
+                ).toFixed(1)}%`,
                 description: 'Devoluções do canal Multimarcas',
                 value: -tm.totalDevolucoes,
                 type: 'deducao',
               },
               {
                 id: 'devolucoes-revenda',
-                label: 'Revenda',
+                label: `Revenda ${calcularPorcentagem(
+                  tr.totalDevolucoes,
+                  dev,
+                ).toFixed(1)}%`,
                 description: 'Devoluções do canal Revenda',
                 value: -tr.totalDevolucoes,
                 type: 'deducao',
               },
               {
                 id: 'devolucoes-franquias',
-                label: 'Franquias',
+                label: `Franquias ${calcularPorcentagem(
+                  tf.totalDevolucoes,
+                  dev,
+                ).toFixed(1)}%`,
                 description: 'Devoluções do canal Franquias',
                 value: -tf.totalDevolucoes,
                 type: 'deducao',
@@ -1959,7 +1996,12 @@ const DRE = () => {
             children: [
               {
                 id: 'descontos-varejo',
-                label: 'Varejo',
+                label: `Varejo ${calcularPorcentagem(
+                  tv.totalBruto -
+                    tv.totalDevolucoes -
+                    (tv.totalLiquido - tv.totalDevolucoes),
+                  desc,
+                ).toFixed(1)}%`,
                 description: 'Descontos do canal Varejo',
                 value: -(
                   tv.totalBruto -
@@ -1970,7 +2012,12 @@ const DRE = () => {
               },
               {
                 id: 'descontos-multimarcas',
-                label: 'Multimarcas',
+                label: `Multimarcas ${calcularPorcentagem(
+                  tm.totalBruto -
+                    tm.totalDevolucoes -
+                    (tm.totalLiquido - tm.totalDevolucoes),
+                  desc,
+                ).toFixed(1)}%`,
                 description: 'Descontos do canal Multimarcas',
                 value: -(
                   tm.totalBruto -
@@ -1981,7 +2028,12 @@ const DRE = () => {
               },
               {
                 id: 'descontos-revenda',
-                label: 'Revenda',
+                label: `Revenda ${calcularPorcentagem(
+                  tr.totalBruto -
+                    tr.totalDevolucoes -
+                    (tr.totalLiquido - tr.totalDevolucoes),
+                  desc,
+                ).toFixed(1)}%`,
                 description: 'Descontos do canal Revenda',
                 value: -(
                   tr.totalBruto -
@@ -1992,7 +2044,12 @@ const DRE = () => {
               },
               {
                 id: 'descontos-franquias',
-                label: 'Franquias',
+                label: `Franquias ${calcularPorcentagem(
+                  tf.totalBruto -
+                    tf.totalDevolucoes -
+                    (tf.totalLiquido - tf.totalDevolucoes),
+                  desc,
+                ).toFixed(1)}%`,
                 description: 'Descontos do canal Franquias',
                 value: -(
                   tf.totalBruto -
@@ -2012,7 +2069,10 @@ const DRE = () => {
             children: [
               {
                 id: 'impostos-varejo',
-                label: 'Varejo',
+                label: `Varejo ${calcularPorcentagem(
+                  iv.icms + iv.pis + iv.cofins,
+                  ti,
+                ).toFixed(1)}%`,
                 description: 'Impostos do canal Varejo',
                 value: -(iv.icms + iv.pis + iv.cofins),
                 type: 'deducao',
@@ -2042,7 +2102,10 @@ const DRE = () => {
               },
               {
                 id: 'impostos-multimarcas',
-                label: 'Multimarcas',
+                label: `Multimarcas ${calcularPorcentagem(
+                  im.icms + im.pis + im.cofins,
+                  ti,
+                ).toFixed(1)}%`,
                 description: 'Impostos do canal Multimarcas',
                 value: -(im.icms + im.pis + im.cofins),
                 type: 'deducao',
@@ -2072,7 +2135,10 @@ const DRE = () => {
               },
               {
                 id: 'impostos-revenda',
-                label: 'Revenda',
+                label: `Revenda ${calcularPorcentagem(
+                  ir.icms + ir.pis + ir.cofins,
+                  ti,
+                ).toFixed(1)}%`,
                 description: 'Impostos do canal Revenda',
                 value: -(ir.icms + ir.pis + ir.cofins),
                 type: 'deducao',
@@ -2102,7 +2168,10 @@ const DRE = () => {
               },
               {
                 id: 'impostos-franquias',
-                label: 'Franquias',
+                label: `Franquias ${calcularPorcentagem(
+                  ifrq.icms + ifrq.pis + ifrq.cofins,
+                  ti,
+                ).toFixed(1)}%`,
                 description: 'Impostos do canal Franquias',
                 value: -(ifrq.icms + ifrq.pis + ifrq.cofins),
                 type: 'deducao',
@@ -2143,28 +2212,28 @@ const DRE = () => {
         children: [
           {
             id: 'receita-liquida-varejo',
-            label: 'Varejo',
+            label: `Varejo ${calcularPorcentagem(rlv, rl).toFixed(1)}%`,
             description: 'Receita líquida do canal Varejo',
             value: rlv,
             type: 'resultado',
           },
           {
             id: 'receita-liquida-multimarcas',
-            label: 'Multimarcas',
+            label: `Multimarcas ${calcularPorcentagem(rlm, rl).toFixed(1)}%`,
             description: 'Receita líquida do canal Multimarcas',
             value: rlm,
             type: 'resultado',
           },
           {
             id: 'receita-liquida-revenda',
-            label: 'Revenda',
+            label: `Revenda ${calcularPorcentagem(rlr, rl).toFixed(1)}%`,
             description: 'Receita líquida do canal Revenda',
             value: rlr,
             type: 'resultado',
           },
           {
             id: 'receita-liquida-franquias',
-            label: 'Franquias',
+            label: `Franquias ${calcularPorcentagem(rlf, rl).toFixed(1)}%`,
             description: 'Receita líquida do canal Franquias',
             value: rlf,
             type: 'resultado',
@@ -2180,28 +2249,30 @@ const DRE = () => {
         children: [
           {
             id: 'cmv-varejo',
-            label: 'Varejo',
+            label: `Varejo ${calcularPorcentagem(cv, cmvVal).toFixed(1)}%`,
             description: 'CMV do canal Varejo',
             value: -cv,
             type: 'custo',
           },
           {
             id: 'cmv-multimarcas',
-            label: 'Multimarcas',
+            label: `Multimarcas ${calcularPorcentagem(cmtm, cmvVal).toFixed(
+              1,
+            )}%`,
             description: 'CMV do canal Multimarcas',
             value: -cmtm,
             type: 'custo',
           },
           {
             id: 'cmv-revenda',
-            label: 'Revenda',
+            label: `Revenda ${calcularPorcentagem(cr, cmvVal).toFixed(1)}%`,
             description: 'CMV do canal Revenda',
             value: -cr,
             type: 'custo',
           },
           {
             id: 'cmv-franquias',
-            label: 'Franquias',
+            label: `Franquias ${calcularPorcentagem(cf, cmvVal).toFixed(1)}%`,
             description: 'CMV do canal Franquias',
             value: -cf,
             type: 'custo',
@@ -2217,28 +2288,28 @@ const DRE = () => {
         children: [
           {
             id: 'lucro-bruto-varejo',
-            label: 'Varejo',
+            label: `Varejo ${calcularPorcentagem(lbv, lb).toFixed(1)}%`,
             description: 'Lucro bruto do canal Varejo',
             value: lbv,
             type: 'resultado',
           },
           {
             id: 'lucro-bruto-multimarcas',
-            label: 'Multimarcas',
+            label: `Multimarcas ${calcularPorcentagem(lbm, lb).toFixed(1)}%`,
             description: 'Lucro bruto do canal Multimarcas',
             value: lbm,
             type: 'resultado',
           },
           {
             id: 'lucro-bruto-revenda',
-            label: 'Revenda',
+            label: `Revenda ${calcularPorcentagem(lbr, lb).toFixed(1)}%`,
             description: 'Lucro bruto do canal Revenda',
             value: lbr,
             type: 'resultado',
           },
           {
             id: 'lucro-bruto-franquias',
-            label: 'Franquias',
+            label: `Franquias ${calcularPorcentagem(lbf, lb).toFixed(1)}%`,
             description: 'Lucro bruto do canal Franquias',
             value: lbf,
             type: 'resultado',
@@ -2590,16 +2661,6 @@ const DRE = () => {
       setCategoriasExpandidas(todasCategorias);
     }
     setTodosExpandidos(!todosExpandidos);
-  };
-
-  // Funções auxiliares de formatação
-  const formatCurrency = (value) => {
-    const formatted = new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    }).format(Math.abs(value));
-
-    return value < 0 ? `-${formatted}` : formatted;
   };
 
   const getValueColor = (value, type) => {
