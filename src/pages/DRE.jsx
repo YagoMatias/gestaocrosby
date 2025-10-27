@@ -149,6 +149,76 @@ const DRE = () => {
     empresas: [1, 2, 3, 4, 5], // Empresas padrão
   });
   const [filtroMensal, setFiltroMensal] = useState('ANO');
+  const [filtroMensalComparacao, setFiltroMensalComparacao] = useState('ANO');
+
+  // Estados para análise horizontal/vertical
+  const [tipoAnalise, setTipoAnalise] = useState('vertical'); // 'vertical' ou 'horizontal'
+  const [periodoComparacao, setPeriodoComparacao] = useState({
+    dt_inicio: '',
+    dt_fim: '',
+  });
+
+  // Estados para dados do período de comparação (Período 2)
+  const [dadosPeriodo2, setDadosPeriodo2] = useState({
+    vendasBrutas: 0,
+    devolucoes: 0,
+    descontos: 0,
+    totalDeducoes: 0,
+    cmv: 0,
+    receitaLiquida: 0,
+    lucroBruto: 0,
+    icms: 0,
+    pis: 0,
+    cofins: 0,
+    totalImpostos: 0,
+    planoDespesasTotal: 0,
+    planoDespesasFinanceirasTotal: 0,
+    // Dados por canal
+    totaisVarejo: {
+      totalBruto: 0,
+      totalDevolucoes: 0,
+      totalCMV: 0,
+      totalLiquido: 0,
+      descontos: 0,
+    },
+    totaisMultimarcas: {
+      totalBruto: 0,
+      totalDevolucoes: 0,
+      totalCMV: 0,
+      totalLiquido: 0,
+      descontos: 0,
+    },
+    totaisFranquias: {
+      totalBruto: 0,
+      totalDevolucoes: 0,
+      totalCMV: 0,
+      totalLiquido: 0,
+      descontos: 0,
+    },
+    totaisRevenda: {
+      totalBruto: 0,
+      totalDevolucoes: 0,
+      totalCMV: 0,
+      totalLiquido: 0,
+      descontos: 0,
+    },
+    impostosVarejo: { icms: 0, pis: 0, cofins: 0 },
+    impostosMultimarcas: { icms: 0, pis: 0, cofins: 0 },
+    impostosFranquias: { icms: 0, pis: 0, cofins: 0 },
+    impostosRevenda: { icms: 0, pis: 0, cofins: 0 },
+    receitaLiquidaVarejo: 0,
+    receitaLiquidaMultimarcas: 0,
+    receitaLiquidaFranquias: 0,
+    receitaLiquidaRevenda: 0,
+    cmvVarejo: 0,
+    cmvMultimarcas: 0,
+    cmvFranquias: 0,
+    cmvRevenda: 0,
+    lucroBrutoVarejo: 0,
+    lucroBrutoMultimarcas: 0,
+    lucroBrutoFranquias: 0,
+    lucroBrutoRevenda: 0,
+  });
 
   const obterDiasDoMes = (mesNumero, anoNumero) => {
     // Retorna o último dia do mês considerando ano bissexto
@@ -200,6 +270,51 @@ const DRE = () => {
     }));
   };
 
+  const handleFiltroMensalComparacaoChange = (mesSigla) => {
+    setFiltroMensalComparacao(mesSigla);
+    if (mesSigla === 'ANO') return; // Não altera datas diretamente
+
+    const mesesMap = {
+      JAN: 1,
+      FEV: 2,
+      MAR: 3,
+      ABR: 4,
+      MAI: 5,
+      JUN: 6,
+      JUL: 7,
+      AGO: 8,
+      SET: 9,
+      OUT: 10,
+      NOV: 11,
+      DEZ: 12,
+    };
+
+    const mesNumero = mesesMap[mesSigla];
+    if (!mesNumero) return;
+
+    const anoBase = (() => {
+      if (periodoComparacao.dt_inicio) {
+        const [y] = periodoComparacao.dt_inicio.split('-');
+        const n = parseInt(y, 10);
+        if (n > 1900) return n;
+      }
+      return new Date().getFullYear();
+    })();
+
+    const primeiroDia = `${anoBase}-${String(mesNumero).padStart(2, '0')}-01`;
+    const ultimoDiaNum = obterDiasDoMes(mesNumero, anoBase);
+    const ultimoDia = `${anoBase}-${String(mesNumero).padStart(
+      2,
+      '0',
+    )}-${String(ultimoDiaNum).padStart(2, '0')}`;
+
+    setPeriodoComparacao((prev) => ({
+      ...prev,
+      dt_inicio: primeiroDia,
+      dt_fim: ultimoDia,
+    }));
+  };
+
   const [expandedNodes, setExpandedNodes] = useState({
     'vendas-bruta': true,
     'deducoes-vendas': true,
@@ -239,6 +354,16 @@ const DRE = () => {
   // Função para buscar vendas brutas das 4 rotas de Faturamento Materializadas
   const buscarVendasBrutas = useCallback(async () => {
     if (!periodo.dt_inicio || !periodo.dt_fim) return;
+
+    // Validação: Se for análise horizontal, verificar se período 2 foi preenchido
+    if (tipoAnalise === 'horizontal') {
+      if (!periodoComparacao.dt_inicio || !periodoComparacao.dt_fim) {
+        setError(
+          'Para análise horizontal, preencha o Período 2 de comparação.',
+        );
+        return;
+      }
+    }
 
     setLoading(true);
     setError('');
@@ -863,6 +988,353 @@ const DRE = () => {
       setCofins(cofinsReal);
       setTotalImpostos(totalImpostosReal);
 
+      // ================= ANÁLISE HORIZONTAL: Buscar dados do Período 2 =================
+      if (tipoAnalise === 'horizontal') {
+        setLoadingStatus('Buscando dados do Período 2 de comparação...');
+
+        // Buscar faturamento do Período 2
+        const paramsFaturamentoPeriodo2 = {
+          dataInicio: periodoComparacao.dt_inicio,
+          dataFim: periodoComparacao.dt_fim,
+        };
+
+        const [
+          faturamentoVarejoPeriodo2,
+          faturamentoMultimarcasPeriodo2,
+          faturamentoFranquiasPeriodo2,
+          faturamentoRevendaPeriodo2,
+        ] = await Promise.all([
+          api.sales.faturamentoVarejo(paramsFaturamentoPeriodo2),
+          api.sales.faturamentoMtm(paramsFaturamentoPeriodo2),
+          api.sales.faturamentoFranquias(paramsFaturamentoPeriodo2),
+          api.sales.faturamentoRevenda(paramsFaturamentoPeriodo2),
+        ]);
+
+        // Buscar CMV do Período 2
+        const paramsCMVPeriodo2Varejo = {
+          dataInicio: periodoComparacao.dt_inicio,
+          dataFim: periodoComparacao.dt_fim,
+          cd_grupoempresa: empresasVarejo,
+        };
+
+        const paramsCMVPeriodo2Fixas = {
+          dataInicio: periodoComparacao.dt_inicio,
+          dataFim: periodoComparacao.dt_fim,
+          cd_grupoempresa: empresasFixas,
+        };
+
+        const [
+          cmvVarejoPeriodo2,
+          cmvMultimarcasPeriodo2,
+          cmvFranquiasPeriodo2,
+          cmvRevendaPeriodo2,
+        ] = await Promise.all([
+          api.sales.cmvVarejo(paramsCMVPeriodo2Varejo),
+          api.sales.cmvMultimarcas(paramsCMVPeriodo2Fixas),
+          api.sales.cmvFranquias(paramsCMVPeriodo2Fixas),
+          api.sales.cmvRevenda(paramsCMVPeriodo2Fixas),
+        ]);
+
+        // Processar dados do Período 2 (mesma lógica do Período 1)
+        const dadosFaturamentoVarejoPeriodo2 = calcularDadosFaturamento(
+          faturamentoVarejoPeriodo2,
+        );
+        const dadosFaturamentoMultimarcasPeriodo2 = calcularDadosFaturamento(
+          faturamentoMultimarcasPeriodo2,
+        );
+        const dadosFaturamentoFranquiasPeriodo2 = calcularDadosFaturamento(
+          faturamentoFranquiasPeriodo2,
+        );
+        const dadosFaturamentoRevendaPeriodo2 = calcularDadosFaturamento(
+          faturamentoRevendaPeriodo2,
+        );
+
+        const dadosCMVVarejoPeriodo2 = calcularCMV(cmvVarejoPeriodo2);
+        const dadosCMVMultimarcasPeriodo2 = calcularCMV(cmvMultimarcasPeriodo2);
+        const dadosCMVFranquiasPeriodo2 = calcularCMV(cmvFranquiasPeriodo2);
+        const dadosCMVRevendaPeriodo2 = calcularCMV(cmvRevendaPeriodo2);
+
+        const totalReceitaBrutaPeriodo2 =
+          dadosFaturamentoVarejoPeriodo2.receitaBruta +
+          dadosFaturamentoMultimarcasPeriodo2.receitaBruta +
+          dadosFaturamentoFranquiasPeriodo2.receitaBruta +
+          dadosFaturamentoRevendaPeriodo2.receitaBruta;
+
+        const totalVendasBrutasPeriodo2 = totalReceitaBrutaPeriodo2;
+
+        const totalDevolucoesLiquidasPeriodo2 =
+          dadosFaturamentoVarejoPeriodo2.devolucoesLiquidas +
+          dadosFaturamentoMultimarcasPeriodo2.devolucoesLiquidas +
+          dadosFaturamentoFranquiasPeriodo2.devolucoesLiquidas +
+          dadosFaturamentoRevendaPeriodo2.devolucoesLiquidas;
+
+        const totalDescontosPeriodo2 =
+          dadosFaturamentoVarejoPeriodo2.descontos +
+          dadosFaturamentoMultimarcasPeriodo2.descontos +
+          dadosFaturamentoFranquiasPeriodo2.descontos +
+          dadosFaturamentoRevendaPeriodo2.descontos;
+
+        const totalCMVPeriodo2 =
+          dadosCMVVarejoPeriodo2.cmv +
+          dadosCMVMultimarcasPeriodo2.cmv +
+          dadosCMVFranquiasPeriodo2.cmv +
+          dadosCMVRevendaPeriodo2.cmv;
+
+        // Criar estrutura de totais por canal para Período 2
+        const totaisVarejoPeriodo2 = {
+          totalBruto: dadosFaturamentoVarejoPeriodo2.receitaBruta,
+          totalDevolucoes: dadosFaturamentoVarejoPeriodo2.devolucoesLiquidas,
+          totalLiquido: dadosFaturamentoVarejoPeriodo2.receitaLiquida,
+          totalCMV: dadosCMVVarejoPeriodo2.cmv,
+          descontos: dadosFaturamentoVarejoPeriodo2.descontos,
+        };
+
+        const totaisMultimarcasPeriodo2 = {
+          totalBruto: dadosFaturamentoMultimarcasPeriodo2.receitaBruta,
+          totalDevolucoes:
+            dadosFaturamentoMultimarcasPeriodo2.devolucoesLiquidas,
+          totalLiquido: dadosFaturamentoMultimarcasPeriodo2.receitaLiquida,
+          totalCMV: dadosCMVMultimarcasPeriodo2.cmv,
+          descontos: dadosFaturamentoMultimarcasPeriodo2.descontos,
+        };
+
+        const totaisFranquiasPeriodo2 = {
+          totalBruto: dadosFaturamentoFranquiasPeriodo2.receitaBruta,
+          totalDevolucoes: dadosFaturamentoFranquiasPeriodo2.devolucoesLiquidas,
+          totalLiquido: dadosFaturamentoFranquiasPeriodo2.receitaLiquida,
+          totalCMV: dadosCMVFranquiasPeriodo2.cmv,
+          descontos: dadosFaturamentoFranquiasPeriodo2.descontos,
+        };
+
+        const totaisRevendaPeriodo2 = {
+          totalBruto: dadosFaturamentoRevendaPeriodo2.receitaBruta,
+          totalDevolucoes: dadosFaturamentoRevendaPeriodo2.devolucoesLiquidas,
+          totalLiquido: dadosFaturamentoRevendaPeriodo2.receitaLiquida,
+          totalCMV: dadosCMVRevendaPeriodo2.cmv,
+          descontos: dadosFaturamentoRevendaPeriodo2.descontos,
+        };
+
+        // Buscar impostos do Período 2
+        const responseImpostosPeriodo2 = await api.sales.impostosPorCanal({
+          dataInicio: periodoComparacao.dt_inicio,
+          dataFim: periodoComparacao.dt_fim,
+        });
+
+        const impostosDataPeriodo2 =
+          responseImpostosPeriodo2?.success && responseImpostosPeriodo2?.data
+            ? responseImpostosPeriodo2.data
+            : null;
+
+        const impostosVarejoPeriodo2 = {
+          icms: impostosDataPeriodo2?.varejo?.icms || 0,
+          pis: impostosDataPeriodo2?.varejo?.pis || 0,
+          cofins: impostosDataPeriodo2?.varejo?.cofins || 0,
+        };
+
+        const impostosMultimarcasPeriodo2 = {
+          icms: impostosDataPeriodo2?.multimarcas?.icms || 0,
+          pis: impostosDataPeriodo2?.multimarcas?.pis || 0,
+          cofins: impostosDataPeriodo2?.multimarcas?.cofins || 0,
+        };
+
+        const impostosFranquiasPeriodo2 = {
+          icms: impostosDataPeriodo2?.franquias?.icms || 0,
+          pis: impostosDataPeriodo2?.franquias?.pis || 0,
+          cofins: impostosDataPeriodo2?.franquias?.cofins || 0,
+        };
+
+        const impostosRevendaPeriodo2 = {
+          icms: impostosDataPeriodo2?.revenda?.icms || 0,
+          pis: impostosDataPeriodo2?.revenda?.pis || 0,
+          cofins: impostosDataPeriodo2?.revenda?.cofins || 0,
+        };
+
+        const icmsRealPeriodo2 =
+          impostosVarejoPeriodo2.icms +
+          impostosMultimarcasPeriodo2.icms +
+          impostosFranquiasPeriodo2.icms +
+          impostosRevendaPeriodo2.icms;
+
+        const pisRealPeriodo2 =
+          impostosVarejoPeriodo2.pis +
+          impostosMultimarcasPeriodo2.pis +
+          impostosFranquiasPeriodo2.pis +
+          impostosRevendaPeriodo2.pis;
+
+        const cofinsRealPeriodo2 =
+          impostosVarejoPeriodo2.cofins +
+          impostosMultimarcasPeriodo2.cofins +
+          impostosFranquiasPeriodo2.cofins +
+          impostosRevendaPeriodo2.cofins;
+
+        const totalImpostosRealPeriodo2 =
+          icmsRealPeriodo2 + pisRealPeriodo2 + cofinsRealPeriodo2;
+
+        const totalDeducoesCalculadoPeriodo2 =
+          totalDevolucoesLiquidasPeriodo2 +
+          totalDescontosPeriodo2 +
+          totalImpostosRealPeriodo2;
+
+        const receitaLiquidaCalculadaPeriodo2 =
+          totalVendasBrutasPeriodo2 - totalDeducoesCalculadoPeriodo2;
+        const lucroBrutoCalculadoPeriodo2 =
+          receitaLiquidaCalculadaPeriodo2 - totalCMVPeriodo2;
+
+        // Calcular receitas líquidas por canal para Período 2
+        const receitaLiquidaVarejoPeriodo2 =
+          totaisVarejoPeriodo2.totalBruto -
+          (totaisVarejoPeriodo2.totalDevolucoes +
+            totaisVarejoPeriodo2.descontos +
+            impostosVarejoPeriodo2.icms +
+            impostosVarejoPeriodo2.pis +
+            impostosVarejoPeriodo2.cofins);
+
+        const receitaLiquidaMultimarcasPeriodo2 =
+          totaisMultimarcasPeriodo2.totalBruto -
+          (totaisMultimarcasPeriodo2.totalDevolucoes +
+            totaisMultimarcasPeriodo2.descontos +
+            impostosMultimarcasPeriodo2.icms +
+            impostosMultimarcasPeriodo2.pis +
+            impostosMultimarcasPeriodo2.cofins);
+
+        const receitaLiquidaFranquiasPeriodo2 =
+          totaisFranquiasPeriodo2.totalBruto -
+          (totaisFranquiasPeriodo2.totalDevolucoes +
+            totaisFranquiasPeriodo2.descontos +
+            impostosFranquiasPeriodo2.icms +
+            impostosFranquiasPeriodo2.pis +
+            impostosFranquiasPeriodo2.cofins);
+
+        const receitaLiquidaRevendaPeriodo2 =
+          totaisRevendaPeriodo2.totalBruto -
+          (totaisRevendaPeriodo2.totalDevolucoes +
+            totaisRevendaPeriodo2.descontos +
+            impostosRevendaPeriodo2.icms +
+            impostosRevendaPeriodo2.pis +
+            impostosRevendaPeriodo2.cofins);
+
+        // Lucro bruto por canal para Período 2
+        const lucroBrutoVarejoPeriodo2 =
+          receitaLiquidaVarejoPeriodo2 - totaisVarejoPeriodo2.totalCMV;
+        const lucroBrutoMultimarcasPeriodo2 =
+          receitaLiquidaMultimarcasPeriodo2 -
+          totaisMultimarcasPeriodo2.totalCMV;
+        const lucroBrutoFranquiasPeriodo2 =
+          receitaLiquidaFranquiasPeriodo2 - totaisFranquiasPeriodo2.totalCMV;
+        const lucroBrutoRevendaPeriodo2 =
+          receitaLiquidaRevendaPeriodo2 - totaisRevendaPeriodo2.totalCMV;
+
+        // Buscar despesas do Período 2
+        const todasEmpresasCodigos = [
+          1, 2, 5, 6, 7, 11, 31, 55, 65, 75, 85, 90, 91, 92, 93, 94, 95, 96, 97,
+          98, 99, 100, 101, 111, 200, 311, 500, 550, 600, 650, 700, 750, 850,
+          890, 910, 920, 930, 940, 950, 960, 970, 980, 990,
+        ];
+
+        const paramsCPPeriodo2 = {
+          dt_inicio: periodoComparacao.dt_inicio,
+          dt_fim: periodoComparacao.dt_fim,
+          cd_empresa: todasEmpresasCodigos,
+        };
+
+        const contasPagarPeriodo2 = await api.financial.contasPagarEmissao(
+          paramsCPPeriodo2,
+        );
+
+        let dadosCPPeriodo2 = [];
+        if (Array.isArray(contasPagarPeriodo2?.data)) {
+          dadosCPPeriodo2 = contasPagarPeriodo2.data;
+        } else if (
+          contasPagarPeriodo2?.data?.data &&
+          Array.isArray(contasPagarPeriodo2.data.data)
+        ) {
+          dadosCPPeriodo2 = contasPagarPeriodo2.data.data;
+        } else if (Array.isArray(contasPagarPeriodo2?.rows)) {
+          dadosCPPeriodo2 = contasPagarPeriodo2.rows;
+        } else if (
+          contasPagarPeriodo2?.data?.rows &&
+          Array.isArray(contasPagarPeriodo2.data.rows)
+        ) {
+          dadosCPPeriodo2 = contasPagarPeriodo2.data.rows;
+        }
+
+        let totalOperacionaisPeriodo2 = 0;
+        let totalFinanceirosPeriodo2 = 0;
+
+        for (const item of dadosCPPeriodo2) {
+          const ccustoRaw =
+            item.cd_ccusto ??
+            item.ccusto ??
+            item.cd_centrocusto ??
+            item.centrocusto ??
+            item.cc_custo ??
+            item.centro_custo ??
+            item.cd_ccusto_padrao;
+          const ccustoNum = Number(ccustoRaw);
+          if (!Number.isNaN(ccustoNum) && ccustoNum === 999) continue;
+
+          const codigoDespesa = Number(item.cd_despesaitem) || 0;
+          if (shouldExcluirDespesa(codigoDespesa)) continue;
+
+          const valorRateio = parseFloat(item.vl_rateio || 0) || 0;
+          const valorDuplicata = parseFloat(item.vl_duplicata || 0) || 0;
+          const valor = valorRateio !== 0 ? valorRateio : valorDuplicata;
+
+          if (codigoDespesa >= 7000 && codigoDespesa <= 7999) {
+            totalFinanceirosPeriodo2 += Math.abs(valor);
+          } else {
+            totalOperacionaisPeriodo2 += Math.abs(valor);
+          }
+        }
+
+        // Salvar dados do Período 2
+        setDadosPeriodo2({
+          vendasBrutas: totalVendasBrutasPeriodo2,
+          devolucoes: totalDevolucoesLiquidasPeriodo2,
+          descontos: totalDescontosPeriodo2,
+          totalDeducoes: totalDeducoesCalculadoPeriodo2,
+          cmv: totalCMVPeriodo2,
+          receitaLiquida: receitaLiquidaCalculadaPeriodo2,
+          lucroBruto: lucroBrutoCalculadoPeriodo2,
+          icms: icmsRealPeriodo2,
+          pis: pisRealPeriodo2,
+          cofins: cofinsRealPeriodo2,
+          totalImpostos: totalImpostosRealPeriodo2,
+          planoDespesasTotal: totalOperacionaisPeriodo2,
+          planoDespesasFinanceirasTotal: totalFinanceirosPeriodo2,
+          // Dados por canal
+          totaisVarejo: totaisVarejoPeriodo2,
+          totaisMultimarcas: totaisMultimarcasPeriodo2,
+          totaisFranquias: totaisFranquiasPeriodo2,
+          totaisRevenda: totaisRevendaPeriodo2,
+          impostosVarejo: impostosVarejoPeriodo2,
+          impostosMultimarcas: impostosMultimarcasPeriodo2,
+          impostosFranquias: impostosFranquiasPeriodo2,
+          impostosRevenda: impostosRevendaPeriodo2,
+          receitaLiquidaVarejo: receitaLiquidaVarejoPeriodo2,
+          receitaLiquidaMultimarcas: receitaLiquidaMultimarcasPeriodo2,
+          receitaLiquidaFranquias: receitaLiquidaFranquiasPeriodo2,
+          receitaLiquidaRevenda: receitaLiquidaRevendaPeriodo2,
+          cmvVarejo: totaisVarejoPeriodo2.totalCMV,
+          cmvMultimarcas: totaisMultimarcasPeriodo2.totalCMV,
+          cmvFranquias: totaisFranquiasPeriodo2.totalCMV,
+          cmvRevenda: totaisRevendaPeriodo2.totalCMV,
+          lucroBrutoVarejo: lucroBrutoVarejoPeriodo2,
+          lucroBrutoMultimarcas: lucroBrutoMultimarcasPeriodo2,
+          lucroBrutoFranquias: lucroBrutoFranquiasPeriodo2,
+          lucroBrutoRevenda: lucroBrutoRevendaPeriodo2,
+        });
+
+        console.log('📊 Dados do Período 2 carregados:', {
+          periodo2: {
+            inicio: periodoComparacao.dt_inicio,
+            fim: periodoComparacao.dt_fim,
+          },
+          vendasBrutas: totalVendasBrutasPeriodo2,
+          lucroBruto: lucroBrutoCalculadoPeriodo2,
+        });
+      }
+
       // ================= Plano de Contas (Contas a Pagar - Emissão) =================
       try {
         setLoadingStatus('Buscando Contas a Pagar (Emissão)...');
@@ -1319,55 +1791,67 @@ const DRE = () => {
       setLoading(false);
       setLoadingStatus('');
     }
-  }, [api, periodo]);
+  }, [api, periodo, tipoAnalise, periodoComparacao, shouldExcluirDespesa]);
 
   // Remover busca automática - só buscar quando clicar no botão
 
-  // Dados do DRE com vendas brutas reais
-  const dreData = useMemo(() => {
-    console.log(
-      '🔄 useMemo dreData - vendasBrutas:',
-      vendasBrutas,
-      'devolucoes:',
-      devolucoes,
-      'descontos:',
-      descontos,
-      'totalDeducoes:',
-      totalDeducoes,
-      'cmv:',
-      cmv,
-      'receitaLiquida:',
-      receitaLiquida,
-      'lucroBruto:',
-      lucroBruto,
-      'icms:',
-      icms,
-      'pis:',
-      pis,
-      'cofins:',
-      cofins,
-      'totalImpostos:',
-      totalImpostos,
-    );
-    // Despesas Operacionais (exclui módulo de Despesas Financeiras)
+  // Função auxiliar para gerar estrutura DRE com base em dados específicos
+  const gerarEstruturaDRE = useCallback((dados) => {
+    const {
+      vendasBrutas: vb,
+      devolucoes: dev,
+      descontos: desc,
+      totalDeducoes: td,
+      cmv: cmvVal,
+      receitaLiquida: rl,
+      lucroBruto: lb,
+      icms: icmsVal,
+      pis: pisVal,
+      cofins: cofinsVal,
+      totalImpostos: ti,
+      planoDespesasTotal: pdt,
+      planoDespesasFinanceirasTotal: pdft,
+      totaisVarejo: tv,
+      totaisMultimarcas: tm,
+      totaisFranquias: tf,
+      totaisRevenda: tr,
+      impostosVarejo: iv,
+      impostosMultimarcas: im,
+      impostosFranquias: ifrq,
+      impostosRevenda: ir,
+      receitaLiquidaVarejo: rlv,
+      receitaLiquidaMultimarcas: rlm,
+      receitaLiquidaFranquias: rlf,
+      receitaLiquidaRevenda: rlr,
+      cmvVarejo: cv,
+      cmvMultimarcas: cmtm,
+      cmvFranquias: cf,
+      cmvRevenda: cr,
+      lucroBrutoVarejo: lbv,
+      lucroBrutoMultimarcas: lbm,
+      lucroBrutoFranquias: lbf,
+      lucroBrutoRevenda: lbr,
+    } = dados;
+
+    // Despesas Operacionais
     const despesasOperacionaisNode = {
       id: 'despesas-operacionais',
       label: 'Despesas Operacionais',
       description:
         'Linhas de Contas a Pagar (Emissão), para classificação posterior.',
-      value: -planoDespesasTotal,
+      value: -pdt,
       type: 'despesa',
-      children: planoDespesasNodes,
+      children: [],
     };
 
-    // Novo módulo pai de Despesas Financeiras
+    // Despesas Financeiras
     const despesasFinanceirasNode = {
       id: 'despesas-financeiras',
       label: 'Despesas Financeiras',
       description: 'Encargos, juros e demais despesas financeiras.',
-      value: -planoDespesasFinanceirasTotal,
+      value: -pdft,
       type: 'despesa',
-      children: planoDespesasFinanceirasNodes,
+      children: [],
     };
 
     return [
@@ -1375,36 +1859,35 @@ const DRE = () => {
         id: 'vendas-bruta',
         label: 'Receitas Brutas',
         description: 'Quanto você vendeu no período (sem tirar nada ainda).',
-        value: vendasBrutas,
+        value: vb,
         type: 'receita',
         children: [
           {
             id: 'varejo',
             label: 'Varejo',
             description: 'Vendas do canal Varejo',
-            value: totaisVarejo.totalBruto + totaisVarejo.totalDevolucoes,
+            value: tv.totalBruto + tv.totalDevolucoes,
             type: 'receita',
           },
           {
             id: 'multimarcas',
             label: 'Multimarcas',
             description: 'Vendas do canal Multimarcas',
-            value:
-              totaisMultimarcas.totalBruto + totaisMultimarcas.totalDevolucoes,
+            value: tm.totalBruto + tm.totalDevolucoes,
             type: 'receita',
           },
           {
             id: 'revenda',
             label: 'Revenda',
             description: 'Vendas do canal Revenda',
-            value: totaisRevenda.totalBruto + totaisRevenda.totalDevolucoes,
+            value: tr.totalBruto + tr.totalDevolucoes,
             type: 'receita',
           },
           {
             id: 'franquias',
             label: 'Franquias',
             description: 'Vendas do canal Franquias',
-            value: totaisFranquias.totalBruto + totaisFranquias.totalDevolucoes,
+            value: tf.totalBruto + tf.totalDevolucoes,
             type: 'receita',
           },
         ],
@@ -1414,42 +1897,42 @@ const DRE = () => {
         label: 'Deduções sobre Vendas',
         description:
           'Devoluções, descontos concedidos e impostos sobre vendas.',
-        value: -(devolucoes + descontos + totalImpostos), // Soma dos valores individuais
+        value: -(dev + desc + ti),
         type: 'deducao',
         children: [
           {
             id: 'devolucoes',
             label: 'Devoluções',
             description: 'Clientes devolveram mercadorias',
-            value: -devolucoes, // Valor negativo (dedução)
+            value: -dev,
             type: 'deducao',
             children: [
               {
                 id: 'devolucoes-varejo',
                 label: 'Varejo',
                 description: 'Devoluções do canal Varejo',
-                value: -totaisVarejo.totalDevolucoes,
+                value: -tv.totalDevolucoes,
                 type: 'deducao',
               },
               {
                 id: 'devolucoes-multimarcas',
                 label: 'Multimarcas',
                 description: 'Devoluções do canal Multimarcas',
-                value: -totaisMultimarcas.totalDevolucoes,
+                value: -tm.totalDevolucoes,
                 type: 'deducao',
               },
               {
                 id: 'devolucoes-revenda',
                 label: 'Revenda',
                 description: 'Devoluções do canal Revenda',
-                value: -totaisRevenda.totalDevolucoes,
+                value: -tr.totalDevolucoes,
                 type: 'deducao',
               },
               {
                 id: 'devolucoes-franquias',
                 label: 'Franquias',
                 description: 'Devoluções do canal Franquias',
-                value: -totaisFranquias.totalDevolucoes,
+                value: -tf.totalDevolucoes,
                 type: 'deducao',
               },
             ],
@@ -1459,20 +1942,18 @@ const DRE = () => {
             label: 'Descontos Concedidos',
             description: 'Descontos dados aos clientes',
             value: -(
-              totaisVarejo.totalBruto -
-              totaisVarejo.totalDevolucoes -
-              (totaisVarejo.totalLiquido - totaisVarejo.totalDevolucoes) +
-              (totaisMultimarcas.totalBruto -
-                totaisMultimarcas.totalDevolucoes -
-                (totaisMultimarcas.totalLiquido -
-                  totaisMultimarcas.totalDevolucoes)) +
-              (totaisRevenda.totalBruto -
-                totaisRevenda.totalDevolucoes -
-                (totaisRevenda.totalLiquido - totaisRevenda.totalDevolucoes)) +
-              (totaisFranquias.totalBruto -
-                totaisFranquias.totalDevolucoes -
-                (totaisFranquias.totalLiquido -
-                  totaisFranquias.totalDevolucoes))
+              tv.totalBruto -
+              tv.totalDevolucoes -
+              (tv.totalLiquido - tv.totalDevolucoes) +
+              (tm.totalBruto -
+                tm.totalDevolucoes -
+                (tm.totalLiquido - tm.totalDevolucoes)) +
+              (tr.totalBruto -
+                tr.totalDevolucoes -
+                (tr.totalLiquido - tr.totalDevolucoes)) +
+              (tf.totalBruto -
+                tf.totalDevolucoes -
+                (tf.totalLiquido - tf.totalDevolucoes))
             ),
             type: 'deducao',
             children: [
@@ -1481,9 +1962,9 @@ const DRE = () => {
                 label: 'Varejo',
                 description: 'Descontos do canal Varejo',
                 value: -(
-                  totaisVarejo.totalBruto -
-                  totaisVarejo.totalDevolucoes -
-                  (totaisVarejo.totalLiquido - totaisVarejo.totalDevolucoes)
+                  tv.totalBruto -
+                  tv.totalDevolucoes -
+                  (tv.totalLiquido - tv.totalDevolucoes)
                 ),
                 type: 'deducao',
               },
@@ -1492,10 +1973,9 @@ const DRE = () => {
                 label: 'Multimarcas',
                 description: 'Descontos do canal Multimarcas',
                 value: -(
-                  totaisMultimarcas.totalBruto -
-                  totaisMultimarcas.totalDevolucoes -
-                  (totaisMultimarcas.totalLiquido -
-                    totaisMultimarcas.totalDevolucoes)
+                  tm.totalBruto -
+                  tm.totalDevolucoes -
+                  (tm.totalLiquido - tm.totalDevolucoes)
                 ),
                 type: 'deducao',
               },
@@ -1504,9 +1984,9 @@ const DRE = () => {
                 label: 'Revenda',
                 description: 'Descontos do canal Revenda',
                 value: -(
-                  totaisRevenda.totalBruto -
-                  totaisRevenda.totalDevolucoes -
-                  (totaisRevenda.totalLiquido - totaisRevenda.totalDevolucoes)
+                  tr.totalBruto -
+                  tr.totalDevolucoes -
+                  (tr.totalLiquido - tr.totalDevolucoes)
                 ),
                 type: 'deducao',
               },
@@ -1515,10 +1995,9 @@ const DRE = () => {
                 label: 'Franquias',
                 description: 'Descontos do canal Franquias',
                 value: -(
-                  totaisFranquias.totalBruto -
-                  totaisFranquias.totalDevolucoes -
-                  (totaisFranquias.totalLiquido -
-                    totaisFranquias.totalDevolucoes)
+                  tf.totalBruto -
+                  tf.totalDevolucoes -
+                  (tf.totalLiquido - tf.totalDevolucoes)
                 ),
                 type: 'deducao',
               },
@@ -1528,39 +2007,35 @@ const DRE = () => {
             id: 'impostos-vendas',
             label: 'Impostos sobre Vendas',
             description: 'ICMS, PIS, COFINS e outros impostos sobre vendas.',
-            value: -totalImpostos, // Valor real calculado
+            value: -ti,
             type: 'deducao',
             children: [
               {
                 id: 'impostos-varejo',
                 label: 'Varejo',
                 description: 'Impostos do canal Varejo',
-                value: -(
-                  impostosVarejo.icms +
-                  impostosVarejo.pis +
-                  impostosVarejo.cofins
-                ),
+                value: -(iv.icms + iv.pis + iv.cofins),
                 type: 'deducao',
                 children: [
                   {
                     id: 'icms-varejo',
                     label: 'ICMS',
                     description: 'ICMS do canal Varejo',
-                    value: -impostosVarejo.icms,
+                    value: -iv.icms,
                     type: 'deducao',
                   },
                   {
                     id: 'pis-varejo',
                     label: 'PIS',
                     description: 'PIS do canal Varejo',
-                    value: -impostosVarejo.pis,
+                    value: -iv.pis,
                     type: 'deducao',
                   },
                   {
                     id: 'cofins-varejo',
                     label: 'COFINS',
                     description: 'COFINS do canal Varejo',
-                    value: -impostosVarejo.cofins,
+                    value: -iv.cofins,
                     type: 'deducao',
                   },
                 ],
@@ -1569,32 +2044,28 @@ const DRE = () => {
                 id: 'impostos-multimarcas',
                 label: 'Multimarcas',
                 description: 'Impostos do canal Multimarcas',
-                value: -(
-                  impostosMultimarcas.icms +
-                  impostosMultimarcas.pis +
-                  impostosMultimarcas.cofins
-                ),
+                value: -(im.icms + im.pis + im.cofins),
                 type: 'deducao',
                 children: [
                   {
                     id: 'icms-multimarcas',
                     label: 'ICMS',
                     description: 'ICMS do canal Multimarcas',
-                    value: -impostosMultimarcas.icms,
+                    value: -im.icms,
                     type: 'deducao',
                   },
                   {
                     id: 'pis-multimarcas',
                     label: 'PIS',
                     description: 'PIS do canal Multimarcas',
-                    value: -impostosMultimarcas.pis,
+                    value: -im.pis,
                     type: 'deducao',
                   },
                   {
                     id: 'cofins-multimarcas',
                     label: 'COFINS',
                     description: 'COFINS do canal Multimarcas',
-                    value: -impostosMultimarcas.cofins,
+                    value: -im.cofins,
                     type: 'deducao',
                   },
                 ],
@@ -1603,32 +2074,28 @@ const DRE = () => {
                 id: 'impostos-revenda',
                 label: 'Revenda',
                 description: 'Impostos do canal Revenda',
-                value: -(
-                  impostosRevenda.icms +
-                  impostosRevenda.pis +
-                  impostosRevenda.cofins
-                ),
+                value: -(ir.icms + ir.pis + ir.cofins),
                 type: 'deducao',
                 children: [
                   {
                     id: 'icms-revenda',
                     label: 'ICMS',
                     description: 'ICMS do canal Revenda',
-                    value: -impostosRevenda.icms,
+                    value: -ir.icms,
                     type: 'deducao',
                   },
                   {
                     id: 'pis-revenda',
                     label: 'PIS',
                     description: 'PIS do canal Revenda',
-                    value: -impostosRevenda.pis,
+                    value: -ir.pis,
                     type: 'deducao',
                   },
                   {
                     id: 'cofins-revenda',
                     label: 'COFINS',
                     description: 'COFINS do canal Revenda',
-                    value: -impostosRevenda.cofins,
+                    value: -ir.cofins,
                     type: 'deducao',
                   },
                 ],
@@ -1637,32 +2104,28 @@ const DRE = () => {
                 id: 'impostos-franquias',
                 label: 'Franquias',
                 description: 'Impostos do canal Franquias',
-                value: -(
-                  impostosFranquias.icms +
-                  impostosFranquias.pis +
-                  impostosFranquias.cofins
-                ),
+                value: -(ifrq.icms + ifrq.pis + ifrq.cofins),
                 type: 'deducao',
                 children: [
                   {
                     id: 'icms-franquias',
                     label: 'ICMS',
                     description: 'ICMS do canal Franquias',
-                    value: -impostosFranquias.icms,
+                    value: -ifrq.icms,
                     type: 'deducao',
                   },
                   {
                     id: 'pis-franquias',
                     label: 'PIS',
                     description: 'PIS do canal Franquias',
-                    value: -impostosFranquias.pis,
+                    value: -ifrq.pis,
                     type: 'deducao',
                   },
                   {
                     id: 'cofins-franquias',
                     label: 'COFINS',
                     description: 'COFINS do canal Franquias',
-                    value: -impostosFranquias.cofins,
+                    value: -ifrq.cofins,
                     type: 'deducao',
                   },
                 ],
@@ -1675,35 +2138,35 @@ const DRE = () => {
         id: 'receita-liquida',
         label: 'Receita Líquida de Vendas',
         description: 'É o que realmente ficou das vendas.',
-        value: receitaLiquida, // Valor real calculado
+        value: rl,
         type: 'resultado',
         children: [
           {
             id: 'receita-liquida-varejo',
             label: 'Varejo',
             description: 'Receita líquida do canal Varejo',
-            value: receitaLiquidaVarejo,
+            value: rlv,
             type: 'resultado',
           },
           {
             id: 'receita-liquida-multimarcas',
             label: 'Multimarcas',
             description: 'Receita líquida do canal Multimarcas',
-            value: receitaLiquidaMultimarcas,
+            value: rlm,
             type: 'resultado',
           },
           {
             id: 'receita-liquida-revenda',
             label: 'Revenda',
             description: 'Receita líquida do canal Revenda',
-            value: receitaLiquidaRevenda,
+            value: rlr,
             type: 'resultado',
           },
           {
             id: 'receita-liquida-franquias',
             label: 'Franquias',
             description: 'Receita líquida do canal Franquias',
-            value: receitaLiquidaFranquias,
+            value: rlf,
             type: 'resultado',
           },
         ],
@@ -1711,37 +2174,36 @@ const DRE = () => {
       {
         id: 'cmv',
         label: 'Custos da Mercadoria Vendida (CMV)',
-        description:
-          'Quanto custou comprar ou produzir o que você vendeu (matéria-prima, mercadorias para revenda, mão de obra da produção).',
-        value: -cmv, // Valor negativo (custo)
+        description: 'Quanto custou comprar ou produzir o que você vendeu.',
+        value: -cmvVal,
         type: 'custo',
         children: [
           {
             id: 'cmv-varejo',
             label: 'Varejo',
             description: 'CMV do canal Varejo',
-            value: -cmvVarejo,
+            value: -cv,
             type: 'custo',
           },
           {
             id: 'cmv-multimarcas',
             label: 'Multimarcas',
             description: 'CMV do canal Multimarcas',
-            value: -cmvMultimarcas,
+            value: -cmtm,
             type: 'custo',
           },
           {
             id: 'cmv-revenda',
             label: 'Revenda',
             description: 'CMV do canal Revenda',
-            value: -cmvRevenda,
+            value: -cr,
             type: 'custo',
           },
           {
             id: 'cmv-franquias',
             label: 'Franquias',
             description: 'CMV do canal Franquias',
-            value: -cmvFranquias,
+            value: -cf,
             type: 'custo',
           },
         ],
@@ -1750,35 +2212,35 @@ const DRE = () => {
         id: 'lucro-bruto',
         label: 'Lucro Bruto',
         description: 'Receita Líquida – CMV',
-        value: lucroBruto, // Valor real calculado
+        value: lb,
         type: 'resultado',
         children: [
           {
             id: 'lucro-bruto-varejo',
             label: 'Varejo',
             description: 'Lucro bruto do canal Varejo',
-            value: lucroBrutoVarejo,
+            value: lbv,
             type: 'resultado',
           },
           {
             id: 'lucro-bruto-multimarcas',
             label: 'Multimarcas',
             description: 'Lucro bruto do canal Multimarcas',
-            value: lucroBrutoMultimarcas,
+            value: lbm,
             type: 'resultado',
           },
           {
             id: 'lucro-bruto-revenda',
             label: 'Revenda',
             description: 'Lucro bruto do canal Revenda',
-            value: lucroBrutoRevenda,
+            value: lbr,
             type: 'resultado',
           },
           {
             id: 'lucro-bruto-franquias',
             label: 'Franquias',
             description: 'Lucro bruto do canal Franquias',
-            value: lucroBrutoFranquias,
+            value: lbf,
             type: 'resultado',
           },
         ],
@@ -1788,7 +2250,7 @@ const DRE = () => {
         id: 'resultado-operacional',
         label: 'Resultado Operacional',
         description: 'Lucro Bruto - Despesas Operacionais',
-        value: lucroBruto - planoDespesasTotal,
+        value: lb - pdt,
         type: 'resultado',
         children: [],
       },
@@ -1797,7 +2259,7 @@ const DRE = () => {
         id: 'lucro-antes-impostos',
         label: 'Lucro Antes do IR/CSLL',
         description: 'Resultado antes dos impostos sobre o lucro.',
-        value: lucroBruto - planoDespesasTotal - planoDespesasFinanceirasTotal,
+        value: lb - pdt - pdft,
         type: 'resultado',
         children: [],
       },
@@ -1829,13 +2291,69 @@ const DRE = () => {
         label: 'Lucro Líquido do Exercício',
         description:
           'Resultado Operacional - Despesas Financeiras - Impostos sobre o Lucro',
-        value:
-          lucroBruto - planoDespesasTotal - planoDespesasFinanceirasTotal - 0,
+        value: lb - pdt - pdft - 0,
         type: 'resultado-final',
         children: [],
       },
     ];
+  }, []);
+
+  // Dados do DRE com vendas brutas reais (Período 1)
+  const dreData = useMemo(() => {
+    const estruturaDRE = gerarEstruturaDRE({
+      vendasBrutas,
+      devolucoes,
+      descontos,
+      totalDeducoes,
+      cmv,
+      receitaLiquida,
+      lucroBruto,
+      icms,
+      pis,
+      cofins,
+      totalImpostos,
+      planoDespesasTotal,
+      planoDespesasFinanceirasTotal,
+      totaisVarejo,
+      totaisMultimarcas,
+      totaisFranquias,
+      totaisRevenda,
+      impostosVarejo,
+      impostosMultimarcas,
+      impostosFranquias,
+      impostosRevenda,
+      receitaLiquidaVarejo,
+      receitaLiquidaMultimarcas,
+      receitaLiquidaFranquias,
+      receitaLiquidaRevenda,
+      cmvVarejo,
+      cmvMultimarcas,
+      cmvFranquias,
+      cmvRevenda,
+      lucroBrutoVarejo,
+      lucroBrutoMultimarcas,
+      lucroBrutoFranquias,
+      lucroBrutoRevenda,
+    });
+
+    // Adicionar children aos nós de despesas (usa dados reais do Período 1)
+    const despesasOpIndex = estruturaDRE.findIndex(
+      (n) => n.id === 'despesas-operacionais',
+    );
+    if (despesasOpIndex >= 0) {
+      estruturaDRE[despesasOpIndex].children = planoDespesasNodes;
+    }
+
+    const despesasFinIndex = estruturaDRE.findIndex(
+      (n) => n.id === 'despesas-financeiras',
+    );
+    if (despesasFinIndex >= 0) {
+      estruturaDRE[despesasFinIndex].children = planoDespesasFinanceirasNodes;
+    }
+
+    return estruturaDRE;
   }, [
+    gerarEstruturaDRE,
     vendasBrutas,
     devolucoes,
     descontos,
@@ -1854,27 +2372,166 @@ const DRE = () => {
     totaisMultimarcas,
     totaisFranquias,
     totaisRevenda,
-    // Impostos por canal
     impostosVarejo,
     impostosMultimarcas,
     impostosFranquias,
     impostosRevenda,
-    // Receitas líquidas por canal
     receitaLiquidaVarejo,
     receitaLiquidaMultimarcas,
     receitaLiquidaFranquias,
     receitaLiquidaRevenda,
-    // CMV por canal
     cmvVarejo,
     cmvMultimarcas,
     cmvFranquias,
     cmvRevenda,
-    // Lucro bruto por canal
     lucroBrutoVarejo,
     lucroBrutoMultimarcas,
     lucroBrutoFranquias,
     lucroBrutoRevenda,
     planoDespesasFinanceirasTotal,
+  ]);
+
+  // DRE do Período 2 (quando análise horizontal está ativa)
+  const drePeriodo2Data = useMemo(() => {
+    if (tipoAnalise !== 'horizontal' || !dadosPeriodo2.vendasBrutas) {
+      return [];
+    }
+
+    return gerarEstruturaDRE(dadosPeriodo2);
+  }, [tipoAnalise, dadosPeriodo2, gerarEstruturaDRE]);
+
+  // DRE Consolidado (soma dos dois períodos)
+  const dreConsolidadoData = useMemo(() => {
+    if (tipoAnalise !== 'horizontal' || !dadosPeriodo2.vendasBrutas) {
+      return [];
+    }
+
+    // Função auxiliar para somar objetos recursivamente
+    const somarObjetos = (obj1, obj2) => {
+      const resultado = {};
+      for (const key in obj1) {
+        if (
+          typeof obj1[key] === 'object' &&
+          !Array.isArray(obj1[key]) &&
+          obj1[key] !== null
+        ) {
+          resultado[key] = somarObjetos(obj1[key], obj2[key] || {});
+        } else {
+          resultado[key] = (obj1[key] || 0) + (obj2[key] || 0);
+        }
+      }
+      return resultado;
+    };
+
+    const dadosConsolidados = {
+      vendasBrutas: vendasBrutas + dadosPeriodo2.vendasBrutas,
+      devolucoes: devolucoes + dadosPeriodo2.devolucoes,
+      descontos: descontos + dadosPeriodo2.descontos,
+      totalDeducoes: totalDeducoes + dadosPeriodo2.totalDeducoes,
+      cmv: cmv + dadosPeriodo2.cmv,
+      receitaLiquida: receitaLiquida + dadosPeriodo2.receitaLiquida,
+      lucroBruto: lucroBruto + dadosPeriodo2.lucroBruto,
+      icms: icms + dadosPeriodo2.icms,
+      pis: pis + dadosPeriodo2.pis,
+      cofins: cofins + dadosPeriodo2.cofins,
+      totalImpostos: totalImpostos + dadosPeriodo2.totalImpostos,
+      planoDespesasTotal: planoDespesasTotal + dadosPeriodo2.planoDespesasTotal,
+      planoDespesasFinanceirasTotal:
+        planoDespesasFinanceirasTotal +
+        dadosPeriodo2.planoDespesasFinanceirasTotal,
+      totaisVarejo: somarObjetos(
+        totaisVarejo,
+        dadosPeriodo2.totaisVarejo || {},
+      ),
+      totaisMultimarcas: somarObjetos(
+        totaisMultimarcas,
+        dadosPeriodo2.totaisMultimarcas || {},
+      ),
+      totaisFranquias: somarObjetos(
+        totaisFranquias,
+        dadosPeriodo2.totaisFranquias || {},
+      ),
+      totaisRevenda: somarObjetos(
+        totaisRevenda,
+        dadosPeriodo2.totaisRevenda || {},
+      ),
+      impostosVarejo: somarObjetos(
+        impostosVarejo,
+        dadosPeriodo2.impostosVarejo || {},
+      ),
+      impostosMultimarcas: somarObjetos(
+        impostosMultimarcas,
+        dadosPeriodo2.impostosMultimarcas || {},
+      ),
+      impostosFranquias: somarObjetos(
+        impostosFranquias,
+        dadosPeriodo2.impostosFranquias || {},
+      ),
+      impostosRevenda: somarObjetos(
+        impostosRevenda,
+        dadosPeriodo2.impostosRevenda || {},
+      ),
+      receitaLiquidaVarejo:
+        receitaLiquidaVarejo + (dadosPeriodo2.receitaLiquidaVarejo || 0),
+      receitaLiquidaMultimarcas:
+        receitaLiquidaMultimarcas +
+        (dadosPeriodo2.receitaLiquidaMultimarcas || 0),
+      receitaLiquidaFranquias:
+        receitaLiquidaFranquias + (dadosPeriodo2.receitaLiquidaFranquias || 0),
+      receitaLiquidaRevenda:
+        receitaLiquidaRevenda + (dadosPeriodo2.receitaLiquidaRevenda || 0),
+      cmvVarejo: cmvVarejo + (dadosPeriodo2.cmvVarejo || 0),
+      cmvMultimarcas: cmvMultimarcas + (dadosPeriodo2.cmvMultimarcas || 0),
+      cmvFranquias: cmvFranquias + (dadosPeriodo2.cmvFranquias || 0),
+      cmvRevenda: cmvRevenda + (dadosPeriodo2.cmvRevenda || 0),
+      lucroBrutoVarejo:
+        lucroBrutoVarejo + (dadosPeriodo2.lucroBrutoVarejo || 0),
+      lucroBrutoMultimarcas:
+        lucroBrutoMultimarcas + (dadosPeriodo2.lucroBrutoMultimarcas || 0),
+      lucroBrutoFranquias:
+        lucroBrutoFranquias + (dadosPeriodo2.lucroBrutoFranquias || 0),
+      lucroBrutoRevenda:
+        lucroBrutoRevenda + (dadosPeriodo2.lucroBrutoRevenda || 0),
+    };
+
+    return gerarEstruturaDRE(dadosConsolidados);
+  }, [
+    tipoAnalise,
+    vendasBrutas,
+    devolucoes,
+    descontos,
+    totalDeducoes,
+    cmv,
+    receitaLiquida,
+    lucroBruto,
+    icms,
+    pis,
+    cofins,
+    totalImpostos,
+    planoDespesasTotal,
+    planoDespesasFinanceirasTotal,
+    totaisVarejo,
+    totaisMultimarcas,
+    totaisFranquias,
+    totaisRevenda,
+    impostosVarejo,
+    impostosMultimarcas,
+    impostosFranquias,
+    impostosRevenda,
+    receitaLiquidaVarejo,
+    receitaLiquidaMultimarcas,
+    receitaLiquidaFranquias,
+    receitaLiquidaRevenda,
+    cmvVarejo,
+    cmvMultimarcas,
+    cmvFranquias,
+    cmvRevenda,
+    lucroBrutoVarejo,
+    lucroBrutoMultimarcas,
+    lucroBrutoFranquias,
+    lucroBrutoRevenda,
+    dadosPeriodo2,
+    gerarEstruturaDRE,
   ]);
 
   const toggleNode = (nodeId) => {
@@ -1935,6 +2592,7 @@ const DRE = () => {
     setTodosExpandidos(!todosExpandidos);
   };
 
+  // Funções auxiliares de formatação
   const formatCurrency = (value) => {
     const formatted = new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -1949,10 +2607,318 @@ const DRE = () => {
       return value >= 0 ? 'text-green-600' : 'text-red-600';
     }
     if (type === 'resultado') {
-      return value >= 0 ? 'text-blue-600' : 'text-red-600';
+      return value >= 0 ? 'text-[]' : 'text-red-600';
     }
     return value < 0 ? 'text-red-500' : 'text-green-600';
   };
+
+  // Função para gerar lista de meses
+  const gerarMeses = () => {
+    const meses = [
+      { value: '01', label: 'Jan' },
+      { value: '02', label: 'Fev' },
+      { value: '03', label: 'Mar' },
+      { value: '04', label: 'Abr' },
+      { value: '05', label: 'Mai' },
+      { value: '06', label: 'Jun' },
+      { value: '07', label: 'Jul' },
+      { value: '08', label: 'Ago' },
+      { value: '09', label: 'Set' },
+      { value: '10', label: 'Out' },
+      { value: '11', label: 'Nov' },
+      { value: '12', label: 'Dez' },
+    ];
+    return meses;
+  };
+
+  // Função auxiliar para renderizar uma tree view DRE
+  const renderDRETreeView = useCallback(
+    (dreDataToRender, tituloColuna = null) => {
+      if (!dreDataToRender || dreDataToRender.length === 0) return null;
+
+      return (
+        <div className="space-y-2 flex justify-center items-center flex-col flex-1 px-2">
+          {tituloColuna && (
+            <div className="bg-[#000638] to-indigo-600 text-white px-3 py-2 rounded-lg w-full text-center mb-2">
+              <h3 className="text-xs font-bold">{tituloColuna}</h3>
+            </div>
+          )}
+
+          {/* Módulos da DRE */}
+          {dreDataToRender.map((modulo, moduloIndex) => {
+            const isModuloExpanded = categoriasExpandidas.has(modulo.label);
+            const resultadoSections = [];
+            const isResultadoSection = resultadoSections.includes(modulo.label);
+
+            return (
+              <div
+                key={`modulo-${moduloIndex}-${modulo.id}-${
+                  tituloColuna || 'main'
+                }`}
+                className={`w-full ${
+                  isResultadoSection
+                    ? 'bg-blue-50 rounded-lg'
+                    : 'border border-gray-200 rounded-lg overflow-hidden'
+                }`}
+              >
+                {/* Cabeçalho do módulo principal */}
+                <div
+                  className={`${
+                    isResultadoSection
+                      ? 'bg-blue-50 cursor-default'
+                      : 'bg-gray-50 hover:bg-gray-100 cursor-pointer'
+                  } transition-colors px-2 py-1.5 flex items-center justify-between`}
+                  onClick={
+                    isResultadoSection
+                      ? undefined
+                      : () => toggleCategoria(modulo.label)
+                  }
+                >
+                  <div className="flex items-center space-x-2">
+                    {!isResultadoSection &&
+                      (isModuloExpanded ? (
+                        <CaretDown size={10} className="text-gray-600" />
+                      ) : (
+                        <CaretRight size={10} className="text-gray-600" />
+                      ))}
+                    <div>
+                      <h3 className="font-medium text-xs text-gray-800">
+                        {modulo.label}
+                      </h3>
+                      <div className="flex gap-96 items-center justify-between space-x-32 text-xs text-gray-600">
+                        <span
+                          className={`font-medium text-xs ${
+                            modulo.value >= 0
+                              ? 'text-green-600'
+                              : 'text-red-600'
+                          }`}
+                        >
+                          {formatCurrency(Math.abs(modulo.value))}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sub-itens do módulo */}
+                {isModuloExpanded &&
+                  modulo.children &&
+                  modulo.children.length > 0 && (
+                    <div className="bg-white border-t border-gray-100">
+                      {modulo.children.map((subitem, subitemIndex) => {
+                        const chaveSubitem = `${modulo.label}|${subitem.label}`;
+                        const isSubitemExpanded =
+                          categoriasExpandidas.has(chaveSubitem);
+                        const hasSubitemChildren =
+                          subitem.children && subitem.children.length > 0;
+
+                        return (
+                          <div
+                            key={`subitem-${moduloIndex}-${subitemIndex}-${
+                              subitem.id
+                            }-${tituloColuna || 'main'}`}
+                            className="border-b border-gray-100 last:border-b-0"
+                          >
+                            {/* Cabeçalho do sub-item */}
+                            <div
+                              className={`bg-gray-25 hover:bg-gray-50 transition-colors px-4 py-1.5 flex items-center justify-between ${
+                                hasSubitemChildren
+                                  ? 'cursor-pointer'
+                                  : 'cursor-default'
+                              }`}
+                              onClick={
+                                hasSubitemChildren
+                                  ? () => toggleCategoria(chaveSubitem)
+                                  : undefined
+                              }
+                            >
+                              <div className="flex items-center space-x-2">
+                                {hasSubitemChildren &&
+                                  (isSubitemExpanded ? (
+                                    <CaretDown
+                                      size={10}
+                                      className="text-gray-500"
+                                    />
+                                  ) : (
+                                    <CaretRight
+                                      size={10}
+                                      className="text-gray-500"
+                                    />
+                                  ))}
+                                <div>
+                                  <h4 className="font-medium text-xs text-gray-700">
+                                    {subitem.label}
+                                  </h4>
+                                  <div className="flex items-center space-x-3 text-xs text-gray-500">
+                                    <span
+                                      className={`font-medium ${
+                                        subitem.value >= 0
+                                          ? 'text-green-500'
+                                          : 'text-red-500'
+                                      }`}
+                                    >
+                                      {formatCurrency(Math.abs(subitem.value))}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Sub-sub-itens (3º nível) */}
+                            {isSubitemExpanded &&
+                              subitem.children &&
+                              subitem.children.length > 0 && (
+                                <div className="bg-white border-t border-gray-50">
+                                  {subitem.children.map(
+                                    (subsubitem, subsubitemIndex) => {
+                                      const chaveSubsubitem = `${modulo.label}|${subitem.label}|${subsubitem.label}`;
+                                      const isSubsubitemExpanded =
+                                        categoriasExpandidas.has(
+                                          chaveSubsubitem,
+                                        );
+                                      const hasSubsubitemChildren =
+                                        subsubitem.children &&
+                                        subsubitem.children.length > 0;
+
+                                      return (
+                                        <div
+                                          key={`subsubitem-${moduloIndex}-${subitemIndex}-${subsubitemIndex}-${
+                                            subsubitem.id
+                                          }-${tituloColuna || 'main'}`}
+                                          className="border-b border-gray-50 last:border-b-0"
+                                        >
+                                          <div
+                                            className={`bg-gray-25 hover:bg-gray-50 transition-colors px-6 py-1.5 flex items-center justify-between ${
+                                              hasSubsubitemChildren
+                                                ? 'cursor-pointer'
+                                                : 'cursor-default'
+                                            }`}
+                                            onClick={
+                                              hasSubsubitemChildren
+                                                ? () =>
+                                                    toggleCategoria(
+                                                      chaveSubsubitem,
+                                                    )
+                                                : undefined
+                                            }
+                                          >
+                                            <div className="flex items-center space-x-2">
+                                              {hasSubsubitemChildren &&
+                                                (isSubsubitemExpanded ? (
+                                                  <CaretDown
+                                                    size={10}
+                                                    className="text-gray-400"
+                                                  />
+                                                ) : (
+                                                  <CaretRight
+                                                    size={10}
+                                                    className="text-gray-400"
+                                                  />
+                                                ))}
+                                              <div>
+                                                <h5 className="font-medium text-xs text-gray-600">
+                                                  {subsubitem.label}
+                                                </h5>
+                                                <div className="flex items-center space-x-3 text-xs text-gray-400">
+                                                  {subsubitem.description && (
+                                                    <span className="text-gray-400">
+                                                      {subsubitem.description}
+                                                    </span>
+                                                  )}
+                                                  <span
+                                                    className={`font-medium ${
+                                                      subsubitem.value >= 0
+                                                        ? 'text-green-400'
+                                                        : 'text-red-400'
+                                                    }`}
+                                                  >
+                                                    {formatCurrency(
+                                                      Math.abs(
+                                                        subsubitem.value,
+                                                      ),
+                                                    )}
+                                                  </span>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {/* Sub-sub-sub-itens (4º nível - se existirem) */}
+                                          {isSubsubitemExpanded &&
+                                            subsubitem.children &&
+                                            subsubitem.children.length > 0 && (
+                                              <div className="bg-white border-t border-gray-50">
+                                                {subsubitem.children.map(
+                                                  (
+                                                    subsubsubitem,
+                                                    subsubsubitemIndex,
+                                                  ) => (
+                                                    <div
+                                                      key={`subsubsubitem-${moduloIndex}-${subitemIndex}-${subsubitemIndex}-${subsubsubitemIndex}-${
+                                                        subsubsubitem.id
+                                                      }-${
+                                                        tituloColuna || 'main'
+                                                      }`}
+                                                      className="border-b border-gray-50 last:border-b-0"
+                                                    >
+                                                      <div className="bg-gray-25 hover:bg-gray-50 cursor-default transition-colors px-8 py-1.5 flex items-center justify-between">
+                                                        <div className="flex items-center space-x-2">
+                                                          <div>
+                                                            <h6 className="font-medium text-xs text-gray-500">
+                                                              {
+                                                                subsubsubitem.label
+                                                              }
+                                                            </h6>
+                                                            <div className="flex items-center space-x-3 text-xs text-gray-300">
+                                                              {subsubsubitem.description && (
+                                                                <span className="text-gray-400">
+                                                                  {
+                                                                    subsubsubitem.description
+                                                                  }
+                                                                </span>
+                                                              )}
+                                                              <span
+                                                                className={`font-medium ${
+                                                                  subsubsubitem.value >=
+                                                                  0
+                                                                    ? 'text-green-300'
+                                                                    : 'text-red-300'
+                                                                }`}
+                                                              >
+                                                                {formatCurrency(
+                                                                  Math.abs(
+                                                                    subsubsubitem.value,
+                                                                  ),
+                                                                )}
+                                                              </span>
+                                                            </div>
+                                                          </div>
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  ),
+                                                )}
+                                              </div>
+                                            )}
+                                        </div>
+                                      );
+                                    },
+                                  )}
+                                </div>
+                              )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    },
+    [categoriasExpandidas, toggleCategoria, formatCurrency],
+  );
 
   const getIcon = (type, value) => {
     if (type === 'resultado-final') {
@@ -1988,7 +2954,7 @@ const DRE = () => {
       case 'imposto':
         return <Dot className="w-4 h-4 text-purple-600" />;
       case 'resultado':
-        return <Dot className="w-4 h-4 text-blue-600" />;
+        return <Dot className="w-4 h-4 text-[]" />;
       case 'resultado-final':
         return <TrendUp className="w-4 h-4 text-green-600" />;
       default:
@@ -2159,6 +3125,7 @@ const DRE = () => {
             Selecione o período para análise
           </span>
         </div>
+
         {/* Filtro rápido por período (ANO/Meses) */}
         <div className="mb-3">
           <div className="flex flex-wrap gap-1">
@@ -2229,6 +3196,117 @@ const DRE = () => {
             </button>
           </div>
         </div>
+        {/* Seletor de Tipo de Análise */}
+        <div className="mb-4">
+          <label className="block text-sm font-semibold mb-2">
+            Tipo de Análise
+          </label>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="tipoAnalise"
+                value="vertical"
+                checked={tipoAnalise === 'vertical'}
+                onChange={(e) => setTipoAnalise(e.target.value)}
+                className="w-4 h-4 text-[#000638]"
+              />
+              <span className="text-sm font-medium">Análise Vertical</span>
+              <span className="text-xs text-gray-500">(Período único)</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="tipoAnalise"
+                value="horizontal"
+                checked={tipoAnalise === 'horizontal'}
+                onChange={(e) => setTipoAnalise(e.target.value)}
+                className="w-4 h-4 text-[#000638]"
+              />
+              <span className="text-sm font-medium">Análise Horizontal</span>
+              <span className="text-xs text-gray-500">
+                (Comparar 2 períodos)
+              </span>
+            </label>
+          </div>
+        </div>
+        {/* Campos de Período de Comparação (visível apenas na análise horizontal) */}
+        {tipoAnalise === 'horizontal' && (
+          <>
+            {/* Filtro rápido por mês para Período 2 */}
+            <div className="mb-3 mt-4 pt-4 border-t border-gray-300">
+              <label className="block text-sm font-semibold mb-2 text-[#000638]">
+                Selecionar Mês para Comparação
+              </label>
+              <div className="flex flex-wrap gap-1">
+                {[
+                  'ANO',
+                  'JAN',
+                  'FEV',
+                  'MAR',
+                  'ABR',
+                  'MAI',
+                  'JUN',
+                  'JUL',
+                  'AGO',
+                  'SET',
+                  'OUT',
+                  'NOV',
+                  'DEZ',
+                ].map((mes) => (
+                  <button
+                    key={mes}
+                    type="button"
+                    onClick={() => handleFiltroMensalComparacaoChange(mes)}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      filtroMensalComparacao === mes
+                        ? 'bg-[#000638] text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+                    }`}
+                  >
+                    {mes}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[]">
+                  Inicial (Comparação)
+                </label>
+                <input
+                  type="date"
+                  className="border border-blue-300 rounded px-2 py-1.5 w-full text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={periodoComparacao.dt_inicio}
+                  onChange={(e) =>
+                    setPeriodoComparacao((prev) => ({
+                      ...prev,
+                      dt_inicio: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[]">
+                  Final (Comparação)
+                </label>
+                <input
+                  type="date"
+                  className="border border-blue-300 rounded px-2 py-1.5 w-full text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={periodoComparacao.dt_fim}
+                  onChange={(e) =>
+                    setPeriodoComparacao((prev) => ({
+                      ...prev,
+                      dt_fim: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+          </>
+        )}
+
         {error && (
           <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
             <p className="text-sm text-red-700">{error}</p>
@@ -2272,6 +3350,8 @@ const DRE = () => {
           </p>
         </div>
 
+        {/* Card de Comparação para Análise Horizontal */}
+
         {loading ? (
           <div className="flex flex-col items-center justify-center py-12">
             <LoadingSpinner
@@ -2282,7 +3362,7 @@ const DRE = () => {
               <div className="mt-4 w-full max-w-md">
                 <div className="bg-gray-200 rounded-full h-2">
                   <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    className="bg-[] h-2 rounded-full transition-all duration-300"
                     style={{
                       width: loadingStatus.includes('Varejo')
                         ? '20%'
@@ -2313,312 +3393,43 @@ const DRE = () => {
           </div>
         ) : vendasBrutas > 0 ? (
           <>
-            {/* DRE Tree View - Estilo Contas a Pagar */}
-            <div className="space-y-2 flex justify-center items-center flex-col">
-              {/* Botões de ação */}
-              <div className="flex justify-between items-center">
-                {/* Botão discreto para expandir/colapsar todos */}
-                <button
-                  onClick={toggleTodosTopicos}
-                  className="text-xs text-gray-500 hover:text-gray-700 px-0.5 py-0.5 rounded transition-colors flex items-center gap-1"
-                  title={
-                    todosExpandidos
-                      ? 'Colapsar todos os tópicos'
-                      : 'Expandir todos os tópicos'
-                  }
-                >
-                  {todosExpandidos ? (
-                    <>
-                      <span>−</span>
-                      <span>Colapsar tudo</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>+</span>
-                      <span>Expandir tudo</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {/* Módulos da DRE */}
-              {dreData.map((modulo, moduloIndex) => {
-                const isModuloExpanded = categoriasExpandidas.has(modulo.label);
-
-                // Seções de resultado que não devem ser expansíveis
-                const resultadoSections = [
-                  // 'Receitas Brutas',
-                  // 'Receita Líquida de Vendas',
-                  // 'Lucro Bruto',
-                  // 'Resultado Operacional',
-                  // 'Lucro Antes do IR/CSLL',
-                  // 'Lucro Líquido do Exercício',
-                ];
-
-                const isResultadoSection = resultadoSections.includes(
-                  modulo.label,
-                );
-
-                return (
-                  <div
-                    key={`modulo-${moduloIndex}-${modulo.id}`}
-                    className={`w-1/2 ${
-                      isResultadoSection
-                        ? 'bg-blue-50 rounded-lg'
-                        : 'border border-gray-200 rounded-lg overflow-hidden'
-                    }`}
-                  >
-                    {/* Cabeçalho do módulo principal */}
-                    <div
-                      className={`${
-                        isResultadoSection
-                          ? 'bg-blue-50 cursor-default'
-                          : 'bg-gray-50 hover:bg-gray-100 cursor-pointer'
-                      } transition-colors px-2 py-1.5 flex items-center justify-between`}
-                      onClick={
-                        isResultadoSection
-                          ? undefined
-                          : () => toggleCategoria(modulo.label)
-                      }
-                    >
-                      <div className="flex items-center space-x-2">
-                        {!isResultadoSection &&
-                          (isModuloExpanded ? (
-                            <CaretDown size={10} className="text-gray-600" />
-                          ) : (
-                            <CaretRight size={10} className="text-gray-600" />
-                          ))}
-                        <div>
-                          <h3 className="font-medium text-xs text-gray-800">
-                            {modulo.label}
-                          </h3>
-                          <div className="flex gap-96 items-center justify-between space-x-32 text-xs text-gray-600">
-                            <span
-                              className={`font-medium text-xs ${
-                                modulo.value >= 0
-                                  ? 'text-green-600'
-                                  : 'text-red-600'
-                              }`}
-                            >
-                              {formatCurrency(Math.abs(modulo.value))}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Sub-itens do módulo */}
-                    {isModuloExpanded &&
-                      modulo.children &&
-                      modulo.children.length > 0 && (
-                        <div className="bg-white border-t border-gray-100">
-                          {modulo.children.map((subitem, subitemIndex) => {
-                            const chaveSubitem = `${modulo.label}|${subitem.label}`;
-                            const isSubitemExpanded =
-                              categoriasExpandidas.has(chaveSubitem);
-                            const hasSubitemChildren =
-                              subitem.children && subitem.children.length > 0;
-
-                            return (
-                              <div
-                                key={`subitem-${moduloIndex}-${subitemIndex}-${subitem.id}`}
-                                className="border-b border-gray-100 last:border-b-0"
-                              >
-                                {/* Cabeçalho do sub-item */}
-                                <div
-                                  className={`bg-gray-25 hover:bg-gray-50 transition-colors px-4 py-1.5 flex items-center justify-between ${
-                                    hasSubitemChildren
-                                      ? 'cursor-pointer'
-                                      : 'cursor-default'
-                                  }`}
-                                  onClick={
-                                    hasSubitemChildren
-                                      ? () => toggleCategoria(chaveSubitem)
-                                      : undefined
-                                  }
-                                >
-                                  <div className="flex items-center space-x-2">
-                                    {hasSubitemChildren &&
-                                      (isSubitemExpanded ? (
-                                        <CaretDown
-                                          size={10}
-                                          className="text-gray-500"
-                                        />
-                                      ) : (
-                                        <CaretRight
-                                          size={10}
-                                          className="text-gray-500"
-                                        />
-                                      ))}
-                                    <div>
-                                      <h4 className="font-medium text-xs text-gray-700">
-                                        {subitem.label}
-                                      </h4>
-                                      <div className="flex items-center space-x-3 text-xs text-gray-500">
-                                        <span
-                                          className={`font-medium ${
-                                            subitem.value >= 0
-                                              ? 'text-green-500'
-                                              : 'text-red-500'
-                                          }`}
-                                        >
-                                          {formatCurrency(
-                                            Math.abs(subitem.value),
-                                          )}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Sub-sub-itens (se existirem) */}
-                                {isSubitemExpanded &&
-                                  subitem.children &&
-                                  subitem.children.length > 0 && (
-                                    <div className="bg-white border-t border-gray-50">
-                                      {subitem.children.map(
-                                        (subsubitem, subsubitemIndex) => {
-                                          const chaveSubsubitem = `${modulo.label}|${subitem.label}|${subsubitem.label}`;
-                                          const isSubsubitemExpanded =
-                                            categoriasExpandidas.has(
-                                              chaveSubsubitem,
-                                            );
-                                          const hasSubsubitemChildren =
-                                            subsubitem.children &&
-                                            subsubitem.children.length > 0;
-
-                                          return (
-                                            <div
-                                              key={`subsubitem-${moduloIndex}-${subitemIndex}-${subsubitemIndex}-${subsubitem.id}`}
-                                              className="border-b border-gray-50 last:border-b-0"
-                                            >
-                                              <div
-                                                className={`bg-gray-25 hover:bg-gray-50 transition-colors px-6 py-1.5 flex items-center justify-between ${
-                                                  hasSubsubitemChildren
-                                                    ? 'cursor-pointer'
-                                                    : 'cursor-default'
-                                                }`}
-                                                onClick={
-                                                  hasSubsubitemChildren
-                                                    ? () =>
-                                                        toggleCategoria(
-                                                          chaveSubsubitem,
-                                                        )
-                                                    : undefined
-                                                }
-                                              >
-                                                <div className="flex items-center space-x-2">
-                                                  {hasSubsubitemChildren &&
-                                                    (isSubsubitemExpanded ? (
-                                                      <CaretDown
-                                                        size={10}
-                                                        className="text-gray-400"
-                                                      />
-                                                    ) : (
-                                                      <CaretRight
-                                                        size={10}
-                                                        className="text-gray-400"
-                                                      />
-                                                    ))}
-                                                  <div>
-                                                    <h5 className="font-medium text-xs text-gray-600">
-                                                      {subsubitem.label}
-                                                    </h5>
-                                                    <div className="flex items-center space-x-3 text-xs text-gray-400">
-                                                      {subsubitem.description && (
-                                                        <span className="text-gray-400">
-                                                          {
-                                                            subsubitem.description
-                                                          }
-                                                        </span>
-                                                      )}
-                                                      <span
-                                                        className={`font-medium ${
-                                                          subsubitem.value >= 0
-                                                            ? 'text-green-400'
-                                                            : 'text-red-400'
-                                                        }`}
-                                                      >
-                                                        {formatCurrency(
-                                                          Math.abs(
-                                                            subsubitem.value,
-                                                          ),
-                                                        )}
-                                                      </span>
-                                                    </div>
-                                                  </div>
-                                                </div>
-                                              </div>
-
-                                              {/* Sub-sub-sub-itens (4º nível - se existirem) */}
-                                              {isSubsubitemExpanded &&
-                                                subsubitem.children &&
-                                                subsubitem.children.length >
-                                                  0 && (
-                                                  <div className="bg-white border-t border-gray-50">
-                                                    {subsubitem.children.map(
-                                                      (
-                                                        subsubsubitem,
-                                                        subsubsubitemIndex,
-                                                      ) => (
-                                                        <div
-                                                          key={`subsubsubitem-${moduloIndex}-${subitemIndex}-${subsubitemIndex}-${subsubsubitemIndex}-${subsubsubitem.id}`}
-                                                          className="border-b border-gray-50 last:border-b-0"
-                                                        >
-                                                          <div className="bg-gray-25 hover:bg-gray-50 cursor-default transition-colors px-8 py-1.5 flex items-center justify-between">
-                                                            <div className="flex items-center space-x-2">
-                                                              <div>
-                                                                <h6 className="font-medium text-xs text-gray-500">
-                                                                  {
-                                                                    subsubsubitem.label
-                                                                  }
-                                                                </h6>
-                                                                <div className="flex items-center space-x-3 text-xs text-gray-300">
-                                                                  {subsubsubitem.description && (
-                                                                    <span className="text-gray-400">
-                                                                      {
-                                                                        subsubsubitem.description
-                                                                      }
-                                                                    </span>
-                                                                  )}
-                                                                  <span
-                                                                    className={`font-medium ${
-                                                                      subsubsubitem.value >=
-                                                                      0
-                                                                        ? 'text-green-300'
-                                                                        : 'text-red-300'
-                                                                    }`}
-                                                                  >
-                                                                    {formatCurrency(
-                                                                      Math.abs(
-                                                                        subsubsubitem.value,
-                                                                      ),
-                                                                    )}
-                                                                  </span>
-                                                                </div>
-                                                              </div>
-                                                            </div>
-                                                          </div>
-                                                        </div>
-                                                      ),
-                                                    )}
-                                                  </div>
-                                                )}
-                                            </div>
-                                          );
-                                        },
-                                      )}
-                                    </div>
-                                  )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                  </div>
-                );
-              })}
+            {/* Botões de ação */}
+            <div className="flex justify-center items-center px-4 py-2">
+              <button
+                onClick={toggleTodosTopicos}
+                className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded transition-colors flex items-center gap-1"
+                title={
+                  todosExpandidos
+                    ? 'Colapsar todos os tópicos'
+                    : 'Expandir todos os tópicos'
+                }
+              >
+                {todosExpandidos ? (
+                  <>
+                    <span>−</span>
+                    <span>Colapsar tudo</span>
+                  </>
+                ) : (
+                  <>
+                    <span>+</span>
+                    <span>Expandir tudo</span>
+                  </>
+                )}
+              </button>
             </div>
+
+            {/* DRE Tree Views */}
+            {tipoAnalise === 'vertical' ? (
+              // Análise Vertical: Apenas 1 coluna (Período 1)
+              renderDRETreeView(dreData)
+            ) : (
+              // Análise Horizontal: 3 colunas (Período 1, Período 2, Consolidado)
+              <div className="flex gap-4 px-4 overflow-x-auto">
+                {renderDRETreeView(dreData, '📅 Período 1')}
+                {renderDRETreeView(drePeriodo2Data, '📅 Período 2')}
+                {renderDRETreeView(dreConsolidadoData, '📊 Consolidado')}
+              </div>
+            )}
           </>
         ) : (
           <div className="flex flex-col items-center justify-center py-12 px-4">

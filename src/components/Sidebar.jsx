@@ -236,6 +236,12 @@ const varejo = [
     icon: CreditCard,
     color: 'text-green-600',
   },
+  {
+    name: 'Análise de Transação',
+    href: '/analise-transacao',
+    icon: Receipt,
+    color: 'text-blue-600',
+  },
 ];
 
 const multimarcas = [

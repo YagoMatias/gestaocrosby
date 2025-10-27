@@ -68,6 +68,7 @@ const GerenciadorDashboards = lazy(() =>
   import('./pages/GerenciadorDashboards'),
 );
 const GerenciadorAcessos = lazy(() => import('./pages/GerenciadorAcessos'));
+const AnaliseTransacao = lazy(() => import('./pages/AnaliseTransacao'));
 const Widgets = lazy(() => import('./pages/Widgets'));
 
 // Componente de fallback para loading
@@ -148,6 +149,7 @@ const AppRoutes = memo(() => {
     { path: '/user-panel', component: UserPanel },
     { path: '/auth-test', component: AuthTest },
     { path: '/acao-cartoes', component: AcaoCartoes },
+    { path: '/analise-transacao', component: AnaliseTransacao },
   ];
 
   // Componente de layout para rotas protegidas

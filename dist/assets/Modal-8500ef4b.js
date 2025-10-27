@@ -1,0 +1,13 @@
+import{r as t,j as l,D as z}from"./index-a2563983.js";import{B as F}from"./Button-3b4dd265.js";const K=t.memo(({isOpen:u=!1,onClose:a,title:r,children:g,size:p="md",closeOnBackdrop:x=!0,closeOnEscape:b=!0,showCloseButton:y=!0,footer:v,className:k="",overlayClassName:j="",preventBodyScroll:n=!0,...E})=>{const m=t.useRef(null),f=t.useRef(null);t.useRef(null),t.useRef(null);const w={xs:"max-w-xs",sm:"max-w-sm",md:"max-w-md",lg:"max-w-lg",xl:"max-w-xl","2xl":"max-w-2xl","3xl":"max-w-3xl","4xl":"max-w-4xl","5xl":"max-w-5xl","6xl":"max-w-6xl",full:"max-w-full mx-4"},o=t.useCallback(()=>{if(!m.current)return[];const e=["button:not([disabled])","input:not([disabled])","select:not([disabled])","textarea:not([disabled])","a[href]",'[tabindex]:not([tabindex="-1"])'];return m.current.querySelectorAll(e.join(", "))},[]),h=t.useCallback(e=>{const s=o(),d=s[0],i=s[s.length-1];e.shiftKey?document.activeElement===d&&(e.preventDefault(),i==null||i.focus()):document.activeElement===i&&(e.preventDefault(),d==null||d.focus())},[o]),c=t.useCallback(e=>{e.key==="Escape"&&b?a==null||a():e.key==="Tab"&&h(e)},[b,a,h]),N=t.useCallback(e=>{e.target===e.currentTarget&&x&&(a==null||a())},[x,a]);if(t.useEffect(()=>(u?(f.current=document.activeElement,n&&(document.body.style.overflow="hidden"),document.addEventListener("keydown",c),setTimeout(()=>{var s;const e=o();e.length>0?e[0].focus():(s=m.current)==null||s.focus()},100)):(n&&(document.body.style.overflow=""),document.removeEventListener("keydown",c),f.current&&f.current.focus()),()=>{document.removeEventListener("keydown",c),n&&(document.body.style.overflow="")}),[u,c,o,n]),!u)return null;const R=`
+    fixed inset-0 z-50 overflow-y-auto
+    bg-black bg-opacity-50 backdrop-blur-sm
+    flex items-center justify-center p-4
+    transition-opacity duration-300
+    ${j}
+  `,D=`
+    relative bg-white rounded-lg shadow-xl
+    w-full ${w[p]||w.md}
+    max-h-[90vh] overflow-hidden
+    transform transition-all duration-300
+    ${k}
+  `,T=l.jsx("div",{className:R,onClick:N,role:"dialog","aria-modal":"true","aria-labelledby":r?"modal-title":void 0,...E,children:l.jsxs("div",{className:D,tabIndex:-1,children:[(r||y)&&l.jsxs("div",{className:"flex items-center justify-between p-4 border-b border-gray-200",children:[r&&l.jsx("h2",{id:"modal-title",className:"text-lg font-semibold text-gray-900",children:r}),y&&l.jsx(F,{type:"button",variant:"ghost",size:"sm",onClick:a,className:"ml-auto","aria-label":"Fechar modal",children:"x"})]}),l.jsx("div",{className:"p-4 overflow-y-auto max-h-[calc(90vh-8rem)]",children:g}),v&&l.jsx("div",{className:"flex items-center justify-end gap-3 p-4 border-t border-gray-200 bg-gray-50",children:v})]})});return z.createPortal(T,document.body)});K.displayName="Modal";export{K as M};

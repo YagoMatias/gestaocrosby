@@ -1,0 +1,12 @@
+import{r as c,j as r}from"./index-a2563983.js";const j=c.memo(c.forwardRef(({children:d,variant:p="primary",size:x="md",disabled:s=!1,loading:e=!1,fullWidth:g=!1,leftIcon:a,rightIcon:n,onClick:t,type:m="button",className:u="",loadingText:b="Carregando...",...h},y)=>{const o={primary:"bg-[#000638] hover:bg-[#fe0000] text-white border-transparent focus:ring-[#000638]",secondary:"bg-gray-100 hover:bg-gray-200 text-gray-900 border-gray-300 focus:ring-gray-500",outline:"bg-transparent hover:bg-[#000638] hover:text-white text-[#000638] border-[#000638] focus:ring-[#000638]",ghost:"bg-transparent hover:bg-gray-100 text-gray-700 border-transparent focus:ring-gray-500",danger:"bg-red-600 hover:bg-red-700 text-white border-transparent focus:ring-red-500",success:"bg-green-600 hover:bg-green-700 text-white border-transparent focus:ring-green-500",warning:"bg-yellow-500 hover:bg-yellow-600 text-white border-transparent focus:ring-yellow-500"},i={xs:"px-2 py-1 text-xs",sm:"px-3 py-1.5 text-sm",md:"px-4 py-2 text-sm",lg:"px-6 py-3 text-base",xl:"px-8 py-4 text-lg"},f=`
+    inline-flex items-center justify-center
+    font-medium rounded-lg border
+    transition-all duration-200 ease-in-out
+    focus:outline-none focus:ring-2 focus:ring-offset-2
+    disabled:opacity-50 disabled:cursor-not-allowed
+    disabled:pointer-events-none
+    ${g?"w-full":""}
+    ${o[p]||o.primary}
+    ${i[x]||i.md}
+    ${u}
+  `,w=l=>{if(s||e){l.preventDefault();return}t==null||t(l)},v=()=>r.jsxs("svg",{className:"animate-spin -ml-1 mr-2 h-4 w-4",xmlns:"http://www.w3.org/2000/svg",fill:"none",viewBox:"0 0 24 24","aria-hidden":"true",children:[r.jsx("circle",{className:"opacity-25",cx:"12",cy:"12",r:"10",stroke:"currentColor",strokeWidth:"4"}),r.jsx("path",{className:"opacity-75",fill:"currentColor",d:"M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"})]});return r.jsxs("button",{ref:y,type:m,className:f,disabled:s||e,onClick:w,"aria-disabled":s||e,"aria-describedby":e?"loading-description":void 0,...h,children:[e&&r.jsx(v,{}),a&&!e&&r.jsx("span",{className:"mr-2 flex-shrink-0","aria-hidden":"true",children:a}),r.jsx("span",{className:e?"opacity-70":"",children:e?b:d}),n&&!e&&r.jsx("span",{className:"ml-2 flex-shrink-0","aria-hidden":"true",children:n}),e&&r.jsx("span",{id:"loading-description",className:"sr-only",children:"Operação em andamento"})]})}));j.displayName="Button";export{j as B};
