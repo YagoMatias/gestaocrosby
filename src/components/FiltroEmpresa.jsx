@@ -9,112 +9,11 @@ const FiltroEmpresa = ({
   const { user } = useAuth();
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [todasEmpresasOriginais, setTodasEmpresasOriginais] = useState([]);
   const [todasEmpresas, setTodasEmpresas] = useState([]);
   const [loading, setLoading] = useState(true);
   const dropdownRef = useRef(null);
 
-  // Códigos das empresas que queremos buscar
-  const codigosEmpresas = apenasEmpresa101
-    ? [
-        '1',
-        '2',
-        '5',
-        '6',
-        '7',
-        '11',
-        '31',
-        '55',
-        '65',
-        '75',
-        '85',
-        '90',
-        '91',
-        '92',
-        '93',
-        '94',
-        '95',
-        '96',
-        '97',
-        '98',
-        '99',
-        '100',
-        '101',
-        '111',
-        '200',
-        '311',
-        '500',
-        '550',
-        '600',
-        '650',
-        '700',
-        '750',
-        '850',
-        '890',
-        '910',
-        '920',
-        '930',
-        '940',
-        '950',
-        '960',
-        '970',
-        '980',
-        '990',
-        '12',
-        '13',
-        '14',
-        '15',
-        '16',
-      ]
-    : [
-        '1',
-        '2',
-        '5',
-        '6',
-        '7',
-        '11',
-        '31',
-        '55',
-        '65',
-        '75',
-        '85',
-        '90',
-        '91',
-        '92',
-        '93',
-        '94',
-        '95',
-        '96',
-        '97',
-        '98',
-        '99',
-        '100',
-        '101',
-        '111',
-        '200',
-        '311',
-        '500',
-        '550',
-        '600',
-        '650',
-        '700',
-        '750',
-        '850',
-        '890',
-        '910',
-        '920',
-        '930',
-        '940',
-        '950',
-        '960',
-        '970',
-        '980',
-        '990',
-        '12',
-        '13',
-        '14',
-        '15',
-        '16',
-      ];
   // Buscar empresas do banco de dados
   useEffect(() => {
     const buscarEmpresas = async () => {
@@ -155,21 +54,21 @@ const FiltroEmpresa = ({
             throw new Error('Estrutura de dados não reconhecida');
           }
 
-          // Filtrar apenas as empresas que queremos
-          const empresasFiltradas = empresasArray.filter((empresa) =>
-            codigosEmpresas.includes(empresa.cd_empresa.toString()),
-          );
+          // Não filtrar por códigos - usar todas as empresas da API
+          // A filtragem por empresas vinculadas (franquias) será feita no useEffect abaixo
 
           console.log(
-            `🔍 Empresas filtradas: ${empresasFiltradas.length} de ${empresasArray.length}`,
+            `✅ Carregadas ${empresasArray.length} empresas da API (todas disponíveis)`,
           );
 
           // Ordenar por código da empresa
-          const empresasOrdenadas = empresasFiltradas.sort(
+          const empresasOrdenadas = empresasArray.sort(
             (a, b) => parseInt(a.cd_empresa) - parseInt(b.cd_empresa),
           );
 
-          setTodasEmpresas(empresasOrdenadas);
+          // Guardar empresas originais e aplicar filtro se necessário
+          setTodasEmpresasOriginais(empresasOrdenadas);
+
           console.log(
             '✅ Empresas carregadas com sucesso:',
             empresasOrdenadas.map(
@@ -181,13 +80,9 @@ const FiltroEmpresa = ({
         }
       } catch (error) {
         console.error('❌ Erro ao buscar empresas:', error);
-        // Fallback para empresas padrão se a API falhar
-        setTodasEmpresas(
-          codigosEmpresas.map((codigo) => ({
-            cd_empresa: codigo,
-            nm_grupoempresa: `CROSBY FILIAL ${codigo}`,
-          })),
-        );
+        // Fallback: não definir empresas se a API falhar
+        setTodasEmpresasOriginais([]);
+        setTodasEmpresas([]);
       } finally {
         setLoading(false);
       }
@@ -198,16 +93,24 @@ const FiltroEmpresa = ({
 
   // Filtrar empresas para usuários FRANQUIAS
   useEffect(() => {
+    // Se for usuário franquias e tem empresas permitidas, filtrar
     if (
       user?.role === 'franquias' &&
       user?.allowedCompanies &&
       user.allowedCompanies.length > 0
     ) {
-      setTodasEmpresas((prev) =>
-        prev.filter((emp) => user.allowedCompanies.includes(emp.cd_empresa)),
+      const empresasFiltradas = todasEmpresasOriginais.filter((emp) =>
+        user.allowedCompanies.includes(emp.cd_empresa),
       );
+      setTodasEmpresas(empresasFiltradas);
+      console.log(
+        `🔒 Usuário FRANQUIAS: ${empresasFiltradas.length} empresas visíveis de ${todasEmpresasOriginais.length} disponíveis`,
+      );
+    } else {
+      // Para outros usuários, mostrar todas as empresas
+      setTodasEmpresas(todasEmpresasOriginais);
     }
-  }, [user?.role, user?.allowedCompanies, loading]);
+  }, [user?.role, user?.allowedCompanies, todasEmpresasOriginais]);
 
   // Filtrar empresas baseado no termo de busca
   const empresasFiltradas = todasEmpresas.filter(
@@ -316,7 +219,7 @@ const FiltroEmpresa = ({
           </div>
 
           {/* Botões de ação */}
-          <div className="p-3 border-b border-gray-200 bg-gray-50 flex gap-2">
+          <div className="p-3 border-b border-gray-200 bg-gray-50 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => {
@@ -325,6 +228,34 @@ const FiltroEmpresa = ({
               className="text-xs px-2 py-1 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors"
             >
               Selecionar Todas
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (onSelectEmpresas) {
+                  const filiais = todasEmpresas.filter(
+                    (emp) => parseInt(emp.cd_empresa) < 5999,
+                  );
+                  onSelectEmpresas([...filiais]);
+                }
+              }}
+              className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+            >
+              Filial
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (onSelectEmpresas) {
+                  const franquias = todasEmpresas.filter(
+                    (emp) => parseInt(emp.cd_empresa) > 6000,
+                  );
+                  onSelectEmpresas([...franquias]);
+                }
+              }}
+              className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+            >
+              Franquias
             </button>
             <button
               type="button"
