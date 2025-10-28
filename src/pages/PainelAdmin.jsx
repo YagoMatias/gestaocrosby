@@ -8,8 +8,13 @@ import {
   deleteUser,
   checkEmailExists,
 } from '../lib/userProfiles';
+import {
+  saveUserCompanies,
+  getUserCompanies,
+} from '../services/userCompaniesService';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Notification from '../components/Notification';
+import FiltroEmpresa from '../components/FiltroEmpresa';
 import {
   USER_ROLES,
   USER_ROLE_LABELS,
@@ -36,6 +41,8 @@ export default function PainelAdmin() {
     active: true,
   });
   const [editando, setEditando] = useState(false);
+  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
+  const [loadingEmpresas, setLoadingEmpresas] = useState(false);
 
   // Só Owner pode acessar
   if (!user || user.role !== 'owner') {
@@ -67,6 +74,29 @@ export default function PainelAdmin() {
     fetchUsuarios();
   }, []);
 
+  // NOVO: Carregar empresas vinculadas quando editar usuário franquias
+  useEffect(() => {
+    const loadCompaniesForUser = async () => {
+      if (editando && form.id && form.role === 'franquias') {
+        setLoadingEmpresas(true);
+        try {
+          const { data } = await getUserCompanies(form.id);
+          if (data) {
+            const empresasObjs = data.map((codigo) => ({ cd_empresa: codigo }));
+            setEmpresasSelecionadas(empresasObjs);
+          }
+        } catch (error) {
+          console.error('Erro ao carregar empresas:', error);
+        } finally {
+          setLoadingEmpresas(false);
+        }
+      } else if (form.role !== 'franquias') {
+        setEmpresasSelecionadas([]);
+      }
+    };
+    loadCompaniesForUser();
+  }, [editando, form.id, form.role]);
+
   // Handlers
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -87,6 +117,16 @@ export default function PainelAdmin() {
         return;
       }
 
+      // Validar se usuário franquias tem empresas vinculadas
+      if (form.role === 'franquias' && empresasSelecionadas.length === 0) {
+        setErro(
+          'Usuário do tipo Franquias deve ter pelo menos uma empresa vinculada.',
+        );
+        return;
+      }
+
+      let userId;
+
       if (editando) {
         // Atualizar usuário
         const updateData = { ...form };
@@ -94,13 +134,30 @@ export default function PainelAdmin() {
           delete updateData.password; // Não atualizar senha se estiver vazia
         }
         await updateUser(form.id, updateData);
+        userId = form.id;
       } else {
         // Criar novo usuário
         if (!form.password) {
           setErro('Senha é obrigatória para novos usuários.');
           return;
         }
-        await createUser(form);
+        const newUser = await createUser(form);
+        userId = newUser.id;
+      }
+
+      // Salvar empresas vinculadas se for franquias
+      if (form.role === 'franquias') {
+        const companyCodes = empresasSelecionadas.map((emp) => emp.cd_empresa);
+        const { error: companiesError } = await saveUserCompanies(
+          userId,
+          companyCodes,
+        );
+        if (companiesError) {
+          setErro(
+            'Erro ao salvar empresas vinculadas: ' + companiesError.message,
+          );
+          return;
+        }
       }
 
       setForm({
@@ -111,6 +168,7 @@ export default function PainelAdmin() {
         role: 'user',
         active: true,
       });
+      setEmpresasSelecionadas([]);
       setEditando(false);
       setSuccess(
         editando
@@ -213,6 +271,29 @@ export default function PainelAdmin() {
             Ativo
           </label>
         </div>
+
+        {/* Campo de seleção de empresas para tipo franquias */}
+        {form.role === 'franquias' && (
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2 text-gray-700">
+              Empresas Vinculadas (obrigatório para Franquias)
+            </label>
+            {loadingEmpresas ? (
+              <LoadingSpinner text="Carregando empresas..." />
+            ) : (
+              <FiltroEmpresa
+                empresasSelecionadas={empresasSelecionadas}
+                onSelectEmpresas={setEmpresasSelecionadas}
+              />
+            )}
+            {form.role === 'franquias' && empresasSelecionadas.length === 0 && (
+              <p className="text-red-600 text-sm mt-1">
+                Selecione pelo menos uma empresa
+              </p>
+            )}
+          </div>
+        )}
+
         <button
           className="bg-blue-700 text-white px-4 py-2 rounded hover:bg-blue-800"
           type="submit"
@@ -225,6 +306,7 @@ export default function PainelAdmin() {
             className="ml-4 text-gray-600 underline"
             onClick={() => {
               setEditando(false);
+              setEmpresasSelecionadas([]);
               setForm({
                 id: null,
                 name: '',

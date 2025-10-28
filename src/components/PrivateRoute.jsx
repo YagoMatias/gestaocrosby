@@ -36,6 +36,29 @@ const PrivateRoute = ({ children }) => {
     return <Navigate to="/" replace />;
   }
 
+  // Verificar se usuário franquias tem empresas vinculadas
+  if (user.role === 'franquias') {
+    if (!user.allowedCompanies || user.allowedCompanies.length === 0) {
+      console.log(
+        '🚫 PrivateRoute - Usuário franquias sem empresas vinculadas',
+      );
+      return (
+        <div className="flex items-center justify-center min-h-screen bg-gray-50">
+          <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-md">
+            <p className="text-red-600 font-bold mb-2 text-xl">
+              Acesso Bloqueado
+            </p>
+            <p className="text-gray-700 mb-4">
+              Nenhuma empresa vinculada ao seu usuário.
+              <br />
+              Contate um administrador do sistema.
+            </p>
+          </div>
+        </div>
+      );
+    }
+  }
+
   // Verificar permissões customizadas
   const hasPermission = () => {
     // Owner tem acesso total

@@ -7,9 +7,18 @@ import React, {
 } from 'react';
 import { supabase, supabaseSession } from '../lib/supabase';
 import { getUserPermissions } from '../services/permissionsService';
+import { getUserCompanies } from '../services/userCompaniesService';
 
 // Roles disponíveis no sistema (ordenados por hierarquia)
-const ROLES = ['owner', 'admin', 'manager', 'user', 'guest', 'vendedor'];
+const ROLES = [
+  'owner',
+  'admin',
+  'manager',
+  'user',
+  'guest',
+  'vendedor',
+  'franquias',
+];
 
 // Configuração de roles com labels e níveis
 const ROLE_CONFIG = {
@@ -43,6 +52,11 @@ const ROLE_CONFIG = {
     level: 60,
     color: '#10b981',
   },
+  franquias: {
+    label: 'Franquias',
+    level: 50,
+    color: '#3b82f6',
+  },
 };
 
 const AuthContext = createContext();
@@ -73,6 +87,31 @@ export const AuthProvider = ({ children }) => {
   const updateUser = (userData) => {
     userRef.current = userData;
     setUser(userData);
+  };
+
+  // Função auxiliar para carregar empresas vinculadas do banco
+  const loadUserCompanies = async (userId, userRole) => {
+    try {
+      // Apenas usuários do tipo franquias têm empresas vinculadas
+      if (userRole !== 'franquias') {
+        return null; // null = todas as empresas disponíveis
+      }
+
+      const { data, error } = await getUserCompanies(userId);
+
+      if (error) {
+        console.error('❌ Erro ao carregar empresas vinculadas:', error);
+        return []; // Array vazio = nenhuma empresa
+      }
+
+      // Retornar array de códigos de empresas
+      const companies = data || [];
+      console.log('✅ Empresas vinculadas carregadas:', companies);
+      return companies;
+    } catch (error) {
+      console.error('❌ Erro crítico ao carregar empresas vinculadas:', error);
+      return [];
+    }
   };
 
   // Função auxiliar para carregar permissões do banco
@@ -228,6 +267,12 @@ export const AuthProvider = ({ children }) => {
       );
       console.log('✅ Permissões carregadas, configurando usuário...');
 
+      // Carregar empresas vinculadas (APENAS para franquias)
+      const allowedCompanies = await loadUserCompanies(
+        authData.user.id,
+        validRole,
+      );
+
       // Configurar usuário
       const userData = {
         id: authData.user.id,
@@ -235,6 +280,7 @@ export const AuthProvider = ({ children }) => {
         name: authData.user.user_metadata?.name || 'Usuário',
         role: validRole,
         allowedPages, // Adicionar permissões customizadas
+        allowedCompanies, // Adicionar empresas vinculadas
         profile: {
           name: validRole,
           label: roleConfig.label,
@@ -316,12 +362,19 @@ export const AuthProvider = ({ children }) => {
             validRole,
           );
 
+          // Carregar empresas vinculadas
+          const allowedCompanies = await loadUserCompanies(
+            session.user.id,
+            validRole,
+          );
+
           updateUser({
             id: session.user.id,
             email: session.user.email,
             name: session.user.user_metadata?.name || 'Usuário',
             role: validRole,
             allowedPages, // Adicionar permissões customizadas
+            allowedCompanies, // Adicionar empresas vinculadas
             profile: {
               name: validRole,
               label: roleConfig.label,
@@ -381,12 +434,19 @@ export const AuthProvider = ({ children }) => {
           validRole,
         );
 
+        // Carregar empresas vinculadas
+        const allowedCompanies = await loadUserCompanies(
+          session.user.id,
+          validRole,
+        );
+
         updateUser({
           id: session.user.id,
           email: session.user.email,
           name: session.user.user_metadata?.name || 'Usuário',
           role: validRole,
           allowedPages, // Adicionar permissões customizadas
+          allowedCompanies, // Adicionar empresas vinculadas
           profile: {
             name: validRole,
             label: roleConfig.label,
@@ -440,12 +500,19 @@ export const AuthProvider = ({ children }) => {
           validRole,
         );
 
+        // Carregar empresas vinculadas
+        const allowedCompanies = await loadUserCompanies(
+          session.user.id,
+          validRole,
+        );
+
         updateUser({
           id: session.user.id,
           email: session.user.email,
           name: session.user.user_metadata?.name || 'Usuário',
           role: validRole,
           allowedPages, // Adicionar permissões customizadas
+          allowedCompanies, // Adicionar empresas vinculadas
           profile: {
             name: validRole,
             label: roleConfig.label,

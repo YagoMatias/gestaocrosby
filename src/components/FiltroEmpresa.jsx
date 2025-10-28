@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useAuth } from './AuthContext';
 
 const FiltroEmpresa = ({
   empresasSelecionadas = [],
   onSelectEmpresas,
   apenasEmpresa101 = false,
 }) => {
+  const { user } = useAuth();
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [todasEmpresas, setTodasEmpresas] = useState([]);
@@ -193,6 +195,19 @@ const FiltroEmpresa = ({
 
     buscarEmpresas();
   }, []);
+
+  // Filtrar empresas para usuários FRANQUIAS
+  useEffect(() => {
+    if (
+      user?.role === 'franquias' &&
+      user?.allowedCompanies &&
+      user.allowedCompanies.length > 0
+    ) {
+      setTodasEmpresas((prev) =>
+        prev.filter((emp) => user.allowedCompanies.includes(emp.cd_empresa)),
+      );
+    }
+  }, [user?.role, user?.allowedCompanies, loading]);
 
   // Filtrar empresas baseado no termo de busca
   const empresasFiltradas = todasEmpresas.filter(
