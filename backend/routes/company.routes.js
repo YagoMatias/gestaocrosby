@@ -23,31 +23,13 @@ router.get(
   '/empresas',
   sanitizeInput,
   asyncHandler(async (req, res) => {
-    const { cd_empresa } = req.query;
-
-    let query = `
-      SELECT cd_empresa, nm_grupoempresa 
-      FROM vr_ger_empresa 
-      WHERE cd_grupoempresa < 5999
+    const query = `
+      SELECT cd_empresa, nm_grupoempresa, cd_pessoa 
+      FROM vr_ger_empresa
+      ORDER BY cd_grupoempresa ASC
     `;
 
-    const params = [];
-
-    // Se cd_empresa foi fornecido, filtrar por lista de códigos
-    if (cd_empresa) {
-      const empresaIds = cd_empresa
-        .split(',')
-        .map((id) => id.trim())
-        .filter((id) => id);
-      if (empresaIds.length > 0) {
-        query += ` AND cd_empresa = ANY($1)`;
-        params.push(empresaIds);
-      }
-    }
-
-    query += ` ORDER BY cd_grupoempresa ASC`;
-
-    const { rows } = await pool.query(query, params);
+    const { rows } = await pool.query(query);
 
     successResponse(
       res,
@@ -111,8 +93,8 @@ router.get(
       req.query;
 
     const allowedOperations = [
-      1, 2, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 8750, 9017,
-      9400, 9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405, 1205,
+      1, 2, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 9017, 9400,
+      9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405, 1205, 1101,
     ];
 
     const excludedGroups = [
@@ -219,12 +201,23 @@ router.get(
 router.get(
   '/expedicao',
   asyncHandler(async (req, res) => {
+    // Primeiro, vamos descobrir quais colunas existem na view
+    const describeQuery = `
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'vw_detalhe_pedido_completo'
+      ORDER BY ordinal_position
+    `;
+
+    const { rows: columns } = await pool.query(describeQuery);
+
+    // Agora vamos tentar uma query simples para ver os dados
     const query = `
       SELECT * 
       FROM vw_detalhe_pedido_completo 
       WHERE cd_empresa = 850 
         AND cd_tabpreco IN (21, 22)
-      ORDER BY dt_pedido DESC
+      LIMIT 50000000
     `;
 
     const { rows } = await pool.query(query);
@@ -234,6 +227,7 @@ router.get(
       {
         empresa: 850,
         tabelas_preco: [21, 22],
+        colunas_disponiveis: columns,
         count: rows.length,
         data: rows,
       },
@@ -256,11 +250,20 @@ router.get(
     const limit = parseInt(req.query.limit, 10) || 50000000;
     const offset = parseInt(req.query.offset, 10) || 0;
 
+    // Primeiro, vamos descobrir quais colunas existem na view
+    const describeQuery = `
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'vw_detalhe_pedido_completo'
+      ORDER BY ordinal_position
+    `;
+
+    const { rows: columns } = await pool.query(describeQuery);
+
     const query = `
       SELECT * 
       FROM vw_detalhe_pedido_completo 
       WHERE cd_empresa = 111 
-      ORDER BY dt_pedido DESC
       LIMIT $1 OFFSET $2
     `;
 
@@ -285,6 +288,7 @@ router.get(
         limit,
         offset,
         hasMore: offset + limit < total,
+        colunas_disponiveis: columns,
         data: resultado.rows,
       },
       'Dados de PCP obtidos com sucesso',

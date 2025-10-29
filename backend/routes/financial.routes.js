@@ -1084,6 +1084,128 @@ router.get(
 );
 
 /**
+ * @route GET /financial/contas-receber-cliente
+ * @desc Buscar contas a receber por cliente com filtro de status
+ * @access Public
+ * @query {cd_cliente, status, limit, offset}
+ * @query status: 'em_aberto' | 'pagos' | 'vencidos' | 'todos' (opcional, padrão: 'todos')
+ */
+router.get(
+  '/contas-receber-cliente',
+  sanitizeInput,
+  validateRequired(['cd_cliente']),
+  validatePagination,
+  asyncHandler(async (req, res) => {
+    const { cd_cliente, status = 'todos' } = req.query;
+    const limit = parseInt(req.query.limit, 10) || 50000000;
+    const offset = parseInt(req.query.offset, 10) || 0;
+
+    // Validar status
+    const statusValidos = ['em_aberto', 'pagos', 'vencidos', 'todos'];
+    if (!statusValidos.includes(status)) {
+      return errorResponse(
+        res,
+        `Status inválido. Valores válidos: ${statusValidos.join(', ')}`,
+        400,
+        'INVALID_STATUS',
+      );
+    }
+
+    // Construir WHERE baseado no status
+    let whereClause = 'WHERE vff.cd_cliente = $1';
+    const queryParams = [cd_cliente];
+    const countParams = [cd_cliente];
+
+    switch (status) {
+      case 'em_aberto':
+        // vl_pago = 0 ou NULL indica em aberto
+        whereClause += ` AND (vff.vl_pago = 0 OR vff.vl_pago IS NULL)`;
+        break;
+      case 'pagos':
+        // vl_pago > 0 indica pagos
+        whereClause += ` AND vff.vl_pago > 0`;
+        break;
+      case 'vencidos':
+        // dt_vencimento não nulo e menor que hoje, e ainda não pago
+        whereClause += ` AND vff.dt_vencimento IS NOT NULL AND vff.dt_vencimento < CURRENT_DATE AND (vff.vl_pago = 0 OR vff.vl_pago IS NULL)`;
+        break;
+      case 'todos':
+        // Sem WHERE adicional
+        break;
+    }
+
+    // Adicionar filtro de situação
+    whereClause += ` AND vff.tp_situacao = 1`;
+
+    // Adicionar LIMIT e OFFSET aos parâmetros (já temos cd_cliente em $1)
+    queryParams.push(limit, offset);
+
+    const query = `
+      SELECT
+        vff.cd_empresa,
+        vff.cd_cliente,
+        vff.nm_cliente,
+        vff.nr_fat,
+        vff.nr_parcela,
+        vff.dt_emissao,
+        vff.dt_vencimento,
+        vff.dt_cancelamento,
+        vff.dt_liq,
+        vff.tp_cobranca,
+        vff.tp_documento,
+        vff.tp_faturamento,
+        vff.tp_inclusao,
+        vff.tp_baixa,
+        vff.tp_situacao,
+        vff.vl_fatura,
+        vff.vl_original,
+        vff.vl_abatimento,
+        vff.vl_pago,
+        vff.vl_desconto,
+        vff.vl_liquido,
+        vff.vl_acrescimo,
+        vff.vl_multa,
+        vff.nr_portador,
+        vff.vl_renegociacao,
+        vff.vl_corrigido,
+        vff.vl_juros,
+        vff.pr_juromes,
+        vff.pr_multa
+      FROM vr_fcr_faturai vff
+      ${whereClause}
+      ORDER BY vff.dt_emissao DESC
+      LIMIT $2 OFFSET $3
+    `;
+
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM vr_fcr_faturai vff
+      ${whereClause}
+    `;
+
+    const [resultado, totalResult] = await Promise.all([
+      pool.query(query, queryParams),
+      pool.query(countQuery, countParams),
+    ]);
+
+    const total = parseInt(totalResult.rows[0].total, 10);
+
+    successResponse(
+      res,
+      {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total,
+        filtros: { cd_cliente, status },
+        data: resultado.rows,
+      },
+      'Contas a receber do cliente obtidas com sucesso',
+    );
+  }),
+);
+
+/**
  * @route GET /financial/fluxocaixa-entradas
  * @desc Buscar fluxo de caixa de entradas (baseado na data de liquidação)
  * @access Public
@@ -1221,7 +1343,6 @@ router.get(
         AND vff.dt_vencimento > $3
         AND vff.dt_liq IS NULL
         AND vff.dt_cancelamento IS NULL
-        AND vff.cd_empresa < 5999
         AND vff.vl_pago = 0
         AND (
           (vpp.cd_tipoclas = 20 AND vpp.cd_classificacao::integer = 2)
@@ -1240,7 +1361,6 @@ router.get(
         AND vff.dt_vencimento > $3
         AND vff.dt_liq IS NULL
         AND vff.dt_cancelamento IS NULL
-        AND vff.cd_empresa < 5999
         AND vff.vl_pago = 0
         AND (
           (vpp.cd_tipoclas = 20 AND vpp.cd_classificacao::integer = 2)
@@ -1284,22 +1404,8 @@ router.get(
   validatePagination,
   asyncHandler(async (req, res) => {
     const { dt_inicio, dt_fim, dt_vencimento_ini } = req.query;
-    const limit = parseInt(req.query.limit, 10) || 10000; // Reduzido de 50M para 10K
+    const limit = parseInt(req.query.limit, 10) || 50000000;
     const offset = parseInt(req.query.offset, 10) || 0;
-
-    // Validação adicional para evitar períodos muito longos
-    const inicioDate = new Date(dt_inicio);
-    const fimDate = new Date(dt_fim);
-    const diffDays = (fimDate - inicioDate) / (1000 * 60 * 60 * 24);
-
-    if (diffDays > 365) {
-      return errorResponse(
-        res,
-        'Período muito longo. Máximo permitido: 365 dias',
-        400,
-        'PERIOD_TOO_LONG',
-      );
-    }
 
     const query = `
       SELECT
@@ -1339,7 +1445,6 @@ router.get(
         AND vff.dt_vencimento > $3
         AND vff.dt_liq IS NULL
         AND vff.dt_cancelamento IS NULL
-        AND vff.cd_empresa < 5999
         AND vff.vl_pago = 0
         AND (
           (vpp.cd_tipoclas = 20 AND vpp.cd_classificacao::integer = 3)
@@ -1360,8 +1465,8 @@ router.get(
         AND vff.dt_cancelamento IS NULL
         AND vff.vl_pago = 0
         AND (
-          (vpp.cd_tipoclas = 20 AND vpp.cd_classificacao::integer = 3)
-          OR (vpp.cd_tipoclas = 7 AND vpp.cd_classificacao::integer = 1)
+          (vpp.cd_tipoclas = 20 AND vpp.cd_classificacao::integer = 2)
+          OR (vpp.cd_tipoclas = 5 AND vpp.cd_classificacao::integer = 1)
         )
     `;
 
@@ -1444,7 +1549,6 @@ router.get(
         AND vff.dt_vencimento < CURRENT_DATE
         AND vff.dt_liq IS NULL
         AND vff.dt_cancelamento IS NULL
-        AND vff.cd_empresa < 5999
         AND vff.vl_pago = 0
         AND pp.nm_fantasia LIKE '%F%CROSBY%'
       GROUP BY
@@ -1492,7 +1596,6 @@ router.get(
         AND vff.dt_vencimento < CURRENT_DATE
         AND vff.dt_liq IS NULL
         AND vff.dt_cancelamento IS NULL
-        AND vff.cd_empresa < 5999
         AND vff.vl_pago = 0
         AND pp.nm_fantasia LIKE '%F%CROSBY%'
     `;

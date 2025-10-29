@@ -92,6 +92,13 @@ const financeiro = [
         color: 'text-green-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
+      {
+        name: 'Franquias',
+        href: '/contas-pagar-franquias',
+        icon: Calendar,
+        color: 'text-green-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
     ],
   },
   {
