@@ -790,7 +790,7 @@ const RankingFaturamento = () => {
           <div className="grid grid-cols-2 gap-4">
             <button
               onClick={() => setRankingTipo('lojas')}
-              className={`flex items-center justify-center px-4 py-3 rounded-lg border transition-colors ${
+              className={`flex items-center justify-center px-2 py-1 rounded-lg border transition-colors text-xs ${
                 rankingTipo === 'lojas'
                   ? 'bg-[#000638] border-[#000638] text-white'
                   : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
@@ -802,7 +802,7 @@ const RankingFaturamento = () => {
 
             <button
               onClick={() => setRankingTipo('vendedores')}
-              className={`flex items-center justify-center px-4 py-3 rounded-lg border transition-colors ${
+              className={`flex items-center justify-center px-2 py-1 rounded-lg border transition-colors text-xs ${
                 rankingTipo === 'vendedores'
                   ? 'bg-[#000638] border-[#000638] text-white'
                   : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
