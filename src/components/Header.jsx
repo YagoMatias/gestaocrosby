@@ -94,8 +94,8 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
   };
 
   return (
-    <header className="w-auto bg-white shadow-sm border-b border-gray-200">
-      <div className="w-full flex items-center justify-between gap-10 px-6 py-1">
+    <header className="bg-white shadow-sm border-b border-gray-200">
+      <div className="w-full flex items-center justify-around  py-1">
         <div className="flex items-center gap-4">
           {/* Botão de menu hambúrguer */}
           <button
