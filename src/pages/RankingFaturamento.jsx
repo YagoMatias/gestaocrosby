@@ -455,10 +455,13 @@ const RankingFaturamento = () => {
     return 'regular';
   };
 
-  // Inicializa com data em branco - só busca quando clicar em Atualizar
+  // Define datas padrão (1º dia do mês até hoje) sem buscar automaticamente
   useEffect(() => {
-    setDataInicio('');
-    setDataFim('');
+    const hoje = new Date();
+    const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    const toISODate = (d) => d.toISOString().split('T')[0];
+    setDataInicio(toISODate(primeiroDiaMes));
+    setDataFim(toISODate(hoje));
   }, []);
 
   // Filtros para lojas
@@ -660,50 +663,50 @@ const RankingFaturamento = () => {
       </h1>
 
       {/* Filtros */}
-      <div className="bg-white rounded-2xl shadow-lg mb-6 border border-[#000638]/10">
-        <div className="p-6 pb-4">
-          <div className="flex items-center mb-2">
-            <Funnel size={22} weight="bold" className="text-[#000638] mr-2" />
-            <h2 className="text-xl font-semibold text-[#000638]">Filtros</h2>
+      <div className="bg-white rounded-2xl shadow-lg mb-4 border border-[#000638]/10">
+        <div className="p-3 pb-2">
+          <div className="flex items-center mb-1.5">
+            <Funnel size={18} weight="bold" className="text-[#000638] mr-2" />
+            <h2 className="text-lg font-semibold text-[#000638]">Filtros</h2>
           </div>
-          <p className="text-sm text-gray-600">
+          <p className="text-xs text-gray-600">
             Selecione o período e tipo de loja para análise
           </p>
         </div>
-        <div className="p-6 pt-0">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div className="p-3 pt-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
             <div>
-              <label className="block text-xs font-semibold mb-1 text-[#000638]">
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                 Data Início
               </label>
               <input
                 type="date"
                 value={dataInicio}
                 onChange={(e) => setDataInicio(e.target.value)}
-                className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold mb-1 text-[#000638]">
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                 Data Fim
               </label>
               <input
                 type="date"
                 value={dataFim}
                 onChange={(e) => setDataFim(e.target.value)}
-                className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
               />
             </div>
           </div>
 
           <div className="mb-4">
-            <label className="block text-xs font-semibold mb-1 text-[#000638]">
+            <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
               Tipo de Loja
             </label>
             <select
               value={tipoLoja}
               onChange={(e) => setTipoLoja(e.target.value)}
-              className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
+              className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
             >
               <option value="Todos">Todos</option>
               <option value="Proprias">Próprias</option>
@@ -711,14 +714,14 @@ const RankingFaturamento = () => {
             </select>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <button
               onClick={() => {
                 buscarDados(dataInicio, dataFim);
                 buscarDadosVendedores(dataInicio, dataFim);
               }}
               disabled={loading || loadingVendedores}
-              className={`flex items-center justify-center px-4 py-3 rounded-lg font-semibold text-white transition-colors ${
+              className={`flex items-center justify-center px-3 py-1 h-7 rounded-lg font-semibold text-white transition-colors text-xs ${
                 loading || loadingVendedores
                   ? 'bg-gray-400 cursor-not-allowed'
                   : 'bg-[#000638] hover:bg-[#fe0000]'
@@ -726,12 +729,12 @@ const RankingFaturamento = () => {
             >
               {loading || loadingVendedores ? (
                 <>
-                  <Spinner size={20} className="animate-spin mr-2" />
+                  <Spinner size={12} className="animate-spin mr-2" />
                   <span>Atualizando...</span>
                 </>
               ) : (
                 <>
-                  <ArrowClockwise size={20} className="mr-2" />
+                  <ArrowClockwise size={12} className="mr-2" />
                   <span>Atualizar</span>
                 </>
               )}
@@ -740,26 +743,26 @@ const RankingFaturamento = () => {
             <button
               onClick={exportarPDFLojas}
               disabled={dadosLojasFiltrados.length === 0}
-              className={`flex items-center justify-center px-4 py-3 rounded-lg font-semibold text-white transition-colors ${
+              className={`flex items-center justify-center px-3 py-1 h-7 rounded-lg font-semibold text-white transition-colors text-xs ${
                 dadosLojasFiltrados.length === 0
                   ? 'bg-gray-400 cursor-not-allowed'
                   : 'bg-[#000638] hover:bg-[#fe0000]'
               }`}
             >
-              <FileText size={20} className="mr-2" />
+              <FileText size={12} className="mr-2" />
               <span>Baixar Lojas</span>
             </button>
 
             <button
               onClick={exportarPDFVendedores}
               disabled={dadosVendedoresFiltrados.length === 0}
-              className={`flex items-center justify-center px-4 py-3 rounded-lg font-semibold text-white transition-colors ${
+              className={`flex items-center justify-center px-3 py-1 h-7 rounded-lg font-semibold text-white transition-colors text-xs ${
                 dadosVendedoresFiltrados.length === 0
                   ? 'bg-gray-400 cursor-not-allowed'
                   : 'bg-[#000638] hover:bg-[#fe0000]'
               }`}
             >
-              <FileText size={20} className="mr-2" />
+              <FileText size={12} className="mr-2" />
               <span>Baixar Vendedores</span>
             </button>
           </div>
@@ -779,7 +782,7 @@ const RankingFaturamento = () => {
               Tipo de Ranking
             </h2>
           </div>
-          <p className="text-sm text-gray-600">
+          <p className="text-xs text-gray-600">
             Escolha entre ranking de lojas ou vendedores
           </p>
         </div>
@@ -1033,7 +1036,7 @@ const RankingFaturamento = () => {
                 faturamento
               </p>
             </div>
-            <div className="p-6 pt-0">
+            <div className="max-w-[350px] md:max-w-[700px] lg:max-w-[900px] xl:max-w-[1100px] 2xl:max-w-[1300px] mx-auto overflow-x-auto">
               <div className="overflow-x-auto">
                 <table className="min-w-full border border-gray-200 rounded-lg">
                   <thead className="bg-gray-50">
@@ -1128,20 +1131,20 @@ const RankingFaturamento = () => {
                           return getTicketColorClass(ticket);
                         })()}`}
                       >
-                        <td className="px-4 py-3 text-sm font-bold text-blue-600">
+                        <td className="px-4 py-3 text-xs font-bold text-blue-600">
                           {item.rank}
                         </td>
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                        <td className="px-4 py-3 text-xs  text-gray-900">
                           {rankingTipo === 'lojas'
                             ? item.nome_fantasia ||
                               item.nome ||
                               `Loja ${item.rank}`
                             : item.nome_vendedor || `Vendedor ${item.rank}`}
                         </td>
-                        <td className="px-4 py-3 text-sm font-semibold text-green-600">
+                        <td className="px-4 py-3 text-xs font-semibold text-green-600">
                           {formatCurrency(Number(item.faturamento))}
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-900">
+                        <td className="px-4 py-3 text-xs text-gray-900">
                           {(() => {
                             const transacoesSaida =
                               Number(item.transacoes_saida) || 0;
@@ -1155,7 +1158,7 @@ const RankingFaturamento = () => {
                               : '0.00';
                           })()}
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-900">
+                        <td className="px-4 py-3 text-xs text-gray-900">
                           {(() => {
                             const transacoesSaida =
                               Number(item.transacoes_saida) || 0;
