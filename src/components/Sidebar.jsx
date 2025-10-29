@@ -770,6 +770,25 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             color="text-amber-600"
           />
 
+          {/* Minha Franquia (pasta) */}
+          <MenuItem
+            item={{
+              name: 'Minha Franquia',
+              href: '#',
+              icon: Folder,
+              color: 'text-amber-600',
+              children: [
+                {
+                  name: 'Contas a Pagar',
+                  href: '/contas-pagar-franquias',
+                  icon: Receipt,
+                  color: 'text-red-600',
+                },
+              ],
+            }}
+            isActive={false}
+          />
+
           {/* VIGIA - item independente */}
           <MenuItem
             item={{

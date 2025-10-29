@@ -378,11 +378,11 @@ const DRE = () => {
       // Parâmetros para as rotas de CMV (mantidas para calcular CMV)
       const empresasFixas = [
         91, 2, 5, 6, 7, 11, 11, 12, 13, 14, 15, 16, 31, 55, 65, 75, 85, 90, 91,
-        92, 93, 94, 95, 96, 97, 98, 99,
+        92, 93, 94, 95, 96, 97, 99,
       ];
       const empresasVarejo = [
         2, 5, 11, 12, 13, 14, 15, 16, 55, 65, 90, 91, 92, 93, 94, 95, 96, 97,
-        98, 200, 500, 550, 650, 890, 910, 920, 930, 940, 950, 960, 970, 980,
+        200, 500, 550, 650, 890, 910, 920, 930, 940, 950, 960, 970,
       ];
 
       const paramsCMVVarejo = {
@@ -472,7 +472,7 @@ const DRE = () => {
 
         for (const row of data) {
           // RECEITAS BRUTAS = apenas a coluna VALOR_SEM_DESCONTO (soma total)
-          receitaBruta += parseFloat(row?.valor_sem_desconto || 0);
+          receitaBruta += parseFloat(row?.valor_sem_desconto_saida || 0);
 
           // Outros valores da view materializada
           devolucoesBrutas += parseFloat(row?.valor_sem_desconto_entrada || 0);
@@ -1227,9 +1227,8 @@ const DRE = () => {
         // Buscar despesas do Período 2
         const todasEmpresasCodigos = [
           1, 2, 5, 6, 7, 11, 11, 12, 13, 14, 15, 16, 31, 55, 65, 75, 85, 90, 91,
-          92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 111, 200, 311, 500, 550,
-          600, 650, 700, 750, 850, 890, 910, 920, 930, 940, 950, 960, 970, 980,
-          990,
+          92, 93, 94, 95, 96, 97, 99, 100, 101, 111, 200, 311, 500, 550, 600,
+          650, 700, 750, 850, 890, 910, 920, 930, 940, 950, 960, 970, 990,
         ];
 
         const paramsCPPeriodo2 = {
@@ -1342,8 +1341,8 @@ const DRE = () => {
         // Usar exatamente as mesmas empresas do Varejo
         const todasEmpresasCodigos = [
           1, 2, 5, 6, 7, 11, 12, 13, 14, 15, 16, 31, 55, 65, 75, 85, 90, 91, 92,
-          93, 94, 95, 96, 97, 98, 99, 100, 101, 111, 200, 311, 500, 550, 600,
-          650, 700, 750, 850, 890, 910, 920, 930, 940, 950, 960, 970, 980, 990,
+          93, 94, 95, 96, 97, 99, 100, 101, 111, 200, 311, 500, 550, 600, 650,
+          700, 750, 850, 890, 910, 920, 930, 940, 950, 960, 970, 990,
         ];
 
         const paramsCP = {
@@ -2277,6 +2276,10 @@ const DRE = () => {
         label: 'Custos da Mercadoria Vendida (CMV)',
         description: 'Quanto custou comprar ou produzir o que você vendeu.',
         value: -cmvVal,
+        porcentagem: (() => {
+          const base = rl;
+          return base > 0 ? ((cmvVal / base) * 100).toFixed(2) : '0.00';
+        })(),
         type: 'custo',
         children: [
           {
@@ -2285,7 +2288,12 @@ const DRE = () => {
             description: 'CMV do canal Varejo',
             value: -cv,
             type: 'custo',
-            porcentagem: calcularPorcentagem(cv, cmvVal).toFixed(1),
+            porcentagem: (() => {
+              const receitaMaisImpostos = rlv;
+              return receitaMaisImpostos > 0
+                ? ((cv / receitaMaisImpostos) * 100).toFixed(2)
+                : '0.00';
+            })(),
           },
           {
             id: 'cmv-multimarcas',
@@ -2293,7 +2301,12 @@ const DRE = () => {
             description: 'CMV do canal Multimarcas',
             value: -cmtm,
             type: 'custo',
-            porcentagem: calcularPorcentagem(cmtm, cmvVal).toFixed(1),
+            porcentagem: (() => {
+              const receitaMaisImpostos = rlm;
+              return receitaMaisImpostos > 0
+                ? ((cmtm / receitaMaisImpostos) * 100).toFixed(2)
+                : '0.00';
+            })(),
           },
           {
             id: 'cmv-revenda',
@@ -2301,7 +2314,12 @@ const DRE = () => {
             description: 'CMV do canal Revenda',
             value: -cr,
             type: 'custo',
-            porcentagem: calcularPorcentagem(cr, cmvVal).toFixed(1),
+            porcentagem: (() => {
+              const receitaMaisImpostos = rlr;
+              return receitaMaisImpostos > 0
+                ? ((cr / receitaMaisImpostos) * 100).toFixed(2)
+                : '0.00';
+            })(),
           },
           {
             id: 'cmv-franquias',
@@ -2309,7 +2327,12 @@ const DRE = () => {
             description: 'CMV do canal Franquias',
             value: -cf,
             type: 'custo',
-            porcentagem: calcularPorcentagem(cf, cmvVal).toFixed(1),
+            porcentagem: (() => {
+              const receitaMaisImpostos = rlf;
+              return receitaMaisImpostos > 0
+                ? ((cf / receitaMaisImpostos) * 100).toFixed(2)
+                : '0.00';
+            })(),
           },
         ],
       },
@@ -2828,15 +2851,7 @@ const DRE = () => {
                         {modulo.label}
                       </h3>
                       <div className="flex gap-96 items-center justify-between space-x-32 text-xs text-gray-600">
-                        <span
-                          className={`font-medium text-xs ${
-                            modulo.value >= 0
-                              ? 'text-green-600'
-                              : 'text-red-600'
-                          }`}
-                        >
-                          {formatCurrency(Math.abs(modulo.value))}
-                        </span>
+                        {renderizarValorComPorcentagem(modulo.value, modulo)}
                       </div>
                     </div>
                   </div>
