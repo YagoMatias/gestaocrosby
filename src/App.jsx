@@ -156,7 +156,7 @@ const AppRoutes = memo(() => {
 
   // Componente de layout para rotas protegidas
   const ProtectedLayout = ({ Component }) => (
-    <div className="h-screen flex">
+    <div className="h-screen flex w-screen p-0 m-0">
       <Sidebar
         isOpen={sidebarOpen}
         onClose={handleCloseSidebar}

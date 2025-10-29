@@ -19,14 +19,14 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
     const startAnimation = () => {
       // Iniciar com texto
       setCurrentDisplay('text');
-      
+
       // Ciclo a cada 20 segundos
       const cycle = () => {
         setIsTransitioning(true);
-        
+
         // Mostrar imagem
         setCurrentDisplay('image');
-        
+
         // Após 10 segundos, voltar para texto
         setTimeout(() => {
           setCurrentDisplay('text');
@@ -37,7 +37,7 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
       // Primeiro ciclo após 3 segundos
       const initialTimer = setTimeout(() => {
         cycle();
-        
+
         // Ciclos subsequentes a cada 20 segundos
         animationRef.current = setInterval(cycle, 20000);
       }, 3000);
@@ -94,7 +94,7 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
   };
 
   return (
-    <header className="w-screen bg-white shadow-sm border-b border-gray-200">
+    <header className="w-auto bg-white shadow-sm border-b border-gray-200">
       <div className="w-full flex items-center justify-between gap-10 px-6 py-1">
         <div className="flex items-center gap-4">
           {/* Botão de menu hambúrguer */}
@@ -106,23 +106,30 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
           </button>
 
           {/* HEADCOACH - posicionamento dinâmico */}
-          <div className={`flex items-center transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-4'}`}>
-            
+          <div
+            className={`flex items-center transition-all duration-300 ${
+              sidebarOpen ? 'ml-64' : 'ml-4'
+            }`}
+          >
             {/* Container com altura fixa e largura mínima para evitar layout shift */}
             <div className="h-5 w-48 flex items-center justify-start">
               {/* Texto HEADCOACH CROSBY */}
               {currentDisplay === 'text' && (
-                <h1 className={`text-lg font-bold text-blue-950 font-barlow whitespace-nowrap ${!isTransitioning ? 'animate-fade-in-smooth' : ''}`}>
+                <h1
+                  className={`text-lg font-bold text-blue-950 font-barlow whitespace-nowrap ${
+                    !isTransitioning ? 'animate-fade-in-smooth' : ''
+                  }`}
+                >
                   HEADCOACH CROSBY
                 </h1>
               )}
 
               {/* Imagem hokey.gif */}
               {currentDisplay === 'image' && (
-                <img 
-                  src="/hokey.gif" 
-                  alt="HEADCOACH" 
-                  className="w-8 h-8 rounded-full animate-slide-right-bounce shadow-lg" 
+                <img
+                  src="/hokey.gif"
+                  alt="HEADCOACH"
+                  className="w-8 h-8 rounded-full animate-slide-right-bounce shadow-lg"
                 />
               )}
             </div>
@@ -140,13 +147,20 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
               <span className="text-sm font-medium text-gray-700">
                 {user?.name || 'Usuário'}
               </span>
-              <svg 
-                className={`w-4 h-4 text-gray-500 transition-transform ${showDropdown ? 'rotate-180' : ''}`}
-                fill="none" 
-                stroke="currentColor" 
+              <svg
+                className={`w-4 h-4 text-gray-500 transition-transform ${
+                  showDropdown ? 'rotate-180' : ''
+                }`}
+                fill="none"
+                stroke="currentColor"
                 viewBox="0 0 24 24"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
               </svg>
             </button>
 
@@ -177,4 +191,4 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
   );
 };
 
-export default Header; 
+export default Header;
