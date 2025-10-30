@@ -176,6 +176,21 @@ const AVAILABLE_PAGES = [
     name: 'Vigia',
     category: 'Outros',
   },
+  {
+    path: 'https://app.powerbi.com/view?r=eyJrIjoiYjdkYzkxNjctOTcwYy00MWExLTkzMmItYzRlMjVmYWZjO[…]DUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9&pageName=bfc07965b7fd71caeaba',
+    name: 'Cronograma',
+    category: 'Outros',
+  },
+  {
+    path: 'https://app.powerbi.com/view?r=eyJrIjoiM2YwNjQzYmMtMjMxMy00Zjk0LTk3ZWUtMWY5Nzc4ZjU5ZGQwIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9',
+    name: 'Estoque',
+    category: 'Outros',
+  },
+  {
+    path: 'https://open.spotify.com/playlist/0luIH9EeXQsM1EVLEe10Co?si=PVAUen1xTNq_65EcEFuHSw&pi=rle4YjINSti0l&nd=1&dlsi=514142e8d84b44b8',
+    name: 'Playlist Loja',
+    category: 'Outros',
+  },
 
   // Admin (apenas para referência, owners sempre têm acesso)
   { path: '/painel-admin', name: 'Painel Admin', category: 'Administração' },
@@ -211,9 +226,17 @@ const GerenciadorAcessos = () => {
   const [selectedPages, setSelectedPages] = useState([]);
   const [mode, setMode] = useState('individual'); // 'individual' ou 'bulk'
   const [saving, setSaving] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
   const [copyFromUser, setCopyFromUser] = useState('');
+  const [toasts, setToasts] = useState([]);
+
+  // Função para adicionar toast
+  const addToast = (message, type = 'success') => {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((toast) => toast.id !== id));
+    }, 2000);
+  };
 
   // Verificar se é owner
   if (user?.role !== 'owner') {
@@ -345,78 +368,70 @@ const GerenciadorAcessos = () => {
   // Salvar permissões
   const handleSave = async () => {
     if (selectedUsers.length === 0) {
-      setErrorMessage('Selecione pelo menos um usuário');
-      setTimeout(() => setErrorMessage(''), 3000);
+      addToast('Selecione pelo menos um usuário', 'error');
       return;
     }
 
     setSaving(true);
-    setErrorMessage('');
-    setSuccessMessage('');
 
     try {
       if (mode === 'individual' && selectedUsers.length === 1) {
         const result = await savePermissions(selectedUsers[0], selectedPages);
         if (result.success) {
-          setSuccessMessage('✅ Permissões salvas com sucesso!');
+          addToast('✅ Permissões salvas com sucesso!');
           await loadUsersWithPermissions();
         } else {
-          setErrorMessage(result.error || 'Erro ao salvar permissões');
+          addToast(result.error || 'Erro ao salvar permissões', 'error');
         }
       } else {
         // Modo bulk
         const result = await saveBulkPermissions(selectedUsers, selectedPages);
         if (result.success) {
-          setSuccessMessage(
+          addToast(
             `✅ Permissões salvas para ${selectedUsers.length} usuários!`,
           );
           await loadUsersWithPermissions();
         } else {
-          setErrorMessage(result.error || 'Erro ao salvar permissões em massa');
+          addToast(
+            result.error || 'Erro ao salvar permissões em massa',
+            'error',
+          );
         }
       }
     } catch (err) {
-      setErrorMessage(err.message || 'Erro ao salvar permissões');
+      addToast(err.message || 'Erro ao salvar permissões', 'error');
     } finally {
       setSaving(false);
-      setTimeout(() => setSuccessMessage(''), 3000);
-      setTimeout(() => setErrorMessage(''), 5000);
     }
   };
 
   // Copiar permissões de outro usuário
   const handleCopyPermissions = async () => {
     if (!copyFromUser || selectedUsers.length === 0) {
-      setErrorMessage('Selecione usuário de origem e destino');
-      setTimeout(() => setErrorMessage(''), 3000);
+      addToast('Selecione usuário de origem e destino', 'error');
       return;
     }
 
     setSaving(true);
-    setErrorMessage('');
-    setSuccessMessage('');
 
     try {
       for (const toUserId of selectedUsers) {
         await copyPermissions(copyFromUser, toUserId);
       }
-      setSuccessMessage('✅ Permissões copiadas com sucesso!');
+      addToast('✅ Permissões copiadas com sucesso!');
       await loadUsersWithPermissions();
       setCopyFromUser('');
     } catch (err) {
-      setErrorMessage(err.message || 'Erro ao copiar permissões');
+      addToast(err.message || 'Erro ao copiar permissões', 'error');
     } finally {
       setSaving(false);
-      setTimeout(() => setSuccessMessage(''), 3000);
-      setTimeout(() => setErrorMessage(''), 5000);
     }
   };
 
   // Limpar permissões
   const handleClearPermissions = async () => {
     if (selectedUsers.length === 0) {
-      setErrorMessage('Selecione pelo menos um usuário');
-      setTimeout(() => setErrorMessage(''), 3000);
+      addToast('Selecione pelo menos um usuário', 'error');
       return;
     }
 
@@ -429,22 +444,18 @@ const GerenciadorAcessos = () => {
     }
 
     setSaving(true);
-    setErrorMessage('');
-    setSuccessMessage('');
 
     try {
       for (const userId of selectedUsers) {
         await clearPermissions(userId);
       }
-      setSuccessMessage('✅ Permissões removidas com sucesso!');
+      addToast('✅ Permissões removidas com sucesso!');
       await loadUsersWithPermissions();
       setSelectedPages([]);
     } catch (err) {
-      setErrorMessage(err.message || 'Erro ao limpar permissões');
+      addToast(err.message || 'Erro ao limpar permissões', 'error');
     } finally {
       setSaving(false);
-      setTimeout(() => setSuccessMessage(''), 3000);
-      setTimeout(() => setErrorMessage(''), 5000);
     }
   };
 
@@ -482,25 +493,6 @@ const GerenciadorAcessos = () => {
           icon={Shield}
           subtitle="Controle permissões de acesso dos usuários às páginas do sistema"
         />
-
-        {/* Mensagens */}
-        {successMessage && (
-          <div className="mb-4 p-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg flex items-center gap-2 shadow-sm">
-            <CheckCircle size={20} className="text-green-600 flex-shrink-0" />
-            <span className="text-sm font-medium text-green-800">
-              {successMessage}
-            </span>
-          </div>
-        )}
-
-        {(errorMessage || error) && (
-          <div className="mb-4 p-3 bg-gradient-to-r from-red-50 to-rose-50 border border-red-200 rounded-lg flex items-center gap-2 shadow-sm">
-            <XCircle size={20} className="text-red-600 flex-shrink-0" />
-            <span className="text-sm font-medium text-red-800">
-              {errorMessage || error}
-            </span>
-          </div>
-        )}
 
         {/* Controles */}
         <Card className="mb-4 shadow-md">
@@ -853,10 +845,7 @@ const GerenciadorAcessos = () => {
                   className="flex-1 px-4 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm font-bold shadow-md transition-all"
                 >
                   {saving ? (
-                    <>
-                      <LoadingSpinner size="sm" />
-                      Salvando...
-                    </>
+                    <>Salvando</>
                   ) : (
                     <>
                       <FloppyDisk size={18} />
@@ -876,6 +865,27 @@ const GerenciadorAcessos = () => {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Toasts */}
+      <div className="fixed top-4 right-4 z-50 space-y-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`p-4 rounded-lg shadow-lg border flex items-center gap-3 max-w-sm transform transition-all duration-300 ease-in-out ${
+              toast.type === 'error'
+                ? 'bg-gradient-to-r from-red-50 to-rose-50 border-red-200 text-red-800'
+                : 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200 text-green-800'
+            }`}
+          >
+            {toast.type === 'error' ? (
+              <XCircle size={20} className="text-red-600 flex-shrink-0" />
+            ) : (
+              <CheckCircle size={20} className="text-green-600 flex-shrink-0" />
+            )}
+            <span className="text-sm font-medium">{toast.message}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
