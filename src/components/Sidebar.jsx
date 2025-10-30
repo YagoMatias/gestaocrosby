@@ -679,6 +679,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             isActive={location.pathname === '/bi-externo'}
           />
 
+          {/* PRODUÇÃO */}
+          <MenuItem
+            item={{
+              name: 'Produção',
+              href: '/producao',
+              icon: ChartLineUp,
+              color: 'text-indigo-600',
+            }}
+            isActive={location.pathname === '/producao'}
+          />
+
           {/* Dashboard Faturamento */}
           <MenuItem
             item={{
