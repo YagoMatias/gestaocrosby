@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Lock, Eye, EyeSlash } from '@phosphor-icons/react';
 import { useAuth } from './AuthContext';
+import ForgotPasswordModal from './ForgotPasswordModal';
 
 const Logo = () => (
   <div className="flex justify-center mb-6">
@@ -16,6 +17,7 @@ const LoginForm = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
   const navigate = useNavigate();
   const { login } = useAuth();
 
@@ -99,16 +101,14 @@ const LoginForm = () => {
           </button>
         </div>
 
-        <div className="mb-6 flex items-center justify-between">
-          <label className="inline-flex items-center gap-2 text-sm text-gray-600">
-            <input
-              type="checkbox"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-            />
-            <span>Manter conectado</span>
-          </label>
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowForgotPasswordModal(true)}
+            className="mb-5 text-sm text-gray-600 hover:text-gray-800 transition"
+          >
+            Esqueceu a senha?
+          </button>
         </div>
 
         <button
@@ -119,6 +119,12 @@ const LoginForm = () => {
           {loading ? 'Entrando...' : 'Entrar'}
         </button>
       </form>
+
+      {/* Modal de redefinição de senha */}
+      <ForgotPasswordModal
+        isOpen={showForgotPasswordModal}
+        onClose={() => setShowForgotPasswordModal(false)}
+      />
     </div>
   );
 };
