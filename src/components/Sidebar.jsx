@@ -672,11 +672,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           <MenuItem
             item={{
               name: 'BI Externo',
-              href: '/dashboard',
+              href: '/bi-externo',
               icon: ChartLineUp,
               color: 'text-indigo-600',
             }}
-            isActive={location.pathname === '/dashboard'}
+            isActive={location.pathname === '/bi-externo'}
           />
 
           {/* Dashboard Faturamento */}
@@ -797,28 +797,6 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               name: 'Vigia',
               href: 'https://vigia.crosbytech.com.br/',
               icon: Eye,
-              color: 'text-blue-600',
-              external: true,
-            }}
-            isActive={false}
-          />
-
-          <MenuItem
-            item={{
-              name: 'Cronograma',
-              href: 'https://app.powerbi.com/view?r=eyJrIjoiYjdkYzkxNjctOTcwYy00MWExLTkzMmItYzRlMjVmYWZjO[…]DUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9&pageName=bfc07965b7fd71caeaba',
-              icon: CalendarDots,
-              color: 'text-blue-600',
-              external: true,
-            }}
-            isActive={false}
-          />
-
-          <MenuItem
-            item={{
-              name: 'Estoque',
-              href: 'https://app.powerbi.com/view?r=eyJrIjoiM2YwNjQzYmMtMjMxMy00Zjk0LTk3ZWUtMWY5Nzc4ZjU5ZGQwIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9',
-              icon: TShirt,
               color: 'text-blue-600',
               external: true,
             }}

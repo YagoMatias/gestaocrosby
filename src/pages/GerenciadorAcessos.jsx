@@ -29,7 +29,8 @@ const AVAILABLE_PAGES = [
   // Páginas principais
   { path: '/home', name: 'Home', category: 'Principal' },
   { path: '/crosby-bot', name: 'Crosby Bot', category: 'Principal' },
-  { path: '/dashboard', name: 'BI Externo', category: 'Principal' },
+  { path: '/dashboard', name: 'BI Externo (Dashboard)', category: 'Principal' },
+  { path: '/bi-externo', name: 'BI Externo', category: 'Principal' },
   {
     path: '/dashboard-faturamento',
     name: 'Dashboard Faturamento',

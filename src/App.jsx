@@ -11,6 +11,7 @@ import AcaoCartoes from './pages/AcaoCartoes';
 // Lazy loading de todas as páginas para otimizar bundle
 const Home = lazy(() => import('./pages/Home'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
+const BIExterno = lazy(() => import('./pages/BIExterno'));
 const ContasAPagar = lazy(() => import('./pages/ContasAPagar'));
 const ContasAPagarEmissao = lazy(() => import('./pages/ContasAPagarEmissao'));
 const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
@@ -111,6 +112,7 @@ const AppRoutes = memo(() => {
     { path: '/saldo-bancario-totvs', component: SaldoBancarioTotvs },
     { path: '/home', component: Home },
     { path: '/dashboard', component: Dashboard },
+    { path: '/bi-externo', component: BIExterno },
     { path: '/contas-a-pagar', component: ContasAPagar },
     { path: '/contas-a-pagar-emissao', component: ContasAPagarEmissao },
     { path: '/despesas-por-setor', component: DespesasPorSetor },
