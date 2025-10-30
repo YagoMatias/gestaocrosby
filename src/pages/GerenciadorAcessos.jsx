@@ -150,6 +150,14 @@ const AVAILABLE_PAGES = [
     category: 'Franquias',
   },
 
+  // Minha Franquia
+  {
+    path: '/contas-pagar-franquias',
+    name: 'Contas a Pagar Franquias',
+    category: 'Minha Franquia',
+  },
+  { path: '/meus-pedidos', name: 'Meus Pedidos', category: 'Minha Franquia' },
+
   // Outros
   { path: '/clientes', name: 'Clientes', category: 'Outros' },
   {
