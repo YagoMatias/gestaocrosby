@@ -352,6 +352,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const [revendaOpen, setRevendaOpen] = useState(false);
   const [franquiasOpen, setFranquiasOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [producaoOpen, setProducaoOpen] = useState(false);
   const { user } = useAuth();
 
   // Garante que ao abrir uma seção, as demais sejam fechadas
@@ -438,6 +439,19 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setMultimarcasOpen(false);
       setRevendaOpen(false);
       setFranquiasOpen(false);
+      return;
+    }
+    if (section === 'producao') {
+      const next = !producaoOpen;
+      setProducaoOpen(next);
+      setFinanceiroOpen(false);
+      setDashboardFinanceiroOpen(false);
+      setFaturamentoOpen(false);
+      setVarejoOpen(false);
+      setMultimarcasOpen(false);
+      setRevendaOpen(false);
+      setFranquiasOpen(false);
+      setAdminOpen(false);
       return;
     }
   };
@@ -679,17 +693,6 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             isActive={location.pathname === '/bi-externo'}
           />
 
-          {/* PRODUÇÃO */}
-          <MenuItem
-            item={{
-              name: 'Produção',
-              href: '/producao',
-              icon: ChartLineUp,
-              color: 'text-indigo-600',
-            }}
-            isActive={location.pathname === '/producao'}
-          />
-
           {/* Dashboard Faturamento */}
           <MenuItem
             item={{
@@ -775,6 +778,23 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             onToggle={() => handleSectionToggle('franquias')}
             icon={Users}
             color="text-amber-600"
+          />
+
+          {/* Seção Produção */}
+          <MenuSection
+            title="Produção"
+            items={[
+              {
+                name: 'Contas a Pagar',
+                href: '/producao',
+                icon: ChartLineUp,
+                color: 'text-indigo-600',
+              },
+            ]}
+            isOpen={producaoOpen}
+            onToggle={() => handleSectionToggle('producao')}
+            icon={ChartLineUp}
+            color="text-indigo-600"
           />
 
           {/* Minha Franquia (pasta) */}

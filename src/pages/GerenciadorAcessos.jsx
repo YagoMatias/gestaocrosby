@@ -31,7 +31,6 @@ const AVAILABLE_PAGES = [
   { path: '/crosby-bot', name: 'Crosby Bot', category: 'Principal' },
   { path: '/dashboard', name: 'BI Externo (Dashboard)', category: 'Principal' },
   { path: '/bi-externo', name: 'BI Externo', category: 'Principal' },
-  { path: '/producao', name: 'Produção', category: 'Principal' },
   {
     path: '/dashboard-faturamento',
     name: 'Dashboard Faturamento',
@@ -206,6 +205,9 @@ const AVAILABLE_PAGES = [
     name: 'Gerenciador de Acessos',
     category: 'Administração',
   },
+
+  // Produção
+  { path: '/producao', name: 'Contas a Pagar', category: 'Produção' },
 ];
 
 const GerenciadorAcessos = () => {

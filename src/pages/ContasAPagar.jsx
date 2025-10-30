@@ -87,6 +87,7 @@ const ContasAPagar = (props) => {
   const blockedCostCenters = (props?.__blockedCostCenters || []).map((n) =>
     typeof n === 'string' ? parseInt(n, 10) : Number(n),
   );
+  const despesasFixas = props?.__despesasFixas || null;
 
   // Debug logs para verificar o status do usuário
   useEffect(() => {
@@ -1413,7 +1414,26 @@ const ContasAPagar = (props) => {
               })
             : dadosProcessados;
 
-        setDados(dadosAposBloqueio);
+        // Aplicar filtro de despesas fixas, se configurado pelo wrapper
+        const dadosFinais =
+          despesasFixas && despesasFixas.length > 0
+            ? dadosAposBloqueio.filter((item) => {
+                const cdDespesa = parseInt(item.cd_despesaitem) || 0;
+                return despesasFixas.includes(cdDespesa);
+              })
+            : dadosAposBloqueio;
+
+        console.log('🔍 DEBUG - Filtro de despesas fixas:', {
+          despesasFixas,
+          totalAntes: dadosAposBloqueio.length,
+          totalDepois: dadosFinais.length,
+          amostraDespesas: dadosFinais.slice(0, 3).map((item) => ({
+            cd_despesaitem: item.cd_despesaitem,
+            ds_despesaitem: item.ds_despesaitem,
+          })),
+        });
+
+        setDados(dadosFinais);
         setDadosFornecedor(dadosFornecedorArray);
         setDadosCentroCusto(dadosCentroCustoArray);
         setDadosDespesa(dadosDespesaArray);
@@ -2487,7 +2507,7 @@ const ContasAPagar = (props) => {
             <div className="flex items-center">
               <button
                 type="submit"
-                className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
+                className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
                 disabled={loading || !dataInicio || !dataFim}
               >
                 {loading ? (
