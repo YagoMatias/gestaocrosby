@@ -914,17 +914,6 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               color="text-red-600"
             />
           </div>
-
-          {/* User Panel */}
-          <MenuItem
-            item={{
-              name: 'Configurações',
-              href: '/user-panel',
-              icon: UserGear,
-              color: 'text-gray-600',
-            }}
-            isActive={location.pathname === '/user-panel'}
-          />
         </nav>
 
         {/* Footer com info do usuário */}
