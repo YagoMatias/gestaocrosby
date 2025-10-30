@@ -12,9 +12,9 @@ const router = express.Router();
 // URL base da nossa API (Render)
 // Configurar via variável de ambiente API_BASE_URL no Render
 // Exemplo: https://sua-api.onrender.com
-const API_BASE_URL = 
-  process.env.API_BASE_URL || 
-  process.env.RENDER_EXTERNAL_URL || 
+const API_BASE_URL =
+  process.env.API_BASE_URL ||
+  process.env.RENDER_EXTERNAL_URL ||
   'http://localhost:4000';
 
 /**
@@ -28,10 +28,10 @@ router.get(
   asyncHandler(async (req, res) => {
     // Obter token atual (ou gerar novo se necessário)
     const tokenData = await getToken();
-    
+
     // Obter informações adicionais
     const tokenInfo = getTokenInfo();
-    
+
     successResponse(
       res,
       {
@@ -47,20 +47,19 @@ router.get(
       },
       'Token obtido com sucesso',
     );
-  })
+  }),
 );
 
 // URL da API TOTVS Moda - baseado na documentação Swagger
 // Documentação: https://www30.bhan.com.br:9443/api/totvsmoda/authorization/v2/swagger/index.html
 // Pode ser configurada via variável de ambiente TOTVS_AUTH_ENDPOINT
-const TOTVS_AUTH_ENDPOINT = 
-  process.env.TOTVS_AUTH_ENDPOINT || 
+const TOTVS_AUTH_ENDPOINT =
+  process.env.TOTVS_AUTH_ENDPOINT ||
   'https://www30.bhan.com.br:9443/api/totvsmoda/authorization/v2/token';
 
 // URL base da API TOTVS Moda
-const TOTVS_BASE_URL = 
-  process.env.TOTVS_BASE_URL || 
-  'https://www30.bhan.com.br:9443/api/totvsmoda';
+const TOTVS_BASE_URL =
+  process.env.TOTVS_BASE_URL || 'https://www30.bhan.com.br:9443/api/totvsmoda';
 
 /**
  * @route POST /totvs/auth
@@ -99,7 +98,9 @@ router.post(
       );
     }
 
-    if (!['password', 'client_credentials', 'refresh_token'].includes(grant_type)) {
+    if (
+      !['password', 'client_credentials', 'refresh_token'].includes(grant_type)
+    ) {
       return errorResponse(
         res,
         'grant_type inválido. Valores válidos: password, client_credentials, refresh_token',
@@ -111,7 +112,7 @@ router.post(
     // Preparar payload conforme grant_type
     // A API TOTVS espera application/x-www-form-urlencoded com nomes de campos específicos
     const formData = new URLSearchParams();
-    
+
     // Campos obrigatórios baseados no grant_type
     formData.append('Grant_type', grant_type);
 
@@ -159,16 +160,19 @@ router.post(
     } else {
       formData.append('Branch', '');
     }
-    
+
     if (req.body.mfa_totvs) {
       formData.append('Mfa_totvs', req.body.mfa_totvs);
     } else {
       formData.append('Mfa_totvs', '');
     }
-    
+
     // Campos adicionais opcionais (conforme documentação)
     if (req.body.validationResult) {
-      formData.append('ValidationResult.IsValid', req.body.validationResult.isValid || '');
+      formData.append(
+        'ValidationResult.IsValid',
+        req.body.validationResult.isValid || '',
+      );
     } else {
       formData.append('ValidationResult.IsValid', '');
     }
@@ -187,12 +191,12 @@ router.post(
         {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json',
+            Accept: 'application/json',
           },
           timeout: 30000, // 30 segundos de timeout
           // Pode ser necessário ignorar erros de certificado SSL em ambiente de desenvolvimento
           // httpsAgent: new https.Agent({ rejectUnauthorized: false }) // Descomente se necessário
-        }
+        },
       );
 
       console.log('✅ Token gerado com sucesso');
@@ -234,20 +238,19 @@ router.post(
         );
       } else if (error.request) {
         // A requisição foi feita mas não houve resposta
-        const errorMessage = error.code === 'ENOTFOUND'
-          ? `URL da API TOTVS não encontrada: ${TOTVS_AUTH_ENDPOINT}. Verifique se a URL está correta.`
-          : error.code === 'ECONNREFUSED'
-          ? `Conexão recusada pela API TOTVS: ${TOTVS_AUTH_ENDPOINT}. O servidor pode estar offline ou a porta está incorreta.`
-          : error.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' || error.code === 'CERT_HAS_EXPIRED'
-          ? `Erro de certificado SSL. Verifique a configuração do certificado da API TOTVS.`
-          : `Não foi possível conectar à API TOTVS (${error.code || 'Erro desconhecido'})`;
+        const errorMessage =
+          error.code === 'ENOTFOUND'
+            ? `URL da API TOTVS não encontrada: ${TOTVS_AUTH_ENDPOINT}. Verifique se a URL está correta.`
+            : error.code === 'ECONNREFUSED'
+            ? `Conexão recusada pela API TOTVS: ${TOTVS_AUTH_ENDPOINT}. O servidor pode estar offline ou a porta está incorreta.`
+            : error.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
+              error.code === 'CERT_HAS_EXPIRED'
+            ? `Erro de certificado SSL. Verifique a configuração do certificado da API TOTVS.`
+            : `Não foi possível conectar à API TOTVS (${
+                error.code || 'Erro desconhecido'
+              })`;
 
-        return errorResponse(
-          res,
-          errorMessage,
-          503,
-          'TOTVS_CONNECTION_ERROR',
-        );
+        return errorResponse(res, errorMessage, 503, 'TOTVS_CONNECTION_ERROR');
       } else {
         // Erro ao configurar a requisição
         throw new Error(`Erro ao chamar API TOTVS: ${error.message}`);
@@ -291,9 +294,14 @@ router.post(
     }
 
     // Converter para número se vier como string
-    const branchCodeNum = typeof branchCode === 'string' ? parseInt(branchCode, 10) : branchCode;
-    
-    if (isNaN(branchCodeNum) || branchCodeNum < 0 || branchCodeNum.toString().length > 4) {
+    const branchCodeNum =
+      typeof branchCode === 'string' ? parseInt(branchCode, 10) : branchCode;
+
+    if (
+      isNaN(branchCodeNum) ||
+      branchCodeNum < 0 ||
+      branchCodeNum.toString().length > 4
+    ) {
       return errorResponse(
         res,
         'O campo branchCode deve ser um número inteiro com máximo de 4 caracteres',
@@ -321,11 +329,22 @@ router.post(
       );
     }
 
-    if (customerCode !== undefined && customerCode !== null && customerCode !== '') {
+    if (
+      customerCode !== undefined &&
+      customerCode !== null &&
+      customerCode !== ''
+    ) {
       // Converter para número se vier como string
-      const customerCodeNum = typeof customerCode === 'string' ? parseInt(customerCode, 10) : customerCode;
-      
-      if (isNaN(customerCodeNum) || customerCodeNum < 0 || customerCodeNum.toString().length > 9) {
+      const customerCodeNum =
+        typeof customerCode === 'string'
+          ? parseInt(customerCode, 10)
+          : customerCode;
+
+      if (
+        isNaN(customerCodeNum) ||
+        customerCodeNum < 0 ||
+        customerCodeNum.toString().length > 9
+      ) {
         return errorResponse(
           res,
           'O campo customerCode deve ser um número inteiro com máximo de 9 caracteres',
@@ -337,7 +356,10 @@ router.post(
 
     if (customerCpfCnpj) {
       // Validar que customerCpfCnpj contenha apenas números e tenha máximo 14 caracteres
-      if (typeof customerCpfCnpj !== 'string' || !/^\d+$/.test(customerCpfCnpj)) {
+      if (
+        typeof customerCpfCnpj !== 'string' ||
+        !/^\d+$/.test(customerCpfCnpj)
+      ) {
         return errorResponse(
           res,
           'O campo customerCpfCnpj deve conter apenas números',
@@ -356,7 +378,11 @@ router.post(
       }
     }
 
-    if (receivableCode === undefined || receivableCode === null || receivableCode === '') {
+    if (
+      receivableCode === undefined ||
+      receivableCode === null ||
+      receivableCode === ''
+    ) {
       return errorResponse(
         res,
         'O campo receivableCode é obrigatório',
@@ -366,9 +392,16 @@ router.post(
     }
 
     // Converter para número se vier como string
-    const receivableCodeNum = typeof receivableCode === 'string' ? parseInt(receivableCode, 10) : receivableCode;
-    
-    if (isNaN(receivableCodeNum) || receivableCodeNum < 0 || receivableCodeNum.toString().length > 10) {
+    const receivableCodeNum =
+      typeof receivableCode === 'string'
+        ? parseInt(receivableCode, 10)
+        : receivableCode;
+
+    if (
+      isNaN(receivableCodeNum) ||
+      receivableCodeNum < 0 ||
+      receivableCodeNum.toString().length > 10
+    ) {
       return errorResponse(
         res,
         'O campo receivableCode deve ser um número inteiro com máximo de 10 caracteres',
@@ -377,7 +410,11 @@ router.post(
       );
     }
 
-    if (installmentNumber === undefined || installmentNumber === null || installmentNumber === '') {
+    if (
+      installmentNumber === undefined ||
+      installmentNumber === null ||
+      installmentNumber === ''
+    ) {
       return errorResponse(
         res,
         'O campo installmentNumber é obrigatório',
@@ -387,9 +424,16 @@ router.post(
     }
 
     // Converter para número se vier como string
-    const installmentNumberNum = typeof installmentNumber === 'string' ? parseInt(installmentNumber, 10) : installmentNumber;
-    
-    if (isNaN(installmentNumberNum) || installmentNumberNum < 0 || installmentNumberNum.toString().length > 3) {
+    const installmentNumberNum =
+      typeof installmentNumber === 'string'
+        ? parseInt(installmentNumber, 10)
+        : installmentNumber;
+
+    if (
+      isNaN(installmentNumberNum) ||
+      installmentNumberNum < 0 ||
+      installmentNumberNum.toString().length > 3
+    ) {
       return errorResponse(
         res,
         'O campo installmentNumber deve ser um número inteiro com máximo de 3 caracteres',
@@ -401,7 +445,7 @@ router.post(
     try {
       // Obter token atual (ou gerar novo se necessário)
       const tokenData = await getToken();
-      
+
       if (!tokenData || !tokenData.access_token) {
         return errorResponse(
           res,
@@ -419,8 +463,15 @@ router.post(
       };
 
       // Adicionar customerCode OU customerCpfCnpj (não ambos)
-      if (customerCode !== undefined && customerCode !== null && customerCode !== '') {
-        const customerCodeNum = typeof customerCode === 'string' ? parseInt(customerCode, 10) : customerCode;
+      if (
+        customerCode !== undefined &&
+        customerCode !== null &&
+        customerCode !== ''
+      ) {
+        const customerCodeNum =
+          typeof customerCode === 'string'
+            ? parseInt(customerCode, 10)
+            : customerCode;
         payload.customerCode = customerCodeNum;
       } else {
         payload.customerCpfCnpj = customerCpfCnpj;
@@ -431,7 +482,9 @@ router.post(
         branchCode: payload.branchCode,
         receivableCode: payload.receivableCode,
         installmentNumber: payload.installmentNumber,
-        customerIdentifier: payload.customerCode ? `Code: ${payload.customerCode}` : `CPF/CNPJ: ${payload.customerCpfCnpj}`,
+        customerIdentifier: payload.customerCode
+          ? `Code: ${payload.customerCode}`
+          : `CPF/CNPJ: ${payload.customerCpfCnpj}`,
       });
 
       // Fazer requisição para a API TOTVS
@@ -441,11 +494,11 @@ router.post(
         {
           headers: {
             'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'Authorization': `Bearer ${tokenData.access_token}`,
+            Accept: 'application/json',
+            Authorization: `Bearer ${tokenData.access_token}`,
           },
           timeout: 30000, // 30 segundos de timeout
-        }
+        },
       );
 
       console.log('✅ Boleto bancário gerado com sucesso');
@@ -453,7 +506,7 @@ router.post(
       // A API TOTVS retorna o base64 do boleto
       // Pode vir como string direto ou em uma propriedade base64
       let base64Data = null;
-      
+
       if (typeof response.data === 'string') {
         base64Data = response.data;
       } else if (response.data?.base64) {
@@ -470,11 +523,14 @@ router.post(
         {
           base64: base64Data,
           // Incluir outras propriedades que a API retornar
-          ...(typeof response.data === 'object' && response.data?.base64 ? 
-            Object.keys(response.data).filter(k => k !== 'base64').reduce((acc, k) => {
-              acc[k] = response.data[k];
-              return acc;
-            }, {}) : {}),
+          ...(typeof response.data === 'object' && response.data?.base64
+            ? Object.keys(response.data)
+                .filter((k) => k !== 'base64')
+                .reduce((acc, k) => {
+                  acc[k] = response.data[k];
+                  return acc;
+                }, {})
+            : {}),
         },
         'Boleto bancário gerado com sucesso',
       );
@@ -494,7 +550,7 @@ router.post(
           console.log('🔄 Token inválido. Tentando gerar novo token...');
           try {
             const newTokenData = await getToken(true); // Forçar geração de novo token
-            
+
             // Preparar payload novamente
             const payload = {
               branchCode: parseInt(branchCode, 10),
@@ -515,18 +571,20 @@ router.post(
               {
                 headers: {
                   'Content-Type': 'application/json',
-                  'Accept': 'application/json',
-                  'Authorization': `Bearer ${newTokenData.access_token}`,
+                  Accept: 'application/json',
+                  Authorization: `Bearer ${newTokenData.access_token}`,
                 },
                 timeout: 30000,
-              }
+              },
             );
 
-            console.log('✅ Boleto bancário gerado com sucesso após renovar token');
+            console.log(
+              '✅ Boleto bancário gerado com sucesso após renovar token',
+            );
 
             // Processar base64 da mesma forma que o primeiro try
             let retryBase64Data = null;
-            
+
             if (typeof retryResponse.data === 'string') {
               retryBase64Data = retryResponse.data;
             } else if (retryResponse.data?.base64) {
@@ -541,20 +599,24 @@ router.post(
               res,
               {
                 base64: retryBase64Data,
-                ...(typeof retryResponse.data === 'object' && retryResponse.data?.base64 ? 
-                  Object.keys(retryResponse.data).filter(k => k !== 'base64').reduce((acc, k) => {
-                    acc[k] = retryResponse.data[k];
-                    return acc;
-                  }, {}) : {}),
+                ...(typeof retryResponse.data === 'object' &&
+                retryResponse.data?.base64
+                  ? Object.keys(retryResponse.data)
+                      .filter((k) => k !== 'base64')
+                      .reduce((acc, k) => {
+                        acc[k] = retryResponse.data[k];
+                        return acc;
+                      }, {})
+                  : {}),
               },
               'Boleto bancário gerado com sucesso',
             );
           } catch (retryError) {
             return errorResponse(
               res,
-              retryError.response?.data?.message || 
-              retryError.response?.data?.error ||
-              'Erro ao gerar boleto bancário na API TOTVS após renovar token',
+              retryError.response?.data?.message ||
+                retryError.response?.data?.error ||
+                'Erro ao gerar boleto bancário na API TOTVS após renovar token',
               retryError.response?.status || 500,
               'TOTVS_API_ERROR',
             );
@@ -562,10 +624,13 @@ router.post(
         }
 
         // Retornar erro detalhado da API TOTVS
-        const errorMessage = error.response.data?.message ||
+        const errorMessage =
+          error.response.data?.message ||
           error.response.data?.error ||
           error.response.data?.error_description ||
-          (typeof error.response.data === 'string' ? error.response.data : 'Erro ao gerar boleto bancário na API TOTVS');
+          (typeof error.response.data === 'string'
+            ? error.response.data
+            : 'Erro ao gerar boleto bancário na API TOTVS');
 
         // Retornar resposta de erro com detalhes adicionais
         res.status(error.response.status || 400).json({
@@ -578,30 +643,589 @@ router.post(
             branchCode: branchCodeNum,
             receivableCode: receivableCodeNum,
             installmentNumber: installmentNumberNum,
-            customerIdentifier: customerCode ? `Code: ${customerCode}` : `CPF/CNPJ: ${customerCpfCnpj}`,
+            customerIdentifier: customerCode
+              ? `Code: ${customerCode}`
+              : `CPF/CNPJ: ${customerCpfCnpj}`,
           },
         });
         return;
       } else if (error.request) {
         // A requisição foi feita mas não houve resposta
-        const errorMessage = error.code === 'ENOTFOUND'
-          ? `URL da API TOTVS não encontrada. Verifique se a URL está correta.`
-          : error.code === 'ECONNREFUSED'
-          ? `Conexão recusada pela API TOTVS. O servidor pode estar offline.`
-          : `Não foi possível conectar à API TOTVS (${error.code || 'Erro desconhecido'})`;
+        const errorMessage =
+          error.code === 'ENOTFOUND'
+            ? `URL da API TOTVS não encontrada. Verifique se a URL está correta.`
+            : error.code === 'ECONNREFUSED'
+            ? `Conexão recusada pela API TOTVS. O servidor pode estar offline.`
+            : `Não foi possível conectar à API TOTVS (${
+                error.code || 'Erro desconhecido'
+              })`;
 
-        return errorResponse(
-          res,
-          errorMessage,
-          503,
-          'TOTVS_CONNECTION_ERROR',
-        );
+        return errorResponse(res, errorMessage, 503, 'TOTVS_CONNECTION_ERROR');
       } else {
         // Erro ao configurar a requisição
         throw new Error(`Erro ao chamar API TOTVS: ${error.message}`);
       }
     }
-  })
+  }),
+);
+
+router.post(
+  '/invoices-search',
+  asyncHandler(async (req, res) => {
+    try {
+      // Obter token atual (ou gerar novo se necessário)
+      const tokenData = await getToken();
+
+      if (!tokenData || !tokenData.access_token) {
+        return errorResponse(
+          res,
+          'Não foi possível obter token de autenticação TOTVS',
+          503,
+          'TOKEN_UNAVAILABLE',
+        );
+      }
+
+      // Montar payload com padrões e sobrepor com corpo recebido
+      const defaultPayload = {
+        filter: {
+          change: {},
+        },
+        page: 1,
+        pageSize: 100,
+        expand: 'person',
+      };
+
+      const payload = {
+        ...defaultPayload,
+        ...req.body,
+        filter: {
+          ...defaultPayload.filter,
+          ...(req.body?.filter || {}),
+        },
+      };
+
+      const endpoint = `${TOTVS_BASE_URL}/fiscal/v2/invoices/search`;
+
+      console.log('🧾 Buscando notas fiscais na API TOTVS:', {
+        endpoint,
+        page: payload.page,
+        pageSize: payload.pageSize,
+        hasPerson: payload.expand,
+      });
+
+      const doRequest = async (accessToken) =>
+        axios.post(endpoint, payload, {
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          timeout: 30000,
+        });
+
+      let response;
+      try {
+        response = await doRequest(tokenData.access_token);
+      } catch (error) {
+        if (error.response?.status === 401) {
+          console.log(
+            '🔄 Token inválido ao buscar notas fiscais. Renovando token...',
+          );
+          const newTokenData = await getToken(true);
+          response = await doRequest(newTokenData.access_token);
+        } else {
+          throw error;
+        }
+      }
+
+      successResponse(
+        res,
+        {
+          ...response.data,
+        },
+        'Notas fiscais obtidas com sucesso',
+      );
+    } catch (error) {
+      console.error('❌ Erro ao buscar notas fiscais na API TOTVS:', {
+        message: error.message,
+        code: error.code,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
+
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message ||
+          error.response.data?.error ||
+          error.response.data?.error_description ||
+          (typeof error.response.data === 'string'
+            ? error.response.data
+            : 'Erro ao buscar notas fiscais na API TOTVS');
+
+        return res.status(error.response.status || 400).json({
+          success: false,
+          message: errorMessage,
+          error: 'TOTVS_API_ERROR',
+          timestamp: new Date().toISOString(),
+          details: error.response.data,
+          payload: req.body,
+        });
+      } else if (error.request) {
+        const errorMessage =
+          error.code === 'ENOTFOUND'
+            ? 'URL da API TOTVS não encontrada. Verifique se a URL está correta.'
+            : error.code === 'ECONNREFUSED'
+            ? 'Conexão recusada pela API TOTVS. O servidor pode estar offline.'
+            : `Não foi possível conectar à API TOTVS (${
+                error.code || 'Erro desconhecido'
+              })`;
+
+        return errorResponse(res, errorMessage, 503, 'TOTVS_CONNECTION_ERROR');
+      }
+
+      throw new Error(`Erro ao chamar API TOTVS: ${error.message}`);
+    }
+  }),
+);
+
+router.post(
+  '/danfe-search',
+  asyncHandler(async (req, res) => {
+    const { mainInvoiceXml, nfeDocumentType } = req.body || {};
+
+    if (
+      !mainInvoiceXml ||
+      typeof mainInvoiceXml !== 'string' ||
+      mainInvoiceXml.trim() === ''
+    ) {
+      return errorResponse(
+        res,
+        'O campo mainInvoiceXml é obrigatório e deve ser uma string com conteúdo',
+        400,
+        'MISSING_MAIN_INVOICE_XML',
+      );
+    }
+
+    // Valor padrão conforme especificado
+    const documentType = nfeDocumentType || 'NFeNormal';
+
+    try {
+      // Obter token atual (ou gerar novo se necessário)
+      const tokenData = await getToken();
+
+      if (!tokenData || !tokenData.access_token) {
+        return errorResponse(
+          res,
+          'Não foi possível obter token de autenticação TOTVS',
+          503,
+          'TOKEN_UNAVAILABLE',
+        );
+      }
+
+      const endpoint = `${TOTVS_BASE_URL}/fiscal/v2/danfe-search`;
+      const payload = {
+        mainInvoiceXml,
+        nfeDocumentType: documentType,
+      };
+
+      console.log('🧾 Gerando DANFE na API TOTVS:', {
+        endpoint,
+        nfeDocumentType: payload.nfeDocumentType,
+        xmlLength: mainInvoiceXml.length,
+      });
+
+      const doRequest = async (accessToken) =>
+        axios.post(endpoint, payload, {
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          timeout: 30000,
+        });
+
+      let response;
+      try {
+        response = await doRequest(tokenData.access_token);
+      } catch (error) {
+        if (error.response?.status === 401) {
+          console.log('🔄 Token inválido ao gerar DANFE. Renovando token...');
+          const newTokenData = await getToken(true);
+          response = await doRequest(newTokenData.access_token);
+        } else {
+          throw error;
+        }
+      }
+
+      successResponse(res, response.data, 'DANFE gerada com sucesso');
+    } catch (error) {
+      console.error('❌ Erro ao gerar DANFE na API TOTVS:', {
+        message: error.message,
+        code: error.code,
+        response: error.response?.data,
+        status: error.response?.status,
+        headers: error.response?.headers,
+        url: error.config?.url,
+      });
+
+      if (error.response) {
+        let errorMessage = 'Erro ao gerar DANFE na API TOTVS';
+        if (error.response.data) {
+          if (typeof error.response.data === 'string') {
+            errorMessage = error.response.data || errorMessage;
+          } else if (typeof error.response.data === 'object') {
+            errorMessage =
+              error.response.data?.message ||
+              error.response.data?.error ||
+              error.response.data?.error_description ||
+              error.response.data?.title ||
+              errorMessage;
+          }
+        }
+
+        return res.status(error.response.status || 400).json({
+          success: false,
+          message: errorMessage,
+          error: 'TOTVS_API_ERROR',
+          timestamp: new Date().toISOString(),
+          details: error.response.data || null,
+          status: error.response.status,
+          payload: {
+            nfeDocumentType: documentType,
+            mainInvoiceXmlLength: mainInvoiceXml?.length,
+          },
+        });
+      } else if (error.request) {
+        const errorMessage =
+          error.code === 'ENOTFOUND'
+            ? 'URL da API TOTVS não encontrada. Verifique se a URL está correta.'
+            : error.code === 'ECONNREFUSED'
+            ? 'Conexão recusada pela API TOTVS. O servidor pode estar offline.'
+            : `Não foi possível conectar à API TOTVS (${
+                error.code || 'Erro desconhecido'
+              })`;
+
+        return errorResponse(res, errorMessage, 503, 'TOTVS_CONNECTION_ERROR');
+      }
+
+      throw new Error(`Erro ao chamar API TOTVS: ${error.message}`);
+    }
+  }),
+);
+
+router.post(
+  '/danfe-from-invoice',
+  asyncHandler(async (req, res) => {
+    // Payload esperado é o mesmo da invoices-search
+    const searchPayload = req.body || {};
+
+    try {
+      // Obter token
+      const tokenData = await getToken();
+      if (!tokenData?.access_token) {
+        return errorResponse(
+          res,
+          'Não foi possível obter token de autenticação TOTVS',
+          503,
+          'TOKEN_UNAVAILABLE',
+        );
+      }
+
+      const token = tokenData.access_token;
+
+      // 1) invoices/search -> obter accessKey
+      const invoicesEndpoint = `${TOTVS_BASE_URL}/fiscal/v2/invoices/search`;
+      const invoicesDefaults = {
+        filter: { change: {} },
+        page: 1,
+        pageSize: 100,
+        expand: 'person',
+      };
+      const invoicesBody = {
+        ...invoicesDefaults,
+        ...searchPayload,
+        filter: { ...invoicesDefaults.filter, ...(searchPayload.filter || {}) },
+      };
+
+      const doInvoicesRequest = async (accessToken) =>
+        axios.post(invoicesEndpoint, invoicesBody, {
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          timeout: 30000,
+        });
+
+      let invoicesResp;
+      try {
+        invoicesResp = await doInvoicesRequest(token);
+      } catch (error) {
+        if (error.response?.status === 401) {
+          const newToken = (await getToken(true))?.access_token;
+          invoicesResp = await doInvoicesRequest(newToken);
+        } else {
+          throw error;
+        }
+      }
+
+      const items = invoicesResp?.data?.items || [];
+      if (!Array.isArray(items) || items.length === 0) {
+        return errorResponse(
+          res,
+          'Nenhuma nota fiscal encontrada para os filtros informados',
+          404,
+          'INVOICE_NOT_FOUND',
+        );
+      }
+
+      // Usar o primeiro item encontrado (ou permitir index via req.body.index futuramente)
+      const first = items[0];
+      const accessKey = first?.eletronic?.accessKey;
+      if (!accessKey) {
+        return errorResponse(
+          res,
+          'Chave de acesso não encontrada na resposta de invoices-search',
+          404,
+          'ACCESS_KEY_NOT_FOUND',
+        );
+      }
+
+      // 2) xml-contents -> obter XML principal
+      const xmlEndpoint = `${TOTVS_BASE_URL}/fiscal/v2/xml-contents/${encodeURIComponent(
+        accessKey,
+      )}`;
+
+      const doXmlRequest = async (accessToken) =>
+        axios.get(xmlEndpoint, {
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          timeout: 30000,
+        });
+
+      let xmlResp;
+      try {
+        xmlResp = await doXmlRequest(token);
+      } catch (error) {
+        if (error.response?.status === 401) {
+          const newToken = (await getToken(true))?.access_token;
+          xmlResp = await doXmlRequest(newToken);
+        } else {
+          throw error;
+        }
+      }
+
+      const mainInvoiceXml =
+        xmlResp?.data?.mainInvoiceXml || xmlResp?.data?.data?.mainInvoiceXml;
+      if (!mainInvoiceXml) {
+        return errorResponse(
+          res,
+          'XML principal da NFe não retornado pela API TOTVS',
+          404,
+          'XML_NOT_FOUND',
+        );
+      }
+
+      // 3) danfe-search -> obter base64 do PDF
+      const danfeEndpoint = `${TOTVS_BASE_URL}/fiscal/v2/danfe-search`;
+      const danfeBody = {
+        mainInvoiceXml,
+        nfeDocumentType: 'NFeNormal',
+      };
+
+      const doDanfeRequest = async (accessToken) =>
+        axios.post(danfeEndpoint, danfeBody, {
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          timeout: 30000,
+        });
+
+      let danfeResp;
+      try {
+        danfeResp = await doDanfeRequest(token);
+      } catch (error) {
+        if (error.response?.status === 401) {
+          const newToken = (await getToken(true))?.access_token;
+          danfeResp = await doDanfeRequest(newToken);
+        } else {
+          throw error;
+        }
+      }
+
+      const danfePdfBase64 = danfeResp?.data?.danfePdfBase64;
+      if (!danfePdfBase64) {
+        return errorResponse(
+          res,
+          'DANFE não retornada pela API TOTVS',
+          502,
+          'DANFE_NOT_RETURNED',
+        );
+      }
+
+      // Sucesso
+      return successResponse(
+        res,
+        {
+          danfePdfBase64,
+          accessKey,
+          invoice: {
+            branchCode: first?.branchCode,
+            invoiceCode: first?.invoiceCode,
+            serialCode: first?.serialCode,
+            personCode: first?.personCode,
+            personName: first?.personName,
+            invoiceDate: first?.invoiceDate,
+          },
+        },
+        'DANFE gerada com sucesso a partir da pesquisa de notas',
+      );
+    } catch (error) {
+      // Tratamento de erro geral
+      const status = error.response?.status || 500;
+      const details = error.response?.data || null;
+      const message =
+        details?.message ||
+        details?.error ||
+        details?.error_description ||
+        error.message ||
+        'Erro ao gerar DANFE';
+      return res.status(status).json({
+        success: false,
+        message,
+        error: 'DANFE_FLOW_ERROR',
+        timestamp: new Date().toISOString(),
+        details,
+        step: details ? undefined : 'unknown',
+      });
+    }
+  }),
+);
+
+router.get(
+  '/xml-contents/:accessKey?',
+  asyncHandler(async (req, res) => {
+    const accessKey = req.params.accessKey || req.query.accessKey;
+
+    if (!accessKey) {
+      return errorResponse(
+        res,
+        'O parâmetro accessKey é obrigatório',
+        400,
+        'MISSING_ACCESS_KEY',
+      );
+    }
+
+    try {
+      // Obter token atual (ou gerar novo se necessário)
+      const tokenData = await getToken();
+
+      if (!tokenData || !tokenData.access_token) {
+        return errorResponse(
+          res,
+          'Não foi possível obter token de autenticação TOTVS',
+          503,
+          'TOKEN_UNAVAILABLE',
+        );
+      }
+
+      const endpoint = `${TOTVS_BASE_URL}/fiscal/v2/xml-contents/${encodeURIComponent(
+        accessKey,
+      )}`;
+
+      console.log('📄 Buscando XML da NF-e na API TOTVS:', {
+        endpoint,
+        accessKey,
+        hasAccessKey: Boolean(accessKey),
+      });
+
+      const doRequest = async (accessToken) =>
+        axios.get(endpoint, {
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          timeout: 30000,
+        });
+
+      let response;
+      try {
+        response = await doRequest(tokenData.access_token);
+      } catch (error) {
+        if (error.response?.status === 401) {
+          console.log('🔄 Token inválido ao buscar XML. Renovando token...');
+          const newTokenData = await getToken(true);
+          response = await doRequest(newTokenData.access_token);
+        } else {
+          throw error;
+        }
+      }
+
+      successResponse(
+        res,
+        response.data,
+        'XML da nota fiscal obtido com sucesso',
+      );
+    } catch (error) {
+      console.error('❌ Erro ao buscar XML da NF-e na API TOTVS:', {
+        message: error.message,
+        code: error.code,
+        response: error.response?.data,
+        status: error.response?.status,
+        headers: error.response?.headers,
+        url: error.config?.url,
+      });
+
+      if (error.response) {
+        // Tratamento melhorado para diferentes formatos de erro
+        let errorMessage = 'Erro ao buscar XML da NF-e na API TOTVS';
+
+        if (error.response.data) {
+          if (typeof error.response.data === 'string') {
+            errorMessage = error.response.data || errorMessage;
+          } else if (typeof error.response.data === 'object') {
+            errorMessage =
+              error.response.data?.message ||
+              error.response.data?.error ||
+              error.response.data?.error_description ||
+              error.response.data?.title ||
+              (error.response.status === 404
+                ? 'Nota fiscal não encontrada na API TOTVS'
+                : errorMessage);
+          }
+        } else if (error.response.status === 404) {
+          errorMessage = 'Nota fiscal não encontrada na API TOTVS';
+        }
+
+        return res.status(error.response.status || 400).json({
+          success: false,
+          message: errorMessage,
+          error: 'TOTVS_API_ERROR',
+          timestamp: new Date().toISOString(),
+          details: error.response.data || null,
+          status: error.response.status,
+          payload: { accessKey },
+        });
+      } else if (error.request) {
+        const errorMessage =
+          error.code === 'ENOTFOUND'
+            ? 'URL da API TOTVS não encontrada. Verifique se a URL está correta.'
+            : error.code === 'ECONNREFUSED'
+            ? 'Conexão recusada pela API TOTVS. O servidor pode estar offline.'
+            : `Não foi possível conectar à API TOTVS (${
+                error.code || 'Erro desconhecido'
+              })`;
+
+        return errorResponse(res, errorMessage, 503, 'TOTVS_CONNECTION_ERROR');
+      }
+
+      throw new Error(`Erro ao chamar API TOTVS: ${error.message}`);
+    }
+  }),
 );
 
 export default router;

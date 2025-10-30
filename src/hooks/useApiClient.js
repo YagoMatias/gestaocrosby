@@ -424,6 +424,7 @@ const useApiClient = () => {
   const franchise = {
     franquiasCredev: (params) =>
       apiCall('/api/franchise/franquias-credev', params),
+    meusPedidos: (params) => apiCall('/api/franchise/meuspedidos', params),
   };
 
   const utils = {

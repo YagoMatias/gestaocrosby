@@ -18,6 +18,7 @@ const ContasAReceberEmissao = lazy(() =>
   import('./pages/ContasAReceberEmissao'),
 );
 const ContasPagarFranquias = lazy(() => import('./pages/ContasPagarFranquias'));
+const MeusPedidos = lazy(() => import('./pages/MeusPedidos'));
 const DespesasPorSetor = lazy(() => import('./pages/DespesasPorSetor'));
 const FluxoCaixa = lazy(() => import('./pages/FluxoCaixa'));
 const ExtratoFinanceiro = lazy(() => import('./pages/ExtratoFinanceiro'));
@@ -116,6 +117,7 @@ const AppRoutes = memo(() => {
     { path: '/contas-a-receber', component: ContasAReceber },
     { path: '/contas-a-receber-emissao', component: ContasAReceberEmissao },
     { path: '/contas-pagar-franquias', component: ContasPagarFranquias },
+    { path: '/meus-pedidos', component: MeusPedidos },
     { path: '/fluxo-caixa', component: FluxoCaixa },
     { path: '/saldo-bancario', component: SaldoBancario },
     { path: '/importacao-ret', component: ImportacaoRet },

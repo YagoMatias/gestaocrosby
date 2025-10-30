@@ -92,13 +92,6 @@ const financeiro = [
         color: 'text-green-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
-      {
-        name: 'Franquias',
-        href: '/contas-pagar-franquias',
-        icon: Calendar,
-        color: 'text-green-600',
-        roles: ['owner', 'admin', 'manager', 'user'],
-      },
     ],
   },
   {
@@ -783,6 +776,12 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                   href: '/contas-pagar-franquias',
                   icon: Receipt,
                   color: 'text-red-600',
+                },
+                {
+                  name: 'Meus Pedidos',
+                  href: '/meus-pedidos',
+                  icon: ShoppingCart,
+                  color: 'text-blue-600',
                 },
               ],
             }}
