@@ -890,18 +890,18 @@ const RankingFaturamento = () => {
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
               <CardHeader className="pb-0">
                 <div className="flex items-center gap-2">
-                  <Storefront size={18} className="text-green-600" />
-                  <CardTitle className="text-sm font-bold text-green-700">
+                  <Storefront size={18} className="text-orange-600" />
+                  <CardTitle className="text-sm font-bold text-orange-700">
                     Total de {rankingTipo === 'lojas' ? 'Lojas' : 'Vendedores'}
                   </CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-2xl font-extrabold text-green-600 mb-1">
+                <div className="text-2xl font-extrabold text-orange-600 mb-1">
                   {loading ? (
                     <Spinner
                       size={24}
-                      className="animate-spin text-green-600"
+                      className="animate-spin text-orange-600"
                     />
                   ) : rankingTipo === 'lojas' ? (
                     dadosLojasFiltrados.length
@@ -918,18 +918,18 @@ const RankingFaturamento = () => {
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
               <CardHeader className="pb-0">
                 <div className="flex items-center gap-2">
-                  <CurrencyDollar size={18} className="text-orange-600" />
-                  <CardTitle className="text-sm font-bold text-orange-700">
+                  <CurrencyDollar size={18} className="text-green-600" />
+                  <CardTitle className="text-sm font-bold text-green-700">
                     Faturamento Total
                   </CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-2xl font-extrabold text-orange-600 mb-1 break-words">
+                <div className="text-2xl font-extrabold text-green-600 mb-1 break-words">
                   {loading ? (
                     <Spinner
                       size={24}
-                      className="animate-spin text-orange-600"
+                      className="animate-spin text-green-600"
                     />
                   ) : (
                     formatCurrency(

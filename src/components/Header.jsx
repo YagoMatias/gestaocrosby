@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { User, SignOut, Gear, List } from '@phosphor-icons/react';
+import NotificationBell from './NotificationBell';
 
 const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
   const { user, logout } = useAuth();
@@ -136,7 +137,10 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
           </div>
         </div>
 
-        <div className="flex items-center">
+        <div className="flex items-center gap-2">
+          {/* Sino de Notificações */}
+          <NotificationBell />
+
           {/* Dropdown do usuário */}
           <div className="relative" ref={dropdownRef}>
             <button

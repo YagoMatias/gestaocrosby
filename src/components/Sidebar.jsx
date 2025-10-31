@@ -916,6 +916,12 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                   icon: Shield,
                   color: 'text-purple-600',
                 },
+                {
+                  name: 'Gerenciador de Avisos',
+                  href: '/gerenciador-avisos',
+                  icon: Megaphone,
+                  color: 'text-orange-600',
+                },
               ]}
               isOpen={adminOpen}
               onToggle={() => handleSectionToggle('admin')}

@@ -205,6 +205,11 @@ const AVAILABLE_PAGES = [
     name: 'Gerenciador de Acessos',
     category: 'Administração',
   },
+  {
+    path: '/gerenciador-avisos',
+    name: 'Gerenciador de Avisos',
+    category: 'Administração',
+  },
 
   // Produção
   { path: '/producao', name: 'Contas a Pagar', category: 'Produção' },

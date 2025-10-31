@@ -1094,116 +1094,162 @@ const ContasPagarFranquias = () => {
                 </div>
               </div>
 
-              {/* Seção 2: Boleto Bancário */}
-              <div className="border border-gray-200 rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <FileArrowDown size={20} className="text-green-600" />
-                  Baixar Boleto Bancário
-                </h3>
+              {/* Seção 2: Boleto Bancário - Só aparece se não estiver pago */}
+              {(() => {
+                const valorFaturado =
+                  parseFloat(faturaSelecionada?.vl_fatura) || 0;
+                const valorPago = parseFloat(faturaSelecionada?.vl_pago) || 0;
+                const estaPago =
+                  valorPago >= valorFaturado && valorFaturado > 0;
 
-                <div className="min-h-[200px]">
-                  {!boletoBase64 && !boletoLoading && !boletoError && (
-                    <div className="flex flex-col items-center justify-center py-8">
-                      <p className="text-sm text-gray-500 mb-4 text-center">
-                        Clique no botão abaixo para gerar o boleto bancário
-                      </p>
-                      <button
-                        onClick={buscarBoleto}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors font-medium"
-                      >
-                        <FileArrowDown size={18} weight="bold" />
-                        Gerar Boleto
-                      </button>
+                return !estaPago ? (
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                      <FileArrowDown size={20} className="text-green-600" />
+                      Baixar Boleto Bancário
+                    </h3>
+
+                    <div className="min-h-[200px]">
+                      {!boletoBase64 && !boletoLoading && !boletoError && (
+                        <div className="flex flex-col items-center justify-center py-8">
+                          <p className="text-sm text-gray-500 mb-4 text-center">
+                            Clique no botão abaixo para gerar o boleto bancário
+                          </p>
+                          <button
+                            onClick={buscarBoleto}
+                            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors font-medium"
+                          >
+                            <FileArrowDown size={18} weight="bold" />
+                            Gerar Boleto
+                          </button>
+                        </div>
+                      )}
+
+                      {boletoLoading && (
+                        <div className="flex items-center justify-center py-6">
+                          <LoadingSpinner size="sm" text="Gerando boleto..." />
+                        </div>
+                      )}
+
+                      {boletoError && (
+                        <div className="bg-red-50 border border-red-200 rounded p-4">
+                          <p className="text-sm text-red-600 font-medium mb-2">
+                            Erro ao gerar boleto:
+                          </p>
+                          <p className="text-sm text-red-500">{boletoError}</p>
+                          <button
+                            onClick={buscarBoleto}
+                            className="mt-3 text-sm text-red-600 hover:text-red-700 font-medium"
+                          >
+                            Tentar novamente
+                          </button>
+                        </div>
+                      )}
+
+                      {boletoBase64 && (
+                        <div className="space-y-3">
+                          <div className="bg-green-50 border border-green-200 rounded p-3">
+                            <p className="text-sm text-green-700 font-medium flex items-center gap-2">
+                              <CheckCircle
+                                size={16}
+                                className="text-green-600"
+                              />
+                              Boleto gerado e aberto em nova aba!
+                            </p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <button
+                              onClick={() => abrirPDF(boletoBase64)}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium"
+                            >
+                              <Eye size={18} weight="bold" />
+                              Visualizar Boleto Novamente
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                const base64 = boletoBase64.replace(
+                                  /^data:application\/pdf;base64,/,
+                                  '',
+                                );
+                                const binaryString = window.atob(base64);
+                                const bytes = new Uint8Array(
+                                  binaryString.length,
+                                );
+                                for (let i = 0; i < binaryString.length; i++) {
+                                  bytes[i] = binaryString.charCodeAt(i);
+                                }
+                                const blob = new Blob([bytes], {
+                                  type: 'application/pdf',
+                                });
+                                baixarPDF(blob);
+                              }}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors font-medium"
+                            >
+                              <FileArrowDown size={18} weight="bold" />
+                              Baixar Boleto
+                            </button>
+                          </div>
+
+                          <div className="bg-gray-50 border border-gray-200 rounded p-3">
+                            <p className="text-xs font-semibold text-gray-700 mb-2">
+                              Informações técnicas:
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Tamanho do arquivo:{' '}
+                              {typeof boletoBase64 === 'string'
+                                ? `${(
+                                    (boletoBase64.length * 0.75) /
+                                    1024
+                                  ).toFixed(2)} KB`
+                                : '0 KB'}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Formato: PDF
+                            </p>
+                          </div>
+
+                          <button
+                            onClick={buscarBoleto}
+                            className="w-full text-sm text-gray-600 hover:text-gray-700 font-medium"
+                          >
+                            Gerar novamente
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
-
-                  {boletoLoading && (
-                    <div className="flex items-center justify-center py-6">
-                      <LoadingSpinner size="sm" text="Gerando boleto..." />
-                    </div>
-                  )}
-
-                  {boletoError && (
-                    <div className="bg-red-50 border border-red-200 rounded p-4">
-                      <p className="text-sm text-red-600 font-medium mb-2">
-                        Erro ao gerar boleto:
-                      </p>
-                      <p className="text-sm text-red-500">{boletoError}</p>
-                      <button
-                        onClick={buscarBoleto}
-                        className="mt-3 text-sm text-red-600 hover:text-red-700 font-medium"
-                      >
-                        Tentar novamente
-                      </button>
-                    </div>
-                  )}
-
-                  {boletoBase64 && (
-                    <div className="space-y-3">
-                      <div className="bg-green-50 border border-green-200 rounded p-3">
-                        <p className="text-sm text-green-700 font-medium flex items-center gap-2">
-                          <CheckCircle size={16} className="text-green-600" />
-                          Boleto gerado e aberto em nova aba!
+                  </div>
+                ) : (
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                      <CheckCircle size={20} className="text-green-600" />
+                      Status do Pagamento
+                    </h3>
+                    <div className="min-h-[200px] flex items-center justify-center">
+                      <div className="text-center">
+                        <CheckCircle
+                          size={48}
+                          className="text-green-600 mx-auto mb-4"
+                        />
+                        <p className="text-lg font-semibold text-green-700 mb-2">
+                          Boleto Pago
                         </p>
-                      </div>
-
-                      <div className="space-y-2">
-                        <button
-                          onClick={() => abrirPDF(boletoBase64)}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium"
-                        >
-                          <Eye size={18} weight="bold" />
-                          Visualizar Boleto Novamente
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            const base64 = boletoBase64.replace(
-                              /^data:application\/pdf;base64,/,
-                              '',
-                            );
-                            const binaryString = window.atob(base64);
-                            const bytes = new Uint8Array(binaryString.length);
-                            for (let i = 0; i < binaryString.length; i++) {
-                              bytes[i] = binaryString.charCodeAt(i);
-                            }
-                            const blob = new Blob([bytes], {
-                              type: 'application/pdf',
-                            });
-                            baixarPDF(blob);
-                          }}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors font-medium"
-                        >
-                          <FileArrowDown size={18} weight="bold" />
-                          Baixar Boleto
-                        </button>
-                      </div>
-
-                      <div className="bg-gray-50 border border-gray-200 rounded p-3">
-                        <p className="text-xs font-semibold text-gray-700 mb-2">
-                          Informações técnicas:
+                        <p className="text-sm text-gray-600">
+                          Esta fatura já foi liquidada e não requer boleto
+                          bancário.
                         </p>
-                        <p className="text-xs text-gray-500">
-                          Tamanho do arquivo:{' '}
-                          {typeof boletoBase64 === 'string'
-                            ? `${((boletoBase64.length * 0.75) / 1024).toFixed(
-                                2,
-                              )} KB`
-                            : '0 KB'}
-                        </p>
-                        <p className="text-xs text-gray-500">Formato: PDF</p>
+                        {faturaSelecionada?.dt_liq && (
+                          <p className="text-xs text-gray-500 mt-2">
+                            Data de liquidação:{' '}
+                            {formatDateBR(faturaSelecionada.dt_liq)}
+                          </p>
+                        )}
                       </div>
-
-                      <button
-                        onClick={buscarBoleto}
-                        className="w-full text-sm text-gray-600 hover:text-gray-700 font-medium"
-                      >
-                        Gerar novamente
-                      </button>
                     </div>
-                  )}
-                </div>
-              </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="mt-6 flex justify-end">

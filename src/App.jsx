@@ -72,6 +72,7 @@ const GerenciadorDashboards = lazy(() =>
   import('./pages/GerenciadorDashboards'),
 );
 const GerenciadorAcessos = lazy(() => import('./pages/GerenciadorAcessos'));
+const GerenciadorAvisos = lazy(() => import('./pages/GerenciadorAvisos'));
 const AnaliseTransacao = lazy(() => import('./pages/AnaliseTransacao'));
 const Widgets = lazy(() => import('./pages/Widgets'));
 
@@ -154,6 +155,7 @@ const AppRoutes = memo(() => {
     { path: '/analise-cashback', component: AnaliseCashback },
     { path: '/painel-admin', component: PainelAdmin },
     { path: '/gerenciador-acessos', component: GerenciadorAcessos },
+    { path: '/gerenciador-avisos', component: GerenciadorAvisos },
     { path: '/user-panel', component: UserPanel },
     { path: '/auth-test', component: AuthTest },
     { path: '/acao-cartoes', component: AcaoCartoes },

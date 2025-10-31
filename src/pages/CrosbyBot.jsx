@@ -98,7 +98,9 @@ const CrosbyBot = () => {
     setSelectedMessage(msg.id);
     // Se for texto, garantir que seja array
     if (msg.type === 'text') {
-      setEditContent(Array.isArray(msg.content) ? msg.content : [msg.content || '']);
+      setEditContent(
+        Array.isArray(msg.content) ? msg.content : [msg.content || ''],
+      );
     } else {
       setEditContent(msg.content || '');
     }
@@ -148,18 +150,20 @@ const CrosbyBot = () => {
 
   // Renderizar preview do texto com formatação
   const renderTextPreview = (msg) => {
-    const contentArray = Array.isArray(msg.content) ? msg.content : [msg.content || ''];
-    const validTexts = contentArray.filter(t => t && t.trim());
-    
+    const contentArray = Array.isArray(msg.content)
+      ? msg.content
+      : [msg.content || ''];
+    const validTexts = contentArray.filter((t) => t && t.trim());
+
     if (validTexts.length === 0) {
       return <span className="text-gray-400 italic">Texto vazio...</span>;
     }
-    
+
     const firstText = applyFormatting(validTexts[0], msg.formatting);
     const className = `${msg.formatting.bold ? 'font-bold' : ''} ${
       msg.formatting.italic ? 'italic' : ''
     }`;
-    
+
     return (
       <span className={className}>
         {firstText}
@@ -464,12 +468,16 @@ const CrosbyBot = () => {
 
         if (msg.type === 'text') {
           // Para texto, aplicar formatação em cada variação e enviar como array
-          const contentArray = Array.isArray(msg.content) ? msg.content : [msg.content || ''];
-          const validTexts = contentArray.filter(t => t && t.trim());
-          
+          const contentArray = Array.isArray(msg.content)
+            ? msg.content
+            : [msg.content || ''];
+          const validTexts = contentArray.filter((t) => t && t.trim());
+
           // Aplicar formatação em todas as variações válidas
-          value = validTexts.map(text => applyFormatting(text, msg.formatting));
-          
+          value = validTexts.map((text) =>
+            applyFormatting(text, msg.formatting),
+          );
+
           // Se não houver textos válidos, enviar array com string vazia
           if (value.length === 0) {
             value = [''];
@@ -856,85 +864,96 @@ const CrosbyBot = () => {
                       <div className="flex-1 flex flex-col overflow-hidden">
                         <div className="flex items-center justify-between mb-2">
                           <label className="text-xs font-semibold text-gray-700">
-                            Variações da Mensagem ({Array.isArray(editContent) ? editContent.filter(t => t && t.trim()).length : 0}/10)
+                            Variações da Mensagem (
+                            {Array.isArray(editContent)
+                              ? editContent.filter((t) => t && t.trim()).length
+                              : 0}
+                            /10)
                           </label>
-                          {Array.isArray(editContent) && editContent.length < 10 && (
-                            <button
-                              onClick={() => {
-                                const newContent = [...editContent, ''];
-                                setEditContent(newContent);
-                                setMessages(
-                                  messages.map((msg) =>
-                                    msg.id === selectedMessage
-                                      ? { ...msg, content: newContent }
-                                      : msg,
-                                  ),
-                                );
-                              }}
-                              className="flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold transition-colors"
-                            >
-                              <Plus size={14} weight="bold" />
-                              Adicionar Variação
-                            </button>
-                          )}
-                        </div>
-                        
-                        <div className="flex-1 overflow-y-auto space-y-3 pr-2">
-                          {Array.isArray(editContent) && editContent.map((text, index) => (
-                            <div key={index} className="relative">
-                              <div className="flex items-start gap-2 mb-1">
-                                <span className="text-xs font-bold text-indigo-600 mt-2">
-                                  #{index + 1}
-                                </span>
-                                {editContent.length > 1 && (
-                                  <button
-                                    onClick={() => {
-                                      const newContent = editContent.filter((_, i) => i !== index);
-                                      setEditContent(newContent);
-                                      setMessages(
-                                        messages.map((msg) =>
-                                          msg.id === selectedMessage
-                                            ? { ...msg, content: newContent }
-                                            : msg,
-                                        ),
-                                      );
-                                    }}
-                                    className="ml-auto p-1 text-red-500 hover:bg-red-50 rounded"
-                                    title="Remover variação"
-                                  >
-                                    <Trash size={14} />
-                                  </button>
-                                )}
-                              </div>
-                              <textarea
-                                value={text}
-                                onChange={(e) => {
-                                  const newContent = [...editContent];
-                                  newContent[index] = e.target.value;
+                          {Array.isArray(editContent) &&
+                            editContent.length < 10 && (
+                              <button
+                                onClick={() => {
+                                  const newContent = [...editContent, ''];
                                   setEditContent(newContent);
-                                }}
-                                onBlur={() => {
                                   setMessages(
                                     messages.map((msg) =>
                                       msg.id === selectedMessage
-                                        ? { ...msg, content: editContent }
+                                        ? { ...msg, content: newContent }
                                         : msg,
                                     ),
                                   );
                                 }}
-                                placeholder={`Digite a variação ${index + 1} da mensagem...`}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none text-sm"
-                                rows={3}
-                              />
-                            </div>
-                          ))}
+                                className="flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold transition-colors"
+                              >
+                                <Plus size={14} weight="bold" />
+                                Adicionar Variação
+                              </button>
+                            )}
                         </div>
-                        
-                        {Array.isArray(editContent) && editContent.length >= 10 && (
-                          <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-700">
-                            ⚠️ Limite máximo de 10 variações atingido
-                          </div>
-                        )}
+
+                        <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+                          {Array.isArray(editContent) &&
+                            editContent.map((text, index) => (
+                              <div key={index} className="relative">
+                                <div className="flex items-start gap-2 mb-1">
+                                  <span className="text-xs font-bold text-indigo-600 mt-2">
+                                    #{index + 1}
+                                  </span>
+                                  {editContent.length > 1 && (
+                                    <button
+                                      onClick={() => {
+                                        const newContent = editContent.filter(
+                                          (_, i) => i !== index,
+                                        );
+                                        setEditContent(newContent);
+                                        setMessages(
+                                          messages.map((msg) =>
+                                            msg.id === selectedMessage
+                                              ? { ...msg, content: newContent }
+                                              : msg,
+                                          ),
+                                        );
+                                      }}
+                                      className="ml-auto p-1 text-red-500 hover:bg-red-50 rounded"
+                                      title="Remover variação"
+                                    >
+                                      <Trash size={14} />
+                                    </button>
+                                  )}
+                                </div>
+                                <textarea
+                                  value={text}
+                                  onChange={(e) => {
+                                    const newContent = [...editContent];
+                                    newContent[index] = e.target.value;
+                                    setEditContent(newContent);
+                                  }}
+                                  onBlur={() => {
+                                    setMessages(
+                                      messages.map((msg) =>
+                                        msg.id === selectedMessage
+                                          ? { ...msg, content: editContent }
+                                          : msg,
+                                      ),
+                                    );
+                                  }}
+                                  placeholder={`Digite a variação ${
+                                    index + 1
+                                  } da mensagem...`}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none text-sm"
+                                  rows={3}
+                                />
+                              </div>
+                            ))}
+                        </div>
+
+                        {Array.isArray(editContent) &&
+                          editContent.length >= 10 && (
+                            <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-700">
+                              ⚠️ Limite máximo de 10 variações atingido
+                            </div>
+                          )}
                       </div>
 
                       {/* Botões de formatação */}
@@ -1061,26 +1080,36 @@ const CrosbyBot = () => {
                           Preview das Variações:
                         </p>
                         <div className="space-y-2">
-                          {Array.isArray(editContent) && editContent.map((text, index) => {
-                            if (!text || !text.trim()) return null;
-                            const formattedText = applyFormatting(text, editFormatting);
-                            const className = `${editFormatting.bold ? 'font-bold' : ''} ${
-                              editFormatting.italic ? 'italic' : ''
-                            }`;
-                            return (
-                              <div key={index} className="flex gap-2">
-                                <span className="text-xs font-bold text-indigo-600 flex-shrink-0">
-                                  #{index + 1}
-                                </span>
-                                <p className={`text-sm text-gray-800 flex-1 ${className}`}>
-                                  {formattedText}
-                                </p>
-                              </div>
-                            );
-                          })}
-                          {Array.isArray(editContent) && editContent.filter(t => t && t.trim()).length === 0 && (
-                            <p className="text-sm text-gray-400 italic">Nenhuma mensagem adicionada</p>
-                          )}
+                          {Array.isArray(editContent) &&
+                            editContent.map((text, index) => {
+                              if (!text || !text.trim()) return null;
+                              const formattedText = applyFormatting(
+                                text,
+                                editFormatting,
+                              );
+                              const className = `${
+                                editFormatting.bold ? 'font-bold' : ''
+                              } ${editFormatting.italic ? 'italic' : ''}`;
+                              return (
+                                <div key={index} className="flex gap-2">
+                                  <span className="text-xs font-bold text-indigo-600 flex-shrink-0">
+                                    #{index + 1}
+                                  </span>
+                                  <p
+                                    className={`text-sm text-gray-800 flex-1 ${className}`}
+                                  >
+                                    {formattedText}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          {Array.isArray(editContent) &&
+                            editContent.filter((t) => t && t.trim()).length ===
+                              0 && (
+                              <p className="text-sm text-gray-400 italic">
+                                Nenhuma mensagem adicionada
+                              </p>
+                            )}
                         </div>
                       </div>
                     </>
@@ -1227,32 +1256,46 @@ const CrosbyBot = () => {
                           <div className="px-3 py-2">
                             {Array.isArray(msg.content) ? (
                               <div className="space-y-2">
-                                {msg.content.filter(t => t && t.trim()).map((text, idx) => {
-                                  const formatted = applyFormatting(text, msg.formatting);
-                                  return (
-                                    <div key={idx} className="flex gap-2">
-                                      <span className="text-[10px] font-bold text-indigo-600 flex-shrink-0 mt-0.5">
-                                        #{idx + 1}
-                                      </span>
-                                      <p
-                                        className={`text-sm text-gray-800 break-words flex-1 ${
-                                          msg.formatting.bold ? 'font-bold' : ''
-                                        } ${msg.formatting.italic ? 'italic' : ''}`}
-                                      >
-                                        {formatted}
-                                      </p>
-                                    </div>
-                                  );
-                                })}
-                                {msg.content.filter(t => t && t.trim()).length === 0 && (
+                                {msg.content
+                                  .filter((t) => t && t.trim())
+                                  .map((text, idx) => {
+                                    const formatted = applyFormatting(
+                                      text,
+                                      msg.formatting,
+                                    );
+                                    return (
+                                      <div key={idx} className="flex gap-2">
+                                        <span className="text-[10px] font-bold text-indigo-600 flex-shrink-0 mt-0.5">
+                                          #{idx + 1}
+                                        </span>
+                                        <p
+                                          className={`text-sm text-gray-800 break-words flex-1 ${
+                                            msg.formatting.bold
+                                              ? 'font-bold'
+                                              : ''
+                                          } ${
+                                            msg.formatting.italic
+                                              ? 'italic'
+                                              : ''
+                                          }`}
+                                        >
+                                          {formatted}
+                                        </p>
+                                      </div>
+                                    );
+                                  })}
+                                {msg.content.filter((t) => t && t.trim())
+                                  .length === 0 && (
                                   <span className="text-gray-400 italic">
                                     Mensagem vazia
                                   </span>
                                 )}
-                                {msg.content.filter(t => t && t.trim()).length > 1 && (
+                                {msg.content.filter((t) => t && t.trim())
+                                  .length > 1 && (
                                   <div className="mt-2 pt-2 border-t border-gray-200">
                                     <p className="text-[10px] text-indigo-600 font-semibold">
-                                      🔀 Uma variação aleatória será enviada para cada contato
+                                      🔀 Uma variação aleatória será enviada
+                                      para cada contato
                                     </p>
                                   </div>
                                 )}
