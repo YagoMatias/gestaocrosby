@@ -13,6 +13,9 @@ import { useNotices } from '../hooks/useNotices';
 /**
  * Modal que exibe todos os avisos do usuário
  * Aberto ao clicar no sino de notificações
+ *
+ * PERMISSÃO: Todos os usuários autenticados podem visualizar seus avisos
+ * Não requer permissão específica no gerenciador de acessos
  */
 const NoticesModal = ({ onClose }) => {
   const { user } = useAuth();

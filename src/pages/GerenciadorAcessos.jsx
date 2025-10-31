@@ -208,7 +208,14 @@ const AVAILABLE_PAGES = [
   {
     path: '/gerenciador-avisos',
     name: 'Gerenciador de Avisos',
-    category: 'Administração',
+    category: 'Avisos',
+  },
+
+  // Avisos
+  {
+    path: '/visualizar-avisos',
+    name: 'Visualizar Avisos',
+    category: 'Avisos',
   },
 
   // Produção

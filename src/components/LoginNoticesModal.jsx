@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { X, Warning, Check } from '@phosphor-icons/react';
+import { X, Check } from '@phosphor-icons/react';
 import { useAuth } from './AuthContext';
 import { useNotices } from '../hooks/useNotices';
 
 /**
  * Modal de avisos exibido automaticamente ao fazer login
  * Mostra avisos não lidos do dia com countdown de 5 segundos
+ * Design igual ao NoticesModal (bg-[#000638], fontes menores, botões compactos)
  */
 const LoginNoticesModal = ({ onClose }) => {
   const { user } = useAuth();
@@ -80,39 +81,38 @@ const LoginNoticesModal = ({ onClose }) => {
   const hasMultiple = notices.length > 1;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden animate-fade-in-scale">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col h-4/5">
         {/* Header */}
-        <div className="bg-gradient-to-r from-yellow-500 via-orange-500 to-red-500 p-6 text-white">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-3">
-              <Warning size={32} weight="fill" className="animate-pulse" />
-              <h2 className="text-2xl font-bold">Aviso Importante</h2>
+        <div className="bg-[#000638] from-blue-600 to-indigo-600 p-4 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold mb-0.5">Aviso Importante</h2>
+              <p className="text-xs text-blue-100">
+                Por favor, leia com atenção antes de continuar
+              </p>
             </div>
             {hasMultiple && (
-              <span className="text-sm bg-white bg-opacity-20 px-3 py-1 rounded-full font-semibold">
+              <span className="text-xs bg-white bg-opacity-20 px-2 py-1 rounded-full font-semibold">
                 {currentIndex + 1} de {notices.length}
               </span>
             )}
           </div>
-          <p className="text-sm text-white text-opacity-90">
-            Por favor, leia com atenção antes de continuar
-          </p>
         </div>
 
         {/* Content */}
-        <div className="p-6 max-h-[50vh] overflow-y-auto">
-          <h3 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">
+        <div className="flex-1 overflow-y-auto p-4">
+          <h3 className="text-base font-bold text-gray-900 mb-1">
             {currentNotice.title}
           </h3>
           <div
-            className="prose prose-sm max-w-none text-gray-700"
+            className="prose prose-sm max-w-none text-sm"
             dangerouslySetInnerHTML={{ __html: currentNotice.content }}
           />
         </div>
 
         {/* Footer */}
-        <div className="border-t border-gray-200 p-6 bg-gray-50">
+        <div className="p-4 border-t border-gray-200 bg-gray-50">
           <div className="flex flex-col gap-3">
             {/* Progress bar do countdown */}
             <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
@@ -126,32 +126,30 @@ const LoginNoticesModal = ({ onClose }) => {
             <button
               onClick={handleConfirm}
               disabled={countdown > 0 || confirming}
-              className={`w-full py-3 rounded-lg font-bold text-lg transition-all flex items-center justify-center gap-2 ${
-                countdown > 0 || confirming
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700 shadow-md hover:shadow-lg transform hover:scale-105'
+              className={`w-full py-2 bg-[#000638] from-green-600 to-emerald-600 text-white text-sm rounded-lg font-bold hover:from-green-700 hover:to-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
+                countdown > 0 || confirming ? 'cursor-not-allowed' : ''
               }`}
             >
               {confirming ? (
                 <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   <span>Confirmando...</span>
                 </>
               ) : countdown > 0 ? (
                 <>
-                  <span className="text-2xl font-bold">{countdown}</span>
+                  <span className="text-lg font-bold">{countdown}</span>
                   <span>segundos para continuar...</span>
                 </>
               ) : (
                 <>
-                  <Check size={24} weight="bold" />
+                  <Check size={16} weight="bold" />
                   <span>Li e Compreendi</span>
                 </>
               )}
             </button>
 
             {/* Informações adicionais */}
-            <div className="text-xs text-gray-500 text-center">
+            <div className="text-[11px] text-gray-500 text-center">
               {hasMultiple && currentIndex < notices.length - 1 ? (
                 <p>
                   Após confirmar, você verá o próximo aviso (

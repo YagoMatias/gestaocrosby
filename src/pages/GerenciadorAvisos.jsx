@@ -9,14 +9,15 @@ import NoticesList from '../components/NoticesList';
 /**
  * Página de gerenciamento de avisos
  * Permite criar, editar, listar e visualizar estatísticas de avisos
+ * Qualquer usuário com permissão pode acessar
  */
 const GerenciadorAvisos = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('criar');
   const [noticeToEdit, setNoticeToEdit] = useState(null);
 
-  // Verificar permissões
-  if (!user || !['owner', 'admin'].includes(user.role)) {
+  // Verificar se o usuário está autenticado
+  if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
         <Card className="max-w-md">
@@ -28,8 +29,8 @@ const GerenciadorAvisos = () => {
               Acesso Negado
             </h2>
             <p className="text-gray-600">
-              Apenas administradores e proprietários podem gerenciar avisos do
-              sistema.
+              Você precisa estar autenticado para acessar o gerenciador de
+              avisos.
             </p>
           </CardContent>
         </Card>
