@@ -24,6 +24,7 @@ import {
   Package,
   Eye,
   X,
+  Article,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -465,7 +466,7 @@ const MeusPedidos = () => {
 
       const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Meus Pedidos');
+      XLSX.utils.book_append_sheet(wb, ws, 'Notas Fiscais');
 
       const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       const data = new Blob([excelBuffer], {
@@ -570,9 +571,9 @@ const MeusPedidos = () => {
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
       <PageTitle
-        title="Meus Pedidos"
-        subtitle="Consulta de pedidos/transações por cliente"
-        icon={ShoppingCart}
+        title="Notas Fiscais"
+        subtitle="Consulte suas Notas Fiscais"
+        icon={Article}
         iconColor="text-blue-600"
       />
 
@@ -723,7 +724,7 @@ const MeusPedidos = () => {
       <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 max-w-7xl mx-auto w-full">
         <div className="p-3 border-b border-[#000638]/10 flex justify-between items-center">
           <h2 className="text-sm font-bold text-[#000638] font-barlow">
-            Meus Pedidos
+            Notas Fiscais
           </h2>
           <div className="flex items-center gap-2">
             <div className="text-xs text-gray-600">

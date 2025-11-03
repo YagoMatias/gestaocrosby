@@ -32,6 +32,7 @@ import {
   CurrencyCircleDollar,
   SquaresFour,
   SpotifyLogo,
+  Article,
   TShirt,
   CalendarDots,
 } from '@phosphor-icons/react';
@@ -693,6 +694,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             isActive={location.pathname === '/bi-externo'}
           />
 
+          {/* BI EXTERNO */}
+          <MenuItem
+            item={{
+              name: 'BIs Externo',
+              href: '/dashboard',
+              icon: ChartLineUp,
+              color: 'text-indigo-600',
+            }}
+            isActive={location.pathname === '/bi-externo'}
+          />
+
           {/* Dashboard Faturamento */}
           <MenuItem
             item={{
@@ -812,9 +824,9 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                   color: 'text-red-600',
                 },
                 {
-                  name: 'Meus Pedidos',
+                  name: 'Notas Fiscais',
                   href: '/meus-pedidos',
-                  icon: ShoppingCart,
+                  icon: Article,
                   color: 'text-blue-600',
                 },
               ],

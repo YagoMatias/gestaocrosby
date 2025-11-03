@@ -1831,6 +1831,25 @@ const DRE = () => {
     return Math.abs((valor / total) * 100);
   };
 
+  // Função auxiliar para calcular variação percentual entre dois períodos
+  const calcularVariacao = (valorAtual, valorAnterior) => {
+    // Se o valor anterior é zero, considerar como crescimento infinito se atual > 0
+    if (valorAnterior === 0) {
+      if (valorAtual > 0) return { percentual: 100, tipo: 'aumento' };
+      if (valorAtual < 0) return { percentual: 100, tipo: 'queda' };
+      return { percentual: 0, tipo: 'neutro' };
+    }
+
+    // Calcular variação percentual: ((Atual - Anterior) / |Anterior|) * 100
+    const variacao =
+      ((valorAtual - valorAnterior) / Math.abs(valorAnterior)) * 100;
+
+    return {
+      percentual: Math.abs(variacao).toFixed(1),
+      tipo: variacao > 0 ? 'aumento' : variacao < 0 ? 'queda' : 'neutro',
+    };
+  };
+
   // Função auxiliar para gerar estrutura DRE com base em dados específicos
   const gerarEstruturaDRE = useCallback((dados) => {
     const {
@@ -1997,89 +2016,40 @@ const DRE = () => {
             id: 'descontos',
             label: 'Descontos Concedidos',
             description: 'Descontos dados aos clientes',
-            value: -(
-              tv.totalBruto -
-              tv.totalDevolucoes -
-              (tv.totalLiquido - tv.totalDevolucoes) +
-              (tm.totalBruto -
-                tm.totalDevolucoes -
-                (tm.totalLiquido - tm.totalDevolucoes)) +
-              (tr.totalBruto -
-                tr.totalDevolucoes -
-                (tr.totalLiquido - tr.totalDevolucoes)) +
-              (tf.totalBruto -
-                tf.totalDevolucoes -
-                (tf.totalLiquido - tf.totalDevolucoes))
-            ),
+            value: -(tv.descontos + tm.descontos + tr.descontos + tf.descontos),
             type: 'deducao',
             children: [
               {
                 id: 'descontos-varejo',
                 label: 'Varejo',
                 description: 'Descontos do canal Varejo',
-                value: -(
-                  tv.totalBruto -
-                  tv.totalDevolucoes -
-                  (tv.totalLiquido - tv.totalDevolucoes)
-                ),
+                value: -tv.descontos,
                 type: 'deducao',
-                porcentagem: calcularPorcentagem(
-                  tv.totalBruto -
-                    tv.totalDevolucoes -
-                    (tv.totalLiquido - tv.totalDevolucoes),
-                  desc,
-                ).toFixed(1),
+                porcentagem: calcularPorcentagem(tv.descontos, desc).toFixed(1),
               },
               {
                 id: 'descontos-multimarcas',
                 label: 'Multimarcas',
                 description: 'Descontos do canal Multimarcas',
-                value: -(
-                  tm.totalBruto -
-                  tm.totalDevolucoes -
-                  (tm.totalLiquido - tm.totalDevolucoes)
-                ),
+                value: -tm.descontos,
                 type: 'deducao',
-                porcentagem: calcularPorcentagem(
-                  tm.totalBruto -
-                    tm.totalDevolucoes -
-                    (tm.totalLiquido - tm.totalDevolucoes),
-                  desc,
-                ).toFixed(1),
+                porcentagem: calcularPorcentagem(tm.descontos, desc).toFixed(1),
               },
               {
                 id: 'descontos-revenda',
                 label: 'Revenda',
                 description: 'Descontos do canal Revenda',
-                value: -(
-                  tr.totalBruto -
-                  tr.totalDevolucoes -
-                  (tr.totalLiquido - tr.totalDevolucoes)
-                ),
+                value: -tr.descontos,
                 type: 'deducao',
-                porcentagem: calcularPorcentagem(
-                  tr.totalBruto -
-                    tr.totalDevolucoes -
-                    (tr.totalLiquido - tr.totalDevolucoes),
-                  desc,
-                ).toFixed(1),
+                porcentagem: calcularPorcentagem(tr.descontos, desc).toFixed(1),
               },
               {
                 id: 'descontos-franquias',
                 label: 'Franquias',
                 description: 'Descontos do canal Franquias',
-                value: -(
-                  tf.totalBruto -
-                  tf.totalDevolucoes -
-                  (tf.totalLiquido - tf.totalDevolucoes)
-                ),
+                value: -tf.descontos,
                 type: 'deducao',
-                porcentagem: calcularPorcentagem(
-                  tf.totalBruto -
-                    tf.totalDevolucoes -
-                    (tf.totalLiquido - tf.totalDevolucoes),
-                  desc,
-                ).toFixed(1),
+                porcentagem: calcularPorcentagem(tf.descontos, desc).toFixed(1),
               },
             ],
           },
@@ -2760,45 +2730,234 @@ const DRE = () => {
   };
 
   // Função auxiliar para renderizar valor com porcentagem
-  const renderizarValorComPorcentagem = (value, item) => {
+  // Função auxiliar para determinar se deve inverter cores baseado no tipo de item
+  const deveInverterCores = (item, parentItem = null) => {
+    // Lista de IDs que devem ter cores invertidas (maior = verde, menor = vermelho)
+    const idsComCoresInvertidas = [
+      'vendas-bruta', // Receitas Brutas
+      'receita-liquida', // Receita Líquida de Vendas
+      'lucro-bruto', // Lucro Bruto
+    ];
+
+    // Verificar se o item atual está na lista
+    if (item && idsComCoresInvertidas.includes(item.id)) {
+      return true;
+    }
+
+    // Verificar se o pai está na lista (para filhos herdarem a regra)
+    if (parentItem && idsComCoresInvertidas.includes(parentItem.id)) {
+      return true;
+    }
+
+    // Para CMV e Deduções, não inverter (menor = verde, maior = vermelho)
+    return false;
+  };
+
+  // Função auxiliar para determinar a cor do badge baseado na hierarquia
+  const obterCorPorHierarquia = (
+    porcentagemNum,
+    siblings = [],
+    inverterCores = false,
+  ) => {
+    // Se não houver irmãos para comparar, usar cor neutra
+    if (!siblings || siblings.length === 0) {
+      return 'bg-blue-100 text-blue-700 border-blue-200';
+    }
+
+    // Extrair todas as porcentagens dos irmãos (incluindo o item atual)
+    const porcentagens = siblings
+      .map((sibling) => {
+        const pct =
+          sibling.porcentagem !== undefined && sibling.porcentagem !== null
+            ? parseFloat(sibling.porcentagem)
+            : null;
+        return pct;
+      })
+      .filter((p) => p !== null && !isNaN(p))
+      .sort((a, b) => b - a); // Ordenar do maior para o menor
+
+    // Se houver menos de 2 itens, usar cor neutra
+    if (porcentagens.length < 2) {
+      return 'bg-blue-100 text-blue-700 border-blue-200';
+    }
+
+    // Encontrar a posição do item atual
+    const posicao = porcentagens.indexOf(porcentagemNum);
+
+    if (posicao === -1) {
+      return 'bg-gray-100 text-gray-700 border-gray-200';
+    }
+
+    // Definir cores baseado na hierarquia
+    const totalItens = porcentagens.length;
+    let corMaior, corSegundo, corPenultimo, corMenor;
+
+    if (inverterCores) {
+      // Para RECEITAS e LUCROS: Maior é melhor
+      // VERDE (maior) → AZUL (segundo) → AMARELO (penúltimo) → VERMELHO (menor)
+      corMaior = 'bg-green-100 text-green-700 border-green-200';
+      corSegundo = 'bg-blue-100 text-blue-700 border-blue-200';
+      corPenultimo = 'bg-yellow-100 text-yellow-700 border-yellow-200';
+      corMenor = 'bg-red-100 text-red-700 border-red-200';
+    } else {
+      // Para CUSTOS e DEDUÇÕES: Menor é melhor
+      // VERMELHO (maior) → AMARELO (segundo) → AZUL (penúltimo) → VERDE (menor)
+      corMaior = 'bg-red-100 text-red-700 border-red-200';
+      corSegundo = 'bg-yellow-100 text-yellow-700 border-yellow-200';
+      corPenultimo = 'bg-blue-100 text-blue-700 border-blue-200';
+      corMenor = 'bg-green-100 text-green-700 border-green-200';
+    }
+
+    if (totalItens === 2) {
+      // Se houver apenas 2 itens: maior e menor
+      return posicao === 0 ? corMaior : corMenor;
+    } else if (totalItens === 3) {
+      // Se houver 3 itens: maior, médio, menor
+      if (posicao === 0) return corMaior;
+      if (posicao === 1) return corSegundo; // Usa cor do segundo como médio
+      return corMenor;
+    } else {
+      // Se houver 4+ itens: maior, segundo, penúltimo, menor
+      if (posicao === 0) {
+        // Maior
+        return corMaior;
+      } else if (posicao === totalItens - 1) {
+        // Menor
+        return corMenor;
+      } else if (posicao === 1 || posicao <= Math.floor(totalItens * 0.33)) {
+        // Segundo maior ou terço superior
+        return corSegundo;
+      } else {
+        // Entre o médio e o menor (penúltimo)
+        return corPenultimo;
+      }
+    }
+  };
+
+  const renderizarValorComPorcentagem = (
+    value,
+    item,
+    mostrarPorcentagem = true,
+    siblings = [],
+    inverterCores = false,
+  ) => {
     const porcentagem =
       item.porcentagem !== undefined && item.porcentagem !== null
         ? item.porcentagem
         : extrairPorcentagemDoLabel(item.label);
 
+    // Só mostra porcentagem se mostrarPorcentagem for true E porcentagem existir
     if (
+      mostrarPorcentagem &&
       porcentagem !== '' &&
       porcentagem !== undefined &&
       porcentagem !== null
     ) {
+      const porcentagemNum = parseFloat(porcentagem);
+      const badgeColor = obterCorPorHierarquia(
+        porcentagemNum,
+        siblings,
+        inverterCores,
+      );
+
+      // Determinar cor do texto baseado no valor
+      // Valores negativos (deduções, custos, despesas) = Vermelho
+      // Valores positivos (receitas, lucros) = Verde
+      const valorCorTexto = value < 0 ? 'text-red-600' : 'text-green-600';
+
       return (
-        <div className="flex items-center gap-2">
-          <span
-            className={`font-medium ${
-              value >= 0 ? 'text-green-500' : 'text-red-500'
-            }`}
-          >
+        <div className="flex items-center gap-2.5">
+          <span className={`font-semibold ${valorCorTexto}`}>
             {formatCurrency(Math.abs(value))}
           </span>
-          <span className="text-gray-400">|</span>
-          <span className="text-gray-600 text-sm">{porcentagem}%</span>
+          <span
+            className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${badgeColor}`}
+          >
+            {porcentagem}%
+          </span>
         </div>
       );
     }
+
+    // Determinar cor do texto baseado no valor (sem porcentagem)
+    const valorCorTexto = value < 0 ? 'text-red-600' : 'text-green-600';
+
+    return (
+      <span className={`font-semibold ${valorCorTexto}`}>
+        {formatCurrency(Math.abs(value))}
+      </span>
+    );
+  };
+
+  // Função auxiliar para renderizar badge de variação (análise horizontal)
+  const renderizarBadgeVariacao = (item, dadosPeriodo1, dadosPeriodo2) => {
+    if (!dadosPeriodo1 || !dadosPeriodo2) return null;
+
+    // Mapear IDs para buscar valores correspondentes
+    const getValorPorId = (dados, id) => {
+      const mapeamento = {
+        'vendas-bruta': dados.vendasBrutas,
+        'deducoes-vendas': -(
+          dados.devolucoes +
+          dados.descontos +
+          dados.totalImpostos
+        ),
+        'receita-liquida': dados.receitaLiquida,
+        cmv: dados.cmv,
+        'lucro-bruto': dados.lucroBruto,
+        'despesas-operacionais': dados.planoDespesasTotal,
+        'resultado-operacional': dados.lucroBruto - dados.planoDespesasTotal,
+        'despesas-financeiras': dados.planoDespesasFinanceirasTotal,
+        'lucro-antes-impostos':
+          dados.lucroBruto -
+          dados.planoDespesasTotal -
+          dados.planoDespesasFinanceirasTotal,
+        'impostos-lucro': 0,
+        'lucro-liquido':
+          dados.lucroBruto -
+          dados.planoDespesasTotal -
+          dados.planoDespesasFinanceirasTotal,
+      };
+      return mapeamento[id] || null;
+    };
+
+    const valorPeriodo1 = getValorPorId(dadosPeriodo1, item.id);
+    const valorPeriodo2 = getValorPorId(dadosPeriodo2, item.id);
+
+    if (valorPeriodo1 === null || valorPeriodo2 === null) return null;
+
+    const { percentual, tipo } = calcularVariacao(valorPeriodo2, valorPeriodo1);
+
+    if (tipo === 'neutro') return null;
+
+    // Definir cor e ícone baseado no tipo de variação
+    const badgeClasses =
+      tipo === 'aumento'
+        ? 'bg-green-100 text-green-700 border-green-200'
+        : 'bg-red-100 text-red-700 border-red-200';
+
+    const simbolo = tipo === 'aumento' ? '↑' : '↓';
+
     return (
       <span
-        className={`font-medium ${
-          value >= 0 ? 'text-green-500' : 'text-red-500'
-        }`}
+        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border ${badgeClasses} ml-2`}
       >
-        {formatCurrency(Math.abs(value))}
+        <span>{simbolo}</span>
+        <span>{percentual}%</span>
       </span>
     );
   };
 
   // Função auxiliar para renderizar uma tree view DRE
   const renderDRETreeView = useCallback(
-    (dreDataToRender, tituloColuna = null) => {
+    (
+      dreDataToRender,
+      tituloColuna = null,
+      mostrarPorcentagem = true,
+      mostrarVariacao = false,
+      periodo1Dados = null,
+      periodo2Dados = null,
+    ) => {
       if (!dreDataToRender || dreDataToRender.length === 0) return null;
 
       return (
@@ -2851,7 +3010,19 @@ const DRE = () => {
                         {modulo.label}
                       </h3>
                       <div className="flex gap-96 items-center justify-between space-x-32 text-xs text-gray-600">
-                        {renderizarValorComPorcentagem(modulo.value, modulo)}
+                        {renderizarValorComPorcentagem(
+                          modulo.value,
+                          modulo,
+                          mostrarPorcentagem,
+                          dreDataToRender,
+                          deveInverterCores(modulo),
+                        )}
+                        {mostrarVariacao &&
+                          renderizarBadgeVariacao(
+                            modulo,
+                            periodo1Dados,
+                            periodo2Dados,
+                          )}
                       </div>
                     </div>
                   </div>
@@ -2910,6 +3081,9 @@ const DRE = () => {
                                     {renderizarValorComPorcentagem(
                                       subitem.value,
                                       subitem,
+                                      mostrarPorcentagem,
+                                      modulo.children,
+                                      deveInverterCores(subitem, modulo),
                                     )}
                                   </div>
                                 </div>
@@ -2977,19 +3151,16 @@ const DRE = () => {
                                                       {subsubitem.description}
                                                     </span>
                                                   )}
-                                                  <span
-                                                    className={`font-medium ${
-                                                      subsubitem.value >= 0
-                                                        ? 'text-green-400'
-                                                        : 'text-red-400'
-                                                    }`}
-                                                  >
-                                                    {formatCurrency(
-                                                      Math.abs(
-                                                        subsubitem.value,
-                                                      ),
-                                                    )}
-                                                  </span>
+                                                  {renderizarValorComPorcentagem(
+                                                    subsubitem.value,
+                                                    subsubitem,
+                                                    mostrarPorcentagem,
+                                                    subitem.children,
+                                                    deveInverterCores(
+                                                      subsubitem,
+                                                      subitem,
+                                                    ),
+                                                  )}
                                                 </div>
                                               </div>
                                             </div>
@@ -3572,17 +3743,41 @@ const DRE = () => {
 
             {/* DRE Tree Views */}
             {tipoAnalise === 'vertical' ? (
-              // Análise Vertical: Apenas 1 coluna (Período 1)
-              renderDRETreeView(dreData)
+              // Análise Vertical: Apenas 1 coluna (Período 1) COM PORCENTAGEM
+              renderDRETreeView(dreData, null, true, false)
             ) : (
-              // Análise Horizontal: 3 colunas (Mês 1, Mês 2, Consolidado)
+              // Análise Horizontal: 3 colunas (Mês 1, Mês 2 com variação, Consolidado) SEM PORCENTAGEM
               <div className="flex gap-4 px-4 overflow-x-auto">
-                {renderDRETreeView(dreData, `📅 ${obterNomeMes(filtroMensal)}`)}
+                {renderDRETreeView(
+                  dreData,
+                  `📅 ${obterNomeMes(filtroMensal)}`,
+                  false,
+                  false,
+                )}
                 {renderDRETreeView(
                   drePeriodo2Data,
                   `📅 ${obterNomeMes(filtroMensalComparacao)}`,
+                  false,
+                  true,
+                  {
+                    vendasBrutas,
+                    devolucoes,
+                    descontos,
+                    totalImpostos,
+                    receitaLiquida,
+                    cmv,
+                    lucroBruto,
+                    planoDespesasTotal,
+                    planoDespesasFinanceirasTotal,
+                  },
+                  dadosPeriodo2,
                 )}
-                {renderDRETreeView(dreConsolidadoData, '📊 Consolidado')}
+                {renderDRETreeView(
+                  dreConsolidadoData,
+                  '📊 Consolidado',
+                  false,
+                  false,
+                )}
               </div>
             )}
           </>

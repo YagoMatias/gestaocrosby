@@ -2,7 +2,12 @@ import React, { useState } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { Card, CardContent } from '../components/ui/cards';
 import PageTitle from '../components/ui/PageTitle';
-import { Megaphone, PencilSimple, ListBullets } from '@phosphor-icons/react';
+import {
+  Megaphone,
+  PencilSimple,
+  ListBullets,
+  MegaphoneIcon,
+} from '@phosphor-icons/react';
 import NoticeEditor from '../components/NoticeEditor';
 import NoticesList from '../components/NoticesList';
 
@@ -54,19 +59,17 @@ const GerenciadorAvisos = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-3 pb-6">
-      <div className="max-w-6xl mx-auto">
+    <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+      <div className="">
         {/* Header da página */}
-        <div className="mb-4">
+        <div className="mb-4 flex items-center justify-center">
           <div className="flex items-center gap-2 mb-1">
-            <Megaphone size={24} weight="bold" className="text-[#000638]" />
-            <h1 className="text-xl font-bold text-gray-900">
-              Gerenciador de Avisos
-            </h1>
+            <PageTitle
+              title="Gerenciador de Avisos"
+              subtitle="Crie, edite e gerencie avisos"
+              icon={MegaphoneIcon}
+            />
           </div>
-          <p className="text-xs text-gray-600 ml-8">
-            Crie e gerencie avisos para os usuários do sistema
-          </p>
         </div>
 
         {/* Tabs de navegação */}
