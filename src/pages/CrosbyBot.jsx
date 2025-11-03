@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../components/AuthContext';
+import useMaintenanceMode from '../hooks/useMaintenanceMode';
+import MaintenanceModal from '../components/MaintenanceModal';
+import MaintenanceBanner from '../components/MaintenanceBanner';
 import {
   Robot,
   Plus,
@@ -45,6 +48,12 @@ const CrosbyBot = () => {
   const [showContatosModal, setShowContatosModal] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
+
+  // ⚠️ SISTEMA EM MANUTENÇÃO - Apenas admin e owner podem acessar
+  const SISTEMA_EM_MANUTENCAO = true;
+  const { showBanner, showModal, userRole } = useMaintenanceMode(
+    SISTEMA_EM_MANUTENCAO,
+  );
 
   // Tipos de mensagem disponíveis
   const messageTypes = [
@@ -572,6 +581,14 @@ const CrosbyBot = () => {
           icon={Robot}
           iconColor="text-indigo-600"
         />
+
+        {/* Banner para Admin/Owner quando sistema está em manutenção */}
+        {showBanner && <MaintenanceBanner userRole={userRole} />}
+
+        {/* Modal de Bloqueio - SISTEMA EM MANUTENÇÃO */}
+        {showModal && (
+          <MaintenanceModal systemName="Crosby Bot" homeRoute="/home" />
+        )}
 
         <div className="flex-1 grid grid-cols-12 gap-6 mt-6 min-h-0">
           {/* Painel de Botões - Adicionar Mensagens */}

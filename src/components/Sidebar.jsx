@@ -686,8 +686,8 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           {/* BI EXTERNO */}
           <MenuItem
             item={{
-              name: 'BI Externo',
-              href: '/Estoque e Showroom',
+              name: 'Estoque e Showroom',
+              href: '/bi-externo',
               icon: ChartLineUp,
               color: 'text-indigo-600',
             }}
