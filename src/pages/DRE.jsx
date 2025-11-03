@@ -584,16 +584,6 @@ const DRE = () => {
         dadosCMVFranquias.cmv +
         dadosCMVRevenda.cmv;
 
-      console.log('📊 CMV calculado das views materializadas:', {
-        varejo: dadosCMVVarejo.cmv,
-        multimarcas: dadosCMVMultimarcas.cmv,
-        franquias: dadosCMVFranquias.cmv,
-        revenda: dadosCMVRevenda.cmv,
-        total: totalCMV,
-        observacao:
-          'Usa apenas a coluna CMV das views cmv_varejo, cmv_mtm, cmv_franquias, cmv_revenda',
-      });
-
       // Criar estrutura de totais por canal para compatibilidade com o resto do código
       const totaisVarejo = {
         totalBruto: dadosFaturamentoVarejo.receitaBruta,
@@ -640,7 +630,6 @@ const DRE = () => {
 
         if (responseImpostos?.success && responseImpostos?.data) {
           impostosData = responseImpostos.data;
-          console.log('💰 Impostos recebidos da API:', impostosData);
         }
       } catch (error) {
         console.error(
@@ -698,41 +687,29 @@ const DRE = () => {
         impostosRevendaData.cofins;
       const totalImpostosReal = icmsReal + pisReal + cofinsReal;
 
-      console.log('💰 Impostos processados:', {
-        varejo: impostosVarejoData,
-        multimarcas: impostosMultimarcasData,
-        franquias: impostosFranquiasData,
-        revenda: impostosRevendaData,
-        totais: {
-          icms: icmsReal,
-          pis: pisReal,
-          cofins: cofinsReal,
-          total: totalImpostosReal,
-        },
-      });
-
       // ========== CÁLCULO FINAL DA DRE ==========
 
       // Total das Deduções = Devoluções Líquidas + Descontos Concedidos + Impostos
+      // IMPORTANTE: totalDescontos já vem NEGATIVO da API, então usamos Math.abs() para somar corretamente
       const totalDeducoesCalculado =
-        totalDevolucoesLiquidas + totalDescontos + totalImpostosReal;
+        totalDevolucoesLiquidas + Math.abs(totalDescontos) + totalImpostosReal;
 
-      console.log(
-        '📊 Cálculo das Deduções sobre Vendas (Views Materializadas):',
-        {
-          devolucoes: totalDevolucoesLiquidas,
-          descontos: totalDescontos,
-          impostos: totalImpostosReal,
-          totalDeducoes: totalDeducoesCalculado,
-          formula: 'Devoluções Líquidas + Descontos Concedidos + Impostos',
-          detalhamento: {
-            vendas_brutas: totalVendasBrutas,
-            devolucoes_liquidas: totalDevolucoesLiquidas,
-            descontos_concedidos: totalDescontos,
-            impostos: totalImpostosReal,
-          },
-        },
-      );
+      // 🔍 DEBUG: Verificar cálculo final da DRE
+      console.log('📊 CÁLCULO FINAL DA DRE:', {
+        vendasBrutas: totalVendasBrutas,
+        devolucoes: totalDevolucoesLiquidas,
+        descontosNegativos: totalDescontos,
+        descontosAbsolutos: Math.abs(totalDescontos),
+        impostos: totalImpostosReal,
+        totalDeducoes: totalDeducoesCalculado,
+        formula: `${totalDevolucoesLiquidas.toFixed(2)} + ${Math.abs(
+          totalDescontos,
+        ).toFixed(2)} + ${totalImpostosReal.toFixed(
+          2,
+        )} = ${totalDeducoesCalculado.toFixed(2)}`,
+        receitaLiquida: totalVendasBrutas - totalDeducoesCalculado,
+        cmv: totalCMV,
+      });
 
       // Receita Líquida = Vendas Brutas - Deduções
       const receitaLiquidaCalculada =
@@ -745,10 +722,11 @@ const DRE = () => {
 
       // Calcular receitas líquidas por canal
       // Receita Líquida = Receita Bruta - (Devoluções + Descontos + Impostos)
+      // IMPORTANTE: descontos já vêm NEGATIVOS, então usamos Math.abs()
       const receitaLiquidaVarejoCalc =
         totaisVarejo.totalBruto -
         (totaisVarejo.totalDevolucoes +
-          totaisVarejo.descontos +
+          Math.abs(totaisVarejo.descontos) +
           impostosVarejoData.icms +
           impostosVarejoData.pis +
           impostosVarejoData.cofins);
@@ -756,7 +734,7 @@ const DRE = () => {
       const receitaLiquidaMultimarcasCalc =
         totaisMultimarcas.totalBruto -
         (totaisMultimarcas.totalDevolucoes +
-          totaisMultimarcas.descontos +
+          Math.abs(totaisMultimarcas.descontos) +
           impostosMultimarcasData.icms +
           impostosMultimarcasData.pis +
           impostosMultimarcasData.cofins);
@@ -764,7 +742,7 @@ const DRE = () => {
       const receitaLiquidaFranquiasCalc =
         totaisFranquias.totalBruto -
         (totaisFranquias.totalDevolucoes +
-          totaisFranquias.descontos +
+          Math.abs(totaisFranquias.descontos) +
           impostosFranquiasData.icms +
           impostosFranquiasData.pis +
           impostosFranquiasData.cofins);
@@ -772,7 +750,7 @@ const DRE = () => {
       const receitaLiquidaRevendaCalc =
         totaisRevenda.totalBruto -
         (totaisRevenda.totalDevolucoes +
-          totaisRevenda.descontos +
+          Math.abs(totaisRevenda.descontos) +
           impostosRevendaData.icms +
           impostosRevendaData.pis +
           impostosRevendaData.cofins);
@@ -806,167 +784,6 @@ const DRE = () => {
       setLucroBrutoMultimarcas(lucroBrutoMultimarcasCalc);
       setLucroBrutoFranquias(lucroBrutoFranquiasCalc);
       setLucroBrutoRevenda(lucroBrutoRevendaCalc);
-
-      console.log('📊 Receitas Líquidas por canal:', {
-        varejo: receitaLiquidaVarejoCalc,
-        multimarcas: receitaLiquidaMultimarcasCalc,
-        franquias: receitaLiquidaFranquiasCalc,
-        revenda: receitaLiquidaRevendaCalc,
-        total: receitaLiquidaCalculada,
-      });
-
-      console.log('📊 CMV por canal:', {
-        varejo: cmvVarejoCalc,
-        multimarcas: cmvMultimarcasCalc,
-        franquias: cmvFranquiasCalc,
-        revenda: cmvRevendaCalc,
-        total: totalCMV,
-      });
-
-      console.log('📊 Lucro Bruto por canal:', {
-        varejo: lucroBrutoVarejoCalc,
-        multimarcas: lucroBrutoMultimarcasCalc,
-        franquias: lucroBrutoFranquiasCalc,
-        revenda: lucroBrutoRevendaCalc,
-        total: lucroBrutoCalculado,
-        formula: 'Receita Líquida - CMV',
-      });
-
-      console.log('📊 Empresas utilizadas:', {
-        varejo: empresasVarejo.length + ' empresas',
-        multimarcas: empresasFixas.length + ' empresas',
-        franquias: empresasFixas.length + ' empresas',
-        revenda: empresasFixas.length + ' empresas',
-      });
-
-      console.log('📊 Dados recebidos das rotas MATERIALIZADAS:', {
-        faturamento: {
-          varejo: {
-            success: faturamentoVarejo?.success,
-            dataLength: Array.isArray(faturamentoVarejo?.data)
-              ? faturamentoVarejo.data.length
-              : 0,
-          },
-          multimarcas: {
-            success: faturamentoMultimarcas?.success,
-            dataLength: Array.isArray(faturamentoMultimarcas?.data)
-              ? faturamentoMultimarcas.data.length
-              : 0,
-          },
-          franquias: {
-            success: faturamentoFranquias?.success,
-            dataLength: Array.isArray(faturamentoFranquias?.data)
-              ? faturamentoFranquias.data.length
-              : 0,
-          },
-          revenda: {
-            success: faturamentoRevenda?.success,
-            dataLength: Array.isArray(faturamentoRevenda?.data)
-              ? faturamentoRevenda.data.length
-              : 0,
-          },
-        },
-        cmv: {
-          varejo: {
-            success: cmvVarejo?.success,
-            dataLength: Array.isArray(cmvVarejo?.data)
-              ? cmvVarejo.data.length
-              : 0,
-          },
-          multimarcas: {
-            success: cmvMultimarcas?.success,
-            dataLength: Array.isArray(cmvMultimarcas?.data)
-              ? cmvMultimarcas.data.length
-              : 0,
-          },
-          franquias: {
-            success: cmvFranquias?.success,
-            dataLength: Array.isArray(cmvFranquias?.data)
-              ? cmvFranquias.data.length
-              : 0,
-          },
-          revenda: {
-            success: cmvRevenda?.success,
-            dataLength: Array.isArray(cmvRevenda?.data)
-              ? cmvRevenda.data.length
-              : 0,
-          },
-        },
-      });
-
-      console.log('📊 Totais por Segmento (Views Materializadas):', {
-        varejo: {
-          receitaBruta: totaisVarejo.totalBruto,
-          devolucoes: totaisVarejo.totalDevolucoes,
-          descontos: totaisVarejo.descontos,
-          cmv: totaisVarejo.totalCMV,
-        },
-        multimarcas: {
-          receitaBruta: totaisMultimarcas.totalBruto,
-          devolucoes: totaisMultimarcas.totalDevolucoes,
-          descontos: totaisMultimarcas.descontos,
-          cmv: totaisMultimarcas.totalCMV,
-        },
-        franquias: {
-          receitaBruta: totaisFranquias.totalBruto,
-          devolucoes: totaisFranquias.totalDevolucoes,
-          descontos: totaisFranquias.descontos,
-          cmv: totaisFranquias.totalCMV,
-        },
-        revenda: {
-          receitaBruta: totaisRevenda.totalBruto,
-          devolucoes: totaisRevenda.totalDevolucoes,
-          descontos: totaisRevenda.descontos,
-          cmv: totaisRevenda.totalCMV,
-        },
-      });
-
-      console.log('📊 RECEITAS BRUTAS (coluna valor_sem_desconto):', {
-        total: totalVendasBrutas,
-        formula: 'Soma APENAS da coluna VALOR_SEM_DESCONTO de todos os canais',
-        observacao: 'Usa a soma total (saída - entrada já calculada na view)',
-      });
-
-      console.log('📊 DEVOLUÇÕES (valor_com_desconto_entrada):', {
-        total: totalDevolucoesLiquidas,
-        formula: 'Soma das entradas com desconto de todos os canais',
-      });
-
-      console.log('📊 DESCONTOS CONCEDIDOS:', {
-        total: totalDescontos,
-        formula: 'valor_sem_desconto - valor_com_desconto (direto das colunas)',
-        porCanal: {
-          varejo: totaisVarejo.descontos,
-          multimarcas: totaisMultimarcas.descontos,
-          franquias: totaisFranquias.descontos,
-          revenda: totaisRevenda.descontos,
-        },
-      });
-
-      console.log('📊 CMV Total:', {
-        total: totalCMV,
-        formula: 'Soma do CMV de todas as rotas CMV materializadas',
-        porCanal: {
-          varejo: totaisVarejo.totalCMV,
-          multimarcas: totaisMultimarcas.totalCMV,
-          franquias: totaisFranquias.totalCMV,
-          revenda: totaisRevenda.totalCMV,
-        },
-      });
-
-      console.log('📊 Receita Líquida:', {
-        vendasBrutas: totalVendasBrutas,
-        totalDeducoes: totalDeducoesCalculado,
-        receitaLiquida: receitaLiquidaCalculada,
-        formula: 'Vendas Brutas - (Devoluções + Descontos + Impostos)',
-      });
-
-      console.log('📊 Lucro Bruto:', {
-        receitaLiquida: receitaLiquidaCalculada,
-        cmv: totalCMV,
-        lucroBruto: lucroBrutoCalculado,
-        formula: 'Receita Líquida - CMV',
-      });
 
       setVendasBrutas(totalVendasBrutas);
       setDevolucoes(totalDevolucoesLiquidas);
@@ -1170,9 +987,10 @@ const DRE = () => {
         const totalImpostosRealPeriodo2 =
           icmsRealPeriodo2 + pisRealPeriodo2 + cofinsRealPeriodo2;
 
+        // IMPORTANTE: totalDescontosPeriodo2 já vem NEGATIVO, então usamos Math.abs()
         const totalDeducoesCalculadoPeriodo2 =
           totalDevolucoesLiquidasPeriodo2 +
-          totalDescontosPeriodo2 +
+          Math.abs(totalDescontosPeriodo2) +
           totalImpostosRealPeriodo2;
 
         const receitaLiquidaCalculadaPeriodo2 =
@@ -1181,10 +999,11 @@ const DRE = () => {
           receitaLiquidaCalculadaPeriodo2 - totalCMVPeriodo2;
 
         // Calcular receitas líquidas por canal para Período 2
+        // IMPORTANTE: descontos já vêm NEGATIVOS, então usamos Math.abs()
         const receitaLiquidaVarejoPeriodo2 =
           totaisVarejoPeriodo2.totalBruto -
           (totaisVarejoPeriodo2.totalDevolucoes +
-            totaisVarejoPeriodo2.descontos +
+            Math.abs(totaisVarejoPeriodo2.descontos) +
             impostosVarejoPeriodo2.icms +
             impostosVarejoPeriodo2.pis +
             impostosVarejoPeriodo2.cofins);
@@ -1192,7 +1011,7 @@ const DRE = () => {
         const receitaLiquidaMultimarcasPeriodo2 =
           totaisMultimarcasPeriodo2.totalBruto -
           (totaisMultimarcasPeriodo2.totalDevolucoes +
-            totaisMultimarcasPeriodo2.descontos +
+            Math.abs(totaisMultimarcasPeriodo2.descontos) +
             impostosMultimarcasPeriodo2.icms +
             impostosMultimarcasPeriodo2.pis +
             impostosMultimarcasPeriodo2.cofins);
@@ -1200,7 +1019,7 @@ const DRE = () => {
         const receitaLiquidaFranquiasPeriodo2 =
           totaisFranquiasPeriodo2.totalBruto -
           (totaisFranquiasPeriodo2.totalDevolucoes +
-            totaisFranquiasPeriodo2.descontos +
+            Math.abs(totaisFranquiasPeriodo2.descontos) +
             impostosFranquiasPeriodo2.icms +
             impostosFranquiasPeriodo2.pis +
             impostosFranquiasPeriodo2.cofins);
@@ -1208,7 +1027,7 @@ const DRE = () => {
         const receitaLiquidaRevendaPeriodo2 =
           totaisRevendaPeriodo2.totalBruto -
           (totaisRevendaPeriodo2.totalDevolucoes +
-            totaisRevendaPeriodo2.descontos +
+            Math.abs(totaisRevendaPeriodo2.descontos) +
             impostosRevendaPeriodo2.icms +
             impostosRevendaPeriodo2.pis +
             impostosRevendaPeriodo2.cofins);
@@ -1324,15 +1143,6 @@ const DRE = () => {
           lucroBrutoFranquias: lucroBrutoFranquiasPeriodo2,
           lucroBrutoRevenda: lucroBrutoRevendaPeriodo2,
         });
-
-        console.log('📊 Dados do Período 2 carregados:', {
-          periodo2: {
-            inicio: periodoComparacao.dt_inicio,
-            fim: periodoComparacao.dt_fim,
-          },
-          vendasBrutas: totalVendasBrutasPeriodo2,
-          lucroBruto: lucroBrutoCalculadoPeriodo2,
-        });
       }
 
       // ================= Plano de Contas (Contas a Pagar - Emissão) =================
@@ -1411,14 +1221,6 @@ const DRE = () => {
           new Set((dadosCP || []).map((x) => x.cd_fornecedor).filter(Boolean)),
         );
 
-        console.log('🔍 Códigos únicos encontrados:', {
-          totalItens: dadosCP.length,
-          codigosDespesas: codigosDespesas.length,
-          codigosFornecedores: codigosFornecedores.length,
-          amostraCodigosDespesas: codigosDespesas.slice(0, 10),
-          amostraCodigosFornecedores: codigosFornecedores.slice(0, 10),
-        });
-
         let despesaMap = new Map();
         let fornecedorMap = new Map();
         try {
@@ -1446,16 +1248,6 @@ const DRE = () => {
               .filter((f) => f && f.cd_fornecedor !== undefined)
               .map((f) => [f.cd_fornecedor, f]),
           );
-          console.log('📊 Resultados das buscas de nomes:', {
-            despesasEncontradas: despesaMap.size,
-            fornecedoresEncontrados: fornecedorMap.size,
-            despesasNaoEncontradas: codigosDespesas.filter(
-              (cd) => !despesaMap.has(cd),
-            ),
-            fornecedoresNaoEncontrados: codigosFornecedores.filter(
-              (cd) => !fornecedorMap.has(cd),
-            ),
-          });
         } catch (errMaps) {
           console.warn(
             'Falha ao enriquecer nomes de despesa/fornecedor:',
@@ -1532,16 +1324,6 @@ const DRE = () => {
               return { duplicata, parcela, total: v };
             })
             .sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
-          console.log('🧪 DEBUG DRE - Registro chave e total por código 6031', {
-            filtro: debugRegistroChave,
-            ocorrenciasRegistroChave: itensChave.length,
-            somaRegistroChave: somaChave,
-            ocorrenciasCodigo6031: itensCod6031.length,
-            somaCodigo6031: soma6031,
-            amostraRegistroChave: itensChave.slice(0, 3),
-          });
-          console.table(tabelaEF);
-          console.table(tabelaDP);
         } catch (e) {
           console.warn('Falha ao gerar logs de diagnóstico DRE:', e);
         }
@@ -1716,66 +1498,6 @@ const DRE = () => {
         setPlanoDespesasTotal(totalOperacionais);
         setPlanoDespesasFinanceirasNodes(gruposFinanceiros);
         setPlanoDespesasFinanceirasTotal(totalFinanceiros);
-
-        // Log detalhado dos problemas encontrados
-        console.log('🚨 ANÁLISE DE PROBLEMAS - DRE Despesas Operacionais:', {
-          totalItensProcessados: dadosCP.length,
-          problemas: {
-            semClassificacao: {
-              quantidade: problemasAnalise.semClassificacao.length,
-              itens: problemasAnalise.semClassificacao,
-              resumo: problemasAnalise.semClassificacao.reduce((acc, item) => {
-                const codigo = item.cd_despesaitem;
-                if (!acc[codigo]) acc[codigo] = { count: 0, valor: 0 };
-                acc[codigo].count++;
-                acc[codigo].valor += item.valor;
-                return acc;
-              }, {}),
-            },
-            semDespesa: {
-              quantidade: problemasAnalise.semDespesa.length,
-              itens: problemasAnalise.semDespesa,
-              resumo: problemasAnalise.semDespesa.reduce((acc, item) => {
-                const codigo = item.cd_despesaitem;
-                if (!acc[codigo])
-                  acc[codigo] = {
-                    count: 0,
-                    valor: 0,
-                    temNaAPI: item.temNaAPI,
-                    temNoItem: item.temNoItem,
-                  };
-                acc[codigo].count++;
-                acc[codigo].valor += item.valor;
-                return acc;
-              }, {}),
-            },
-            codigosDespesaInvalidos: {
-              quantidade: problemasAnalise.codigosDespesaInvalidos.length,
-              itens: problemasAnalise.codigosDespesaInvalidos,
-            },
-          },
-          recomendacoes: {
-            paraSemClassificacao:
-              'Adicionar códigos nas exceções de categoriasDespesas.js ou criar nova faixa',
-            paraSemDespesa:
-              'Verificar se códigos existem na tabela de despesas ou adicionar ds_despesaitem nos dados originais',
-            paraCodigosInvalidos:
-              'Verificar integridade dos dados de cd_despesaitem',
-          },
-        });
-
-        // Notificação visual se houver problemas
-        if (
-          problemasAnalise.semClassificacao.length > 0 ||
-          problemasAnalise.semDespesa.length > 0
-        ) {
-          const totalProblemas =
-            problemasAnalise.semClassificacao.length +
-            problemasAnalise.semDespesa.length;
-          console.warn(
-            `⚠️ ATENÇÃO: ${totalProblemas} itens com problemas de classificação encontrados. Verifique o console para detalhes.`,
-          );
-        }
       } catch (error) {
         console.error(
           'Erro ao buscar/gerar Plano de Contas (AP Emissão):',
@@ -1956,7 +1678,21 @@ const DRE = () => {
         label: 'Deduções sobre Vendas',
         description:
           'Devoluções, descontos concedidos e impostos sobre vendas.',
-        value: -(dev + desc + ti),
+        value: (function () {
+          // 🔍 DEBUG: Calcular deduções
+          const valorCalculado = -(dev + Math.abs(desc) + ti);
+          console.log('📊 CÁLCULO DEDUÇÕES SOBRE VENDAS:', {
+            devolucoes: dev,
+            descontos: desc,
+            descontosAbsoluto: Math.abs(desc),
+            impostos: ti,
+            somaAntiga: dev + desc + ti,
+            somaNova: dev + Math.abs(desc) + ti,
+            valorFinalAntigo: -(dev + desc + ti),
+            valorFinalNovo: valorCalculado,
+          });
+          return valorCalculado;
+        })(),
         type: 'deducao',
         children: [
           {
@@ -2016,42 +1752,68 @@ const DRE = () => {
             id: 'descontos',
             label: 'Descontos Concedidos',
             description: 'Descontos dados aos clientes',
-            value: -(tv.descontos + tm.descontos + tr.descontos + tf.descontos),
+            value: tv.descontos + tm.descontos + tr.descontos + tf.descontos,
             type: 'deducao',
-            children: [
-              {
-                id: 'descontos-varejo',
-                label: 'Varejo',
-                description: 'Descontos do canal Varejo',
-                value: -tv.descontos,
-                type: 'deducao',
-                porcentagem: calcularPorcentagem(tv.descontos, desc).toFixed(1),
-              },
-              {
-                id: 'descontos-multimarcas',
-                label: 'Multimarcas',
-                description: 'Descontos do canal Multimarcas',
-                value: -tm.descontos,
-                type: 'deducao',
-                porcentagem: calcularPorcentagem(tm.descontos, desc).toFixed(1),
-              },
-              {
-                id: 'descontos-revenda',
-                label: 'Revenda',
-                description: 'Descontos do canal Revenda',
-                value: -tr.descontos,
-                type: 'deducao',
-                porcentagem: calcularPorcentagem(tr.descontos, desc).toFixed(1),
-              },
-              {
-                id: 'descontos-franquias',
-                label: 'Franquias',
-                description: 'Descontos do canal Franquias',
-                value: -tf.descontos,
-                type: 'deducao',
-                porcentagem: calcularPorcentagem(tf.descontos, desc).toFixed(1),
-              },
-            ],
+            children: (function () {
+              // 🔍 DEBUG: Valores dos descontos na criação da estrutura
+              console.log('📊 CRIAÇÃO ESTRUTURA - DESCONTOS (CORRIGIDO):', {
+                descontoVarejo: tv.descontos,
+                descontoMultimarcas: tm.descontos,
+                descontoRevenda: tr.descontos,
+                descontoFranquias: tf.descontos,
+                totalDescontos:
+                  tv.descontos + tm.descontos + tr.descontos + tf.descontos,
+                observacao:
+                  'Descontos JÁ VÊM NEGATIVOS da API, não aplicar sinal negativo novamente',
+              });
+
+              return [
+                {
+                  id: 'descontos-varejo',
+                  label: 'Varejo',
+                  description: 'Descontos do canal Varejo',
+                  value: tv.descontos,
+                  type: 'deducao',
+                  porcentagem: calcularPorcentagem(
+                    Math.abs(tv.descontos),
+                    Math.abs(desc),
+                  ).toFixed(1),
+                },
+                {
+                  id: 'descontos-multimarcas',
+                  label: 'Multimarcas',
+                  description: 'Descontos do canal Multimarcas',
+                  value: tm.descontos,
+                  type: 'deducao',
+                  porcentagem: calcularPorcentagem(
+                    Math.abs(tm.descontos),
+                    Math.abs(desc),
+                  ).toFixed(1),
+                },
+                {
+                  id: 'descontos-revenda',
+                  label: 'Revenda',
+                  description: 'Descontos do canal Revenda',
+                  value: tr.descontos,
+                  type: 'deducao',
+                  porcentagem: calcularPorcentagem(
+                    Math.abs(tr.descontos),
+                    Math.abs(desc),
+                  ).toFixed(1),
+                },
+                {
+                  id: 'descontos-franquias',
+                  label: 'Franquias',
+                  description: 'Descontos do canal Franquias',
+                  value: tf.descontos,
+                  type: 'deducao',
+                  porcentagem: calcularPorcentagem(
+                    Math.abs(tf.descontos),
+                    Math.abs(desc),
+                  ).toFixed(1),
+                },
+              ];
+            })(),
           },
           {
             id: 'impostos-vendas',
@@ -2846,6 +2608,20 @@ const DRE = () => {
         ? item.porcentagem
         : extrairPorcentagemDoLabel(item.label);
 
+    // 🔍 DEBUG: Rastreamento de DESCONTOS CONCEDIDOS
+    if (item.label && item.label.toLowerCase().includes('desconto')) {
+      console.log('🔍 DEBUG DESCONTOS CONCEDIDOS:', {
+        label: item.label,
+        id: item.id,
+        valueOriginal: value,
+        valueType: typeof value,
+        isNegative: value < 0,
+        isPositive: value > 0,
+        isZero: value === 0,
+        item: item,
+      });
+    }
+
     // Só mostra porcentagem se mostrarPorcentagem for true E porcentagem existir
     if (
       mostrarPorcentagem &&
@@ -2865,6 +2641,19 @@ const DRE = () => {
       // Valores positivos (receitas, lucros) = Verde
       const valorCorTexto = value < 0 ? 'text-red-600' : 'text-green-600';
 
+      // 🔍 DEBUG: Verificar cor aplicada aos descontos
+      if (item.label && item.label.toLowerCase().includes('desconto')) {
+        console.log('🎨 COR APLICADA AO DESCONTO:', {
+          label: item.label,
+          value: value,
+          corEscolhida: valorCorTexto,
+          condicao:
+            value < 0
+              ? 'NEGATIVO (deveria ser vermelho)'
+              : 'POSITIVO (deveria ser verde)',
+        });
+      }
+
       return (
         <div className="flex items-center gap-2.5">
           <span className={`font-semibold ${valorCorTexto}`}>
@@ -2881,6 +2670,15 @@ const DRE = () => {
 
     // Determinar cor do texto baseado no valor (sem porcentagem)
     const valorCorTexto = value < 0 ? 'text-red-600' : 'text-green-600';
+
+    // 🔍 DEBUG: Verificar cor sem porcentagem
+    if (item.label && item.label.toLowerCase().includes('desconto')) {
+      console.log('🎨 COR SEM PORCENTAGEM - DESCONTO:', {
+        label: item.label,
+        value: value,
+        corEscolhida: valorCorTexto,
+      });
+    }
 
     return (
       <span className={`font-semibold ${valorCorTexto}`}>
