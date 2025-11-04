@@ -62,6 +62,15 @@ const DRE = () => {
   const [planoDespesasFinanceirasTotal, setPlanoDespesasFinanceirasTotal] =
     useState(0);
 
+  // Despesas do Período 2
+  const [planoDespesasNodesPeriodo2, setPlanoDespesasNodesPeriodo2] = useState(
+    [],
+  );
+  const [
+    planoDespesasFinanceirasNodesPeriodo2,
+    setPlanoDespesasFinanceirasNodesPeriodo2,
+  ] = useState([]);
+
   // Lista de despesas (cd_despesaitem) a serem excluídas do cálculo/visualização
   const [despesasExcluidas, setDespesasExcluidas] = useState(
     new Set([
@@ -1080,6 +1089,108 @@ const DRE = () => {
         let totalOperacionaisPeriodo2 = 0;
         let totalFinanceirosPeriodo2 = 0;
 
+        // ========== CRIAR ESTRUTURA DE NODES PARA PERÍODO 2 ==========
+        console.log('🚀 INICIANDO PROCESSAMENTO PERÍODO 2:', {
+          qtdRegistros: dadosCPPeriodo2.length,
+        });
+
+        // Enriquecer com nomes de despesas e fornecedores do Período 2
+        const codigosDespesasPeriodo2 = Array.from(
+          new Set(
+            (dadosCPPeriodo2 || [])
+              .map((x) => x.cd_despesaitem)
+              .filter(Boolean)
+              .filter((cd) => !shouldExcluirDespesa(cd)),
+          ),
+        );
+        const codigosFornecedoresPeriodo2 = Array.from(
+          new Set(
+            (dadosCPPeriodo2 || []).map((x) => x.cd_fornecedor).filter(Boolean),
+          ),
+        );
+
+        let despesaMapPeriodo2 = new Map();
+        let fornecedorMapPeriodo2 = new Map();
+        try {
+          const [despesasRespPeriodo2, fornecedoresRespPeriodo2] =
+            await Promise.all([
+              api.financial.despesa({
+                cd_despesaitem: codigosDespesasPeriodo2,
+              }),
+              api.financial.fornecedor({
+                cd_fornecedor: codigosFornecedoresPeriodo2,
+              }),
+            ]);
+
+          const despesasDataPeriodo2 = Array.isArray(despesasRespPeriodo2?.data)
+            ? despesasRespPeriodo2.data
+            : Array.isArray(despesasRespPeriodo2)
+            ? despesasRespPeriodo2
+            : [];
+          const fornecedoresDataPeriodo2 = Array.isArray(
+            fornecedoresRespPeriodo2?.data,
+          )
+            ? fornecedoresRespPeriodo2.data
+            : Array.isArray(fornecedoresRespPeriodo2)
+            ? fornecedoresRespPeriodo2
+            : [];
+
+          despesaMapPeriodo2 = new Map(
+            despesasDataPeriodo2
+              .filter((d) => d && d.cd_despesaitem !== undefined)
+              .map((d) => [d.cd_despesaitem, d]),
+          );
+          fornecedorMapPeriodo2 = new Map(
+            fornecedoresDataPeriodo2
+              .filter((f) => f && f.cd_fornecedor !== undefined)
+              .map((f) => [f.cd_fornecedor, f]),
+          );
+
+          console.log('📋 DADOS PERÍODO 2 CARREGADOS:', {
+            despesas: {
+              qtdCodigos: codigosDespesasPeriodo2.length,
+              qtdEncontradas: despesaMapPeriodo2.size,
+            },
+            fornecedores: {
+              qtdCodigos: codigosFornecedoresPeriodo2.length,
+              qtdEncontrados: fornecedorMapPeriodo2.size,
+            },
+          });
+        } catch (errMapsPeriodo2) {
+          console.warn(
+            'Falha ao enriquecer nomes de despesa/fornecedor do Período 2:',
+            errMapsPeriodo2,
+          );
+        }
+
+        // Função de categoria por faixa de código (igual Período 1)
+        const getCategoriaByCodigo = (codigo) => {
+          if (codigo >= 1000 && codigo <= 1999) {
+            return 'CUSTO DAS MERCADORIAS VENDIDAS';
+          } else if (codigo >= 2000 && codigo <= 2999) {
+            return 'DESPESAS OPERACIONAIS';
+          } else if (codigo >= 3000 && codigo <= 3999) {
+            return 'DESPESAS COM PESSOAL';
+          } else if (codigo >= 4001 && codigo <= 4999) {
+            return 'ALUGUÉIS E ARRENDAMENTOS';
+          } else if (codigo >= 5000 && codigo <= 5999) {
+            return 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
+          } else if (codigo >= 6000 && codigo <= 6999) {
+            return 'DESPESAS GERAIS';
+          } else if (codigo >= 7000 && codigo <= 7999) {
+            return 'DESPESAS FINANCEIRAS';
+          } else if (codigo >= 8000 && codigo <= 8999) {
+            return 'OUTRAS DESPESAS OPERACIONAIS';
+          } else if (codigo >= 9000 && codigo <= 9999) {
+            return 'DESPESAS C/ VENDAS';
+          } else {
+            return 'SEM CLASSIFICAÇÃO';
+          }
+        };
+
+        const gruposMapPeriodo2 = new Map();
+        const gruposFinanceirosMapPeriodo2 = new Map();
+
         for (const item of dadosCPPeriodo2) {
           const ccustoRaw =
             item.cd_ccusto ??
@@ -1099,12 +1210,171 @@ const DRE = () => {
           const valorDuplicata = parseFloat(item.vl_duplicata || 0) || 0;
           const valor = valorRateio !== 0 ? valorRateio : valorDuplicata;
 
-          if (codigoDespesa >= 7000 && codigoDespesa <= 7999) {
+          // Determinar se é operacional ou financeiro
+          const isFinanceiro = codigoDespesa >= 7000 && codigoDespesa <= 7999;
+
+          if (isFinanceiro) {
             totalFinanceirosPeriodo2 += Math.abs(valor);
           } else {
             totalOperacionaisPeriodo2 += Math.abs(valor);
           }
+
+          // Obter classificação COM FALLBACK para faixa de códigos
+          // Se for financeiro (7000-7999), FORÇAR categoria "DESPESAS FINANCEIRAS"
+          let chaveGrupo = isFinanceiro
+            ? 'DESPESAS FINANCEIRAS'
+            : getCategoriaPorCodigo(codigoDespesa) ||
+              getCategoriaByCodigo(codigoDespesa);
+
+          // Se a classificação resultou em "DESPESAS FINANCEIRAS",
+          // garantir que vai para o grupo financeiro independente do código
+          const isGrupoFinanceiro = chaveGrupo === 'DESPESAS FINANCEIRAS';
+
+          const grupoAtual = isGrupoFinanceiro
+            ? gruposFinanceirosMapPeriodo2
+            : gruposMapPeriodo2;
+
+          // Atualizar totais baseado no grupo real
+          if (isGrupoFinanceiro && !isFinanceiro) {
+            // Corrigir totais se mudou de operacional para financeiro
+            totalOperacionaisPeriodo2 -= Math.abs(valor);
+            totalFinanceirosPeriodo2 += Math.abs(valor);
+          }
+
+          // Criar grupo de despesas
+          if (!grupoAtual.has(chaveGrupo)) {
+            grupoAtual.set(chaveGrupo, {
+              id: `grp-p2-${chaveGrupo}`,
+              label: chaveGrupo,
+              description: '',
+              value: 0,
+              type: 'despesa',
+              children: [],
+              _despesas: new Map(),
+            });
+          }
+
+          const grupo = grupoAtual.get(chaveGrupo);
+          grupo.value += -valor;
+
+          // Buscar nome da despesa no mapa (igual Período 1)
+          const nomeDespesa = (
+            despesaMapPeriodo2.get(item.cd_despesaitem)?.ds_despesaitem ||
+            item.nm_despesaitem ||
+            item.ds_despesaitem ||
+            `CÓDIGO ${codigoDespesa}`
+          )
+            .toString()
+            .trim();
+
+          if (!grupo._despesas.has(nomeDespesa)) {
+            grupo._despesas.set(nomeDespesa, {
+              id: `desp-p2-${chaveGrupo}-${nomeDespesa}`,
+              label: nomeDespesa,
+              description: `Código: ${codigoDespesa}`,
+              value: 0,
+              type: 'despesa',
+              children: [],
+              _forn: new Map(),
+              _fornCount: 0,
+            });
+          }
+
+          const despesa = grupo._despesas.get(nomeDespesa);
+
+          // Adicionar camada de fornecedores (igual Período 1)
+          const fornInfo = fornecedorMapPeriodo2.get(item.cd_fornecedor);
+          const nmFornecedor = (
+            fornInfo?.nm_fornecedor ||
+            item.nm_fornecedor ||
+            item.cd_fornecedor ||
+            'Fornecedor'
+          ).toString();
+          const fornKey = String(item.cd_fornecedor || nmFornecedor);
+
+          if (!despesa._forn.has(fornKey)) {
+            despesa._forn.set(fornKey, {
+              id: `forn-p2-${fornKey}`,
+              label: nmFornecedor,
+              description: [
+                `Empresa: ${item.cd_empresa || '-'}`,
+                `Fornecedor: ${item.cd_fornecedor || '-'}`,
+              ].join(' | '),
+              value: 0,
+              type: 'despesa',
+              children: [],
+            });
+            despesa._fornCount += 1;
+          }
+
+          const fornecedor = despesa._forn.get(fornKey);
+          fornecedor.value += -valor;
+
+          despesa.value += -valor;
         }
+
+        console.log('🔵 PERÍODO 2 - Grupos criados:', {
+          operacionais: gruposMapPeriodo2.size,
+          financeiros: gruposFinanceirosMapPeriodo2.size,
+        });
+
+        // Converter Maps para arrays de nodes - OPERACIONAIS PERÍODO 2
+        const nodesPeriodo2 = Array.from(gruposMapPeriodo2.values()).map(
+          (g) => {
+            const despesasArr = Array.from(g._despesas.values()).map((d) => {
+              // Materializar fornecedores (igual Período 1)
+              d.description = `${d._fornCount} fornecedor(es) | Total: ${Number(
+                Math.abs(d.value),
+              ).toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+              })}`;
+              d.children = Array.from(d._forn.values()).sort(
+                (a, b) => Math.abs(b.value) - Math.abs(a.value),
+              );
+              delete d._forn;
+              delete d._fornCount;
+              return d;
+            });
+            despesasArr.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+            g.children = despesasArr;
+            delete g._despesas;
+            return g;
+          },
+        );
+        nodesPeriodo2.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+        setPlanoDespesasNodesPeriodo2(nodesPeriodo2);
+
+        // Converter Maps para arrays de nodes - FINANCEIRAS PERÍODO 2
+        const nodesFinanceirasPeriodo2 = Array.from(
+          gruposFinanceirosMapPeriodo2.values(),
+        ).map((g) => {
+          const despesasArr = Array.from(g._despesas.values()).map((d) => {
+            // Materializar fornecedores (igual Período 1)
+            d.description = `${d._fornCount} fornecedor(es) | Total: ${Number(
+              Math.abs(d.value),
+            ).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`;
+            d.children = Array.from(d._forn.values()).sort(
+              (a, b) => Math.abs(b.value) - Math.abs(a.value),
+            );
+            delete d._forn;
+            delete d._fornCount;
+            return d;
+          });
+          despesasArr.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+          g.children = despesasArr;
+          delete g._despesas;
+          return g;
+        });
+        nodesFinanceirasPeriodo2.sort(
+          (a, b) => Math.abs(b.value) - Math.abs(a.value),
+        );
+        setPlanoDespesasFinanceirasNodesPeriodo2(nodesFinanceirasPeriodo2);
+
+        console.log('✅ PERÍODO 2 - Nodes criados:', {
+          operacionais: nodesPeriodo2.length,
+          financeiras: nodesFinanceirasPeriodo2.length,
+        });
 
         // Salvar dados do Período 2
         setDadosPeriodo2({
@@ -1354,9 +1624,15 @@ const DRE = () => {
           const valorDuplicata = parseFloat(item.vl_duplicata || 0) || 0;
           const valor = valorRateio !== 0 ? valorRateio : valorDuplicata;
           totalGeral += valor;
+
+          // Verificar se é despesa financeira (7000-7999)
+          const isFinanceiro = codigoDespesa >= 7000 && codigoDespesa <= 7999;
+
           const categoriaExcecao = getCategoriaPorCodigo(codigoDespesa);
-          const chaveGrupo =
-            categoriaExcecao || getCategoriaByCodigo(codigoDespesa);
+          // Se for financeiro (7000-7999), FORÇAR categoria "DESPESAS FINANCEIRAS"
+          const chaveGrupo = isFinanceiro
+            ? 'DESPESAS FINANCEIRAS'
+            : categoriaExcecao || getCategoriaByCodigo(codigoDespesa);
 
           // Analisar problemas de classificação
           if (chaveGrupo === 'SEM CLASSIFICAÇÃO') {
@@ -1573,651 +1849,653 @@ const DRE = () => {
   };
 
   // Função auxiliar para gerar estrutura DRE com base em dados específicos
-  const gerarEstruturaDRE = useCallback((dados) => {
-    const {
-      vendasBrutas: vb,
-      devolucoes: dev,
-      descontos: desc,
-      totalDeducoes: td,
-      cmv: cmvVal,
-      receitaLiquida: rl,
-      lucroBruto: lb,
-      icms: icmsVal,
-      pis: pisVal,
-      cofins: cofinsVal,
-      totalImpostos: ti,
-      planoDespesasTotal: pdt,
-      planoDespesasFinanceirasTotal: pdft,
-      totaisVarejo: tv,
-      totaisMultimarcas: tm,
-      totaisFranquias: tf,
-      totaisRevenda: tr,
-      impostosVarejo: iv,
-      impostosMultimarcas: im,
-      impostosFranquias: ifrq,
-      impostosRevenda: ir,
-      receitaLiquidaVarejo: rlv,
-      receitaLiquidaMultimarcas: rlm,
-      receitaLiquidaFranquias: rlf,
-      receitaLiquidaRevenda: rlr,
-      cmvVarejo: cv,
-      cmvMultimarcas: cmtm,
-      cmvFranquias: cf,
-      cmvRevenda: cr,
-      lucroBrutoVarejo: lbv,
-      lucroBrutoMultimarcas: lbm,
-      lucroBrutoFranquias: lbf,
-      lucroBrutoRevenda: lbr,
-    } = dados;
+  const gerarEstruturaDRE = useCallback(
+    (dados, nodesOperacionais = null, nodesFinanceiras = null) => {
+      const {
+        vendasBrutas: vb,
+        devolucoes: dev,
+        descontos: desc,
+        totalDeducoes: td,
+        cmv: cmvVal,
+        receitaLiquida: rl,
+        lucroBruto: lb,
+        icms: icmsVal,
+        pis: pisVal,
+        cofins: cofinsVal,
+        totalImpostos: ti,
+        planoDespesasTotal: pdt,
+        planoDespesasFinanceirasTotal: pdft,
+        totaisVarejo: tv,
+        totaisMultimarcas: tm,
+        totaisFranquias: tf,
+        totaisRevenda: tr,
+        impostosVarejo: iv,
+        impostosMultimarcas: im,
+        impostosFranquias: ifrq,
+        impostosRevenda: ir,
+        receitaLiquidaVarejo: rlv,
+        receitaLiquidaMultimarcas: rlm,
+        receitaLiquidaFranquias: rlf,
+        receitaLiquidaRevenda: rlr,
+        cmvVarejo: cv,
+        cmvMultimarcas: cmtm,
+        cmvFranquias: cf,
+        cmvRevenda: cr,
+        lucroBrutoVarejo: lbv,
+        lucroBrutoMultimarcas: lbm,
+        lucroBrutoFranquias: lbf,
+        lucroBrutoRevenda: lbr,
+      } = dados;
 
-    // Despesas Operacionais
-    const despesasOperacionaisNode = {
-      id: 'despesas-operacionais',
-      label: 'Despesas Operacionais',
-      description:
-        'Linhas de Contas a Pagar (Emissão), para classificação posterior.',
-      value: -pdt,
-      type: 'despesa',
-      children: [],
-    };
+      // 🔍 DEBUG: Log dos nodes recebidos
+      console.log('📦 CRIANDO NODOS DE DESPESAS:', {
+        qtdOperacionais: nodesOperacionais?.length || 0,
+        qtdFinanceiras: nodesFinanceiras?.length || 0,
+        primeirosOperacionais: nodesOperacionais?.slice(0, 3).map((n) => ({
+          label: n.label,
+          value: n.value,
+          qtdChildren: n.children?.length || 0,
+        })),
+      });
 
-    // Despesas Financeiras
-    const despesasFinanceirasNode = {
-      id: 'despesas-financeiras',
-      label: 'Despesas Financeiras',
-      description: 'Encargos, juros e demais despesas financeiras.',
-      value: -pdft,
-      type: 'despesa',
-      children: [],
-    };
-
-    return [
-      {
-        id: 'vendas-bruta',
-        label: 'Receitas Brutas',
-        description: 'Quanto você vendeu no período (sem tirar nada ainda).',
-        value: vb,
-        type: 'receita',
-        children: [
-          {
-            id: 'varejo',
-            label: 'Varejo',
-            description: 'Vendas do canal Varejo',
-            value: tv.totalBruto,
-            type: 'receita',
-            porcentagem: calcularPorcentagem(tv.totalBruto, vb).toFixed(1),
-          },
-          {
-            id: 'multimarcas',
-            label: 'Multimarcas',
-            description: 'Vendas do canal Multimarcas',
-            value: tm.totalBruto,
-            type: 'receita',
-            porcentagem: calcularPorcentagem(tm.totalBruto, vb).toFixed(1),
-          },
-          {
-            id: 'revenda',
-            label: 'Revenda',
-            description: 'Vendas do canal Revenda',
-            value: tr.totalBruto,
-            type: 'receita',
-            porcentagem: calcularPorcentagem(tr.totalBruto, vb).toFixed(1),
-          },
-          {
-            id: 'franquias',
-            label: 'Franquias',
-            description: 'Vendas do canal Franquias',
-            value: tf.totalBruto,
-            type: 'receita',
-            porcentagem: calcularPorcentagem(tf.totalBruto, vb).toFixed(1),
-          },
-        ],
-      },
-      {
-        id: 'deducoes-vendas',
-        label: 'Deduções sobre Vendas',
+      // Despesas Operacionais
+      const despesasOperacionaisNode = {
+        id: 'despesas-operacionais',
+        label: 'Despesas Operacionais',
         description:
-          'Devoluções, descontos concedidos e impostos sobre vendas.',
-        value: (function () {
-          // 🔍 DEBUG: Calcular deduções
-          const valorCalculado = -(dev + Math.abs(desc) + ti);
-          console.log('📊 CÁLCULO DEDUÇÕES SOBRE VENDAS:', {
-            devolucoes: dev,
-            descontos: desc,
-            descontosAbsoluto: Math.abs(desc),
-            impostos: ti,
-            somaAntiga: dev + desc + ti,
-            somaNova: dev + Math.abs(desc) + ti,
-            valorFinalAntigo: -(dev + desc + ti),
-            valorFinalNovo: valorCalculado,
-          });
-          return valorCalculado;
-        })(),
-        type: 'deducao',
-        children: [
-          {
-            id: 'devolucoes',
-            label: 'Devoluções',
-            description: 'Clientes devolveram mercadorias',
-            value: -dev,
-            type: 'deducao',
-            children: [
-              {
-                id: 'devolucoes-varejo',
-                label: 'Varejo',
-                description: 'Devoluções do canal Varejo',
-                value: -tv.totalDevolucoes,
-                type: 'deducao',
-                porcentagem: calcularPorcentagem(
-                  tv.totalDevolucoes,
-                  dev,
-                ).toFixed(1),
-              },
-              {
-                id: 'devolucoes-multimarcas',
-                label: 'Multimarcas',
-                description: 'Devoluções do canal Multimarcas',
-                value: -tm.totalDevolucoes,
-                type: 'deducao',
-                porcentagem: calcularPorcentagem(
-                  tm.totalDevolucoes,
-                  dev,
-                ).toFixed(1),
-              },
-              {
-                id: 'devolucoes-revenda',
-                label: 'Revenda',
-                description: 'Devoluções do canal Revenda',
-                value: -tr.totalDevolucoes,
-                type: 'deducao',
-                porcentagem: calcularPorcentagem(
-                  tr.totalDevolucoes,
-                  dev,
-                ).toFixed(1),
-              },
-              {
-                id: 'devolucoes-franquias',
-                label: 'Franquias',
-                description: 'Devoluções do canal Franquias',
-                value: -tf.totalDevolucoes,
-                type: 'deducao',
-                porcentagem: calcularPorcentagem(
-                  tf.totalDevolucoes,
-                  dev,
-                ).toFixed(1),
-              },
-            ],
-          },
-          {
-            id: 'descontos',
-            label: 'Descontos Concedidos',
-            description: 'Descontos dados aos clientes',
-            value: tv.descontos + tm.descontos + tr.descontos + tf.descontos,
-            type: 'deducao',
-            children: (function () {
-              // 🔍 DEBUG: Valores dos descontos na criação da estrutura
-              console.log('📊 CRIAÇÃO ESTRUTURA - DESCONTOS (CORRIGIDO):', {
-                descontoVarejo: tv.descontos,
-                descontoMultimarcas: tm.descontos,
-                descontoRevenda: tr.descontos,
-                descontoFranquias: tf.descontos,
-                totalDescontos:
-                  tv.descontos + tm.descontos + tr.descontos + tf.descontos,
-                observacao:
-                  'Descontos JÁ VÊM NEGATIVOS da API, não aplicar sinal negativo novamente',
-              });
+          'Linhas de Contas a Pagar (Emissão), para classificação posterior.',
+        value: -pdt,
+        type: 'despesa',
+        children: nodesOperacionais || [],
+      };
 
-              return [
+      // Despesas Financeiras
+      const despesasFinanceirasNode = {
+        id: 'despesas-financeiras',
+        label: 'Despesas Financeiras',
+        description: 'Encargos, juros e demais despesas financeiras.',
+        value: -pdft,
+        type: 'despesa',
+        children: nodesFinanceiras || [],
+      };
+
+      return [
+        {
+          id: 'vendas-bruta',
+          label: 'Receitas Brutas',
+          description: 'Quanto você vendeu no período (sem tirar nada ainda).',
+          value: vb,
+          type: 'receita',
+          children: [
+            {
+              id: 'varejo',
+              label: 'Varejo',
+              description: 'Vendas do canal Varejo',
+              value: tv.totalBruto,
+              type: 'receita',
+              porcentagem: calcularPorcentagem(tv.totalBruto, vb).toFixed(1),
+            },
+            {
+              id: 'multimarcas',
+              label: 'Multimarcas',
+              description: 'Vendas do canal Multimarcas',
+              value: tm.totalBruto,
+              type: 'receita',
+              porcentagem: calcularPorcentagem(tm.totalBruto, vb).toFixed(1),
+            },
+            {
+              id: 'revenda',
+              label: 'Revenda',
+              description: 'Vendas do canal Revenda',
+              value: tr.totalBruto,
+              type: 'receita',
+              porcentagem: calcularPorcentagem(tr.totalBruto, vb).toFixed(1),
+            },
+            {
+              id: 'franquias',
+              label: 'Franquias',
+              description: 'Vendas do canal Franquias',
+              value: tf.totalBruto,
+              type: 'receita',
+              porcentagem: calcularPorcentagem(tf.totalBruto, vb).toFixed(1),
+            },
+          ],
+        },
+        {
+          id: 'deducoes-vendas',
+          label: 'Deduções sobre Vendas',
+          description:
+            'Devoluções, descontos concedidos e impostos sobre vendas.',
+          value: (function () {
+            // 🔍 DEBUG: Calcular deduções
+            const valorCalculado = -(dev + Math.abs(desc) + ti);
+            console.log('📊 CÁLCULO DEDUÇÕES SOBRE VENDAS:', {
+              devolucoes: dev,
+              descontos: desc,
+              descontosAbsoluto: Math.abs(desc),
+              impostos: ti,
+              somaAntiga: dev + desc + ti,
+              somaNova: dev + Math.abs(desc) + ti,
+              valorFinalAntigo: -(dev + desc + ti),
+              valorFinalNovo: valorCalculado,
+            });
+            return valorCalculado;
+          })(),
+          type: 'deducao',
+          children: [
+            {
+              id: 'devolucoes',
+              label: 'Devoluções',
+              description: 'Clientes devolveram mercadorias',
+              value: -dev,
+              type: 'deducao',
+              children: [
                 {
-                  id: 'descontos-varejo',
+                  id: 'devolucoes-varejo',
                   label: 'Varejo',
-                  description: 'Descontos do canal Varejo',
-                  value: tv.descontos,
+                  description: 'Devoluções do canal Varejo',
+                  value: -tv.totalDevolucoes,
                   type: 'deducao',
                   porcentagem: calcularPorcentagem(
-                    Math.abs(tv.descontos),
-                    Math.abs(desc),
+                    tv.totalDevolucoes,
+                    dev,
                   ).toFixed(1),
                 },
                 {
-                  id: 'descontos-multimarcas',
+                  id: 'devolucoes-multimarcas',
                   label: 'Multimarcas',
-                  description: 'Descontos do canal Multimarcas',
-                  value: tm.descontos,
+                  description: 'Devoluções do canal Multimarcas',
+                  value: -tm.totalDevolucoes,
                   type: 'deducao',
                   porcentagem: calcularPorcentagem(
-                    Math.abs(tm.descontos),
-                    Math.abs(desc),
+                    tm.totalDevolucoes,
+                    dev,
                   ).toFixed(1),
                 },
                 {
-                  id: 'descontos-revenda',
+                  id: 'devolucoes-revenda',
                   label: 'Revenda',
-                  description: 'Descontos do canal Revenda',
-                  value: tr.descontos,
+                  description: 'Devoluções do canal Revenda',
+                  value: -tr.totalDevolucoes,
                   type: 'deducao',
                   porcentagem: calcularPorcentagem(
-                    Math.abs(tr.descontos),
-                    Math.abs(desc),
+                    tr.totalDevolucoes,
+                    dev,
                   ).toFixed(1),
                 },
                 {
-                  id: 'descontos-franquias',
+                  id: 'devolucoes-franquias',
                   label: 'Franquias',
-                  description: 'Descontos do canal Franquias',
-                  value: tf.descontos,
+                  description: 'Devoluções do canal Franquias',
+                  value: -tf.totalDevolucoes,
                   type: 'deducao',
                   porcentagem: calcularPorcentagem(
-                    Math.abs(tf.descontos),
-                    Math.abs(desc),
+                    tf.totalDevolucoes,
+                    dev,
                   ).toFixed(1),
                 },
-              ];
-            })(),
-          },
-          {
-            id: 'impostos-vendas',
-            label: 'Impostos sobre Vendas',
-            description: 'ICMS, PIS, COFINS e outros impostos sobre vendas.',
-            value: -ti,
-            type: 'deducao',
-            children: [
-              {
-                id: 'impostos-varejo',
-                label: 'Varejo',
-                description: 'Impostos do canal Varejo',
-                value: -(iv.icms + iv.pis + iv.cofins),
-                type: 'deducao',
-                porcentagem: calcularPorcentagem(
-                  iv.icms + iv.pis + iv.cofins,
-                  ti,
-                ).toFixed(1),
-                children: [
+              ],
+            },
+            {
+              id: 'descontos',
+              label: 'Descontos Concedidos',
+              description: 'Descontos dados aos clientes',
+              value: tv.descontos + tm.descontos + tr.descontos + tf.descontos,
+              type: 'deducao',
+              children: (function () {
+                // 🔍 DEBUG: Valores dos descontos na criação da estrutura
+                console.log('📊 CRIAÇÃO ESTRUTURA - DESCONTOS (CORRIGIDO):', {
+                  descontoVarejo: tv.descontos,
+                  descontoMultimarcas: tm.descontos,
+                  descontoRevenda: tr.descontos,
+                  descontoFranquias: tf.descontos,
+                  totalDescontos:
+                    tv.descontos + tm.descontos + tr.descontos + tf.descontos,
+                  observacao:
+                    'Descontos JÁ VÊM NEGATIVOS da API, não aplicar sinal negativo novamente',
+                });
+
+                return [
                   {
-                    id: 'icms-varejo',
-                    label: 'ICMS',
-                    description: 'ICMS do canal Varejo',
-                    value: -iv.icms,
+                    id: 'descontos-varejo',
+                    label: 'Varejo',
+                    description: 'Descontos do canal Varejo',
+                    value: tv.descontos,
                     type: 'deducao',
+                    porcentagem: calcularPorcentagem(
+                      Math.abs(tv.descontos),
+                      Math.abs(desc),
+                    ).toFixed(1),
                   },
                   {
-                    id: 'pis-varejo',
-                    label: 'PIS',
-                    description: 'PIS do canal Varejo',
-                    value: -iv.pis,
+                    id: 'descontos-multimarcas',
+                    label: 'Multimarcas',
+                    description: 'Descontos do canal Multimarcas',
+                    value: tm.descontos,
                     type: 'deducao',
+                    porcentagem: calcularPorcentagem(
+                      Math.abs(tm.descontos),
+                      Math.abs(desc),
+                    ).toFixed(1),
                   },
                   {
-                    id: 'cofins-varejo',
-                    label: 'COFINS',
-                    description: 'COFINS do canal Varejo',
-                    value: -iv.cofins,
+                    id: 'descontos-revenda',
+                    label: 'Revenda',
+                    description: 'Descontos do canal Revenda',
+                    value: tr.descontos,
                     type: 'deducao',
-                  },
-                ],
-              },
-              {
-                id: 'impostos-multimarcas',
-                label: 'Multimarcas',
-                description: 'Impostos do canal Multimarcas',
-                value: -(im.icms + im.pis + im.cofins),
-                type: 'deducao',
-                porcentagem: calcularPorcentagem(
-                  im.icms + im.pis + im.cofins,
-                  ti,
-                ).toFixed(1),
-                children: [
-                  {
-                    id: 'icms-multimarcas',
-                    label: 'ICMS',
-                    description: 'ICMS do canal Multimarcas',
-                    value: -im.icms,
-                    type: 'deducao',
+                    porcentagem: calcularPorcentagem(
+                      Math.abs(tr.descontos),
+                      Math.abs(desc),
+                    ).toFixed(1),
                   },
                   {
-                    id: 'pis-multimarcas',
-                    label: 'PIS',
-                    description: 'PIS do canal Multimarcas',
-                    value: -im.pis,
+                    id: 'descontos-franquias',
+                    label: 'Franquias',
+                    description: 'Descontos do canal Franquias',
+                    value: tf.descontos,
                     type: 'deducao',
+                    porcentagem: calcularPorcentagem(
+                      Math.abs(tf.descontos),
+                      Math.abs(desc),
+                    ).toFixed(1),
                   },
-                  {
-                    id: 'cofins-multimarcas',
-                    label: 'COFINS',
-                    description: 'COFINS do canal Multimarcas',
-                    value: -im.cofins,
-                    type: 'deducao',
-                  },
-                ],
-              },
-              {
-                id: 'impostos-revenda',
-                label: 'Revenda',
-                description: 'Impostos do canal Revenda',
-                value: -(ir.icms + ir.pis + ir.cofins),
-                type: 'deducao',
-                porcentagem: calcularPorcentagem(
-                  ir.icms + ir.pis + ir.cofins,
-                  ti,
-                ).toFixed(1),
-                children: [
-                  {
-                    id: 'icms-revenda',
-                    label: 'ICMS',
-                    description: 'ICMS do canal Revenda',
-                    value: -ir.icms,
-                    type: 'deducao',
-                  },
-                  {
-                    id: 'pis-revenda',
-                    label: 'PIS',
-                    description: 'PIS do canal Revenda',
-                    value: -ir.pis,
-                    type: 'deducao',
-                  },
-                  {
-                    id: 'cofins-revenda',
-                    label: 'COFINS',
-                    description: 'COFINS do canal Revenda',
-                    value: -ir.cofins,
-                    type: 'deducao',
-                  },
-                ],
-              },
-              {
-                id: 'impostos-franquias',
-                label: 'Franquias',
-                description: 'Impostos do canal Franquias',
-                value: -(ifrq.icms + ifrq.pis + ifrq.cofins),
-                type: 'deducao',
-                porcentagem: calcularPorcentagem(
-                  ifrq.icms + ifrq.pis + ifrq.cofins,
-                  ti,
-                ).toFixed(1),
-                children: [
-                  {
-                    id: 'icms-franquias',
-                    label: 'ICMS',
-                    description: 'ICMS do canal Franquias',
-                    value: -ifrq.icms,
-                    type: 'deducao',
-                  },
-                  {
-                    id: 'pis-franquias',
-                    label: 'PIS',
-                    description: 'PIS do canal Franquias',
-                    value: -ifrq.pis,
-                    type: 'deducao',
-                  },
-                  {
-                    id: 'cofins-franquias',
-                    label: 'COFINS',
-                    description: 'COFINS do canal Franquias',
-                    value: -ifrq.cofins,
-                    type: 'deducao',
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      },
-      {
-        id: 'receita-liquida',
-        label: 'Receita Líquida de Vendas',
-        description: 'É o que realmente ficou das vendas.',
-        value: rl,
-        type: 'resultado',
-        children: [
-          {
-            id: 'receita-liquida-varejo',
-            label: 'Varejo',
-            description: 'Receita líquida do canal Varejo',
-            value: rlv,
-            type: 'resultado',
-            porcentagem: calcularPorcentagem(rlv, rl).toFixed(1),
-          },
-          {
-            id: 'receita-liquida-multimarcas',
-            label: 'Multimarcas',
-            description: 'Receita líquida do canal Multimarcas',
-            value: rlm,
-            type: 'resultado',
-            porcentagem: calcularPorcentagem(rlm, rl).toFixed(1),
-          },
-          {
-            id: 'receita-liquida-revenda',
-            label: 'Revenda',
-            description: 'Receita líquida do canal Revenda',
-            value: rlr,
-            type: 'resultado',
-            porcentagem: calcularPorcentagem(rlr, rl).toFixed(1),
-          },
-          {
-            id: 'receita-liquida-franquias',
-            label: 'Franquias',
-            description: 'Receita líquida do canal Franquias',
-            value: rlf,
-            type: 'resultado',
-            porcentagem: calcularPorcentagem(rlf, rl).toFixed(1),
-          },
-        ],
-      },
-      {
-        id: 'cmv',
-        label: 'Custos da Mercadoria Vendida (CMV)',
-        description: 'Quanto custou comprar ou produzir o que você vendeu.',
-        value: -cmvVal,
-        porcentagem: (() => {
-          const base = rl;
-          return base > 0 ? ((cmvVal / base) * 100).toFixed(2) : '0.00';
-        })(),
-        type: 'custo',
-        children: [
-          {
-            id: 'cmv-varejo',
-            label: 'Varejo',
-            description: 'CMV do canal Varejo',
-            value: -cv,
-            type: 'custo',
-            porcentagem: (() => {
-              const receitaMaisImpostos = rlv;
-              return receitaMaisImpostos > 0
-                ? ((cv / receitaMaisImpostos) * 100).toFixed(2)
-                : '0.00';
-            })(),
-          },
-          {
-            id: 'cmv-multimarcas',
-            label: 'Multimarcas',
-            description: 'CMV do canal Multimarcas',
-            value: -cmtm,
-            type: 'custo',
-            porcentagem: (() => {
-              const receitaMaisImpostos = rlm;
-              return receitaMaisImpostos > 0
-                ? ((cmtm / receitaMaisImpostos) * 100).toFixed(2)
-                : '0.00';
-            })(),
-          },
-          {
-            id: 'cmv-revenda',
-            label: 'Revenda',
-            description: 'CMV do canal Revenda',
-            value: -cr,
-            type: 'custo',
-            porcentagem: (() => {
-              const receitaMaisImpostos = rlr;
-              return receitaMaisImpostos > 0
-                ? ((cr / receitaMaisImpostos) * 100).toFixed(2)
-                : '0.00';
-            })(),
-          },
-          {
-            id: 'cmv-franquias',
-            label: 'Franquias',
-            description: 'CMV do canal Franquias',
-            value: -cf,
-            type: 'custo',
-            porcentagem: (() => {
-              const receitaMaisImpostos = rlf;
-              return receitaMaisImpostos > 0
-                ? ((cf / receitaMaisImpostos) * 100).toFixed(2)
-                : '0.00';
-            })(),
-          },
-        ],
-      },
-      {
-        id: 'lucro-bruto',
-        label: 'Lucro Bruto',
-        description: 'Receita Líquida – CMV',
-        value: lb,
-        type: 'resultado',
-        children: [
-          {
-            id: 'lucro-bruto-varejo',
-            label: 'Varejo',
-            description: 'Lucro bruto do canal Varejo',
-            value: lbv,
-            type: 'resultado',
-            porcentagem: calcularPorcentagem(lbv, lb).toFixed(1),
-          },
-          {
-            id: 'lucro-bruto-multimarcas',
-            label: 'Multimarcas',
-            description: 'Lucro bruto do canal Multimarcas',
-            value: lbm,
-            type: 'resultado',
-            porcentagem: calcularPorcentagem(lbm, lb).toFixed(1),
-          },
-          {
-            id: 'lucro-bruto-revenda',
-            label: 'Revenda',
-            description: 'Lucro bruto do canal Revenda',
-            value: lbr,
-            type: 'resultado',
-            porcentagem: calcularPorcentagem(lbr, lb).toFixed(1),
-          },
-          {
-            id: 'lucro-bruto-franquias',
-            label: 'Franquias',
-            description: 'Lucro bruto do canal Franquias',
-            value: lbf,
-            type: 'resultado',
-            porcentagem: calcularPorcentagem(lbf, lb).toFixed(1),
-          },
-        ],
-      },
-      despesasOperacionaisNode,
-      {
-        id: 'resultado-operacional',
-        label: 'Resultado Operacional',
-        description: 'Lucro Bruto - Despesas Operacionais',
-        value: lb - pdt,
-        type: 'resultado',
-        children: [],
-      },
-      despesasFinanceirasNode,
-      {
-        id: 'lucro-antes-impostos',
-        label: 'Lucro Antes do IR/CSLL',
-        description: 'Resultado antes dos impostos sobre o lucro.',
-        value: lb - pdt - pdft,
-        type: 'resultado',
-        children: [],
-      },
-      {
-        id: 'impostos-lucro',
-        label: 'Impostos sobre o Lucro (IR/CSLL)',
-        description: 'Se a empresa paga esse tipo de imposto.',
-        value: 0,
-        type: 'imposto',
-        children: [
-          {
-            id: 'irpj',
-            label: 'IRPJ',
-            description: 'Imposto de Renda Pessoa Jurídica',
-            value: 0,
-            type: 'imposto',
-          },
-          {
-            id: 'csll',
-            label: 'CSLL',
-            description: 'Contribuição Social sobre o Lucro Líquido',
-            value: 0,
-            type: 'imposto',
-          },
-        ],
-      },
-      {
-        id: 'lucro-liquido',
-        label: 'Lucro Líquido do Exercício',
-        description:
-          'Resultado Operacional - Despesas Financeiras - Impostos sobre o Lucro',
-        value: lb - pdt - pdft - 0,
-        type: 'resultado-final',
-        children: [],
-      },
-    ];
-  }, []);
+                ];
+              })(),
+            },
+            {
+              id: 'impostos-vendas',
+              label: 'Impostos sobre Vendas',
+              description: 'ICMS, PIS, COFINS e outros impostos sobre vendas.',
+              value: -ti,
+              type: 'deducao',
+              children: [
+                {
+                  id: 'impostos-varejo',
+                  label: 'Varejo',
+                  description: 'Impostos do canal Varejo',
+                  value: -(iv.icms + iv.pis + iv.cofins),
+                  type: 'deducao',
+                  porcentagem: calcularPorcentagem(
+                    iv.icms + iv.pis + iv.cofins,
+                    ti,
+                  ).toFixed(1),
+                  children: [
+                    {
+                      id: 'icms-varejo',
+                      label: 'ICMS',
+                      description: 'ICMS do canal Varejo',
+                      value: -iv.icms,
+                      type: 'deducao',
+                    },
+                    {
+                      id: 'pis-varejo',
+                      label: 'PIS',
+                      description: 'PIS do canal Varejo',
+                      value: -iv.pis,
+                      type: 'deducao',
+                    },
+                    {
+                      id: 'cofins-varejo',
+                      label: 'COFINS',
+                      description: 'COFINS do canal Varejo',
+                      value: -iv.cofins,
+                      type: 'deducao',
+                    },
+                  ],
+                },
+                {
+                  id: 'impostos-multimarcas',
+                  label: 'Multimarcas',
+                  description: 'Impostos do canal Multimarcas',
+                  value: -(im.icms + im.pis + im.cofins),
+                  type: 'deducao',
+                  porcentagem: calcularPorcentagem(
+                    im.icms + im.pis + im.cofins,
+                    ti,
+                  ).toFixed(1),
+                  children: [
+                    {
+                      id: 'icms-multimarcas',
+                      label: 'ICMS',
+                      description: 'ICMS do canal Multimarcas',
+                      value: -im.icms,
+                      type: 'deducao',
+                    },
+                    {
+                      id: 'pis-multimarcas',
+                      label: 'PIS',
+                      description: 'PIS do canal Multimarcas',
+                      value: -im.pis,
+                      type: 'deducao',
+                    },
+                    {
+                      id: 'cofins-multimarcas',
+                      label: 'COFINS',
+                      description: 'COFINS do canal Multimarcas',
+                      value: -im.cofins,
+                      type: 'deducao',
+                    },
+                  ],
+                },
+                {
+                  id: 'impostos-revenda',
+                  label: 'Revenda',
+                  description: 'Impostos do canal Revenda',
+                  value: -(ir.icms + ir.pis + ir.cofins),
+                  type: 'deducao',
+                  porcentagem: calcularPorcentagem(
+                    ir.icms + ir.pis + ir.cofins,
+                    ti,
+                  ).toFixed(1),
+                  children: [
+                    {
+                      id: 'icms-revenda',
+                      label: 'ICMS',
+                      description: 'ICMS do canal Revenda',
+                      value: -ir.icms,
+                      type: 'deducao',
+                    },
+                    {
+                      id: 'pis-revenda',
+                      label: 'PIS',
+                      description: 'PIS do canal Revenda',
+                      value: -ir.pis,
+                      type: 'deducao',
+                    },
+                    {
+                      id: 'cofins-revenda',
+                      label: 'COFINS',
+                      description: 'COFINS do canal Revenda',
+                      value: -ir.cofins,
+                      type: 'deducao',
+                    },
+                  ],
+                },
+                {
+                  id: 'impostos-franquias',
+                  label: 'Franquias',
+                  description: 'Impostos do canal Franquias',
+                  value: -(ifrq.icms + ifrq.pis + ifrq.cofins),
+                  type: 'deducao',
+                  porcentagem: calcularPorcentagem(
+                    ifrq.icms + ifrq.pis + ifrq.cofins,
+                    ti,
+                  ).toFixed(1),
+                  children: [
+                    {
+                      id: 'icms-franquias',
+                      label: 'ICMS',
+                      description: 'ICMS do canal Franquias',
+                      value: -ifrq.icms,
+                      type: 'deducao',
+                    },
+                    {
+                      id: 'pis-franquias',
+                      label: 'PIS',
+                      description: 'PIS do canal Franquias',
+                      value: -ifrq.pis,
+                      type: 'deducao',
+                    },
+                    {
+                      id: 'cofins-franquias',
+                      label: 'COFINS',
+                      description: 'COFINS do canal Franquias',
+                      value: -ifrq.cofins,
+                      type: 'deducao',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: 'receita-liquida',
+          label: 'Receita Líquida de Vendas',
+          description: 'É o que realmente ficou das vendas.',
+          value: rl,
+          type: 'resultado',
+          children: [
+            {
+              id: 'receita-liquida-varejo',
+              label: 'Varejo',
+              description: 'Receita líquida do canal Varejo',
+              value: rlv,
+              type: 'resultado',
+              porcentagem: calcularPorcentagem(rlv, rl).toFixed(1),
+            },
+            {
+              id: 'receita-liquida-multimarcas',
+              label: 'Multimarcas',
+              description: 'Receita líquida do canal Multimarcas',
+              value: rlm,
+              type: 'resultado',
+              porcentagem: calcularPorcentagem(rlm, rl).toFixed(1),
+            },
+            {
+              id: 'receita-liquida-revenda',
+              label: 'Revenda',
+              description: 'Receita líquida do canal Revenda',
+              value: rlr,
+              type: 'resultado',
+              porcentagem: calcularPorcentagem(rlr, rl).toFixed(1),
+            },
+            {
+              id: 'receita-liquida-franquias',
+              label: 'Franquias',
+              description: 'Receita líquida do canal Franquias',
+              value: rlf,
+              type: 'resultado',
+              porcentagem: calcularPorcentagem(rlf, rl).toFixed(1),
+            },
+          ],
+        },
+        {
+          id: 'cmv',
+          label: 'Custos da Mercadoria Vendida (CMV)',
+          description: 'Quanto custou comprar ou produzir o que você vendeu.',
+          value: -cmvVal,
+          porcentagem: (() => {
+            const base = rl;
+            return base > 0 ? ((cmvVal / base) * 100).toFixed(2) : '0.00';
+          })(),
+          type: 'custo',
+          children: [
+            {
+              id: 'cmv-varejo',
+              label: 'Varejo',
+              description: 'CMV do canal Varejo',
+              value: -cv,
+              type: 'custo',
+              porcentagem: (() => {
+                const receitaMaisImpostos = rlv;
+                return receitaMaisImpostos > 0
+                  ? ((cv / receitaMaisImpostos) * 100).toFixed(2)
+                  : '0.00';
+              })(),
+            },
+            {
+              id: 'cmv-multimarcas',
+              label: 'Multimarcas',
+              description: 'CMV do canal Multimarcas',
+              value: -cmtm,
+              type: 'custo',
+              porcentagem: (() => {
+                const receitaMaisImpostos = rlm;
+                return receitaMaisImpostos > 0
+                  ? ((cmtm / receitaMaisImpostos) * 100).toFixed(2)
+                  : '0.00';
+              })(),
+            },
+            {
+              id: 'cmv-revenda',
+              label: 'Revenda',
+              description: 'CMV do canal Revenda',
+              value: -cr,
+              type: 'custo',
+              porcentagem: (() => {
+                const receitaMaisImpostos = rlr;
+                return receitaMaisImpostos > 0
+                  ? ((cr / receitaMaisImpostos) * 100).toFixed(2)
+                  : '0.00';
+              })(),
+            },
+            {
+              id: 'cmv-franquias',
+              label: 'Franquias',
+              description: 'CMV do canal Franquias',
+              value: -cf,
+              type: 'custo',
+              porcentagem: (() => {
+                const receitaMaisImpostos = rlf;
+                return receitaMaisImpostos > 0
+                  ? ((cf / receitaMaisImpostos) * 100).toFixed(2)
+                  : '0.00';
+              })(),
+            },
+          ],
+        },
+        {
+          id: 'lucro-bruto',
+          label: 'Lucro Bruto',
+          description: 'Receita Líquida – CMV',
+          value: lb,
+          type: 'resultado',
+          children: [
+            {
+              id: 'lucro-bruto-varejo',
+              label: 'Varejo',
+              description: 'Lucro bruto do canal Varejo',
+              value: lbv,
+              type: 'resultado',
+              porcentagem: calcularPorcentagem(lbv, lb).toFixed(1),
+            },
+            {
+              id: 'lucro-bruto-multimarcas',
+              label: 'Multimarcas',
+              description: 'Lucro bruto do canal Multimarcas',
+              value: lbm,
+              type: 'resultado',
+              porcentagem: calcularPorcentagem(lbm, lb).toFixed(1),
+            },
+            {
+              id: 'lucro-bruto-revenda',
+              label: 'Revenda',
+              description: 'Lucro bruto do canal Revenda',
+              value: lbr,
+              type: 'resultado',
+              porcentagem: calcularPorcentagem(lbr, lb).toFixed(1),
+            },
+            {
+              id: 'lucro-bruto-franquias',
+              label: 'Franquias',
+              description: 'Lucro bruto do canal Franquias',
+              value: lbf,
+              type: 'resultado',
+              porcentagem: calcularPorcentagem(lbf, lb).toFixed(1),
+            },
+          ],
+        },
+        despesasOperacionaisNode,
+        {
+          id: 'resultado-operacional',
+          label: 'Resultado Operacional',
+          description: 'Lucro Bruto - Despesas Operacionais',
+          value: lb - pdt,
+          type: 'resultado',
+          children: [],
+        },
+        despesasFinanceirasNode,
+        {
+          id: 'lucro-antes-impostos',
+          label: 'Lucro Antes do IR/CSLL',
+          description: 'Resultado antes dos impostos sobre o lucro.',
+          value: lb - pdt - pdft,
+          type: 'resultado',
+          children: [],
+        },
+        {
+          id: 'impostos-lucro',
+          label: 'Impostos sobre o Lucro (IR/CSLL)',
+          description: 'Se a empresa paga esse tipo de imposto.',
+          value: 0,
+          type: 'imposto',
+          children: [
+            {
+              id: 'irpj',
+              label: 'IRPJ',
+              description: 'Imposto de Renda Pessoa Jurídica',
+              value: 0,
+              type: 'imposto',
+            },
+            {
+              id: 'csll',
+              label: 'CSLL',
+              description: 'Contribuição Social sobre o Lucro Líquido',
+              value: 0,
+              type: 'imposto',
+            },
+          ],
+        },
+        {
+          id: 'lucro-liquido',
+          label: 'Lucro Líquido do Exercício',
+          description:
+            'Resultado Operacional - Despesas Financeiras - Impostos sobre o Lucro',
+          value: lb - pdt - pdft - 0,
+          type: 'resultado-final',
+          children: [],
+        },
+      ];
+    },
+    [],
+  );
 
   // Dados do DRE com vendas brutas reais (Período 1)
   const dreData = useMemo(() => {
-    const estruturaDRE = gerarEstruturaDRE({
-      vendasBrutas,
-      devolucoes,
-      descontos,
-      totalDeducoes,
-      cmv,
-      receitaLiquida,
-      lucroBruto,
-      icms,
-      pis,
-      cofins,
-      totalImpostos,
-      planoDespesasTotal,
-      planoDespesasFinanceirasTotal,
-      totaisVarejo,
-      totaisMultimarcas,
-      totaisFranquias,
-      totaisRevenda,
-      impostosVarejo,
-      impostosMultimarcas,
-      impostosFranquias,
-      impostosRevenda,
-      receitaLiquidaVarejo,
-      receitaLiquidaMultimarcas,
-      receitaLiquidaFranquias,
-      receitaLiquidaRevenda,
-      cmvVarejo,
-      cmvMultimarcas,
-      cmvFranquias,
-      cmvRevenda,
-      lucroBrutoVarejo,
-      lucroBrutoMultimarcas,
-      lucroBrutoFranquias,
-      lucroBrutoRevenda,
-    });
-
-    // Adicionar children aos nós de despesas (usa dados reais do Período 1)
-    const despesasOpIndex = estruturaDRE.findIndex(
-      (n) => n.id === 'despesas-operacionais',
+    const estruturaDRE = gerarEstruturaDRE(
+      {
+        vendasBrutas,
+        devolucoes,
+        descontos,
+        totalDeducoes,
+        cmv,
+        receitaLiquida,
+        lucroBruto,
+        icms,
+        pis,
+        cofins,
+        totalImpostos,
+        planoDespesasTotal,
+        planoDespesasFinanceirasTotal,
+        totaisVarejo,
+        totaisMultimarcas,
+        totaisFranquias,
+        totaisRevenda,
+        impostosVarejo,
+        impostosMultimarcas,
+        impostosFranquias,
+        impostosRevenda,
+        receitaLiquidaVarejo,
+        receitaLiquidaMultimarcas,
+        receitaLiquidaFranquias,
+        receitaLiquidaRevenda,
+        cmvVarejo,
+        cmvMultimarcas,
+        cmvFranquias,
+        cmvRevenda,
+        lucroBrutoVarejo,
+        lucroBrutoMultimarcas,
+        lucroBrutoFranquias,
+        lucroBrutoRevenda,
+      },
+      planoDespesasNodes,
+      planoDespesasFinanceirasNodes,
     );
-    if (despesasOpIndex >= 0) {
-      estruturaDRE[despesasOpIndex].children = planoDespesasNodes;
-    }
-
-    const despesasFinIndex = estruturaDRE.findIndex(
-      (n) => n.id === 'despesas-financeiras',
-    );
-    if (despesasFinIndex >= 0) {
-      estruturaDRE[despesasFinIndex].children = planoDespesasFinanceirasNodes;
-    }
 
     return estruturaDRE;
   }, [
-    gerarEstruturaDRE,
     vendasBrutas,
     devolucoes,
     descontos,
@@ -2261,8 +2539,102 @@ const DRE = () => {
       return [];
     }
 
-    return gerarEstruturaDRE(dadosPeriodo2);
-  }, [tipoAnalise, dadosPeriodo2, gerarEstruturaDRE]);
+    return gerarEstruturaDRE(
+      dadosPeriodo2,
+      planoDespesasNodesPeriodo2,
+      planoDespesasFinanceirasNodesPeriodo2,
+    );
+  }, [
+    tipoAnalise,
+    dadosPeriodo2,
+    gerarEstruturaDRE,
+    planoDespesasNodesPeriodo2,
+    planoDespesasFinanceirasNodesPeriodo2,
+  ]);
+
+  // Função para mesclar nodes de despesas dos dois períodos
+  const mesclarNodes = useCallback((nodes1, nodes2) => {
+    const nodesMap = new Map();
+
+    // Adicionar nodes do Período 1
+    for (const node of nodes1) {
+      const chave = node.label || node.nome || node.id;
+      nodesMap.set(chave, { ...node });
+    }
+
+    // Mesclar com nodes do Período 2
+    for (const node of nodes2) {
+      const chave = node.label || node.nome || node.id;
+      if (nodesMap.has(chave)) {
+        const existing = nodesMap.get(chave);
+        existing.value = (existing.value || 0) + (node.value || 0);
+        existing.valor = (existing.valor || 0) + (node.valor || 0);
+
+        // Mesclar children
+        if (node.children && existing.children) {
+          const childrenMap = new Map();
+          for (const child of existing.children) {
+            const childChave = child.label || child.nome || child.id;
+            childrenMap.set(childChave, { ...child });
+          }
+          for (const child of node.children) {
+            const childChave = child.label || child.nome || child.id;
+            if (childrenMap.has(childChave)) {
+              const existingChild = childrenMap.get(childChave);
+              existingChild.value =
+                (existingChild.value || 0) + (child.value || 0);
+              existingChild.valor =
+                (existingChild.valor || 0) + (child.valor || 0);
+
+              // Mesclar sub-children (contas)
+              if (child.children && existingChild.children) {
+                const subChildrenMap = new Map();
+                for (const subChild of existingChild.children) {
+                  const subChave =
+                    subChild.label || subChild.nome || subChild.id;
+                  subChildrenMap.set(subChave, { ...subChild });
+                }
+                for (const subChild of child.children) {
+                  const subChave =
+                    subChild.label || subChild.nome || subChild.id;
+                  if (subChildrenMap.has(subChave)) {
+                    const existing = subChildrenMap.get(subChave);
+                    existing.value =
+                      (existing.value || 0) + (subChild.value || 0);
+                    existing.valor =
+                      (existing.valor || 0) + (subChild.valor || 0);
+                  } else {
+                    subChildrenMap.set(subChave, { ...subChild });
+                  }
+                }
+                existingChild.children = Array.from(
+                  subChildrenMap.values(),
+                ).sort(
+                  (a, b) =>
+                    Math.abs(b.valor || b.value || 0) -
+                    Math.abs(a.valor || a.value || 0),
+                );
+              }
+            } else {
+              childrenMap.set(childChave, { ...child });
+            }
+          }
+          existing.children = Array.from(childrenMap.values()).sort(
+            (a, b) =>
+              Math.abs(b.valor || b.value || 0) -
+              Math.abs(a.valor || a.value || 0),
+          );
+        }
+      } else {
+        nodesMap.set(chave, { ...node });
+      }
+    }
+
+    return Array.from(nodesMap.values()).sort(
+      (a, b) =>
+        Math.abs(b.valor || b.value || 0) - Math.abs(a.valor || a.value || 0),
+    );
+  }, []);
 
   // DRE Consolidado (soma dos dois períodos)
   const dreConsolidadoData = useMemo(() => {
@@ -2358,7 +2730,21 @@ const DRE = () => {
         lucroBrutoRevenda + (dadosPeriodo2.lucroBrutoRevenda || 0),
     };
 
-    return gerarEstruturaDRE(dadosConsolidados);
+    // Mesclar nodes de despesas
+    const nodesOpConsolidados = mesclarNodes(
+      planoDespesasNodes,
+      planoDespesasNodesPeriodo2,
+    );
+    const nodesFinConsolidados = mesclarNodes(
+      planoDespesasFinanceirasNodes,
+      planoDespesasFinanceirasNodesPeriodo2,
+    );
+
+    return gerarEstruturaDRE(
+      dadosConsolidados,
+      nodesOpConsolidados,
+      nodesFinConsolidados,
+    );
   }, [
     tipoAnalise,
     vendasBrutas,
@@ -2396,6 +2782,11 @@ const DRE = () => {
     lucroBrutoRevenda,
     dadosPeriodo2,
     gerarEstruturaDRE,
+    mesclarNodes,
+    planoDespesasNodes,
+    planoDespesasNodesPeriodo2,
+    planoDespesasFinanceirasNodes,
+    planoDespesasFinanceirasNodesPeriodo2,
   ]);
 
   const toggleNode = (nodeId) => {
@@ -2407,12 +2798,20 @@ const DRE = () => {
 
   // Funções de controle de expansão no estilo Contas a Pagar
   const toggleCategoria = (categoriaNome) => {
+    console.log('🔄 TOGGLE CATEGORIA:', {
+      categoria: categoriaNome,
+      jaExpandida: categoriasExpandidas.has(categoriaNome),
+      acao: categoriasExpandidas.has(categoriaNome) ? 'FECHAR' : 'ABRIR',
+    });
+
     const novaSet = new Set(categoriasExpandidas);
     if (novaSet.has(categoriaNome)) {
       novaSet.delete(categoriaNome);
     } else {
       novaSet.add(categoriaNome);
     }
+
+    console.log('✅ NOVO STATE:', Array.from(novaSet));
     setCategoriasExpandidas(novaSet);
   };
 
@@ -2431,26 +2830,46 @@ const DRE = () => {
         'Lucro Líquido do Exercício',
       ];
 
-      dreData.forEach((item) => {
-        // Só adiciona se não for uma seção de resultado
-        if (!resultadoSections.includes(item.label)) {
-          todasCategorias.add(item.label);
-          if (item.children) {
-            item.children.forEach((child) => {
-              // Adiciona o subitem como chave composta
-              todasCategorias.add(`${item.label}|${child.label}`);
-              // Se o subitem tem children, adiciona eles também
-              if (child.children) {
-                child.children.forEach((grandchild) => {
-                  todasCategorias.add(
-                    `${item.label}|${child.label}|${grandchild.label}`,
-                  );
-                });
-              }
-            });
+      // Função auxiliar para adicionar categorias com prefixo de coluna
+      const adicionarCategorias = (dados, prefixo = 'main') => {
+        dados.forEach((item) => {
+          // Só adiciona se não for uma seção de resultado
+          if (!resultadoSections.includes(item.label)) {
+            todasCategorias.add(`${prefixo}|${item.label}`);
+            if (item.children) {
+              item.children.forEach((child) => {
+                // Adiciona o subitem como chave composta
+                todasCategorias.add(`${prefixo}|${item.label}|${child.label}`);
+                // Se o subitem tem children, adiciona eles também
+                if (child.children) {
+                  child.children.forEach((grandchild) => {
+                    todasCategorias.add(
+                      `${prefixo}|${item.label}|${child.label}|${grandchild.label}`,
+                    );
+                  });
+                }
+              });
+            }
           }
+        });
+      };
+
+      // Adicionar categorias de todas as colunas
+      if (tipoAnalise === 'horizontal') {
+        adicionarCategorias(dreData, `📅 ${obterNomeMes(filtroMensal)}`);
+        if (drePeriodo2Data.length > 0) {
+          adicionarCategorias(
+            drePeriodo2Data,
+            `📅 ${obterNomeMes(filtroMensalComparacao)}`,
+          );
         }
-      });
+        if (dreConsolidadoData.length > 0) {
+          adicionarCategorias(dreConsolidadoData, '📊 Consolidado');
+        }
+      } else {
+        adicionarCategorias(dreData, 'main');
+      }
+
       setCategoriasExpandidas(todasCategorias);
     }
     setTodosExpandidos(!todosExpandidos);
@@ -2758,8 +3177,13 @@ const DRE = () => {
     ) => {
       if (!dreDataToRender || dreDataToRender.length === 0) return null;
 
+      console.log('🎨 RENDERIZANDO COLUNA:', {
+        coluna: tituloColuna || 'main',
+        qtdModulos: dreDataToRender.length,
+      });
+
       return (
-        <div className="space-y-2 flex justify-center items-center flex-col flex-1 px-2">
+        <div className="space-y-2 flex items-center flex-col w-full max-w-md px-2">
           {tituloColuna && (
             <div className="bg-[#000638] to-indigo-600 text-white px-3 py-2 rounded-lg w-full text-center mb-2">
               <h3 className="text-xs font-bold">{tituloColuna}</h3>
@@ -2768,9 +3192,25 @@ const DRE = () => {
 
           {/* Módulos da DRE */}
           {dreDataToRender.map((modulo, moduloIndex) => {
-            const isModuloExpanded = categoriasExpandidas.has(modulo.label);
+            const chaveModulo = `${tituloColuna || 'main'}|${modulo.label}`;
+            const isModuloExpanded = categoriasExpandidas.has(chaveModulo);
             const resultadoSections = [];
             const isResultadoSection = resultadoSections.includes(modulo.label);
+
+            // 🔍 DEBUG: Log para despesas operacionais
+            if (modulo.label === 'Despesas Operacionais') {
+              console.log('🔍 DEBUG DESPESAS OPERACIONAIS:', {
+                coluna: tituloColuna || 'main',
+                chaveModulo: chaveModulo,
+                isExpanded: isModuloExpanded,
+                hasChildren: !!modulo.children,
+                qtdChildren: modulo.children?.length || 0,
+                primeirosChildren: modulo.children
+                  ?.slice(0, 3)
+                  .map((c) => c.label),
+                categoriasExpandidas: Array.from(categoriasExpandidas),
+              });
+            }
 
             return (
               <div
@@ -2793,7 +3233,14 @@ const DRE = () => {
                   onClick={
                     isResultadoSection
                       ? undefined
-                      : () => toggleCategoria(modulo.label)
+                      : () => {
+                          console.log('🖱️ CLIQUE NO MÓDULO:', {
+                            modulo: modulo.label,
+                            coluna: tituloColuna || 'main',
+                            chaveModulo: chaveModulo,
+                          });
+                          toggleCategoria(chaveModulo);
+                        }
                   }
                 >
                   <div className="flex items-center space-x-2">
@@ -2828,11 +3275,26 @@ const DRE = () => {
 
                 {/* Sub-itens do módulo */}
                 {isModuloExpanded &&
+                  (() => {
+                    console.log('👀 VERIFICANDO CHILDREN DO MÓDULO:', {
+                      modulo: modulo.label,
+                      coluna: tituloColuna || 'main',
+                      isExpanded: isModuloExpanded,
+                      hasChildren: !!modulo.children,
+                      qtdChildren: modulo.children?.length || 0,
+                      children: modulo.children
+                        ?.map((c) => c.label)
+                        .slice(0, 5),
+                    });
+                    return true;
+                  })() &&
                   modulo.children &&
                   modulo.children.length > 0 && (
                     <div className="bg-white border-t border-gray-100">
                       {modulo.children.map((subitem, subitemIndex) => {
-                        const chaveSubitem = `${modulo.label}|${subitem.label}`;
+                        const chaveSubitem = `${tituloColuna || 'main'}|${
+                          modulo.label
+                        }|${subitem.label}`;
                         const isSubitemExpanded =
                           categoriasExpandidas.has(chaveSubitem);
                         const hasSubitemChildren =
@@ -2895,7 +3357,11 @@ const DRE = () => {
                                 <div className="bg-white border-t border-gray-50">
                                   {subitem.children.map(
                                     (subsubitem, subsubitemIndex) => {
-                                      const chaveSubsubitem = `${modulo.label}|${subitem.label}|${subsubitem.label}`;
+                                      const chaveSubsubitem = `${
+                                        tituloColuna || 'main'
+                                      }|${modulo.label}|${subitem.label}|${
+                                        subsubitem.label
+                                      }`;
                                       const isSubsubitemExpanded =
                                         categoriasExpandidas.has(
                                           chaveSubsubitem,
@@ -3038,7 +3504,17 @@ const DRE = () => {
         </div>
       );
     },
-    [categoriasExpandidas, toggleCategoria, formatCurrency],
+    [
+      categoriasExpandidas,
+      toggleCategoria,
+      formatCurrency,
+      renderizarValorComPorcentagem,
+      renderizarBadgeVariacao,
+      deveInverterCores,
+      obterCorPorHierarquia,
+      calcularPorcentagem,
+      calcularVariacao,
+    ],
   );
 
   const getIcon = (type, value) => {
