@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import useApiClient from '../hooks/useApiClient';
 import LoadingSpinner from '../components/LoadingSpinner';
+import CalendarioPeriodosDRE from '../components/CalendarioPeriodosDRE';
 import {
   CaretDown,
   CaretRight,
@@ -4631,117 +4632,18 @@ const DRE = () => {
         icon={TrendUp}
       />
 
-      {/* Filtros */}
-      <div className="bg-white rounded-lg shadow p-3 mb-4 border border-gray-200">
-        <div className="mb-6">
-          <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
-            <Funnel size={18} weight="bold" />
-            Filtros - Múltiplos Períodos
-          </span>
-          <span className="text-xs text-gray-500 mt-1">
-            Adicione quantos períodos desejar para comparação
-          </span>
-        </div>
-
-        {/* Renderizar cada período */}
-        {periodos.map((per, index) => (
-          <div
-            key={per.id}
-            className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-semibold text-[#000638]">
-                📅 Período {index + 1} {tipoAnalise === 'vertical' && '(com %)'}
-              </label>
-              {periodos.length > 1 && (
-                <button
-                  onClick={() => removerPeriodo(per.id)}
-                  className="text-red-600 hover:text-red-800 text-xs font-medium"
-                  title="Remover período"
-                >
-                  ✕ Remover
-                </button>
-              )}
-            </div>
-
-            {/* Filtro rápido por mês */}
-            <div className="mb-2">
-              <div className="flex flex-wrap gap-1">
-                {[
-                  'ANO',
-                  'JAN',
-                  'FEV',
-                  'MAR',
-                  'ABR',
-                  'MAI',
-                  'JUN',
-                  'JUL',
-                  'AGO',
-                  'SET',
-                  'OUT',
-                  'NOV',
-                  'DEZ',
-                ].map((mes) => (
-                  <button
-                    key={mes}
-                    type="button"
-                    onClick={() => handleFiltroMensalChange(mes, per.id)}
-                    className={`px-2 py-0.5 text-xs font-medium rounded-md transition-colors ${
-                      per.filtroMensal === mes
-                        ? 'bg-[#000638] text-white'
-                        : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
-                    }`}
-                  >
-                    {mes}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Campos de data */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div>
-                <label className="block text-xs font-semibold mb-1">
-                  Data Inicial
-                </label>
-                <input
-                  type="date"
-                  className="border rounded px-2 py-1.5 w-full text-xs"
-                  value={per.dt_inicio}
-                  onChange={(e) =>
-                    atualizarPeriodo(per.id, 'dt_inicio', e.target.value)
-                  }
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Data Final
-                </label>
-                <input
-                  type="date"
-                  className="border rounded px-2 py-1.5 w-full text-xs"
-                  value={per.dt_fim}
-                  onChange={(e) =>
-                    atualizarPeriodo(per.id, 'dt_fim', e.target.value)
-                  }
-                />
-              </div>
-            </div>
-          </div>
-        ))}
-        {/* Botão para adicionar mais períodos */}
-        <div className="mb-4 flex justify-center">
-          <button
-            onClick={adicionarPeriodo}
-            className="bg-green-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-semibold shadow-md flex items-center gap-2"
-          >
-            <span>+ Adicionar Período</span>
-          </button>
-        </div>
-
+      {/* Novo Componente de Calendário */}
+      <div className="">
+        <CalendarioPeriodosDRE
+          onPeriodosChange={(novosPeriodos) => {
+            console.log('📅 Períodos selecionados:', novosPeriodos);
+            setPeriodos(novosPeriodos);
+          }}
+          periodosIniciais={periodos}
+        />
         {/* Seletor de Tipo de Análise */}
-        <div className="mb-4">
-          <label className="block text-sm font-semibold mb-2">
+        <div className="bg-white p-4 mb-4 border-b-2 border-l-2 border-r-2 border-gray-200 ">
+          <label className="block text-sm font-semibold mb-3 text-gray-800">
             Tipo de Análise
           </label>
           <div className="flex gap-4">
@@ -4775,34 +4677,27 @@ const DRE = () => {
             </label>
           </div>
         </div>
-
-        {/* Botão de buscar dados */}
-        <div className="flex items-center justify-center mt-4 pt-4 border-t border-gray-300">
-          <button
-            className="bg-[#000638] text-white text-sm px-8 py-3 rounded-lg hover:bg-[#fe0000] transition-colors font-semibold shadow-lg flex items-center gap-2"
-            onClick={buscarVendasBrutas}
-            disabled={loading}
-          >
-            {loading ? (
-              <>
-                <span className="animate-spin">🔄</span>
-                <span>Carregando...</span>
-              </>
-            ) : (
-              <>
-                <span>🔍</span>
-                <span>Buscar Dados de Todos os Períodos</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {error && (
-          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-sm text-red-700">{error}</p>
-          </div>
-        )}
       </div>
+
+      {/* Botão de buscar dados */}
+      <div className="flex items-center justify-center mb-4">
+        <button
+          className="bg-[#000638] text-white text-sm px-8 py-3 rounded-lg hover:bg-[#000856] transition-colors font-semibold shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={buscarVendasBrutas}
+          disabled={loading || periodos.length === 0}
+        >
+          <>
+            <span>🔍</span>
+            <span>Buscar Dados</span>
+          </>
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+          <p className="text-sm text-red-700">{error}</p>
+        </div>
+      )}
 
       {/* Tree View */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
@@ -4810,38 +4705,9 @@ const DRE = () => {
           <h2 className="text-lg font-semibold text-gray-900">
             Demonstrativo de Resultado do Exercício
           </h2>
-          <p className="text-sm text-gray-600 mt-1">
-            Período:{' '}
-            {(() => {
-              const parseDateNoTZ = (iso) => {
-                if (!iso) return null;
-                try {
-                  const [y, m, d] = iso.split('-').map((n) => parseInt(n, 10));
-                  if (!y || !m || !d) return null;
-                  return new Date(y, m - 1, d);
-                } catch {
-                  return null;
-                }
-              };
-              const formatDateBR = (iso) => {
-                const d = parseDateNoTZ(iso);
-                if (!d) return '';
-                const dd = String(d.getDate()).padStart(2, '0');
-                const mm = String(d.getMonth() + 1).padStart(2, '0');
-                const yyyy = String(d.getFullYear());
-                return `${dd}/${mm}/${yyyy}`;
-              };
-              return periodo.dt_inicio && periodo.dt_fim
-                ? `${formatDateBR(periodo.dt_inicio)} a ${formatDateBR(
-                    periodo.dt_fim,
-                  )}`
-                : 'Selecione um período';
-            })()}
-          </p>
         </div>
 
         {/* Card de Comparação para Análise Horizontal */}
-
         {loading ? (
           <div className="flex flex-col items-center justify-center py-12">
             <LoadingSpinner
