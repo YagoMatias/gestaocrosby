@@ -152,20 +152,60 @@ const DRE = () => {
   const [lucroBrutoMultimarcas, setLucroBrutoMultimarcas] = useState(0);
   const [lucroBrutoFranquias, setLucroBrutoFranquias] = useState(0);
   const [lucroBrutoRevenda, setLucroBrutoRevenda] = useState(0);
-  const [periodo, setPeriodo] = useState({
+
+  // Sistema de múltiplos períodos
+  const [periodos, setPeriodos] = useState([
+    {
+      id: 1,
+      dt_inicio: '',
+      dt_fim: '',
+      filtroMensal: 'ANO',
+      empresas: [1, 2, 3, 4, 5],
+    },
+  ]);
+
+  // Dados de cada período (array de objetos com dados DRE)
+  const [dadosPeriodos, setDadosPeriodos] = useState([]);
+
+  // Manter compatibilidade com código existente (período principal = primeiro da lista)
+  const periodo = periodos[0] || {
     dt_inicio: '',
     dt_fim: '',
-    empresas: [1, 2, 3, 4, 5], // Empresas padrão
-  });
+    empresas: [1, 2, 3, 4, 5],
+  };
+  const setPeriodo = (updater) => {
+    setPeriodos((prev) => {
+      const newPeriodos = [...prev];
+      newPeriodos[0] =
+        typeof updater === 'function' ? updater(newPeriodos[0]) : updater;
+      return newPeriodos;
+    });
+  };
   const [filtroMensal, setFiltroMensal] = useState('ANO');
   const [filtroMensalComparacao, setFiltroMensalComparacao] = useState('ANO');
 
   // Estados para análise horizontal/vertical
   const [tipoAnalise, setTipoAnalise] = useState('vertical'); // 'vertical' ou 'horizontal'
-  const [periodoComparacao, setPeriodoComparacao] = useState({
-    dt_inicio: '',
-    dt_fim: '',
-  });
+
+  // Manter compatibilidade (periodoComparacao = segundo período)
+  const periodoComparacao = periodos[1] || { dt_inicio: '', dt_fim: '' };
+  const setPeriodoComparacao = (updater) => {
+    setPeriodos((prev) => {
+      const newPeriodos = [...prev];
+      if (newPeriodos.length < 2) {
+        newPeriodos.push({
+          id: 2,
+          dt_inicio: '',
+          dt_fim: '',
+          filtroMensal: 'ANO',
+          empresas: [1, 2, 3, 4, 5],
+        });
+      }
+      newPeriodos[1] =
+        typeof updater === 'function' ? updater(newPeriodos[1]) : updater;
+      return newPeriodos;
+    });
+  };
 
   // Estados para dados do período de comparação (Período 2)
   const [dadosPeriodo2, setDadosPeriodo2] = useState({
@@ -234,54 +274,41 @@ const DRE = () => {
     return new Date(anoNumero, mesNumero, 0).getDate();
   };
 
-  const handleFiltroMensalChange = (mesSigla) => {
-    setFiltroMensal(mesSigla);
-    if (mesSigla === 'ANO') return; // Não altera datas diretamente
-
-    const mesesMap = {
-      JAN: 1,
-      FEV: 2,
-      MAR: 3,
-      ABR: 4,
-      MAI: 5,
-      JUN: 6,
-      JUL: 7,
-      AGO: 8,
-      SET: 9,
-      OUT: 10,
-      NOV: 11,
-      DEZ: 12,
-    };
-
-    const mesNumero = mesesMap[mesSigla];
-    if (!mesNumero) return;
-
-    const anoBase = (() => {
-      if (periodo.dt_inicio) {
-        const [y] = periodo.dt_inicio.split('-');
-        const n = parseInt(y, 10);
-        if (n > 1900) return n;
-      }
-      return new Date().getFullYear();
-    })();
-
-    const primeiroDia = `${anoBase}-${String(mesNumero).padStart(2, '0')}-01`;
-    const ultimoDiaNum = obterDiasDoMes(mesNumero, anoBase);
-    const ultimoDia = `${anoBase}-${String(mesNumero).padStart(
-      2,
-      '0',
-    )}-${String(ultimoDiaNum).padStart(2, '0')}`;
-
-    setPeriodo((prev) => ({
+  // Funções para gerenciar múltiplos períodos
+  const adicionarPeriodo = () => {
+    const novoId = Math.max(...periodos.map((p) => p.id), 0) + 1;
+    setPeriodos((prev) => [
       ...prev,
-      dt_inicio: primeiroDia,
-      dt_fim: ultimoDia,
-    }));
+      {
+        id: novoId,
+        dt_inicio: '',
+        dt_fim: '',
+        filtroMensal: 'ANO',
+        empresas: [1, 2, 3, 4, 5],
+      },
+    ]);
   };
 
-  const handleFiltroMensalComparacaoChange = (mesSigla) => {
-    setFiltroMensalComparacao(mesSigla);
-    if (mesSigla === 'ANO') return; // Não altera datas diretamente
+  const removerPeriodo = (id) => {
+    if (periodos.length <= 1) {
+      alert('É necessário ter pelo menos 1 período!');
+      return;
+    }
+    setPeriodos((prev) => prev.filter((p) => p.id !== id));
+    setDadosPeriodos((prev) => prev.filter((d) => d.periodoId !== id));
+  };
+
+  const atualizarPeriodo = (id, campo, valor) => {
+    setPeriodos((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, [campo]: valor } : p)),
+    );
+  };
+
+  const handleFiltroMensalChange = (mesSigla, periodoId) => {
+    if (mesSigla === 'ANO') {
+      atualizarPeriodo(periodoId, 'filtroMensal', mesSigla);
+      return;
+    }
 
     const mesesMap = {
       JAN: 1,
@@ -301,9 +328,10 @@ const DRE = () => {
     const mesNumero = mesesMap[mesSigla];
     if (!mesNumero) return;
 
+    const periodoAtual = periodos.find((p) => p.id === periodoId);
     const anoBase = (() => {
-      if (periodoComparacao.dt_inicio) {
-        const [y] = periodoComparacao.dt_inicio.split('-');
+      if (periodoAtual?.dt_inicio) {
+        const [y] = periodoAtual.dt_inicio.split('-');
         const n = parseInt(y, 10);
         if (n > 1900) return n;
       }
@@ -317,11 +345,38 @@ const DRE = () => {
       '0',
     )}-${String(ultimoDiaNum).padStart(2, '0')}`;
 
-    setPeriodoComparacao((prev) => ({
-      ...prev,
-      dt_inicio: primeiroDia,
-      dt_fim: ultimoDia,
-    }));
+    setPeriodos((prev) =>
+      prev.map((p) =>
+        p.id === periodoId
+          ? {
+              ...p,
+              dt_inicio: primeiroDia,
+              dt_fim: ultimoDia,
+              filtroMensal: mesSigla,
+            }
+          : p,
+      ),
+    );
+  };
+
+  // Função de obter nome do mês a partir da sigla
+  const obterNomeMesPorSigla = (sigla) => {
+    const mesesMap = {
+      ANO: 'Ano',
+      JAN: 'Janeiro',
+      FEV: 'Fevereiro',
+      MAR: 'Março',
+      ABR: 'Abril',
+      MAI: 'Maio',
+      JUN: 'Junho',
+      JUL: 'Julho',
+      AGO: 'Agosto',
+      SET: 'Setembro',
+      OUT: 'Outubro',
+      NOV: 'Novembro',
+      DEZ: 'Dezembro',
+    };
+    return mesesMap[sigla] || 'Período';
   };
 
   const [expandedNodes, setExpandedNodes] = useState({
@@ -360,25 +415,830 @@ const DRE = () => {
     }));
   }, []);
 
-  // Função para buscar vendas brutas das 4 rotas de Faturamento Materializadas
-  const buscarVendasBrutas = useCallback(async () => {
-    if (!periodo.dt_inicio || !periodo.dt_fim) return;
+  // Função para buscar dados de um único período
+  const buscarDadosPeriodo = async (periodo, periodoIndex, totalPeriodos) => {
+    const statusPrefix =
+      totalPeriodos > 1 ? `[${periodoIndex + 1}/${totalPeriodos}] ` : '';
 
-    // Validação: Se for análise horizontal, verificar se período 2 foi preenchido
-    if (tipoAnalise === 'horizontal') {
-      if (!periodoComparacao.dt_inicio || !periodoComparacao.dt_fim) {
-        setError(
-          'Para análise horizontal, preencha o Período 2 de comparação.',
-        );
-        return;
+    try {
+      // Parâmetros padronizados para as novas rotas materializadas
+      const paramsFaturamento = {
+        dataInicio: periodo.dt_inicio,
+        dataFim: periodo.dt_fim,
+      };
+
+      // Parâmetros para as rotas de CMV
+      const empresasFixas = [
+        91, 2, 5, 6, 7, 11, 11, 12, 13, 14, 15, 16, 31, 55, 65, 75, 85, 90, 91,
+        92, 93, 94, 95, 96, 97, 99,
+      ];
+      const empresasVarejo = [
+        2, 5, 11, 12, 13, 14, 15, 16, 55, 65, 90, 91, 92, 93, 94, 95, 96, 97,
+        200, 500, 550, 650, 890, 910, 920, 930, 940, 950, 960, 970,
+      ];
+
+      const paramsCMVVarejo = {
+        dataInicio: periodo.dt_inicio,
+        dataFim: periodo.dt_fim,
+        cd_grupoempresa: empresasVarejo,
+      };
+
+      const paramsCMVMultimarcas = {
+        dataInicio: periodo.dt_inicio,
+        dataFim: periodo.dt_fim,
+        cd_grupoempresa: empresasFixas,
+      };
+
+      const paramsCMVFranquias = {
+        dataInicio: periodo.dt_inicio,
+        dataFim: periodo.dt_fim,
+        cd_grupoempresa: empresasFixas,
+      };
+
+      const paramsCMVRevenda = {
+        dataInicio: periodo.dt_inicio,
+        dataFim: periodo.dt_fim,
+        cd_grupoempresa: empresasFixas,
+      };
+
+      // Buscar dados de FATURAMENTO
+      setLoadingStatus(`${statusPrefix}Buscando faturamento Varejo...`);
+      const faturamentoVarejo = await api.sales.faturamentoVarejo(
+        paramsFaturamento,
+      );
+
+      setLoadingStatus(`${statusPrefix}Buscando faturamento Multimarcas...`);
+      const faturamentoMultimarcas = await api.sales.faturamentoMtm(
+        paramsFaturamento,
+      );
+
+      setLoadingStatus(`${statusPrefix}Buscando faturamento Franquias...`);
+      const faturamentoFranquias = await api.sales.faturamentoFranquias(
+        paramsFaturamento,
+      );
+
+      setLoadingStatus(`${statusPrefix}Buscando faturamento Revenda...`);
+      const faturamentoRevenda = await api.sales.faturamentoRevenda(
+        paramsFaturamento,
+      );
+
+      // Buscar dados de CMV
+      setLoadingStatus(`${statusPrefix}Buscando CMV...`);
+      const [cmvVarejo, cmvMultimarcas, cmvFranquias, cmvRevenda] =
+        await Promise.all([
+          api.sales.cmvVarejo(paramsCMVVarejo),
+          api.sales.cmvMultimarcas(paramsCMVMultimarcas),
+          api.sales.cmvFranquias(paramsCMVFranquias),
+          api.sales.cmvRevenda(paramsCMVRevenda),
+        ]);
+
+      setLoadingStatus(`${statusPrefix}Processando dados...`);
+
+      // Calcular dados de faturamento usando views materializadas
+      const calcularDadosFaturamento = (responseFaturamento) => {
+        if (!responseFaturamento?.success || !responseFaturamento?.data)
+          return {
+            receitaBruta: 0,
+            devolucoesBrutas: 0,
+            receitaLiquida: 0,
+            devolucoesLiquidas: 0,
+            descontos: 0,
+          };
+
+        const data = Array.isArray(responseFaturamento.data)
+          ? responseFaturamento.data
+          : [];
+
+        let receitaBruta = 0;
+        let devolucoesBrutas = 0;
+        let receitaLiquida = 0;
+        let devolucoesLiquidas = 0;
+
+        for (const row of data) {
+          receitaBruta += parseFloat(row?.valor_sem_desconto_saida || 0);
+          devolucoesBrutas += parseFloat(row?.valor_sem_desconto_entrada || 0);
+          receitaLiquida += parseFloat(row?.valor_com_desconto || 0);
+          devolucoesLiquidas += parseFloat(
+            row?.valor_com_desconto_entrada || 0,
+          );
+        }
+
+        const descontos = receitaBruta - receitaLiquida;
+
+        return {
+          receitaBruta,
+          devolucoesBrutas,
+          receitaLiquida,
+          devolucoesLiquidas,
+          descontos,
+        };
+      };
+
+      // Calcular CMV
+      const calcularCMV = (responseCMV) => {
+        if (!responseCMV?.success || !responseCMV?.data)
+          return { cmv: 0, produtosSaida: 0, produtosEntrada: 0 };
+
+        const data = Array.isArray(responseCMV.data) ? responseCMV.data : [];
+        let cmvTotal = 0;
+        let produtosSaida = 0;
+        let produtosEntrada = 0;
+
+        for (const row of data) {
+          cmvTotal += parseFloat(row?.cmv || 0);
+          produtosSaida += parseFloat(row?.produtos_saida || 0);
+          produtosEntrada += parseFloat(row?.produtos_entrada || 0);
+        }
+
+        return { cmv: cmvTotal, produtosSaida, produtosEntrada };
+      };
+
+      // Processar dados
+      const dadosFaturamentoVarejo =
+        calcularDadosFaturamento(faturamentoVarejo);
+      const dadosFaturamentoMultimarcas = calcularDadosFaturamento(
+        faturamentoMultimarcas,
+      );
+      const dadosFaturamentoFranquias =
+        calcularDadosFaturamento(faturamentoFranquias);
+      const dadosFaturamentoRevenda =
+        calcularDadosFaturamento(faturamentoRevenda);
+
+      const dadosCMVVarejo = calcularCMV(cmvVarejo);
+      const dadosCMVMultimarcas = calcularCMV(cmvMultimarcas);
+      const dadosCMVFranquias = calcularCMV(cmvFranquias);
+      const dadosCMVRevenda = calcularCMV(cmvRevenda);
+
+      // Calcular totais
+      const totalReceitaBruta =
+        dadosFaturamentoVarejo.receitaBruta +
+        dadosFaturamentoMultimarcas.receitaBruta +
+        dadosFaturamentoFranquias.receitaBruta +
+        dadosFaturamentoRevenda.receitaBruta;
+
+      const totalVendasBrutas = totalReceitaBruta;
+
+      const totalDevolucoesLiquidas =
+        dadosFaturamentoVarejo.devolucoesLiquidas +
+        dadosFaturamentoMultimarcas.devolucoesLiquidas +
+        dadosFaturamentoFranquias.devolucoesLiquidas +
+        dadosFaturamentoRevenda.devolucoesLiquidas;
+
+      const totalDescontos =
+        dadosFaturamentoVarejo.descontos +
+        dadosFaturamentoMultimarcas.descontos +
+        dadosFaturamentoFranquias.descontos +
+        dadosFaturamentoRevenda.descontos;
+
+      const totalCMV =
+        dadosCMVVarejo.cmv +
+        dadosCMVMultimarcas.cmv +
+        dadosCMVFranquias.cmv +
+        dadosCMVRevenda.cmv;
+
+      // Criar estrutura de totais por canal
+      const totaisVarejo = {
+        totalBruto: dadosFaturamentoVarejo.receitaBruta,
+        totalDevolucoes: dadosFaturamentoVarejo.devolucoesLiquidas,
+        totalLiquido: dadosFaturamentoVarejo.receitaLiquida,
+        totalCMV: dadosCMVVarejo.cmv,
+        descontos: dadosFaturamentoVarejo.descontos,
+      };
+
+      const totaisMultimarcas = {
+        totalBruto: dadosFaturamentoMultimarcas.receitaBruta,
+        totalDevolucoes: dadosFaturamentoMultimarcas.devolucoesLiquidas,
+        totalLiquido: dadosFaturamentoMultimarcas.receitaLiquida,
+        totalCMV: dadosCMVMultimarcas.cmv,
+        descontos: dadosFaturamentoMultimarcas.descontos,
+      };
+
+      const totaisFranquias = {
+        totalBruto: dadosFaturamentoFranquias.receitaBruta,
+        totalDevolucoes: dadosFaturamentoFranquias.devolucoesLiquidas,
+        totalLiquido: dadosFaturamentoFranquias.receitaLiquida,
+        totalCMV: dadosCMVFranquias.cmv,
+        descontos: dadosFaturamentoFranquias.descontos,
+      };
+
+      const totaisRevenda = {
+        totalBruto: dadosFaturamentoRevenda.receitaBruta,
+        totalDevolucoes: dadosFaturamentoRevenda.devolucoesLiquidas,
+        totalLiquido: dadosFaturamentoRevenda.receitaLiquida,
+        totalCMV: dadosCMVRevenda.cmv,
+        descontos: dadosFaturamentoRevenda.descontos,
+      };
+
+      // Buscar impostos
+      setLoadingStatus(`${statusPrefix}Buscando impostos...`);
+      let impostosData = null;
+      try {
+        const responseImpostos = await api.sales.impostosPorCanal({
+          dataInicio: periodo.dt_inicio,
+          dataFim: periodo.dt_fim,
+        });
+
+        if (responseImpostos?.success && responseImpostos?.data) {
+          impostosData = responseImpostos.data;
+        }
+      } catch (error) {
+        console.error('⚠️ Erro ao buscar impostos:', error);
       }
+
+      // Processar impostos por canal
+      const impostosVarejoData = {
+        icms: impostosData?.varejo?.icms || 0,
+        pis: impostosData?.varejo?.pis || 0,
+        cofins: impostosData?.varejo?.cofins || 0,
+      };
+
+      const impostosMultimarcasData = {
+        icms: impostosData?.multimarcas?.icms || 0,
+        pis: impostosData?.multimarcas?.pis || 0,
+        cofins: impostosData?.multimarcas?.cofins || 0,
+      };
+
+      const impostosFranquiasData = {
+        icms: impostosData?.franquias?.icms || 0,
+        pis: impostosData?.franquias?.pis || 0,
+        cofins: impostosData?.franquias?.cofins || 0,
+      };
+
+      const impostosRevendaData = {
+        icms: impostosData?.revenda?.icms || 0,
+        pis: impostosData?.revenda?.pis || 0,
+        cofins: impostosData?.revenda?.cofins || 0,
+      };
+
+      // Totais de impostos
+      const icmsReal =
+        impostosVarejoData.icms +
+        impostosMultimarcasData.icms +
+        impostosFranquiasData.icms +
+        impostosRevendaData.icms;
+      const pisReal =
+        impostosVarejoData.pis +
+        impostosMultimarcasData.pis +
+        impostosFranquiasData.pis +
+        impostosRevendaData.pis;
+      const cofinsReal =
+        impostosVarejoData.cofins +
+        impostosMultimarcasData.cofins +
+        impostosFranquiasData.cofins +
+        impostosRevendaData.cofins;
+      const totalImpostosReal = icmsReal + pisReal + cofinsReal;
+
+      // Cálculos finais
+      const totalDeducoesCalculado =
+        totalDevolucoesLiquidas + Math.abs(totalDescontos) + totalImpostosReal;
+
+      const receitaLiquidaCalculada =
+        totalVendasBrutas - totalDeducoesCalculado;
+      const lucroBrutoCalculado = receitaLiquidaCalculada - totalCMV;
+
+      // Calcular por canal
+      const receitaLiquidaVarejoCalc =
+        totaisVarejo.totalBruto -
+        (totaisVarejo.totalDevolucoes +
+          Math.abs(totaisVarejo.descontos) +
+          impostosVarejoData.icms +
+          impostosVarejoData.pis +
+          impostosVarejoData.cofins);
+
+      const receitaLiquidaMultimarcasCalc =
+        totaisMultimarcas.totalBruto -
+        (totaisMultimarcas.totalDevolucoes +
+          Math.abs(totaisMultimarcas.descontos) +
+          impostosMultimarcasData.icms +
+          impostosMultimarcasData.pis +
+          impostosMultimarcasData.cofins);
+
+      const receitaLiquidaFranquiasCalc =
+        totaisFranquias.totalBruto -
+        (totaisFranquias.totalDevolucoes +
+          Math.abs(totaisFranquias.descontos) +
+          impostosFranquiasData.icms +
+          impostosFranquiasData.pis +
+          impostosFranquiasData.cofins);
+
+      const receitaLiquidaRevendaCalc =
+        totaisRevenda.totalBruto -
+        (totaisRevenda.totalDevolucoes +
+          Math.abs(totaisRevenda.descontos) +
+          impostosRevendaData.icms +
+          impostosRevendaData.pis +
+          impostosRevendaData.cofins);
+
+      const cmvVarejoCalc = totaisVarejo.totalCMV;
+      const cmvMultimarcasCalc = totaisMultimarcas.totalCMV;
+      const cmvFranquiasCalc = totaisFranquias.totalCMV;
+      const cmvRevendaCalc = totaisRevenda.totalCMV;
+
+      const lucroBrutoVarejoCalc = receitaLiquidaVarejoCalc - cmvVarejoCalc;
+      const lucroBrutoMultimarcasCalc =
+        receitaLiquidaMultimarcasCalc - cmvMultimarcasCalc;
+      const lucroBrutoFranquiasCalc =
+        receitaLiquidaFranquiasCalc - cmvFranquiasCalc;
+      const lucroBrutoRevendaCalc = receitaLiquidaRevendaCalc - cmvRevendaCalc;
+
+      // Buscar despesas (Contas a Pagar)
+      setLoadingStatus(`${statusPrefix}Buscando despesas...`);
+      const todasEmpresasCodigos = [
+        1, 2, 5, 6, 7, 11, 11, 12, 13, 14, 15, 16, 31, 55, 65, 75, 85, 90, 91,
+        92, 93, 94, 95, 96, 97, 99, 100, 101, 111, 200, 311, 500, 550, 600, 650,
+        700, 750, 850, 890, 910, 920, 930, 940, 950, 960, 970, 990,
+      ];
+
+      const paramsCP = {
+        dt_inicio: periodo.dt_inicio,
+        dt_fim: periodo.dt_fim,
+        cd_empresa: todasEmpresasCodigos,
+      };
+
+      const contasPagar = await api.financial.contasPagarEmissao(paramsCP);
+
+      let dadosCP = [];
+      if (Array.isArray(contasPagar?.data)) {
+        dadosCP = contasPagar.data;
+      } else if (
+        contasPagar?.data?.data &&
+        Array.isArray(contasPagar.data.data)
+      ) {
+        dadosCP = contasPagar.data.data;
+      } else if (Array.isArray(contasPagar?.rows)) {
+        dadosCP = contasPagar.rows;
+      } else if (
+        contasPagar?.data?.rows &&
+        Array.isArray(contasPagar.data.rows)
+      ) {
+        dadosCP = contasPagar.data.rows;
+      }
+
+      // Processar despesas (versão simplificada - apenas totais)
+      let totalOperacionais = 0;
+      let totalFinanceiros = 0;
+
+      for (const item of dadosCP) {
+        const ccustoRaw =
+          item.cd_ccusto ??
+          item.ccusto ??
+          item.cd_centrocusto ??
+          item.centrocusto ??
+          item.cc_custo ??
+          item.centro_custo ??
+          item.cd_ccusto_padrao;
+        const ccustoNum = Number(ccustoRaw);
+        if (!Number.isNaN(ccustoNum) && ccustoNum === 999) continue;
+
+        const codigoDespesa = Number(item.cd_despesaitem) || 0;
+        if (shouldExcluirDespesa(codigoDespesa)) continue;
+
+        const valorRateio = parseFloat(item.vl_rateio || 0) || 0;
+        const valorDuplicata = parseFloat(item.vl_duplicata || 0) || 0;
+        const valor = valorRateio !== 0 ? valorRateio : valorDuplicata;
+
+        const isFinanceiro = codigoDespesa >= 7000 && codigoDespesa <= 7999;
+
+        if (isFinanceiro) {
+          totalFinanceiros += Math.abs(valor);
+        } else {
+          totalOperacionais += Math.abs(valor);
+        }
+      }
+
+      // Processar nodes de despesas (estrutura completa para renderização)
+      const [
+        planoDespesasNodesProcessado,
+        planoDespesasFinanceirasNodesProcessado,
+      ] = await processarDespesasCompleto(dadosCP, periodo);
+
+      // Retornar objeto com todos os dados do período
+      return {
+        periodoId: periodo.id,
+        periodo: periodo,
+        vendasBrutas: totalVendasBrutas,
+        devolucoes: totalDevolucoesLiquidas,
+        descontos: totalDescontos,
+        totalDeducoes: totalDeducoesCalculado,
+        cmv: totalCMV,
+        receitaLiquida: receitaLiquidaCalculada,
+        lucroBruto: lucroBrutoCalculado,
+        icms: icmsReal,
+        pis: pisReal,
+        cofins: cofinsReal,
+        totalImpostos: totalImpostosReal,
+        planoDespesasTotal: totalOperacionais,
+        planoDespesasFinanceirasTotal: totalFinanceiros,
+        planoDespesasNodes: planoDespesasNodesProcessado,
+        planoDespesasFinanceirasNodes: planoDespesasFinanceirasNodesProcessado,
+        totaisVarejo,
+        totaisMultimarcas,
+        totaisFranquias,
+        totaisRevenda,
+        impostosVarejo: impostosVarejoData,
+        impostosMultimarcas: impostosMultimarcasData,
+        impostosFranquias: impostosFranquiasData,
+        impostosRevenda: impostosRevendaData,
+        receitaLiquidaVarejo: receitaLiquidaVarejoCalc,
+        receitaLiquidaMultimarcas: receitaLiquidaMultimarcasCalc,
+        receitaLiquidaFranquias: receitaLiquidaFranquiasCalc,
+        receitaLiquidaRevenda: receitaLiquidaRevendaCalc,
+        cmvVarejo: cmvVarejoCalc,
+        cmvMultimarcas: cmvMultimarcasCalc,
+        cmvFranquias: cmvFranquiasCalc,
+        cmvRevenda: cmvRevendaCalc,
+        lucroBrutoVarejo: lucroBrutoVarejoCalc,
+        lucroBrutoMultimarcas: lucroBrutoMultimarcasCalc,
+        lucroBrutoFranquias: lucroBrutoFranquiasCalc,
+        lucroBrutoRevenda: lucroBrutoRevendaCalc,
+      };
+    } catch (err) {
+      console.error(
+        `Erro ao buscar dados do período ${periodoIndex + 1}:`,
+        err,
+      );
+      throw err;
+    }
+  };
+
+  // Função auxiliar para processar despesas com estrutura completa
+  const processarDespesasCompleto = async (dadosCP, periodo) => {
+    try {
+      // Buscar nomes das despesas e fornecedores
+      const codigosDespesas = Array.from(
+        new Set(
+          (dadosCP || [])
+            .map((x) => x.cd_despesaitem)
+            .filter(Boolean)
+            .filter((cd) => !shouldExcluirDespesa(cd)),
+        ),
+      );
+      const codigosFornecedores = Array.from(
+        new Set((dadosCP || []).map((x) => x.cd_fornecedor).filter(Boolean)),
+      );
+
+      let despesaMap = new Map();
+      let fornecedorMap = new Map();
+
+      try {
+        const [despesasResp, fornecedoresResp] = await Promise.all([
+          api.financial.despesa({ cd_despesaitem: codigosDespesas }),
+          api.financial.fornecedor({ cd_fornecedor: codigosFornecedores }),
+        ]);
+
+        const despesasData = Array.isArray(despesasResp?.data)
+          ? despesasResp.data
+          : Array.isArray(despesasResp)
+          ? despesasResp
+          : [];
+        const fornecedoresData = Array.isArray(fornecedoresResp?.data)
+          ? fornecedoresResp.data
+          : Array.isArray(fornecedoresResp)
+          ? fornecedoresResp
+          : [];
+
+        despesaMap = new Map(
+          despesasData
+            .filter((d) => d && d.cd_despesaitem !== undefined)
+            .map((d) => [d.cd_despesaitem, d]),
+        );
+        fornecedorMap = new Map(
+          fornecedoresData
+            .filter((f) => f && f.cd_fornecedor !== undefined)
+            .map((f) => [f.cd_fornecedor, f]),
+        );
+      } catch (errMaps) {
+        console.warn(
+          'Falha ao enriquecer nomes de despesa/fornecedor:',
+          errMaps,
+        );
+      }
+
+      // Função de categoria por faixa de código
+      const getCategoriaByCodigo = (codigo) => {
+        if (codigo >= 1000 && codigo <= 1999) {
+          return 'CUSTO DAS MERCADORIAS VENDIDAS';
+        } else if (codigo >= 2000 && codigo <= 2999) {
+          return 'DESPESAS OPERACIONAIS';
+        } else if (codigo >= 3000 && codigo <= 3999) {
+          return 'DESPESAS COM PESSOAL';
+        } else if (codigo >= 4001 && codigo <= 4999) {
+          return 'ALUGUÉIS E ARRENDAMENTOS';
+        } else if (codigo >= 5000 && codigo <= 5999) {
+          return 'IMPOSTOS, TAXAS E CONTRIBUIÇÕES';
+        } else if (codigo >= 6000 && codigo <= 6999) {
+          return 'DESPESAS GERAIS';
+        } else if (codigo >= 7000 && codigo <= 7999) {
+          return 'DESPESAS FINANCEIRAS';
+        } else if (codigo >= 8000 && codigo <= 8999) {
+          return 'OUTRAS DESPESAS OPERACIONAIS';
+        } else if (codigo >= 9000 && codigo <= 9999) {
+          return 'DESPESAS C/ VENDAS';
+        } else {
+          return 'SEM CLASSIFICAÇÃO';
+        }
+      };
+
+      const gruposMap = new Map();
+      const gruposFinanceirosMap = new Map();
+
+      for (const item of dadosCP) {
+        const ccustoRaw =
+          item.cd_ccusto ??
+          item.ccusto ??
+          item.cd_centrocusto ??
+          item.centrocusto ??
+          item.cc_custo ??
+          item.centro_custo ??
+          item.cd_ccusto_padrao;
+        const ccustoNum = Number(ccustoRaw);
+        if (!Number.isNaN(ccustoNum) && ccustoNum === 999) continue;
+
+        const codigoDespesa = Number(item.cd_despesaitem) || 0;
+        if (shouldExcluirDespesa(codigoDespesa)) continue;
+
+        const valorRateio = parseFloat(item.vl_rateio || 0) || 0;
+        const valorDuplicata = parseFloat(item.vl_duplicata || 0) || 0;
+        const valor = valorRateio !== 0 ? valorRateio : valorDuplicata;
+
+        const isFinanceiro = codigoDespesa >= 7000 && codigoDespesa <= 7999;
+
+        let chaveGrupo = isFinanceiro
+          ? 'DESPESAS FINANCEIRAS'
+          : getCategoriaPorCodigo(codigoDespesa) ||
+            getCategoriaByCodigo(codigoDespesa);
+
+        const isGrupoFinanceiro = chaveGrupo === 'DESPESAS FINANCEIRAS';
+        const grupoAtual = isGrupoFinanceiro ? gruposFinanceirosMap : gruposMap;
+
+        if (!grupoAtual.has(chaveGrupo)) {
+          grupoAtual.set(chaveGrupo, {
+            id: `grp-${chaveGrupo}`,
+            label: chaveGrupo,
+            description: '',
+            value: 0,
+            type: 'despesa',
+            children: [],
+            _despesas: new Map(),
+          });
+        }
+
+        const grupo = grupoAtual.get(chaveGrupo);
+        grupo.value += -valor;
+
+        const nomeDespesa = (
+          despesaMap.get(item.cd_despesaitem)?.ds_despesaitem ||
+          item.nm_despesaitem ||
+          item.ds_despesaitem ||
+          `CÓDIGO ${codigoDespesa}`
+        )
+          .toString()
+          .trim();
+
+        if (!grupo._despesas.has(nomeDespesa)) {
+          grupo._despesas.set(nomeDespesa, {
+            id: `desp-${chaveGrupo}-${nomeDespesa}`,
+            label: nomeDespesa,
+            description: `Código: ${codigoDespesa}`,
+            value: 0,
+            type: 'despesa',
+            children: [],
+            _forn: new Map(),
+            _fornCount: 0,
+          });
+        }
+
+        const despesa = grupo._despesas.get(nomeDespesa);
+
+        const fornInfo = fornecedorMap.get(item.cd_fornecedor);
+        const nmFornecedor = (
+          fornInfo?.nm_fornecedor ||
+          item.nm_fornecedor ||
+          item.cd_fornecedor ||
+          'Fornecedor'
+        ).toString();
+        const fornKey = String(item.cd_fornecedor || nmFornecedor);
+
+        if (!despesa._forn.has(fornKey)) {
+          despesa._forn.set(fornKey, {
+            id: `forn-${fornKey}`,
+            label: nmFornecedor,
+            description: [
+              `Empresa: ${item.cd_empresa || '-'}`,
+              `Fornecedor: ${item.cd_fornecedor || '-'}`,
+            ].join(' | '),
+            value: 0,
+            type: 'despesa',
+            children: [],
+          });
+          despesa._fornCount += 1;
+        }
+
+        const fornecedor = despesa._forn.get(fornKey);
+        fornecedor.value += -valor;
+        despesa.value += -valor;
+      }
+
+      // Converter Maps para arrays de nodes - OPERACIONAIS
+      const nodesOperacionais = Array.from(gruposMap.values()).map((g) => {
+        const despesasArr = Array.from(g._despesas.values()).map((d) => {
+          d.description = `${d._fornCount} fornecedor(es) | Total: ${Number(
+            Math.abs(d.value),
+          ).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`;
+          d.children = Array.from(d._forn.values()).sort(
+            (a, b) => Math.abs(b.value) - Math.abs(a.value),
+          );
+          delete d._forn;
+          delete d._fornCount;
+          return d;
+        });
+        despesasArr.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+        g.children = despesasArr;
+        delete g._despesas;
+        return g;
+      });
+      nodesOperacionais.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+
+      // Converter Maps para arrays de nodes - FINANCEIRAS
+      const nodesFinanceiras = Array.from(gruposFinanceirosMap.values()).map(
+        (g) => {
+          const despesasArr = Array.from(g._despesas.values()).map((d) => {
+            d.description = `${d._fornCount} fornecedor(es) | Total: ${Number(
+              Math.abs(d.value),
+            ).toLocaleString('pt-BR', {
+              style: 'currency',
+              currency: 'BRL',
+            })}`;
+            d.children = Array.from(d._forn.values()).sort(
+              (a, b) => Math.abs(b.value) - Math.abs(a.value),
+            );
+            delete d._forn;
+            delete d._fornCount;
+            return d;
+          });
+          despesasArr.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+          g.children = despesasArr;
+          delete g._despesas;
+          return g;
+        },
+      );
+      nodesFinanceiras.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+
+      return [nodesOperacionais, nodesFinanceiras];
+    } catch (error) {
+      console.error('Erro ao processar despesas completo:', error);
+      return [[], []];
+    }
+  };
+
+  // Função principal para buscar todos os períodos
+  const buscarVendasBrutas = useCallback(async () => {
+    // Validar se há pelo menos 1 período com datas
+    const periodosValidos = periodos.filter((p) => p.dt_inicio && p.dt_fim);
+    if (periodosValidos.length === 0) {
+      setError('Preencha pelo menos um período com datas de início e fim.');
+      return;
     }
 
     setLoading(true);
     setError('');
+    setDadosPeriodos([]); // Limpar dados anteriores
 
     try {
-      // Parâmetros padronizados para as novas rotas materializadas
+      console.log(
+        `🚀 Iniciando busca de ${periodosValidos.length} período(s)...`,
+      );
+
+      // Buscar dados de todos os períodos válidos
+      const resultados = [];
+
+      for (let i = 0; i < periodosValidos.length; i++) {
+        const periodoAtual = periodosValidos[i];
+        console.log(
+          `📊 Processando período ${i + 1}/${periodosValidos.length}:`,
+          periodoAtual,
+        );
+
+        const dadosPeriodo = await buscarDadosPeriodo(
+          periodoAtual,
+          i,
+          periodosValidos.length,
+        );
+        resultados.push(dadosPeriodo);
+      }
+
+      // Armazenar todos os resultados em dadosPeriodos
+      setDadosPeriodos(resultados);
+
+      // Atualizar estados principais com dados do primeiro período (compatibilidade)
+      if (resultados.length > 0) {
+        const primeiroPeriodo = resultados[0];
+
+        setVendasBrutas(primeiroPeriodo.vendasBrutas);
+        setDevolucoes(primeiroPeriodo.devolucoes);
+        setDescontos(primeiroPeriodo.descontos);
+        setTotalDeducoes(primeiroPeriodo.totalDeducoes);
+        setCmv(primeiroPeriodo.cmv);
+        setReceitaLiquida(primeiroPeriodo.receitaLiquida);
+        setLucroBruto(primeiroPeriodo.lucroBruto);
+        setIcms(primeiroPeriodo.icms);
+        setPis(primeiroPeriodo.pis);
+        setCofins(primeiroPeriodo.cofins);
+        setTotalImpostos(primeiroPeriodo.totalImpostos);
+
+        setPlanoDespesasTotal(primeiroPeriodo.planoDespesasTotal);
+        setPlanoDespesasFinanceirasTotal(
+          primeiroPeriodo.planoDespesasFinanceirasTotal,
+        );
+        setPlanoDespesasNodes(primeiroPeriodo.planoDespesasNodes);
+        setPlanoDespesasFinanceirasNodes(
+          primeiroPeriodo.planoDespesasFinanceirasNodes,
+        );
+
+        setTotaisVarejo(primeiroPeriodo.totaisVarejo);
+        setTotaisMultimarcas(primeiroPeriodo.totaisMultimarcas);
+        setTotaisFranquias(primeiroPeriodo.totaisFranquias);
+        setTotaisRevenda(primeiroPeriodo.totaisRevenda);
+
+        setImpostosVarejo(primeiroPeriodo.impostosVarejo);
+        setImpostosMultimarcas(primeiroPeriodo.impostosMultimarcas);
+        setImpostosFranquias(primeiroPeriodo.impostosFranquias);
+        setImpostosRevenda(primeiroPeriodo.impostosRevenda);
+
+        setReceitaLiquidaVarejo(primeiroPeriodo.receitaLiquidaVarejo);
+        setReceitaLiquidaMultimarcas(primeiroPeriodo.receitaLiquidaMultimarcas);
+        setReceitaLiquidaFranquias(primeiroPeriodo.receitaLiquidaFranquias);
+        setReceitaLiquidaRevenda(primeiroPeriodo.receitaLiquidaRevenda);
+
+        setCmvVarejo(primeiroPeriodo.cmvVarejo);
+        setCmvMultimarcas(primeiroPeriodo.cmvMultimarcas);
+        setCmvFranquias(primeiroPeriodo.cmvFranquias);
+        setCmvRevenda(primeiroPeriodo.cmvRevenda);
+
+        setLucroBrutoVarejo(primeiroPeriodo.lucroBrutoVarejo);
+        setLucroBrutoMultimarcas(primeiroPeriodo.lucroBrutoMultimarcas);
+        setLucroBrutoFranquias(primeiroPeriodo.lucroBrutoFranquias);
+        setLucroBrutoRevenda(primeiroPeriodo.lucroBrutoRevenda);
+      }
+
+      // Se há segundo período, atualizar dadosPeriodo2 (compatibilidade)
+      if (resultados.length > 1) {
+        const segundoPeriodo = resultados[1];
+
+        setDadosPeriodo2({
+          vendasBrutas: segundoPeriodo.vendasBrutas,
+          devolucoes: segundoPeriodo.devolucoes,
+          descontos: segundoPeriodo.descontos,
+          totalDeducoes: segundoPeriodo.totalDeducoes,
+          cmv: segundoPeriodo.cmv,
+          receitaLiquida: segundoPeriodo.receitaLiquida,
+          lucroBruto: segundoPeriodo.lucroBruto,
+          icms: segundoPeriodo.icms,
+          pis: segundoPeriodo.pis,
+          cofins: segundoPeriodo.cofins,
+          totalImpostos: segundoPeriodo.totalImpostos,
+          planoDespesasTotal: segundoPeriodo.planoDespesasTotal,
+          planoDespesasFinanceirasTotal:
+            segundoPeriodo.planoDespesasFinanceirasTotal,
+          totaisVarejo: segundoPeriodo.totaisVarejo,
+          totaisMultimarcas: segundoPeriodo.totaisMultimarcas,
+          totaisFranquias: segundoPeriodo.totaisFranquias,
+          totaisRevenda: segundoPeriodo.totaisRevenda,
+          impostosVarejo: segundoPeriodo.impostosVarejo,
+          impostosMultimarcas: segundoPeriodo.impostosMultimarcas,
+          impostosFranquias: segundoPeriodo.impostosFranquias,
+          impostosRevenda: segundoPeriodo.impostosRevenda,
+          receitaLiquidaVarejo: segundoPeriodo.receitaLiquidaVarejo,
+          receitaLiquidaMultimarcas: segundoPeriodo.receitaLiquidaMultimarcas,
+          receitaLiquidaFranquias: segundoPeriodo.receitaLiquidaFranquias,
+          receitaLiquidaRevenda: segundoPeriodo.receitaLiquidaRevenda,
+          cmvVarejo: segundoPeriodo.cmvVarejo,
+          cmvMultimarcas: segundoPeriodo.cmvMultimarcas,
+          cmvFranquias: segundoPeriodo.cmvFranquias,
+          cmvRevenda: segundoPeriodo.cmvRevenda,
+          lucroBrutoVarejo: segundoPeriodo.lucroBrutoVarejo,
+          lucroBrutoMultimarcas: segundoPeriodo.lucroBrutoMultimarcas,
+          lucroBrutoFranquias: segundoPeriodo.lucroBrutoFranquias,
+          lucroBrutoRevenda: segundoPeriodo.lucroBrutoRevenda,
+        });
+
+        setPlanoDespesasNodesPeriodo2(segundoPeriodo.planoDespesasNodes);
+        setPlanoDespesasFinanceirasNodesPeriodo2(
+          segundoPeriodo.planoDespesasFinanceirasNodes,
+        );
+      }
+
+      console.log(
+        `✅ Busca concluída! ${resultados.length} período(s) processado(s).`,
+      );
+
+      // ================= CÓDIGO LEGADO COMENTADO =================
+      // O código abaixo foi substituído pela nova implementação acima
+      // que itera sobre todos os períodos dinamicamente.
+      // Mantido comentado temporariamente para referência.
+
+      /*
+      // [CÓDIGO ANTIGO - NÃO MAIS UTILIZADO]
       const paramsFaturamento = {
         dataInicio: periodo.dt_inicio,
         dataFim: periodo.dt_fim,
@@ -814,8 +1674,8 @@ const DRE = () => {
       setCofins(cofinsReal);
       setTotalImpostos(totalImpostosReal);
 
-      // ================= ANÁLISE HORIZONTAL: Buscar dados do Período 2 =================
-      if (tipoAnalise === 'horizontal') {
+      // ================= BUSCAR DADOS DO PERÍODO 2 (opcional - se preenchido) =================
+      if (periodoComparacao.dt_inicio && periodoComparacao.dt_fim) {
         setLoadingStatus('Buscando dados do Período 2 de comparação...');
 
         // Buscar faturamento do Período 2
@@ -1782,6 +2642,8 @@ const DRE = () => {
         setPlanoDespesasNodes([]);
         setPlanoDespesasTotal(0);
       }
+      */
+      // ================= FIM DO CÓDIGO LEGADO =================
     } catch (err) {
       console.error('Erro ao buscar vendas brutas:', err);
       setError(`Erro ao carregar dados: ${err.message || 'Erro desconhecido'}`);
@@ -1789,7 +2651,7 @@ const DRE = () => {
       setLoading(false);
       setLoadingStatus('');
     }
-  }, [api, periodo, tipoAnalise, periodoComparacao, shouldExcluirDespesa]);
+  }, [api, periodos, shouldExcluirDespesa]);
 
   // Remover busca automática - só buscar quando clicar no botão
 
@@ -2533,9 +3395,9 @@ const DRE = () => {
     planoDespesasFinanceirasTotal,
   ]);
 
-  // DRE do Período 2 (quando análise horizontal está ativa)
+  // DRE do Período 2 (quando há comparação)
   const drePeriodo2Data = useMemo(() => {
-    if (tipoAnalise !== 'horizontal' || !dadosPeriodo2.vendasBrutas) {
+    if (!dadosPeriodo2.vendasBrutas) {
       return [];
     }
 
@@ -2545,7 +3407,6 @@ const DRE = () => {
       planoDespesasFinanceirasNodesPeriodo2,
     );
   }, [
-    tipoAnalise,
     dadosPeriodo2,
     gerarEstruturaDRE,
     planoDespesasNodesPeriodo2,
@@ -2638,7 +3499,7 @@ const DRE = () => {
 
   // DRE Consolidado (soma dos dois períodos)
   const dreConsolidadoData = useMemo(() => {
-    if (tipoAnalise !== 'horizontal' || !dadosPeriodo2.vendasBrutas) {
+    if (!dadosPeriodo2.vendasBrutas) {
       return [];
     }
 
@@ -2788,6 +3649,65 @@ const DRE = () => {
     planoDespesasFinanceirasNodes,
     planoDespesasFinanceirasNodesPeriodo2,
   ]);
+
+  // 🆕 Gerar estruturas DRE para todos os períodos dinamicamente
+  const dreDataTodosPeriodos = useMemo(() => {
+    if (!dadosPeriodos || dadosPeriodos.length === 0) {
+      return [];
+    }
+
+    console.log(
+      `🎨 Gerando estruturas DRE para ${dadosPeriodos.length} período(s)...`,
+    );
+
+    return dadosPeriodos.map((dados, index) => {
+      const estrutura = gerarEstruturaDRE(
+        {
+          vendasBrutas: dados.vendasBrutas,
+          devolucoes: dados.devolucoes,
+          descontos: dados.descontos,
+          totalDeducoes: dados.totalDeducoes,
+          cmv: dados.cmv,
+          receitaLiquida: dados.receitaLiquida,
+          lucroBruto: dados.lucroBruto,
+          icms: dados.icms,
+          pis: dados.pis,
+          cofins: dados.cofins,
+          totalImpostos: dados.totalImpostos,
+          planoDespesasTotal: dados.planoDespesasTotal,
+          planoDespesasFinanceirasTotal: dados.planoDespesasFinanceirasTotal,
+          totaisVarejo: dados.totaisVarejo,
+          totaisMultimarcas: dados.totaisMultimarcas,
+          totaisFranquias: dados.totaisFranquias,
+          totaisRevenda: dados.totaisRevenda,
+          impostosVarejo: dados.impostosVarejo,
+          impostosMultimarcas: dados.impostosMultimarcas,
+          impostosFranquias: dados.impostosFranquias,
+          impostosRevenda: dados.impostosRevenda,
+          receitaLiquidaVarejo: dados.receitaLiquidaVarejo,
+          receitaLiquidaMultimarcas: dados.receitaLiquidaMultimarcas,
+          receitaLiquidaFranquias: dados.receitaLiquidaFranquias,
+          receitaLiquidaRevenda: dados.receitaLiquidaRevenda,
+          cmvVarejo: dados.cmvVarejo,
+          cmvMultimarcas: dados.cmvMultimarcas,
+          cmvFranquias: dados.cmvFranquias,
+          cmvRevenda: dados.cmvRevenda,
+          lucroBrutoVarejo: dados.lucroBrutoVarejo,
+          lucroBrutoMultimarcas: dados.lucroBrutoMultimarcas,
+          lucroBrutoFranquias: dados.lucroBrutoFranquias,
+          lucroBrutoRevenda: dados.lucroBrutoRevenda,
+        },
+        dados.planoDespesasNodes || [],
+        dados.planoDespesasFinanceirasNodes || [],
+      );
+
+      return {
+        periodoId: dados.periodoId,
+        periodo: dados.periodo,
+        estrutura: estrutura,
+      };
+    });
+  }, [dadosPeriodos, gerarEstruturaDRE]);
 
   const toggleNode = (nodeId) => {
     setExpandedNodes((prev) => ({
@@ -3716,125 +4636,36 @@ const DRE = () => {
         <div className="mb-6">
           <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
             <Funnel size={18} weight="bold" />
-            Filtros
+            Filtros - Múltiplos Períodos
           </span>
           <span className="text-xs text-gray-500 mt-1">
-            Selecione o período para análise
+            Adicione quantos períodos desejar para comparação
           </span>
         </div>
 
-        {/* Filtro rápido por período (ANO/Meses) */}
-        <div className="mb-3">
-          <div className="flex flex-wrap gap-1">
-            {[
-              'ANO',
-              'JAN',
-              'FEV',
-              'MAR',
-              'ABR',
-              'MAI',
-              'JUN',
-              'JUL',
-              'AGO',
-              'SET',
-              'OUT',
-              'NOV',
-              'DEZ',
-            ].map((mes) => (
-              <button
-                key={mes}
-                type="button"
-                onClick={() => handleFiltroMensalChange(mes)}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                  filtroMensal === mes
-                    ? 'bg-[#000638] text-white'
-                    : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
-                }`}
-              >
-                {mes}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <div>
-            <label className="block text-xs font-semibold mb-1">
-              Período Inicial
-            </label>
-            <input
-              type="date"
-              className="border rounded px-2 py-1.5 w-full text-xs"
-              value={periodo.dt_inicio}
-              onChange={(e) =>
-                setPeriodo((prev) => ({ ...prev, dt_inicio: e.target.value }))
-              }
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
-              Período Final
-            </label>
-            <input
-              type="date"
-              className="border rounded px-2 py-1.5 w-full text-xs"
-              value={periodo.dt_fim}
-              onChange={(e) =>
-                setPeriodo((prev) => ({ ...prev, dt_fim: e.target.value }))
-              }
-            />
-          </div>
-          <div className="flex items-center">
-            <button
-              className="bg-[#000638] text-white text-xs px-3 py-2 rounded hover:bg-[#fe0000]"
-              onClick={buscarVendasBrutas}
-              disabled={loading}
-            >
-              {loading ? 'Carregando...' : 'Buscar Dados'}
-            </button>
-          </div>
-        </div>
-        {/* Seletor de Tipo de Análise */}
-        <div className="mb-4">
-          <label className="block text-sm font-semibold mb-2">
-            Tipo de Análise
-          </label>
-          <div className="flex gap-4">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="tipoAnalise"
-                value="vertical"
-                checked={tipoAnalise === 'vertical'}
-                onChange={(e) => setTipoAnalise(e.target.value)}
-                className="w-4 h-4 text-[#000638]"
-              />
-              <span className="text-sm font-medium">Análise Vertical</span>
-              <span className="text-xs text-gray-500">(Período único)</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="tipoAnalise"
-                value="horizontal"
-                checked={tipoAnalise === 'horizontal'}
-                onChange={(e) => setTipoAnalise(e.target.value)}
-                className="w-4 h-4 text-[#000638]"
-              />
-              <span className="text-sm font-medium">Análise Horizontal</span>
-              <span className="text-xs text-gray-500">
-                (Comparar 2 períodos)
-              </span>
-            </label>
-          </div>
-        </div>
-        {/* Campos de Período de Comparação (visível apenas na análise horizontal) */}
-        {tipoAnalise === 'horizontal' && (
-          <>
-            {/* Filtro rápido por mês para Período 2 */}
-            <div className="mb-3 mt-4 pt-4 border-t border-gray-300">
-              <label className="block text-sm font-semibold mb-2 text-[#000638]">
-                Selecionar Mês para Comparação
+        {/* Renderizar cada período */}
+        {periodos.map((per, index) => (
+          <div
+            key={per.id}
+            className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-semibold text-[#000638]">
+                📅 Período {index + 1} {tipoAnalise === 'vertical' && '(com %)'}
               </label>
+              {periodos.length > 1 && (
+                <button
+                  onClick={() => removerPeriodo(per.id)}
+                  className="text-red-600 hover:text-red-800 text-xs font-medium"
+                  title="Remover período"
+                >
+                  ✕ Remover
+                </button>
+              )}
+            </div>
+
+            {/* Filtro rápido por mês */}
+            <div className="mb-2">
               <div className="flex flex-wrap gap-1">
                 {[
                   'ANO',
@@ -3854,9 +4685,9 @@ const DRE = () => {
                   <button
                     key={mes}
                     type="button"
-                    onClick={() => handleFiltroMensalComparacaoChange(mes)}
-                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                      filtroMensalComparacao === mes
+                    onClick={() => handleFiltroMensalChange(mes, per.id)}
+                    className={`px-2 py-0.5 text-xs font-medium rounded-md transition-colors ${
+                      per.filtroMensal === mes
                         ? 'bg-[#000638] text-white'
                         : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
                     }`}
@@ -3867,42 +4698,104 @@ const DRE = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {/* Campos de data */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[]">
-                  Inicial (Comparação)
+                <label className="block text-xs font-semibold mb-1">
+                  Data Inicial
                 </label>
                 <input
                   type="date"
-                  className="border border-blue-300 rounded px-2 py-1.5 w-full text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  value={periodoComparacao.dt_inicio}
+                  className="border rounded px-2 py-1.5 w-full text-xs"
+                  value={per.dt_inicio}
                   onChange={(e) =>
-                    setPeriodoComparacao((prev) => ({
-                      ...prev,
-                      dt_inicio: e.target.value,
-                    }))
+                    atualizarPeriodo(per.id, 'dt_inicio', e.target.value)
                   }
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-[]">
-                  Final (Comparação)
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Data Final
                 </label>
                 <input
                   type="date"
-                  className="border border-blue-300 rounded px-2 py-1.5 w-full text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  value={periodoComparacao.dt_fim}
+                  className="border rounded px-2 py-1.5 w-full text-xs"
+                  value={per.dt_fim}
                   onChange={(e) =>
-                    setPeriodoComparacao((prev) => ({
-                      ...prev,
-                      dt_fim: e.target.value,
-                    }))
+                    atualizarPeriodo(per.id, 'dt_fim', e.target.value)
                   }
                 />
               </div>
             </div>
-          </>
-        )}
+          </div>
+        ))}
+        {/* Botão para adicionar mais períodos */}
+        <div className="mb-4 flex justify-center">
+          <button
+            onClick={adicionarPeriodo}
+            className="bg-green-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-semibold shadow-md flex items-center gap-2"
+          >
+            <span>+ Adicionar Período</span>
+          </button>
+        </div>
+
+        {/* Seletor de Tipo de Análise */}
+        <div className="mb-4">
+          <label className="block text-sm font-semibold mb-2">
+            Tipo de Análise
+          </label>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="tipoAnalise"
+                value="vertical"
+                checked={tipoAnalise === 'vertical'}
+                onChange={(e) => setTipoAnalise(e.target.value)}
+                className="w-4 h-4 text-[#000638]"
+              />
+              <span className="text-sm font-medium">Análise Vertical</span>
+              <span className="text-xs text-gray-500">
+                (Mostra % de cada item)
+              </span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="tipoAnalise"
+                value="horizontal"
+                checked={tipoAnalise === 'horizontal'}
+                onChange={(e) => setTipoAnalise(e.target.value)}
+                className="w-4 h-4 text-[#000638]"
+              />
+              <span className="text-sm font-medium">Análise Horizontal</span>
+              <span className="text-xs text-gray-500">
+                (Mostra variação entre períodos)
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* Botão de buscar dados */}
+        <div className="flex items-center justify-center mt-4 pt-4 border-t border-gray-300">
+          <button
+            className="bg-[#000638] text-white text-sm px-8 py-3 rounded-lg hover:bg-[#fe0000] transition-colors font-semibold shadow-lg flex items-center gap-2"
+            onClick={buscarVendasBrutas}
+            disabled={loading}
+          >
+            {loading ? (
+              <>
+                <span className="animate-spin">🔄</span>
+                <span>Carregando...</span>
+              </>
+            ) : (
+              <>
+                <span>🔍</span>
+                <span>Buscar Dados de Todos os Períodos</span>
+              </>
+            )}
+          </button>
+        </div>
 
         {error && (
           <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
@@ -4015,12 +4908,90 @@ const DRE = () => {
               </button>
             </div>
 
-            {/* DRE Tree Views */}
-            {tipoAnalise === 'vertical' ? (
-              // Análise Vertical: Apenas 1 coluna (Período 1) COM PORCENTAGEM
-              renderDRETreeView(dreData, null, true, false)
+            {/* DRE Tree Views - Renderização Dinâmica de N Períodos */}
+            {dreDataTodosPeriodos.length > 0 ? (
+              <div className="flex gap-4 px-4 overflow-x-auto">
+                {dreDataTodosPeriodos.map((periodoData, index) => {
+                  const periodo = periodoData.periodo;
+                  const estruturaDRE = periodoData.estrutura;
+
+                  // Gerar título da coluna baseado nas datas do período
+                  const dtInicio = periodo.dt_inicio
+                    ? new Date(periodo.dt_inicio + 'T00:00:00')
+                    : null;
+                  const dtFim = periodo.dt_fim
+                    ? new Date(periodo.dt_fim + 'T00:00:00')
+                    : null;
+
+                  let tituloColuna = `Período ${index + 1}`;
+                  if (dtInicio && dtFim) {
+                    const mesInicio = dtInicio.toLocaleDateString('pt-BR', {
+                      month: 'short',
+                      year: 'numeric',
+                    });
+                    const mesFim = dtFim.toLocaleDateString('pt-BR', {
+                      month: 'short',
+                      year: 'numeric',
+                    });
+
+                    if (mesInicio === mesFim) {
+                      tituloColuna = `📅 ${mesInicio}`;
+                    } else {
+                      tituloColuna = `📅 ${mesInicio} - ${mesFim}`;
+                    }
+                  }
+
+                  // Análise vertical: mostrar porcentagem
+                  // Análise horizontal: mostrar variação em relação ao período anterior
+                  const mostrarPorcentagem = tipoAnalise === 'vertical';
+                  const mostrarVariacao =
+                    tipoAnalise === 'horizontal' && index > 0;
+
+                  const periodoAnteriorDados =
+                    index > 0 ? dadosPeriodos[index - 1] : null;
+                  const periodoAtualDados = dadosPeriodos[index];
+
+                  return (
+                    <div key={`periodo-${periodoData.periodoId}-${index}`}>
+                      {renderDRETreeView(
+                        estruturaDRE,
+                        tituloColuna,
+                        mostrarPorcentagem,
+                        mostrarVariacao,
+                        periodoAnteriorDados,
+                        periodoAtualDados,
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : // Fallback para o modo antigo (compatibilidade)
+            tipoAnalise === 'vertical' ? (
+              drePeriodo2Data.length > 0 ? (
+                <div className="flex gap-4 px-4 overflow-x-auto">
+                  {renderDRETreeView(
+                    dreData,
+                    `📅 ${obterNomeMes(filtroMensal)}`,
+                    true,
+                    false,
+                  )}
+                  {renderDRETreeView(
+                    drePeriodo2Data,
+                    `📅 ${obterNomeMes(filtroMensalComparacao)}`,
+                    true,
+                    false,
+                  )}
+                  {renderDRETreeView(
+                    dreConsolidadoData,
+                    '📊 Consolidado',
+                    true,
+                    false,
+                  )}
+                </div>
+              ) : (
+                renderDRETreeView(dreData, null, true, false)
+              )
             ) : (
-              // Análise Horizontal: 3 colunas (Mês 1, Mês 2 com variação, Consolidado) SEM PORCENTAGEM
               <div className="flex gap-4 px-4 overflow-x-auto">
                 {renderDRETreeView(
                   dreData,
