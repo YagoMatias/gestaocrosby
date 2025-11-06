@@ -29,13 +29,28 @@ export const salvarObservacaoDespesaManual = async (dados) => {
     }
 
     // UPDATE da coluna observacoes na tabela despesas_manuais_dre
+    // Verificar se cd_usuario da despesa é INTEGER ou UUID
+    let updateData = {
+      observacoes: dados.observacao,
+    };
+
+    // Buscar dados atuais da despesa para verificar tipo de cd_usuario
+    const { data: despesaAtual } = await supabase
+      .from('despesas_manuais_dre')
+      .select('cd_usuario')
+      .eq('id', dados.id)
+      .single();
+
+    // Se cd_usuario for null ou for UUID, não atualizar
+    // (INTEGER seria um número, UUID é string com hífens)
+    if (despesaAtual && typeof despesaAtual.cd_usuario === 'number') {
+      // Coluna é INTEGER, não podemos salvar UUID
+      console.log('⚠️ cd_usuario é INTEGER, não será atualizado');
+    }
+
     const { data, error } = await supabase
       .from('despesas_manuais_dre')
-      .update({
-        observacoes: dados.observacao,
-        cd_usuario: user.id,
-        dt_alteracao: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('id', dados.id)
       .select('*')
       .single();
@@ -47,7 +62,8 @@ export const salvarObservacaoDespesaManual = async (dados) => {
 
     console.log('✅ Observação atualizada com sucesso:', data);
 
-    // Buscar dados do usuário da view
+    // Buscar dados do usuário da view usando o ID do usuário autenticado
+    // (que foi quem salvou a observação agora)
     const { data: usuarioData, error: usuarioError } = await supabase
       .from('usuarios_view')
       .select('*')
@@ -55,15 +71,18 @@ export const salvarObservacaoDespesaManual = async (dados) => {
       .single();
 
     if (usuarioError) {
-      console.warn('⚠️ Erro ao buscar usuário da observação:', usuarioError);
+      console.warn('⚠️ Erro ao buscar dados do usuário:', usuarioError);
       // Continuar sem dados do usuário (não é crítico)
     }
 
-    // Retornar despesa atualizada com dados do usuário
+    console.log('👤 Dados do usuário:', usuarioData);
+
+    // Retornar despesa atualizada com dados do usuário ATUAL (quem salvou)
     return {
       success: true,
       data: {
         ...data,
+        cd_usuario: user.id, // Retornar UUID do usuário autenticado
         usuario: usuarioData || null,
       },
     };
@@ -86,7 +105,7 @@ export const buscarObservacaoDespesaManual = async (idDespesaManual) => {
     // Buscar a despesa com observação
     const { data, error } = await supabase
       .from('despesas_manuais_dre')
-      .select('id, observacoes, cd_usuario, dt_alteracao')
+      .select('id, observacoes, cd_usuario, dt_cadastro')
       .eq('id', idDespesaManual)
       .eq('ativo', true)
       .single();
@@ -126,7 +145,7 @@ export const buscarObservacaoDespesaManual = async (idDespesaManual) => {
         id: data.id,
         observacao: data.observacoes,
         cd_usuario: data.cd_usuario,
-        dt_alteracao: data.dt_alteracao,
+        dt_cadastro: data.dt_cadastro,
         usuario: usuario,
       },
     };
@@ -161,7 +180,6 @@ export const limparObservacaoDespesaManual = async (idDespesaManual) => {
       .update({
         observacoes: null,
         cd_usuario: user.id,
-        dt_alteracao: new Date().toISOString(),
       })
       .eq('id', idDespesaManual)
       .select()
@@ -194,7 +212,7 @@ export const buscarObservacoesMultiplasDespesas = async (idsDespesas) => {
     // Buscar todas as despesas com observações
     const { data: despesas, error } = await supabase
       .from('despesas_manuais_dre')
-      .select('id, observacoes, cd_usuario, dt_alteracao')
+      .select('id, observacoes, cd_usuario, dt_cadastro')
       .in('id', idsDespesas)
       .eq('ativo', true)
       .not('observacoes', 'is', null);
@@ -243,7 +261,7 @@ export const buscarObservacoesMultiplasDespesas = async (idsDespesas) => {
         id: despesa.id,
         observacao: despesa.observacoes,
         cd_usuario: despesa.cd_usuario,
-        dt_alteracao: despesa.dt_alteracao,
+        dt_cadastro: despesa.dt_cadastro,
         usuario: usuariosMap.get(despesa.cd_usuario) || null,
       });
     });
