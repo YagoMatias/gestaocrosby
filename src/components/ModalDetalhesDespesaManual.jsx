@@ -142,42 +142,55 @@ const ModalDetalhesDespesaManual = ({
           periodo: periodoAtual,
         });
 
-        // Extrair dados da despesa TOTVS da descrição
-        const descricaoParts = despesa.description?.split(' | ') || [];
-        const empresaMatch = descricaoParts[0]?.match(/Empresa: (\d+)/);
-        const fornecedorMatch = descricaoParts[1]?.match(/Fornecedor: (\d+)/);
+        // Usar dados diretos da despesa (ou do primeiro título se for agregado)
+        const primeiroTitulo =
+          despesa._titulos && despesa._titulos.length > 0
+            ? despesa._titulos[0]
+            : null;
 
         const dadosObservacao = {
-          cd_empresa: empresaMatch ? parseInt(empresaMatch[1]) : null,
-          cd_despesaitem: despesa.cd_despesaitem || null,
-          cd_fornecedor: fornecedorMatch
-            ? parseInt(fornecedorMatch[1])
-            : despesa.cd_fornecedor || null,
-          nr_duplicata: despesa.nr_duplicata || 'N/A',
-          nr_parcela: despesa.nr_parcela || 0,
+          cd_empresa: despesa.cd_empresa || primeiroTitulo?.cd_empresa,
+          cd_despesaitem:
+            despesa.cd_despesaitem || primeiroTitulo?.cd_despesaitem,
+          cd_fornecedor: despesa.cd_fornecedor || primeiroTitulo?.cd_fornecedor,
+          nr_duplicata:
+            despesa.nr_duplicata || primeiroTitulo?.nr_duplicata || 'N/A',
+          nr_parcela: despesa.nr_parcela || primeiroTitulo?.nr_parcela || 0,
           observacao: dadosEditados.observacoes,
           dt_inicio: periodoAtual.dt_inicio,
           dt_fim: periodoAtual.dt_fim,
         };
 
-        console.log('📋 Dados da observação:', dadosObservacao);
+        console.log('📋 Dados da observação a serem salvos:', dadosObservacao);
 
         // Salvar observação
         const resultado = await salvarObservacaoDespesa(dadosObservacao);
 
         console.log('✅ Observação salva com sucesso:', resultado);
+
+        // 🆕 Chamar callback com informações do usuário da observação
+        if (onSave && resultado.data) {
+          onSave({
+            ...despesa,
+            ...dadosEditados,
+            value: -Math.abs(dadosEditados.valor),
+            _observacaoTotvs: dadosEditados.observacoes,
+            _usuarioObservacao: resultado.data.usuario,
+            _dataObservacao: resultado.data.created_at,
+            _dataAlteracaoObservacao: resultado.data.updated_at,
+          });
+        }
       }
 
-      // Chamar callback de sucesso (recarregar dados)
-      if (onSave) {
-        onSave({
-          ...despesa,
-          ...dadosEditados,
-          value: -Math.abs(dadosEditados.valor),
-          _observacaoTotvs: !isDespesaManual
-            ? dadosEditados.observacoes
-            : undefined,
-        });
+      if (isDespesaManual) {
+        // Para despesas manuais, chamar onSave aqui
+        if (onSave) {
+          onSave({
+            ...despesa,
+            ...dadosEditados,
+            value: -Math.abs(dadosEditados.valor),
+          });
+        }
       }
 
       setModoEdicao(false);
@@ -832,6 +845,129 @@ const ModalDetalhesDespesaManual = ({
               </p>
             )}
           </div>
+
+          {/* 🆕 Seção: Informações de Auditoria */}
+          {(despesa.usuario || despesa._usuarioObservacao) && (
+            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+              <div className="flex items-center gap-2 mb-3">
+                <User size={18} weight="bold" className="text-[#000638]" />
+                <label className="text-sm font-semibold text-gray-700 uppercase tracking-wider">
+                  Informações de Auditoria
+                </label>
+              </div>
+              <div className="space-y-2 text-sm text-gray-600">
+                {/* Informações de despesa manual */}
+                {isDespesaManual && despesa.usuario && (
+                  <>
+                    <p>
+                      <span className="font-semibold">Criado por:</span>{' '}
+                      {despesa.usuario.raw_user_meta_data?.full_name ||
+                        despesa.usuario.email ||
+                        'Usuário desconhecido'}
+                      {despesa.dt_cadastro && (
+                        <span className="text-gray-500">
+                          {' '}
+                          em{' '}
+                          {new Date(despesa.dt_cadastro).toLocaleString(
+                            'pt-BR',
+                            {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            },
+                          )}
+                        </span>
+                      )}
+                    </p>
+                    {despesa.dt_alteracao &&
+                      despesa.dt_alteracao !== despesa.dt_cadastro && (
+                        <p>
+                          <span className="font-semibold">
+                            Última alteração:
+                          </span>{' '}
+                          {despesa.usuario.raw_user_meta_data?.full_name ||
+                            despesa.usuario.email ||
+                            'Usuário desconhecido'}
+                          <span className="text-gray-500">
+                            {' '}
+                            em{' '}
+                            {new Date(despesa.dt_alteracao).toLocaleString(
+                              'pt-BR',
+                              {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              },
+                            )}
+                          </span>
+                        </p>
+                      )}
+                  </>
+                )}
+
+                {/* Informações de observação TOTVS */}
+                {!isDespesaManual && despesa._usuarioObservacao && (
+                  <>
+                    <p>
+                      <span className="font-semibold">
+                        Observação criada por:
+                      </span>{' '}
+                      {despesa._usuarioObservacao.raw_user_meta_data
+                        ?.full_name ||
+                        despesa._usuarioObservacao.email ||
+                        'Usuário desconhecido'}
+                      {despesa._dataObservacao && (
+                        <span className="text-gray-500">
+                          {' '}
+                          em{' '}
+                          {new Date(despesa._dataObservacao).toLocaleString(
+                            'pt-BR',
+                            {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            },
+                          )}
+                        </span>
+                      )}
+                    </p>
+                    {despesa._dataAlteracaoObservacao &&
+                      despesa._dataAlteracaoObservacao !==
+                        despesa._dataObservacao && (
+                        <p>
+                          <span className="font-semibold">
+                            Última alteração da observação:
+                          </span>{' '}
+                          {despesa._usuarioObservacao.raw_user_meta_data
+                            ?.full_name ||
+                            despesa._usuarioObservacao.email ||
+                            'Usuário desconhecido'}
+                          <span className="text-gray-500">
+                            {' '}
+                            em{' '}
+                            {new Date(
+                              despesa._dataAlteracaoObservacao,
+                            ).toLocaleString('pt-BR', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </p>
+                      )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Detalhes Adicionais - Somente para despesas TOTVS SEM detalhamento de duplicatas */}
           {!isDespesaManual &&

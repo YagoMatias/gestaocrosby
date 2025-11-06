@@ -82,6 +82,19 @@ export const salvarObservacaoDespesa = async (dados) => {
         throw error;
       }
 
+      // 🆕 Buscar informações do usuário separadamente
+      if (data && data.cd_usuario) {
+        const { data: userData, error: userError } = await supabase
+          .from('usuarios_view')
+          .select('id, email, raw_user_meta_data')
+          .eq('id', data.cd_usuario)
+          .single();
+
+        if (!userError && userData) {
+          data.usuario = userData;
+        }
+      }
+
       console.log('✅ Observação atualizada:', data);
       return { success: true, data, isNew: false };
     } else {
@@ -106,6 +119,19 @@ export const salvarObservacaoDespesa = async (dados) => {
       if (error) {
         console.error('❌ Erro ao criar observação:', error);
         throw error;
+      }
+
+      // 🆕 Buscar informações do usuário separadamente
+      if (data && data.cd_usuario) {
+        const { data: userData, error: userError } = await supabase
+          .from('usuarios_view')
+          .select('id, email, raw_user_meta_data')
+          .eq('id', data.cd_usuario)
+          .single();
+
+        if (!userError && userData) {
+          data.usuario = userData;
+        }
       }
 
       console.log('✅ Observação criada:', data);
@@ -136,6 +162,32 @@ export const buscarObservacoesPeriodo = async (dt_inicio, dt_fim) => {
     if (error) {
       console.error('❌ Erro ao buscar observações:', error);
       throw error;
+    }
+
+    // 🆕 Buscar informações dos usuários separadamente
+    if (data && data.length > 0) {
+      const userIds = [
+        ...new Set(data.map((d) => d.cd_usuario).filter(Boolean)),
+      ];
+
+      if (userIds.length > 0) {
+        const { data: users, error: userError } = await supabase
+          .from('usuarios_view')
+          .select('id, email, raw_user_meta_data')
+          .in('id', userIds);
+
+        if (!userError && users) {
+          // Criar mapa de usuários
+          const userMap = new Map(users.map((u) => [u.id, u]));
+
+          // Adicionar informações do usuário a cada observação
+          data.forEach((obs) => {
+            if (obs.cd_usuario) {
+              obs.usuario = userMap.get(obs.cd_usuario);
+            }
+          });
+        }
+      }
     }
 
     console.log(`✅ ${data.length} observações encontradas`);

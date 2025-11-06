@@ -71,6 +71,32 @@ export const listarDespesasManuais = async (filtros = {}) => {
       throw new Error(error.message || 'Erro ao listar despesas manuais');
     }
 
+    // 🆕 Buscar informações dos usuários separadamente
+    if (data && data.length > 0) {
+      const userIds = [
+        ...new Set(data.map((d) => d.cd_usuario).filter(Boolean)),
+      ];
+
+      if (userIds.length > 0) {
+        const { data: users, error: userError } = await supabase
+          .from('usuarios_view')
+          .select('id, email, raw_user_meta_data')
+          .in('id', userIds);
+
+        if (!userError && users) {
+          // Criar mapa de usuários
+          const userMap = new Map(users.map((u) => [u.id, u]));
+
+          // Adicionar informações do usuário a cada despesa
+          data.forEach((despesa) => {
+            if (despesa.cd_usuario) {
+              despesa.usuario = userMap.get(despesa.cd_usuario);
+            }
+          });
+        }
+      }
+    }
+
     console.log(`✅ ${data.length} despesas manuais encontradas`);
     return { success: true, data };
   } catch (error) {

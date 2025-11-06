@@ -449,6 +449,10 @@ const DRE = () => {
             despesaAtualizada._observacaoTotvs || despesaAtualizada.observacoes
           ),
           observacoes: despesaAtualizada.observacoes,
+          // 🆕 Atualizar informações do usuário da observação
+          _usuarioObservacao: despesaAtualizada._usuarioObservacao,
+          _dataObservacao: despesaAtualizada._dataObservacao,
+          _dataAlteracaoObservacao: despesaAtualizada._dataAlteracaoObservacao,
         };
       }
 
@@ -871,8 +875,17 @@ const DRE = () => {
       const observacoesMap = new Map();
       observacoesTotvs.forEach((obs) => {
         const chave = `${obs.cd_empresa}-${obs.cd_despesaitem}-${obs.cd_fornecedor}-${obs.nr_duplicata}-${obs.nr_parcela}`;
-        observacoesMap.set(chave, obs.observacao);
+        observacoesMap.set(chave, {
+          observacao: obs.observacao,
+          usuario: obs.usuario,
+          created_at: obs.created_at,
+          updated_at: obs.updated_at,
+        });
       });
+
+      console.log(
+        `📋 Mapa de observações criado com ${observacoesMap.size} entradas`,
+      );
 
       // Mesclar despesas manuais com dadosCP (conversão para formato compatível)
       const despesasManuaisConvertidas = despesasManuais.map((dm) => ({
@@ -887,6 +900,8 @@ const DRE = () => {
         _isDespesaManual: true, // Flag para identificação visual
         _idDespesaManual: dm.id, // UUID para edição/exclusão
         _dtCadastro: dm.dt_cadastro,
+        _dtAlteracao: dm.dt_alteracao,
+        _usuario: dm.usuario, // 🆕 Informações do usuário
       }));
 
       // Adicionar despesas manuais ao array de dados
@@ -1228,6 +1243,10 @@ const DRE = () => {
             observacoes: item.observacoes,
             cd_despesaitem: item.cd_despesaitem,
             cd_fornecedor: item.cd_fornecedor,
+            // 🆕 Informações do usuário (despesas manuais)
+            usuario: item._usuario,
+            dt_cadastro: item._dtCadastro,
+            dt_alteracao: item._dtAlteracao,
           });
           despesa._fornCount += 1;
         }
@@ -1235,12 +1254,15 @@ const DRE = () => {
         const fornecedor = despesa._forn.get(fornKey);
 
         // 🆕 Buscar observação TOTVS para este título específico
+        let observacaoTotvsObj = null;
         let observacaoTotvs = '';
         if (!item._isDespesaManual) {
           const chaveObs = `${item.cd_empresa}-${item.cd_despesaitem}-${
             item.cd_fornecedor
           }-${item.nr_duplicata || 'N/A'}-${item.nr_parcela || 0}`;
-          observacaoTotvs = observacoesMap.get(chaveObs) || '';
+
+          observacaoTotvsObj = observacoesMap.get(chaveObs);
+          observacaoTotvs = observacaoTotvsObj?.observacao || '';
         }
 
         // 🆕 Adicionar cada duplicata individual ao array de títulos
@@ -1282,6 +1304,13 @@ const DRE = () => {
           fornecedor._temObservacao = true;
           fornecedor._observacaoTotvs =
             fornecedor._observacaoTotvs || observacaoTotvs;
+
+          // 🆕 Adicionar informações do usuário da observação ao fornecedor
+          if (observacaoTotvsObj && !fornecedor._usuarioObservacao) {
+            fornecedor._usuarioObservacao = observacaoTotvsObj.usuario;
+            fornecedor._dataObservacao = observacaoTotvsObj.created_at;
+            fornecedor._dataAlteracaoObservacao = observacaoTotvsObj.updated_at;
+          }
         }
 
         fornecedor.value += -valor;
