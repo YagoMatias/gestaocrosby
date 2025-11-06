@@ -24,6 +24,8 @@ const ModalAdicionarDespesaManual = ({
   // Estados do formulário
   const [tipoDespesa, setTipoDespesa] = useState('OPERACIONAL');
   const [codigoDespesa, setCodigoDespesa] = useState('');
+  const [buscaDespesa, setBuscaDespesa] = useState(''); // 🆕 Campo de busca
+  const [mostrarSugestoes, setMostrarSugestoes] = useState(false); // 🆕 Controle de dropdown
   const [fornecedor, setFornecedor] = useState('');
   const [codigoFornecedor, setCodigoFornecedor] = useState(null);
   const [valor, setValor] = useState('');
@@ -51,7 +53,7 @@ const ModalAdicionarDespesaManual = ({
     if (despesasDisponiveis.length > 0) {
       agruparDespesasPorCategoria();
     }
-  }, [tipoDespesa, despesasDisponiveis]);
+  }, [despesasDisponiveis]); // 🆕 Removido tipoDespesa das dependências
 
   // Inicializar período se houver apenas um
   useEffect(() => {
@@ -59,6 +61,21 @@ const ModalAdicionarDespesaManual = ({
       setPeriodoSelecionado(periodosSelecionados[0]);
     }
   }, [isOpen, periodosSelecionados, periodoSelecionado]);
+
+  // 🆕 Fechar sugestões ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        mostrarSugestoes &&
+        !event.target.closest('.autocomplete-container')
+      ) {
+        setMostrarSugestoes(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [mostrarSugestoes]);
 
   // 🔍 Buscar todas as despesas do backend
   const buscarDespesas = async () => {
@@ -75,22 +92,14 @@ const ModalAdicionarDespesaManual = ({
     }
   };
 
-  // 📊 Agrupar despesas por categoria com base no tipo selecionado
+  // 📊 Agrupar despesas por categoria (TODAS, sem filtro de tipo)
   const agruparDespesasPorCategoria = () => {
     const grupos = {};
 
     despesasDisponiveis.forEach((despesa) => {
       const codigo = despesa.cd_despesaitem;
 
-      // Filtrar por tipo
-      const isOperacional =
-        (codigo >= 1000 && codigo <= 6999) ||
-        (codigo >= 8000 && codigo <= 9999);
-      const isFinanceira = codigo >= 7000 && codigo <= 7999;
-
-      if (tipoDespesa === 'OPERACIONAL' && !isOperacional) return;
-      if (tipoDespesa === 'FINANCEIRA' && !isFinanceira) return;
-
+      // 🆕 Não filtrar mais por tipo - mostrar TODAS as despesas
       // Obter categoria
       const categoria = getCategoriaPorCodigo(codigo);
 
@@ -136,6 +145,46 @@ const ModalAdicionarDespesaManual = ({
     if (!valor) return 0;
     return parseFloat(valor.replace(/\./g, '').replace(',', '.'));
   }, [valor]);
+
+  // 🆕 Filtrar despesas por busca
+  const despesasFiltradas = useMemo(() => {
+    if (!buscaDespesa.trim()) {
+      return [];
+    }
+
+    const termoBusca = buscaDespesa.toLowerCase();
+    const todasDespesas = [];
+
+    // Juntar todas as despesas de todas as categorias
+    Object.values(despesasAgrupadas).forEach((despesas) => {
+      todasDespesas.push(...despesas);
+    });
+
+    // Filtrar por código ou descrição
+    return todasDespesas
+      .filter((despesa) => {
+        const codigo = despesa.cd_despesaitem.toString();
+        const descricao = despesa.ds_despesaitem.toLowerCase();
+
+        return codigo.includes(termoBusca) || descricao.includes(termoBusca);
+      })
+      .slice(0, 50); // Limitar a 50 resultados para performance
+  }, [buscaDespesa, despesasAgrupadas]);
+
+  // 🆕 Selecionar despesa do autocomplete
+  const selecionarDespesa = (despesa) => {
+    setCodigoDespesa(despesa.cd_despesaitem.toString());
+    setBuscaDespesa(`${despesa.cd_despesaitem} - ${despesa.ds_despesaitem}`);
+    setMostrarSugestoes(false);
+
+    // Definir automaticamente o tipo baseado no código
+    const codigo = despesa.cd_despesaitem;
+    if (codigo >= 7000 && codigo <= 7999) {
+      setTipoDespesa('FINANCEIRA');
+    } else {
+      setTipoDespesa('OPERACIONAL');
+    }
+  };
 
   // 💾 Salvar despesa manual
   const handleSubmit = async (e) => {
@@ -279,97 +328,93 @@ const ModalAdicionarDespesaManual = ({
             </p>
           </div>
 
-          {/* 2️⃣ Tipo de Despesa */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Tipo de Despesa *
-            </label>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 cursor-pointer px-4 py-3 border-2 rounded-lg transition-all hover:bg-gray-50 flex-1">
-                <input
-                  type="radio"
-                  value="OPERACIONAL"
-                  checked={tipoDespesa === 'OPERACIONAL'}
-                  onChange={(e) => {
-                    setTipoDespesa(e.target.value);
-                    setCodigoDespesa(''); // Reset ao trocar tipo
-                  }}
-                  className="w-4 h-4 text-[#000638]"
-                />
-                <div className="flex-1">
-                  <span className="font-medium text-gray-900">Operacional</span>
-                  <p className="text-xs text-gray-500">Despesas do dia a dia</p>
-                </div>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer px-4 py-3 border-2 rounded-lg transition-all hover:bg-gray-50 flex-1">
-                <input
-                  type="radio"
-                  value="FINANCEIRA"
-                  checked={tipoDespesa === 'FINANCEIRA'}
-                  onChange={(e) => {
-                    setTipoDespesa(e.target.value);
-                    setCodigoDespesa(''); // Reset ao trocar tipo
-                  }}
-                  className="w-4 h-4 text-[#000638]"
-                />
-                <div className="flex-1">
-                  <span className="font-medium text-gray-900">Financeira</span>
-                  <p className="text-xs text-gray-500">Juros, taxas, etc</p>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* 3️⃣ Descrição da Despesa */}
-          <div>
+          {/* 2️⃣ Descrição da Despesa - AUTOCOMPLETE */}
+          <div className="autocomplete-container">
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               Descrição da Despesa *
             </label>
             {loadingDespesas ? (
-              <div className="w-full border-2 border-gray-300 rounded-lg px-4 py-2.5 flex items-center justify-center text-gray-500">
+              <div className=" w-full border-2 border-gray-300 rounded-lg px-4 py-2.5 flex items-center justify-center text-gray-500">
                 <span className="animate-pulse">Carregando despesas...</span>
               </div>
             ) : (
-              <select
-                className="w-full border-2 border-gray-300 rounded-lg px-4 py-2.5 focus:border-[#000638] focus:ring-2 focus:ring-[#000638]/20 outline-none transition-all"
-                value={codigoDespesa}
-                onChange={(e) => setCodigoDespesa(e.target.value)}
-                required
-              >
-                <option value="">Selecione uma despesa</option>
-                {Object.keys(despesasAgrupadas)
-                  .sort()
-                  .map((categoria) => (
-                    <optgroup key={categoria} label={categoria}>
-                      {despesasAgrupadas[categoria].map((despesa) => (
-                        <option
+              <>
+                <input
+                  type="text"
+                  className=" w-full border-2 border-gray-300 rounded-lg px-4 py-2.5 focus:border-[#000638] focus:ring-2 focus:ring-[#000638]/20 outline-none transition-all"
+                  value={buscaDespesa}
+                  onChange={(e) => {
+                    setBuscaDespesa(e.target.value);
+                    setMostrarSugestoes(true);
+                    if (!e.target.value.trim()) {
+                      setCodigoDespesa('');
+                    }
+                  }}
+                  onFocus={() => buscaDespesa && setMostrarSugestoes(true)}
+                  placeholder="Digite o código ou nome da despesa..."
+                  required
+                />
+
+                {/* Dropdown de Sugestões */}
+                {mostrarSugestoes && despesasFiltradas.length > 0 && (
+                  <div className="bg-white absolute z-10 w-96 mt-1 border-2 border-gray-300 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                    {despesasFiltradas.map((despesa) => {
+                      const codigo = despesa.cd_despesaitem;
+                      const isSelecionado = codigoDespesa === codigo.toString();
+
+                      return (
+                        <button
                           key={despesa.cd_despesaitem}
-                          value={despesa.cd_despesaitem}
+                          type="button"
+                          onClick={() => selecionarDespesa(despesa)}
+                          className={`w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors border-b border-gray-100 last:border-b-0 ${
+                            isSelecionado ? 'bg-blue-100' : ''
+                          }`}
                         >
-                          {despesa.cd_despesaitem} - {despesa.ds_despesaitem}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-              </select>
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <span className="font-semibold text-gray-900">
+                                {codigo}
+                              </span>
+                              <span className="text-gray-600 ml-2">
+                                - {despesa.ds_despesaitem}
+                              </span>
+                            </div>
+                            <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700">
+                              {getCategoriaPorCodigo(codigo)}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Mensagem quando não encontrar */}
+                {mostrarSugestoes &&
+                  buscaDespesa.trim() &&
+                  despesasFiltradas.length === 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border-2 border-gray-300 rounded-lg shadow-lg p-4 text-center text-gray-500">
+                      Nenhuma despesa encontrada para "{buscaDespesa}"
+                    </div>
+                  )}
+              </>
             )}
             <p className="text-xs text-gray-500 mt-1">
-              {tipoDespesa === 'OPERACIONAL'
-                ? 'Despesas operacionais (códigos 1000-6999 e 8000-9999)'
-                : 'Despesas financeiras (códigos 7000-7999)'}
+              Digite para buscar em todas as despesas disponíveis
               {codigoDespesa && (
                 <span className="text-blue-600 font-medium ml-2">
-                  → Código: {codigoDespesa}
+                  ✓ Selecionado: Código {codigoDespesa}
                 </span>
               )}
             </p>
           </div>
 
-          {/* 4️⃣ Fornecedor */}
+          {/* 3️⃣ Fornecedor */}
           <div>
             <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
               <User size={18} weight="duotone" />
-              Fornecedor (opcional)
+              Fornecedor *
             </label>
             <input
               type="text"
@@ -378,13 +423,14 @@ const ModalAdicionarDespesaManual = ({
               onChange={(e) => setFornecedor(e.target.value)}
               placeholder="Nome do fornecedor"
               maxLength={200}
+              required
             />
             <p className="text-xs text-gray-500 mt-1">
               Digite o nome do fornecedor relacionado a esta despesa
             </p>
           </div>
 
-          {/* 4.5️⃣ Código do Fornecedor */}
+          {/* 4️⃣ Código do Fornecedor */}
           <div>
             <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
               Código do Fornecedor (opcional)
