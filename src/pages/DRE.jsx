@@ -427,6 +427,46 @@ const DRE = () => {
     }));
   }, []);
 
+  // 🆕 Função helper para atualizar observação na árvore de despesas
+  const atualizarObservacaoNaArvore = (nodes, despesaAtualizada) => {
+    if (!nodes || !Array.isArray(nodes)) return nodes;
+
+    return nodes.map((node) => {
+      // Se encontrou o nó correspondente, atualizar
+      if (
+        node.id === despesaAtualizada.id ||
+        (node.cd_empresa === despesaAtualizada.cd_empresa &&
+          node.cd_despesaitem === despesaAtualizada.cd_despesaitem &&
+          node.cd_fornecedor === despesaAtualizada.cd_fornecedor &&
+          node.nr_duplicata === despesaAtualizada.nr_duplicata &&
+          node.nr_parcela === despesaAtualizada.nr_parcela)
+      ) {
+        return {
+          ...node,
+          _observacaoTotvs:
+            despesaAtualizada._observacaoTotvs || despesaAtualizada.observacoes,
+          _temObservacao: !!(
+            despesaAtualizada._observacaoTotvs || despesaAtualizada.observacoes
+          ),
+          observacoes: despesaAtualizada.observacoes,
+        };
+      }
+
+      // Recursivamente atualizar filhos
+      if (node.children && node.children.length > 0) {
+        return {
+          ...node,
+          children: atualizarObservacaoNaArvore(
+            node.children,
+            despesaAtualizada,
+          ),
+        };
+      }
+
+      return node;
+    });
+  };
+
   // Função para buscar dados de um único período
   const buscarDadosPeriodo = async (periodo, periodoIndex, totalPeriodos) => {
     const statusPrefix =
@@ -1156,15 +1196,6 @@ const DRE = () => {
         const fornKey = String(item.cd_fornecedor || nmFornecedor);
 
         if (!despesa._forn.has(fornKey)) {
-          // 🆕 Buscar observação TOTVS se não for despesa manual
-          let observacaoTotvs = '';
-          if (!item._isDespesaManual) {
-            const chaveObs = `${item.cd_empresa}-${item.cd_despesaitem}-${
-              item.cd_fornecedor
-            }-${item.nr_duplicata || 'N/A'}-${item.nr_parcela || 0}`;
-            observacaoTotvs = observacoesMap.get(chaveObs) || '';
-          }
-
           const descricaoFornecedor = item._isDespesaManual
             ? [
                 '✏️ MANUAL',
@@ -1182,52 +1213,79 @@ const DRE = () => {
                 .join(' | ');
 
           despesa._forn.set(fornKey, {
-            id: item._idDespesaManual || `forn-${fornKey}`, // Usar UUID se for despesa manual
+            id: item._idDespesaManual || `forn-${fornKey}`,
             label: nmFornecedor,
             description: descricaoFornecedor,
             value: 0,
             type: 'despesa',
             children: [],
-            _isDespesaManual: item._isDespesaManual || false, // 🆕 Preservar flag
-            _idDespesaManual: item._idDespesaManual, // 🆕 UUID para edição
-            _observacaoTotvs: observacaoTotvs, // 🆕 Observação TOTVS
-            _temObservacao: !!observacaoTotvs || !!item.observacoes || false, // 🆕 Flag para indicador visual
-            nome: item.fornecedor || nmFornecedor, // Nome original
-            valor: item.valor || 0, // Valor original
-            fornecedor: item.fornecedor, // Fornecedor original
-            observacoes: item.observacoes, // Observações (despesa manual)
-            // Identificação
+            _isDespesaManual: item._isDespesaManual || false,
+            _idDespesaManual: item._idDespesaManual,
+            _titulos: [], // 🆕 Array para armazenar todas as duplicatas individuais
+            nome: item.fornecedor || nmFornecedor,
+            valor: 0,
+            fornecedor: item.fornecedor,
+            observacoes: item.observacoes,
             cd_despesaitem: item.cd_despesaitem,
             cd_fornecedor: item.cd_fornecedor,
-            cd_empresa: item.cd_empresa,
-            cd_ccusto: item.cd_ccusto,
-            // Documento
-            nr_duplicata: item.nr_duplicata,
-            nr_parcela: item.nr_parcela,
-            nr_portador: item.nr_portador,
-            // Datas
-            dt_emissao: item.dt_emissao,
-            dt_vencimento: item.dt_vencimento,
-            dt_entrada: item.dt_entrada,
-            dt_liq: item.dt_liq,
-            // Valores Financeiros
-            vl_duplicata: item.vl_duplicata,
-            vl_rateio: item.vl_rateio,
-            vl_pago: item.vl_pago,
-            vl_juros: item.vl_juros,
-            vl_acrescimo: item.vl_acrescimo,
-            vl_desconto: item.vl_desconto,
-            // Status
-            tp_situacao: item.tp_situacao,
-            tp_estagio: item.tp_estagio,
-            tp_previsaoreal: item.tp_previsaoreal,
-            in_aceite: item.in_aceite,
           });
           despesa._fornCount += 1;
         }
 
         const fornecedor = despesa._forn.get(fornKey);
+
+        // 🆕 Buscar observação TOTVS para este título específico
+        let observacaoTotvs = '';
+        if (!item._isDespesaManual) {
+          const chaveObs = `${item.cd_empresa}-${item.cd_despesaitem}-${
+            item.cd_fornecedor
+          }-${item.nr_duplicata || 'N/A'}-${item.nr_parcela || 0}`;
+          observacaoTotvs = observacoesMap.get(chaveObs) || '';
+        }
+
+        // 🆕 Adicionar cada duplicata individual ao array de títulos
+        fornecedor._titulos.push({
+          // Identificação
+          cd_empresa: item.cd_empresa,
+          cd_despesaitem: item.cd_despesaitem,
+          cd_fornecedor: item.cd_fornecedor,
+          cd_ccusto: item.cd_ccusto,
+          // Documento
+          nr_duplicata: item.nr_duplicata,
+          nr_parcela: item.nr_parcela,
+          nr_portador: item.nr_portador,
+          // Datas
+          dt_emissao: item.dt_emissao,
+          dt_vencimento: item.dt_vencimento,
+          dt_entrada: item.dt_entrada,
+          dt_liq: item.dt_liq,
+          // Valores Financeiros
+          vl_duplicata: item.vl_duplicata,
+          vl_rateio: item.vl_rateio,
+          vl_pago: item.vl_pago,
+          vl_juros: item.vl_juros,
+          vl_acrescimo: item.vl_acrescimo,
+          vl_desconto: item.vl_desconto,
+          valor: Math.abs(valor), // Valor individual do título
+          // Status
+          tp_situacao: item.tp_situacao,
+          tp_estagio: item.tp_estagio,
+          tp_previsaoreal: item.tp_previsaoreal,
+          in_aceite: item.in_aceite,
+          // Observação
+          _observacaoTotvs: observacaoTotvs,
+          _temObservacao: !!observacaoTotvs || !!item.observacoes,
+        });
+
+        // 🆕 Verificar se algum título tem observação para marcar o fornecedor
+        if (observacaoTotvs || item.observacoes) {
+          fornecedor._temObservacao = true;
+          fornecedor._observacaoTotvs =
+            fornecedor._observacaoTotvs || observacaoTotvs;
+        }
+
         fornecedor.value += -valor;
+        fornecedor.valor = (fornecedor.valor || 0) + Math.abs(valor);
         despesa.value += -valor;
       }
 
@@ -5171,10 +5229,61 @@ const DRE = () => {
           setModalDespManual={setModalDespManual}
           despesa={despesaSelecionada}
           periodoAtual={periodo} // 🆕 Passar período atual para salvar observações
-          onSave={(despesaAtualizada) => {
+          onSave={async (despesaAtualizada) => {
             console.log('💾 Despesa/Observação atualizada:', despesaAtualizada);
-            // Recarregar dados após salvar
-            buscarVendasBrutas();
+
+            // 🚀 OTIMIZAÇÃO: Só recarregar o necessário
+            if (
+              despesaAtualizada._isDespesaManual ||
+              despesaAtualizada.ativo === false
+            ) {
+              // Para despesas manuais (criar/editar/excluir): recarregar dados silenciosamente
+              console.log(
+                '🔄 Recarregando dados em background (despesa manual)...',
+              );
+
+              // Recarregar sem mostrar loading full screen
+              buscarVendasBrutas()
+                .then(() => {
+                  console.log('✅ Dados atualizados com sucesso');
+                })
+                .catch((error) => {
+                  console.error('❌ Erro ao atualizar dados:', error);
+                });
+            } else {
+              // Para observações TOTVS: apenas atualizar o objeto no estado local
+              console.log(
+                '📝 Atualizando apenas observação no estado local...',
+              );
+
+              // Atualizar a despesa selecionada com a nova observação
+              setDespesaSelecionada((prev) => ({
+                ...prev,
+                ...despesaAtualizada,
+              }));
+
+              // Atualizar nos dados dos períodos se existir
+              setDadosPeriodos((prev) =>
+                prev.map((p) => {
+                  if (p.periodoId === periodo.id) {
+                    return {
+                      ...p,
+                      despesasOperacionais: atualizarObservacaoNaArvore(
+                        p.despesasOperacionais,
+                        despesaAtualizada,
+                      ),
+                      despesasFinanceiras: atualizarObservacaoNaArvore(
+                        p.despesasFinanceiras,
+                        despesaAtualizada,
+                      ),
+                    };
+                  }
+                  return p;
+                }),
+              );
+
+              console.log('✅ Observação atualizada localmente (sem reload)');
+            }
           }}
         />
       )}
