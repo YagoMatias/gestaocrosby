@@ -46,97 +46,45 @@ export const salvarObservacaoDespesa = async (dados) => {
       throw new Error('Usuário não autenticado');
     }
 
-    // Verificar se já existe uma observação para esta despesa neste período
-    const { data: existente, error: buscaError } = await supabase
+    // 🆕 Sempre criar nova observação (sistema de chat/histórico)
+    console.log('✨ Criando novo comentário no histórico');
+    const { data, error } = await supabase
       .from('observacoes_despesas_totvs')
-      .select('id')
-      .eq('cd_empresa', dados.cd_empresa)
-      .eq('cd_despesaitem', dados.cd_despesaitem)
-      .eq('cd_fornecedor', dados.cd_fornecedor)
-      .eq('nr_duplicata', dados.nr_duplicata)
-      .eq('nr_parcela', dados.nr_parcela)
-      .eq('dt_inicio', dados.dt_inicio)
-      .eq('dt_fim', dados.dt_fim)
-      .maybeSingle();
+      .insert({
+        cd_empresa: dados.cd_empresa,
+        cd_despesaitem: dados.cd_despesaitem,
+        cd_fornecedor: dados.cd_fornecedor,
+        nr_duplicata: dados.nr_duplicata,
+        nr_parcela: dados.nr_parcela,
+        observacao: dados.observacao,
+        dt_inicio: dados.dt_inicio,
+        dt_fim: dados.dt_fim,
+        cd_usuario: user.id,
+        is_active: true,
+      })
+      .select()
+      .single();
 
-    if (buscaError) {
-      console.error('❌ Erro ao buscar observação existente:', buscaError);
-      throw buscaError;
+    if (error) {
+      console.error('❌ Erro ao criar comentário:', error);
+      throw error;
     }
 
-    if (existente) {
-      // Atualizar observação existente
-      console.log('🔄 Atualizando observação existente:', existente.id);
-      const { data, error } = await supabase
-        .from('observacoes_despesas_totvs')
-        .update({
-          observacao: dados.observacao,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existente.id)
-        .select()
+    // 🆕 Buscar informações do usuário separadamente
+    if (data && data.cd_usuario) {
+      const { data: userData, error: userError } = await supabase
+        .from('usuarios_view')
+        .select('id, email, raw_user_meta_data')
+        .eq('id', data.cd_usuario)
         .single();
 
-      if (error) {
-        console.error('❌ Erro ao atualizar observação:', error);
-        throw error;
+      if (!userError && userData) {
+        data.usuario = userData;
       }
-
-      // 🆕 Buscar informações do usuário separadamente
-      if (data && data.cd_usuario) {
-        const { data: userData, error: userError } = await supabase
-          .from('usuarios_view')
-          .select('id, email, raw_user_meta_data')
-          .eq('id', data.cd_usuario)
-          .single();
-
-        if (!userError && userData) {
-          data.usuario = userData;
-        }
-      }
-
-      console.log('✅ Observação atualizada:', data);
-      return { success: true, data, isNew: false };
-    } else {
-      // Criar nova observação
-      console.log('✨ Criando nova observação');
-      const { data, error } = await supabase
-        .from('observacoes_despesas_totvs')
-        .insert({
-          cd_empresa: dados.cd_empresa,
-          cd_despesaitem: dados.cd_despesaitem,
-          cd_fornecedor: dados.cd_fornecedor,
-          nr_duplicata: dados.nr_duplicata,
-          nr_parcela: dados.nr_parcela,
-          observacao: dados.observacao,
-          dt_inicio: dados.dt_inicio,
-          dt_fim: dados.dt_fim,
-          cd_usuario: user.id,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error('❌ Erro ao criar observação:', error);
-        throw error;
-      }
-
-      // 🆕 Buscar informações do usuário separadamente
-      if (data && data.cd_usuario) {
-        const { data: userData, error: userError } = await supabase
-          .from('usuarios_view')
-          .select('id, email, raw_user_meta_data')
-          .eq('id', data.cd_usuario)
-          .single();
-
-        if (!userError && userData) {
-          data.usuario = userData;
-        }
-      }
-
-      console.log('✅ Observação criada:', data);
-      return { success: true, data, isNew: true };
     }
+
+    console.log('✅ Comentário criado:', data);
+    return { success: true, data, isNew: true };
   } catch (error) {
     console.error('❌ Erro ao salvar observação de despesa:', error);
     throw error;
@@ -157,7 +105,9 @@ export const buscarObservacoesPeriodo = async (dt_inicio, dt_fim) => {
       .from('observacoes_despesas_totvs')
       .select('*')
       .eq('dt_inicio', dt_inicio)
-      .eq('dt_fim', dt_fim);
+      .eq('dt_fim', dt_fim)
+      .eq('is_active', true) // 🆕 Apenas comentários ativos
+      .order('created_at', { ascending: true }); // 🆕 Ordenar do mais antigo ao mais recente
 
     if (error) {
       console.error('❌ Erro ao buscar observações:', error);

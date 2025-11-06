@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Calendar,
@@ -13,14 +13,18 @@ import {
   CaretRight,
   Note,
   Trash,
+  ChatCircleText,
+  PaperPlaneRight,
 } from '@phosphor-icons/react';
 import {
   editarDespesaManual,
   excluirDespesaManual,
 } from '../services/despesasManuaisService';
 import { salvarObservacaoDespesa } from '../services/observacoesDespesasService';
+import { salvarObservacaoDespesaManual } from '../services/observacoesDespesasManuaisService';
 import useApiClient from '../hooks/useApiClient';
 import LoadingSpinner from './LoadingSpinner';
+import { supabase } from '../lib/supabase';
 
 const ModalDetalhesDespesaManual = ({
   modalDespManual,
@@ -39,6 +43,13 @@ const ModalDetalhesDespesaManual = ({
   const [mostrarConfirmacaoExclusao, setMostrarConfirmacaoExclusao] =
     useState(false);
   const [excluindo, setExcluindo] = useState(false);
+
+  // 🆕 Estados para o chat
+  const [novaObservacao, setNovaObservacao] = useState('');
+  const [salvandoObservacao, setSalvandoObservacao] = useState(false);
+  const [observacoesRealtime, setObservacoesRealtime] = useState([]);
+  const chatContainerRef = useRef(null);
+
   const [dadosEditados, setDadosEditados] = useState({
     nome: '',
     valor: 0,
@@ -48,6 +59,110 @@ const ModalDetalhesDespesaManual = ({
 
   // 🆕 Detectar se é despesa manual ou TOTVS
   const isDespesaManual = despesa?._isDespesaManual || false;
+
+  // 🆕 useEffect para inicializar observações e configurar real-time
+  useEffect(() => {
+    if (!despesa) return;
+
+    // Inicializar com observações existentes
+    const observacoesIniciais = despesa._observacoesHistorico || [];
+    setObservacoesRealtime(observacoesIniciais);
+
+    console.log(
+      `🔄 Inicializando chat para ${
+        isDespesaManual ? 'DESPESA MANUAL' : 'DESPESA TOTVS'
+      }`,
+    );
+    console.log(
+      `📊 ${observacoesIniciais.length} observações iniciais carregadas`,
+    );
+
+    // ⚠️ REAL-TIME APENAS PARA DESPESAS TOTVS
+    if (isDespesaManual) {
+      console.log('📝 Despesa manual: sem real-time (UPDATE simples)');
+      return;
+    }
+
+    // 🟢 DESPESA TOTVS: Configurar real-time
+    let channel;
+
+    const primeiroTitulo =
+      despesa._titulos && despesa._titulos.length > 0
+        ? despesa._titulos[0]
+        : null;
+
+    const cd_empresa = despesa.cd_empresa || primeiroTitulo?.cd_empresa;
+    const cd_despesaitem =
+      despesa.cd_despesaitem || primeiroTitulo?.cd_despesaitem;
+    const cd_fornecedor =
+      despesa.cd_fornecedor || primeiroTitulo?.cd_fornecedor;
+    const nr_duplicata =
+      despesa.nr_duplicata || primeiroTitulo?.nr_duplicata || 'N/A';
+    const nr_parcela = despesa.nr_parcela || primeiroTitulo?.nr_parcela || 0;
+
+    if (!cd_empresa || !cd_fornecedor) {
+      console.warn('⚠️ Dados insuficientes para configurar real-time TOTVS');
+      return;
+    }
+
+    const filtro = `cd_empresa=eq.${cd_empresa},cd_despesaitem=eq.${cd_despesaitem},cd_fornecedor=eq.${cd_fornecedor},nr_duplicata=eq.${nr_duplicata},nr_parcela=eq.${nr_parcela}`;
+
+    console.log('🟢 Configurando real-time TOTVS:', { filtro });
+
+    channel = supabase
+      .channel(
+        `observacoes-totvs-${cd_empresa}-${cd_fornecedor}-${nr_duplicata}-${nr_parcela}`,
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'observacoes_despesas_totvs',
+          filter: filtro,
+        },
+        async (payload) => {
+          console.log(
+            '✨ Nova observação TOTVS recebida via real-time:',
+            payload,
+          );
+
+          // Buscar dados do usuário
+          const { data: usuarioData } = await supabase
+            .from('usuarios_view')
+            .select('*')
+            .eq('id', payload.new.cd_usuario)
+            .single();
+
+          const novaObservacaoCompleta = {
+            ...payload.new,
+            usuario: usuarioData || null,
+          };
+
+          // Adicionar à lista
+          setObservacoesRealtime((prev) => [...prev, novaObservacaoCompleta]);
+
+          // Scroll automático
+          setTimeout(() => {
+            if (chatContainerRef.current) {
+              chatContainerRef.current.scrollTop =
+                chatContainerRef.current.scrollHeight;
+            }
+          }, 100);
+        },
+      )
+      .subscribe((status) => {
+        console.log(`📡 Real-time TOTVS status: ${status}`);
+      });
+
+    // Cleanup
+    return () => {
+      if (channel) {
+        console.log('🔌 Desconectando real-time...');
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [despesa, isDespesaManual]);
 
   useEffect(() => {
     if (despesa) {
@@ -87,6 +202,120 @@ const ModalDetalhesDespesaManual = ({
       month: '2-digit',
       year: 'numeric',
     });
+  };
+
+  // 🆕 Função para adicionar observação TOTVS (com real-time)
+  const handleAdicionarObservacaoTotvs = async () => {
+    if (!novaObservacao.trim()) {
+      setErro('Digite uma observação antes de enviar.');
+      return;
+    }
+
+    if (!periodoAtual?.dt_inicio || !periodoAtual?.dt_fim) {
+      setErro('Período atual não encontrado.');
+      return;
+    }
+
+    try {
+      setSalvandoObservacao(true);
+      setErro('');
+
+      const primeiroTitulo =
+        despesa._titulos && despesa._titulos.length > 0
+          ? despesa._titulos[0]
+          : null;
+
+      const dadosObservacao = {
+        cd_empresa: despesa.cd_empresa || primeiroTitulo?.cd_empresa,
+        cd_despesaitem:
+          despesa.cd_despesaitem || primeiroTitulo?.cd_despesaitem,
+        cd_fornecedor: despesa.cd_fornecedor || primeiroTitulo?.cd_fornecedor,
+        nr_duplicata:
+          despesa.nr_duplicata || primeiroTitulo?.nr_duplicata || 'N/A',
+        nr_parcela: despesa.nr_parcela || primeiroTitulo?.nr_parcela || 0,
+        observacao: novaObservacao.trim(),
+        dt_inicio: periodoAtual.dt_inicio,
+        dt_fim: periodoAtual.dt_fim,
+      };
+
+      console.log('💬 Salvando observação TOTVS:', dadosObservacao);
+
+      await salvarObservacaoDespesa(dadosObservacao);
+
+      console.log(
+        '✅ Observação TOTVS salva - Real-time atualizará automaticamente',
+      );
+
+      setNovaObservacao('');
+    } catch (error) {
+      console.error('❌ Erro ao adicionar observação TOTVS:', error);
+      setErro(
+        error.message || 'Erro ao adicionar observação. Tente novamente.',
+      );
+    } finally {
+      setSalvandoObservacao(false);
+    }
+  };
+
+  // 🆕 Função para adicionar observação MANUAL (sem real-time)
+  const handleAdicionarObservacaoManual = async () => {
+    if (!novaObservacao.trim()) {
+      setErro('Digite uma observação antes de enviar.');
+      return;
+    }
+
+    const despesaId = despesa.id || despesa._idDespesaManual;
+    if (!despesaId) {
+      setErro('ID da despesa manual não encontrado.');
+      return;
+    }
+
+    try {
+      setSalvandoObservacao(true);
+      setErro('');
+
+      const dadosObservacao = {
+        id: despesaId,
+        observacao: novaObservacao.trim(),
+      };
+
+      console.log('💬 Salvando observação MANUAL:', dadosObservacao);
+
+      const result = await salvarObservacaoDespesaManual(dadosObservacao);
+
+      console.log('✅ Observação MANUAL salva');
+
+      // Atualizar localmente (sem real-time)
+      if (result.success && result.data) {
+        setObservacoesRealtime([
+          {
+            id: result.data.id,
+            observacao: result.data.observacoes,
+            cd_usuario: result.data.cd_usuario,
+            dt_alteracao: result.data.dt_alteracao,
+            usuario: result.data.usuario,
+            created_at: result.data.dt_alteracao,
+          },
+        ]);
+
+        // Scroll automático
+        setTimeout(() => {
+          if (chatContainerRef.current) {
+            chatContainerRef.current.scrollTop =
+              chatContainerRef.current.scrollHeight;
+          }
+        }, 100);
+      }
+
+      setNovaObservacao('');
+    } catch (error) {
+      console.error('❌ Erro ao adicionar observação MANUAL:', error);
+      setErro(
+        error.message || 'Erro ao adicionar observação. Tente novamente.',
+      );
+    } finally {
+      setSalvandoObservacao(false);
+    }
   };
 
   const handleInputChange = (field, value) => {
@@ -822,28 +1051,134 @@ const ModalDetalhesDespesaManual = ({
               </div>
             )}
 
-          {/* Observações/Descrição */}
+          {/* 🆕 Seção: Chat de Observações */}
           <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-            <label className="text-sm font-semibold text-blue-900 mb-2 block">
-              Observações
-            </label>
-            {modoEdicao ? (
-              <textarea
-                value={dadosEditados.observacoes}
-                onChange={(e) =>
-                  handleInputChange('observacoes', e.target.value)
-                }
-                rows={4}
-                className="w-full text-gray-700 border-2 border-blue-300 rounded-lg px-3 py-2 focus:outline-none focus:border-[#000638] transition-colors resize-none"
-                placeholder="Adicione observações sobre esta despesa..."
+            <div className="flex items-center gap-2 mb-3">
+              <ChatCircleText
+                size={20}
+                weight="bold"
+                className="text-blue-900"
               />
-            ) : (
-              <p className="text-gray-700 leading-relaxed">
-                {despesa.observacoes ||
-                  despesa._observacaoTotvs ||
-                  'Sem observações'}
-              </p>
-            )}
+              <label className="text-sm font-semibold text-blue-900 uppercase tracking-wider">
+                {isDespesaManual ? 'Observação' : 'Chat de Observações'}
+              </label>
+              {!isDespesaManual && observacoesRealtime.length > 0 && (
+                <span className="ml-auto bg-blue-600 text-white text-xs px-2 py-1 rounded-full">
+                  {observacoesRealtime.length}
+                </span>
+              )}
+            </div>
+
+            {/* Container do Chat */}
+            <div
+              ref={chatContainerRef}
+              className="bg-white rounded-lg border border-blue-200 p-3 mb-3 max-h-64 overflow-y-auto space-y-3"
+            >
+              {observacoesRealtime.length === 0 ? (
+                <div className="text-center text-gray-400 py-8">
+                  <ChatCircleText
+                    size={48}
+                    weight="light"
+                    className="mx-auto mb-2 opacity-50"
+                  />
+                  <p className="text-sm">
+                    {isDespesaManual
+                      ? 'Sem observações'
+                      : 'Nenhuma mensagem ainda. Seja o primeiro a comentar!'}
+                  </p>
+                </div>
+              ) : (
+                observacoesRealtime.map((obs, index) => {
+                  const nomeUsuario =
+                    obs.usuario?.name ||
+                    obs.usuario?.nome_completo ||
+                    obs.usuario?.email?.split('@')[0] ||
+                    'Usuário';
+                  const dataHora = obs.created_at
+                    ? new Date(obs.created_at).toLocaleString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : obs.dt_alteracao
+                    ? new Date(obs.dt_alteracao).toLocaleString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : '';
+
+                  return (
+                    <div
+                      key={obs.id || index}
+                      className="bg-gray-50 rounded-lg p-3 border border-gray-200"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-8 h-8 rounded-full bg-[#000638] flex items-center justify-center text-white text-sm font-bold">
+                          {nomeUsuario.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-gray-900">
+                            {nomeUsuario}
+                          </p>
+                          {dataHora && (
+                            <p className="text-xs text-gray-500">{dataHora}</p>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                        {obs.observacao}
+                      </p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Input para nova observação */}
+            <div className="flex gap-2">
+              <textarea
+                value={novaObservacao}
+                onChange={(e) => setNovaObservacao(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (isDespesaManual) {
+                      handleAdicionarObservacaoManual();
+                    } else {
+                      handleAdicionarObservacaoTotvs();
+                    }
+                  }
+                }}
+                rows={2}
+                className="flex-1 text-sm text-gray-700 border-2 border-blue-300 rounded-lg px-3 py-2 focus:outline-none focus:border-[#000638] transition-colors resize-none"
+                placeholder={
+                  isDespesaManual
+                    ? 'Adicione uma observação...'
+                    : 'Digite sua mensagem... (Enter para enviar, Shift+Enter para quebrar linha)'
+                }
+                disabled={salvandoObservacao}
+              />
+              <button
+                onClick={
+                  isDespesaManual
+                    ? handleAdicionarObservacaoManual
+                    : handleAdicionarObservacaoTotvs
+                }
+                disabled={salvandoObservacao || !novaObservacao.trim()}
+                className="bg-[#000638] text-white px-4 py-2 rounded-lg hover:bg-[#000856] transition-colors font-semibold shadow-md flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed self-end"
+              >
+                {salvandoObservacao ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <PaperPlaneRight size={20} weight="bold" />
+                )}
+              </button>
+            </div>
           </div>
 
           {/* 🆕 Seção: Informações de Auditoria */}
