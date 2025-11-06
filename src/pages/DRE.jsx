@@ -5,6 +5,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import CalendarioPeriodosDRE from '../components/CalendarioPeriodosDRE';
 import ModalAdicionarDespesaManual from '../components/ModalAdicionarDespesaManual';
 import { listarDespesasManuais } from '../services/despesasManuaisService';
+import { buscarObservacoesPeriodo } from '../services/observacoesDespesasService';
 import {
   CaretDown,
   CaretRight,
@@ -808,6 +809,31 @@ const DRE = () => {
         );
       }
 
+      // 🆕 Buscar observações de despesas TOTVS
+      setLoadingStatus(`${statusPrefix}Buscando observações de despesas...`);
+      let observacoesTotvs = [];
+      try {
+        observacoesTotvs = await buscarObservacoesPeriodo(
+          periodo.dt_inicio,
+          periodo.dt_fim,
+        );
+        console.log(
+          `✅ ${observacoesTotvs.length} observações TOTVS encontradas para o período`,
+        );
+      } catch (error) {
+        console.warn(
+          '⚠️ Erro ao buscar observações TOTVS (continuando sem elas):',
+          error,
+        );
+      }
+
+      // Criar mapa de observações para busca rápida
+      const observacoesMap = new Map();
+      observacoesTotvs.forEach((obs) => {
+        const chave = `${obs.cd_empresa}-${obs.cd_despesaitem}-${obs.cd_fornecedor}-${obs.nr_duplicata}-${obs.nr_parcela}`;
+        observacoesMap.set(chave, obs.observacao);
+      });
+
       // Mesclar despesas manuais com dadosCP (conversão para formato compatível)
       const despesasManuaisConvertidas = despesasManuais.map((dm) => ({
         cd_despesaitem: dm.cd_despesaitem,
@@ -866,7 +892,7 @@ const DRE = () => {
       const [
         planoDespesasNodesProcessado,
         planoDespesasFinanceirasNodesProcessado,
-      ] = await processarDespesasCompleto(dadosCP, periodo);
+      ] = await processarDespesasCompleto(dadosCP, periodo, observacoesMap);
 
       // Retornar objeto com todos os dados do período
       return {
@@ -918,7 +944,11 @@ const DRE = () => {
   };
 
   // Função auxiliar para processar despesas com estrutura completa
-  const processarDespesasCompleto = async (dadosCP, periodo) => {
+  const processarDespesasCompleto = async (
+    dadosCP,
+    periodo,
+    observacoesMap,
+  ) => {
     try {
       // Buscar nomes das despesas e fornecedores
       const codigosDespesas = Array.from(
@@ -953,16 +983,48 @@ const DRE = () => {
           ? fornecedoresResp
           : [];
 
+        // Converter códigos para números para garantir compatibilidade
         despesaMap = new Map(
           despesasData
             .filter((d) => d && d.cd_despesaitem !== undefined)
-            .map((d) => [d.cd_despesaitem, d]),
+            .map((d) => [Number(d.cd_despesaitem), d]),
         );
         fornecedorMap = new Map(
           fornecedoresData
             .filter((f) => f && f.cd_fornecedor !== undefined)
-            .map((f) => [f.cd_fornecedor, f]),
+            .map((f) => [Number(f.cd_fornecedor), f]),
         );
+
+        console.log(`📋 DespesaMap carregado com ${despesaMap.size} itens`);
+        console.log(
+          `📋 FornecedorMap carregado com ${fornecedorMap.size} itens`,
+        );
+
+        // Verificar se códigos de despesas manuais estão no mapa
+        const codigosDespesasManuais = Array.from(
+          new Set(
+            (dadosCP || [])
+              .filter((item) => item._isDespesaManual)
+              .map((item) => item.cd_despesaitem),
+          ),
+        );
+
+        if (codigosDespesasManuais.length > 0) {
+          console.log(
+            '🔍 Códigos de despesas manuais:',
+            codigosDespesasManuais,
+          );
+          codigosDespesasManuais.forEach((codigo) => {
+            if (despesaMap.has(codigo)) {
+              console.log(
+                `✅ Código ${codigo} encontrado:`,
+                despesaMap.get(codigo).ds_despesaitem,
+              );
+            } else {
+              console.warn(`⚠️ Código ${codigo} NÃO encontrado no despesaMap`);
+            }
+          });
+        }
       } catch (errMaps) {
         console.warn(
           'Falha ao enriquecer nomes de despesa/fornecedor:',
@@ -1042,14 +1104,29 @@ const DRE = () => {
         const grupo = grupoAtual.get(chaveGrupo);
         grupo.value += -valor;
 
+        // Para despesas manuais, sempre usar a descrição do código, não o fornecedor
+        // 🔧 CONVERTER PARA NÚMERO para buscar no Map
+        const descricaoDespesa = despesaMap.get(
+          Number(item.cd_despesaitem),
+        )?.ds_despesaitem;
         const nomeDespesa = (
-          despesaMap.get(item.cd_despesaitem)?.ds_despesaitem ||
+          descricaoDespesa ||
           item.nm_despesaitem ||
           item.ds_despesaitem ||
           `CÓDIGO ${codigoDespesa}`
         )
           .toString()
           .trim();
+
+        // Log para debug de despesas manuais
+        if (item._isDespesaManual) {
+          console.log('🔍 Processando despesa manual:', {
+            nivel3_cd_despesaitem: codigoDespesa,
+            nivel3_descricaoEncontrada: descricaoDespesa,
+            nivel3_labelFinal: nomeDespesa,
+            nivel4_fornecedor: item.fornecedor,
+          });
+        }
 
         if (!grupo._despesas.has(nomeDespesa)) {
           grupo._despesas.set(nomeDespesa, {
@@ -1061,12 +1138,14 @@ const DRE = () => {
             children: [],
             _forn: new Map(),
             _fornCount: 0,
+            cd_despesaitem: codigoDespesa, // Preservar código para referência
           });
         }
 
         const despesa = grupo._despesas.get(nomeDespesa);
 
-        const fornInfo = fornecedorMap.get(item.cd_fornecedor);
+        // 🔧 CONVERTER PARA NÚMERO para buscar no Map
+        const fornInfo = fornecedorMap.get(Number(item.cd_fornecedor));
         const nmFornecedor = (
           fornInfo?.nm_fornecedor ||
           item.nm_fornecedor ||
@@ -1077,10 +1156,18 @@ const DRE = () => {
         const fornKey = String(item.cd_fornecedor || nmFornecedor);
 
         if (!despesa._forn.has(fornKey)) {
+          // 🆕 Buscar observação TOTVS se não for despesa manual
+          let observacaoTotvs = '';
+          if (!item._isDespesaManual) {
+            const chaveObs = `${item.cd_empresa}-${item.cd_despesaitem}-${
+              item.cd_fornecedor
+            }-${item.nr_duplicata || 'N/A'}-${item.nr_parcela || 0}`;
+            observacaoTotvs = observacoesMap.get(chaveObs) || '';
+          }
+
           const descricaoFornecedor = item._isDespesaManual
             ? [
                 '✏️ MANUAL',
-                item.observacoes ? `Obs: ${item.observacoes}` : '',
                 `Cadastro: ${new Date(item._dtCadastro).toLocaleDateString(
                   'pt-BR',
                 )}`,
@@ -1090,7 +1177,9 @@ const DRE = () => {
             : [
                 `Empresa: ${item.cd_empresa || '-'}`,
                 `Fornecedor: ${item.cd_fornecedor || '-'}`,
-              ].join(' | ');
+              ]
+                .filter(Boolean)
+                .join(' | ');
 
           despesa._forn.set(fornKey, {
             id: item._idDespesaManual || `forn-${fornKey}`, // Usar UUID se for despesa manual
@@ -1101,12 +1190,38 @@ const DRE = () => {
             children: [],
             _isDespesaManual: item._isDespesaManual || false, // 🆕 Preservar flag
             _idDespesaManual: item._idDespesaManual, // 🆕 UUID para edição
+            _observacaoTotvs: observacaoTotvs, // 🆕 Observação TOTVS
+            _temObservacao: !!observacaoTotvs || !!item.observacoes || false, // 🆕 Flag para indicador visual
             nome: item.fornecedor || nmFornecedor, // Nome original
             valor: item.valor || 0, // Valor original
             fornecedor: item.fornecedor, // Fornecedor original
-            observacoes: item.observacoes, // Observações
+            observacoes: item.observacoes, // Observações (despesa manual)
+            // Identificação
             cd_despesaitem: item.cd_despesaitem,
             cd_fornecedor: item.cd_fornecedor,
+            cd_empresa: item.cd_empresa,
+            cd_ccusto: item.cd_ccusto,
+            // Documento
+            nr_duplicata: item.nr_duplicata,
+            nr_parcela: item.nr_parcela,
+            nr_portador: item.nr_portador,
+            // Datas
+            dt_emissao: item.dt_emissao,
+            dt_vencimento: item.dt_vencimento,
+            dt_entrada: item.dt_entrada,
+            dt_liq: item.dt_liq,
+            // Valores Financeiros
+            vl_duplicata: item.vl_duplicata,
+            vl_rateio: item.vl_rateio,
+            vl_pago: item.vl_pago,
+            vl_juros: item.vl_juros,
+            vl_acrescimo: item.vl_acrescimo,
+            vl_desconto: item.vl_desconto,
+            // Status
+            tp_situacao: item.tp_situacao,
+            tp_estagio: item.tp_estagio,
+            tp_previsaoreal: item.tp_previsaoreal,
+            in_aceite: item.in_aceite,
           });
           despesa._fornCount += 1;
         }
@@ -2195,8 +2310,10 @@ const DRE = () => {
           grupo.value += -valor;
 
           // Buscar nome da despesa no mapa (igual Período 1)
+          // 🔧 CONVERTER PARA NÚMERO para buscar no Map
           const nomeDespesa = (
-            despesaMapPeriodo2.get(item.cd_despesaitem)?.ds_despesaitem ||
+            despesaMapPeriodo2.get(Number(item.cd_despesaitem))
+              ?.ds_despesaitem ||
             item.nm_despesaitem ||
             item.ds_despesaitem ||
             `CÓDIGO ${codigoDespesa}`
@@ -2220,7 +2337,10 @@ const DRE = () => {
           const despesa = grupo._despesas.get(nomeDespesa);
 
           // Adicionar camada de fornecedores (igual Período 1)
-          const fornInfo = fornecedorMapPeriodo2.get(item.cd_fornecedor);
+          // 🔧 CONVERTER PARA NÚMERO para buscar no Map
+          const fornInfo = fornecedorMapPeriodo2.get(
+            Number(item.cd_fornecedor),
+          );
           const nmFornecedor = (
             fornInfo?.nm_fornecedor ||
             item.nm_fornecedor ||
@@ -2608,8 +2728,9 @@ const DRE = () => {
           }
           const grupo = gruposMap.get(chaveGrupo);
 
+          // 🔧 CONVERTER PARA NÚMERO para buscar no Map
           const nomeDespesa = (
-            despesaMap.get(item.cd_despesaitem)?.ds_despesaitem ||
+            despesaMap.get(Number(item.cd_despesaitem))?.ds_despesaitem ||
             item.ds_despesaitem ||
             'SEM DESPESA'
           )
@@ -2624,7 +2745,7 @@ const DRE = () => {
               nr_duplicata: item.nr_duplicata,
               valor: valor,
               motivo: `Código ${item.cd_despesaitem} não encontrado na API /despesa nem tem ds_despesaitem no item original`,
-              temNaAPI: despesaMap.has(item.cd_despesaitem),
+              temNaAPI: despesaMap.has(Number(item.cd_despesaitem)),
               temNoItem: !!item.ds_despesaitem,
             });
           }
@@ -2642,7 +2763,8 @@ const DRE = () => {
           }
           const nodoDespesa = grupo._despesas.get(nomeDespesa);
 
-          const fornInfo = fornecedorMap.get(item.cd_fornecedor);
+          // 🔧 CONVERTER PARA NÚMERO para buscar no Map
+          const fornInfo = fornecedorMap.get(Number(item.cd_fornecedor));
           const nmFornecedor = (
             fornInfo?.nm_fornecedor ||
             item.nm_fornecedor ||
@@ -4404,7 +4526,7 @@ const DRE = () => {
                                                 ))}
                                               <div>
                                                 <h5
-                                                  className={`font-medium text-xs ${
+                                                  className={` font-medium text-xs ${
                                                     subsubitem._isDespesaManual
                                                       ? 'text-blue-700'
                                                       : 'text-gray-600'
@@ -4474,6 +4596,13 @@ const DRE = () => {
                                                     >
                                                       <div className="bg-gray-25 hover:bg-gray-100 cursor-pointer transition-colors px-8 py-1.5 flex items-center justify-between">
                                                         <div className="flex items-center space-x-2">
+                                                          {/* Indicador de observação */}
+                                                          {subsubsubitem._temObservacao && (
+                                                            <div
+                                                              className="w-2 h-2 bg-red-500 rounded-full flex-shrink-0"
+                                                              title="Tem observação"
+                                                            />
+                                                          )}
                                                           <div>
                                                             <h6 className="font-medium text-xs text-gray-500">
                                                               {
@@ -5035,15 +5164,15 @@ const DRE = () => {
         periodosSelecionados={periodos.filter((p) => p.dt_inicio && p.dt_fim)}
       />
 
-      {/* Modal Detalhes Despesa Manual */}
+      {/* Modal Detalhes Despesa Manual/TOTVS */}
       {modalDespManual && despesaSelecionada && (
         <ModalDetalhesDespesaManual
           modalDespManual={modalDespManual}
           setModalDespManual={setModalDespManual}
           despesa={despesaSelecionada}
+          periodoAtual={periodo} // 🆕 Passar período atual para salvar observações
           onSave={(despesaAtualizada) => {
-            console.log('💾 Despesa atualizada:', despesaAtualizada);
-            // TODO: Implementar API para salvar no backend
+            console.log('💾 Despesa/Observação atualizada:', despesaAtualizada);
             // Recarregar dados após salvar
             buscarVendasBrutas();
           }}

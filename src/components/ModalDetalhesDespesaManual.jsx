@@ -8,8 +8,10 @@ import {
   PencilSimple,
   FloppyDisk,
   User,
+  Eye,
 } from '@phosphor-icons/react';
 import { editarDespesaManual } from '../services/despesasManuaisService';
+import { salvarObservacaoDespesa } from '../services/observacoesDespesasService';
 import LoadingSpinner from './LoadingSpinner';
 
 const ModalDetalhesDespesaManual = ({
@@ -17,6 +19,7 @@ const ModalDetalhesDespesaManual = ({
   setModalDespManual,
   despesa,
   onSave,
+  periodoAtual, // 🆕 Receber período atual para salvar observação
 }) => {
   const [modoEdicao, setModoEdicao] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -28,18 +31,24 @@ const ModalDetalhesDespesaManual = ({
     observacoes: '',
   });
 
+  // 🆕 Detectar se é despesa manual ou TOTVS
+  const isDespesaManual = despesa?._isDespesaManual || false;
+
   useEffect(() => {
     if (despesa) {
-      console.log('📋 Despesa carregada no modal:', despesa);
+      console.log('📋 Despesa carregada no modal:', {
+        ...despesa,
+        isDespesaManual,
+      });
       // Na tabela, 'fornecedor' é o nome principal da despesa
       setDadosEditados({
         nome: despesa.fornecedor || despesa.label || '',
         valor: Math.abs(despesa.valor || despesa.value || 0),
         fornecedor: despesa.fornecedor || '',
-        observacoes: despesa.observacoes || despesa.description || '',
+        observacoes: despesa.observacoes || despesa._observacaoTotvs || '',
       });
     }
-  }, [despesa]);
+  }, [despesa, isDespesaManual]);
 
   if (!despesa) return null;
 
@@ -72,51 +81,89 @@ const ModalDetalhesDespesaManual = ({
       setSalvando(true);
       setErro('');
 
-      // Verificar se a despesa tem ID (é uma despesa manual do Supabase)
-      const despesaId = despesa.id || despesa._idDespesaManual;
+      if (isDespesaManual) {
+        // ============ DESPESA MANUAL: Edição completa ============
+        const despesaId = despesa.id || despesa._idDespesaManual;
 
-      if (!despesaId) {
-        console.error('❌ Despesa sem ID:', despesa);
-        throw new Error(
-          'ID da despesa não encontrado. Não é possível editar despesas que não são manuais.',
+        if (!despesaId) {
+          console.error('❌ Despesa manual sem ID:', despesa);
+          throw new Error('ID da despesa manual não encontrado.');
+        }
+
+        console.log('💾 Salvando alterações da DESPESA MANUAL:', {
+          id: despesaId,
+          despesaCompleta: despesa,
+          dados: dadosEditados,
+        });
+
+        // Preparar dados para envio (usar os nomes de campo corretos do banco)
+        const dadosParaAtualizar = {
+          fornecedor: dadosEditados.nome || dadosEditados.fornecedor,
+          valor: dadosEditados.valor,
+          observacoes: dadosEditados.observacoes || null,
+        };
+
+        // Chamar API para atualizar no Supabase
+        const resultado = await editarDespesaManual(
+          despesaId,
+          dadosParaAtualizar,
         );
+
+        console.log('✅ Despesa manual atualizada com sucesso:', resultado);
+      } else {
+        // ============ DESPESA TOTVS: Apenas salvar observação ============
+        if (!periodoAtual?.dt_inicio || !periodoAtual?.dt_fim) {
+          throw new Error('Período atual não encontrado.');
+        }
+
+        console.log('💾 Salvando OBSERVAÇÃO de despesa TOTVS:', {
+          despesa,
+          observacao: dadosEditados.observacoes,
+          periodo: periodoAtual,
+        });
+
+        // Extrair dados da despesa TOTVS da descrição
+        const descricaoParts = despesa.description?.split(' | ') || [];
+        const empresaMatch = descricaoParts[0]?.match(/Empresa: (\d+)/);
+        const fornecedorMatch = descricaoParts[1]?.match(/Fornecedor: (\d+)/);
+
+        const dadosObservacao = {
+          cd_empresa: empresaMatch ? parseInt(empresaMatch[1]) : null,
+          cd_despesaitem: despesa.cd_despesaitem || null,
+          cd_fornecedor: fornecedorMatch
+            ? parseInt(fornecedorMatch[1])
+            : despesa.cd_fornecedor || null,
+          nr_duplicata: despesa.nr_duplicata || 'N/A',
+          nr_parcela: despesa.nr_parcela || 0,
+          observacao: dadosEditados.observacoes,
+          dt_inicio: periodoAtual.dt_inicio,
+          dt_fim: periodoAtual.dt_fim,
+        };
+
+        console.log('📋 Dados da observação:', dadosObservacao);
+
+        // Salvar observação
+        const resultado = await salvarObservacaoDespesa(dadosObservacao);
+
+        console.log('✅ Observação salva com sucesso:', resultado);
       }
-
-      console.log('💾 Salvando alterações da despesa:', {
-        id: despesaId,
-        despesaCompleta: despesa,
-        dados: dadosEditados,
-      });
-
-      // Preparar dados para envio (usar os nomes de campo corretos do banco)
-      // A tabela despesas_manuais_dre usa 'fornecedor' para o nome da despesa
-      const dadosParaAtualizar = {
-        fornecedor: dadosEditados.nome || dadosEditados.fornecedor, // Nome da despesa
-        valor: dadosEditados.valor,
-        observacoes: dadosEditados.observacoes || null,
-      };
-
-      // Chamar API para atualizar no Supabase
-      const resultado = await editarDespesaManual(
-        despesaId,
-        dadosParaAtualizar,
-      );
-
-      console.log('✅ Despesa atualizada com sucesso:', resultado);
 
       // Chamar callback de sucesso (recarregar dados)
       if (onSave) {
         onSave({
           ...despesa,
           ...dadosEditados,
-          value: -Math.abs(dadosEditados.valor), // Para compatibilidade com DRE
+          value: -Math.abs(dadosEditados.valor),
+          _observacaoTotvs: !isDespesaManual
+            ? dadosEditados.observacoes
+            : undefined,
         });
       }
 
       setModoEdicao(false);
       setModalDespManual(false);
     } catch (error) {
-      console.error('❌ Erro ao salvar despesa:', error);
+      console.error('❌ Erro ao salvar:', error);
       setErro(error.message || 'Erro ao salvar alterações. Tente novamente.');
     } finally {
       setSalvando(false);
@@ -125,15 +172,25 @@ const ModalDetalhesDespesaManual = ({
 
   const handleCancelar = () => {
     // Restaurar dados originais
-    // Na tabela, 'fornecedor' é o nome principal da despesa
     setDadosEditados({
       nome: despesa.fornecedor || despesa.label || '',
       valor: Math.abs(despesa.valor || despesa.value || 0),
       fornecedor: despesa.fornecedor || '',
-      observacoes: despesa.observacoes || despesa.description || '',
+      observacoes: despesa.observacoes || despesa._observacaoTotvs || '',
     });
     setErro('');
     setModoEdicao(false);
+  };
+
+  // 🆕 Definir título baseado no tipo de despesa
+  const getTitulo = () => {
+    if (isDespesaManual) {
+      return modoEdicao
+        ? 'Editar Despesa Manual'
+        : 'Detalhes da Despesa Manual';
+    } else {
+      return modoEdicao ? 'Adicionar Observação' : 'Detalhes da Despesa TOTVS';
+    }
   };
 
   return (
@@ -142,12 +199,12 @@ const ModalDetalhesDespesaManual = ({
         {/* Header */}
         <div className="bg-gradient-to-r from-[#000638] to-[#000856] text-white px-6 py-4 rounded-t-lg flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <FileText size={24} weight="bold" />
-            <h2 className="text-xl font-bold">
-              {modoEdicao
-                ? 'Editar Despesa Manual'
-                : 'Detalhes da Despesa Manual'}
-            </h2>
+            {isDespesaManual ? (
+              <FileText size={24} weight="bold" />
+            ) : (
+              <Eye size={24} weight="bold" />
+            )}
+            <h2 className="text-xl font-bold">{getTitulo()}</h2>
           </div>
           <div className="flex items-center gap-2">
             {!modoEdicao && (
@@ -174,12 +231,25 @@ const ModalDetalhesDespesaManual = ({
 
         {/* Content */}
         <div className="p-6 space-y-6">
+          {/* Tipo de Despesa Badge */}
+          <div className="flex items-center gap-2">
+            <span
+              className={`px-3 py-1 rounded-full text-xs font-bold ${
+                isDespesaManual
+                  ? 'bg-blue-100 text-blue-800'
+                  : 'bg-purple-100 text-purple-800'
+              }`}
+            >
+              {isDespesaManual ? '✏️ DESPESA MANUAL' : '📊 DESPESA TOTVS'}
+            </span>
+          </div>
+
           {/* Título/Label */}
           <div className="border-b border-gray-200 pb-4">
             <label className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
               Descrição / Nome da Despesa
             </label>
-            {modoEdicao ? (
+            {modoEdicao && isDespesaManual ? (
               <input
                 type="text"
                 value={dadosEditados.nome}
@@ -208,7 +278,7 @@ const ModalDetalhesDespesaManual = ({
                   Valor
                 </label>
               </div>
-              {modoEdicao ? (
+              {modoEdicao && isDespesaManual ? (
                 <div className="flex items-center gap-2">
                   <span className="text-2xl font-bold text-red-600">R$</span>
                   <input
@@ -309,29 +379,257 @@ const ModalDetalhesDespesaManual = ({
             ) : (
               <p className="text-gray-700 leading-relaxed">
                 {despesa.observacoes ||
-                  despesa.description ||
+                  despesa._observacaoTotvs ||
                   'Sem observações'}
               </p>
             )}
           </div>
 
-          {/* Dados adicionais (se houver) */}
-          {despesa.cd_empresa && (
-            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-              <label className="text-sm font-semibold text-gray-600 mb-2 block">
-                Código da Empresa
-              </label>
-              <p className="text-lg text-gray-900">{despesa.cd_empresa}</p>
-            </div>
-          )}
+          {/* Detalhes Adicionais - Somente para despesas TOTVS */}
+          {!isDespesaManual && (
+            <>
+              {/* Seção: Identificação */}
+              <div className="border-t border-gray-200 pt-4">
+                <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wider">
+                  📋 Identificação
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {despesa.cd_empresa && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Empresa
+                      </label>
+                      <p className="text-sm font-medium text-gray-900">
+                        {despesa.cd_empresa}
+                      </p>
+                    </div>
+                  )}
+                  {despesa.cd_despesaitem && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Item Despesa
+                      </label>
+                      <p className="text-sm font-medium text-gray-900">
+                        {despesa.cd_despesaitem}
+                      </p>
+                    </div>
+                  )}
+                  {despesa.cd_fornecedor && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Cód. Fornecedor
+                      </label>
+                      <p className="text-sm font-medium text-gray-900">
+                        {despesa.cd_fornecedor}
+                      </p>
+                    </div>
+                  )}
+                  {despesa.cd_ccusto && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Centro de Custo
+                      </label>
+                      <p className="text-sm font-medium text-gray-900">
+                        {despesa.cd_ccusto}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
 
-          {despesa.cd_despesaitem && (
-            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-              <label className="text-sm font-semibold text-gray-600 mb-2 block">
-                Código do Item de Despesa
-              </label>
-              <p className="text-lg text-gray-900">{despesa.cd_despesaitem}</p>
-            </div>
+              {/* Seção: Documento */}
+              <div className="border-t border-gray-200 pt-4">
+                <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wider">
+                  📄 Documento
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {despesa.nr_duplicata && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Nº Duplicata
+                      </label>
+                      <p className="text-sm font-medium text-gray-900">
+                        {despesa.nr_duplicata}
+                      </p>
+                    </div>
+                  )}
+                  {despesa.nr_parcela !== undefined && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Nº Parcela
+                      </label>
+                      <p className="text-sm font-medium text-gray-900">
+                        {despesa.nr_parcela}
+                      </p>
+                    </div>
+                  )}
+                  {despesa.nr_portador && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Nº Portador
+                      </label>
+                      <p className="text-sm font-medium text-gray-900">
+                        {despesa.nr_portador}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Seção: Datas */}
+              <div className="border-t border-gray-200 pt-4">
+                <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wider">
+                  📅 Datas
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {despesa.dt_entrada && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Data Entrada
+                      </label>
+                      <p className="text-sm font-medium text-gray-900">
+                        {formatDate(despesa.dt_entrada)}
+                      </p>
+                    </div>
+                  )}
+                  {despesa.dt_liq && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Data Liquidação
+                      </label>
+                      <p className="text-sm font-medium text-gray-900">
+                        {formatDate(despesa.dt_liq)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Seção: Valores Financeiros */}
+              <div className="border-t border-gray-200 pt-4">
+                <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wider">
+                  💰 Valores Financeiros
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {despesa.vl_duplicata !== undefined && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Valor Duplicata
+                      </label>
+                      <p className="text-sm font-bold text-gray-900">
+                        {formatCurrency(despesa.vl_duplicata)}
+                      </p>
+                    </div>
+                  )}
+                  {despesa.vl_rateio !== undefined && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Valor Rateio
+                      </label>
+                      <p className="text-sm font-bold text-gray-900">
+                        {formatCurrency(despesa.vl_rateio)}
+                      </p>
+                    </div>
+                  )}
+                  {despesa.vl_pago !== undefined && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Valor Pago
+                      </label>
+                      <p className="text-sm font-bold text-green-600">
+                        {formatCurrency(despesa.vl_pago)}
+                      </p>
+                    </div>
+                  )}
+                  {despesa.vl_juros !== undefined && despesa.vl_juros !== 0 && (
+                    <div className="bg-red-50 rounded-lg p-3 border border-red-200">
+                      <label className="text-xs font-semibold text-red-700 mb-1 block">
+                        Juros
+                      </label>
+                      <p className="text-sm font-bold text-red-600">
+                        {formatCurrency(despesa.vl_juros)}
+                      </p>
+                    </div>
+                  )}
+                  {despesa.vl_acrescimo !== undefined &&
+                    despesa.vl_acrescimo !== 0 && (
+                      <div className="bg-red-50 rounded-lg p-3 border border-red-200">
+                        <label className="text-xs font-semibold text-red-700 mb-1 block">
+                          Acréscimo
+                        </label>
+                        <p className="text-sm font-bold text-red-600">
+                          {formatCurrency(despesa.vl_acrescimo)}
+                        </p>
+                      </div>
+                    )}
+                  {despesa.vl_desconto !== undefined &&
+                    despesa.vl_desconto !== 0 && (
+                      <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                        <label className="text-xs font-semibold text-green-700 mb-1 block">
+                          Desconto
+                        </label>
+                        <p className="text-sm font-bold text-green-600">
+                          {formatCurrency(despesa.vl_desconto)}
+                        </p>
+                      </div>
+                    )}
+                </div>
+              </div>
+
+              {/* Seção: Status */}
+              <div className="border-t border-gray-200 pt-4">
+                <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wider">
+                  ✅ Status
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {despesa.tp_situacao && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Situação
+                      </label>
+                      <p className="text-sm font-medium text-gray-900">
+                        {despesa.tp_situacao === 'N'
+                          ? 'Normal'
+                          : despesa.tp_situacao}
+                      </p>
+                    </div>
+                  )}
+                  {despesa.tp_estagio && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Estágio
+                      </label>
+                      <p className="text-sm font-medium text-gray-900">
+                        {despesa.tp_estagio}
+                      </p>
+                    </div>
+                  )}
+                  {despesa.tp_previsaoreal && (
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                        Previsão/Real
+                      </label>
+                      <p className="text-sm font-medium text-gray-900">
+                        {despesa.tp_previsaoreal === '2'
+                          ? 'Real'
+                          : despesa.tp_previsaoreal}
+                      </p>
+                    </div>
+                  )}
+                  {despesa.in_aceite !== undefined &&
+                    despesa.in_aceite !== null && (
+                      <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                        <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                          Aceite
+                        </label>
+                        <p className="text-sm font-medium text-gray-900">
+                          {despesa.in_aceite || 'Não informado'}
+                        </p>
+                      </div>
+                    )}
+                </div>
+              </div>
+            </>
           )}
         </div>
 
