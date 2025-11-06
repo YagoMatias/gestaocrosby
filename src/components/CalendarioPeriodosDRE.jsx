@@ -117,7 +117,7 @@ const CalendarioPeriodosDRE = ({ onPeriodosChange, periodosIniciais = [] }) => {
   useEffect(() => {
     // Serializar para comparação (evita comparar referências de objetos)
     const currentSerialized = JSON.stringify(periodosGerados);
-    
+
     // Só chamar onPeriodosChange se houve mudança real
     if (currentSerialized !== prevPeriodosRef.current) {
       prevPeriodosRef.current = currentSerialized;

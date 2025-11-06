@@ -6,6 +6,65 @@ import { API_BASE_URL } from '../config/constants';
  * Padroniza o tratamento de respostas da nova estrutura da API
  */
 const useApiClient = () => {
+  // Método auxiliar para requisições POST/PUT/DELETE
+  const apiMutate = useCallback(
+    async (endpoint, method = 'POST', body = null, params = {}) => {
+      try {
+        // Construir URL com parâmetros (para GET em métodos DELETE)
+        const url = new URL(endpoint, API_BASE_URL);
+        Object.keys(params).forEach((key) => {
+          const value = params[key];
+          if (value !== null && value !== undefined && value !== '') {
+            url.searchParams.append(key, value);
+          }
+        });
+
+        console.log(`🌐 API ${method}:`, url.toString(), body ? { body } : '');
+
+        const options = {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        };
+
+        if (body && (method === 'POST' || method === 'PUT')) {
+          options.body = JSON.stringify(body);
+        }
+
+        const response = await fetch(url.toString(), options);
+
+        if (!response.ok) {
+          let errorBody = null;
+          try {
+            errorBody = await response.json();
+          } catch {}
+          const message =
+            (errorBody && (errorBody.message || errorBody.error)) ||
+            response.statusText ||
+            'Erro ao processar requisição';
+
+          console.error(`❌ Erro ${method}:`, {
+            status: response.status,
+            message,
+            errorBody,
+          });
+
+          throw new Error(message);
+        }
+
+        const result = await response.json();
+        console.log(`✅ ${method} Response:`, result);
+
+        return result;
+      } catch (error) {
+        console.error(`❌ Erro na API ${method}:`, error);
+        throw error;
+      }
+    },
+    [],
+  );
+
   const apiCall = useCallback(async (endpoint, params = {}) => {
     try {
       // Construir URL com parâmetros
@@ -273,6 +332,9 @@ const useApiClient = () => {
     fornecedor: (params) => apiCall('/api/financial/fornecedor', params),
     centrocusto: (params) => apiCall('/api/financial/centrocusto', params),
     despesa: (params) => apiCall('/api/financial/despesa', params),
+    // 🆕 Nova rota para buscar TODAS as despesas (sem parâmetros obrigatórios)
+    despesasTodas: (params = {}) =>
+      apiCall('/api/financial/despesas-todas', params),
     inadimplentesMultimarcas: (params) =>
       apiCall('/api/financial/inadimplentes-multimarcas', params),
     // Nova rota para inadimplentes (franquias)
@@ -282,6 +344,52 @@ const useApiClient = () => {
       apiCall('/api/financial/inadimplentes-revenda', params),
     // Observações de faturas (obsfati)
     obsFati: (params) => apiCall('/api/financial/obsfati', params),
+
+    // 🆕 CRUD Despesas Manuais DRE
+    /**
+     * Adicionar despesa manual ao DRE
+     * @param {Object} despesa - Dados da despesa
+     * @param {string} despesa.dt_inicio - Data início do período (YYYY-MM-DD)
+     * @param {string} despesa.dt_fim - Data fim do período (YYYY-MM-DD)
+     * @param {string} despesa.categoria_principal - 'OPERACIONAL' ou 'FINANCEIRA'
+     * @param {number} despesa.cd_despesaitem - Código da despesa do TOTVS
+     * @param {string} despesa.fornecedor - Nome do fornecedor (opcional)
+     * @param {number} despesa.cd_fornecedor - Código do fornecedor (opcional)
+     * @param {number} despesa.valor - Valor da despesa
+     * @param {string} despesa.observacoes - Observações (opcional)
+     * @returns {Promise<Object>} Resposta da API
+     */
+    adicionarDespesaManual: (despesa) =>
+      apiMutate('/api/financial/despesas-manuais-dre', 'POST', despesa),
+
+    /**
+     * Listar despesas manuais do DRE
+     * @param {Object} params - Filtros de busca
+     * @param {string} params.dt_inicio - Data início (opcional)
+     * @param {string} params.dt_fim - Data fim (opcional)
+     * @param {string} params.categoria_principal - Categoria (opcional)
+     * @param {boolean} params.ativo - Filtrar por ativo/inativo (opcional)
+     * @returns {Promise<Object>} Lista de despesas
+     */
+    listarDespesasManuais: (params) =>
+      apiCall('/api/financial/despesas-manuais-dre', params),
+
+    /**
+     * Editar despesa manual existente
+     * @param {string} id - UUID da despesa
+     * @param {Object} despesa - Dados atualizados da despesa
+     * @returns {Promise<Object>} Resposta da API
+     */
+    editarDespesaManual: (id, despesa) =>
+      apiMutate(`/api/financial/despesas-manuais-dre/${id}`, 'PUT', despesa),
+
+    /**
+     * Excluir (desativar) despesa manual
+     * @param {string} id - UUID da despesa
+     * @returns {Promise<Object>} Resposta da API
+     */
+    excluirDespesaManual: (id) =>
+      apiMutate(`/api/financial/despesas-manuais-dre/${id}`, 'DELETE'),
   };
 
   const sales = {
@@ -439,6 +547,7 @@ const useApiClient = () => {
 
   return {
     apiCall,
+    apiMutate,
     transacoesPorOperacao,
     transacoesPorNr,
     financial,

@@ -3,6 +3,8 @@ import PageTitle from '../components/ui/PageTitle';
 import useApiClient from '../hooks/useApiClient';
 import LoadingSpinner from '../components/LoadingSpinner';
 import CalendarioPeriodosDRE from '../components/CalendarioPeriodosDRE';
+import ModalAdicionarDespesaManual from '../components/ModalAdicionarDespesaManual';
+import { listarDespesasManuais } from '../services/despesasManuaisService';
 import {
   CaretDown,
   CaretRight,
@@ -13,8 +15,10 @@ import {
   Folder,
   FileText,
   Funnel,
+  Plus,
 } from '@phosphor-icons/react';
 import { getCategoriaPorCodigo } from '../config/categoriasDespesas';
+import ModalDetalhesDespesaManual from '../components/ModalDetalhesDespesaManual';
 
 const DRE = () => {
   const api = useApiClient();
@@ -28,6 +32,8 @@ const DRE = () => {
   const [cmv, setCmv] = useState(0);
   const [receitaLiquida, setReceitaLiquida] = useState(0);
   const [lucroBruto, setLucroBruto] = useState(0);
+  const [modalDespManual, setModalDespManual] = useState(false);
+  const [despesaSelecionada, setDespesaSelecionada] = useState(null);
 
   // Estados para totais por canal
   const [totaisVarejo, setTotaisVarejo] = useState({
@@ -187,6 +193,10 @@ const DRE = () => {
 
   // Estados para análise horizontal/vertical
   const [tipoAnalise, setTipoAnalise] = useState('vertical'); // 'vertical' ou 'horizontal'
+
+  // Estado para controlar modal de despesas manuais
+  const [modalDespesaManualAberto, setModalDespesaManualAberto] =
+    useState(false);
 
   // Manter compatibilidade (periodoComparacao = segundo período)
   const periodoComparacao = periodos[1] || { dt_inicio: '', dt_fim: '' };
@@ -775,6 +785,51 @@ const DRE = () => {
         dadosCP = contasPagar.data.rows;
       }
 
+      // 🆕 Buscar despesas manuais do Supabase
+      setLoadingStatus(`${statusPrefix}Buscando despesas manuais...`);
+      let despesasManuais = [];
+      try {
+        const responseDespesasManuais = await listarDespesasManuais({
+          dt_inicio: periodo.dt_inicio,
+          dt_fim: periodo.dt_fim,
+          ativo: true, // Apenas despesas ativas
+        });
+
+        if (responseDespesasManuais?.success && responseDespesasManuais?.data) {
+          despesasManuais = responseDespesasManuais.data;
+          console.log(
+            `✅ ${despesasManuais.length} despesas manuais encontradas para o período`,
+          );
+        }
+      } catch (error) {
+        console.warn(
+          '⚠️ Erro ao buscar despesas manuais (continuando sem elas):',
+          error,
+        );
+      }
+
+      // Mesclar despesas manuais com dadosCP (conversão para formato compatível)
+      const despesasManuaisConvertidas = despesasManuais.map((dm) => ({
+        cd_despesaitem: dm.cd_despesaitem,
+        vl_duplicata: dm.valor,
+        vl_rateio: 0,
+        cd_ccusto: null,
+        ds_despesaitem: `${dm.fornecedor || 'Manual'}`, // Fornecedor como identificador
+        cd_fornecedor: dm.cd_fornecedor,
+        fornecedor: dm.fornecedor,
+        observacoes: dm.observacoes,
+        _isDespesaManual: true, // Flag para identificação visual
+        _idDespesaManual: dm.id, // UUID para edição/exclusão
+        _dtCadastro: dm.dt_cadastro,
+      }));
+
+      // Adicionar despesas manuais ao array de dados
+      dadosCP = [...dadosCP, ...despesasManuaisConvertidas];
+
+      if (despesasManuaisConvertidas.length > 0) {
+        console.log(`📊 Total de registros após merge: ${dadosCP.length}`);
+      }
+
       // Processar despesas (versão simplificada - apenas totais)
       let totalOperacionais = 0;
       let totalFinanceiros = 0;
@@ -1015,22 +1070,43 @@ const DRE = () => {
         const nmFornecedor = (
           fornInfo?.nm_fornecedor ||
           item.nm_fornecedor ||
+          item.fornecedor || // 🆕 Campo de despesa manual
           item.cd_fornecedor ||
           'Fornecedor'
         ).toString();
         const fornKey = String(item.cd_fornecedor || nmFornecedor);
 
         if (!despesa._forn.has(fornKey)) {
+          const descricaoFornecedor = item._isDespesaManual
+            ? [
+                '✏️ MANUAL',
+                item.observacoes ? `Obs: ${item.observacoes}` : '',
+                `Cadastro: ${new Date(item._dtCadastro).toLocaleDateString(
+                  'pt-BR',
+                )}`,
+              ]
+                .filter(Boolean)
+                .join(' | ')
+            : [
+                `Empresa: ${item.cd_empresa || '-'}`,
+                `Fornecedor: ${item.cd_fornecedor || '-'}`,
+              ].join(' | ');
+
           despesa._forn.set(fornKey, {
-            id: `forn-${fornKey}`,
+            id: item._idDespesaManual || `forn-${fornKey}`, // Usar UUID se for despesa manual
             label: nmFornecedor,
-            description: [
-              `Empresa: ${item.cd_empresa || '-'}`,
-              `Fornecedor: ${item.cd_fornecedor || '-'}`,
-            ].join(' | '),
+            description: descricaoFornecedor,
             value: 0,
             type: 'despesa',
             children: [],
+            _isDespesaManual: item._isDespesaManual || false, // 🆕 Preservar flag
+            _idDespesaManual: item._idDespesaManual, // 🆕 UUID para edição
+            nome: item.fornecedor || nmFornecedor, // Nome original
+            valor: item.valor || 0, // Valor original
+            fornecedor: item.fornecedor, // Fornecedor original
+            observacoes: item.observacoes, // Observações
+            cd_despesaitem: item.cd_despesaitem,
+            cd_fornecedor: item.cd_fornecedor,
           });
           despesa._fornCount += 1;
         }
@@ -4327,12 +4403,26 @@ const DRE = () => {
                                                   />
                                                 ))}
                                               <div>
-                                                <h5 className="font-medium text-xs text-gray-600">
+                                                <h5
+                                                  className={`font-medium text-xs ${
+                                                    subsubitem._isDespesaManual
+                                                      ? 'text-blue-700'
+                                                      : 'text-gray-600'
+                                                  }`}
+                                                >
+                                                  {subsubitem._isDespesaManual &&
+                                                    '✏️ '}
                                                   {subsubitem.label}
                                                 </h5>
                                                 <div className="flex items-center space-x-3 text-xs text-gray-400">
                                                   {subsubitem.description && (
-                                                    <span className="text-gray-400">
+                                                    <span
+                                                      className={
+                                                        subsubitem._isDespesaManual
+                                                          ? 'text-blue-500 font-medium'
+                                                          : 'text-gray-400'
+                                                      }
+                                                    >
                                                       {subsubitem.description}
                                                     </span>
                                                   )}
@@ -4367,9 +4457,22 @@ const DRE = () => {
                                                       }-${
                                                         tituloColuna || 'main'
                                                       }`}
-                                                      className="border-b border-gray-50 last:border-b-0"
+                                                      className="border-b border-gray-50 last:border-b-0 cursor-pointer"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        console.log(
+                                                          '🔍 Despesa clicada:',
+                                                          subsubsubitem,
+                                                        );
+                                                        setDespesaSelecionada(
+                                                          subsubsubitem,
+                                                        );
+                                                        setModalDespManual(
+                                                          true,
+                                                        );
+                                                      }}
                                                     >
-                                                      <div className="bg-gray-25 hover:bg-gray-50 cursor-default transition-colors px-8 py-1.5 flex items-center justify-between">
+                                                      <div className="bg-gray-25 hover:bg-gray-100 cursor-pointer transition-colors px-8 py-1.5 flex items-center justify-between">
                                                         <div className="flex items-center space-x-2">
                                                           <div>
                                                             <h6 className="font-medium text-xs text-gray-500">
@@ -4679,8 +4782,8 @@ const DRE = () => {
         </div>
       </div>
 
-      {/* Botão de buscar dados */}
-      <div className="flex items-center justify-center mb-4">
+      {/* Botões de ação */}
+      <div className="flex items-center justify-center gap-4 mb-4">
         <button
           className="bg-[#000638] text-white text-sm px-8 py-3 rounded-lg hover:bg-[#000856] transition-colors font-semibold shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={buscarVendasBrutas}
@@ -4690,6 +4793,16 @@ const DRE = () => {
             <span>🔍</span>
             <span>Buscar Dados</span>
           </>
+        </button>
+
+        <button
+          className="bg-blue-600 text-white text-sm px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-semibold shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={() => setModalDespesaManualAberto(true)}
+          disabled={loading || periodos.length === 0}
+          title="Adicionar despesa manual ao DRE"
+        >
+          <Plus size={20} weight="bold" />
+          <span>Adicionar Despesa Manual</span>
         </button>
       </div>
 
@@ -4903,6 +5016,39 @@ const DRE = () => {
           </div>
         )}
       </div>
+
+      {/* Modal de Adicionar Despesa Manual */}
+      <ModalAdicionarDespesaManual
+        isOpen={modalDespesaManualAberto}
+        onClose={() => setModalDespesaManualAberto(false)}
+        onSuccess={() => {
+          console.log('✅ Despesa manual adicionada! Recarregando dados...');
+          // Recarregar os dados do DRE após adicionar despesa
+          if (
+            periodos.length > 0 &&
+            periodos[0].dt_inicio &&
+            periodos[0].dt_fim
+          ) {
+            buscarVendasBrutas();
+          }
+        }}
+        periodosSelecionados={periodos.filter((p) => p.dt_inicio && p.dt_fim)}
+      />
+
+      {/* Modal Detalhes Despesa Manual */}
+      {modalDespManual && despesaSelecionada && (
+        <ModalDetalhesDespesaManual
+          modalDespManual={modalDespManual}
+          setModalDespManual={setModalDespManual}
+          despesa={despesaSelecionada}
+          onSave={(despesaAtualizada) => {
+            console.log('💾 Despesa atualizada:', despesaAtualizada);
+            // TODO: Implementar API para salvar no backend
+            // Recarregar dados após salvar
+            buscarVendasBrutas();
+          }}
+        />
+      )}
     </div>
   );
 };
