@@ -29,28 +29,12 @@ export const salvarObservacaoDespesaManual = async (dados) => {
     }
 
     // UPDATE da coluna observacoes na tabela despesas_manuais_dre
-    // Verificar se cd_usuario da despesa é INTEGER ou UUID
-    let updateData = {
-      observacoes: dados.observacao,
-    };
-
-    // Buscar dados atuais da despesa para verificar tipo de cd_usuario
-    const { data: despesaAtual } = await supabase
-      .from('despesas_manuais_dre')
-      .select('cd_usuario')
-      .eq('id', dados.id)
-      .single();
-
-    // Se cd_usuario for null ou for UUID, não atualizar
-    // (INTEGER seria um número, UUID é string com hífens)
-    if (despesaAtual && typeof despesaAtual.cd_usuario === 'number') {
-      // Coluna é INTEGER, não podemos salvar UUID
-      console.log('⚠️ cd_usuario é INTEGER, não será atualizado');
-    }
-
     const { data, error } = await supabase
       .from('despesas_manuais_dre')
-      .update(updateData)
+      .update({
+        observacoes: dados.observacao,
+        cd_usuario: user.id,
+      })
       .eq('id', dados.id)
       .select('*')
       .single();
@@ -62,8 +46,7 @@ export const salvarObservacaoDespesaManual = async (dados) => {
 
     console.log('✅ Observação atualizada com sucesso:', data);
 
-    // Buscar dados do usuário da view usando o ID do usuário autenticado
-    // (que foi quem salvou a observação agora)
+    // Buscar dados do usuário da view
     const { data: usuarioData, error: usuarioError } = await supabase
       .from('usuarios_view')
       .select('*')
@@ -71,18 +54,15 @@ export const salvarObservacaoDespesaManual = async (dados) => {
       .single();
 
     if (usuarioError) {
-      console.warn('⚠️ Erro ao buscar dados do usuário:', usuarioError);
+      console.warn('⚠️ Erro ao buscar usuário da observação:', usuarioError);
       // Continuar sem dados do usuário (não é crítico)
     }
 
-    console.log('👤 Dados do usuário:', usuarioData);
-
-    // Retornar despesa atualizada com dados do usuário ATUAL (quem salvou)
+    // Retornar despesa atualizada com dados do usuário
     return {
       success: true,
       data: {
         ...data,
-        cd_usuario: user.id, // Retornar UUID do usuário autenticado
         usuario: usuarioData || null,
       },
     };

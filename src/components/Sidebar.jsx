@@ -312,6 +312,15 @@ const franquias = [
   },
 ];
 
+const acaoCartoes = [
+  {
+    name: 'Check-in Card',
+    href: '/check-in-card',
+    icon: CreditCard,
+    color: 'text-blue-600',
+  },
+];
+
 // Sub-seção: Dashboard Financeiro (itens internos)
 const dashboardFinanceiro = [
   {
@@ -352,6 +361,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const [multimarcasOpen, setMultimarcasOpen] = useState(false);
   const [revendaOpen, setRevendaOpen] = useState(false);
   const [franquiasOpen, setFranquiasOpen] = useState(false);
+  const [acaoCartoesOpen, setAcaoCartoesOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [producaoOpen, setProducaoOpen] = useState(false);
   const { user } = useAuth();
@@ -366,6 +376,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setMultimarcasOpen(false);
       setRevendaOpen(false);
       setFranquiasOpen(false);
+      setAcaoCartoesOpen(false);
       setAdminOpen(false);
       if (!next) setDashboardFinanceiroOpen(false);
       return;
@@ -379,6 +390,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setMultimarcasOpen(false);
       setRevendaOpen(false);
       setFranquiasOpen(false);
+      setAcaoCartoesOpen(false);
       setAdminOpen(false);
       return;
     }
@@ -391,6 +403,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setMultimarcasOpen(false);
       setRevendaOpen(false);
       setFranquiasOpen(false);
+      setAcaoCartoesOpen(false);
       setAdminOpen(false);
       return;
     }
@@ -403,6 +416,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setVarejoOpen(false);
       setRevendaOpen(false);
       setFranquiasOpen(false);
+      setAcaoCartoesOpen(false);
       setAdminOpen(false);
       return;
     }
@@ -415,6 +429,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setVarejoOpen(false);
       setMultimarcasOpen(false);
       setFranquiasOpen(false);
+      setAcaoCartoesOpen(false);
       setAdminOpen(false);
       return;
     }
@@ -427,6 +442,20 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setVarejoOpen(false);
       setMultimarcasOpen(false);
       setRevendaOpen(false);
+      setAcaoCartoesOpen(false);
+      setAdminOpen(false);
+      return;
+    }
+    if (section === 'acaoCartoes') {
+      const next = !acaoCartoesOpen;
+      setAcaoCartoesOpen(next);
+      setFinanceiroOpen(false);
+      setDashboardFinanceiroOpen(false);
+      setFaturamentoOpen(false);
+      setVarejoOpen(false);
+      setMultimarcasOpen(false);
+      setRevendaOpen(false);
+      setFranquiasOpen(false);
       setAdminOpen(false);
       return;
     }
@@ -440,6 +469,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setMultimarcasOpen(false);
       setRevendaOpen(false);
       setFranquiasOpen(false);
+      setAcaoCartoesOpen(false);
       return;
     }
     if (section === 'producao') {
@@ -452,6 +482,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setMultimarcasOpen(false);
       setRevendaOpen(false);
       setFranquiasOpen(false);
+      setAcaoCartoesOpen(false);
       setAdminOpen(false);
       return;
     }
@@ -807,6 +838,16 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             onToggle={() => handleSectionToggle('producao')}
             icon={ChartLineUp}
             color="text-indigo-600"
+          />
+
+          {/* Seção Ação Cartões */}
+          <MenuSection
+            title="Ação Cartões"
+            items={acaoCartoes}
+            isOpen={acaoCartoesOpen}
+            onToggle={() => handleSectionToggle('acaoCartoes')}
+            icon={CreditCard}
+            color="text-blue-600"
           />
 
           {/* Minha Franquia (pasta) */}

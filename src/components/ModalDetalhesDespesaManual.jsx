@@ -15,17 +15,13 @@ import {
   Trash,
   ChatCircleText,
   PaperPlaneRight,
-  ArrowsClockwise,
 } from '@phosphor-icons/react';
 import {
   editarDespesaManual,
   excluirDespesaManual,
 } from '../services/despesasManuaisService';
 import { salvarObservacaoDespesa } from '../services/observacoesDespesasService';
-import { 
-  salvarObservacaoDespesaManualChat,
-  buscarObservacoesDespesaManual,
-} from '../services/observacoesDespesasManuaisChatService';
+import { salvarObservacaoDespesaManual } from '../services/observacoesDespesasManuaisService';
 import useApiClient from '../hooks/useApiClient';
 import LoadingSpinner from './LoadingSpinner';
 import { supabase } from '../lib/supabase';
@@ -52,7 +48,6 @@ const ModalDetalhesDespesaManual = ({
   const [novaObservacao, setNovaObservacao] = useState('');
   const [salvandoObservacao, setSalvandoObservacao] = useState(false);
   const [observacoesRealtime, setObservacoesRealtime] = useState([]);
-  const [atualizandoObservacoes, setAtualizandoObservacoes] = useState(false);
   const chatContainerRef = useRef(null);
 
   const [dadosEditados, setDadosEditados] = useState({
@@ -69,42 +64,22 @@ const ModalDetalhesDespesaManual = ({
   useEffect(() => {
     if (!despesa) return;
 
-    // Função assíncrona para carregar observações
-    const carregarObservacoes = async () => {
-      if (isDespesaManual) {
-        // DESPESA MANUAL: Buscar da tabela observacoes_despesas_manuais
-        console.log('🔄 Carregando observações de despesa MANUAL...');
-        const despesaId = despesa.id || despesa._idDespesaManual;
-        
-        try {
-          const result = await buscarObservacoesDespesaManual(despesaId);
-          if (result.success) {
-            setObservacoesRealtime(result.data);
-            console.log(`✅ ${result.data.length} observações carregadas`);
-          }
-        } catch (error) {
-          console.error('❌ Erro ao carregar observações manuais:', error);
-          setObservacoesRealtime([]);
-        }
-      } else {
-        // DESPESA TOTVS: Usar observações do histórico
-        const observacoesIniciais = despesa._observacoesHistorico || [];
-        setObservacoesRealtime(observacoesIniciais);
-        console.log(`📊 ${observacoesIniciais.length} observações TOTVS carregadas`);
-      }
-    };
-
-    carregarObservacoes();
+    // Inicializar com observações existentes
+    const observacoesIniciais = despesa._observacoesHistorico || [];
+    setObservacoesRealtime(observacoesIniciais);
 
     console.log(
       `🔄 Inicializando chat para ${
         isDespesaManual ? 'DESPESA MANUAL' : 'DESPESA TOTVS'
       }`,
     );
+    console.log(
+      `📊 ${observacoesIniciais.length} observações iniciais carregadas`,
+    );
 
     // ⚠️ REAL-TIME APENAS PARA DESPESAS TOTVS
     if (isDespesaManual) {
-      console.log('📝 Despesa manual: sem real-time (atualização manual)');
+      console.log('📝 Despesa manual: sem real-time (UPDATE simples)');
       return;
     }
 
@@ -320,7 +295,7 @@ const ModalDetalhesDespesaManual = ({
     }
   };
 
-  // 🆕 Função para adicionar observação MANUAL (agora com tabela separada - CHAT)
+  // 🆕 Função para adicionar observação MANUAL (sem real-time)
   const handleAdicionarObservacaoManual = async () => {
     if (!novaObservacao.trim()) {
       setErro('Digite uma observação antes de enviar.');
@@ -338,24 +313,28 @@ const ModalDetalhesDespesaManual = ({
       setErro('');
 
       const dadosObservacao = {
-        id_despesa_manual: despesaId,
+        id: despesaId,
         observacao: novaObservacao.trim(),
       };
 
-      console.log('💬 Salvando observação MANUAL (CHAT):', dadosObservacao);
+      console.log('💬 Salvando observação MANUAL:', dadosObservacao);
 
-      const result = await salvarObservacaoDespesaManualChat(dadosObservacao);
+      const result = await salvarObservacaoDespesaManual(dadosObservacao);
 
       console.log('✅ Observação MANUAL salva');
 
-      // Adicionar localmente (feedback instantâneo)
+      // Atualizar localmente (sem real-time)
       if (result.success && result.data) {
-        const novaObservacaoLocal = {
-          ...result.data,
-          usuario: result.data.usuario || null,
-        };
-
-        setObservacoesRealtime((prev) => [...prev, novaObservacaoLocal]);
+        setObservacoesRealtime([
+          {
+            id: result.data.id,
+            observacao: result.data.observacoes,
+            cd_usuario: result.data.cd_usuario,
+            dt_alteracao: result.data.dt_alteracao,
+            usuario: result.data.usuario,
+            created_at: result.data.dt_alteracao,
+          },
+        ]);
 
         // Scroll automático
         setTimeout(() => {
@@ -374,83 +353,6 @@ const ModalDetalhesDespesaManual = ({
       );
     } finally {
       setSalvandoObservacao(false);
-    }
-  };
-
-  // 🔄 Função para atualizar observações manualmente
-  const handleAtualizarObservacoes = async () => {
-    setAtualizandoObservacoes(true);
-    try {
-      console.log('🔄 Atualizando observações...');
-
-      if (isDespesaManual) {
-        // DESPESA MANUAL: Buscar da tabela observacoes_despesas_manuais
-        const despesaId = despesa.id || despesa._idDespesaManual;
-        const result = await buscarObservacoesDespesaManual(despesaId);
-
-        if (result.success) {
-          setObservacoesRealtime(result.data);
-        }
-      } else {
-        // DESPESA TOTVS: Buscar da tabela observacoes_despesas_totvs
-        const primeiroTitulo =
-          despesa._titulos && despesa._titulos.length > 0
-            ? despesa._titulos[0]
-            : null;
-
-        const cd_empresa = despesa.cd_empresa || primeiroTitulo?.cd_empresa;
-        const cd_despesaitem =
-          despesa.cd_despesaitem || primeiroTitulo?.cd_despesaitem;
-        const cd_fornecedor =
-          despesa.cd_fornecedor || primeiroTitulo?.cd_fornecedor;
-        const nr_duplicata =
-          despesa.nr_duplicata || primeiroTitulo?.nr_duplicata;
-        const nr_parcela = despesa.nr_parcela || primeiroTitulo?.nr_parcela;
-
-        const { data: observacoes, error } = await supabase
-          .from('observacoes_despesas_totvs')
-          .select('*')
-          .eq('cd_empresa', cd_empresa)
-          .eq('cd_despesaitem', cd_despesaitem)
-          .eq('cd_fornecedor', cd_fornecedor)
-          .eq('nr_duplicata', nr_duplicata)
-          .eq('nr_parcela', nr_parcela)
-          .eq('is_active', true)
-          .order('created_at', { ascending: true });
-
-        if (error) throw error;
-
-        // Buscar dados dos usuários
-        const usuariosIds = [...new Set(observacoes.map((o) => o.cd_usuario))];
-        const { data: usuariosData } = await supabase
-          .from('usuarios_view')
-          .select('*')
-          .in('id', usuariosIds);
-
-        const usuariosMap = new Map(usuariosData.map((u) => [u.id, u]));
-
-        const observacoesCompletas = observacoes.map((obs) => ({
-          ...obs,
-          usuario: usuariosMap.get(obs.cd_usuario) || null,
-        }));
-
-        setObservacoesRealtime(observacoesCompletas);
-      }
-
-      console.log('✅ Observações atualizadas!');
-      
-      // Scroll para o fim
-      setTimeout(() => {
-        if (chatContainerRef.current) {
-          chatContainerRef.current.scrollTop =
-            chatContainerRef.current.scrollHeight;
-        }
-      }, 100);
-    } catch (error) {
-      console.error('❌ Erro ao atualizar observações:', error);
-      setErro('Erro ao atualizar observações. Tente novamente.');
-    } finally {
-      setAtualizandoObservacoes(false);
     }
   };
 
@@ -1199,24 +1101,10 @@ const ModalDetalhesDespesaManual = ({
                 {isDespesaManual ? 'Observação' : 'Chat de Observações'}
               </label>
               {!isDespesaManual && observacoesRealtime.length > 0 && (
-                <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded-full">
+                <span className="ml-auto bg-blue-600 text-white text-xs px-2 py-1 rounded-full">
                   {observacoesRealtime.length}
                 </span>
               )}
-              {/* Botão de atualizar */}
-              <button
-                onClick={handleAtualizarObservacoes}
-                disabled={atualizandoObservacoes}
-                className="ml-auto bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
-                title="Atualizar observações"
-              >
-                <ArrowsClockwise
-                  size={16}
-                  weight="bold"
-                  className={atualizandoObservacoes ? 'animate-spin' : ''}
-                />
-                Atualizar
-              </button>
             </div>
 
             {/* Container do Chat */}
