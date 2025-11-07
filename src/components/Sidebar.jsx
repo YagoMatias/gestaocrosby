@@ -236,7 +236,7 @@ const varejo = [
   },
   {
     name: 'Ação Cartões',
-    href: '/acao-cartoes',
+    href: '/check-in-card',
     icon: CreditCard,
     color: 'text-green-600',
   },

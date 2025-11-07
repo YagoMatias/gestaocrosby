@@ -520,6 +520,7 @@ const useApiClient = () => {
       apiCall('/api/faturamento/impostos-por-canal', params),
     impostosDetalhados: (params) =>
       apiCall('/api/faturamento/impostos-detalhados', params),
+    vlimposto: (params) => apiCall('/api/sales/vlimposto', params),
   };
 
   const company = {
@@ -545,6 +546,8 @@ const useApiClient = () => {
     autocompleteGrupoEmpresa: (q) =>
       apiCall('/api/utils/autocomplete/nm_grupoempresa', { q }),
     cadastroPessoa: (params) => apiCall('/api/utils/cadastropessoa', params),
+    // Rota para ação cartões (acao-cartoes)
+    acaoCartoes: (params) => apiCall('/api/utils/acao-cartoes', params),
   };
 
   return {

@@ -472,6 +472,85 @@ const DRE = () => {
     });
   };
 
+  // Função auxiliar para buscar impostos em lotes (evita erro 431 - URL muito longa)
+  const buscarImpostosEmLotes = async (transacoes, tamanhoDosLotes = 300) => {
+    if (!transacoes || transacoes.length === 0) {
+      return { success: true, data: { data: [] } };
+    }
+
+    console.log(
+      `📦 Dividindo ${transacoes.length} transações em lotes de até ${tamanhoDosLotes}`,
+    );
+
+    // Dividir em lotes
+    const lotes = [];
+    for (let i = 0; i < transacoes.length; i += tamanhoDosLotes) {
+      lotes.push(transacoes.slice(i, i + tamanhoDosLotes));
+    }
+
+    console.log(`🔄 Total de ${lotes.length} lotes para processar`);
+
+    // Buscar todos os lotes em paralelo com Promise.allSettled para resiliência
+    const resultadosLotes = await Promise.allSettled(
+      lotes.map(async (lote, index) => {
+        console.log(
+          `🔄 Buscando lote ${index + 1}/${lotes.length} com ${
+            lote.length
+          } transações`,
+        );
+        const resultado = await api.sales.vlimposto({ nr_transacao: lote });
+        console.log(`🔍 DEBUG ESTRUTURA LOTE ${index + 1}:`, {
+          success: resultado?.success,
+          hasData: !!resultado?.data,
+          dataType: typeof resultado?.data,
+          isArray: Array.isArray(resultado?.data),
+          dataLength: Array.isArray(resultado?.data)
+            ? resultado.data.length
+            : 'n/a',
+          firstItem: Array.isArray(resultado?.data)
+            ? resultado.data[0]
+            : resultado?.data,
+        });
+        console.log(`✅ Lote ${index + 1} concluído`);
+        return resultado;
+      }),
+    );
+
+    // Combinar resultados de todos os lotes bem-sucedidos
+    const todosImpostos = resultadosLotes.reduce((acc, resultado, index) => {
+      if (resultado.status === 'fulfilled' && resultado.value?.success) {
+        // O useApiClient já desaninha data.data, então os dados estão direto em .data
+        const impostos = Array.isArray(resultado.value.data)
+          ? resultado.value.data
+          : resultado.value.data?.data || [];
+        console.log(
+          `📦 Lote ${index + 1}: ${impostos.length} impostos encontrados`,
+        );
+        return [...acc, ...impostos];
+      } else {
+        console.error(
+          `❌ Lote ${index + 1} falhou:`,
+          resultado.reason || resultado,
+        );
+        return acc;
+      }
+    }, []);
+
+    const lotesComSucesso = resultadosLotes.filter(
+      (r) => r.status === 'fulfilled',
+    ).length;
+    console.log(
+      `📊 Resumo: ${lotesComSucesso}/${lotes.length} lotes com sucesso, ${todosImpostos.length} impostos combinados`,
+    );
+
+    // Retornar no mesmo formato que a API original
+    // O useApiClient vai processar isso e retornar apenas .data
+    return {
+      success: true,
+      data: todosImpostos, // Array direto, não aninhado
+    };
+  };
+
   // Função para buscar dados de um único período
   const buscarDadosPeriodo = async (periodo, periodoIndex, totalPeriodos) => {
     const statusPrefix =
@@ -686,20 +765,122 @@ const DRE = () => {
         descontos: dadosFaturamentoRevenda.descontos,
       };
 
-      // Buscar impostos
+      // Buscar impostos usando a nova rota /vlimposto
       setLoadingStatus(`${statusPrefix}Buscando impostos...`);
       let impostosData = null;
       try {
-        const responseImpostos = await api.sales.impostosPorCanal({
-          dataInicio: periodo.dt_inicio,
-          dataFim: periodo.dt_fim,
+        // Coletar todas as nr_transacao de cada canal (acessar .data do response)
+        const transacoesVarejo = (faturamentoVarejo?.data || [])
+          .map((item) => item.nr_transacao)
+          .filter(Boolean);
+
+        const transacoesMultimarcas = (faturamentoMultimarcas?.data || [])
+          .map((item) => item.nr_transacao)
+          .filter(Boolean);
+
+        const transacoesFranquias = (faturamentoFranquias?.data || [])
+          .map((item) => item.nr_transacao)
+          .filter(Boolean);
+
+        const transacoesRevenda = (faturamentoRevenda?.data || [])
+          .map((item) => item.nr_transacao)
+          .filter(Boolean);
+
+        console.log('📊 Transações coletadas:', {
+          varejo: transacoesVarejo.length,
+          multimarcas: transacoesMultimarcas.length,
+          franquias: transacoesFranquias.length,
+          revenda: transacoesRevenda.length,
         });
 
-        if (responseImpostos?.success && responseImpostos?.data) {
-          impostosData = responseImpostos.data;
-        }
+        // Buscar impostos por canal
+        const [
+          impostosVarejo,
+          impostosMultimarcas,
+          impostosFranquias,
+          impostosRevenda,
+        ] = await Promise.all([
+          transacoesVarejo.length > 0
+            ? buscarImpostosEmLotes(transacoesVarejo)
+            : Promise.resolve({ success: true, data: { data: [] } }),
+
+          transacoesMultimarcas.length > 0
+            ? buscarImpostosEmLotes(transacoesMultimarcas)
+            : Promise.resolve({ success: true, data: { data: [] } }),
+
+          transacoesFranquias.length > 0
+            ? buscarImpostosEmLotes(transacoesFranquias)
+            : Promise.resolve({ success: true, data: { data: [] } }),
+
+          transacoesRevenda.length > 0
+            ? buscarImpostosEmLotes(transacoesRevenda)
+            : Promise.resolve({ success: true, data: { data: [] } }),
+        ]);
+
+        // Processar impostos por canal agrupando por cd_imposto
+        const processarImpostos = (dadosImposto) => {
+          console.log('🔍 Estrutura recebida:', dadosImposto);
+
+          if (!dadosImposto?.success) {
+            console.warn('⚠️ Response sem success');
+            return { icms: 0, pis: 0, cofins: 0 };
+          }
+
+          // buscarImpostosEmLotes retorna: { success: true, data: [...] }
+          // onde data já é o array de impostos
+          const impostos = Array.isArray(dadosImposto.data)
+            ? dadosImposto.data
+            : dadosImposto.data?.data || [];
+
+          console.log('📊 Impostos extraídos:', impostos);
+
+          if (!Array.isArray(impostos) || impostos.length === 0) {
+            console.warn('⚠️ Nenhum imposto encontrado ou formato inválido');
+            return { icms: 0, pis: 0, cofins: 0 };
+          }
+
+          const totais = { icms: 0, pis: 0, cofins: 0 };
+
+          impostos.forEach((item) => {
+            const valor = parseFloat(item.valorimposto || 0);
+            const cdImposto = parseInt(item.cd_imposto);
+
+            console.log(`  - cd_imposto: ${cdImposto}, valor: ${valor}`);
+
+            // ICMS: cd_imposto 1, 2, 3
+            if ([1, 2, 3].includes(cdImposto)) {
+              totais.icms += valor;
+            }
+            // PIS: cd_imposto 6
+            else if (cdImposto === 6) {
+              totais.pis += valor;
+            }
+            // COFINS: cd_imposto 5
+            else if (cdImposto === 5) {
+              totais.cofins += valor;
+            }
+          });
+
+          console.log('✅ Totais calculados:', totais);
+          return totais;
+        };
+
+        impostosData = {
+          varejo: processarImpostos(impostosVarejo),
+          multimarcas: processarImpostos(impostosMultimarcas),
+          franquias: processarImpostos(impostosFranquias),
+          revenda: processarImpostos(impostosRevenda),
+        };
+
+        console.log('✅ Impostos processados por canal:', impostosData);
       } catch (error) {
         console.error('⚠️ Erro ao buscar impostos:', error);
+        impostosData = {
+          varejo: { icms: 0, pis: 0, cofins: 0 },
+          multimarcas: { icms: 0, pis: 0, cofins: 0 },
+          franquias: { icms: 0, pis: 0, cofins: 0 },
+          revenda: { icms: 0, pis: 0, cofins: 0 },
+        };
       }
 
       // Processar impostos por canal
@@ -1813,24 +1994,112 @@ const DRE = () => {
       };
 
       // ========== BUSCAR IMPOSTOS ==========
-      // Buscar impostos usando a nova rota de impostos-por-canal
+      // Buscar impostos usando a nova rota /vlimposto
       setLoadingStatus('Buscando impostos por canal...');
 
       let impostosData = null;
       try {
-        const responseImpostos = await api.sales.impostosPorCanal({
-          dataInicio: periodo.dt_inicio,
-          dataFim: periodo.dt_fim,
+        // Coletar todas as nr_transacao de cada canal (acessar .data do response)
+        const transacoesVarejo = (faturamentoVarejo?.data || [])
+          .map(item => item.nr_transacao)
+          .filter(Boolean);
+        
+        const transacoesMultimarcas = (faturamentoMultimarcas?.data || [])
+          .map(item => item.nr_transacao)
+          .filter(Boolean);
+        
+        const transacoesFranquias = (faturamentoFranquias?.data || [])
+          .map(item => item.nr_transacao)
+          .filter(Boolean);
+        
+        const transacoesRevenda = (faturamentoRevenda?.data || [])
+          .map(item => item.nr_transacao)
+          .filter(Boolean);
+
+        console.log('📊 Transações coletadas:', {
+          varejo: transacoesVarejo.length,
+          multimarcas: transacoesMultimarcas.length,
+          franquias: transacoesFranquias.length,
+          revenda: transacoesRevenda.length,
         });
 
-        if (responseImpostos?.success && responseImpostos?.data) {
-          impostosData = responseImpostos.data;
-        }
+        // Buscar impostos por canal
+        const [impostosVarejo, impostosMultimarcas, impostosFranquias, impostosRevenda] = await Promise.all([
+          transacoesVarejo.length > 0 
+            ? buscarImpostosEmLotes(transacoesVarejo)
+            : Promise.resolve({ success: true, data: { data: [] } }),
+          
+          transacoesMultimarcas.length > 0
+            ? buscarImpostosEmLotes(transacoesMultimarcas)
+            : Promise.resolve({ success: true, data: { data: [] } }),
+          
+          transacoesFranquias.length > 0
+            ? buscarImpostosEmLotes(transacoesFranquias)
+            : Promise.resolve({ success: true, data: { data: [] } }),
+          
+          transacoesRevenda.length > 0
+            ? buscarImpostosEmLotes(transacoesRevenda)
+            : Promise.resolve({ success: true, data: { data: [] } }),
+        ]);
+
+        // Processar impostos por canal agrupando por cd_imposto
+        const processarImpostos = (dadosImposto) => {
+          if (!dadosImposto?.success) {
+            return { icms: 0, pis: 0, cofins: 0 };
+          }
+
+          // buscarImpostosEmLotes retorna: { success: true, data: [...] }
+          const impostos = Array.isArray(dadosImposto.data) 
+            ? dadosImposto.data 
+            : (dadosImposto.data?.data || []);
+          
+          if (!Array.isArray(impostos) || impostos.length === 0) {
+            return { icms: 0, pis: 0, cofins: 0 };
+          }
+
+          const totais = { icms: 0, pis: 0, cofins: 0 };
+
+          impostos.forEach(item => {
+            const valor = parseFloat(item.valorimposto || 0);
+            const cdImposto = parseInt(item.cd_imposto);
+
+            // ICMS: cd_imposto 1, 2, 3
+            if ([1, 2, 3].includes(cdImposto)) {
+              totais.icms += valor;
+            }
+            // PIS: cd_imposto 6
+            else if (cdImposto === 6) {
+              totais.pis += valor;
+            }
+            // COFINS: cd_imposto 5
+            else if (cdImposto === 5) {
+              totais.cofins += valor;
+            }
+          });
+
+          return totais;
+        };
+
+        impostosData = {
+          varejo: processarImpostos(impostosVarejo),
+          multimarcas: processarImpostos(impostosMultimarcas),
+          franquias: processarImpostos(impostosFranquias),
+          revenda: processarImpostos(impostosRevenda),
+        };
+
+        console.log('✅ Impostos processados por canal:', impostosData);
+
       } catch (error) {
         console.error(
           '⚠️ Erro ao buscar impostos, usando valores zerados:',
           error,
         );
+        impostosData = {
+          varejo: { icms: 0, pis: 0, cofins: 0 },
+          multimarcas: { icms: 0, pis: 0, cofins: 0 },
+          franquias: { icms: 0, pis: 0, cofins: 0 },
+          revenda: { icms: 0, pis: 0, cofins: 0 },
+        };
       }
 
       // Processar impostos por canal (a API retorna impostos separados por tipo)
@@ -2126,16 +2395,108 @@ const DRE = () => {
           descontos: dadosFaturamentoRevendaPeriodo2.descontos,
         };
 
-        // Buscar impostos do Período 2
-        const responseImpostosPeriodo2 = await api.sales.impostosPorCanal({
-          dataInicio: periodoComparacao.dt_inicio,
-          dataFim: periodoComparacao.dt_fim,
-        });
+        // Buscar impostos do Período 2 usando a nova rota /vlimposto
+        let impostosDataPeriodo2 = null;
+        try {
+          // Coletar todas as nr_transacao de cada canal do Período 2 (acessar .data do response)
+          const transacoesVarejoPeriodo2 = (faturamentoVarejoPeriodo2?.data || [])
+            .map(item => item.nr_transacao)
+            .filter(Boolean);
+          
+          const transacoesMultimarcasPeriodo2 = (faturamentoMultimarcasPeriodo2?.data || [])
+            .map(item => item.nr_transacao)
+            .filter(Boolean);
+          
+          const transacoesFranquiasPeriodo2 = (faturamentoFranquiasPeriodo2?.data || [])
+            .map(item => item.nr_transacao)
+            .filter(Boolean);
+          
+          const transacoesRevendaPeriodo2 = (faturamentoRevendaPeriodo2?.data || [])
+            .map(item => item.nr_transacao)
+            .filter(Boolean);
 
-        const impostosDataPeriodo2 =
-          responseImpostosPeriodo2?.success && responseImpostosPeriodo2?.data
-            ? responseImpostosPeriodo2.data
-            : null;
+          console.log('📊 Transações Período 2 coletadas:', {
+            varejo: transacoesVarejoPeriodo2.length,
+            multimarcas: transacoesMultimarcasPeriodo2.length,
+            franquias: transacoesFranquiasPeriodo2.length,
+            revenda: transacoesRevendaPeriodo2.length,
+          });
+
+          // Buscar impostos por canal do Período 2
+          const [impostosVarejoPer2, impostosMultimarcasPer2, impostosFranquiasPer2, impostosRevendaPer2] = await Promise.all([
+            transacoesVarejoPeriodo2.length > 0 
+              ? buscarImpostosEmLotes(transacoesVarejoPeriodo2)
+              : Promise.resolve({ success: true, data: { data: [] } }),
+            
+            transacoesMultimarcasPeriodo2.length > 0
+              ? buscarImpostosEmLotes(transacoesMultimarcasPeriodo2)
+              : Promise.resolve({ success: true, data: { data: [] } }),
+            
+            transacoesFranquiasPeriodo2.length > 0
+              ? buscarImpostosEmLotes(transacoesFranquiasPeriodo2)
+              : Promise.resolve({ success: true, data: { data: [] } }),
+            
+            transacoesRevendaPeriodo2.length > 0
+              ? buscarImpostosEmLotes(transacoesRevendaPeriodo2)
+              : Promise.resolve({ success: true, data: { data: [] } }),
+          ]);
+
+          // Processar impostos por canal agrupando por cd_imposto
+          const processarImpostosPer2 = (dadosImposto) => {
+            if (!dadosImposto?.success) {
+              return { icms: 0, pis: 0, cofins: 0 };
+            }
+
+            // buscarImpostosEmLotes retorna: { success: true, data: [...] }
+            const impostos = Array.isArray(dadosImposto.data) 
+              ? dadosImposto.data 
+              : (dadosImposto.data?.data || []);
+            
+            if (!Array.isArray(impostos) || impostos.length === 0) {
+              return { icms: 0, pis: 0, cofins: 0 };
+            }
+
+            const totais = { icms: 0, pis: 0, cofins: 0 };
+
+            impostos.forEach(item => {
+              const valor = parseFloat(item.valorimposto || 0);
+              const cdImposto = parseInt(item.cd_imposto);
+
+              // ICMS: cd_imposto 1, 2, 3
+              if ([1, 2, 3].includes(cdImposto)) {
+                totais.icms += valor;
+              }
+              // PIS: cd_imposto 6
+              else if (cdImposto === 6) {
+                totais.pis += valor;
+              }
+              // COFINS: cd_imposto 5
+              else if (cdImposto === 5) {
+                totais.cofins += valor;
+              }
+            });
+
+            return totais;
+          };
+
+          impostosDataPeriodo2 = {
+            varejo: processarImpostosPer2(impostosVarejoPer2),
+            multimarcas: processarImpostosPer2(impostosMultimarcasPer2),
+            franquias: processarImpostosPer2(impostosFranquiasPer2),
+            revenda: processarImpostosPer2(impostosRevendaPer2),
+          };
+
+          console.log('✅ Impostos Período 2 processados por canal:', impostosDataPeriodo2);
+
+        } catch (error) {
+          console.error('⚠️ Erro ao buscar impostos Período 2:', error);
+          impostosDataPeriodo2 = {
+            varejo: { icms: 0, pis: 0, cofins: 0 },
+            multimarcas: { icms: 0, pis: 0, cofins: 0 },
+            franquias: { icms: 0, pis: 0, cofins: 0 },
+            revenda: { icms: 0, pis: 0, cofins: 0 },
+          };
+        }
 
         const impostosVarejoPeriodo2 = {
           icms: impostosDataPeriodo2?.varejo?.icms || 0,

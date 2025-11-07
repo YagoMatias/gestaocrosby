@@ -103,6 +103,18 @@ const AVAILABLE_PAGES = [
   { path: '/credev-varejo', name: 'CREDEV Varejo', category: 'Varejo' },
   { path: '/analise-cashback', name: 'Análise Cashback', category: 'Varejo' },
 
+  // Ação Cartões
+  {
+    path: '/check-in-card',
+    name: 'Check-in Card',
+    category: 'Ação Cartões',
+  },
+  {
+    path: '/acao-cartoes',
+    name: 'Dashboard',
+    category: 'Ação Cartões',
+  },
+
   // Multimarcas
   {
     path: '/dashboard-multimarcas',

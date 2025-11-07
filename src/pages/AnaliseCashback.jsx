@@ -740,7 +740,7 @@ const AnaliseCashback = () => {
 
         {/* Filtros e Botões */}
         <div className="mb-4">
-          <form className="flex flex-col bg-white p-3 rounded-lg shadow-lg w-full max-w-4xl mx-auto border border-[#000638]/10 gap-5 p-5">
+          <form className="flex flex-col bg-white  rounded-lg shadow-lg w-full max-w-4xl mx-auto border border-[#000638]/10 gap-5 p-5">
             <div className="">
               <div className="mb-2">
                 <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
@@ -814,12 +814,12 @@ const AnaliseCashback = () => {
                       };
                       fetchCashbackData(params);
                     }}
-                    className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercas"
+                    className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed  transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercas"
                   >
                     <ChartLineUp size={16} />
                     Buscar
                   </button>
-                  <button className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-md tracking-wide">
+                  <button className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed  transition-colors h-7 text-xs font-bold shadow-md tracking-wide">
                     <Download size={18} />
                     Exportar
                   </button>

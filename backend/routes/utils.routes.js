@@ -416,17 +416,27 @@ router.post(
  * @desc Retorna informações de vouchers e transações do dia relacionadas
  * @access Public
  * @query {cd_empcad} - código(s) de empresa cadastro (pode ser único ou lista separada por vírgula)
+ * @query {cd_sufixo} - código sufixo (obrigatório) - filtra por cd_sufixo exato (usa TRIM para remover espaços)
  */
 router.get(
   '/acao-cartoes',
   sanitizeInput,
   asyncHandler(async (req, res) => {
-    let { cd_empcad } = req.query;
+    let { cd_empcad, cd_sufixo } = req.query;
 
     if (!cd_empcad) {
       return errorResponse(
         res,
         'Parâmetro cd_empcad é obrigatório',
+        400,
+        'BAD_REQUEST',
+      );
+    }
+
+    if (!cd_sufixo) {
+      return errorResponse(
+        res,
+        'Parâmetro cd_sufixo é obrigatório',
         400,
         'BAD_REQUEST',
       );
@@ -438,8 +448,23 @@ router.get(
       .map((s) => s.trim())
       .filter(Boolean);
 
+    // Limpar espaços do cd_sufixo
+    const cdSufixoLimpo = String(cd_sufixo).trim();
+
     // Construir placeholders dinamicamente
     const placeholders = empresas.map((_, i) => `$${i + 1}`).join(',');
+
+    // Construir parâmetros e condições dinamicamente
+    let params = [...empresas, cdSufixoLimpo];
+    let paramIndex = empresas.length + 1;
+    let whereConditions = [
+      'v.cd_pessoa is not null',
+      `v.cd_sufixo not like '%crosby%'`,
+      `v.cd_sufixo not like '%CROSBY%'`,
+      `v.tp_situacao <> 6`,
+      `v.cd_empcad in (${placeholders})`,
+      `TRIM(v.cd_sufixo) = $${paramIndex}`,
+    ];
 
     const query = `
       with trx_do_dia as (
@@ -470,6 +495,7 @@ router.get(
       select
         v.cd_empcad,
         v.cd_pessoa,
+        pp.nm_pessoa,
         v.nr_voucher,
         v.cd_sufixo,
         v.vl_voucher,
@@ -496,18 +522,16 @@ router.get(
           t.cd_pessoa = v.cd_pessoa
           and t.d_trans = v.dt_cadastro::date
           and t.rn_dia = 1
+      left join pes_pessoa pp on
+        v.cd_pessoa = pp.cd_pessoa
       where
-        v.cd_pessoa is not null
-        and v.cd_sufixo not like '%crosby%'
-        and v.cd_sufixo not like '%CROSBY%'
-        and v.tp_situacao <> 6
-        and v.cd_empcad in (${placeholders})
+        ${whereConditions.join(' AND ')}
       order by
         v.cd_empcad,
         v.dt_cadastro desc
     `;
 
-    const result = await pool.query(query, empresas);
+    const result = await pool.query(query, params);
 
     successResponse(
       res,
