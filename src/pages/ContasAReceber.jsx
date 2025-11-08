@@ -275,8 +275,8 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
       const dia = data.getDate();
 
       if (filtro === 'ANO') {
-        // Mostrar dados dos anos 2025 e 2026
-        return ano === 2025 || ano === 2026;
+        // Mostrar TODOS os dados, independente do ano (permite anos diferentes)
+        return true;
       }
 
       // Filtros por mês específico

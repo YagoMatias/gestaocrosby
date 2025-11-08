@@ -664,9 +664,8 @@ const ContasAPagar = (props) => {
       const dia = data.getDate();
 
       if (filtro === 'ANO') {
-        // Mostrar dados do ano atual
-        const anoAtual = new Date().getFullYear();
-        return ano === anoAtual;
+        // Mostrar TODOS os dados, independente do ano (permite anos diferentes)
+        return true;
       }
 
       // Filtros por mês específico
@@ -5282,22 +5281,19 @@ const DespesasPorCategoria = ({
     ];
     const dadosMensais = {};
 
-    // Calcular ANO ATUAL
-    const anoAtual = new Date().getFullYear();
+    // Calcular ANO - TODOS os dados do período consultado
     dadosMensais['ANO'] = dadosOriginais.filter((item) => {
       if (!item.dt_vencimento) return false;
-      const data = criarDataSemFusoHorario(item.dt_vencimento);
-      const ano = data.getFullYear();
-      return ano === anoAtual;
+      return true; // Retorna todos os dados, independente do ano
     }).length;
 
-    // Calcular cada mês
+    // Calcular cada mês - considera todos os anos
     meses.forEach((mes, index) => {
       const numeroMes = index + 1;
       dadosMensais[mes] = dadosOriginais.filter((item) => {
         if (!item.dt_vencimento) return false;
         const data = criarDataSemFusoHorario(item.dt_vencimento);
-        return data.getMonth() + 1 === numeroMes;
+        return data.getMonth() + 1 === numeroMes; // Mês específico de qualquer ano
       }).length;
     });
 
