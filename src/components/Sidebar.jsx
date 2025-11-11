@@ -886,17 +886,6 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             }}
             isActive={false}
           />
-          {/* VIGIA - FRANQUIAS */}
-          <MenuItem
-            item={{
-              name: 'Vigia Franquias',
-              href: 'https://franquia.crosbytech.com.br/whatsapp/instances',
-              icon: Eye,
-              color: 'text-blue-600',
-              external: true,
-            }}
-            isActive={false}
-          />
 
           <MenuItem
             item={{
