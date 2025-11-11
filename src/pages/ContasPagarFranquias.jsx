@@ -598,8 +598,8 @@ const ContasPagarFranquias = () => {
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
       <PageTitle
-        title="Contas a Pagar - Franquias"
-        subtitle="Consulta de contas a pagar por empresa"
+        title="Portal de Títulos - Franquias"
+        subtitle="Consulta de títulos da sua franquia"
         icon={Receipt}
         iconColor="text-red-600"
       />
@@ -637,7 +637,7 @@ const ContasPagarFranquias = () => {
                 className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
               >
                 <option value="todos">TODOS</option>
-                <option value="em_aberto">EM ANDAMENTO</option>
+                <option value="em_aberto">A PAGAR</option>
                 <option value="pagos">PAGOS</option>
                 <option value="vencidos">VENCIDOS</option>
               </select>

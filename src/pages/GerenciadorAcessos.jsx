@@ -190,6 +190,11 @@ const AVAILABLE_PAGES = [
     category: 'Outros',
   },
   {
+    path: 'https://franquia.crosbytech.com.br/whatsapp/instances',
+    name: 'Vigia Franquias',
+    category: 'Outros',
+  },
+  {
     path: 'https://app.powerbi.com/view?r=eyJrIjoiYjdkYzkxNjctOTcwYy00MWExLTkzMmItYzRlMjVmYWZjO[…]DUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9&pageName=bfc07965b7fd71caeaba',
     name: 'Cronograma',
     category: 'Outros',

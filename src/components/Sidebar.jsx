@@ -859,7 +859,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
               color: 'text-amber-600',
               children: [
                 {
-                  name: 'Contas a Pagar',
+                  name: 'Portal de Títulos',
                   href: '/contas-pagar-franquias',
                   icon: Receipt,
                   color: 'text-red-600',
@@ -880,6 +880,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             item={{
               name: 'Vigia',
               href: 'https://vigia.crosbytech.com.br/',
+              icon: Eye,
+              color: 'text-blue-600',
+              external: true,
+            }}
+            isActive={false}
+          />
+          {/* VIGIA - FRANQUIAS */}
+          <MenuItem
+            item={{
+              name: 'Vigia Franquias',
+              href: 'https://franquia.crosbytech.com.br/whatsapp/instances',
               icon: Eye,
               color: 'text-blue-600',
               external: true,
