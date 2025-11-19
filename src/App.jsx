@@ -15,6 +15,7 @@ const BIExterno = lazy(() => import('./pages/BIExterno'));
 const ContasAPagar = lazy(() => import('./pages/ContasAPagar'));
 const Producao = lazy(() => import('./pages/Producao'));
 const CheckInCard = lazy(() => import('./pages/CheckInCard'));
+const MeusCartoes = lazy(() => import('./pages/MeusCartoes'));
 const ContasAPagarEmissao = lazy(() => import('./pages/ContasAPagarEmissao'));
 const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
 const ContasAReceberEmissao = lazy(() =>
@@ -161,6 +162,7 @@ const AppRoutes = memo(() => {
     { path: '/auth-test', component: AuthTest },
     { path: '/acao-cartoes', component: AcaoCartoes },
     { path: '/check-in-card', component: CheckInCard },
+    { path: '/meus-cartoes', component: MeusCartoes },
     { path: '/analise-transacao', component: AnaliseTransacao },
   ];
 

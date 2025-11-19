@@ -110,6 +110,11 @@ const AVAILABLE_PAGES = [
     category: 'Ação Cartões',
   },
   {
+    path: '/meus-cartoes',
+    name: 'Meus Cartões',
+    category: 'Ação Cartões',
+  },
+  {
     path: '/acao-cartoes',
     name: 'Dashboard',
     category: 'Ação Cartões',

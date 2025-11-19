@@ -313,7 +313,7 @@ const CheckInCard = () => {
                     <div className="flex items-end justify-end">
                       <img
                         className="w-40 h-30"
-                        src="../dist/logobranco2.png"
+                        src="/logobranco2.png"
                         alt="logobranco"
                       />
                     </div>

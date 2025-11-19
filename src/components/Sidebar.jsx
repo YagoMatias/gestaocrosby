@@ -319,6 +319,12 @@ const acaoCartoes = [
     icon: CreditCard,
     color: 'text-blue-600',
   },
+  {
+    name: 'Meus Cartões',
+    href: '/meus-cartoes',
+    icon: CreditCard,
+    color: 'text-green-600',
+  },
 ];
 
 // Sub-seção: Dashboard Financeiro (itens internos)
