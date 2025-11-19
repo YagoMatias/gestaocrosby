@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import PageTitle from '../components/ui/PageTitle';
 import useApiClient from '../hooks/useApiClient';
+import { supabase } from '../lib/supabase';
 import {
   MagnifyingGlass,
   CreditCard as CreditCardIcon,
@@ -37,6 +38,25 @@ const CheckInCard = () => {
       console.log('🔍 Buscando cartões para empresa:', empresaId);
       console.log('🔍 CVV digitado:', cvv);
 
+      // Buscar dados do Supabase filtrando pelo CVV (sufixo_voucher)
+      console.log(
+        '🔍 Buscando no Supabase cliente_cartao onde sufixo_voucher =',
+        cvv,
+      );
+      const { data: clienteCartaoData, error: supabaseError } = await supabase
+        .from('cliente_cartao')
+        .select('id, cd_pessoa, sufixo_voucher, vl_cartao')
+        .eq('sufixo_voucher', cvv);
+
+      if (supabaseError) {
+        console.error('❌ Erro ao buscar no Supabase:', supabaseError);
+      } else {
+        console.log(
+          '📊 Dados do Supabase  cliente_cartao(filtrado por CVV):',
+          JSON.stringify(clienteCartaoData, null, 2),
+        );
+      }
+
       // Buscar dados da API
       const response = await apiCall(
         `/api/utils/acao-cartoes?cd_empcad=${empresaId}&cd_sufixo=${cvv}`,
@@ -48,33 +68,41 @@ const CheckInCard = () => {
         const cartaoData = response.data[0];
         console.log('✅ Cartão encontrado:', cartaoData);
 
-        // Determinar o tipo de cartão baseado no valor do voucher
+        // Determinar o tipo e cor do cartão baseado no vl_cartao do Supabase
         let tipo = 'Blue';
         let bgColor = 'bg-[#000638]';
         let corTipo = 'text-blue-600';
         let textColor = 'text-white';
 
-        if (cartaoData.vl_voucher >= 300) {
-          tipo = 'Blue';
-          bgColor = 'bg-[#000638]';
-          corTipo = 'text-blue-600';
-        } else if (cartaoData.vl_voucher >= 200) {
-          tipo = 'Black';
-          bgColor = 'bg-black';
-          corTipo = 'text-gray-900';
-        } else {
-          tipo = 'Platinum';
-          bgColor = 'bg-gradient-to-br from-gray-300 to-gray-400';
-          corTipo = 'text-gray-600';
-          textColor = 'text-gray-800';
+        // Verificar se existe dados do Supabase e usar vl_cartao para definir tipo/cor
+        if (clienteCartaoData && clienteCartaoData.length > 0) {
+          const vlCartao = clienteCartaoData[0].vl_cartao;
+          console.log('🎨 Definindo cor baseado em vl_cartao:', vlCartao);
+
+          if (vlCartao === 'Clean - 100') {
+            tipo = 'Platinum';
+            bgColor = 'bg-gradient-to-br from-gray-300 to-gray-400';
+            corTipo = 'text-gray-600';
+            textColor = 'text-gray-800';
+          } else if (vlCartao === 'Cian - 200') {
+            tipo = 'Cian';
+            bgColor = 'bg-cyan-500';
+            corTipo = 'text-cyan-600';
+            textColor = 'text-white';
+          } else if (vlCartao === 'Blue - 300') {
+            tipo = 'Blue';
+            bgColor = 'bg-[#000638]';
+            corTipo = 'text-blue-600';
+            textColor = 'text-white';
+          }
         }
 
         // Determinar o status (invertido: NÃO USADO = Ativo / USADO = Inativo)
         const status =
           cartaoData.situacao_uso === 'NÃO USADO' ? 'Ativo' : 'Inativo';
 
-        // Mockar o limite conforme as regras solicitadas:
-        // status 'Ativo' => Platinum=100, Blue=200, Black=300
+        // Definir o limite conforme o tipo de cartão:
+        // Platinum = 100, Cian = 200, Blue = 300
         // status 'Inativo' => 0 para todos
         let mockedLimite = 0;
         if (status === 'Ativo') {
@@ -82,10 +110,10 @@ const CheckInCard = () => {
             case 'Platinum':
               mockedLimite = 100;
               break;
-            case 'Blue':
+            case 'Cian':
               mockedLimite = 200;
               break;
-            case 'Black':
+            case 'Blue':
               mockedLimite = 300;
               break;
             default:
@@ -427,6 +455,23 @@ const CheckInCard = () => {
                     <p className="text-xs text-gray-600 mb-1">CVV / Sufixo</p>
                     <p className="font-semibold text-gray-800">
                       {cartaoAtual.cvv || '--'}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded">
+                    <p className="text-xs text-gray-600 mb-1">Tipo do Cartão</p>
+                    <p className={`font-semibold ${cartaoAtual.corTipo}`}>
+                      {cartaoAtual.tipo || '--'}
+                    </p>
+                  </div>
+                  <div className="bg-green-50 p-3 rounded">
+                    <p className="text-xs text-gray-600 mb-1">Limite do Cartão</p>
+                    <p className="font-semibold text-green-700 text-lg">
+                      R$ {
+                        cartaoAtual.tipo === 'Platinum' ? '100.00' :
+                        cartaoAtual.tipo === 'Cian' ? '200.00' :
+                        cartaoAtual.tipo === 'Blue' ? '300.00' :
+                        '0.00'
+                      }
                     </p>
                   </div>
                   <div className="bg-gray-50 p-3 rounded col-span-2">
