@@ -285,7 +285,7 @@ const CheckInCard = () => {
                   {cartaoAtual.status === 'Inativo' && (
                     <button
                       onClick={() => setModalAberto(true)}
-                      className="mt-3 text-xs text-red-600 hover:text-red-800 underline font-medium"
+                      className="ml-4 inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold bg-yellow-100 text-yellow-800 hover:bg-yellow-200 transition-colors"
                     >
                       Ver detalhes da transação
                     </button>
@@ -464,14 +464,18 @@ const CheckInCard = () => {
                     </p>
                   </div>
                   <div className="bg-green-50 p-3 rounded">
-                    <p className="text-xs text-gray-600 mb-1">Limite do Cartão</p>
+                    <p className="text-xs text-gray-600 mb-1">
+                      Limite do Cartão
+                    </p>
                     <p className="font-semibold text-green-700 text-lg">
-                      R$ {
-                        cartaoAtual.tipo === 'Platinum' ? '100.00' :
-                        cartaoAtual.tipo === 'Cian' ? '200.00' :
-                        cartaoAtual.tipo === 'Blue' ? '300.00' :
-                        '0.00'
-                      }
+                      R${' '}
+                      {cartaoAtual.tipo === 'Platinum'
+                        ? '100.00'
+                        : cartaoAtual.tipo === 'Cian'
+                        ? '200.00'
+                        : cartaoAtual.tipo === 'Blue'
+                        ? '300.00'
+                        : '0.00'}
                     </p>
                   </div>
                   <div className="bg-gray-50 p-3 rounded col-span-2">
