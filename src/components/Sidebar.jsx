@@ -30,11 +30,14 @@ import {
   Target,
   IdentificationCard,
   CurrencyCircleDollar,
+  CurrencyDollar,
   SquaresFour,
   SpotifyLogo,
   Article,
   TShirt,
   CalendarDots,
+  ClipboardText,
+  Handshake,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -97,6 +100,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
     ],
+  },
+  {
+    name: 'Análise de Crédito',
+    href: '/analise-credito',
+    icon: ClipboardText,
+    color: 'text-purple-600',
+    roles: ['owner', 'admin', 'manager'],
   },
   {
     name: 'Fluxo de Caixa',
@@ -869,6 +879,18 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                   href: '/contas-pagar-franquias',
                   icon: Receipt,
                   color: 'text-red-600',
+                },
+                {
+                  name: 'Solicitação de Crédito',
+                  href: '/solicitacao-credito',
+                  icon: CurrencyDollar,
+                  color: 'text-green-600',
+                },
+                {
+                  name: 'Renegociação de Dívidas',
+                  href: '/renegociacao-dividas',
+                  icon: Handshake,
+                  color: 'text-orange-600',
                 },
                 {
                   name: 'Notas Fiscais',

@@ -721,8 +721,25 @@ const ContasPagarFranquias = () => {
         rows = response;
       }
 
-      console.log(`✅ ${rows.length} observações encontradas`);
-      setObsFatura(rows);
+      // Filtrar observações indesejadas
+      const textosFiltrar = [
+        'BOLETO CANCELADO: BANCO REJEITOU A FATURA',
+        'BOLETO CANCELADO: GERADO PARA O BANCO ERRADO',
+      ];
+
+      const rowsFiltradas = rows.filter((obs) => {
+        const textoObs = (obs.ds_observacao || '').trim().toUpperCase();
+        return !textosFiltrar.some((filtro) =>
+          textoObs.includes(filtro.toUpperCase()),
+        );
+      });
+
+      console.log(
+        `✅ ${rowsFiltradas.length} observações encontradas (${
+          rows.length - rowsFiltradas.length
+        } filtradas)`,
+      );
+      setObsFatura(rowsFiltradas);
     } catch (error) {
       console.error('❌ Erro ao buscar observações:', error);
       setObsFatura([]);

@@ -22,6 +22,9 @@ const ContasAReceberEmissao = lazy(() =>
   import('./pages/ContasAReceberEmissao'),
 );
 const ContasPagarFranquias = lazy(() => import('./pages/ContasPagarFranquias'));
+const SolicitacaoCredito = lazy(() => import('./pages/SolicitacaoCredito'));
+const AnaliseCredito = lazy(() => import('./pages/AnaliseCredito'));
+const RenegociacaoDividas = lazy(() => import('./pages/RenegociacaoDividas'));
 const NotasFiscais = lazy(() => import('./pages/NotasFiscais'));
 const DespesasPorSetor = lazy(() => import('./pages/DespesasPorSetor'));
 const FluxoCaixa = lazy(() => import('./pages/FluxoCaixa'));
@@ -124,7 +127,10 @@ const AppRoutes = memo(() => {
     { path: '/contas-a-receber', component: ContasAReceber },
     { path: '/contas-a-receber-emissao', component: ContasAReceberEmissao },
     { path: '/contas-pagar-franquias', component: ContasPagarFranquias },
-    { path: '/meus-pedidos', component: NotasFiscais },
+    { path: '/solicitacao-credito', component: SolicitacaoCredito },
+    { path: '/analise-credito', component: AnaliseCredito },
+    { path: '/renegociacao-dividas', component: RenegociacaoDividas },
+    { path: '/notas-fiscais', component: NotasFiscais },
     { path: '/fluxo-caixa', component: FluxoCaixa },
     { path: '/saldo-bancario', component: SaldoBancario },
     { path: '/importacao-ret', component: ImportacaoRet },

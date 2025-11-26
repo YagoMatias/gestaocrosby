@@ -130,3 +130,19 @@ input {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+
+/* Animação para modais */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.animate-fadeIn {
+    animation: fadeIn 0.3s ease-out;
+}

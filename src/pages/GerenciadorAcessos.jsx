@@ -55,6 +55,11 @@ const AVAILABLE_PAGES = [
     name: 'Contas a Receber (Emissão)',
     category: 'Financeiro',
   },
+  {
+    path: '/analise-credito',
+    name: 'Análise de Crédito',
+    category: 'Financeiro',
+  },
   { path: '/fluxo-caixa', name: 'Fluxo de Caixa', category: 'Financeiro' },
   {
     path: '/despesas-por-setor',
@@ -172,6 +177,16 @@ const AVAILABLE_PAGES = [
   {
     path: '/contas-pagar-franquias',
     name: 'Contas a Pagar Franquias',
+    category: 'Minha Franquia',
+  },
+  {
+    path: '/solicitacao-credito',
+    name: 'Solicitação de Crédito',
+    category: 'Minha Franquia',
+  },
+  {
+    path: '/renegociacao-dividas',
+    name: 'Renegociação de Dívidas',
     category: 'Minha Franquia',
   },
   { path: '/meus-pedidos', name: 'Notas Fiscais', category: 'Minha Franquia' },
