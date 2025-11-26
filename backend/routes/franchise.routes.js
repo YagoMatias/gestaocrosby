@@ -389,6 +389,7 @@ router.get(
         tt.cd_grupoempresa,
         tt.dt_transacao,
         tt.nr_transacao,
+        tt.nr_transacaoori,
         tt.cd_pessoa,
         pp.nm_fantasia,
         tt.vl_total
@@ -416,6 +417,223 @@ router.get(
         data: rows,
       },
       'Pedidos obtidos com sucesso',
+    );
+  }),
+);
+
+/**
+ * @route GET /franchise/trans_fatura
+ * @desc Buscar transações vinculadas a fatura
+ * @access Public
+ * @query {cd_cliente, nr_fat, nr_parcela}
+ */
+router.get(
+  '/trans_fatura',
+  sanitizeInput,
+  asyncHandler(async (req, res) => {
+    const { cd_cliente, nr_fat, nr_parcela } = req.query;
+
+    // Validação de parâmetros obrigatórios
+    if (!cd_cliente || !nr_fat || !nr_parcela) {
+      return errorResponse(
+        res,
+        'Parâmetros obrigatórios: cd_cliente, nr_fat, nr_parcela',
+        400,
+        'MISSING_PARAMETERS',
+      );
+    }
+
+    const query = `
+      SELECT
+        vff.cd_empresa,
+        vff.cd_cliente,
+        vff.nr_fat,
+        vff.nr_parcela,
+        vff.cd_empliq,
+        vff.dt_liq,
+        vff.nr_seqliq,
+        vff.cd_emptransacao,
+        vff.nr_transacao,
+        vff.dt_transacao,
+        vtt.cd_empresadest,
+        vtt.nr_transacaodest,
+        vtt.dt_transacaodest,
+        vtt.cd_operacaodest,
+        vtt.tp_situacaodest,
+        vtt.cd_empresaori,
+        vtt.nr_transacaoori,
+        vtt.dt_transacaoori,
+        vtt.cd_operacaoori,
+        vtt.tp_situacaoori
+      FROM
+        vr_fcr_fattrans vff
+      LEFT JOIN vr_tra_transacoridest vtt ON vff.nr_transacao = vtt.nr_transacaoori
+      LEFT JOIN fcr_faturai ff ON vff.cd_cliente = ff.cd_cliente AND vff.cd_empresa = ff.cd_empresa
+      WHERE
+        vff.cd_cliente = $1
+        AND vff.nr_fat = $2
+        AND vff.nr_parcela = $3
+        AND vtt.tp_situacaodest = 4
+        AND ff.vl_fatura = '5321.83'
+      GROUP BY
+        vff.cd_empresa,
+        vff.cd_cliente,
+        vff.nr_fat,
+        vff.nr_parcela,
+        vff.cd_empliq,
+        vff.dt_liq,
+        vff.nr_seqliq,
+        vff.cd_emptransacao,
+        vff.nr_transacao,
+        vff.dt_transacao,
+        vtt.cd_empresadest,
+        vtt.nr_transacaodest,
+        vtt.dt_transacaodest,
+        vtt.cd_operacaodest,
+        vtt.tp_situacaodest,
+        vtt.cd_empresaori,
+        vtt.nr_transacaoori,
+        vtt.dt_transacaoori,
+        vtt.cd_operacaoori,
+        vtt.tp_situacaoori
+    `;
+
+    const params = [cd_cliente, nr_fat, nr_parcela];
+
+    const { rows } = await pool.query(query, params);
+
+    successResponse(
+      res,
+      {
+        filtros: { cd_cliente, nr_fat, nr_parcela },
+        count: rows.length,
+        data: rows,
+      },
+      'Transações da fatura obtidas com sucesso',
+    );
+  }),
+);
+
+/**
+ * @route GET /franchise/detalhenf
+ * @desc Buscar detalhes dos itens de uma nota fiscal (transação)
+ * @access Public
+ * @query {nr_transacao} - Número da transação (obrigatório)
+ */
+router.get(
+  '/detalhenf',
+  sanitizeInput,
+  asyncHandler(async (req, res) => {
+    const { nr_transacao } = req.query;
+
+    // Validar parâmetro obrigatório
+    if (!nr_transacao) {
+      return errorResponse(
+        res,
+        'O parâmetro nr_transacao é obrigatório',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    const query = `
+      SELECT
+        tt.nr_transacao,
+        tt.cd_empresa,
+        tt.cd_produto,
+        tt.ds_produto,
+        SUM(tt.qt_solicitada) AS qnt,
+        tt.vl_unitliquido,
+        SUM(tt.vl_totalliquido) AS total
+      FROM
+        tra_transitem tt
+      WHERE
+        tt.nr_transacao = $1
+      GROUP BY
+        tt.nr_transacao,
+        tt.cd_empresa,
+        tt.cd_produto,
+        tt.ds_produto,
+        tt.vl_unitliquido
+      ORDER BY
+        tt.cd_produto
+    `;
+
+    const { rows } = await pool.query(query, [nr_transacao]);
+
+    // Calcular total geral
+    const totalGeral = rows.reduce(
+      (acc, item) => acc + parseFloat(item.total || 0),
+      0,
+    );
+    const quantidadeTotal = rows.reduce(
+      (acc, item) => acc + parseFloat(item.qnt || 0),
+      0,
+    );
+
+    successResponse(
+      res,
+      {
+        filtros: { nr_transacao },
+        count: rows.length,
+        totais: {
+          quantidade_total: quantidadeTotal,
+          valor_total: totalGeral,
+        },
+        data: rows,
+      },
+      'Detalhes da nota fiscal obtidos com sucesso',
+    );
+  }),
+);
+
+/**
+ * @route GET /franchise/transacao-info
+ * @desc Buscar informações básicas de uma transação (cd_empresa, dt_transacao)
+ * @access Public
+ * @query {nr_transacao} - Número da transação (obrigatório)
+ */
+router.get(
+  '/transacao-info',
+  sanitizeInput,
+  asyncHandler(async (req, res) => {
+    const { nr_transacao } = req.query;
+
+    if (!nr_transacao) {
+      return errorResponse(
+        res,
+        'O parâmetro nr_transacao é obrigatório',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    const query = `
+      SELECT
+        tt.nr_transacao,
+        tt.cd_empresa,
+        tt.dt_transacao,
+        tt.cd_pessoa
+      FROM
+        tra_transacao tt
+      WHERE
+        tt.nr_transacao = $1
+      LIMIT 1
+    `;
+
+    const { rows } = await pool.query(query, [nr_transacao]);
+
+    if (rows.length === 0) {
+      return errorResponse(res, 'Transação não encontrada', 404, 'NOT_FOUND');
+    }
+
+    successResponse(
+      res,
+      {
+        filtros: { nr_transacao },
+        data: rows[0],
+      },
+      'Informações da transação obtidas com sucesso',
     );
   }),
 );

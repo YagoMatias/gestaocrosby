@@ -29,7 +29,7 @@ import {
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
-const MeusPedidos = () => {
+const NotasFiscais = () => {
   const apiClient = useApiClient();
   const [dados, setDados] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -53,6 +53,11 @@ const MeusPedidos = () => {
   const [danfeLoading, setDanfeLoading] = useState(false);
   const [danfeBase64, setDanfeBase64] = useState('');
   const [danfeError, setDanfeError] = useState('');
+
+  // Estados para produtos da nota fiscal
+  const [produtosNF, setProdutosNF] = useState([]);
+  const [produtosLoading, setProdutosLoading] = useState(false);
+  const [produtosError, setProdutosError] = useState('');
 
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/franchise/';
   const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
@@ -325,28 +330,76 @@ const MeusPedidos = () => {
     setEmpresasSelecionadas(empresas);
   };
 
-  // Função para abrir modal e buscar DANFE
-  const abrirModalDanfe = async (pedido) => {
+  // Função para buscar produtos da nota fiscal
+  const buscarProdutosNF = async (nr_transacao) => {
     try {
-      setModalAberto(true);
-      setPedidoSelecionado(pedido);
+      setProdutosLoading(true);
+      setProdutosError('');
+      setProdutosNF([]);
+
+      console.log('🔍 Buscando produtos da NF:', nr_transacao);
+
+      const response = await fetch(
+        `${BaseURL}detalhenf?nr_transacao=${nr_transacao}`,
+      );
+
+      if (!response.ok) {
+        throw new Error('Erro ao buscar produtos da nota fiscal');
+      }
+
+      const data = await response.json();
+      console.log('✅ Produtos da NF recebidos:', data);
+
+      if (data.success && data.data && data.data.data) {
+        setProdutosNF(data.data.data);
+        console.log(`✅ ${data.data.data.length} produtos encontrados`);
+      } else {
+        setProdutosNF([]);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao buscar produtos:', error);
+      setProdutosError(
+        error.message || 'Erro ao buscar produtos da nota fiscal',
+      );
+      setProdutosNF([]);
+    } finally {
+      setProdutosLoading(false);
+    }
+  };
+
+  // Função para abrir modal (sem gerar DANFE automaticamente)
+  const abrirModalDanfe = async (pedido) => {
+    setModalAberto(true);
+    setPedidoSelecionado(pedido);
+    setDanfeBase64('');
+    setDanfeError('');
+
+    // Buscar produtos da nota fiscal
+    buscarProdutosNF(pedido.nr_transacao);
+  };
+
+  // Função para gerar DANFE (chamada pelo botão)
+  const gerarDanfe = async () => {
+    if (!pedidoSelecionado) return;
+
+    try {
       setDanfeLoading(true);
       setDanfeBase64('');
       setDanfeError('');
 
-      console.log('🔍 Buscando DANFE do pedido:', pedido);
+      console.log('🔍 Gerando DANFE do pedido:', pedidoSelecionado);
 
       // Formatar a data no formato esperado pela API (YYYY-MM-DD)
-      const dataTransacao = pedido.dt_transacao
-        ? pedido.dt_transacao.split('T')[0]
+      const dataTransacao = pedidoSelecionado.dt_transacao
+        ? pedidoSelecionado.dt_transacao.split('T')[0]
         : '';
 
       const payload = {
         filter: {
-          branchCodeList: [parseInt(pedido.cd_grupoempresa)],
-          personCodeList: [pedido.cd_pessoa],
-          transactionBranchCode: parseInt(pedido.cd_grupoempresa),
-          transactionCode: parseInt(pedido.nr_transacao),
+          branchCodeList: [parseInt(pedidoSelecionado.cd_grupoempresa)],
+          personCodeList: [pedidoSelecionado.cd_pessoa],
+          transactionBranchCode: parseInt(pedidoSelecionado.cd_grupoempresa),
+          transactionCode: parseInt(pedidoSelecionado.nr_transacao),
           transactionDate: dataTransacao,
         },
       };
@@ -363,7 +416,7 @@ const MeusPedidos = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Erro ao buscar DANFE do pedido');
+        throw new Error(errorData.message || 'Erro ao gerar DANFE do pedido');
       }
 
       const data = await response.json();
@@ -384,8 +437,8 @@ const MeusPedidos = () => {
         throw new Error('DANFE não retornada pela API');
       }
     } catch (error) {
-      console.error('❌ Erro ao buscar DANFE:', error);
-      setDanfeError(error.message || 'Erro ao buscar DANFE');
+      console.error('❌ Erro ao gerar DANFE:', error);
+      setDanfeError(error.message || 'Erro ao gerar DANFE');
     } finally {
       setDanfeLoading(false);
     }
@@ -474,7 +527,7 @@ const MeusPedidos = () => {
       });
 
       const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
-      const nomeArquivo = `meus-pedidos-${hoje}.xlsx`;
+      const nomeArquivo = `notas-fiscais-${hoje}.xlsx`;
 
       saveAs(data, nomeArquivo);
 
@@ -1018,6 +1071,116 @@ const MeusPedidos = () => {
               </div>
             )}
 
+            {/* Seção de Produtos da Nota Fiscal */}
+            <div className="border border-gray-200 rounded-lg p-4 mb-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Package size={20} className="text-purple-600" />
+                Produtos da Nota Fiscal
+              </h3>
+
+              <div className="min-h-[150px]">
+                {produtosLoading ? (
+                  <div className="flex items-center justify-center py-6">
+                    <LoadingSpinner size="sm" text="Carregando produtos..." />
+                  </div>
+                ) : produtosError ? (
+                  <div className="bg-red-50 border border-red-200 rounded p-4">
+                    <p className="text-sm text-red-600">{produtosError}</p>
+                  </div>
+                ) : produtosNF.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full border border-gray-200 rounded-lg">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
+                            Código
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
+                            Descrição
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">
+                            Quantidade
+                          </th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase">
+                            Valor Unit.
+                          </th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase">
+                            Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 bg-white">
+                        {produtosNF.map((produto, index) => (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm text-gray-900">
+                              {produto.cd_produto || '--'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900">
+                              {produto.ds_produto || '--'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-center text-gray-900">
+                              {parseFloat(produto.qnt || 0).toLocaleString(
+                                'pt-BR',
+                                {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                },
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right text-gray-900">
+                              {parseFloat(
+                                produto.vl_unitliquido || 0,
+                              ).toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right font-semibold text-green-600">
+                              {parseFloat(produto.total || 0).toLocaleString(
+                                'pt-BR',
+                                {
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                },
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        {/* Linha de Total */}
+                        <tr className="bg-gray-100 font-bold">
+                          <td
+                            colSpan="4"
+                            className="px-4 py-3 text-sm text-right text-gray-900"
+                          >
+                            TOTAL GERAL:
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right text-green-700 font-bold">
+                            {produtosNF
+                              .reduce(
+                                (acc, produto) =>
+                                  acc + parseFloat(produto.total || 0),
+                                0,
+                              )
+                              .toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-8 text-gray-500">
+                    <Package size={32} className="mb-2 opacity-50" />
+                    <p className="text-sm">
+                      Nenhum produto encontrado para esta nota fiscal
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Seção DANFE */}
             <div className="border border-gray-200 rounded-lg p-4">
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -1032,11 +1195,11 @@ const MeusPedidos = () => {
                       Clique no botão abaixo para gerar a DANFE do pedido
                     </p>
                     <button
-                      onClick={() => abrirModalDanfe(pedidoSelecionado)}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium"
+                      onClick={gerarDanfe}
+                      className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold text-base shadow-md"
                     >
-                      <FileArrowDown size={18} weight="bold" />
-                      Gerar DANFE
+                      <FileArrowDown size={20} weight="bold" />
+                      Gerar Nota Fiscal
                     </button>
                   </div>
                 )}
@@ -1054,7 +1217,7 @@ const MeusPedidos = () => {
                     </p>
                     <p className="text-sm text-red-500">{danfeError}</p>
                     <button
-                      onClick={() => abrirModalDanfe(pedidoSelecionado)}
+                      onClick={gerarDanfe}
                       className="mt-3 text-sm text-red-600 hover:text-red-700 font-medium"
                     >
                       Tentar novamente
@@ -1119,7 +1282,7 @@ const MeusPedidos = () => {
                     </div>
 
                     <button
-                      onClick={() => abrirModalDanfe(pedidoSelecionado)}
+                      onClick={gerarDanfe}
                       className="w-full text-sm text-gray-600 hover:text-gray-700 font-medium"
                     >
                       Gerar novamente
@@ -1144,4 +1307,4 @@ const MeusPedidos = () => {
   );
 };
 
-export default MeusPedidos;
+export default NotasFiscais;

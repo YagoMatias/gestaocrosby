@@ -174,7 +174,7 @@ const AVAILABLE_PAGES = [
     name: 'Contas a Pagar Franquias',
     category: 'Minha Franquia',
   },
-  { path: '/meus-pedidos', name: 'Meus Pedidos', category: 'Minha Franquia' },
+  { path: '/meus-pedidos', name: 'Notas Fiscais', category: 'Minha Franquia' },
 
   // Outros
   { path: '/clientes', name: 'Clientes', category: 'Outros' },

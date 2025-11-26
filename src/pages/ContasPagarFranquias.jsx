@@ -51,8 +51,19 @@ const ContasPagarFranquias = () => {
   const [boletoError, setBoletoError] = useState('');
   const [faturaSelecionada, setFaturaSelecionada] = useState(null);
 
+  // Estados para transações
+  const [transacoesFatura, setTransacoesFatura] = useState([]);
+  const [transacoesLoading, setTransacoesLoading] = useState(false);
+  const [transacoesError, setTransacoesError] = useState('');
+
+  // Estados para DANFE
+  const [danfeLoading, setDanfeLoading] = useState(false);
+  const [danfeError, setDanfeError] = useState('');
+
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
   const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
+  const FranchiseURL =
+    'https://apigestaocrosby-bw2v.onrender.com/api/franchise/';
 
   // Helpers de data sem fuso horário
   const parseDateNoTZ = (isoDate) => {
@@ -74,6 +85,15 @@ const ContasPagarFranquias = () => {
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const yyyy = String(d.getFullYear());
     return `${dd}/${mm}/${yyyy}`;
+  };
+
+  // Função para formatar valores monetários
+  const formatCurrency = (value) => {
+    if (!value && value !== 0) return 'R$ 0,00';
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(value);
   };
 
   // CSS customizado para a tabela
@@ -301,6 +321,375 @@ const ContasPagarFranquias = () => {
     setEmpresasSelecionadas(empresas);
   };
 
+  // Função para buscar transações da fatura
+  const buscarTransacoesFatura = async (fatura) => {
+    setTransacoesLoading(true);
+    setTransacoesError('');
+
+    try {
+      const cd_pessoa = fatura.cd_cliente || '';
+      const dt_emissao = fatura.dt_emissao
+        ? fatura.dt_emissao.split('T')[0]
+        : '';
+
+      if (!dt_emissao) {
+        throw new Error('Data de emissão não disponível');
+      }
+
+      // Buscar faturas relacionadas (mesmo cliente, data emissão, vencimento e parcela)
+      const faturasRelacionadas = dados.filter(
+        (f) =>
+          f.cd_cliente === fatura.cd_cliente &&
+          f.dt_emissao?.split('T')[0] === dt_emissao &&
+          f.dt_vencimento?.split('T')[0] ===
+            fatura.dt_vencimento?.split('T')[0] &&
+          f.nr_parcela === fatura.nr_parcela,
+      );
+
+      console.log('📋 Faturas relacionadas:', faturasRelacionadas);
+
+      // Somar o valor total das faturas relacionadas
+      const valorTotalFaturas = faturasRelacionadas.reduce(
+        (soma, f) => soma + (parseFloat(f.vl_fatura) || 0),
+        0,
+      );
+
+      console.log(
+        `💰 Valor total das faturas somadas: R$ ${valorTotalFaturas.toFixed(
+          2,
+        )}`,
+      );
+
+      // Calcular intervalo de 30 dias
+      const dataEmissao = new Date(dt_emissao + 'T00:00:00');
+      const dataLimite = new Date(dataEmissao);
+      dataLimite.setDate(dataLimite.getDate() + 30);
+      const dt_limite = dataLimite.toISOString().split('T')[0];
+
+      console.log('🔍 Buscando transações da fatura no intervalo de 30 dias:', {
+        cd_pessoa,
+        vl_total: valorTotalFaturas,
+        dt_inicio: dt_emissao,
+        dt_fim: dt_limite,
+      });
+
+      // Buscar todas as transações no intervalo de 30 dias
+      const promises = [];
+      for (let i = 0; i <= 30; i++) {
+        const dataAtual = new Date(dataEmissao);
+        dataAtual.setDate(dataAtual.getDate() + i);
+        const dt_busca = dataAtual.toISOString().split('T')[0];
+
+        promises.push(
+          fetch(
+            `${FranchiseURL}trans_fatura?cd_pessoa=${cd_pessoa}&dt_transacao=${dt_busca}&vl_transacao=${valorTotalFaturas}`,
+          )
+            .then((res) => res.json())
+            .then((data) => {
+              // Extrair transações
+              let transacoes = [];
+              if (data.success && data.data && data.data.data) {
+                transacoes = data.data.data;
+              } else if (
+                data.success &&
+                data.data &&
+                Array.isArray(data.data)
+              ) {
+                transacoes = data.data;
+              }
+              return transacoes;
+            })
+            .catch(() => []),
+        );
+      }
+
+      const resultados = await Promise.all(promises);
+      const todasTransacoes = resultados.flat();
+
+      console.log(
+        '📊 Total de transações encontradas (brutas):',
+        todasTransacoes.length,
+      );
+      console.log('� Transações brutas:', todasTransacoes);
+
+      // Filtrar por empresa < 100 e valor próximo (tolerância de R$ 0.10)
+      const tolerancia = 0.1;
+      const transacoesFiltradas = todasTransacoes.filter((t) => {
+        const valorTransacao = parseFloat(t.vl_transacao) || 0;
+        const diferencaValor = Math.abs(valorTransacao - valorTotalFaturas);
+        return t.cd_empresa < 100 && diferencaValor <= tolerancia;
+      });
+
+      console.log(
+        `🔍 Transações filtradas (empresa<100 e valor≈${valorTotalFaturas}):`,
+        transacoesFiltradas,
+      );
+
+      // Remover duplicatas baseado em nr_transacao
+      const transacoesUnicas = transacoesFiltradas.filter(
+        (t, index, self) =>
+          index === self.findIndex((x) => x.nr_transacao === t.nr_transacao),
+      );
+
+      console.log(
+        `✅ ${transacoesUnicas.length} transações únicas encontradas`,
+      );
+
+      // Lógica: Retornar transações únicas encontradas
+      let transacoesFinais = [];
+      if (transacoesUnicas.length > 0) {
+        transacoesFinais = transacoesUnicas;
+        console.log(
+          `✅ ${transacoesUnicas.length} transações encontradas no intervalo de 30 dias`,
+        );
+      } else {
+        console.log('⚠️ Nenhuma transação encontrada');
+      }
+
+      setTransacoesFatura(transacoesFinais);
+    } catch (error) {
+      console.error('❌ Erro ao buscar transações:', error);
+      setTransacoesError(error.message || 'Erro ao buscar transações');
+      setTransacoesFatura([]);
+    } finally {
+      setTransacoesLoading(false);
+    }
+  };
+
+  // Nova função otimizada usando a rota trans-faturamento
+  const buscarTransacoesFaturaOtimizada = async (fatura) => {
+    setTransacoesLoading(true);
+    setTransacoesError('');
+
+    try {
+      const cd_cliente = fatura.cd_cliente || '';
+      const nr_fat = fatura.nr_fat || '';
+      const nr_parcela = fatura.nr_parcela || '';
+      const vl_fatura = fatura.vl_fatura || 0;
+
+      if (!cd_cliente || !nr_fat || !nr_parcela) {
+        throw new Error('Dados da fatura incompletos');
+      }
+
+      console.log('🔍 Buscando transações da fatura:', {
+        cd_cliente,
+        nr_fat,
+        nr_parcela,
+        vl_fatura,
+      });
+
+      // Usar a nova rota otimizada que retorna transação origem e destino
+      const response = await fetch(
+        `${FranchiseURL}trans_fatura?cd_cliente=${cd_cliente}&nr_fat=${nr_fat}&nr_parcela=${nr_parcela}&vl_fatura=${vl_fatura}`,
+      );
+
+      if (!response.ok) {
+        throw new Error('Erro ao buscar transações da fatura');
+      }
+
+      const data = await response.json();
+      console.log('✅ Resposta da API:', data);
+
+      // Extrair array de transações
+      let transacoes = [];
+      if (data.success && data.data && data.data.data) {
+        transacoes = data.data.data;
+      } else if (data.success && data.data && Array.isArray(data.data)) {
+        transacoes = data.data;
+      }
+
+      console.log('📊 Transações recebidas:', transacoes);
+
+      // Processar transações: escolher entre origem, destino ou própria transação baseado em cd_empresa < 100
+      const transacoesProcessadas = transacoes
+        .map((t) => {
+          // Prioridade 1: Verificar se cd_empresadest < 100
+          if (t.cd_empresadest && parseInt(t.cd_empresadest) < 100) {
+            return {
+              cd_empresa: t.cd_empresadest,
+              nr_transacao: t.nr_transacaodest,
+              dt_transacao: t.dt_transacaodest,
+              vl_transacao: t.vl_transacao || 0,
+              tipo: 'destino',
+            };
+          }
+          // Prioridade 2: Verificar se cd_empresaori < 100
+          else if (t.cd_empresaori && parseInt(t.cd_empresaori) < 100) {
+            return {
+              cd_empresa: t.cd_empresaori,
+              nr_transacao: t.nr_transacaoori,
+              dt_transacao: t.dt_transacaoori,
+              vl_transacao: t.vl_transacao || 0,
+              tipo: 'origem',
+            };
+          }
+          // Prioridade 3: Se ambos forem null, usar dados da própria transação se cd_empresa < 100
+          else if (
+            !t.cd_empresadest &&
+            !t.cd_empresaori &&
+            t.cd_empresa &&
+            parseInt(t.cd_empresa) < 100
+          ) {
+            return {
+              cd_empresa: t.cd_empresa,
+              nr_transacao: t.nr_transacao,
+              dt_transacao: t.dt_transacao,
+              vl_transacao: t.vl_transacao || 0,
+              tipo: 'propria',
+            };
+          }
+          // Se nenhuma condição atendida, retornar null
+          return null;
+        })
+        .filter((t) => t !== null); // Remover nulls
+
+      console.log(
+        `✅ ${transacoesProcessadas.length} transações processadas (empresa < 100):`,
+        transacoesProcessadas,
+      );
+
+      setTransacoesFatura(transacoesProcessadas);
+    } catch (error) {
+      console.error('❌ Erro ao buscar transações:', error);
+      setTransacoesError(error.message || 'Erro ao buscar transações');
+      setTransacoesFatura([]);
+    } finally {
+      setTransacoesLoading(false);
+    }
+  };
+
+  // Função para gerar DANFE a partir da transação
+  const gerarDanfeTransacao = async (transacao) => {
+    try {
+      setDanfeLoading(true);
+      setDanfeError('');
+
+      console.log('🔍 Gerando DANFE da transação:', transacao);
+
+      const cd_pessoa = parseInt(faturaSelecionada?.cd_cliente) || 0;
+      const dataTransacao = transacao.dt_transacao
+        ? transacao.dt_transacao.split('T')[0]
+        : '';
+
+      if (!dataTransacao) {
+        throw new Error('Data da transação não disponível');
+      }
+
+      // Buscar faturas com mesmo cliente, data emissão, vencimento e parcela
+      const faturasRelacionadas = dados.filter(
+        (f) =>
+          f.cd_cliente === faturaSelecionada.cd_cliente &&
+          f.dt_emissao?.split('T')[0] ===
+            faturaSelecionada.dt_emissao?.split('T')[0] &&
+          f.dt_vencimento?.split('T')[0] ===
+            faturaSelecionada.dt_vencimento?.split('T')[0] &&
+          f.nr_parcela === faturaSelecionada.nr_parcela,
+      );
+
+      console.log('📋 Faturas relacionadas encontradas:', faturasRelacionadas);
+
+      // Somar o valor total das faturas relacionadas
+      const valorTotalFaturas = faturasRelacionadas.reduce(
+        (soma, fatura) => soma + (parseFloat(fatura.vl_fatura) || 0),
+        0,
+      );
+
+      console.log(
+        `💰 Valor total das faturas somadas: R$ ${valorTotalFaturas.toFixed(
+          2,
+        )}`,
+      );
+      console.log(
+        `💰 Valor da transação: R$ ${parseFloat(transacao.vl_transacao).toFixed(
+          2,
+        )}`,
+      );
+
+      const payload = {
+        filter: {
+          branchCodeList: [parseInt(transacao.cd_empresa)],
+          personCodeList: [cd_pessoa],
+          transactionBranchCode: parseInt(transacao.cd_empresa),
+          transactionCode: parseInt(transacao.nr_transacao),
+          transactionDate: dataTransacao,
+        },
+      };
+
+      console.log('📤 Payload DANFE enviado:', payload);
+
+      const response = await fetch(`${TotvsURL}danfe-from-invoice`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao gerar DANFE');
+      }
+
+      const data = await response.json();
+      console.log('✅ DANFE recebida:', data);
+
+      let base64 = '';
+      if (data.success && data.data) {
+        base64 = data.data.danfePdfBase64 || data.data.base64 || '';
+      } else if (data.danfePdfBase64) {
+        base64 = data.danfePdfBase64;
+      }
+
+      if (base64) {
+        abrirPDFDanfe(base64, transacao.nr_transacao);
+      } else {
+        throw new Error('DANFE não retornada pela API');
+      }
+    } catch (error) {
+      console.error('❌ Erro ao gerar DANFE:', error);
+      setDanfeError(error.message || 'Erro ao gerar DANFE');
+      alert(`Erro ao gerar DANFE: ${error.message}`);
+    } finally {
+      setDanfeLoading(false);
+    }
+  };
+
+  // Função para abrir PDF da DANFE em nova aba
+  const abrirPDFDanfe = (base64String, nrTransacao) => {
+    try {
+      const base64 = base64String.replace(/^data:application\/pdf;base64,/, '');
+      const binaryString = window.atob(base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+
+      const newWindow = window.open(url, '_blank');
+
+      if (newWindow) {
+        console.log('✅ DANFE aberta em nova aba');
+        setTimeout(() => {
+          window.URL.revokeObjectURL(url);
+        }, 1000);
+      } else {
+        console.warn('⚠️ Popup bloqueado, iniciando download...');
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `danfe-transacao-${nrTransacao}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao abrir DANFE:', error);
+      alert('Erro ao abrir a DANFE. Tente novamente.');
+    }
+  };
+
   // Função para abrir modal de observações
   const abrirObsFatura = async (fatura) => {
     try {
@@ -316,6 +705,9 @@ const ContasPagarFranquias = () => {
       console.log(
         `🔍 Buscando observações - cd_cliente: ${cd_cliente}, nr_fat: ${nr_fat}`,
       );
+
+      // Buscar transações da fatura usando a nova rota otimizada
+      buscarTransacoesFaturaOtimizada(fatura);
 
       const response = await apiClient.financial.obsFati({
         cd_cliente,
@@ -1061,6 +1453,115 @@ const ContasPagarFranquias = () => {
                 </div>
               </div>
             )}
+
+            {/* Alerta para empresa 101 */}
+            {faturaSelecionada && faturaSelecionada.cd_empresa === '101' && (
+              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <svg
+                      className="h-5 w-5 text-yellow-400"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-yellow-800 font-semibold">
+                      ⚠️ Essa fatura não é referente a compra de mercadoria,
+                      verifique as observações ou contate a Central de
+                      Franquias.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Seção de Transações Relacionadas */}
+            <div className="border border-gray-200 rounded-lg p-4 mb-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Receipt size={20} className="text-purple-600" />
+                Transações Relacionadas
+              </h3>
+
+              <div className="min-h-[150px]">
+                {transacoesLoading ? (
+                  <div className="flex items-center justify-center py-6">
+                    <LoadingSpinner size="sm" text="Carregando transações..." />
+                  </div>
+                ) : transacoesError ? (
+                  <div className="bg-red-50 border border-red-200 rounded p-4">
+                    <p className="text-sm text-red-600">{transacoesError}</p>
+                  </div>
+                ) : transacoesFatura.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full border border-gray-200 rounded-lg">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
+                            Empresa
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">
+                            Nº Transação
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">
+                            Data
+                          </th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase">
+                            Valor
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">
+                            Ações
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 bg-white">
+                        {transacoesFatura
+                          .filter((transacao) => transacao.cd_empresa < 100)
+                          .map((transacao, index) => (
+                            <tr key={index} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 text-sm text-gray-900">
+                                {transacao.cd_empresa || '--'}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-center font-bold text-[#000638]">
+                                {transacao.nr_transacao || '--'}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-center text-gray-900">
+                                {formatDateBR(transacao.dt_transacao)}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-right font-semibold text-green-600">
+                                {formatCurrency(transacao.vl_transacao)}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <button
+                                  onClick={() => gerarDanfeTransacao(transacao)}
+                                  disabled={danfeLoading}
+                                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors mx-auto"
+                                  title="Gerar DANFE desta transação"
+                                >
+                                  <FileArrowDown size={18} weight="bold" />
+                                  {danfeLoading ? 'Gerando...' : 'Gerar NF'}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500 text-center py-8">
+                    Nenhuma transação encontrada para esta fatura.
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Seção 1: Observações da Fatura */}
