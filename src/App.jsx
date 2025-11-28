@@ -25,6 +25,7 @@ const ContasPagarFranquias = lazy(() => import('./pages/ContasPagarFranquias'));
 const SolicitacaoCredito = lazy(() => import('./pages/SolicitacaoCredito'));
 const AnaliseCredito = lazy(() => import('./pages/AnaliseCredito'));
 const RenegociacaoDividas = lazy(() => import('./pages/RenegociacaoDividas'));
+const AnaliseRenegociacao = lazy(() => import('./pages/AnaliseRenegociacao'));
 const NotasFiscais = lazy(() => import('./pages/NotasFiscais'));
 const DespesasPorSetor = lazy(() => import('./pages/DespesasPorSetor'));
 const FluxoCaixa = lazy(() => import('./pages/FluxoCaixa'));
@@ -130,6 +131,7 @@ const AppRoutes = memo(() => {
     { path: '/solicitacao-credito', component: SolicitacaoCredito },
     { path: '/analise-credito', component: AnaliseCredito },
     { path: '/renegociacao-dividas', component: RenegociacaoDividas },
+    { path: '/analise-renegociacao', component: AnaliseRenegociacao },
     { path: '/notas-fiscais', component: NotasFiscais },
     { path: '/fluxo-caixa', component: FluxoCaixa },
     { path: '/saldo-bancario', component: SaldoBancario },

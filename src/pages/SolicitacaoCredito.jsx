@@ -15,6 +15,8 @@ import {
   Eye,
   CalendarBlank,
   Receipt,
+  ArrowsLeftRight,
+  XCircle,
 } from '@phosphor-icons/react';
 
 export default function SolicitacaoCredito() {
@@ -37,6 +39,11 @@ export default function SolicitacaoCredito() {
   const [loadingSolicitacoes, setLoadingSolicitacoes] = useState(false);
   const [empresasFiltro, setEmpresasFiltro] = useState([]);
   const [statusFiltro, setStatusFiltro] = useState('todos');
+
+  // Novos estados para modal de detalhes e aceite/recusa de contraproposta
+  const [modalDetalhesAberto, setModalDetalhesAberto] = useState(false);
+  const [solicitacaoSelecionada, setSolicitacaoSelecionada] = useState(null);
+  const [processandoAceite, setProcessandoAceite] = useState(false);
 
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
 
@@ -374,6 +381,11 @@ export default function SolicitacaoCredito() {
     }).format(value);
   };
 
+  const abrirModalDetalhes = (solicitacao) => {
+    setSolicitacaoSelecionada(solicitacao);
+    setModalDetalhesAberto(true);
+  };
+
   return (
     <div className="p-4 md:p-6 lg:p-8">
       <PageTitle
@@ -628,7 +640,7 @@ export default function SolicitacaoCredito() {
                   className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
                 >
                   <option value="todos">TODOS</option>
-                  <option value="ANALISE">EM ANÁLISE</option>
+                  <option value="ANALISE">APROVAÇÃO PENDENTE</option>
                   <option value="APROVADO">APROVADOS</option>
                   <option value="REPROVADO">REPROVADOS</option>
                 </select>
@@ -719,13 +731,22 @@ export default function SolicitacaoCredito() {
                             `Empresa ${solicitacao.cd_empresa}`}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-700 font-bold text-right">
-                          {formatMoney(solicitacao.vl_credito)}
+                          {solicitacao.status === 'APROVADO' &&
+                          solicitacao.contraproposta
+                            ? formatMoney(solicitacao.contraproposta.vl_credito)
+                            : formatMoney(solicitacao.vl_credito)}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-700 capitalize">
-                          {solicitacao.forma_pagamento}
+                          {solicitacao.status === 'APROVADO' &&
+                          solicitacao.contraproposta
+                            ? solicitacao.contraproposta.forma_pagamento
+                            : solicitacao.forma_pagamento}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-700 text-center">
-                          {solicitacao.nr_parcelas}x
+                          {solicitacao.status === 'APROVADO' &&
+                          solicitacao.contraproposta
+                            ? `${solicitacao.contraproposta.nr_parcelas}x`
+                            : `${solicitacao.nr_parcelas}x`}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span
@@ -746,6 +767,7 @@ export default function SolicitacaoCredito() {
                           <button
                             className="text-[#000638] hover:bg-gray-100 p-2 rounded-lg transition-colors"
                             title="Ver detalhes"
+                            onClick={() => abrirModalDetalhes(solicitacao)}
                           >
                             <Eye size={20} weight="bold" />
                           </button>
@@ -1017,6 +1039,287 @@ export default function SolicitacaoCredito() {
               >
                 Fechar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Detalhes da Solicitação */}
+      {modalDetalhesAberto && solicitacaoSelecionada && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+            {/* Header do Modal */}
+            <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center">
+                  <Eye size={20} weight="bold" className="text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    Detalhes da Solicitação
+                  </h2>
+                  <p className="text-sm text-blue-100">
+                    {solicitacaoSelecionada.nm_empresa}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalDetalhesAberto(false)}
+                className="text-white hover:bg-white/20 transition-colors p-2 rounded-lg"
+              >
+                <X size={24} weight="bold" />
+              </button>
+            </div>
+
+            {/* Conteúdo do Modal */}
+            <div className="p-6 space-y-6">
+              {/* Informações Gerais */}
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 mb-4">
+                <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
+                  <Receipt size={18} weight="bold" />
+                  Informações Gerais
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Valor</p>
+                    <p className="text-sm font-bold text-gray-900">
+                      {formatMoney(solicitacaoSelecionada.vl_credito)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Pagamento</p>
+                    <p className="text-sm font-semibold text-gray-900 capitalize">
+                      {solicitacaoSelecionada.forma_pagamento}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Parcelas</p>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {solicitacaoSelecionada.nr_parcelas}x
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Valor/Parcela</p>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {formatMoney(
+                        solicitacaoSelecionada.vl_credito /
+                          solicitacaoSelecionada.nr_parcelas,
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Motivo */}
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 mb-4">
+                <h3 className="text-sm font-bold text-[#000638] mb-2">
+                  Motivo da Solicitação
+                </h3>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                  {solicitacaoSelecionada.motivo}
+                </p>
+              </div>
+
+              {/* Contraproposta Recebida */}
+              {solicitacaoSelecionada.status === 'CONTRAPROPOSTA' &&
+                solicitacaoSelecionada.contraproposta && (
+                  <div className="bg-orange-50 rounded-lg p-4 border border-orange-200 mb-4">
+                    <h3 className="text-sm font-bold text-orange-700 mb-3 flex items-center gap-2">
+                      <ArrowsLeftRight size={18} weight="bold" />
+                      Contraproposta Recebida
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                        <p className="text-xs text-orange-700 mb-1">Valor</p>
+                        <p className="text-sm font-bold text-orange-900">
+                          {formatMoney(
+                            solicitacaoSelecionada.contraproposta.vl_credito,
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-orange-700 mb-1">
+                          Pagamento
+                        </p>
+                        <p className="text-sm font-semibold text-orange-900 capitalize">
+                          {
+                            solicitacaoSelecionada.contraproposta
+                              .forma_pagamento
+                          }
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-orange-700 mb-1">Parcelas</p>
+                        <p className="text-sm font-semibold text-orange-900">
+                          {solicitacaoSelecionada.contraproposta.nr_parcelas}x
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-orange-700 mb-1">
+                          Valor/Parcela
+                        </p>
+                        <p className="text-sm font-semibold text-orange-900">
+                          {formatMoney(
+                            solicitacaoSelecionada.contraproposta.vl_parcela,
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-xs text-orange-700 font-semibold">
+                        Observação do Financeiro:
+                      </p>
+                      <p className="text-sm text-orange-900 whitespace-pre-wrap">
+                        {solicitacaoSelecionada.contraproposta.observacao}
+                      </p>
+                    </div>
+                    {/* Botões de Aceite/Recusa */}
+                    <div className="flex gap-4 pt-4">
+                      <button
+                        onClick={async () => {
+                          setProcessandoAceite(true);
+                          try {
+                            // Atualizar status para APROVADO e adicionar ao histórico
+                            const historicoAtual =
+                              solicitacaoSelecionada.historico_negociacao || [];
+                            const novoHistorico = [
+                              ...historicoAtual,
+                              {
+                                tipo: 'ACEITE',
+                                vl_credito:
+                                  solicitacaoSelecionada.contraproposta
+                                    .vl_credito,
+                                forma_pagamento:
+                                  solicitacaoSelecionada.contraproposta
+                                    .forma_pagamento,
+                                nr_parcelas:
+                                  solicitacaoSelecionada.contraproposta
+                                    .nr_parcelas,
+                                dt: new Date().toISOString(),
+                                user: user?.name || user?.email,
+                                observacao:
+                                  'Aceite da contraproposta pelo franqueado',
+                              },
+                            ];
+                            const { error } = await supabase
+                              .from('solicitacoes_credito')
+                              .update({
+                                status: 'APROVADO',
+                                historico_negociacao: novoHistorico,
+                                dt_aprovacao: new Date().toISOString(),
+                              })
+                              .eq('id', solicitacaoSelecionada.id);
+                            if (error) {
+                              alert('Erro ao aceitar contraproposta');
+                            } else {
+                              alert(
+                                'Contraproposta aceita! Solicitação aprovada.',
+                              );
+                              setModalDetalhesAberto(false);
+                              buscarSolicitacoes();
+                            }
+                          } catch (err) {
+                            alert('Erro ao processar aceite.');
+                          } finally {
+                            setProcessandoAceite(false);
+                          }
+                        }}
+                        disabled={processandoAceite}
+                        className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <CheckCircle size={20} weight="bold" />
+                        Aceitar Contraproposta
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setProcessandoAceite(true);
+                          try {
+                            // Atualizar status para REPROVADO e adicionar ao histórico
+                            const historicoAtual =
+                              solicitacaoSelecionada.historico_negociacao || [];
+                            const novoHistorico = [
+                              ...historicoAtual,
+                              {
+                                tipo: 'RECUSA',
+                                vl_credito:
+                                  solicitacaoSelecionada.contraproposta
+                                    .vl_credito,
+                                forma_pagamento:
+                                  solicitacaoSelecionada.contraproposta
+                                    .forma_pagamento,
+                                nr_parcelas:
+                                  solicitacaoSelecionada.contraproposta
+                                    .nr_parcelas,
+                                dt: new Date().toISOString(),
+                                user: user?.name || user?.email,
+                                observacao:
+                                  'Recusa da contraproposta pelo franqueado',
+                              },
+                            ];
+                            const { error } = await supabase
+                              .from('solicitacoes_credito')
+                              .update({
+                                status: 'REPROVADO',
+                                historico_negociacao: novoHistorico,
+                                dt_aprovacao: new Date().toISOString(),
+                              })
+                              .eq('id', solicitacaoSelecionada.id);
+                            if (error) {
+                              alert('Erro ao recusar contraproposta');
+                            } else {
+                              alert(
+                                'Contraproposta recusada! Solicitação reprovada.',
+                              );
+                              setModalDetalhesAberto(false);
+                              buscarSolicitacoes();
+                            }
+                          } catch (err) {
+                            alert('Erro ao processar recusa.');
+                          } finally {
+                            setProcessandoAceite(false);
+                          }
+                        }}
+                        disabled={processandoAceite}
+                        className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <XCircle size={20} weight="bold" />
+                        Recusar Contraproposta
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+              {/* Histórico de Negociação */}
+              {solicitacaoSelecionada.historico_negociacao &&
+                solicitacaoSelecionada.historico_negociacao.length > 0 && (
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 mb-4">
+                    <h3 className="text-sm font-bold text-[#000638] mb-2">
+                      Histórico de Negociação
+                    </h3>
+                    <ul className="text-xs text-gray-700 space-y-1">
+                      {solicitacaoSelecionada.historico_negociacao.map(
+                        (h, idx) => (
+                          <li key={idx}>
+                            <span className="font-bold text-[#000638]">
+                              {h.tipo}:
+                            </span>{' '}
+                            {h.vl_credito ? formatMoney(h.vl_credito) : ''}{' '}
+                            {h.forma_pagamento
+                              ? `em ${h.nr_parcelas}x (${h.forma_pagamento})`
+                              : ''}{' '}
+                            -{' '}
+                            {h.tipo === 'CONTRAPROPOSTA'
+                              ? 'Financeiro'
+                              : h.user}{' '}
+                            -{' '}
+                            {h.dt ? new Date(h.dt).toLocaleString('pt-BR') : ''}{' '}
+                            {h.observacao ? `- ${h.observacao}` : ''}
+                          </li>
+                        ),
+                      )}
+                    </ul>
+                  </div>
+                )}
             </div>
           </div>
         </div>

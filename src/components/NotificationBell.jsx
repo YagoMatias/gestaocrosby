@@ -3,10 +3,11 @@ import { Bell } from '@phosphor-icons/react';
 import { useAuth } from './AuthContext';
 import { useNotices } from '../hooks/useNotices';
 import NoticesModal from './NoticesModal';
+import { supabase } from '../lib/supabase';
 
 /**
  * Componente de sino de notificações no Header
- * Exibe badge com contador de avisos não lidos
+ * Exibe badge com contador de avisos não lidos + notificações de crédito
  */
 const NotificationBell = () => {
   const { user } = useAuth();
@@ -32,12 +33,43 @@ const NotificationBell = () => {
 
     setIsLoading(true);
     try {
+      // Contar avisos não lidos
       const result = await getUnreadCount(user.id);
+      let totalCount = 0;
+
       if (result.success) {
-        setUnreadCount(result.count);
+        totalCount += result.count;
       }
+
+      // Contar notificações de crédito não lidas
+      const { count: countCredito, error: errorCredito } = await supabase
+        .from('notificacoes_credito')
+        .select('*', { count: 'exact', head: true })
+        .or(
+          `destinatario_id.eq.${user.id},destinatario_tipo.eq.FINANCEIRO,destinatario_tipo.eq.ADMIN`,
+        )
+        .eq('lida', false);
+
+      if (!errorCredito && countCredito) {
+        totalCount += countCredito;
+      }
+
+      // Contar notificações de renegociação não lidas
+      const { count: countReneg, error: errorReneg } = await supabase
+        .from('notificacoes_renegociacao')
+        .select('*', { count: 'exact', head: true })
+        .or(
+          `destinatario_id.eq.${user.id},destinatario_tipo.eq.FINANCEIRO,destinatario_tipo.eq.ADMIN`,
+        )
+        .eq('lida', false);
+
+      if (!errorReneg && countReneg) {
+        totalCount += countReneg;
+      }
+
+      setUnreadCount(totalCount);
     } catch (error) {
-      console.error('Erro ao carregar contagem de avisos:', error);
+      console.error('Erro ao carregar contagem de notificações:', error);
     } finally {
       setIsLoading(false);
     }

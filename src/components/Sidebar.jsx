@@ -109,6 +109,13 @@ const financeiro = [
     roles: ['owner', 'admin', 'manager'],
   },
   {
+    name: 'Análise de Renegociações',
+    href: '/analise-renegociacao',
+    icon: Handshake,
+    color: 'text-orange-600',
+    roles: ['owner', 'admin', 'manager'],
+  },
+  {
     name: 'Fluxo de Caixa',
     href: '/fluxo-caixa',
     icon: TrendUp,

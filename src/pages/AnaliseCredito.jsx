@@ -20,6 +20,10 @@ import {
   User,
   Receipt,
   Spinner,
+  Handshake,
+  ArrowsLeftRight,
+  X,
+  PaperPlaneRight,
 } from '@phosphor-icons/react';
 
 export default function AnaliseCredito() {
@@ -33,6 +37,15 @@ export default function AnaliseCredito() {
   const [modalDetalhesAberto, setModalDetalhesAberto] = useState(false);
   const [solicitacaoSelecionada, setSolicitacaoSelecionada] = useState(null);
   const [processando, setProcessando] = useState(false);
+
+  // Estados para contraproposta
+  const [modalContrapropostaAberto, setModalContrapropostaAberto] =
+    useState(false);
+  const [valorContraproposta, setValorContraproposta] = useState('');
+  const [formaPagamentoContraproposta, setFormaPagamentoContraproposta] =
+    useState('');
+  const [parcelasContraproposta, setParcelasContraproposta] = useState('1');
+  const [observacaoContraproposta, setObservacaoContraproposta] = useState('');
 
   const buscarSolicitacoes = async () => {
     setLoadingSolicitacoes(true);
@@ -183,6 +196,123 @@ export default function AnaliseCredito() {
     }
   };
 
+  const abrirModalContraproposta = (solicitacao) => {
+    setSolicitacaoSelecionada(solicitacao);
+    setValorContraproposta(solicitacao.vl_credito.toString());
+    setFormaPagamentoContraproposta(solicitacao.forma_pagamento);
+    setParcelasContraproposta(solicitacao.nr_parcelas?.toString() || '1');
+    setObservacaoContraproposta('');
+    setModalContrapropostaAberto(true);
+  };
+
+  const enviarContraproposta = async () => {
+    if (!solicitacaoSelecionada) return;
+
+    // Validações
+    if (!valorContraproposta || parseFloat(valorContraproposta) <= 0) {
+      alert('Informe um valor válido para a contraproposta');
+      return;
+    }
+
+    if (!formaPagamentoContraproposta) {
+      alert('Selecione uma forma de pagamento');
+      return;
+    }
+
+    if (
+      !observacaoContraproposta.trim() ||
+      observacaoContraproposta.trim().length < 10
+    ) {
+      alert(
+        'Informe uma observação para a contraproposta (mínimo 10 caracteres)',
+      );
+      return;
+    }
+
+    setProcessando(true);
+    try {
+      const valorFloat = parseFloat(valorContraproposta);
+      const nrParcelas = ['boleto', 'credito'].includes(
+        formaPagamentoContraproposta,
+      )
+        ? parseInt(parcelasContraproposta)
+        : 1;
+      const valorParcela = valorFloat / nrParcelas;
+
+      const contraproposta = {
+        vl_credito: valorFloat,
+        forma_pagamento: formaPagamentoContraproposta,
+        nr_parcelas: nrParcelas,
+        vl_parcela: valorParcela,
+        observacao: observacaoContraproposta.trim(),
+        dt_envio: new Date().toISOString(),
+        enviado_por: user?.id,
+        user_aprovador: user?.name || user?.email,
+      };
+
+      // Adicionar ao histórico
+      const historicoAtual = solicitacaoSelecionada.historico_negociacao || [];
+      const novoHistorico = [
+        ...historicoAtual,
+        {
+          tipo: 'CONTRAPROPOSTA',
+          vl_credito: valorFloat,
+          forma_pagamento: formaPagamentoContraproposta,
+          nr_parcelas: nrParcelas,
+          dt: new Date().toISOString(),
+          user: user?.name || user?.email,
+          observacao: observacaoContraproposta.trim(),
+        },
+      ];
+
+      const { error } = await supabase
+        .from('solicitacoes_credito')
+        .update({
+          status: 'CONTRAPROPOSTA',
+          contraproposta: contraproposta,
+          historico_negociacao: novoHistorico,
+        })
+        .eq('id', solicitacaoSelecionada.id);
+
+      if (error) {
+        console.error('Erro ao enviar contraproposta:', error);
+        alert('Erro ao enviar contraproposta');
+        return;
+      }
+
+      alert(
+        'Contraproposta enviada com sucesso! O franqueado será notificado.',
+      );
+      buscarSolicitacoes();
+      setModalContrapropostaAberto(false);
+      setModalDetalhesAberto(false);
+
+      // Limpar campos
+      setValorContraproposta('');
+      setFormaPagamentoContraproposta('');
+      setParcelasContraproposta('1');
+      setObservacaoContraproposta('');
+    } catch (error) {
+      console.error('Erro ao enviar contraproposta:', error);
+      alert('Erro ao processar contraproposta');
+    } finally {
+      setProcessando(false);
+    }
+  };
+
+  const formatCurrency = (value) => {
+    const number = parseFloat(value.replace(/\D/g, '')) / 100;
+    return number.toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const handleValorContrapropostaChange = (e) => {
+    const formatted = formatCurrency(e.target.value);
+    setValorContraproposta(formatted);
+  };
+
   // Calcular estatísticas
   const empresasUnicas = [...new Set(solicitacoes.map((s) => s.cd_empresa))]
     .length;
@@ -243,6 +373,7 @@ export default function AnaliseCredito() {
               >
                 <option value="todos">TODOS</option>
                 <option value="ANALISE">EM ANÁLISE</option>
+                <option value="CONTRAPROPOSTA">CONTRAPROPOSTA</option>
                 <option value="APROVADO">APROVADO</option>
                 <option value="REPROVADO">REPROVADO</option>
               </select>
@@ -512,11 +643,15 @@ export default function AnaliseCredito() {
                               ? 'bg-green-100 text-green-700'
                               : solicitacao.status === 'REPROVADO'
                               ? 'bg-red-100 text-red-700'
+                              : solicitacao.status === 'CONTRAPROPOSTA'
+                              ? 'bg-orange-100 text-orange-700'
                               : 'bg-yellow-100 text-yellow-700'
                           }`}
                         >
                           {solicitacao.status === 'ANALISE'
                             ? 'Em Análise'
+                            : solicitacao.status === 'CONTRAPROPOSTA'
+                            ? 'Contraproposta'
                             : solicitacao.status}
                         </span>
                       </td>
@@ -799,6 +934,16 @@ export default function AnaliseCredito() {
                   </button>
                   <button
                     onClick={() =>
+                      abrirModalContraproposta(solicitacaoSelecionada)
+                    }
+                    disabled={processando}
+                    className="flex items-center gap-2 px-6 py-3 bg-orange-600 text-white font-semibold rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ArrowsLeftRight size={20} weight="bold" />
+                    Contraproposta
+                  </button>
+                  <button
+                    onClick={() =>
                       aprovarSolicitacao(solicitacaoSelecionada.id)
                     }
                     disabled={processando}
@@ -814,6 +959,302 @@ export default function AnaliseCredito() {
                     Fechar
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Contraproposta */}
+      {modalContrapropostaAberto && solicitacaoSelecionada && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+            {/* Header do Modal */}
+            <div className="sticky top-0 bg-gradient-to-r from-orange-600 to-orange-700 px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center">
+                  <Handshake
+                    size={20}
+                    weight="bold"
+                    className="text-orange-600"
+                  />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    Enviar Contraproposta
+                  </h2>
+                  <p className="text-sm text-orange-100">
+                    {solicitacaoSelecionada.nm_empresa}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalContrapropostaAberto(false)}
+                className="text-white hover:bg-white/20 transition-colors p-2 rounded-lg"
+              >
+                <X size={24} weight="bold" />
+              </button>
+            </div>
+
+            {/* Conteúdo do Modal */}
+            <div className="p-6 space-y-6">
+              {/* Proposta Original */}
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
+                  <Receipt size={18} weight="bold" />
+                  Proposta Original
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Valor</p>
+                    <p className="text-sm font-bold text-gray-900">
+                      {formatMoney(solicitacaoSelecionada.vl_credito)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Pagamento</p>
+                    <p className="text-sm font-semibold text-gray-900 capitalize">
+                      {solicitacaoSelecionada.forma_pagamento}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Parcelas</p>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {solicitacaoSelecionada.nr_parcelas}x
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Valor/Parcela</p>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {formatMoney(
+                        solicitacaoSelecionada.vl_credito /
+                          solicitacaoSelecionada.nr_parcelas,
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Formulário de Contraproposta */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <ArrowsLeftRight
+                    size={20}
+                    className="text-orange-600"
+                    weight="bold"
+                  />
+                  <h3 className="text-lg font-bold text-[#000638]">
+                    Nova Proposta
+                  </h3>
+                </div>
+
+                {/* Valor da Contraproposta */}
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-[#000638]">
+                    Valor do Crédito <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <CurrencyDollar size={20} className="text-gray-400" />
+                    </div>
+                    <input
+                      type="text"
+                      value={valorContraproposta}
+                      onChange={handleValorContrapropostaChange}
+                      placeholder="0,00"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-600 bg-[#f8f9fb] text-[#000638]"
+                      required
+                    />
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                      <span className="text-gray-500 text-sm">R$</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Forma de Pagamento */}
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-[#000638]">
+                    Forma de Pagamento <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={formaPagamentoContraproposta}
+                    onChange={(e) =>
+                      setFormaPagamentoContraproposta(e.target.value)
+                    }
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-600 bg-[#f8f9fb] text-[#000638]"
+                    required
+                  >
+                    <option value="">Selecione...</option>
+                    <option value="boleto">Boleto</option>
+                    <option value="credito">Crédito</option>
+                    <option value="debito">Débito</option>
+                    <option value="dinheiro">Dinheiro</option>
+                    <option value="pix">PIX</option>
+                  </select>
+                </div>
+
+                {/* Parcelamento */}
+                {['boleto', 'credito'].includes(
+                  formaPagamentoContraproposta,
+                ) && (
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-[#000638]">
+                      Parcelamento <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={parcelasContraproposta}
+                      onChange={(e) =>
+                        setParcelasContraproposta(e.target.value)
+                      }
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-600 bg-[#f8f9fb] text-[#000638]"
+                      required
+                    >
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                        <option key={n} value={n}>
+                          {n}x
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Preview */}
+                {valorContraproposta && formaPagamentoContraproposta && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h4 className="text-sm font-bold text-blue-900 mb-3">
+                      Preview da Contraproposta
+                    </h4>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <p className="text-xs text-blue-700 mb-1">
+                          Valor Total
+                        </p>
+                        <p className="text-lg font-bold text-blue-900">
+                          {formatMoney(
+                            parseFloat(
+                              valorContraproposta
+                                .replace(/\./g, '')
+                                .replace(',', '.'),
+                            ),
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-blue-700 mb-1">Parcelas</p>
+                        <p className="text-lg font-bold text-blue-900">
+                          {['boleto', 'credito'].includes(
+                            formaPagamentoContraproposta,
+                          )
+                            ? `${parcelasContraproposta}x`
+                            : '1x'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-blue-700 mb-1">
+                          Valor/Parcela
+                        </p>
+                        <p className="text-lg font-bold text-blue-900">
+                          {formatMoney(
+                            parseFloat(
+                              valorContraproposta
+                                .replace(/\./g, '')
+                                .replace(',', '.'),
+                            ) /
+                              (['boleto', 'credito'].includes(
+                                formaPagamentoContraproposta,
+                              )
+                                ? parseInt(parcelasContraproposta)
+                                : 1),
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Observação */}
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-[#000638]">
+                    Observação / Justificativa{' '}
+                    <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={observacaoContraproposta}
+                    onChange={(e) =>
+                      setObservacaoContraproposta(e.target.value)
+                    }
+                    maxLength={500}
+                    rows={4}
+                    placeholder="Explique o motivo da contraproposta e os benefícios para o franqueado..."
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-600 bg-[#f8f9fb] text-[#000638] resize-none"
+                    required
+                  />
+                  <div className="flex justify-between items-center mt-1">
+                    <p className="text-xs text-gray-500">
+                      Mínimo 10 caracteres
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {observacaoContraproposta.length}/500
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Informativo */}
+              <div className="bg-orange-50 border-l-4 border-orange-400 p-4 rounded-r-lg">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <svg
+                      className="h-5 w-5 text-orange-400"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-orange-800">
+                      O franqueado receberá uma notificação e poderá aceitar ou
+                      recusar esta contraproposta. Se aceita, a solicitação será
+                      automaticamente aprovada.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer - Ações */}
+            <div className="sticky bottom-0 bg-gray-50 px-6 py-4 rounded-b-lg border-t border-gray-200">
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setModalContrapropostaAberto(false)}
+                  disabled={processando}
+                  className="px-6 py-3 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={enviarContraproposta}
+                  disabled={processando}
+                  className="flex items-center gap-2 px-6 py-3 bg-orange-600 text-white font-semibold rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {processando ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      Enviando...
+                    </>
+                  ) : (
+                    <>
+                      <PaperPlaneRight size={20} weight="bold" />
+                      Enviar Contraproposta
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           </div>

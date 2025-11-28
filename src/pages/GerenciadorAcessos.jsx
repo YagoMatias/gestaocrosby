@@ -60,6 +60,11 @@ const AVAILABLE_PAGES = [
     name: 'Análise de Crédito',
     category: 'Financeiro',
   },
+  {
+    path: '/analise-renegociacao',
+    name: 'Análise de Renegociações',
+    category: 'Financeiro',
+  },
   { path: '/fluxo-caixa', name: 'Fluxo de Caixa', category: 'Financeiro' },
   {
     path: '/despesas-por-setor',
