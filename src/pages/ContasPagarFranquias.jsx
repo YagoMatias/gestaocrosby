@@ -255,7 +255,7 @@ const ContasPagarFranquias = () => {
           );
 
           const res = await fetch(
-            `${BaseURL}contas-receber-cliente?cd_cliente=${cdCliente}&status=${status}`,
+            `${BaseURL}contas-receber-cliente?cd_cliente=${cdCliente}&status=todos`,
           );
 
           if (!res.ok) {
@@ -297,9 +297,51 @@ const ContasPagarFranquias = () => {
       });
 
       const resultados = await Promise.all(todasAsPromises);
-      const todosOsDados = resultados.flat();
+      let todosOsDados = resultados.flat();
 
-      console.log('📊 Total de dados consolidados:', todosOsDados.length);
+      console.log(
+        '📊 Total de dados consolidados (antes do filtro):',
+        todosOsDados.length,
+      );
+
+      // Aplicar filtro local baseado no status selecionado
+      // REGRA: Se tem dt_liq preenchida, é SEMPRE considerado PAGO
+      if (status !== 'todos') {
+        todosOsDados = todosOsDados.filter((item) => {
+          const temDataLiquidacao =
+            item.dt_liq && item.dt_liq !== null && item.dt_liq !== '';
+          const dataVencimento = item.dt_vencimento
+            ? new Date(item.dt_vencimento)
+            : null;
+          const hoje = new Date();
+          hoje.setHours(0, 0, 0, 0);
+
+          // Se tem data de liquidação, é PAGO
+          if (temDataLiquidacao) {
+            return status === 'pagos';
+          }
+
+          // Se não tem data de liquidação, aplicar lógica normal
+          const valorFaturado = parseFloat(item.vl_fatura) || 0;
+          const valorPago = parseFloat(item.vl_pago) || 0;
+          const estaPago = valorPago >= valorFaturado && valorFaturado > 0;
+
+          if (status === 'pagos') {
+            return estaPago;
+          } else if (status === 'vencidos') {
+            return !estaPago && dataVencimento && dataVencimento < hoje;
+          } else if (status === 'em_aberto') {
+            return !estaPago && (!dataVencimento || dataVencimento >= hoje);
+          }
+
+          return true;
+        });
+      }
+
+      console.log(
+        `📊 Total de dados após filtro "${status}":`,
+        todosOsDados.length,
+      );
 
       setDados(todosOsDados);
       setDadosCarregados(true);
@@ -945,17 +987,31 @@ const ContasPagarFranquias = () => {
   const calcularTotais = () => {
     const totais = dadosProcessados.reduce(
       (acc, item) => {
-        acc.valorFaturado += parseFloat(item.vl_fatura) || 0;
-        acc.valorPago += parseFloat(item.vl_pago) || 0;
+        const valorFatura = parseFloat(item.vl_fatura) || 0;
+        const valorPago = parseFloat(item.vl_pago) || 0;
+        const temDataLiquidacao =
+          item.dt_liq && item.dt_liq !== null && item.dt_liq !== '';
+
+        acc.valorFaturado += valorFatura;
+        acc.valorPago += valorPago;
+
+        // Se tem data de liquidação, não contabiliza no "a pagar"
+        // Se não tem data de liquidação, considera o saldo restante
+        if (!temDataLiquidacao) {
+          const saldo = valorFatura - valorPago;
+          if (saldo > 0) {
+            acc.valorAPagar += saldo;
+          }
+        }
+
         return acc;
       },
       {
         valorFaturado: 0,
         valorPago: 0,
+        valorAPagar: 0,
       },
     );
-
-    totais.valorAPagar = totais.valorFaturado - totais.valorPago;
 
     return totais;
   };
