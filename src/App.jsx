@@ -49,6 +49,7 @@ const UserPanel = lazy(() => import('./pages/UserPanel'));
 const ManifestacaoNF = lazy(() => import('./pages/ManifestacaoNF'));
 const SaldoBancario = lazy(() => import('./pages/SaldoBancario'));
 const ImportacaoRet = lazy(() => import('./pages/ImportacaoRet'));
+const AjusteRetorno = lazy(() => import('./pages/AjusteRetorno'));
 const AuthTest = lazy(() => import('./components/AuthTest'));
 const FinanceiroPorCanal = lazy(() => import('./pages/FinanceiroPorCanal'));
 const Endividamento = lazy(() => import('./pages/Endividamento'));
@@ -138,6 +139,7 @@ const AppRoutes = memo(() => {
     { path: '/fluxo-caixa', component: FluxoCaixa },
     { path: '/saldo-bancario', component: SaldoBancario },
     { path: '/importacao-ret', component: ImportacaoRet },
+    { path: '/ajuste-retorno', component: AjusteRetorno },
     { path: '/extrato-financeiro', component: ExtratoFinanceiro },
     { path: '/receita-liquida', component: ReceitaLiquida },
     { path: '/metas-varejo', component: MetasVarejo },

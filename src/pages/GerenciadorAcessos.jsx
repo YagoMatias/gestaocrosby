@@ -73,6 +73,7 @@ const AVAILABLE_PAGES = [
   },
   { path: '/saldo-bancario', name: 'Saldo Bancário', category: 'Financeiro' },
   { path: '/importacao-ret', name: 'Importação .RET', category: 'Financeiro' },
+  { path: '/ajuste-retorno', name: 'Ajuste de .RET', category: 'Financeiro' },
   {
     path: '/extrato-financeiro',
     name: 'Extrato Financeiro',

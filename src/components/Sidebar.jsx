@@ -144,6 +144,13 @@ const financeiro = [
     roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
+    name: 'Ajuste de .RET',
+    href: '/ajuste-retorno',
+    icon: Article,
+    color: 'text-purple-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
+  {
     name: 'Extrato Financeiro',
     href: '/extrato-financeiro',
     icon: CreditCard,
