@@ -90,14 +90,26 @@ export default function SolicitacaoCredito() {
         // Verificar se a fatura está vencida
         const estaVencida = dtVencimento < hoje;
 
-        // Verificar se a fatura foi paga (cd_situacao = 4 OU possui dt_liquidacao OU possui vl_pago > 0)
-        const foiPaga =
-          fatura.cd_situacao === 4 ||
-          fatura.dt_liquidacao ||
-          (fatura.vl_pago && fatura.vl_pago > 0);
+        // REGRA: Se tem dt_liq (data de liquidação) preenchida, é SEMPRE considerado PAGO
+        const temDataLiquidacao =
+          fatura.dt_liq && fatura.dt_liq !== null && fatura.dt_liq !== '';
+
+        if (temDataLiquidacao) {
+          return false; // Não incluir nas faturas vencidas se já foi liquidada
+        }
+
+        // Se não tem dt_liq, verificar se foi pago pelo valor
+        const valorFaturado = parseFloat(fatura.vl_fatura) || 0;
+        const valorPago = parseFloat(fatura.vl_pago) || 0;
+        const estaPago = valorPago >= valorFaturado && valorFaturado > 0;
+
+        // REGRA: Ignorar faturas de até R$ 0,01 (1 centavo)
+        if (valorFaturado <= 0.01) {
+          return false; // Não incluir faturas irrelevantes
+        }
 
         // Retorna apenas faturas vencidas que NÃO foram pagas
-        return estaVencida && !foiPaga;
+        return estaVencida && !estaPago;
       });
 
       return faturasVencidas;
@@ -150,14 +162,21 @@ export default function SolicitacaoCredito() {
         // Verificar se a fatura está com vencimento futuro
         const estaFuturo = dtVencimento >= hoje;
 
-        // Verificar se a fatura foi paga
-        const foiPaga =
-          fatura.cd_situacao === 4 ||
-          fatura.dt_liquidacao ||
-          (fatura.vl_pago && fatura.vl_pago > 0);
+        // REGRA: Se tem dt_liq (data de liquidação) preenchida, é SEMPRE considerado PAGO
+        const temDataLiquidacao =
+          fatura.dt_liq && fatura.dt_liq !== null && fatura.dt_liq !== '';
+
+        if (temDataLiquidacao) {
+          return false; // Não incluir nos títulos a vencer se já foi liquidada
+        }
+
+        // Se não tem dt_liq, verificar se foi pago pelo valor
+        const valorFaturado = parseFloat(fatura.vl_fatura) || 0;
+        const valorPago = parseFloat(fatura.vl_pago) || 0;
+        const estaPago = valorPago >= valorFaturado && valorFaturado > 0;
 
         // Retorna apenas faturas futuras que NÃO foram pagas
-        return estaFuturo && !foiPaga;
+        return estaFuturo && !estaPago;
       });
 
       return titulosAVencer;
