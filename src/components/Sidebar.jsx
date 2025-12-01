@@ -185,6 +185,13 @@ const financeiro = [
     color: 'text-purple-600',
     roles: ['owner', 'admin', 'manager', 'user'],
   },
+  {
+    name: 'Títulos Clientes',
+    href: '/titulos-clientes',
+    icon: Receipt,
+    color: 'text-blue-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
 ];
 
 const faturamento = [

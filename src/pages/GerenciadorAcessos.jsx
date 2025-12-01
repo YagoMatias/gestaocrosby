@@ -185,6 +185,11 @@ const AVAILABLE_PAGES = [
     category: 'Minha Franquia',
   },
   {
+    path: '/titulos-clientes',
+    name: 'Títulos Clientes',
+    category: 'Financeiro',
+  },
+  {
     path: '/solicitacao-credito',
     name: 'Solicitação de Crédito',
     category: 'Minha Franquia',

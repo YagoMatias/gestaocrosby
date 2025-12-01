@@ -22,6 +22,7 @@ const ContasAReceberEmissao = lazy(() =>
   import('./pages/ContasAReceberEmissao'),
 );
 const ContasPagarFranquias = lazy(() => import('./pages/ContasPagarFranquias'));
+const TitulosClientes = lazy(() => import('./pages/TitulosClientes'));
 const SolicitacaoCredito = lazy(() => import('./pages/SolicitacaoCredito'));
 const AnaliseCredito = lazy(() => import('./pages/AnaliseCredito'));
 const RenegociacaoDividas = lazy(() => import('./pages/RenegociacaoDividas'));
@@ -128,6 +129,7 @@ const AppRoutes = memo(() => {
     { path: '/contas-a-receber', component: ContasAReceber },
     { path: '/contas-a-receber-emissao', component: ContasAReceberEmissao },
     { path: '/contas-pagar-franquias', component: ContasPagarFranquias },
+    { path: '/titulos-clientes', component: TitulosClientes },
     { path: '/solicitacao-credito', component: SolicitacaoCredito },
     { path: '/analise-credito', component: AnaliseCredito },
     { path: '/renegociacao-dividas', component: RenegociacaoDividas },
