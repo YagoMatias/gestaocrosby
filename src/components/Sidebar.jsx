@@ -908,7 +908,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                 },
                 {
                   name: 'Notas Fiscais',
-                  href: '/meus-pedidos',
+                  href: '/notas-fiscais',
                   icon: Article,
                   color: 'text-blue-600',
                 },

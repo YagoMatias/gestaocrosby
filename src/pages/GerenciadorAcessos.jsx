@@ -199,7 +199,7 @@ const AVAILABLE_PAGES = [
     name: 'Renegociação de Dívidas',
     category: 'Minha Franquia',
   },
-  { path: '/meus-pedidos', name: 'Notas Fiscais', category: 'Minha Franquia' },
+  { path: '/notas-fiscais', name: 'Notas Fiscais', category: 'Minha Franquia' },
 
   // Outros
   { path: '/clientes', name: 'Clientes', category: 'Outros' },
