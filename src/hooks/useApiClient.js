@@ -346,6 +346,15 @@ const useApiClient = () => {
       apiCall('/api/financial/inadimplentes-revenda', params),
     // Observações de faturas (obsfati)
     obsFati: (params) => apiCall('/api/financial/obsfati', params),
+    // Extrato Cliente
+    extratoCliente: (params) =>
+      apiCall('/api/financial/extrato-cliente', params),
+    // Fatura Extrato Cliente
+    faturaExtCliente: (params) =>
+      apiCall('/api/financial/fatura-ext-cliente', params),
+    // Lançamento Extrato Adiantamento
+    lancExtAdiant: (params) =>
+      apiCall('/api/financial/lanc-ext-adiant', params),
 
     // 🆕 CRUD Despesas Manuais DRE
     /**

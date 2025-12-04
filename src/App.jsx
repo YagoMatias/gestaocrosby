@@ -31,6 +31,8 @@ const NotasFiscais = lazy(() => import('./pages/NotasFiscais'));
 const DespesasPorSetor = lazy(() => import('./pages/DespesasPorSetor'));
 const FluxoCaixa = lazy(() => import('./pages/FluxoCaixa'));
 const ExtratoFinanceiro = lazy(() => import('./pages/ExtratoFinanceiro'));
+const ExtratoCliente = lazy(() => import('./pages/ExtratoCliente'));
+const ExtratoCredito = lazy(() => import('./pages/ExtratoCredito'));
 const Conciliacao = lazy(() => import('./pages/Conciliacao'));
 const SaldoBancarioTotvs = lazy(() => import('./pages/SaldoBancarioTotvs'));
 const Clientes = lazy(() => import('./pages/Clientes'));
@@ -141,6 +143,8 @@ const AppRoutes = memo(() => {
     { path: '/importacao-ret', component: ImportacaoRet },
     { path: '/ajuste-retorno', component: AjusteRetorno },
     { path: '/extrato-financeiro', component: ExtratoFinanceiro },
+    { path: '/extrato-cliente', component: ExtratoCliente },
+    { path: '/extrato-credito', component: ExtratoCredito },
     { path: '/receita-liquida', component: ReceitaLiquida },
     { path: '/metas-varejo', component: MetasVarejo },
     { path: '/manifestacao-nf', component: ManifestacaoNF },

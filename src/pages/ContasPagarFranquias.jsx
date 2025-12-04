@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import useApiClient from '../hooks/useApiClient';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { useAuth } from '../components/AuthContext';
 import {
   Card,
   CardContent,
@@ -29,6 +30,7 @@ import { saveAs } from 'file-saver';
 
 const ContasPagarFranquias = () => {
   const apiClient = useApiClient();
+  const { user } = useAuth();
   const [dados, setDados] = useState([]);
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
@@ -1668,20 +1670,83 @@ const ContasPagarFranquias = () => {
                 </div>
               </div>
 
-              {/* Seção 2: Boleto Bancário - Só aparece se não estiver pago */}
+              {/* Seção 2: Boleto Bancário - Oculta seção inteira apenas para franquias quando pago */}
               {(() => {
                 const valorFaturado =
                   parseFloat(faturaSelecionada?.vl_fatura) || 0;
                 const valorPago = parseFloat(faturaSelecionada?.vl_pago) || 0;
                 const estaPago =
                   valorPago >= valorFaturado && valorFaturado > 0;
+                const isFranquia = user?.perfil?.toLowerCase() === 'franquia';
 
-                return !estaPago ? (
+                // Se está pago E é franquia, não mostra nada (retorna null)
+                if (estaPago && isFranquia) {
+                  return (
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                        <CheckCircle size={20} className="text-green-600" />
+                        Status do Pagamento
+                      </h3>
+                      <div className="min-h-[200px] flex items-center justify-center">
+                        <div className="text-center">
+                          <CheckCircle
+                            size={48}
+                            className="text-green-600 mx-auto mb-4"
+                          />
+                          <p className="text-lg font-semibold text-green-700 mb-2">
+                            Boleto Pago
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            Esta fatura já foi liquidada e não requer boleto
+                            bancário.
+                          </p>
+                          {faturaSelecionada?.dt_liq && (
+                            <p className="text-xs text-gray-500 mt-2">
+                              Data de liquidação:{' '}
+                              {formatDateBR(faturaSelecionada.dt_liq)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Para outros perfis, mostra o botão normalmente (mesmo se pago)
+                return (
                   <div className="border border-gray-200 rounded-lg p-4">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                       <FileArrowDown size={20} className="text-green-600" />
                       Baixar Boleto Bancário
                     </h3>
+
+                    {/* Aviso destacado se o boleto está pago */}
+                    {estaPago && (
+                      <div className="mb-4 bg-green-50 border-2 border-green-500 rounded-lg p-4">
+                        <div className="flex items-start gap-3">
+                          <CheckCircle
+                            size={24}
+                            className="text-green-600 flex-shrink-0 mt-0.5"
+                            weight="fill"
+                          />
+                          <div className="flex-1">
+                            <p className="text-sm font-bold text-green-800 mb-1">
+                              ⚠️ BOLETO PAGO
+                            </p>
+                            <p className="text-sm text-green-700">
+                              Esta fatura já foi liquidada. O boleto abaixo é
+                              apenas para fins de comprovante ou reemissão.
+                            </p>
+                            {faturaSelecionada?.dt_liq && (
+                              <p className="text-xs text-green-600 mt-2">
+                                Data de liquidação:{' '}
+                                {formatDateBR(faturaSelecionada.dt_liq)}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="min-h-[200px]">
                       {!boletoBase64 && !boletoLoading && !boletoError && (
@@ -1792,34 +1857,6 @@ const ContasPagarFranquias = () => {
                           </button>
                         </div>
                       )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="border border-gray-200 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                      <CheckCircle size={20} className="text-green-600" />
-                      Status do Pagamento
-                    </h3>
-                    <div className="min-h-[200px] flex items-center justify-center">
-                      <div className="text-center">
-                        <CheckCircle
-                          size={48}
-                          className="text-green-600 mx-auto mb-4"
-                        />
-                        <p className="text-lg font-semibold text-green-700 mb-2">
-                          Boleto Pago
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          Esta fatura já foi liquidada e não requer boleto
-                          bancário.
-                        </p>
-                        {faturaSelecionada?.dt_liq && (
-                          <p className="text-xs text-gray-500 mt-2">
-                            Data de liquidação:{' '}
-                            {formatDateBR(faturaSelecionada.dt_liq)}
-                          </p>
-                        )}
-                      </div>
                     </div>
                   </div>
                 );

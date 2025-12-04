@@ -158,6 +158,13 @@ const financeiro = [
     roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
+    name: 'Extrato Cliente',
+    href: '/extrato-cliente',
+    icon: IdentificationCard,
+    color: 'text-cyan-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
+  {
     name: 'Conciliação',
     href: '/conciliacao',
     icon: CheckCircle,
@@ -900,6 +907,12 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                   href: '/contas-pagar-franquias',
                   icon: Receipt,
                   color: 'text-red-600',
+                },
+                {
+                  name: 'Extrato de Crédito',
+                  href: '/extrato-credito',
+                  icon: CurrencyDollar,
+                  color: 'text-green-600',
                 },
                 {
                   name: 'Solicitação de Crédito',

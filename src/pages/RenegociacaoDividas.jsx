@@ -30,6 +30,8 @@ export default function RenegociacaoDividas() {
   const [faturasDisponiveis, setFaturasDisponiveis] = useState([]);
   const [faturasSelecionadas, setFaturasSelecionadas] = useState([]);
   const [todasSelecionadas, setTodasSelecionadas] = useState(false);
+  const [filtroStatusFaturas, setFiltroStatusFaturas] = useState('todas');
+  const [ordenacao, setOrdenacao] = useState({ campo: null, direcao: 'asc' });
   const [formaPagamento, setFormaPagamento] = useState('');
   const [parcelas, setParcelas] = useState('1');
   const [motivo, setMotivo] = useState('');
@@ -95,12 +97,20 @@ export default function RenegociacaoDividas() {
 
       // Filtrar faturas vencidas e a vencer (não pagas)
       const faturasNaoPagas = dadosArray.filter((fatura) => {
-        const foiPaga =
-          fatura.cd_situacao === 4 ||
-          fatura.dt_liquidacao ||
-          (fatura.vl_pago && fatura.vl_pago > 0);
+        // REGRA: Se tem dt_liq (data de liquidação) preenchida, é SEMPRE considerado PAGO
+        const temDataLiquidacao =
+          fatura.dt_liq && fatura.dt_liq !== null && fatura.dt_liq !== '';
 
-        return !foiPaga;
+        if (temDataLiquidacao) {
+          return false; // Não incluir faturas liquidadas
+        }
+
+        // Se não tem dt_liq, verificar se foi pago pelo valor
+        const valorFaturado = parseFloat(fatura.vl_fatura) || 0;
+        const valorPago = parseFloat(fatura.vl_pago) || 0;
+        const estaPago = valorPago >= valorFaturado && valorFaturado > 0;
+
+        return !estaPago; // Retornar apenas faturas não pagas
       });
 
       // Separar em vencidas e a vencer
@@ -414,23 +424,36 @@ export default function RenegociacaoDividas() {
                       Faturas Disponíveis para Renegociação
                     </h3>
                     {faturasDisponiveis.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={toggleTodasFaturas}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-[#000638] text-white text-sm rounded-lg hover:bg-[#fe0000] transition-colors"
-                      >
-                        {todasSelecionadas ? (
-                          <>
-                            <CheckSquare size={16} weight="fill" />
-                            Desselecionar Todas
-                          </>
-                        ) : (
-                          <>
-                            <Square size={16} />
-                            Selecionar Todas
-                          </>
-                        )}
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <select
+                          value={filtroStatusFaturas}
+                          onChange={(e) =>
+                            setFiltroStatusFaturas(e.target.value)
+                          }
+                          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]"
+                        >
+                          <option value="todas">Todas</option>
+                          <option value="VENCIDA">Vencidas</option>
+                          <option value="A VENCER">A Vencer</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={toggleTodasFaturas}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-[#000638] text-white text-sm rounded-lg hover:bg-[#fe0000] transition-colors"
+                        >
+                          {todasSelecionadas ? (
+                            <>
+                              <CheckSquare size={16} weight="fill" />
+                              Desselecionar Todas
+                            </>
+                          ) : (
+                            <>
+                              <Square size={16} />
+                              Selecionar Todas
+                            </>
+                          )}
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -463,77 +486,161 @@ export default function RenegociacaoDividas() {
                               </div>
                             </th>
                             <th className="px-2 py-2 text-center">
-                              <div className="flex items-center justify-center">
+                              <button
+                                onClick={() => {
+                                  setOrdenacao({
+                                    campo: 'dt_emissao',
+                                    direcao:
+                                      ordenacao.campo === 'dt_emissao' &&
+                                      ordenacao.direcao === 'asc'
+                                        ? 'desc'
+                                        : 'asc',
+                                  });
+                                }}
+                                className="flex items-center justify-center gap-1 hover:text-[#fe0000] transition-colors w-full"
+                              >
                                 Emissão
-                              </div>
+                                {ordenacao.campo === 'dt_emissao' && (
+                                  <span>
+                                    {ordenacao.direcao === 'asc' ? '↑' : '↓'}
+                                  </span>
+                                )}
+                              </button>
                             </th>
                             <th className="px-2 py-2 text-center">
-                              <div className="flex items-center justify-center">
+                              <button
+                                onClick={() => {
+                                  setOrdenacao({
+                                    campo: 'dt_vencimento',
+                                    direcao:
+                                      ordenacao.campo === 'dt_vencimento' &&
+                                      ordenacao.direcao === 'asc'
+                                        ? 'desc'
+                                        : 'asc',
+                                  });
+                                }}
+                                className="flex items-center justify-center gap-1 hover:text-[#fe0000] transition-colors w-full"
+                              >
                                 Vencimento
-                              </div>
+                                {ordenacao.campo === 'dt_vencimento' && (
+                                  <span>
+                                    {ordenacao.direcao === 'asc' ? '↑' : '↓'}
+                                  </span>
+                                )}
+                              </button>
                             </th>
                             <th className="px-2 py-2 text-center">
-                              <div className="flex items-center justify-center">
+                              <button
+                                onClick={() => {
+                                  setOrdenacao({
+                                    campo: 'vl_fatura',
+                                    direcao:
+                                      ordenacao.campo === 'vl_fatura' &&
+                                      ordenacao.direcao === 'asc'
+                                        ? 'desc'
+                                        : 'asc',
+                                  });
+                                }}
+                                className="flex items-center justify-center gap-1 hover:text-[#fe0000] transition-colors w-full"
+                              >
                                 Valor Fatura
-                              </div>
+                                {ordenacao.campo === 'vl_fatura' && (
+                                  <span>
+                                    {ordenacao.direcao === 'asc' ? '↑' : '↓'}
+                                  </span>
+                                )}
+                              </button>
                             </th>
                           </tr>
                         </thead>
                         <tbody className="bg-white">
-                          {faturasDisponiveis.map((fatura) => {
-                            const isSelected = faturasSelecionadas.some(
-                              (f) =>
-                                f.nr_fat === fatura.nr_fat &&
-                                f.nr_parcela === fatura.nr_parcela,
-                            );
-                            return (
-                              <tr
-                                key={`${fatura.nr_fat}-${fatura.nr_parcela}`}
-                                className={`text-sm transition-colors cursor-pointer hover:bg-gray-50 ${
-                                  isSelected ? 'bg-blue-50' : ''
-                                }`}
-                                onClick={() => toggleFatura(fatura)}
-                              >
-                                <td className="text-center px-2 py-2">
-                                  {isSelected ? (
-                                    <CheckSquare
-                                      size={20}
-                                      weight="fill"
-                                      className="text-[#000638] mx-auto"
-                                    />
-                                  ) : (
-                                    <Square
-                                      size={20}
-                                      className="text-gray-400 mx-auto"
-                                    />
-                                  )}
-                                </td>
-                                <td className="text-center px-2 py-2">
-                                  <span
-                                    className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${
-                                      fatura.status === 'VENCIDA'
-                                        ? 'bg-red-100 text-red-700'
-                                        : 'bg-yellow-100 text-yellow-700'
-                                    }`}
-                                  >
-                                    {fatura.status}
-                                  </span>
-                                </td>
-                                <td className="text-center text-gray-900 px-2 py-2">
-                                  {fatura.nr_fat || '--'}
-                                </td>
-                                <td className="text-center text-gray-900 px-2 py-2">
-                                  {formatDate(fatura.dt_emissao)}
-                                </td>
-                                <td className="text-center text-gray-900 px-2 py-2">
-                                  {formatDate(fatura.dt_vencimento)}
-                                </td>
-                                <td className="text-center font-semibold text-green-600 px-2 py-2">
-                                  {formatMoney(fatura.vl_fatura)}
-                                </td>
-                              </tr>
-                            );
-                          })}
+                          {faturasDisponiveis
+                            .filter((fatura) =>
+                              filtroStatusFaturas === 'todas'
+                                ? true
+                                : fatura.status === filtroStatusFaturas,
+                            )
+                            .sort((a, b) => {
+                              if (!ordenacao.campo) return 0;
+
+                              let valorA, valorB;
+
+                              if (ordenacao.campo === 'vl_fatura') {
+                                valorA = parseFloat(a[ordenacao.campo]) || 0;
+                                valorB = parseFloat(b[ordenacao.campo]) || 0;
+                              } else {
+                                valorA = new Date(a[ordenacao.campo]);
+                                valorB = new Date(b[ordenacao.campo]);
+                              }
+
+                              if (ordenacao.direcao === 'asc') {
+                                return valorA > valorB
+                                  ? 1
+                                  : valorA < valorB
+                                  ? -1
+                                  : 0;
+                              } else {
+                                return valorA < valorB
+                                  ? 1
+                                  : valorA > valorB
+                                  ? -1
+                                  : 0;
+                              }
+                            })
+                            .map((fatura) => {
+                              const isSelected = faturasSelecionadas.some(
+                                (f) =>
+                                  f.nr_fat === fatura.nr_fat &&
+                                  f.nr_parcela === fatura.nr_parcela,
+                              );
+                              return (
+                                <tr
+                                  key={`${fatura.nr_fat}-${fatura.nr_parcela}`}
+                                  className={`text-sm transition-colors cursor-pointer hover:bg-gray-50 ${
+                                    isSelected ? 'bg-blue-50' : ''
+                                  }`}
+                                  onClick={() => toggleFatura(fatura)}
+                                >
+                                  <td className="text-center px-2 py-2">
+                                    {isSelected ? (
+                                      <CheckSquare
+                                        size={20}
+                                        weight="fill"
+                                        className="text-[#000638] mx-auto"
+                                      />
+                                    ) : (
+                                      <Square
+                                        size={20}
+                                        className="text-gray-400 mx-auto"
+                                      />
+                                    )}
+                                  </td>
+                                  <td className="text-center px-2 py-2">
+                                    <span
+                                      className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${
+                                        fatura.status === 'VENCIDA'
+                                          ? 'bg-red-100 text-red-700'
+                                          : 'bg-yellow-100 text-yellow-700'
+                                      }`}
+                                    >
+                                      {fatura.status}
+                                    </span>
+                                  </td>
+                                  <td className="text-center text-gray-900 px-2 py-2">
+                                    {fatura.nr_fat || '--'}
+                                  </td>
+                                  <td className="text-center text-gray-900 px-2 py-2">
+                                    {formatDate(fatura.dt_emissao)}
+                                  </td>
+                                  <td className="text-center text-gray-900 px-2 py-2">
+                                    {formatDate(fatura.dt_vencimento)}
+                                  </td>
+                                  <td className="text-center font-semibold text-green-600 px-2 py-2">
+                                    {formatMoney(fatura.vl_fatura)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                         </tbody>
                       </table>
                     </div>
