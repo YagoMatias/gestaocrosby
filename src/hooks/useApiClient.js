@@ -355,6 +355,11 @@ const useApiClient = () => {
     // Lançamento Extrato Adiantamento
     lancExtAdiant: (params) =>
       apiCall('/api/financial/lanc-ext-adiant', params),
+    // Observações de Movimentação
+    obsMov: (params) => apiCall('/api/financial/obs-mov', params),
+    // Transação de Fatura CREDEV
+    transacaoFaturaCredev: (params) =>
+      apiCall('/api/financial/transacao-fatura-credev', params),
 
     // 🆕 CRUD Despesas Manuais DRE
     /**

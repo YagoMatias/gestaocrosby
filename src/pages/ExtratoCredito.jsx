@@ -46,6 +46,15 @@ const ExtratoCredito = () => {
   const [detalhesFatura, setDetalhesFatura] = useState([]);
   const [itemSelecionado, setItemSelecionado] = useState(null);
 
+  // Estados para observações da movimentação
+  const [observacoes, setObservacoes] = useState([]);
+  const [observacoesLoading, setObservacoesLoading] = useState(false);
+
+  // Estados para produtos da transação
+  const [produtosNF, setProdutosNF] = useState([]);
+  const [produtosLoading, setProdutosLoading] = useState(false);
+  const [produtosError, setProdutosError] = useState('');
+
   // Estados para DANFE
   const [danfeLoading, setDanfeLoading] = useState(false);
   const [danfeError, setDanfeError] = useState('');
@@ -65,6 +74,8 @@ const ExtratoCredito = () => {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
   const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
+  const FranchiseURL =
+    'https://apigestaocrosby-bw2v.onrender.com/api/franchise/';
 
   // Função para buscar saldo de CREDEV e Adiantamento
   const buscarSaldoCredito = async () => {
@@ -317,6 +328,39 @@ const ExtratoCredito = () => {
     setModalOpen(true);
     setDetalhesLoading(true);
     setDetalhesFatura([]);
+    setObservacoes([]);
+
+    // Buscar observações da movimentação
+    if (item.nr_ctapes && item.nr_seqmov) {
+      setObservacoesLoading(true);
+      try {
+        console.log('📝 Buscando observações da movimentação:', {
+          nr_ctapes: item.nr_ctapes,
+          nr_seqmov: item.nr_seqmov,
+        });
+
+        const obsResult = await apiClient.financial.obsMov({
+          nr_ctapes: item.nr_ctapes,
+          nr_seqmov: item.nr_seqmov,
+        });
+
+        if (obsResult.success) {
+          const obs = Array.isArray(obsResult.data)
+            ? obsResult.data
+            : obsResult.data?.data || [];
+          console.log('✅ Observações recebidas:', obs.length);
+          setObservacoes(obs);
+        } else {
+          console.warn('⚠️ Nenhuma observação encontrada');
+          setObservacoes([]);
+        }
+      } catch (error) {
+        console.error('❌ Erro ao buscar observações:', error);
+        setObservacoes([]);
+      } finally {
+        setObservacoesLoading(false);
+      }
+    }
 
     try {
       // Verificar se é transferência entre empresas (códigos 888 ou 889)
@@ -371,51 +415,73 @@ const ExtratoCredito = () => {
           setDetalhesFatura([]);
         }
       } else if (isLancamentoCredevComLiquidacao) {
-        // Buscar transações para LANÇAMENTO CREDEV com data de liquidação
+        // NOVA LÓGICA: Buscar transação através da tabela fgr_liqitemcr
         const dataLiquidacao = item.dt_liq.split('T')[0];
-        console.log('🔍 Buscando transações do lançamento CREDEV:', {
-          cd_pessoa: item.cd_pessoa,
-          dt_liquidacao: dataLiquidacao,
-          cd_empresa: item.cd_empresa,
-          valor: item.vl_lancto,
+        console.log(
+          '🔍 Buscando transação do lançamento CREDEV via fgr_liqitemcr:',
+          {
+            cd_pessoa: item.cd_pessoa,
+            dt_liquidacao: dataLiquidacao,
+            cd_empresa: item.cd_empresa,
+            valor: item.vl_lancto,
+          },
+        );
+
+        // Primeiro, buscar detalhes da fatura para obter o nr_fat
+        const faturaResult = await apiClient.financial.faturaExtCliente({
+          cd_cliente: item.cd_pessoa,
+          vl_fatura: item.vl_lancto,
         });
 
-        // Buscar no extrato usando a data de liquidação
-        const result = await apiClient.financial.extratoCliente({
-          cd_pessoa: item.cd_pessoa,
-          dt_inicio: dataLiquidacao,
-          dt_fim: dataLiquidacao,
-        });
+        if (faturaResult.success) {
+          const faturas = Array.isArray(faturaResult.data)
+            ? faturaResult.data
+            : faturaResult.data?.data || [];
 
-        if (result.success) {
-          const detalhes = Array.isArray(result.data)
-            ? result.data
-            : result.data?.data || [];
+          console.log('📋 Faturas encontradas:', faturas.length);
 
-          // Filtrar transações:
-          // 1. Mesmo cd_empresa
-          // 2. Valor próximo ao lançamento CREDEV
-          // 3. tp_operacao = 'D' (débito, pois é a saída do crédito)
-          const detalhesFiltrados = detalhes.filter((detalhe) => {
-            const valorMovimento = Math.abs(parseFloat(detalhe.vl_lancto) || 0);
-            const valorLancamento = Math.abs(parseFloat(item.vl_lancto) || 0);
-            const mesmaEmpresa =
-              detalhe.cd_empresa?.toString() === item.cd_empresa?.toString();
-            const valorProximo =
-              Math.abs(valorMovimento - valorLancamento) < 0.02;
-            const isDebito = detalhe.tp_operacao === 'D';
+          if (faturas.length > 0) {
+            // Pegar a primeira fatura
+            const fatura = faturas[0];
+            console.log('📄 Fatura selecionada:', {
+              cd_cliente: fatura.cd_cliente,
+              nr_fat: fatura.nr_fat,
+              dt_movimfcc: dataLiquidacao,
+            });
 
-            return mesmaEmpresa && valorProximo && isDebito;
-          });
+            // Buscar transação através da tabela fgr_liqitemcr
+            const transacaoResult =
+              await apiClient.financial.transacaoFaturaCredev({
+                cd_cliente: fatura.cd_cliente,
+                nr_fat: fatura.nr_fat,
+                dt_movimfcc: dataLiquidacao,
+              });
 
-          console.log('✅ Transações do CREDEV:', {
-            total: detalhes.length,
-            filtradas: detalhesFiltrados.length,
-            detalhes: detalhesFiltrados,
-          });
-          setDetalhesFatura(detalhesFiltrados);
+            if (
+              transacaoResult.success &&
+              transacaoResult.data &&
+              transacaoResult.data.length > 0
+            ) {
+              const transacao = transacaoResult.data[0];
+              console.log('🎯 Transação encontrada:', transacao);
+
+              // Buscar produtos da transação
+              if (transacao.nr_transacao) {
+                await buscarProdutosNF(transacao.nr_transacao);
+              }
+
+              // Não precisa buscar detalhes de fatura, apenas mostrar os produtos
+              setDetalhesFatura([]);
+            } else {
+              console.warn('⚠️ Nenhuma transação encontrada via fgr_liqitemcr');
+              setDetalhesFatura([]);
+            }
+          } else {
+            console.warn('⚠️ Nenhuma fatura encontrada para buscar transação');
+            setDetalhesFatura([]);
+          }
         } else {
-          console.error('❌ Erro ao buscar transações:', result.message);
+          console.error('❌ Erro ao buscar fatura:', faturaResult.message);
           setDetalhesFatura([]);
         }
       } else {
@@ -454,6 +520,45 @@ const ExtratoCredito = () => {
     setModalOpen(false);
     setItemSelecionado(null);
     setDetalhesFatura([]);
+    setProdutosNF([]);
+    setObservacoes([]);
+  };
+
+  // Função para buscar produtos da nota fiscal
+  const buscarProdutosNF = async (nr_transacao) => {
+    try {
+      setProdutosLoading(true);
+      setProdutosError('');
+      setProdutosNF([]);
+
+      console.log('🔍 Buscando produtos da NF:', nr_transacao);
+
+      const response = await fetch(
+        `${FranchiseURL}detalhenf?nr_transacao=${nr_transacao}`,
+      );
+
+      if (!response.ok) {
+        throw new Error('Erro ao buscar produtos da nota fiscal');
+      }
+
+      const data = await response.json();
+      console.log('✅ Produtos da NF recebidos:', data);
+
+      if (data.success && data.data && data.data.data) {
+        setProdutosNF(data.data.data);
+        console.log(`✅ ${data.data.data.length} produtos encontrados`);
+      } else {
+        setProdutosNF([]);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao buscar produtos:', error);
+      setProdutosError(
+        error.message || 'Erro ao buscar produtos da nota fiscal',
+      );
+      setProdutosNF([]);
+    } finally {
+      setProdutosLoading(false);
+    }
   };
 
   // Função para gerar DANFE a partir da transação
@@ -1343,6 +1448,139 @@ const ExtratoCredito = () => {
 
             {/* Conteúdo do Modal */}
             <div className="flex-1 overflow-y-auto p-6">
+              {/* Seção de Observações */}
+              {observacoesLoading ? (
+                <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2">
+                    <CircleNotch
+                      size={20}
+                      className="animate-spin text-blue-600"
+                    />
+                    <span className="text-sm text-gray-600">
+                      Carregando observações...
+                    </span>
+                  </div>
+                </div>
+              ) : observacoes.length > 0 ? (
+                <div className="mb-6 bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                  <h3 className="text-sm font-bold text-blue-900 mb-3 flex items-center gap-2">
+                    <Receipt size={20} className="text-blue-600" />
+                    Observações da Movimentação
+                  </h3>
+                  <div className="space-y-3">
+                    {observacoes.map((obs, index) => (
+                      <div
+                        key={index}
+                        className="bg-white rounded-lg p-3 border border-blue-200"
+                      >
+                        <p className="text-sm text-gray-800 mb-2">
+                          {obs.ds_obs}
+                        </p>
+                        <div className="flex items-center gap-4 text-xs text-gray-500">
+                          <span>
+                            Data Cadastro: {formatarDataBR(obs.dt_cadastro)}
+                          </span>
+                          <span>
+                            Data Movim: {formatarDataBR(obs.dt_movim)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Seção de Produtos da Transação */}
+              {produtosLoading ? (
+                <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2">
+                    <CircleNotch
+                      size={20}
+                      className="animate-spin text-green-600"
+                    />
+                    <span className="text-sm text-gray-600">
+                      Carregando produtos da nota fiscal...
+                    </span>
+                  </div>
+                </div>
+              ) : produtosError ? (
+                <div className="mb-6 bg-red-50 border-2 border-red-200 rounded-lg p-4">
+                  <h3 className="text-sm font-bold text-red-900 mb-2">
+                    Erro ao carregar produtos
+                  </h3>
+                  <p className="text-sm text-red-700">{produtosError}</p>
+                </div>
+              ) : produtosNF.length > 0 ? (
+                <div className="mb-6 bg-green-50 border-2 border-green-200 rounded-lg p-4">
+                  <h3 className="text-sm font-bold text-green-900 mb-3 flex items-center gap-2">
+                    <Receipt size={20} className="text-green-600" />
+                    Produtos da Nota Fiscal ({produtosNF.length} itens)
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-green-200">
+                      <thead className="bg-green-100">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-green-800 uppercase">
+                            Código
+                          </th>
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-green-800 uppercase">
+                            Descrição
+                          </th>
+                          <th className="px-3 py-2 text-center text-xs font-semibold text-green-800 uppercase">
+                            Quantidade
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-semibold text-green-800 uppercase">
+                            Valor Unit.
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-semibold text-green-800 uppercase">
+                            Valor Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-green-100">
+                        {produtosNF.map((produto, index) => (
+                          <tr key={index} className="hover:bg-green-50">
+                            <td className="px-3 py-2 text-sm text-gray-900">
+                              {produto.cd_produto || '--'}
+                            </td>
+                            <td className="px-3 py-2 text-sm text-gray-900">
+                              {produto.ds_produto || '--'}
+                            </td>
+                            <td className="px-3 py-2 text-sm text-center text-gray-900">
+                              {produto.qt_produto || 0}
+                            </td>
+                            <td className="px-3 py-2 text-sm text-right font-semibold text-gray-900">
+                              {formatarMoeda(produto.vl_unitario)}
+                            </td>
+                            <td className="px-3 py-2 text-sm text-right font-bold text-green-700">
+                              {formatarMoeda(produto.vl_total)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-green-100">
+                        <tr>
+                          <td
+                            colSpan="4"
+                            className="px-3 py-2 text-sm font-bold text-right text-green-900"
+                          >
+                            Total:
+                          </td>
+                          <td className="px-3 py-2 text-sm font-bold text-right text-green-900">
+                            {formatarMoeda(
+                              produtosNF.reduce(
+                                (acc, p) => acc + (parseFloat(p.vl_total) || 0),
+                                0,
+                              ),
+                            )}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+
               {detalhesLoading ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <LoadingSpinner size="lg" />

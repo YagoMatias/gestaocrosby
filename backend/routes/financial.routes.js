@@ -1201,6 +1201,9 @@ router.get(
     // Adicionar filtro de situação
     whereClause += ` AND vff.tp_situacao = 1`;
 
+    // Adicionar filtro de tipo de documento (apenas faturas de mercadoria)
+    whereClause += ` AND vff.tp_documento = 1`;
+
     // Adicionar LIMIT e OFFSET aos parâmetros (já temos cd_cliente em $1)
     queryParams.push(limit, offset);
 
@@ -2763,6 +2766,171 @@ router.get(
         data: result.rows,
       },
       'Lançamentos de adiantamento obtidos com sucesso',
+    );
+  }),
+);
+
+/**
+ * @route GET /financial/obs-mov
+ * @desc Obter observações de uma movimentação do extrato
+ * @access Private
+ * @query nr_ctapes - Número da conta a pagar/receber (obrigatório)
+ * @query nr_seqmov - Número sequencial da movimentação (obrigatório)
+ */
+router.get(
+  '/obs-mov',
+  asyncHandler(async (req, res) => {
+    const { nr_ctapes, nr_seqmov } = req.query;
+
+    // Validação dos parâmetros obrigatórios
+    if (!nr_ctapes) {
+      return errorResponse(
+        res,
+        'Número da conta (nr_ctapes) é obrigatório',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    if (!nr_seqmov) {
+      return errorResponse(
+        res,
+        'Número da movimentação (nr_seqmov) é obrigatório',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    console.log('🔍 Buscando observações da movimentação:', {
+      nr_ctapes,
+      nr_seqmov,
+    });
+
+    const query = `
+      SELECT
+        om.ds_obs,
+        om.dt_cadastro,
+        om.dt_movim,
+        om.nr_ctapes,
+        om.nr_seqmov
+      FROM
+        obs_mov om
+      WHERE
+        om.nr_ctapes = $1
+        AND om.nr_seqmov = $2
+      ORDER BY om.dt_cadastro DESC
+    `;
+
+    const values = [nr_ctapes, nr_seqmov];
+
+    const result = await pool.query(query, values);
+
+    console.log('✅ Observações obtidas:', {
+      nr_ctapes,
+      nr_seqmov,
+      total: result.rows.length,
+    });
+
+    successResponse(
+      res,
+      {
+        nr_ctapes,
+        nr_seqmov,
+        count: result.rows.length,
+        data: result.rows,
+      },
+      'Observações da movimentação obtidas com sucesso',
+    );
+  }),
+);
+
+/**
+ * @route GET /financial/transacao-fatura-credev
+ * @desc Obter número de transação relacionada a uma fatura de crédito CREDEV
+ * @access Private
+ * @query cd_cliente - Código do cliente (obrigatório)
+ * @query nr_fat - Número da fatura (obrigatório)
+ * @query dt_movimfcc - Data da movimentação FCC (obrigatório, formato: YYYY-MM-DD)
+ */
+router.get(
+  '/transacao-fatura-credev',
+  asyncHandler(async (req, res) => {
+    const { cd_cliente, nr_fat, dt_movimfcc } = req.query;
+
+    // Validação dos parâmetros obrigatórios
+    if (!cd_cliente) {
+      return errorResponse(
+        res,
+        'Código do cliente (cd_cliente) é obrigatório',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    if (!nr_fat) {
+      return errorResponse(
+        res,
+        'Número da fatura (nr_fat) é obrigatório',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    if (!dt_movimfcc) {
+      return errorResponse(
+        res,
+        'Data da movimentação (dt_movimfcc) é obrigatória',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    console.log('🔍 Buscando transação da fatura CREDEV:', {
+      cd_cliente,
+      nr_fat,
+      dt_movimfcc,
+    });
+
+    const query = `
+      SELECT
+        fl.cd_cliente,
+        fl.nr_transacao,
+        fl.nr_fat,
+        fl.dt_movimfcc
+      FROM
+        fgr_liqitemcr fl
+      WHERE 
+        fl.cd_cliente = $1
+        AND fl.nr_fat = $2
+        AND fl.dt_movimfcc = $3
+      ORDER BY fl.nr_transacao DESC
+      LIMIT 1
+    `;
+
+    const values = [cd_cliente, nr_fat, dt_movimfcc];
+
+    const result = await pool.query(query, values);
+
+    console.log('✅ Transação da fatura CREDEV:', {
+      cd_cliente,
+      nr_fat,
+      dt_movimfcc,
+      encontrado: result.rows.length > 0,
+      nr_transacao: result.rows[0]?.nr_transacao,
+    });
+
+    successResponse(
+      res,
+      {
+        cd_cliente,
+        nr_fat,
+        dt_movimfcc,
+        count: result.rows.length,
+        data: result.rows,
+      },
+      result.rows.length > 0
+        ? 'Transação da fatura CREDEV encontrada'
+        : 'Nenhuma transação encontrada para esta fatura',
     );
   }),
 );
