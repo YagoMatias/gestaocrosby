@@ -7,25 +7,25 @@ const { Pool } = pkg;
 
 // Configuração do pool de conexões do banco de dados (otimizada para Render)
 const pool = new Pool({
-  user: process.env.PGUSER || 'crosby_ro',
+  user: process.env.PGUSER || 'crosby_ro_geo',
   host: process.env.PGHOST || 'dbexp.vcenter.com.br',
   database: process.env.PGDATABASE || 'crosby',
-  password: process.env.PGPASSWORD || 'wKspo98IU2eswq',
+  password: process.env.PGPASSWORD || 'fJioqw9I2@wqwc',
   port: process.env.PGPORT ? parseInt(process.env.PGPORT) : 20187,
   ssl:
     process.env.NODE_ENV === 'production'
       ? { rejectUnauthorized: false }
       : false,
 
-  // Configurações sem limites de tempo
-  max: 1000, // Máximo de conexões no pool
-  min: 200, // Mínimo de conexões mantidas
-  idleTimeoutMillis: 0, // Sem timeout para conexões ociosas (ilimitado)
+  // Configurações de pool
+  max: 50, // Máximo de conexões no pool
+  min: 0, // Mínimo de conexões mantidas (agressivo para reduzir conexões)
+  idleTimeoutMillis: 600000, // 10 minutos para encerrar conexões ociosas
   connectionTimeoutMillis: 0, // Sem timeout para novas conexões (ilimitado)
   acquireTimeoutMillis: 0, // Sem timeout para adquirir conexão (ilimitado)
   createTimeoutMillis: 0, // Sem timeout para criar conexão (ilimitado)
   destroyTimeoutMillis: 0, // Sem timeout para destruir conexão (ilimitado)
-  reapIntervalMillis: 0, // Sem limpeza automática de conexões
+  reapIntervalMillis: 1000, // Verificar e limpar conexões ociosas a cada 1s
   createRetryIntervalMillis: 0, // Sem intervalo entre tentativas
 
   // Configurações específicas do PostgreSQL - SEM TIMEOUTS
@@ -121,6 +121,25 @@ export const closePool = async () => {
     console.log('🔒 Pool de conexões fechado');
   } catch (error) {
     console.error('❌ Erro ao fechar pool:', error);
+  }
+};
+
+// Health check da conexão
+export const checkConnectionHealth = async () => {
+  try {
+    const result = await pool.query(
+      'SELECT NOW() as time, version() as version',
+    );
+    return {
+      healthy: true,
+      time: result.rows[0].time,
+      version: result.rows[0].version,
+    };
+  } catch (error) {
+    return {
+      healthy: false,
+      error: error.message,
+    };
   }
 };
 
