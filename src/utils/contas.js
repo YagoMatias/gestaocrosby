@@ -28,13 +28,13 @@ export const contas = [
   { numero: '20017', nome: 'ITAÚ LV FABIO' },
   { numero: '20018', nome: 'ITAÚ CE FABIO' },
   { numero: '20019', nome: 'ITAÚ BA FABIO' },
-  { numero: '20020', nome: 'ITAÚ IRMÃOS CR' },
-  { numero: '30001', nome: 'SICREDI IRMÃOS CR' },
-  { numero: '30002', nome: 'BNB 1 IRMÃOS CR' },
-  { numero: '30003', nome: 'BNB 2 IRMÃOS CR' },
+  { numero: '30001', nome: 'ITAÚ IRMÃOS CR' },
+  { numero: '30002', nome: 'SICREDI IRMÃOS CR' },
+  { numero: '30003', nome: 'BNB 1 IRMÃOS CR' },
+  { numero: '30004', nome: 'BNB 2 IRMÃOS CR' },
   { numero: '30005', nome: 'BB IRMÃOS CR' },
   { numero: '30006', nome: 'SANTANDER IRMÃOS CR' },
   { numero: '30007', nome: 'CAIXA IRMÃOS CR' },
   { numero: '30008', nome: 'BRADESCO IRMÃOS CR' },
   { numero: '40001', nome: 'ITAÚ FLAVIO' },
-]; 
+];

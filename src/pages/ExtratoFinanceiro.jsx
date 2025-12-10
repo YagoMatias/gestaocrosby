@@ -33,6 +33,7 @@ import LoadingCircle from '../components/LoadingCircle';
 import useApiClient from '../hooks/useApiClient';
 import ExtratoTotvsTable from '../components/ExtratoTotvsTable';
 import ErrorBoundary from '../components/ui/ErrorBoundary';
+import * as XLSX from 'xlsx';
 
 const PAGE_SIZE = 20; // Paginação client-side com 20 itens por página
 
@@ -76,6 +77,16 @@ const ExtratoFinanceiro = () => {
 
   // Estados para seleção de linhas
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
+
+  // Estados para tabela de divergências
+  const [expandTabelaDivergencias, setExpandTabelaDivergencias] =
+    useState(true);
+  const [currentPageDivergencias, setCurrentPageDivergencias] = useState(1);
+
+  // Estados para filtros locais (após dados carregados)
+  const [filtroHistorico, setFiltroHistorico] = useState('');
+  const [filtroDataLancamento, setFiltroDataLancamento] = useState('');
+  const [filtroValorTotvs, setFiltroValorTotvs] = useState('');
 
   // CSS customizado para a tabela
   useEffect(() => {
@@ -205,6 +216,23 @@ const ExtratoFinanceiro = () => {
   const dadosProcessados = useMemo(() => {
     let dadosFiltrados = [...dados];
 
+    // Aplicar filtro de histórico
+    if (filtroHistorico.trim() !== '') {
+      const termoLower = filtroHistorico.toLowerCase();
+      dadosFiltrados = dadosFiltrados.filter((row) =>
+        row.ds_histbco?.toLowerCase().includes(termoLower),
+      );
+    }
+
+    // Aplicar filtro de data de lançamento
+    if (filtroDataLancamento.trim() !== '') {
+      dadosFiltrados = dadosFiltrados.filter((row) => {
+        if (!row.dt_lancto) return false;
+        const dataRow = row.dt_lancto.split('T')[0]; // Formato YYYY-MM-DD
+        return dataRow === filtroDataLancamento;
+      });
+    }
+
     // Aplicar ordenação
     if (ordenacao.campo) {
       dadosFiltrados.sort((a, b) => {
@@ -236,7 +264,7 @@ const ExtratoFinanceiro = () => {
     }
 
     return dadosFiltrados;
-  }, [dados, ordenacao]);
+  }, [dados, ordenacao, filtroHistorico, filtroDataLancamento]);
 
   // Dados paginados para exibição
   const dadosPaginados = useMemo(() => {
@@ -273,6 +301,11 @@ const ExtratoFinanceiro = () => {
   useEffect(() => {
     setCurrentPageTotvs(1);
   }, [dadosTotvs]);
+
+  // Resetar página Divergências quando dados mudarem
+  useEffect(() => {
+    setCurrentPageDivergencias(1);
+  }, [dados, dadosTotvs]);
 
   // Função para buscar dados
   const fetchDados = async (filtrosParam = filtros) => {
@@ -390,6 +423,10 @@ const ExtratoFinanceiro = () => {
     setCurrentPageTotvs(newPage);
   };
 
+  const handlePageChangeDivergencias = (newPage) => {
+    setCurrentPageDivergencias(newPage);
+  };
+
   // Funções para o modal de ajuda
   const showHelpModal = (title, description, calculation) => {
     setModalContent({ title, description, calculation });
@@ -403,47 +440,94 @@ const ExtratoFinanceiro = () => {
   // Função para formatar datas no padrão brasileiro
   function formatarDataBR(data) {
     if (!data) return '-';
-    const d = new Date(data);
-    if (isNaN(d)) return '-';
-    return d.toLocaleDateString('pt-BR');
+    // Extrair apenas a parte da data (YYYY-MM-DD) para evitar problemas de timezone
+    const dataStr = data.split('T')[0];
+    const [ano, mes, dia] = dataStr.split('-');
+    return `${dia}/${mes}/${ano}`;
   }
 
-  // Função para exportar CSV
+  // Função para exportar Excel
   function exportarCSV() {
     if (!dados || dados.length === 0) return;
-    const header = [
-      'Conta',
-      'Data Lançamento',
-      'Histórico',
-      'Operação',
-      'Valor',
-      'Data Conciliação',
+
+    const dadosExcel = dados.map((row) => {
+      const conta = contas.find((c) => c.numero === String(row.nr_ctapes));
+      const contaFormatada = conta
+        ? `${conta.numero} - ${conta.nome}`
+        : row.nr_ctapes;
+
+      return {
+        Conta: contaFormatada,
+        'Data Lançamento': formatarDataBR(row.dt_lancto),
+        Histórico: row.ds_histbco,
+        Operação: row.tp_operbco,
+        Valor:
+          row.vl_lancto !== null && row.vl_lancto !== undefined
+            ? Number(row.vl_lancto)
+            : 0,
+        'Data Conciliação': formatarDataBR(row.dt_conciliacao),
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(dadosExcel);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Extrato Financeiro');
+
+    // Ajustar largura das colunas
+    const wscols = [
+      { wch: 35 }, // Conta
+      { wch: 15 }, // Data Lançamento
+      { wch: 40 }, // Histórico
+      { wch: 10 }, // Operação
+      { wch: 15 }, // Valor
+      { wch: 15 }, // Data Conciliação
     ];
-    const rows = dados.map((row) => [
-      row.nr_ctapes,
-      formatarDataBR(row.dt_lancto),
-      row.ds_histbco,
-      row.tp_operbco,
-      row.vl_lancto !== null && row.vl_lancto !== undefined
-        ? Number(row.vl_lancto).toLocaleString('pt-BR', {
-            style: 'currency',
-            currency: 'BRL',
-          })
-        : '-',
-      formatarDataBR(row.dt_conciliacao),
-    ]);
-    const csvContent = [header, ...rows]
-      .map((e) => e.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'extrato_financeiro.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    ws['!cols'] = wscols;
+
+    XLSX.writeFile(wb, 'extrato_financeiro.xlsx');
+  }
+
+  // Função para exportar divergências Excel
+  function exportarDivergenciasCSV() {
+    if (!divergencias || divergencias.length === 0) return;
+
+    const dadosExcel = divergencias.map((row) => {
+      const conta = contas.find((c) => c.numero === String(row.nr_ctapes));
+      const contaFormatada = conta
+        ? `${conta.numero} - ${conta.nome}`
+        : row.nr_ctapes;
+
+      return {
+        Conta: contaFormatada,
+        'Data Lançamento': formatarDataBR(row.dt_lancto),
+        Histórico: row.ds_histbco,
+        Operação: row.tp_operbco,
+        Valor:
+          row.vl_lancto !== null && row.vl_lancto !== undefined
+            ? Number(row.vl_lancto)
+            : 0,
+        'Data Conciliação': formatarDataBR(row.dt_conciliacao),
+        'Motivo da Divergência': row.motivo,
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(dadosExcel);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Divergências');
+
+    // Ajustar largura das colunas
+    const wscols = [
+      { wch: 35 }, // Conta
+      { wch: 15 }, // Data Lançamento
+      { wch: 40 }, // Histórico
+      { wch: 10 }, // Operação
+      { wch: 15 }, // Valor
+      { wch: 15 }, // Data Conciliação
+      { wch: 35 }, // Motivo da Divergência
+    ];
+    ws['!cols'] = wscols;
+
+    XLSX.writeFile(wb, 'divergencias_conciliacao.xlsx');
   }
 
   // Função para cor da fonte da conta
@@ -497,8 +581,24 @@ const ExtratoFinanceiro = () => {
 
   // Dados processados TOTVS (filtrados e ordenados)
   const dadosProcessadosTotvs = useMemo(() => {
-    return [...dadosTotvs]; // Por enquanto sem filtros adicionais, apenas os dados originais
-  }, [dadosTotvs]);
+    let dadosFiltrados = [...dadosTotvs];
+
+    // Aplicar filtro de valor se existir
+    if (filtroValorTotvs.trim() !== '') {
+      const valorBusca = parseFloat(filtroValorTotvs.replace(',', '.'));
+      if (!isNaN(valorBusca)) {
+        dadosFiltrados = dadosFiltrados.filter((item) => {
+          const valorItem = parseFloat(item.vl_lancto) || 0;
+          return Math.abs(valorItem - valorBusca) < 0.01;
+        });
+      } else {
+        // Se não for um número válido, retorna array vazio
+        dadosFiltrados = [];
+      }
+    }
+
+    return dadosFiltrados;
+  }, [dadosTotvs, filtroValorTotvs]);
 
   // Dados paginados TOTVS para exibição
   const dadosPaginadosTotvs = useMemo(() => {
@@ -534,6 +634,98 @@ const ExtratoFinanceiro = () => {
   }, [dadosTotvs]);
 
   // (Removido: cards de transação desconciliada por banco nesta página)
+
+  // Cálculo de divergências - valores no Financeiro mas não no TOTVS
+  const divergencias = useMemo(() => {
+    const divergenciasEncontradas = [];
+
+    dadosProcessados.forEach((itemFinanceiro) => {
+      // Tentar encontrar correspondência no TOTVS
+      // Consideramos correspondente se tiver: tipo de operação, mesmo valor e data próxima (±2 dias)
+      const correspondenciaTotvs = dadosTotvs.find((itemTotvs) => {
+        const mesmoTipo = itemTotvs.tp_operacao === itemFinanceiro.tp_operbco;
+        const mesmoValor =
+          Math.abs(
+            (itemTotvs.vl_lancto || 0) - (itemFinanceiro.vl_lancto || 0),
+          ) < 0.01;
+
+        // Verificar se as datas estão próximas (±2 dias)
+        // IMPORTANTE: Financeiro usa dt_lancto, TOTVS usa dt_movim
+        let datasProximas = false;
+        if (itemFinanceiro.dt_lancto && itemTotvs.dt_movim) {
+          const dataFin = new Date(itemFinanceiro.dt_lancto);
+          const dataTotvs = new Date(itemTotvs.dt_movim);
+          const diffDias = Math.abs(
+            (dataFin - dataTotvs) / (1000 * 60 * 60 * 24),
+          );
+          datasProximas = diffDias <= 2;
+        }
+
+        return mesmoTipo && mesmoValor && datasProximas;
+      });
+
+      // Se não encontrou correspondência, é uma divergência
+      if (!correspondenciaTotvs) {
+        divergenciasEncontradas.push({
+          ...itemFinanceiro,
+          motivo: !dadosTotvs.some(
+            (t) => t.tp_operacao === itemFinanceiro.tp_operbco,
+          )
+            ? 'Tipo de operação não encontrado no TOTVS'
+            : !dadosTotvs.some(
+                (t) =>
+                  t.tp_operacao === itemFinanceiro.tp_operbco &&
+                  Math.abs(
+                    (t.vl_lancto || 0) - (itemFinanceiro.vl_lancto || 0),
+                  ) < 0.01,
+              )
+            ? 'Valor não encontrado no TOTVS'
+            : 'Data não corresponde no TOTVS',
+        });
+      }
+    });
+
+    return divergenciasEncontradas;
+  }, [dadosProcessados, dadosTotvs]);
+
+  // Dados paginados para divergências
+  const divergenciasPaginadas = useMemo(() => {
+    const startIndex = (currentPageDivergencias - 1) * PAGE_SIZE;
+    const endIndex = startIndex + PAGE_SIZE;
+    return divergencias.slice(startIndex, endIndex);
+  }, [divergencias, currentPageDivergencias]);
+
+  // Total de páginas para divergências
+  const totalPagesDivergencias = Math.ceil(divergencias.length / PAGE_SIZE);
+
+  // Estatísticas de divergências
+  const estatisticasDivergencias = useMemo(() => {
+    const valorTotalDivergencias = divergencias.reduce(
+      (acc, row) => acc + (row.vl_lancto || 0),
+      0,
+    );
+    const qtdDebitosDivergencias = divergencias.filter(
+      (row) => row.tp_operbco === 'D',
+    ).length;
+    const valorDebitosDivergencias = divergencias
+      .filter((row) => row.tp_operbco === 'D')
+      .reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+    const qtdCreditosDivergencias = divergencias.filter(
+      (row) => row.tp_operbco === 'C',
+    ).length;
+    const valorCreditosDivergencias = divergencias
+      .filter((row) => row.tp_operbco === 'C')
+      .reduce((acc, row) => acc + (row.vl_lancto || 0), 0);
+
+    return {
+      total: divergencias.length,
+      valorTotal: valorTotalDivergencias,
+      qtdDebitos: qtdDebitosDivergencias,
+      valorDebitos: valorDebitosDivergencias,
+      qtdCreditos: qtdCreditosDivergencias,
+      valorCreditos: valorCreditosDivergencias,
+    };
+  }, [divergencias]);
 
   // Cálculo do saldo por conta
   const saldoPorConta = useMemo(() => {
@@ -1237,6 +1429,50 @@ const ExtratoFinanceiro = () => {
 
           {expandTabela && (
             <>
+              {/* Filtros Locais */}
+              {dadosCarregados && dados.length > 0 && (
+                <div className="p-4 bg-gray-50 border-b border-gray-200">
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex items-center gap-2 flex-1 min-w-[250px]">
+                      <label className="text-sm font-semibold text-[#000638] whitespace-nowrap">
+                        Histórico:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Buscar no histórico..."
+                        value={filtroHistorico}
+                        onChange={(e) => setFiltroHistorico(e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638] text-sm"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-semibold text-[#000638] whitespace-nowrap">
+                        Data Lançamento:
+                      </label>
+                      <input
+                        type="date"
+                        value={filtroDataLancamento}
+                        onChange={(e) =>
+                          setFiltroDataLancamento(e.target.value)
+                        }
+                        className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638] text-sm"
+                      />
+                    </div>
+                    {(filtroHistorico || filtroDataLancamento) && (
+                      <button
+                        onClick={() => {
+                          setFiltroHistorico('');
+                          setFiltroDataLancamento('');
+                        }}
+                        className="px-4 py-2 text-sm font-medium text-white bg-[#fe0000] rounded-lg hover:bg-[#cc0000] transition-colors"
+                      >
+                        Limpar Filtros
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {loading ? (
                 <div className="flex justify-center items-center py-20">
                   <div className="flex items-center gap-3">
@@ -1653,7 +1889,373 @@ const ExtratoFinanceiro = () => {
           totalRegistros={dadosProcessadosTotvs.length}
           onPageChange={handlePageChangeTotvs}
           pageSize={PAGE_SIZE}
+          filtroValor={filtroValorTotvs}
+          setFiltroValor={setFiltroValorTotvs}
         />
+
+        {/* Tabela de Conciliação de Divergências */}
+        {dadosCarregados && (
+          <div className="rounded-2xl shadow-lg bg-white border border-[#000638]/10 mt-6">
+            <div className="p-4 border-b border-[#000638]/10">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex-1">
+                  <h2 className="text-xl font-bold text-[#fe0000]">
+                    Conciliação de Divergências
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Registros presentes no Extrato Financeiro mas não
+                    encontrados no TOTVS
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {divergencias.length > 0 && (
+                    <button
+                      onClick={exportarDivergenciasCSV}
+                      className="flex items-center gap-2 bg-[#fe0000] text-white px-4 py-2 rounded-lg hover:bg-[#cc0000] transition-all duration-200 text-sm font-medium shadow-md"
+                    >
+                      <Download size={18} />
+                      Baixar Excel
+                    </button>
+                  )}
+                  <button
+                    onClick={() =>
+                      setExpandTabelaDivergencias(!expandTabelaDivergencias)
+                    }
+                    className="flex items-center text-gray-500 hover:text-gray-700"
+                  >
+                    {expandTabelaDivergencias ? (
+                      <CaretDown size={20} />
+                    ) : (
+                      <CaretRight size={20} />
+                    )}
+                  </button>
+                </div>
+              </div>
+              {divergencias.length > 0 && (
+                <div className="flex items-center gap-6 text-sm flex-wrap">
+                  <span className="font-medium text-[#fe0000]">
+                    {estatisticasDivergencias.total} divergência
+                    {estatisticasDivergencias.total > 1 ? 's' : ''} encontrada
+                    {estatisticasDivergencias.total > 1 ? 's' : ''}
+                  </span>
+                  <span className="text-gray-600">
+                    Valor Total:{' '}
+                    <span className="font-bold">
+                      {estatisticasDivergencias.valorTotal.toLocaleString(
+                        'pt-BR',
+                        {
+                          style: 'currency',
+                          currency: 'BRL',
+                        },
+                      )}
+                    </span>
+                  </span>
+                  <span className="text-red-600">
+                    Débitos: {estatisticasDivergencias.qtdDebitos} •{' '}
+                    <span className="font-bold">
+                      {estatisticasDivergencias.valorDebitos.toLocaleString(
+                        'pt-BR',
+                        {
+                          style: 'currency',
+                          currency: 'BRL',
+                        },
+                      )}
+                    </span>
+                  </span>
+                  <span className="text-green-600">
+                    Créditos: {estatisticasDivergencias.qtdCreditos} •{' '}
+                    <span className="font-bold">
+                      {estatisticasDivergencias.valorCreditos.toLocaleString(
+                        'pt-BR',
+                        {
+                          style: 'currency',
+                          currency: 'BRL',
+                        },
+                      )}
+                    </span>
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {expandTabelaDivergencias && (
+              <>
+                {loading || loadingTotvs ? (
+                  <div className="flex justify-center items-center py-20">
+                    <div className="flex items-center gap-3">
+                      <Spinner
+                        size={32}
+                        className="animate-spin text-blue-600"
+                      />
+                      <span className="text-gray-600">Carregando dados...</span>
+                    </div>
+                  </div>
+                ) : divergencias.length === 0 ? (
+                  <div className="flex justify-center items-center py-20">
+                    <div className="text-center">
+                      <CheckCircle
+                        size={64}
+                        className="text-green-500 mx-auto mb-4"
+                        weight="duotone"
+                      />
+                      <div className="text-green-600 text-lg font-bold mb-2">
+                        ✓ Nenhuma divergência encontrada!
+                      </div>
+                      <div className="text-gray-500 text-sm">
+                        Todos os registros do Extrato Financeiro foram
+                        encontrados no TOTVS
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="table-container max-w-full mx-auto">
+                      <table
+                        className="border-collapse rounded-lg overflow-hidden shadow-lg extrato-table"
+                        style={{ minWidth: '1200px' }}
+                      >
+                        <thead className="bg-[#fe0000] text-white text-xs uppercase tracking-wider">
+                          <tr>
+                            <th className="px-3 py-2 text-center text-[10px]">
+                              Conta
+                            </th>
+                            <th className="px-3 py-2 text-center text-[10px]">
+                              Data Lançamento
+                            </th>
+                            <th className="px-3 py-2 text-left text-[10px]">
+                              Histórico
+                            </th>
+                            <th className="px-3 py-2 text-center text-[10px]">
+                              Operação
+                            </th>
+                            <th className="px-3 py-2 text-center text-[10px]">
+                              Valor
+                            </th>
+                            <th className="px-3 py-2 text-center text-[10px]">
+                              Data Conciliação
+                            </th>
+                            <th className="px-3 py-2 text-left text-[10px]">
+                              Motivo da Divergência
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {divergenciasPaginadas.map((row, index) => (
+                            <tr
+                              key={index}
+                              className={`text-[11px] border-b transition-colors ${
+                                index % 2 === 0
+                                  ? 'bg-red-50 hover:bg-red-100'
+                                  : 'bg-white hover:bg-red-50'
+                              }`}
+                            >
+                              {/* Conta */}
+                              <td
+                                className={`px-2 py-2 text-center text-xs ${(() => {
+                                  const conta = contas.find(
+                                    (c) => c.numero === String(row.nr_ctapes),
+                                  );
+                                  return conta ? corConta(conta.nome) : '';
+                                })()}`}
+                              >
+                                {(() => {
+                                  const conta = contas.find(
+                                    (c) => c.numero === String(row.nr_ctapes),
+                                  );
+                                  return conta
+                                    ? `${conta.numero} - ${conta.nome}`
+                                    : row.nr_ctapes;
+                                })()}
+                              </td>
+
+                              {/* Data Lançamento */}
+                              <td className="px-2 py-2 text-center text-[#000638] font-medium">
+                                {formatarDataBR(row.dt_lancto)}
+                              </td>
+
+                              {/* Histórico */}
+                              <td className="px-2 py-2 text-gray-800">
+                                <div
+                                  className="max-w-xs truncate"
+                                  title={row.ds_histbco}
+                                >
+                                  {row.ds_histbco}
+                                </div>
+                              </td>
+
+                              {/* Operação */}
+                              <td className="px-2 py-2 text-center">
+                                <span
+                                  className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                    row.tp_operbco === 'D'
+                                      ? 'bg-red-100 text-red-800'
+                                      : row.tp_operbco === 'C'
+                                      ? 'bg-green-100 text-green-800'
+                                      : 'bg-gray-100 text-gray-800'
+                                  }`}
+                                >
+                                  {row.tp_operbco}
+                                </span>
+                              </td>
+
+                              {/* Valor */}
+                              <td
+                                className={`px-2 py-2 text-right font-bold ${
+                                  row.tp_operbco === 'D'
+                                    ? 'text-red-600'
+                                    : row.tp_operbco === 'C'
+                                    ? 'text-green-600'
+                                    : 'text-gray-600'
+                                }`}
+                              >
+                                {row.vl_lancto?.toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                })}
+                              </td>
+
+                              {/* Data Conciliação */}
+                              <td className="px-2 py-2 text-center">
+                                {row.dt_conciliacao ? (
+                                  <span className="text-green-600 font-medium">
+                                    {formatarDataBR(row.dt_conciliacao)}
+                                  </span>
+                                ) : (
+                                  <span className="text-red-500 font-medium">
+                                    Pendente
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* Motivo da Divergência */}
+                              <td className="px-2 py-2 text-left">
+                                <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md bg-yellow-100 text-yellow-800">
+                                  {row.motivo}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Paginação Divergências */}
+                    {totalPagesDivergencias > 1 && (
+                      <div className="bg-white border-t border-gray-200 px-6 py-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4 text-sm text-gray-600">
+                            <span className="font-medium">
+                              Página {currentPageDivergencias} de{' '}
+                              {totalPagesDivergencias}
+                            </span>
+                            <span className="text-gray-500">
+                              {divergencias.length} registros • {PAGE_SIZE} por
+                              página
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handlePageChangeDivergencias(1)}
+                              disabled={currentPageDivergencias === 1}
+                              className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                              Primeira
+                            </button>
+
+                            <button
+                              onClick={() =>
+                                handlePageChangeDivergencias(
+                                  currentPageDivergencias - 1,
+                                )
+                              }
+                              disabled={currentPageDivergencias === 1}
+                              className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                              Anterior
+                            </button>
+
+                            <div className="flex items-center gap-1">
+                              {(() => {
+                                const pages = [];
+                                const maxVisiblePages = 5;
+                                let startPage = Math.max(
+                                  1,
+                                  currentPageDivergencias -
+                                    Math.floor(maxVisiblePages / 2),
+                                );
+                                let endPage = Math.min(
+                                  totalPagesDivergencias,
+                                  startPage + maxVisiblePages - 1,
+                                );
+
+                                if (endPage - startPage + 1 < maxVisiblePages) {
+                                  startPage = Math.max(
+                                    1,
+                                    endPage - maxVisiblePages + 1,
+                                  );
+                                }
+
+                                for (let i = startPage; i <= endPage; i++) {
+                                  pages.push(
+                                    <button
+                                      key={i}
+                                      onClick={() =>
+                                        handlePageChangeDivergencias(i)
+                                      }
+                                      className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                                        currentPageDivergencias === i
+                                          ? 'bg-[#fe0000] text-white border border-[#fe0000]'
+                                          : 'text-gray-500 bg-white border border-gray-300 hover:bg-gray-50 hover:text-gray-700'
+                                      }`}
+                                    >
+                                      {i}
+                                    </button>,
+                                  );
+                                }
+                                return pages;
+                              })()}
+                            </div>
+
+                            <button
+                              onClick={() =>
+                                handlePageChangeDivergencias(
+                                  currentPageDivergencias + 1,
+                                )
+                              }
+                              disabled={
+                                currentPageDivergencias ===
+                                totalPagesDivergencias
+                              }
+                              className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                              Próxima
+                            </button>
+
+                            <button
+                              onClick={() =>
+                                handlePageChangeDivergencias(
+                                  totalPagesDivergencias,
+                                )
+                              }
+                              disabled={
+                                currentPageDivergencias ===
+                                totalPagesDivergencias
+                              }
+                              className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                              Última
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Modal de Ajuda */}

@@ -158,6 +158,13 @@ const financeiro = [
     roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
+    name: 'Extrato TOTVS',
+    href: '/extrato-totvs',
+    icon: Receipt,
+    color: 'text-indigo-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
+  {
     name: 'Extrato Cliente',
     href: '/extrato-cliente',
     icon: IdentificationCard,
@@ -283,6 +290,12 @@ const varejo = [
     href: '/analise-transacao',
     icon: Receipt,
     color: 'text-blue-600',
+  },
+  {
+    name: 'Cohort',
+    href: '/cohort-analysis',
+    icon: Users,
+    color: 'text-purple-600',
   },
 ];
 

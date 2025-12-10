@@ -311,6 +311,14 @@ const useApiClient = () => {
     extrato: (params) => apiCall('/api/financial/extrato', params),
     extratoTotvs: (params) => apiCall('/api/financial/extrato-totvs', params),
 
+    /**
+     * Processar extratos bancários de um banco específico
+     * @param {string} banco - Nome do banco (bb, caixa, santander, itau, sicredi, bnb, unicred, bradesco)
+     * @returns {Promise<Object>} Dados agrupados por conta com totais
+     */
+    extratosBanco: (banco) =>
+      apiCall(`/api/financial/extratos/${banco.toLowerCase()}`),
+
     contasPagar: (params) => apiCall('/api/financial/contas-pagar', params),
     contasPagarEmissao: (params) =>
       apiCall('/api/financial/contas-pagar-emissao', params),
@@ -357,6 +365,8 @@ const useApiClient = () => {
       apiCall('/api/financial/lanc-ext-adiant', params),
     // Observações de Movimentação
     obsMov: (params) => apiCall('/api/financial/obs-mov', params),
+    // Observações de Movimentação por Fatura
+    obsMovFatura: (params) => apiCall('/api/financial/obs-mov-fatura', params),
     // Transação de Fatura CREDEV
     transacaoFaturaCredev: (params) =>
       apiCall('/api/financial/transacao-fatura-credev', params),

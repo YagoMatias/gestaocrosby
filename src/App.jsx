@@ -31,6 +31,7 @@ const NotasFiscais = lazy(() => import('./pages/NotasFiscais'));
 const DespesasPorSetor = lazy(() => import('./pages/DespesasPorSetor'));
 const FluxoCaixa = lazy(() => import('./pages/FluxoCaixa'));
 const ExtratoFinanceiro = lazy(() => import('./pages/ExtratoFinanceiro'));
+const ExtratoTotvs = lazy(() => import('./pages/ExtratoTotvs'));
 const ExtratoCliente = lazy(() => import('./pages/ExtratoCliente'));
 const ExtratoCredito = lazy(() => import('./pages/ExtratoCredito'));
 const Conciliacao = lazy(() => import('./pages/Conciliacao'));
@@ -51,6 +52,7 @@ const UserPanel = lazy(() => import('./pages/UserPanel'));
 const ManifestacaoNF = lazy(() => import('./pages/ManifestacaoNF'));
 const SaldoBancario = lazy(() => import('./pages/SaldoBancario'));
 const ImportacaoRet = lazy(() => import('./pages/ImportacaoRet'));
+const ExtratosBancos = lazy(() => import('./pages/ExtratosBancos'));
 const AjusteRetorno = lazy(() => import('./pages/AjusteRetorno'));
 const AuthTest = lazy(() => import('./components/AuthTest'));
 const FinanceiroPorCanal = lazy(() => import('./pages/FinanceiroPorCanal'));
@@ -85,6 +87,7 @@ const GerenciadorAcessos = lazy(() => import('./pages/GerenciadorAcessos'));
 const GerenciadorAvisos = lazy(() => import('./pages/GerenciadorAvisos'));
 const AnaliseTransacao = lazy(() => import('./pages/AnaliseTransacao'));
 const Widgets = lazy(() => import('./pages/Widgets'));
+const CohortAnalysis = lazy(() => import('./pages/CohortAnalysis'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -141,8 +144,10 @@ const AppRoutes = memo(() => {
     { path: '/fluxo-caixa', component: FluxoCaixa },
     { path: '/saldo-bancario', component: SaldoBancario },
     { path: '/importacao-ret', component: ImportacaoRet },
+    { path: '/extratos-bancos', component: ExtratosBancos },
     { path: '/ajuste-retorno', component: AjusteRetorno },
     { path: '/extrato-financeiro', component: ExtratoFinanceiro },
+    { path: '/extrato-totvs', component: ExtratoTotvs },
     { path: '/extrato-cliente', component: ExtratoCliente },
     { path: '/extrato-credito', component: ExtratoCredito },
     { path: '/receita-liquida', component: ReceitaLiquida },
@@ -180,6 +185,7 @@ const AppRoutes = memo(() => {
     { path: '/check-in-card', component: CheckInCard },
     { path: '/meus-cartoes', component: MeusCartoes },
     { path: '/analise-transacao', component: AnaliseTransacao },
+    { path: '/cohort-analysis', component: CohortAnalysis },
   ];
 
   // Componente de layout para rotas protegidas

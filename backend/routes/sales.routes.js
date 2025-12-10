@@ -2953,4 +2953,297 @@ router.get(
   }),
 );
 
+/**
+ * @route GET /sales/cohort-analysis
+ * @desc Análise de cohort - retenção de clientes por mês de primeira compra
+ * @access Public
+ * @query cd_grupoempresa (opcional) - Filtrar por grupo de empresas (aceita múltiplos separados por vírgula)
+ * @query cohort_year (opcional) - Filtrar por ano do cohort
+ * @query cohort_month (opcional) - Filtrar por mês do cohort (1-12)
+ */
+router.get(
+  '/cohort-analysis',
+  asyncHandler(async (req, res) => {
+    const { cd_grupoempresa, cohort_year, cohort_month } = req.query;
+
+    console.log('📊 COHORT: Iniciando análise de cohort');
+    console.time('cohort-query');
+
+    // Construir filtros WHERE dinâmicos
+    const whereConditions = [];
+    const queryParams = [];
+    let paramIndex = 1;
+
+    // Suportar múltiplas empresas (separadas por vírgula)
+    if (cd_grupoempresa) {
+      const empresas = cd_grupoempresa.split(',').map((e) => e.trim());
+      if (empresas.length === 1) {
+        whereConditions.push(`c.cd_grupoempresa = $${paramIndex}`);
+        queryParams.push(empresas[0]);
+        paramIndex++;
+      } else {
+        const placeholders = empresas
+          .map((_, idx) => `$${paramIndex + idx}`)
+          .join(',');
+        whereConditions.push(`c.cd_grupoempresa IN (${placeholders})`);
+        empresas.forEach((emp) => queryParams.push(emp));
+        paramIndex += empresas.length;
+      }
+    }
+
+    if (cohort_year) {
+      whereConditions.push(
+        `EXTRACT(YEAR FROM c.cohort_month) = $${paramIndex}`,
+      );
+      queryParams.push(cohort_year);
+      paramIndex++;
+    }
+
+    if (cohort_month) {
+      whereConditions.push(
+        `EXTRACT(MONTH FROM c.cohort_month) = $${paramIndex}`,
+      );
+      queryParams.push(cohort_month);
+      paramIndex++;
+    }
+
+    const whereClause =
+      whereConditions.length > 0
+        ? `WHERE ${whereConditions.join(' AND ')}`
+        : '';
+
+    const query = `
+      WITH first_purchase AS (
+        SELECT 
+          cd_grupoempresa,
+          cd_pessoa,
+          MIN(DATE_TRUNC('month', dt_transacao)) AS cohort_month
+        FROM tra_transacao
+        WHERE tp_situacao = 4
+          AND tp_operacao = 'S'
+          AND cd_operacao IN (9017,9027,9009,9001,9400,9401,510,511,521,522,545,548)
+        GROUP BY cd_grupoempresa, cd_pessoa
+      ),
+      cohort_activity AS (
+        SELECT 
+          t.cd_grupoempresa,
+          t.cd_pessoa,
+          fp.cohort_month,
+          DATE_TRUNC('month', t.dt_transacao) AS trans_month,
+          (
+            (EXTRACT(YEAR  FROM DATE_TRUNC('month', t.dt_transacao)) * 12 
+             + EXTRACT(MONTH FROM DATE_TRUNC('month', t.dt_transacao)))
+            -
+            (EXTRACT(YEAR  FROM fp.cohort_month) * 12 
+             + EXTRACT(MONTH FROM fp.cohort_month))
+          )::int AS months_since_cohort
+        FROM tra_transacao t
+        JOIN first_purchase fp 
+          ON t.cd_pessoa       = fp.cd_pessoa
+         AND t.cd_grupoempresa = fp.cd_grupoempresa
+        WHERE t.tp_situacao = 4
+          AND t.tp_operacao = 'S'
+          AND t.cd_operacao IN (9017,9027,9009,9001,9400,9401,510,511,521,522,545,548)
+          AND DATE_TRUNC('month', t.dt_transacao) >= fp.cohort_month
+      ),
+      cohort_counts AS (
+        SELECT
+          cd_grupoempresa,
+          cohort_month,
+          months_since_cohort,
+          COUNT(DISTINCT cd_pessoa) AS active_users
+        FROM cohort_activity
+        GROUP BY cd_grupoempresa, cohort_month, months_since_cohort
+      ),
+      cohort_size AS (
+        SELECT
+          cd_grupoempresa,
+          cohort_month,
+          COUNT(DISTINCT cd_pessoa) AS total_users
+        FROM first_purchase
+        GROUP BY cd_grupoempresa, cohort_month
+      )
+      SELECT
+        c.cd_grupoempresa,
+        g.nm_grupoempresa,
+        EXTRACT(YEAR  FROM c.cohort_month)::int  AS cohort_year,
+        EXTRACT(MONTH FROM c.cohort_month)::int  AS cohort_month,
+        CASE EXTRACT(MONTH FROM c.cohort_month)::int
+          WHEN 1  THEN 'Janeiro'
+          WHEN 2  THEN 'Fevereiro'
+          WHEN 3  THEN 'Março'
+          WHEN 4  THEN 'Abril'
+          WHEN 5  THEN 'Maio'
+          WHEN 6  THEN 'Junho'
+          WHEN 7  THEN 'Julho'
+          WHEN 8  THEN 'Agosto'
+          WHEN 9  THEN 'Setembro'
+          WHEN 10 THEN 'Outubro'
+          WHEN 11 THEN 'Novembro'
+          WHEN 12 THEN 'Dezembro'
+        END AS cohort_month_name,
+        c.months_since_cohort,
+        s.total_users,
+        c.active_users,
+        CASE 
+          WHEN c.months_since_cohort = 0 THEN 100.0
+          ELSE ROUND(
+            c.active_users::numeric / NULLIF(s.total_users, 0) * 100
+          , 1)
+        END AS retention_pct
+      FROM cohort_counts c
+      JOIN cohort_size s
+        ON s.cd_grupoempresa = c.cd_grupoempresa
+       AND s.cohort_month    = c.cohort_month
+      JOIN ger_grupoempresa g
+        ON g.cd_grupoempresa = c.cd_grupoempresa
+      ${whereClause}
+      ORDER BY
+        c.cd_grupoempresa,
+        cohort_year,
+        cohort_month,
+        c.months_since_cohort
+    `;
+
+    const result = await pool.query(query, queryParams);
+
+    console.timeEnd('cohort-query');
+    console.log(`✅ COHORT: ${result.rows.length} registros retornados`);
+
+    // Verificar se múltiplas empresas foram selecionadas
+    const empresasSelecionadas = cd_grupoempresa
+      ? cd_grupoempresa.split(',').map((e) => e.trim())
+      : [];
+    const isMultiEmpresa = empresasSelecionadas.length > 1;
+
+    console.log(
+      `📊 COHORT: ${
+        isMultiEmpresa ? 'Modo multi-empresa ativado' : 'Empresa única ou todas'
+      }`,
+    );
+
+    // Agrupar dados por cohort para facilitar visualização
+    const cohortData = result.rows.reduce((acc, row) => {
+      // Se multi-empresa, agregar por mês/ano ignorando cd_grupoempresa
+      const cohortKey = isMultiEmpresa
+        ? `${row.cohort_year}-${String(row.cohort_month).padStart(2, '0')}`
+        : `${row.cd_grupoempresa}-${row.cohort_year}-${String(
+            row.cohort_month,
+          ).padStart(2, '0')}`;
+
+      if (!acc[cohortKey]) {
+        acc[cohortKey] = {
+          cd_grupoempresa: isMultiEmpresa ? 'multi' : row.cd_grupoempresa,
+          nm_grupoempresa: isMultiEmpresa
+            ? 'Multi Empresas'
+            : row.nm_grupoempresa,
+          cohort_year: row.cohort_year,
+          cohort_month: row.cohort_month,
+          cohort_month_name: row.cohort_month_name,
+          cohort_key: cohortKey,
+          total_users: 0,
+          retention_by_month_map: {},
+        };
+      }
+
+      // Se multi-empresa, somar os valores
+      if (isMultiEmpresa) {
+        // Somar total de usuários apenas no mês 0 para evitar duplicação
+        if (row.months_since_cohort === 0) {
+          acc[cohortKey].total_users += parseInt(row.total_users || 0, 10);
+        }
+
+        // Agregar dados por mês
+        if (!acc[cohortKey].retention_by_month_map[row.months_since_cohort]) {
+          acc[cohortKey].retention_by_month_map[row.months_since_cohort] = {
+            months_since_cohort: row.months_since_cohort,
+            active_users: 0,
+            total_users_for_calc: 0,
+          };
+        }
+
+        acc[cohortKey].retention_by_month_map[
+          row.months_since_cohort
+        ].active_users += parseInt(row.active_users || 0, 10);
+        acc[cohortKey].retention_by_month_map[
+          row.months_since_cohort
+        ].total_users_for_calc += parseInt(row.total_users || 0, 10);
+      } else {
+        // Empresa única - manter comportamento original
+        acc[cohortKey].total_users = row.total_users;
+        if (!acc[cohortKey].retention_by_month_map[row.months_since_cohort]) {
+          acc[cohortKey].retention_by_month_map[row.months_since_cohort] = {
+            months_since_cohort: row.months_since_cohort,
+            active_users: parseInt(row.active_users || 0, 10),
+            retention_pct: parseFloat(row.retention_pct || 0),
+          };
+        }
+      }
+
+      return acc;
+    }, {});
+
+    // Converter retention_by_month_map para array e calcular percentuais para multi-empresa
+    const cohortDataArray = Object.values(cohortData).map((cohort) => {
+      const retention_by_month = Object.values(cohort.retention_by_month_map)
+        .map((month) => {
+          if (isMultiEmpresa) {
+            // Recalcular percentual baseado nos totais agregados
+            const retention_pct =
+              month.months_since_cohort === 0
+                ? 100.0
+                : month.total_users_for_calc > 0
+                ? Math.round(
+                    (month.active_users / month.total_users_for_calc) *
+                      100 *
+                      10,
+                  ) / 10
+                : 0;
+
+            return {
+              months_since_cohort: month.months_since_cohort,
+              active_users: month.active_users,
+              retention_pct: retention_pct,
+            };
+          }
+          return month;
+        })
+        .sort((a, b) => a.months_since_cohort - b.months_since_cohort);
+
+      return {
+        cd_grupoempresa: cohort.cd_grupoempresa,
+        nm_grupoempresa: cohort.nm_grupoempresa,
+        cohort_year: cohort.cohort_year,
+        cohort_month: cohort.cohort_month,
+        cohort_month_name: cohort.cohort_month_name,
+        cohort_key: cohort.cohort_key,
+        total_users: cohort.total_users,
+        retention_by_month: retention_by_month,
+      };
+    });
+
+    const cohortDataFinal = cohortDataArray.reduce((acc, cohort) => {
+      acc[cohort.cohort_key] = cohort;
+      return acc;
+    }, {});
+
+    const responseData = {
+      summary: {
+        total_cohorts: Object.keys(cohortDataFinal).length,
+        total_records: result.rows.length,
+        is_multi_empresa: isMultiEmpresa,
+        filters: {
+          cd_grupoempresa: cd_grupoempresa || 'todos',
+          cohort_year: cohort_year || 'todos',
+          cohort_month: cohort_month || 'todos',
+        },
+      },
+      cohorts: Object.values(cohortDataFinal),
+      raw_data: result.rows,
+    };
+
+    successResponse(res, responseData, 'Análise de cohort obtida com sucesso');
+  }),
+);
+
 export default router;

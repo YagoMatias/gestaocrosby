@@ -48,6 +48,8 @@ const ContasPagarFranquias = () => {
   const [obsModalAberto, setObsModalAberto] = useState(false);
   const [obsFatura, setObsFatura] = useState([]);
   const [obsLoading, setObsLoading] = useState(false);
+  const [obsMovimentacao, setObsMovimentacao] = useState([]);
+  const [obsMovLoading, setObsMovLoading] = useState(false);
   const [boletoBase64, setBoletoBase64] = useState('');
   const [boletoLoading, setBoletoLoading] = useState(false);
   const [boletoError, setBoletoError] = useState('');
@@ -738,10 +740,12 @@ const ContasPagarFranquias = () => {
   const abrirObsFatura = async (fatura) => {
     try {
       setObsLoading(true);
+      setObsMovLoading(true);
       setObsModalAberto(true);
       setFaturaSelecionada(fatura);
       setBoletoBase64('');
       setBoletoError('');
+      setObsMovimentacao([]);
 
       const cd_cliente = fatura.cd_cliente || '';
       const nr_fat = fatura.nr_fat || '';
@@ -753,6 +757,7 @@ const ContasPagarFranquias = () => {
       // Buscar transações da fatura usando a nova rota otimizada
       buscarTransacoesFaturaOtimizada(fatura);
 
+      // Buscar observações da fatura
       const response = await apiClient.financial.obsFati({
         cd_cliente,
         nr_fat,
@@ -779,15 +784,47 @@ const ContasPagarFranquias = () => {
       });
 
       console.log(
-        `✅ ${rowsFiltradas.length} observações encontradas (${
+        `✅ ${rowsFiltradas.length} observações da fatura encontradas (${
           rows.length - rowsFiltradas.length
         } filtradas)`,
       );
       setObsFatura(rowsFiltradas);
+      setObsLoading(false);
+
+      // Buscar observações de movimentação
+      try {
+        console.log('📝 Buscando observações da movimentação:', {
+          nr_fat,
+          cd_cliente,
+        });
+
+        const obsMovResult = await apiClient.financial.obsMovFatura({
+          nr_fat,
+          cd_cliente,
+        });
+
+        if (obsMovResult.success) {
+          const obsMov = Array.isArray(obsMovResult.data)
+            ? obsMovResult.data
+            : obsMovResult.data?.data || [];
+          console.log(
+            '✅ Observações de movimentação recebidas:',
+            obsMov.length,
+          );
+          setObsMovimentacao(obsMov);
+        } else {
+          console.warn('⚠️ Nenhuma observação de movimentação encontrada');
+          setObsMovimentacao([]);
+        }
+      } catch (error) {
+        console.error('❌ Erro ao buscar observações de movimentação:', error);
+        setObsMovimentacao([]);
+      } finally {
+        setObsMovLoading(false);
+      }
     } catch (error) {
       console.error('❌ Erro ao buscar observações:', error);
       setObsFatura([]);
-    } finally {
       setObsLoading(false);
     }
   };
@@ -1639,34 +1676,82 @@ const ContasPagarFranquias = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Seção 1: Observações da Fatura */}
+              {/* Seção 1: Observações */}
               <div className="border border-gray-200 rounded-lg p-4">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                   <Receipt size={20} className="text-blue-600" />
-                  Observações da Fatura
+                  Observações
                 </h3>
 
-                <div className="min-h-[200px]">
-                  {obsLoading ? (
-                    <div className="flex items-center justify-center py-6">
-                      <LoadingSpinner
-                        size="sm"
-                        text="Carregando observações..."
-                      />
-                    </div>
-                  ) : obsFatura && obsFatura.length > 0 ? (
-                    <ul className="list-disc pl-5 space-y-2">
-                      {obsFatura.map((o, idx) => (
-                        <li key={idx} className="text-sm text-gray-700">
-                          {o.ds_observacao}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div className="text-sm text-gray-500 text-center py-8">
-                      Nenhuma observação encontrada para esta fatura.
-                    </div>
-                  )}
+                <div className="min-h-[200px] space-y-4">
+                  {/* Observações da Fatura */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                      Observações da Fatura
+                    </h4>
+                    {obsLoading ? (
+                      <div className="flex items-center justify-center py-4">
+                        <LoadingSpinner size="sm" text="Carregando..." />
+                      </div>
+                    ) : obsFatura && obsFatura.length > 0 ? (
+                      <ul className="list-disc pl-5 space-y-1">
+                        {obsFatura.map((o, idx) => (
+                          <li key={idx} className="text-sm text-gray-700">
+                            {o.ds_observacao}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="text-xs text-gray-500 italic py-2">
+                        Nenhuma observação da fatura.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Observações de Movimentação */}
+                  <div className="border-t border-gray-200 pt-4">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                      Observações da Movimentação
+                    </h4>
+                    {obsMovLoading ? (
+                      <div className="flex items-center justify-center py-4">
+                        <LoadingSpinner size="sm" text="Carregando..." />
+                      </div>
+                    ) : obsMovimentacao && obsMovimentacao.length > 0 ? (
+                      <div className="space-y-2">
+                        {obsMovimentacao.map((obs, index) => (
+                          <div
+                            key={index}
+                            className="bg-blue-50 rounded-lg p-3 border border-blue-200"
+                          >
+                            <p className="text-sm text-gray-800 mb-1">
+                              {obs.ds_obs}
+                            </p>
+                            <div className="flex items-center gap-3 text-xs text-gray-500">
+                              <span>
+                                Cadastro: {formatDateBR(obs.dt_cadastro)}
+                              </span>
+                              <span>Movim: {formatDateBR(obs.dt_movim)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-500 italic py-2">
+                        Nenhuma observação de movimentação.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Mensagem quando não há nenhuma observação */}
+                  {!obsLoading &&
+                    !obsMovLoading &&
+                    obsFatura.length === 0 &&
+                    obsMovimentacao.length === 0 && (
+                      <div className="text-sm text-gray-500 text-center py-8">
+                        Nenhuma observação encontrada para esta fatura.
+                      </div>
+                    )}
                 </div>
               </div>
 

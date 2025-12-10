@@ -402,13 +402,79 @@ export const updateUser = async (userId, userData) => {
 // Função para deletar um usuário do auth.users
 export const deleteUser = async (userId) => {
   try {
+    // Deletar todos os registros relacionados antes de deletar o usuário
+
+    // 1. Deletar empresas vinculadas (user_companies)
+    const { error: companiesError } = await supabaseAdmin
+      .from('user_companies')
+      .delete()
+      .eq('user_id', userId);
+
+    if (companiesError) {
+      console.error('Erro ao deletar empresas vinculadas:', companiesError);
+    }
+
+    // 2. Atualizar solicitações de crédito (remover referência ou deletar)
+    // Opção 1: Setar user_id como NULL (mantém histórico)
+    const { error: creditoError } = await supabaseAdmin
+      .from('solicitacoes_credito')
+      .update({ user_id: null })
+      .eq('user_id', userId);
+
+    if (creditoError) {
+      console.error('Erro ao atualizar solicitações de crédito:', creditoError);
+    }
+
+    // Atualizar também o campo aprovado_por
+    const { error: creditoAprovadorError } = await supabaseAdmin
+      .from('solicitacoes_credito')
+      .update({ aprovado_por: null })
+      .eq('aprovado_por', userId);
+
+    if (creditoAprovadorError) {
+      console.error(
+        'Erro ao atualizar aprovador em solicitações de crédito:',
+        creditoAprovadorError,
+      );
+    }
+
+    // 3. Atualizar solicitações de renegociações (remover referência ou deletar)
+    const { error: renegociacoesError } = await supabaseAdmin
+      .from('solicitacoes_renegociacoes')
+      .update({ user_id: null, aprovado_por: null })
+      .eq('user_id', userId);
+
+    if (renegociacoesError) {
+      console.error(
+        'Erro ao atualizar solicitações de renegociações:',
+        renegociacoesError,
+      );
+    }
+
+    // Atualizar também quando for aprovador
+    const { error: renegociacoesAprovadorError } = await supabaseAdmin
+      .from('solicitacoes_renegociacoes')
+      .update({ aprovado_por: null })
+      .eq('aprovado_por', userId);
+
+    if (renegociacoesAprovadorError) {
+      console.error(
+        'Erro ao atualizar aprovador em renegociações:',
+        renegociacoesAprovadorError,
+      );
+    }
+
+    // Agora deletar o usuário do auth.users
     const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
 
     if (error) throw error;
 
     return true;
   } catch (error) {
-    throw error;
+    console.error('Erro ao deletar usuário:', error);
+    throw new Error(
+      `Erro ao deletar usuário: ${error.message || 'Erro desconhecido'}`,
+    );
   }
 };
 

@@ -2845,6 +2845,102 @@ router.get(
 );
 
 /**
+ * @route GET /financial/obs-mov-fatura
+ * @desc Obter observações de movimentação de uma fatura
+ * @access Private
+ * @query nr_fat - Número da fatura (obrigatório)
+ * @query cd_cliente - Código do cliente (obrigatório)
+ */
+router.get(
+  '/obs-mov-fatura',
+  asyncHandler(async (req, res) => {
+    const { nr_fat, cd_cliente } = req.query;
+
+    // Validação dos parâmetros obrigatórios
+    if (!nr_fat) {
+      return errorResponse(
+        res,
+        'Número da fatura (nr_fat) é obrigatório',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    if (!cd_cliente) {
+      return errorResponse(
+        res,
+        'Código do cliente (cd_cliente) é obrigatório',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    console.log('🔍 Buscando observações da movimentação da fatura:', {
+      nr_fat,
+      cd_cliente,
+    });
+
+    try {
+      // Primeira tentativa: buscar através de fcr_movim
+      const query = `
+        SELECT DISTINCT
+          om.ds_obs,
+          om.dt_cadastro,
+          om.dt_movim,
+          om.nr_ctapes,
+          om.nr_seqmov
+        FROM
+          fcr_faturai ff
+        INNER JOIN fcr_movim fm ON ff.cd_cliente = fm.cd_pessoa 
+          AND ff.cd_empresa = fm.cd_empresa
+          AND ff.vl_fatura = fm.vl_lancto
+          AND ff.dt_emissao = fm.dt_movim
+        INNER JOIN obs_mov om ON fm.nr_ctapes = om.nr_ctapes 
+          AND fm.nr_seqmov = om.nr_seqmov
+        WHERE
+          ff.nr_fat = $1
+          AND ff.cd_cliente = $2
+        ORDER BY om.dt_cadastro DESC
+      `;
+
+      const values = [nr_fat, cd_cliente];
+      const result = await pool.query(query, values);
+
+      console.log('✅ Observações da movimentação obtidas:', {
+        nr_fat,
+        cd_cliente,
+        total: result.rows.length,
+      });
+
+      successResponse(
+        res,
+        {
+          nr_fat,
+          cd_cliente,
+          count: result.rows.length,
+          data: result.rows,
+        },
+        'Observações da movimentação da fatura obtidas com sucesso',
+      );
+    } catch (error) {
+      console.error('❌ Erro ao buscar observações da movimentação:', error);
+
+      // Retornar array vazio em caso de erro, ao invés de erro 500
+      successResponse(
+        res,
+        {
+          nr_fat,
+          cd_cliente,
+          count: 0,
+          data: [],
+        },
+        'Nenhuma observação de movimentação encontrada',
+      );
+    }
+  }),
+);
+
+/**
  * @route GET /financial/transacao-fatura-credev
  * @desc Obter número de transação relacionada a uma fatura de crédito CREDEV
  * @access Private
@@ -3243,5 +3339,46 @@ function extrairMovimentacoesPDF(texto, codigoBanco) {
 
   return movimentacoes;
 }
+
+/**
+ * @route GET /financial/extratos/:banco
+ * @desc Processar e retornar extratos bancários de um banco específico
+ * @access Public
+ * @param {string} banco - Nome do banco (bb, caixa, santander, itau, sicredi, bnb, unicred, bradesco)
+ */
+router.get(
+  '/extratos/:banco',
+  asyncHandler(async (req, res) => {
+    const { banco } = req.params;
+
+    // Importação dinâmica do extractorManager
+    const { processExtractsByBank } = await import(
+      '../utils/extratos/extractorManager.js'
+    );
+
+    try {
+      const result = await processExtractsByBank(banco);
+
+      successResponse(
+        res,
+        result,
+        `Extratos do banco ${banco.toUpperCase()} processados com sucesso`,
+      );
+    } catch (error) {
+      if (error.message.includes('Banco não suportado')) {
+        errorResponse(res, error.message, 400, 'INVALID_BANK');
+      } else if (error.message.includes('Diretório não encontrado')) {
+        errorResponse(
+          res,
+          `Nenhum extrato encontrado para o banco ${banco.toUpperCase()}`,
+          404,
+          'EXTRATOS_NOT_FOUND',
+        );
+      } else {
+        throw error;
+      }
+    }
+  }),
+);
 
 export default router;

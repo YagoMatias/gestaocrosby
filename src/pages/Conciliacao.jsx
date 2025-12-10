@@ -1,22 +1,34 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import DropdownContas from '../components/DropdownContas';
-import { contas } from "../utils/contas";
-import { 
-  ArrowsClockwise, 
-  CaretDown, 
-  CaretRight, 
-  ArrowCircleDown, 
-  ArrowCircleUp, 
-  Receipt, 
-  CheckCircle, 
-  XCircle, 
+import { contas } from '../utils/contas';
+import {
+  ArrowsClockwise,
+  CaretDown,
+  CaretRight,
+  ArrowCircleDown,
+  ArrowCircleUp,
+  Receipt,
+  CheckCircle,
+  XCircle,
   Question,
   CaretUp,
   CaretUpDown,
   Download,
-  Spinner
+  Spinner,
 } from '@phosphor-icons/react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/cards';
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from '../components/ui/cards';
 import LoadingCircle from '../components/LoadingCircle';
 import useApiClient from '../hooks/useApiClient';
 import ExtratoTotvsTable from '../components/ExtratoTotvsTable';
@@ -43,7 +55,11 @@ const Conciliacao = () => {
   });
   const [expandTabela, setExpandTabela] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [modalContent, setModalContent] = useState({ title: '', description: '', calculation: '' });
+  const [modalContent, setModalContent] = useState({
+    title: '',
+    description: '',
+    calculation: '',
+  });
 
   // Estados para paginação client-side
   const [currentPage, setCurrentPage] = useState(1);
@@ -51,10 +67,9 @@ const Conciliacao = () => {
 
   // Estados para ordenação
   const [ordenacao, setOrdenacao] = useState({ campo: null, direcao: 'asc' });
-  
+
   // Estados para seleção de linhas
   const [linhasSelecionadas, setLinhasSelecionadas] = useState(new Set());
-  
 
   // CSS customizado para a tabela
   useEffect(() => {
@@ -144,25 +159,30 @@ const Conciliacao = () => {
 
   // Função para ordenação
   const handleSort = useCallback((campo) => {
-    setOrdenacao(prev => ({
+    setOrdenacao((prev) => ({
       campo,
-      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc'
+      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc',
     }));
   }, []);
 
   // Função para ícone de ordenação
-  const getSortIcon = useCallback((campo) => {
-    if (ordenacao.campo !== campo) {
-      return <CaretUpDown size={12} className="opacity-50" />;
-    }
-    return ordenacao.direcao === 'asc' ? 
-      <CaretUp size={12} /> : 
-      <CaretDown size={12} />;
-  }, [ordenacao]);
+  const getSortIcon = useCallback(
+    (campo) => {
+      if (ordenacao.campo !== campo) {
+        return <CaretUpDown size={12} className="opacity-50" />;
+      }
+      return ordenacao.direcao === 'asc' ? (
+        <CaretUp size={12} />
+      ) : (
+        <CaretDown size={12} />
+      );
+    },
+    [ordenacao],
+  );
 
   // Função para selecionar/deselecionar linha
   const toggleLinhaSelecionada = useCallback((index) => {
-    setLinhasSelecionadas(prev => {
+    setLinhasSelecionadas((prev) => {
       const nova = new Set(prev);
       if (nova.has(index)) {
         nova.delete(index);
@@ -214,23 +234,31 @@ const Conciliacao = () => {
 
   const totalPages = Math.ceil(dadosProcessados.length / PAGE_SIZE);
 
-  useEffect(() => { setLinhasSelecionadas(new Set()); }, [dados]);
-  useEffect(() => { setCurrentPage(1); }, [dados]);
-  useEffect(() => { setCurrentPageTotvs(1); }, [dadosTotvs]);
+  useEffect(() => {
+    setLinhasSelecionadas(new Set());
+  }, [dados]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [dados]);
+  useEffect(() => {
+    setCurrentPageTotvs(1);
+  }, [dadosTotvs]);
 
   const fetchDados = async (filtrosParam = filtros) => {
     setLoading(true);
     setErro('');
     try {
-      const contasUsadas = (Array.isArray(filtrosParam.nr_ctapes) && filtrosParam.nr_ctapes.length > 0)
-        ? filtrosParam.nr_ctapes
-        : contas.map(c => c.numero);
+      const contasUsadas =
+        Array.isArray(filtrosParam.nr_ctapes) &&
+        filtrosParam.nr_ctapes.length > 0
+          ? filtrosParam.nr_ctapes
+          : contas.map((c) => c.numero);
       const params = {
         nr_ctapes: contasUsadas,
         dt_movim_ini: filtrosParam.dt_movim_ini,
         dt_movim_fim: filtrosParam.dt_movim_fim,
         limit: 1000000,
-        offset: 0
+        offset: 0,
       };
 
       const result = await apiClient.financial.extrato(params);
@@ -253,15 +281,17 @@ const Conciliacao = () => {
     setLoadingTotvs(true);
     setErroTotvs('');
     try {
-      const contasUsadasTotvs = (Array.isArray(filtrosParam.nr_ctapes) && filtrosParam.nr_ctapes.length > 0)
-        ? filtrosParam.nr_ctapes
-        : contas.map(c => c.numero);
+      const contasUsadasTotvs =
+        Array.isArray(filtrosParam.nr_ctapes) &&
+        filtrosParam.nr_ctapes.length > 0
+          ? filtrosParam.nr_ctapes
+          : contas.map((c) => c.numero);
       const params = {
         nr_ctapes: contasUsadasTotvs,
         dt_movim_ini: filtrosParam.dt_movim_ini,
         dt_movim_fim: filtrosParam.dt_movim_fim,
         limit: 1000000,
-        offset: 0
+        offset: 0,
       };
 
       const resultTotvs = await apiClient.financial.extratoTotvs(params);
@@ -281,14 +311,21 @@ const Conciliacao = () => {
     }
   };
 
-  const handleChange = (e) => { setFiltros({ ...filtros, [e.target.name]: e.target.value }); };
-  const handleFiltrar = (e) => { e.preventDefault(); setCurrentPage(1); fetchDados({ ...filtros, [e.target.name]: e.target.value }); };
+  const handleChange = (e) => {
+    setFiltros({ ...filtros, [e.target.name]: e.target.value });
+  };
+  const handleFiltrar = (e) => {
+    e.preventDefault();
+    setCurrentPage(1);
+    fetchDados({ ...filtros, [e.target.name]: e.target.value });
+  };
 
   function formatarDataBR(data) {
     if (!data) return '-';
-    const d = new Date(data);
-    if (isNaN(d)) return '-';
-    return d.toLocaleDateString('pt-BR');
+    // Extrair apenas a parte da data (YYYY-MM-DD) para evitar problemas de timezone
+    const dataStr = data.split('T')[0];
+    const [ano, mes, dia] = dataStr.split('-');
+    return `${dia}/${mes}/${ano}`;
   }
 
   function corConta(nome) {
@@ -301,9 +338,10 @@ const Conciliacao = () => {
   }
 
   // Em Conciliação, os cards devem aparecer sem seleção prévia
-  const contasSelecionadas = (Array.isArray(filtros.nr_ctapes) && filtros.nr_ctapes.length > 0)
-    ? contas.filter(c => filtros.nr_ctapes.includes(c.numero))
-    : contas;
+  const contasSelecionadas =
+    Array.isArray(filtros.nr_ctapes) && filtros.nr_ctapes.length > 0
+      ? contas.filter((c) => filtros.nr_ctapes.includes(c.numero))
+      : contas;
 
   // Verifica contas selecionadas - controle do dropdown de bancos
   const [expandBancos, setExpandBancos] = useState(false);
@@ -311,19 +349,21 @@ const Conciliacao = () => {
   // Calcula data da transação desconciliada mais antiga por banco
   let ultimasDesconciliadas = [];
   if (contasSelecionadas.length > 0) {
-    ultimasDesconciliadas = contasSelecionadas.map(conta => {
-      const transacoesDesconciliadas = dados.filter(row => String(row.nr_ctapes) === conta.numero && !row.dt_conciliacao);
+    ultimasDesconciliadas = contasSelecionadas.map((conta) => {
+      const transacoesDesconciliadas = dados.filter(
+        (row) => String(row.nr_ctapes) === conta.numero && !row.dt_conciliacao,
+      );
       let dataMaisAntiga = null;
       if (transacoesDesconciliadas.length > 0) {
         dataMaisAntiga = transacoesDesconciliadas.reduce((min, row) => {
           const data = new Date(row.dt_lancto);
-          return (!min || data < new Date(min)) ? row.dt_lancto : min;
+          return !min || data < new Date(min) ? row.dt_lancto : min;
         }, null);
       }
       return {
         numero: conta.numero,
         nome: conta.nome,
-        maisAntigaDesconciliada: dataMaisAntiga
+        maisAntigaDesconciliada: dataMaisAntiga,
       };
     });
 
@@ -332,39 +372,63 @@ const Conciliacao = () => {
       const aHas = !!a.maisAntigaDesconciliada;
       const bHas = !!b.maisAntigaDesconciliada;
       if (aHas && bHas) {
-        return new Date(a.maisAntigaDesconciliada) - new Date(b.maisAntigaDesconciliada);
+        return (
+          new Date(a.maisAntigaDesconciliada) -
+          new Date(b.maisAntigaDesconciliada)
+        );
       }
       if (aHas && !bHas) return -1; // a vem antes
-      if (!aHas && bHas) return 1;  // b vem antes
+      if (!aHas && bHas) return 1; // b vem antes
       return a.nome.localeCompare(b.nome);
     });
   }
 
   return (
-    <ErrorBoundary 
+    <ErrorBoundary
       message="Erro ao carregar a página de Conciliação"
-      onError={(error, errorInfo) => { 
-        console.error('Conciliacao Error:', error, errorInfo); 
+      onError={(error, errorInfo) => {
+        console.error('Conciliacao Error:', error, errorInfo);
       }}
     >
-    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
-        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">Conciliação</h1>
+      <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
+        <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">
+          Conciliação
+        </h1>
         <div className="mb-4">
-          <form onSubmit={handleFiltrar} className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10">
+          <form
+            onSubmit={handleFiltrar}
+            className="flex flex-col bg-white p-8 rounded-2xl shadow-lg w-full max-w-5xl mx-auto border border-[#000638]/10"
+          >
             <div className="mb-6">
-              <span className="text-lg font-bold text-[#000638] flex items-center gap-2"><Receipt size={22} weight="bold" />Filtros</span>
-              <span className="text-sm text-gray-500 mt-1">Selecione o período e as contas para análise</span>
+              <span className="text-lg font-bold text-[#000638] flex items-center gap-2">
+                <Receipt size={22} weight="bold" />
+                Filtros
+              </span>
+              <span className="text-sm text-gray-500 mt-1">
+                Selecione o período e as contas para análise
+              </span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-x-3 gap-y-2 w-full mb-4">
               <div className="flex flex-col">
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Contas</label>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                  Contas
+                </label>
                 <DropdownContas
                   contas={contas}
-                  contasSelecionadas={Array.isArray(filtros.nr_ctapes) ? filtros.nr_ctapes : []}
-                  setContasSelecionadas={fn =>
-                    setFiltros(prev => ({
+                  contasSelecionadas={
+                    Array.isArray(filtros.nr_ctapes) ? filtros.nr_ctapes : []
+                  }
+                  setContasSelecionadas={(fn) =>
+                    setFiltros((prev) => ({
                       ...prev,
-                      nr_ctapes: typeof fn === 'function' ? fn(Array.isArray(prev.nr_ctapes) ? prev.nr_ctapes : []) : fn
+                      nr_ctapes:
+                        typeof fn === 'function'
+                          ? fn(
+                              Array.isArray(prev.nr_ctapes)
+                                ? prev.nr_ctapes
+                                : [],
+                            )
+                          : fn,
                     }))
                   }
                   minWidth={200}
@@ -375,17 +439,33 @@ const Conciliacao = () => {
                 />
               </div>
               <div className="flex flex-col">
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Inicial</label>
-                <input type="date" name="dt_movim_ini" value={filtros.dt_movim_ini} onChange={handleChange} className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" />
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                  Data Inicial
+                </label>
+                <input
+                  type="date"
+                  name="dt_movim_ini"
+                  value={filtros.dt_movim_ini}
+                  onChange={handleChange}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                />
               </div>
               <div className="flex flex-col">
-                <label className="block text-xs font-semibold mb-1 text-[#000638]">Data Final</label>
-                <input type="date" name="dt_movim_fim" value={filtros.dt_movim_fim} onChange={handleChange} className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400" />
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                  Data Final
+                </label>
+                <input
+                  type="date"
+                  name="dt_movim_fim"
+                  value={filtros.dt_movim_fim}
+                  onChange={handleChange}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400"
+                />
               </div>
             </div>
             <div className="flex justify-end w-full mt-1">
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 className="flex items-center gap-1 bg-[#000638] text-white px-5 py-2 rounded-lg hover:bg-[#fe0000] transition h-9 text-sm font-bold shadow tracking-wide uppercase min-w-[90px] disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={loading}
               >
@@ -398,7 +478,11 @@ const Conciliacao = () => {
               </button>
             </div>
           </form>
-          {erro && <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">{erro}</div>}
+          {erro && (
+            <div className="mt-4 bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded text-center">
+              {erro}
+            </div>
+          )}
         </div>
 
         {/* Resto da página igual ao ExtratoFinanceiro */}
@@ -408,23 +492,43 @@ const Conciliacao = () => {
         {/* Cards de bancos: sempre visíveis, sem dropdown */}
         <div className="rounded-2xl shadow-lg bg-white mb-4 border border-[#000638]/10 max-w-5xl mx-auto">
           <div className="p-3 border-b border-[#000638]/10 select-none flex items-center justify-between">
-            <span className="text-base font-bold text-[#000638]">Transação desconciliada mais antiga por banco</span>
+            <span className="text-base font-bold text-[#000638]">
+              Transação desconciliada mais antiga por banco
+            </span>
           </div>
           <div className="flex flex-row gap-2 p-3 flex-wrap justify-center items-stretch">
-            {ultimasDesconciliadas.map(banco => (
-              <Card key={banco.numero} className="min-w-[140px] max-w-[180px] shadow-md rounded-lg bg-white cursor-pointer p-1 border border-gray-200">
+            {ultimasDesconciliadas.map((banco) => (
+              <Card
+                key={banco.numero}
+                className="min-w-[140px] max-w-[180px] shadow-md rounded-lg bg-white cursor-pointer p-1 border border-gray-200"
+              >
                 <CardHeader className="pb-0 px-1 pt-1">
                   <div className="flex flex-row items-center gap-1">
-                    <CardTitle className="text-xs font-bold text-blue-900 truncate">{banco.nome}</CardTitle>
+                    <CardTitle className="text-xs font-bold text-blue-900 truncate">
+                      {banco.nome}
+                    </CardTitle>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-1 pl-2">
-                  <div className="text-[10px] text-gray-500">Data mais antiga desconciliada</div>
+                  <div className="text-[10px] text-gray-500">
+                    Data mais antiga desconciliada
+                  </div>
                   <div className="text-xs font-bold text-gray-700 mt-0.5">
-                    {loading ? <Spinner size={18} className="animate-spin text-blue-600" /> : (
-                      banco.maisAntigaDesconciliada
-                        ? <span className="text-[#fe0000] font-bold">{new Date(banco.maisAntigaDesconciliada).toLocaleDateString('pt-BR')}</span>
-                        : <span className="text-green-600 font-bold">Conciliações realizadas no período</span>
+                    {loading ? (
+                      <Spinner
+                        size={18}
+                        className="animate-spin text-blue-600"
+                      />
+                    ) : banco.maisAntigaDesconciliada ? (
+                      <span className="text-[#fe0000] font-bold">
+                        {new Date(
+                          banco.maisAntigaDesconciliada,
+                        ).toLocaleDateString('pt-BR')}
+                      </span>
+                    ) : (
+                      <span className="text-green-600 font-bold">
+                        Conciliações realizadas no período
+                      </span>
                     )}
                   </div>
                 </CardContent>
@@ -442,5 +546,3 @@ const Conciliacao = () => {
 };
 
 export default Conciliacao;
-
-
