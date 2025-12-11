@@ -2848,24 +2848,16 @@ router.get(
  * @route GET /financial/obs-mov-fatura
  * @desc Obter observações de movimentação de uma fatura
  * @access Private
- * @query nr_fat - Número da fatura (obrigatório)
  * @query cd_cliente - Código do cliente (obrigatório)
+ * @query cd_empresa - Código da empresa (obrigatório)
+ * @query dt_emissao - Data de emissão da fatura (obrigatório, formato: YYYY-MM-DD)
  */
 router.get(
   '/obs-mov-fatura',
   asyncHandler(async (req, res) => {
-    const { nr_fat, cd_cliente } = req.query;
+    const { cd_cliente, cd_empresa, dt_emissao } = req.query;
 
     // Validação dos parâmetros obrigatórios
-    if (!nr_fat) {
-      return errorResponse(
-        res,
-        'Número da fatura (nr_fat) é obrigatório',
-        400,
-        'MISSING_PARAMETER',
-      );
-    }
-
     if (!cd_cliente) {
       return errorResponse(
         res,
@@ -2875,66 +2867,131 @@ router.get(
       );
     }
 
-    console.log('🔍 Buscando observações da movimentação da fatura:', {
-      nr_fat,
+    if (!cd_empresa) {
+      return errorResponse(
+        res,
+        'Código da empresa (cd_empresa) é obrigatório',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    if (!dt_emissao) {
+      return errorResponse(
+        res,
+        'Data de emissão (dt_emissao) é obrigatória',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    console.log('🔍 Buscando observações da movimentação:', {
       cd_cliente,
+      cd_empresa,
+      dt_emissao,
     });
 
     try {
-      // Primeira tentativa: buscar através de fcr_movim
-      const query = `
-        SELECT DISTINCT
+      // Passo 1: Buscar nr_ctapes do cliente
+      const queryCtapes = `
+        SELECT fc.nr_ctapes
+        FROM fcc_ctapes fc
+        WHERE fc.cd_pessoa = $1
+          AND fc.cd_empresa = $2
+      `;
+
+      const resultCtapes = await pool.query(queryCtapes, [
+        cd_cliente,
+        cd_empresa,
+      ]);
+
+      if (resultCtapes.rows.length === 0) {
+        console.log('⚠️ Nenhum nr_ctapes encontrado para o cliente');
+        return successResponse(
+          res,
+          {
+            cd_cliente,
+            cd_empresa,
+            count: 0,
+            data: [],
+          },
+          'Nenhuma conta encontrada para o cliente',
+        );
+      }
+
+      const nr_ctapes = resultCtapes.rows[0].nr_ctapes;
+      console.log('✅ nr_ctapes encontrado:', nr_ctapes);
+
+      // Passo 2: Buscar observações de movimentação
+      // Criar range de data: dt_emissao 00:00:00 até 23:59:59
+      const dt_inicio = `${dt_emissao} 00:00:00`;
+      const dt_fim = `${dt_emissao} 23:59:59`;
+
+      console.log('🔍 Parâmetros da query:', {
+        dt_inicio,
+        dt_fim,
+        nr_ctapes,
+      });
+
+      const queryObs = `
+        SELECT
+          fm.nr_ctapes,
           om.ds_obs,
           om.dt_cadastro,
-          om.dt_movim,
-          om.nr_ctapes,
-          om.nr_seqmov
-        FROM
-          fcr_faturai ff
-        INNER JOIN fcr_movim fm ON ff.cd_cliente = fm.cd_pessoa 
-          AND ff.cd_empresa = fm.cd_empresa
-          AND ff.vl_fatura = fm.vl_lancto
-          AND ff.dt_emissao = fm.dt_movim
-        INNER JOIN obs_mov om ON fm.nr_ctapes = om.nr_ctapes 
-          AND fm.nr_seqmov = om.nr_seqmov
-        WHERE
-          ff.nr_fat = $1
-          AND ff.cd_cliente = $2
+          om.dt_movim
+        FROM fcc_mov fm
+        LEFT JOIN fgr_liqitemcr fl ON fl.nr_ctapes = fm.nr_ctapes
+        LEFT JOIN obs_mov om ON om.nr_ctapes = fm.nr_ctapes
+        WHERE om.dt_movim BETWEEN $1::timestamp AND $2::timestamp
+          AND fm.nr_ctapes = $3
+          AND fm.tp_operacao = 'C'
+        GROUP BY fm.nr_ctapes, om.ds_obs, om.dt_cadastro, om.dt_movim
         ORDER BY om.dt_cadastro DESC
       `;
 
-      const values = [nr_fat, cd_cliente];
-      const result = await pool.query(query, values);
+      const resultObs = await pool.query(queryObs, [
+        dt_inicio,
+        dt_fim,
+        nr_ctapes,
+      ]);
 
       console.log('✅ Observações da movimentação obtidas:', {
-        nr_fat,
         cd_cliente,
-        total: result.rows.length,
+        cd_empresa,
+        nr_ctapes,
+        total: resultObs.rows.length,
       });
 
       successResponse(
         res,
         {
-          nr_fat,
           cd_cliente,
-          count: result.rows.length,
-          data: result.rows,
+          cd_empresa,
+          nr_ctapes,
+          count: resultObs.rows.length,
+          data: resultObs.rows,
         },
         'Observações da movimentação da fatura obtidas com sucesso',
       );
     } catch (error) {
       console.error('❌ Erro ao buscar observações da movimentação:', error);
+      console.error('❌ Stack trace:', error.stack);
+      console.error('❌ Detalhes do erro:', {
+        message: error.message,
+        code: error.code,
+        detail: error.detail,
+      });
 
       // Retornar array vazio em caso de erro, ao invés de erro 500
       successResponse(
         res,
         {
-          nr_fat,
           cd_cliente,
+          cd_empresa,
           count: 0,
           data: [],
         },
-        'Nenhuma observação de movimentação encontrada',
+        'Erro ao buscar observações de movimentação',
       );
     }
   }),
@@ -3378,6 +3435,72 @@ router.get(
         throw error;
       }
     }
+  }),
+);
+
+/**
+ * @route GET /financial/auditoria-conta
+ * @desc Buscar movimentações de contas específicas para auditoria
+ * @access Public
+ */
+router.get(
+  '/auditoria-conta',
+  asyncHandler(async (req, res) => {
+    const query = `
+      SELECT
+        fm.nr_ctapes,
+        fm.dt_movim,
+        fm.nr_seqmov,
+        fm.ds_doc,
+        fm.in_estorno,
+        fm.tp_operacao,
+        fm.cd_clichqpres,
+        fm.cd_empresa,
+        fm.cd_tipoclas,
+        fm.vl_lancto,
+        fm.cd_grupoempresa,
+        fm.cd_componente,
+        fm.dt_liq,
+        fm.cd_empchqpres,
+        fm.cd_operador,
+        fm.dt_reposicao,
+        fm.dt_faturanf,
+        fm.ds_aux,
+        fm.nr_chequepres,
+        fm.tp_documento,
+        fm.nr_seqhistrelsub,
+        fm.cd_operestorno,
+        fm.cd_empdespesa,
+        fm.dt_conci,
+        fm.cd_historico,
+        fm.nr_faturanf,
+        fm.nr_seqliq,
+        fm.cd_clas,
+        fm.cd_empliq,
+        fm.cd_operconci,
+        fm.vl_reposicao,
+        fm.dt_estorno,
+        fm.tp_reposicao,
+        fm.cd_empresanf,
+        fm.in_fechado,
+        fm.u_version,
+        fm.dt_cadastro
+      FROM
+        fcc_mov fm
+      WHERE
+        fm.nr_ctapes IN (3, 4, 7, 12, 14, 15, 49, 109, 258, 271, 334442, 448, 526, 528, 594, 595, 597, 789, 850, 890, 891, 959, 980, 998)
+        AND fm.dt_movim > '2025-01-01'
+      ORDER BY
+        fm.dt_movim DESC
+    `;
+
+    const result = await pool.query(query);
+
+    successResponse(
+      res,
+      result.rows,
+      `${result.rows.length} movimentações encontradas`,
+    );
   }),
 );
 

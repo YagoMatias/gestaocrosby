@@ -42,6 +42,7 @@ const MetasVarejo = lazy(() => import('./pages/MetasVarejo'));
 
 const RankingFaturamento = lazy(() => import('./pages/RankingFaturamento'));
 const AuditoriaCMV = lazy(() => import('./pages/AuditoriaCMV'));
+const AuditoriaConta = lazy(() => import('./pages/AuditoriaConta'));
 const ComprasFranquias = lazy(() => import('./pages/ComprasFranquias'));
 const Credev = lazy(() => import('./pages/Credev'));
 const CredevRevenda = lazy(() => import('./pages/CredevRevenda'));
@@ -155,6 +156,7 @@ const AppRoutes = memo(() => {
     { path: '/manifestacao-nf', component: ManifestacaoNF },
     { path: '/ranking-faturamento', component: RankingFaturamento },
     { path: '/auditoria-cmv', component: AuditoriaCMV },
+    { path: '/auditoria-conta', component: AuditoriaConta },
     { path: '/cmv-consolidado', component: CMVConsolidado },
     { path: '/cmv-multimarcas', component: CMVMultimarcas },
     { path: '/cmv-revenda', component: CMVRevenda },

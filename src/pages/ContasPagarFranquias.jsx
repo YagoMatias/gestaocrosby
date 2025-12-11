@@ -793,14 +793,21 @@ const ContasPagarFranquias = () => {
 
       // Buscar observações de movimentação
       try {
+        const cd_empresa = fatura.cd_empresa || '';
+        const dt_emissao = fatura.dt_emissao
+          ? fatura.dt_emissao.split('T')[0]
+          : '';
+
         console.log('📝 Buscando observações da movimentação:', {
-          nr_fat,
           cd_cliente,
+          cd_empresa,
+          dt_emissao,
         });
 
         const obsMovResult = await apiClient.financial.obsMovFatura({
-          nr_fat,
           cd_cliente,
+          cd_empresa,
+          dt_emissao,
         });
 
         if (obsMovResult.success) {

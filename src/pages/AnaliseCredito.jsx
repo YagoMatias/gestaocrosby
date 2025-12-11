@@ -352,9 +352,6 @@ export default function AnaliseCredito() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             {/* Filtro Empresa */}
             <div>
-              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                Empresa / Franquia
-              </label>
               <FiltroEmpresa
                 empresasSelecionadas={empresasFiltro}
                 onSelectEmpresas={setEmpresasFiltro}

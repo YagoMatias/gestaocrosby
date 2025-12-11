@@ -99,6 +99,18 @@ const InadimplentesFranquias = () => {
 
   const dadosFiltrados = useMemo(() => {
     return dados.filter((item) => {
+      // REGRA 1: Filtrar apenas tp_documento = 1 (faturas de mercadoria)
+      const tipoDocumentoValido = !item.tp_documento || item.tp_documento === 1 || item.tp_documento === '1';
+      
+      // REGRA 2: Filtrar apenas tp_situacao = 1 (situação ativa/normal)
+      const situacaoValida = !item.tp_situacao || item.tp_situacao === 1 || item.tp_situacao === '1';
+      
+      // REGRA 3: Não mostrar faturas canceladas (dt_cancelamento deve ser null)
+      const naoCancelada = !item.dt_cancelamento || item.dt_cancelamento === null;
+      
+      // REGRA 4: Não mostrar faturas liquidadas (dt_liq deve ser null)
+      const naoLiquidada = !item.dt_liq || item.dt_liq === null;
+
       const matchCliente =
         filtroClientes.length === 0 ||
         filtroClientes.includes(String(item.cd_cliente));
@@ -119,7 +131,7 @@ const InadimplentesFranquias = () => {
 
       const estaAtrasado = diasAtraso >= 1;
 
-      return matchCliente && estaAtrasado && matchEstado;
+      return matchCliente && estaAtrasado && matchEstado && tipoDocumentoValido && situacaoValida && naoCancelada && naoLiquidada;
     });
   }, [dados, filtroClientes, filtroEstados]);
 

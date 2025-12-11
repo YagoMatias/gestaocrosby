@@ -12,6 +12,8 @@ import {
 } from '../components/ui/cards';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   MagnifyingGlass,
   Calendar,
@@ -37,8 +39,8 @@ const ExtratoCredito = () => {
 
   // Estados dos filtros
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
+  const [tipoDocFiltro, setTipoDocFiltro] = useState('TODOS');
+  const [historicoFiltro, setHistoricoFiltro] = useState('TODOS');
 
   // Estados do modal de detalhes
   const [modalOpen, setModalOpen] = useState(false);
@@ -76,6 +78,21 @@ const ExtratoCredito = () => {
   const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
   const FranchiseURL =
     'https://apigestaocrosby-bw2v.onrender.com/api/franchise/';
+
+  // Constantes para os filtros
+  const TIPOS_DOC = [
+    { value: 'TODOS', label: 'Todos' },
+    { value: '10', label: 'Adiantamento' },
+    { value: '20', label: 'CREDEV' },
+  ];
+
+  const HISTORICOS = [
+    { value: 'TODOS', label: 'Todos' },
+    { value: 'TRANSF_EMP', label: 'TRANSF EMP' },
+    { value: 'UTILIZACAO', label: 'UTILIZAÇÃO' },
+    { value: 'LANCAMENTO', label: 'LANÇAMENTO' },
+    { value: 'CANCEL_CREDEV', label: 'CANCEL CREDEV' },
+  ];
 
   // Função para buscar saldo de CREDEV e Adiantamento
   const buscarSaldoCredito = async () => {
@@ -139,10 +156,9 @@ const ExtratoCredito = () => {
       return;
     }
 
-    if (!dataInicio || !dataFim) {
-      setErro('Por favor, informe o período (data inicial e final)');
-      return;
-    }
+    // Definir datas fixas: início 01/01/1990 e fim hoje
+    const dataInicio = '1990-01-01';
+    const dataFim = new Date().toISOString().split('T')[0];
 
     setLoading(true);
     setErro('');
@@ -240,17 +256,112 @@ const ExtratoCredito = () => {
     });
   };
 
-  // Calcular totalizadores
-  const saldoTotal = dados.reduce(
+  // Função para obter dados ordenados e filtrados
+  const getSortedData = () => {
+    let dadosFiltrados = [...dados];
+
+    // Filtro por Tipo de Documento
+    if (tipoDocFiltro !== 'TODOS') {
+      dadosFiltrados = dadosFiltrados.filter(
+        (item) => item.tp_documento === tipoDocFiltro,
+      );
+    }
+
+    // Filtro por Código Histórico
+    if (historicoFiltro !== 'TODOS') {
+      dadosFiltrados = dadosFiltrados.filter((item) => {
+        const cdHistorico = item.cd_historico;
+
+        switch (historicoFiltro) {
+          case 'TRANSF_EMP':
+            return cdHistorico === '888' || cdHistorico === '889';
+          case 'UTILIZACAO':
+            return cdHistorico === '901';
+          case 'LANCAMENTO':
+            return (
+              cdHistorico === '6' ||
+              cdHistorico === '699' ||
+              cdHistorico === '900' ||
+              cdHistorico === '1075'
+            );
+          case 'CANCEL_CREDEV':
+            return cdHistorico === '1144' || cdHistorico === '1250';
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Ordenação
+    if (!sortConfig.key) return dadosFiltrados;
+
+    const sortedData = [...dadosFiltrados].sort((a, b) => {
+      let aValue = a[sortConfig.key];
+      let bValue = b[sortConfig.key];
+
+      // Tratamento especial para valores nulos/undefined
+      if (aValue === null || aValue === undefined) aValue = '';
+      if (bValue === null || bValue === undefined) bValue = '';
+
+      // Tratamento especial para datas
+      if (sortConfig.key === 'dt_movim' || sortConfig.key === 'dt_liquidacao') {
+        aValue = new Date(aValue).getTime() || 0;
+        bValue = new Date(bValue).getTime() || 0;
+      }
+      // Tratamento especial para valores monetários
+      else if (sortConfig.key === 'vl_lanc') {
+        aValue = parseFloat(aValue) || 0;
+        bValue = parseFloat(bValue) || 0;
+      }
+      // Tratamento para strings
+      else if (typeof aValue === 'string') {
+        aValue = aValue.toLowerCase();
+        bValue = bValue.toLowerCase();
+      }
+
+      if (aValue < bValue) {
+        return sortConfig.direction === 'asc' ? -1 : 1;
+      }
+      if (aValue > bValue) {
+        return sortConfig.direction === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+
+    return sortedData;
+  };
+
+  const dadosOrdenados = getSortedData();
+
+  // Calcular totalizadores com base nos dados filtrados
+  const saldoTotal = dadosOrdenados.reduce(
     (acc, item) => acc + (Number(item.vl_lancto) || 0),
     0,
   );
-  const totalDebito = dados
+  const totalDebito = dadosOrdenados
     .filter((item) => item.tp_operacao === 'D')
     .reduce((acc, item) => acc + (Number(item.vl_lancto) || 0), 0);
-  const totalCredito = dados
+  const totalCredito = dadosOrdenados
     .filter((item) => item.tp_operacao === 'C')
     .reduce((acc, item) => acc + (Number(item.vl_lancto) || 0), 0);
+
+  // Função auxiliar para formatar histórico
+  const formatarHistorico = (cd_historico) => {
+    const historicos = {
+      6: 'LANÇAMENTO',
+      7: 'ZERAR SALDO',
+      699: 'LANÇAMENTO',
+      888: 'TRANSF EMP',
+      889: 'TRANSF EMP',
+      900: 'LANÇAMENTO',
+      901: 'UTILIZAÇÃO',
+      1075: 'LANÇAMENTO',
+      1144: 'CANCEL CREDEV',
+      1250: 'CANCEL CREDEV',
+      1288: 'LANÇAMENTO',
+    };
+    return historicos[cd_historico] || cd_historico || '-';
+  };
 
   // Função para exportar dados para Excel
   const handleExportExcel = () => {
@@ -264,30 +375,7 @@ const ExtratoCredito = () => {
         Data: formatarDataBR(item.dt_movim),
         'NR CTAPES': item.nr_ctapes || '',
         'Seq Mov': item.nr_seqmov || '',
-        'Cod Histórico':
-          item.cd_historico === '6'
-            ? 'LANÇAMENTO'
-            : item.cd_historico === '7'
-            ? 'ZERAR SALDO'
-            : item.cd_historico === '699'
-            ? 'LANÇAMENTO'
-            : item.cd_historico === '888'
-            ? 'TRANSF EMP'
-            : item.cd_historico === '889'
-            ? 'TRANSF EMP'
-            : item.cd_historico === '900'
-            ? 'LANÇAMENTO'
-            : item.cd_historico === '901'
-            ? 'UTILIZAÇÃO'
-            : item.cd_historico === '1075'
-            ? 'LANÇAMENTO'
-            : item.cd_historico === '1144'
-            ? 'CANCEL CREDEV'
-            : item.cd_historico === '1250'
-            ? 'CANCEL CREDEV'
-            : item.cd_historico === '1288'
-            ? 'LANÇAMENTO'
-            : item.cd_historico || '',
+        'Cod Histórico': formatarHistorico(item.cd_historico),
         'Tipo Doc':
           item.tp_documento === '10'
             ? 'ADIANTAMENTO'
@@ -319,6 +407,179 @@ const ExtratoCredito = () => {
     } catch (error) {
       console.error('❌ Erro ao exportar Excel:', error);
       alert('Erro ao exportar arquivo Excel. Tente novamente.');
+    }
+  };
+
+  // Função para exportar dados para PDF
+  const handleExportPDF = () => {
+    if (dadosOrdenados.length === 0) {
+      alert('Não há dados para exportar!');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF('l', 'mm', 'a4'); // landscape orientation
+
+      // Título do documento
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Extrato de Crédito', 14, 15);
+
+      // Data de geração
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      const dataGeracao = new Date().toLocaleString('pt-BR');
+      doc.text(`Gerado em: ${dataGeracao}`, 14, 22);
+
+      // Informações de filtros aplicados
+      let yPos = 28;
+      if (empresasSelecionadas.length > 0) {
+        const empresasNomes = empresasSelecionadas
+          .map((e) => e.nm_fantasia)
+          .join(', ');
+        doc.text(`Empresas: ${empresasNomes}`, 14, yPos);
+        yPos += 5;
+      }
+      if (tipoDocFiltro !== 'TODOS') {
+        const tipoDocLabel =
+          TIPOS_DOC.find((t) => t.value === tipoDocFiltro)?.label ||
+          tipoDocFiltro;
+        doc.text(`Tipo DOC: ${tipoDocLabel}`, 14, yPos);
+        yPos += 5;
+      }
+      if (historicoFiltro !== 'TODOS') {
+        const historicoLabel =
+          HISTORICOS.find((h) => h.value === historicoFiltro)?.label ||
+          historicoFiltro;
+        doc.text(`Histórico: ${historicoLabel}`, 14, yPos);
+        yPos += 5;
+      }
+
+      // Preparar dados para a tabela
+      const tableData = dadosOrdenados.map((item) => [
+        formatarDataBR(item.dt_movim),
+        item.cd_empresa || '-',
+        item.nr_ctapes || '-',
+        item.nr_seqmov || '-',
+        formatarHistorico(item.cd_historico),
+        item.tp_documento === '10'
+          ? 'ADIANTAMENTO'
+          : item.tp_documento === '20'
+          ? 'CREDEV'
+          : item.tp_documento || '-',
+        item.tp_operacao === 'D' ? 'Débito' : 'Crédito',
+        formatarMoeda(item.vl_lancto),
+        formatarDataBR(item.dt_liq),
+      ]);
+
+      // Criar a tabela
+      autoTable(doc, {
+        startY: yPos + 5,
+        head: [
+          [
+            'Data Movim',
+            'Empresa',
+            'Conta',
+            'Seq Mov',
+            'Histórico',
+            'Tipo Doc',
+            'Operação',
+            'Valor',
+            'Data Liq',
+          ],
+        ],
+        body: tableData,
+        styles: {
+          fontSize: 8,
+          cellPadding: 2,
+        },
+        headStyles: {
+          fillColor: [0, 6, 56], // cor #000638
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          halign: 'center',
+        },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 22 }, // Data Movim
+          1: { halign: 'center', cellWidth: 18 }, // Empresa
+          2: { halign: 'center', cellWidth: 18 }, // Conta
+          3: { halign: 'center', cellWidth: 18 }, // Seq Mov
+          4: { halign: 'left', cellWidth: 32 }, // Histórico
+          5: { halign: 'left', cellWidth: 30 }, // Tipo Doc
+          6: { halign: 'center', cellWidth: 22 }, // Operação
+          7: { halign: 'right', cellWidth: 30 }, // Valor
+          8: { halign: 'center', cellWidth: 22 }, // Data Liq
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245],
+        },
+        margin: { top: 10 },
+      });
+
+      // Adicionar rodapé com totalizadores
+      const finalY =
+        doc.lastAutoTable?.finalY || doc.previousAutoTable?.finalY || yPos + 10;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+
+      // Criar duas colunas de informações
+      const col1X = 14;
+      const col2X = 150;
+
+      // Coluna 1: Movimentações do período
+      doc.text('MOVIMENTAÇÕES DO PERÍODO:', col1X, finalY + 10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(
+        `Total Débito: ${formatarMoeda(totalDebito)}`,
+        col1X,
+        finalY + 16,
+      );
+      doc.text(
+        `Total Crédito: ${formatarMoeda(totalCredito)}`,
+        col1X,
+        finalY + 22,
+      );
+      doc.text(
+        `Diferença: ${formatarMoeda(totalCredito - totalDebito)}`,
+        col1X,
+        finalY + 28,
+      );
+      doc.text(
+        `Total de registros: ${dadosOrdenados.length}`,
+        col1X,
+        finalY + 34,
+      );
+
+      // Coluna 2: Saldos disponíveis
+      doc.setFont('helvetica', 'bold');
+      doc.text('SALDOS DISPONÍVEIS:', col2X, finalY + 10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(
+        `Saldo CREDEV: ${formatarMoeda(saldoCredev)}`,
+        col2X,
+        finalY + 16,
+      );
+      doc.text(
+        `Saldo Adiantamento: ${formatarMoeda(saldoAdiantamento)}`,
+        col2X,
+        finalY + 22,
+      );
+      doc.setFont('helvetica', 'bold');
+      doc.text(
+        `Saldo Total: ${formatarMoeda(saldoCredev + saldoAdiantamento)}`,
+        col2X,
+        finalY + 28,
+      );
+
+      // Salvar o PDF
+      const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+      const nomeArquivo = `extrato-credito-${hoje}.pdf`;
+      doc.save(nomeArquivo);
+
+      console.log('✅ PDF exportado com sucesso:', nomeArquivo);
+    } catch (error) {
+      console.error('❌ Erro ao exportar PDF:', error);
+      alert('Erro ao exportar arquivo PDF. Tente novamente.');
     }
   };
 
@@ -858,48 +1119,6 @@ const ExtratoCredito = () => {
     setSortConfig({ key, direction });
   };
 
-  // Função para obter dados ordenados
-  const getSortedData = () => {
-    if (!sortConfig.key) return dados;
-
-    const sortedData = [...dados].sort((a, b) => {
-      let aValue = a[sortConfig.key];
-      let bValue = b[sortConfig.key];
-
-      // Tratamento especial para valores nulos/undefined
-      if (aValue === null || aValue === undefined) aValue = '';
-      if (bValue === null || bValue === undefined) bValue = '';
-
-      // Tratamento especial para datas
-      if (sortConfig.key === 'dt_movim' || sortConfig.key === 'dt_liquidacao') {
-        aValue = new Date(aValue).getTime() || 0;
-        bValue = new Date(bValue).getTime() || 0;
-      }
-      // Tratamento especial para valores monetários
-      else if (sortConfig.key === 'vl_lanc') {
-        aValue = parseFloat(aValue) || 0;
-        bValue = parseFloat(bValue) || 0;
-      }
-      // Tratamento para strings
-      else if (typeof aValue === 'string') {
-        aValue = aValue.toLowerCase();
-        bValue = bValue.toLowerCase();
-      }
-
-      if (aValue < bValue) {
-        return sortConfig.direction === 'asc' ? -1 : 1;
-      }
-      if (aValue > bValue) {
-        return sortConfig.direction === 'asc' ? 1 : -1;
-      }
-      return 0;
-    });
-
-    return sortedData;
-  };
-
-  const dadosOrdenados = getSortedData();
-
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
       <PageTitle
@@ -937,30 +1156,40 @@ const ExtratoCredito = () => {
               />
             </div>
 
-            {/* Data Início */}
+            {/* Filtro Tipo DOC */}
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                Data Início
+                Tipo DOC
               </label>
-              <input
-                type="date"
-                value={dataInicio}
-                onChange={(e) => setDataInicio(e.target.value)}
+              <select
+                value={tipoDocFiltro}
+                onChange={(e) => setTipoDocFiltro(e.target.value)}
                 className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-              />
+              >
+                {TIPOS_DOC.map((tipo) => (
+                  <option key={tipo.value} value={tipo.value}>
+                    {tipo.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            {/* Data Fim */}
+            {/* Filtro Histórico */}
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                Data Fim
+                Histórico
               </label>
-              <input
-                type="date"
-                value={dataFim}
-                onChange={(e) => setDataFim(e.target.value)}
-                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs justcify-center"
-              />
+              <select
+                value={historicoFiltro}
+                onChange={(e) => setHistoricoFiltro(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              >
+                {HISTORICOS.map((hist) => (
+                  <option key={hist.value} value={hist.value}>
+                    {hist.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Botão Buscar */}
@@ -1152,13 +1381,22 @@ const ExtratoCredito = () => {
                 : 'Nenhum dado carregado'}
             </div>
             {dados.length > 0 && (
-              <button
-                onClick={handleExportExcel}
-                className="flex items-center gap-1 bg-green-600 text-white px-2 py-1 rounded-lg hover:bg-green-700 transition-colors font-medium text-xs"
-              >
-                <FileArrowDown size={12} />
-                BAIXAR EXCEL
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportExcel}
+                  className="flex items-center gap-1 bg-green-600 text-white px-2 py-1 rounded-lg hover:bg-green-700 transition-colors font-medium text-xs"
+                >
+                  <FileArrowDown size={12} />
+                  EXCEL
+                </button>
+                <button
+                  onClick={handleExportPDF}
+                  className="flex items-center gap-1 bg-red-600 text-white px-2 py-1 rounded-lg hover:bg-red-700 transition-colors font-medium text-xs"
+                >
+                  <FileArrowDown size={12} />
+                  PDF
+                </button>
+              </div>
             )}
           </div>
         </div>

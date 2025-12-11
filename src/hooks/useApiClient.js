@@ -416,6 +416,12 @@ const useApiClient = () => {
      */
     excluirDespesaManual: (id) =>
       apiMutate(`/api/financial/despesas-manuais-dre/${id}`, 'DELETE'),
+
+    /**
+     * Buscar dados de auditoria de conta
+     * @returns {Promise<Object>} Movimentações de contas específicas
+     */
+    auditoriaConta: () => apiCall('/api/financial/auditoria-conta'),
   };
 
   const sales = {
