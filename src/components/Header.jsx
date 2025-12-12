@@ -96,7 +96,7 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
 
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
-      <div className="w-full flex items-center sm:justify-around md:justify-between p-6 py-1">
+      <div className="w-full flex items-center sm:justify-center md:justify-between p-6 py-1">
         <div className="flex items-center gap-4">
           {/* Botão de menu hambúrguer */}
           <button
@@ -148,9 +148,6 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
               onClick={() => setShowDropdown(!showDropdown)}
             >
               <User size={20} className="text-gray-500" />
-              <span className="text-sm font-medium text-gray-700">
-                {user?.name || 'Usuário'}
-              </span>
               <svg
                 className={`w-4 h-4 text-gray-500 transition-transform ${
                   showDropdown ? 'rotate-180' : ''

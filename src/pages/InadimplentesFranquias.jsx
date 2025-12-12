@@ -3,6 +3,8 @@ import FiltroEstados from '../components/filters/FiltroEstados';
 import FiltroClientes from '../components/filters/FiltroClientes';
 import useApiClient from '../hooks/useApiClient';
 import PageTitle from '../components/ui/PageTitle';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   Card,
   CardContent,
@@ -29,6 +31,7 @@ import {
   CurrencyDollar,
   MapPin,
   Receipt,
+  FileArrowDown,
 } from '@phosphor-icons/react';
 
 // Registrar componentes do Chart.js
@@ -100,14 +103,19 @@ const InadimplentesFranquias = () => {
   const dadosFiltrados = useMemo(() => {
     return dados.filter((item) => {
       // REGRA 1: Filtrar apenas tp_documento = 1 (faturas de mercadoria)
-      const tipoDocumentoValido = !item.tp_documento || item.tp_documento === 1 || item.tp_documento === '1';
-      
+      const tipoDocumentoValido =
+        !item.tp_documento ||
+        item.tp_documento === 1 ||
+        item.tp_documento === '1';
+
       // REGRA 2: Filtrar apenas tp_situacao = 1 (situação ativa/normal)
-      const situacaoValida = !item.tp_situacao || item.tp_situacao === 1 || item.tp_situacao === '1';
-      
+      const situacaoValida =
+        !item.tp_situacao || item.tp_situacao === 1 || item.tp_situacao === '1';
+
       // REGRA 3: Não mostrar faturas canceladas (dt_cancelamento deve ser null)
-      const naoCancelada = !item.dt_cancelamento || item.dt_cancelamento === null;
-      
+      const naoCancelada =
+        !item.dt_cancelamento || item.dt_cancelamento === null;
+
       // REGRA 4: Não mostrar faturas liquidadas (dt_liq deve ser null)
       const naoLiquidada = !item.dt_liq || item.dt_liq === null;
 
@@ -131,7 +139,15 @@ const InadimplentesFranquias = () => {
 
       const estaAtrasado = diasAtraso >= 1;
 
-      return matchCliente && estaAtrasado && matchEstado && tipoDocumentoValido && situacaoValida && naoCancelada && naoLiquidada;
+      return (
+        matchCliente &&
+        estaAtrasado &&
+        matchEstado &&
+        tipoDocumentoValido &&
+        situacaoValida &&
+        naoCancelada &&
+        naoLiquidada
+      );
     });
   }, [dados, filtroClientes, filtroEstados]);
 
@@ -346,6 +362,148 @@ const InadimplentesFranquias = () => {
     setFaturasSelecionadas([]);
   };
 
+  // Função para exportar dados para PDF
+  const handleExportPDF = () => {
+    if (clientesAgrupados.length === 0) {
+      alert('Não há dados para exportar!');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF('l', 'mm', 'a4'); // landscape orientation
+
+      // Título do documento
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Inadimplência Franquias', 14, 15);
+
+      // Data de geração
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      const dataGeracao = new Date().toLocaleString('pt-BR');
+      doc.text(`Gerado em: ${dataGeracao}`, 14, 22);
+
+      // Informações de filtros aplicados
+      let yPos = 28;
+      if (filtroDataInicial) {
+        doc.text(`Data Inicial: ${filtroDataInicial}`, 14, yPos);
+        yPos += 5;
+      }
+      if (filtroDataFinal) {
+        doc.text(`Data Final: ${filtroDataFinal}`, 14, yPos);
+        yPos += 5;
+      }
+      if (filtroClientes.length > 0) {
+        doc.text(
+          `Filtro de Clientes Aplicado: ${filtroClientes.length} selecionados`,
+          14,
+          yPos,
+        );
+        yPos += 5;
+      }
+      if (filtroEstados.length > 0) {
+        doc.text(`Estados Filtrados: ${filtroEstados.join(', ')}`, 14, yPos);
+        yPos += 5;
+      }
+
+      // Preparar dados para a tabela
+      const tableData = clientesAgrupados.map((cliente) => {
+        const diasMax = (cliente.faturas || []).reduce((max, f) => {
+          if (!f.dt_vencimento) return max;
+          const diff = Math.floor(
+            (new Date() - new Date(f.dt_vencimento)) / (1000 * 60 * 60 * 24),
+          );
+          return Math.max(max, diff);
+        }, 0);
+
+        return [
+          cliente.cd_cliente || '-',
+          cliente.nm_fantasia || '-',
+          cliente.nm_cliente || '-',
+          cliente.ds_uf || '-',
+          formatarMoeda(cliente.valor_total),
+          cliente.faturas.length.toString(),
+          diasMax > 0 ? `${diasMax} dias` : '-',
+        ];
+      });
+
+      // Criar a tabela
+      autoTable(doc, {
+        startY: yPos + 5,
+        head: [
+          [
+            'Cód. Cliente',
+            'Nome Fantasia',
+            'Nome Cliente',
+            'Estado',
+            'Valor Total',
+            'Nº Faturas',
+            'Maior Atraso',
+          ],
+        ],
+        body: tableData,
+        styles: {
+          fontSize: 8,
+          cellPadding: 2,
+        },
+        headStyles: {
+          fillColor: [0, 6, 56], // cor #000638
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          halign: 'center',
+        },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 25 }, // Cód. Cliente
+          1: { halign: 'left', cellWidth: 50 }, // Nome Fantasia
+          2: { halign: 'left', cellWidth: 50 }, // Nome Cliente
+          3: { halign: 'center', cellWidth: 20 }, // Estado
+          4: { halign: 'right', cellWidth: 30 }, // Valor Total
+          5: { halign: 'center', cellWidth: 25 }, // Nº Faturas
+          6: { halign: 'center', cellWidth: 30 }, // Maior Atraso
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245],
+        },
+        margin: { top: 10 },
+      });
+
+      // Adicionar rodapé com totalizadores
+      const finalY =
+        doc.lastAutoTable?.finalY || doc.previousAutoTable?.finalY || yPos + 10;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+
+      doc.text('RESUMO GERAL:', 14, finalY + 10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(
+        `Total de Clientes Inadimplentes: ${metricas.totalClientes}`,
+        14,
+        finalY + 16,
+      );
+      doc.text(
+        `Valor Total em Aberto: ${formatarMoeda(metricas.valorTotal)}`,
+        14,
+        finalY + 22,
+      );
+
+      const totalFaturas = clientesAgrupados.reduce(
+        (acc, c) => acc + c.faturas.length,
+        0,
+      );
+      doc.text(`Total de Faturas: ${totalFaturas}`, 14, finalY + 28);
+
+      // Salvar o PDF
+      const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+      const nomeArquivo = `inadimplentes-franquias-${hoje}.pdf`;
+      doc.save(nomeArquivo);
+
+      console.log('✅ PDF exportado com sucesso:', nomeArquivo);
+    } catch (error) {
+      console.error('❌ Erro ao exportar PDF:', error);
+      alert('Erro ao exportar arquivo PDF. Tente novamente.');
+    }
+  };
+
   return (
     <div className="w-full max-w-7xl mx-auto py-6 px-4 space-y-6">
       <PageTitle
@@ -548,11 +706,22 @@ const InadimplentesFranquias = () => {
 
       <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
         <CardHeader className="pb-2">
-          <div className="flex items-center gap-2">
-            <Receipt size={18} className="text-purple-600" />
-            <CardTitle className="text-sm font-bold text-purple-700">
-              Lista de Clientes Inadimplentes
-            </CardTitle>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Receipt size={18} className="text-purple-600" />
+              <CardTitle className="text-sm font-bold text-purple-700">
+                Lista de Clientes Inadimplentes
+              </CardTitle>
+            </div>
+            {clientesAgrupados.length > 0 && (
+              <button
+                onClick={handleExportPDF}
+                className="flex items-center gap-1 bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors font-medium text-xs shadow-md"
+              >
+                <FileArrowDown size={14} />
+                EXPORTAR PDF
+              </button>
+            )}
           </div>
         </CardHeader>
         <CardContent className="pt-0 px-4 pb-4">
