@@ -147,22 +147,7 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
               className="flex items-center gap-2 px-3 py-1 rounded-lg hover:bg-gray-100 transition-colors"
               onClick={() => setShowDropdown(!showDropdown)}
             >
-              <User size={20} className="text-gray-500" />
-              <svg
-                className={`w-4 h-4 text-gray-500 transition-transform ${
-                  showDropdown ? 'rotate-180' : ''
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 9l-7 7-7-7"
-                />
-              </svg>
+              <User size={24} className="text-gray-500" />
             </button>
 
             {/* Dropdown menu */}
