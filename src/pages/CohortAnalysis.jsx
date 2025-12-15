@@ -115,23 +115,23 @@ const CohortAnalysis = () => {
   const getRetentionColor = (retention, isFirstMonth = false) => {
     if (isFirstMonth) return 'rgba(255, 255, 255, 1)'; // Branco para mês 0
 
-    // Nova escala de cores: 0-2 vermelho, 2.1-5 laranja, 5.1-8 azul, 8.1+ verde
+    // Escala de cores invertida: 0-2 verde, 2.1-5 azul, 5.1-8 laranja, 8.1+ vermelho
     if (retention > 8) {
-      // Verde: 8.1% ou mais
+      // Vermelho: 8.1% ou mais
       const intensity = Math.min((retention - 8.1) / 91.9, 1); // 8.1-100%
-      return `rgba(34, 197, 94, ${0.4 + intensity * 0.6})`; // Verde
+      return `rgba(239, 68, 68, ${0.4 + intensity * 0.6})`; // Vermelho
     } else if (retention > 5) {
-      // Azul: 5.1-8%
+      // Laranja: 5.1-8%
       const intensity = (retention - 5.1) / 2.9; // 5.1-8%
-      return `rgba(59, 130, 246, ${0.4 + intensity * 0.6})`; // Azul
-    } else if (retention > 2) {
-      // Laranja: 2.1-5%
-      const intensity = (retention - 2.1) / 2.9; // 2.1-5%
       return `rgba(249, 115, 22, ${0.4 + intensity * 0.6})`; // Laranja
+    } else if (retention > 2) {
+      // Azul: 2.1-5%
+      const intensity = (retention - 2.1) / 2.9; // 2.1-5%
+      return `rgba(59, 130, 246, ${0.4 + intensity * 0.6})`; // Azul
     } else {
-      // Vermelho: 0-2%
+      // Verde: 0-2%
       const intensity = Math.max(retention / 2, 0.4); // 0-2%
-      return `rgba(239, 68, 68, ${intensity})`; // Vermelho
+      return `rgba(34, 197, 94, ${intensity})`; // Verde
     }
   };
 
@@ -174,6 +174,9 @@ const CohortAnalysis = () => {
                   Mês {i + 1}
                 </th>
               ))}
+              <th className="border border-gray-400 px-3 py-3 text-center font-bold text-xs whitespace-nowrap bg-yellow-100 text-gray-900">
+                Total Clientes
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -248,10 +251,96 @@ const CohortAnalysis = () => {
                       </td>
                     );
                   })}
+                  {/* Coluna Total de Clientes (soma apenas meses 1+, excluindo novos clientes) */}
+                  <td className="border border-gray-300 px-3 py-3 text-center font-bold bg-yellow-50">
+                    <div className="flex flex-col items-center">
+                      <span className="text-base text-gray-800">
+                        {cohort.retention_by_month
+                          .filter((r) => r.months_since_cohort > 0)
+                          .reduce(
+                            (sum, r) => sum + parseInt(r.active_users || 0, 10),
+                            0,
+                          )}
+                      </span>
+                      <span className="text-xs text-gray-500 font-normal">
+                        clientes
+                      </span>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
           </tbody>
+          <tfoot>
+            <tr className="bg-gradient-to-r from-gray-100 to-gray-200 font-bold">
+              <td className="border border-gray-400 px-4 py-3 text-left font-bold text-sm sticky left-0 bg-gradient-to-r from-gray-100 to-gray-200 z-10">
+                TOTAL
+              </td>
+              <td className="border border-gray-400 px-3 py-3 text-center text-xs">
+                -
+              </td>
+              {/* Total de Novos Clientes */}
+              <td className="border border-gray-400 px-3 py-3 text-center font-bold bg-gray-100">
+                <div className="flex flex-col items-center">
+                  <span className="text-base text-gray-800">
+                    {cohortData.cohorts.reduce(
+                      (sum, c) => sum + parseInt(c.total_users || 0, 10),
+                      0,
+                    )}
+                  </span>
+                  <span className="text-xs text-gray-600 font-normal">
+                    novos
+                  </span>
+                </div>
+              </td>
+              {/* Total por mês */}
+              {Array.from({ length: maxMonths }, (_, monthIdx) => {
+                const totalMes = cohortData.cohorts.reduce((sum, cohort) => {
+                  const retention = cohort.retention_by_month.find(
+                    (r) => r.months_since_cohort === monthIdx + 1,
+                  );
+                  return sum + parseInt(retention?.active_users || 0, 10);
+                }, 0);
+
+                return (
+                  <td
+                    key={monthIdx}
+                    className="border border-gray-400 px-3 py-3 text-center font-bold bg-gray-100"
+                  >
+                    <div className="flex flex-col items-center">
+                      <span className="text-base text-gray-800">
+                        {totalMes}
+                      </span>
+                      <span className="text-xs text-gray-600 font-normal">
+                        clientes
+                      </span>
+                    </div>
+                  </td>
+                );
+              })}
+              {/* Total Geral de Clientes de Retorno */}
+              <td className="border border-gray-400 px-3 py-3 text-center font-bold bg-yellow-100">
+                <div className="flex flex-col items-center">
+                  <span className="text-base text-gray-800">
+                    {cohortData.cohorts.reduce((sum, cohort) => {
+                      return (
+                        sum +
+                        cohort.retention_by_month
+                          .filter((r) => r.months_since_cohort > 0)
+                          .reduce(
+                            (s, r) => s + parseInt(r.active_users || 0, 10),
+                            0,
+                          )
+                      );
+                    }, 0)}
+                  </span>
+                  <span className="text-xs text-gray-600 font-normal">
+                    total
+                  </span>
+                </div>
+              </td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     );
@@ -614,19 +703,10 @@ const CohortAnalysis = () => {
                   <div className="flex items-center gap-3">
                     <div
                       className="w-12 h-8 rounded border border-gray-300"
-                      style={{ backgroundColor: 'rgba(34, 197, 94, 0.8)' }}
+                      style={{ backgroundColor: 'rgba(239, 68, 68, 0.8)' }}
                     ></div>
                     <span className="text-sm text-gray-600">
-                      <strong>Verde:</strong> Retenção excelente (≥8.1%)
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-12 h-8 rounded border border-gray-300"
-                      style={{ backgroundColor: 'rgba(59, 130, 246, 0.7)' }}
-                    ></div>
-                    <span className="text-sm text-gray-600">
-                      <strong>Azul:</strong> Retenção boa (5.1-8%)
+                      <strong>Vermelho:</strong> Retenção excelente (≥8.1%)
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
@@ -635,16 +715,25 @@ const CohortAnalysis = () => {
                       style={{ backgroundColor: 'rgba(249, 115, 22, 0.7)' }}
                     ></div>
                     <span className="text-sm text-gray-600">
-                      <strong>Laranja:</strong> Retenção baixa (2.1-5%)
+                      <strong>Laranja:</strong> Retenção boa (5.1-8%)
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
                     <div
                       className="w-12 h-8 rounded border border-gray-300"
-                      style={{ backgroundColor: 'rgba(239, 68, 68, 0.6)' }}
+                      style={{ backgroundColor: 'rgba(59, 130, 246, 0.7)' }}
                     ></div>
                     <span className="text-sm text-gray-600">
-                      <strong>Vermelho:</strong> Retenção crítica (0-2%)
+                      <strong>Azul:</strong> Retenção baixa (2.1-5%)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-12 h-8 rounded border border-gray-300"
+                      style={{ backgroundColor: 'rgba(34, 197, 94, 0.6)' }}
+                    ></div>
+                    <span className="text-sm text-gray-600">
+                      <strong>Verde:</strong> Retenção crítica (0-2%)
                     </span>
                   </div>
                 </div>
