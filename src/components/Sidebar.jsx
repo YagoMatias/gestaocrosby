@@ -38,6 +38,7 @@ import {
   CalendarDots,
   ClipboardText,
   Handshake,
+  MagnifyingGlass,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -162,6 +163,13 @@ const financeiro = [
     href: '/extrato-totvs',
     icon: Receipt,
     color: 'text-indigo-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
+  {
+    name: 'Auditoria de Antecipações',
+    href: '/auditoria-antecipacoes',
+    icon: MagnifyingGlass,
+    color: 'text-amber-600',
     roles: ['owner', 'admin', 'manager', 'user'],
   },
   {

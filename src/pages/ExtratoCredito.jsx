@@ -29,6 +29,7 @@ import {
   Funnel,
   CaretUp,
   CaretDown,
+  User,
 } from '@phosphor-icons/react';
 
 const ExtratoCredito = () => {
@@ -39,6 +40,7 @@ const ExtratoCredito = () => {
 
   // Estados dos filtros
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
+  const [filtroCliente, setFiltroCliente] = useState('');
   const [tipoDocFiltro, setTipoDocFiltro] = useState('TODOS');
   const [historicoFiltro, setHistoricoFiltro] = useState('TODOS');
 
@@ -96,7 +98,8 @@ const ExtratoCredito = () => {
 
   // Função para buscar saldo de CREDEV e Adiantamento
   const buscarSaldoCredito = async () => {
-    if (empresasSelecionadas.length === 0) return;
+    // Precisa ter empresa OU cliente para buscar saldo
+    if (empresasSelecionadas.length === 0 && !filtroCliente.trim()) return;
 
     setLoadingSaldo(true);
     try {
@@ -105,10 +108,11 @@ const ExtratoCredito = () => {
       const result = await apiClient.financial.credevAdiantamento();
 
       if (result.success && result.data) {
-        // Filtrar dados das empresas selecionadas
-        const cdPessoasSelecionadas = empresasSelecionadas.map(
-          (emp) => emp.cd_pessoa,
-        );
+        // Montar lista de cd_pessoa para filtrar (empresas + cliente)
+        const cdPessoasSelecionadas = [
+          ...empresasSelecionadas.map((emp) => emp.cd_pessoa),
+          ...(filtroCliente.trim() ? [filtroCliente.trim()] : []),
+        ];
 
         const dadosFiltrados = result.data.filter((item) => {
           const cdPessoa = item.cd_pessoa || item.cd_cliente;
@@ -151,8 +155,11 @@ const ExtratoCredito = () => {
 
   // Função para buscar dados
   const buscarExtrato = async () => {
-    if (empresasSelecionadas.length === 0) {
-      setErro('Por favor, selecione pelo menos uma empresa');
+    // Validar: precisa ter empresa OU cliente
+    if (empresasSelecionadas.length === 0 && !filtroCliente.trim()) {
+      setErro(
+        'Por favor, selecione pelo menos uma empresa ou informe um código de cliente',
+      );
       return;
     }
 
@@ -163,16 +170,32 @@ const ExtratoCredito = () => {
     setLoading(true);
     setErro('');
     try {
-      // Buscar dados para todas as empresas selecionadas
-      const todasPromises = empresasSelecionadas.map(async (empresa) => {
-        console.log('🔍 Buscando extrato da empresa:', {
-          cd_pessoa: empresa.cd_pessoa,
+      // Determinar quais cd_pessoa buscar
+      let cdPessoasParaBuscar = [];
+
+      // Se tem filtro de cliente, adiciona ele
+      if (filtroCliente.trim()) {
+        cdPessoasParaBuscar.push({
+          cd_pessoa: filtroCliente.trim(),
+          nome: 'Cliente: ' + filtroCliente.trim(),
+        });
+      }
+
+      // Se tem empresas selecionadas, adiciona elas
+      if (empresasSelecionadas.length > 0) {
+        cdPessoasParaBuscar = [...cdPessoasParaBuscar, ...empresasSelecionadas];
+      }
+
+      // Buscar dados para todos os cd_pessoa (empresas e/ou cliente)
+      const todasPromises = cdPessoasParaBuscar.map(async (item) => {
+        console.log('🔍 Buscando extrato:', {
+          cd_pessoa: item.cd_pessoa,
           dt_inicio: dataInicio,
           dt_fim: dataFim,
         });
 
         const result = await apiClient.financial.extratoCliente({
-          cd_pessoa: empresa.cd_pessoa,
+          cd_pessoa: item.cd_pessoa,
           dt_inicio: dataInicio,
           dt_fim: dataFim,
         });
@@ -1147,12 +1170,29 @@ const ExtratoCredito = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 mb-3">
             {/* Filtro de Empresa */}
             <div>
               <FiltroEmpresa
                 empresasSelecionadas={empresasSelecionadas}
                 onSelectEmpresas={setEmpresasSelecionadas}
+              />
+            </div>
+
+            {/* Filtro de Cliente (CD Pessoa) */}
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                <span className="flex items-center gap-1">
+                  <User size={12} weight="bold" />
+                  Código Cliente
+                </span>
+              </label>
+              <input
+                type="text"
+                value={filtroCliente}
+                onChange={(e) => setFiltroCliente(e.target.value)}
+                placeholder="Ex: 12345"
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs placeholder:text-gray-400"
               />
             </div>
 
@@ -1215,7 +1255,7 @@ const ExtratoCredito = () => {
       </div>
 
       {/* Cards de Saldo de Crédito */}
-      {empresasSelecionadas.length > 0 && (
+      {(empresasSelecionadas.length > 0 || filtroCliente.trim()) && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-2 mb-6 max-w-7xl mx-auto">
           {/* Saldo CREDEV */}
           <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">

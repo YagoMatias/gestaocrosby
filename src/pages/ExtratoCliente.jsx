@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
 import useApiClient from '../hooks/useApiClient';
 import LoadingSpinner from '../components/LoadingSpinner';
+import PageTitle from '../components/ui/PageTitle';
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from '../components/ui/cards';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   MagnifyingGlass,
   Calendar,
@@ -20,6 +24,11 @@ import {
   Eye,
   X,
   FileArrowDown,
+  CheckCircle,
+  Funnel,
+  CaretUp,
+  CaretDown,
+  User,
 } from '@phosphor-icons/react';
 
 const ExtratoCliente = () => {
@@ -29,15 +38,25 @@ const ExtratoCliente = () => {
   const [erro, setErro] = useState('');
 
   // Estados dos filtros
-  const [cdPessoa, setCdPessoa] = useState('');
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
+  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
+  const [filtroCliente, setFiltroCliente] = useState('');
+  const [tipoDocFiltro, setTipoDocFiltro] = useState('TODOS');
+  const [historicoFiltro, setHistoricoFiltro] = useState('TODOS');
 
   // Estados do modal de detalhes
   const [modalOpen, setModalOpen] = useState(false);
   const [detalhesLoading, setDetalhesLoading] = useState(false);
   const [detalhesFatura, setDetalhesFatura] = useState([]);
   const [itemSelecionado, setItemSelecionado] = useState(null);
+
+  // Estados para observações da movimentação
+  const [observacoes, setObservacoes] = useState([]);
+  const [observacoesLoading, setObservacoesLoading] = useState(false);
+
+  // Estados para produtos da transação
+  const [produtosNF, setProdutosNF] = useState([]);
+  const [produtosLoading, setProdutosLoading] = useState(false);
+  const [produtosError, setProdutosError] = useState('');
 
   // Estados para DANFE
   const [danfeLoading, setDanfeLoading] = useState(false);
@@ -49,49 +68,162 @@ const ExtratoCliente = () => {
   const [boletoBase64, setBoletoBase64] = useState('');
   const [faturaParaBoleto, setFaturaParaBoleto] = useState(null);
 
+  // Estados para saldo de CREDEV e Adiantamento
+  const [saldoCredev, setSaldoCredev] = useState(0);
+  const [saldoAdiantamento, setSaldoAdiantamento] = useState(0);
+  const [loadingSaldo, setLoadingSaldo] = useState(false);
+
+  // Estados para ordenação
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+
   const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
+  const FranchiseURL =
+    'https://apigestaocrosby-bw2v.onrender.com/api/franchise/';
+
+  // Constantes para os filtros
+  const TIPOS_DOC = [
+    { value: 'TODOS', label: 'Todos' },
+    { value: '10', label: 'Adiantamento' },
+    { value: '20', label: 'CREDEV' },
+  ];
+
+  const HISTORICOS = [
+    { value: 'TODOS', label: 'Todos' },
+    { value: 'TRANSF_EMP', label: 'TRANSF EMP' },
+    { value: 'UTILIZACAO', label: 'UTILIZAÇÃO' },
+    { value: 'LANCAMENTO', label: 'LANÇAMENTO' },
+    { value: 'CANCEL_CREDEV', label: 'CANCEL CREDEV' },
+  ];
+
+  // Função para buscar saldo de CREDEV e Adiantamento
+  const buscarSaldoCredito = async () => {
+    // Precisa ter empresa OU cliente para buscar saldo
+    if (empresasSelecionadas.length === 0 && !filtroCliente.trim()) return;
+
+    setLoadingSaldo(true);
+    try {
+      console.log('💰 Buscando saldo de crédito...');
+
+      const result = await apiClient.financial.credevAdiantamento();
+
+      if (result.success && result.data) {
+        // Montar lista de cd_pessoa para filtrar (empresas + cliente)
+        const cdPessoasSelecionadas = [
+          ...empresasSelecionadas.map((emp) => emp.cd_pessoa),
+          ...(filtroCliente.trim() ? [filtroCliente.trim()] : []),
+        ];
+
+        const dadosFiltrados = result.data.filter((item) => {
+          const cdPessoa = item.cd_pessoa || item.cd_cliente;
+          return cdPessoasSelecionadas.includes(cdPessoa);
+        });
+
+        // Calcular saldo de CREDEV
+        const totalCredev = dadosFiltrados
+          .filter((item) => item.tp_documento === 'CREDEV')
+          .reduce((acc, item) => {
+            const saldo = parseFloat(item.vl_saldo) || 0;
+            return acc + saldo;
+          }, 0);
+
+        // Calcular saldo de ADIANTAMENTO
+        const totalAdiantamento = dadosFiltrados
+          .filter((item) => item.tp_documento === 'ADIANTAMENTO')
+          .reduce((acc, item) => {
+            const saldo = parseFloat(item.vl_saldo) || 0;
+            return acc + saldo;
+          }, 0);
+
+        console.log('✅ Saldo calculado:', {
+          credev: totalCredev,
+          adiantamento: totalAdiantamento,
+          total: totalCredev + totalAdiantamento,
+        });
+
+        setSaldoCredev(totalCredev);
+        setSaldoAdiantamento(totalAdiantamento);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao buscar saldo de crédito:', error);
+      setSaldoCredev(0);
+      setSaldoAdiantamento(0);
+    } finally {
+      setLoadingSaldo(false);
+    }
+  };
 
   // Função para buscar dados
   const buscarExtrato = async () => {
-    if (!cdPessoa) {
-      setErro('Por favor, informe o código do cliente');
+    // Validar: precisa ter empresa OU cliente
+    if (empresasSelecionadas.length === 0 && !filtroCliente.trim()) {
+      setErro(
+        'Por favor, selecione pelo menos uma empresa ou informe um código de cliente',
+      );
       return;
     }
 
-    if (!dataInicio || !dataFim) {
-      setErro('Por favor, informe o período (data inicial e final)');
-      return;
-    }
+    // Definir datas fixas: início 01/01/1990 e fim hoje
+    const dataInicio = '1990-01-01';
+    const dataFim = new Date().toISOString().split('T')[0];
 
     setLoading(true);
     setErro('');
     try {
-      console.log('🔍 Buscando extrato do cliente:', {
-        cd_pessoa: cdPessoa,
-        dt_inicio: dataInicio,
-        dt_fim: dataFim,
+      // Determinar quais cd_pessoa buscar
+      let cdPessoasParaBuscar = [];
+
+      // Se tem filtro de cliente, adiciona ele
+      if (filtroCliente.trim()) {
+        cdPessoasParaBuscar.push({
+          cd_pessoa: filtroCliente.trim(),
+          nome: 'Cliente: ' + filtroCliente.trim(),
+        });
+      }
+
+      // Se tem empresas selecionadas, adiciona elas
+      if (empresasSelecionadas.length > 0) {
+        cdPessoasParaBuscar = [...cdPessoasParaBuscar, ...empresasSelecionadas];
+      }
+
+      // Buscar dados para todos os cd_pessoa (empresas e/ou cliente)
+      const todasPromises = cdPessoasParaBuscar.map(async (item) => {
+        console.log('🔍 Buscando extrato:', {
+          cd_pessoa: item.cd_pessoa,
+          dt_inicio: dataInicio,
+          dt_fim: dataFim,
+        });
+
+        const result = await apiClient.financial.extratoCliente({
+          cd_pessoa: item.cd_pessoa,
+          dt_inicio: dataInicio,
+          dt_fim: dataFim,
+        });
+
+        return result;
       });
 
-      const result = await apiClient.financial.extratoCliente({
-        cd_pessoa: cdPessoa,
-        dt_inicio: dataInicio,
-        dt_fim: dataFim,
+      const resultados = await Promise.all(todasPromises);
+
+      // Consolidar todos os resultados
+      let todosOsDados = [];
+      resultados.forEach((result) => {
+        if (result.success) {
+          // O useApiClient já processa a estrutura aninhada, então result.data já é o array
+          const dadosExtrato = Array.isArray(result.data)
+            ? result.data
+            : result.data?.data || [];
+
+          // Não filtrar nenhum código - mostrar todos
+          const dadosFiltrados = dadosExtrato;
+
+          todosOsDados = [...todosOsDados, ...dadosFiltrados];
+        }
       });
 
-      if (result.success) {
-        // O useApiClient já processa a estrutura aninhada, então result.data já é o array
-        const dadosExtrato = Array.isArray(result.data)
-          ? result.data
-          : result.data?.data || [];
-
-        // Filtrar apenas códigos históricos 900 e 901
-        const dadosFiltrados = dadosExtrato.filter(
-          (item) => item.cd_historico === '900' || item.cd_historico === '901',
-        );
-
+      if (todosOsDados.length > 0) {
         // Ordenar por data de movimentação em ordem decrescente (mais recente primeiro)
         // Se datas iguais, débito (D) vem antes de crédito (C)
-        const dadosOrdenados = [...dadosFiltrados].sort((a, b) => {
+        const dadosOrdenados = [...todosOsDados].sort((a, b) => {
           const dataA = new Date(a.dt_movim);
           const dataB = new Date(b.dt_movim);
 
@@ -107,16 +239,18 @@ const ExtratoCliente = () => {
           return 0;
         });
 
-        console.log('✅ Extrato recebido:', {
+        console.log('✅ Extrato consolidado recebido:', {
           total: dadosOrdenados.length,
-          totalSemFiltro: dadosExtrato.length,
+          empresas: empresasSelecionadas.length,
           primeiroItem: dadosOrdenados[0],
-          estruturaCompleta: result,
         });
         setDados(dadosOrdenados);
       } else {
-        throw new Error(result.message || 'Erro ao buscar extrato');
+        setDados([]);
       }
+
+      // Buscar saldo de crédito após buscar extrato
+      await buscarSaldoCredito();
     } catch (err) {
       console.error('❌ Erro ao buscar extrato:', err);
       setErro('Erro ao carregar dados do servidor.');
@@ -144,17 +278,112 @@ const ExtratoCliente = () => {
     });
   };
 
-  // Calcular totalizadores
-  const saldoTotal = dados.reduce(
+  // Função para obter dados ordenados e filtrados
+  const getSortedData = () => {
+    let dadosFiltrados = [...dados];
+
+    // Filtro por Tipo de Documento
+    if (tipoDocFiltro !== 'TODOS') {
+      dadosFiltrados = dadosFiltrados.filter(
+        (item) => item.tp_documento === tipoDocFiltro,
+      );
+    }
+
+    // Filtro por Código Histórico
+    if (historicoFiltro !== 'TODOS') {
+      dadosFiltrados = dadosFiltrados.filter((item) => {
+        const cdHistorico = item.cd_historico;
+
+        switch (historicoFiltro) {
+          case 'TRANSF_EMP':
+            return cdHistorico === '888' || cdHistorico === '889';
+          case 'UTILIZACAO':
+            return cdHistorico === '901';
+          case 'LANCAMENTO':
+            return (
+              cdHistorico === '6' ||
+              cdHistorico === '699' ||
+              cdHistorico === '900' ||
+              cdHistorico === '1075'
+            );
+          case 'CANCEL_CREDEV':
+            return cdHistorico === '1144' || cdHistorico === '1250';
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Ordenação
+    if (!sortConfig.key) return dadosFiltrados;
+
+    const sortedData = [...dadosFiltrados].sort((a, b) => {
+      let aValue = a[sortConfig.key];
+      let bValue = b[sortConfig.key];
+
+      // Tratamento especial para valores nulos/undefined
+      if (aValue === null || aValue === undefined) aValue = '';
+      if (bValue === null || bValue === undefined) bValue = '';
+
+      // Tratamento especial para datas
+      if (sortConfig.key === 'dt_movim' || sortConfig.key === 'dt_liquidacao') {
+        aValue = new Date(aValue).getTime() || 0;
+        bValue = new Date(bValue).getTime() || 0;
+      }
+      // Tratamento especial para valores monetários
+      else if (sortConfig.key === 'vl_lanc') {
+        aValue = parseFloat(aValue) || 0;
+        bValue = parseFloat(bValue) || 0;
+      }
+      // Tratamento para strings
+      else if (typeof aValue === 'string') {
+        aValue = aValue.toLowerCase();
+        bValue = bValue.toLowerCase();
+      }
+
+      if (aValue < bValue) {
+        return sortConfig.direction === 'asc' ? -1 : 1;
+      }
+      if (aValue > bValue) {
+        return sortConfig.direction === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+
+    return sortedData;
+  };
+
+  const dadosOrdenados = getSortedData();
+
+  // Calcular totalizadores com base nos dados filtrados
+  const saldoTotal = dadosOrdenados.reduce(
     (acc, item) => acc + (Number(item.vl_lancto) || 0),
     0,
   );
-  const totalDebito = dados
+  const totalDebito = dadosOrdenados
     .filter((item) => item.tp_operacao === 'D')
     .reduce((acc, item) => acc + (Number(item.vl_lancto) || 0), 0);
-  const totalCredito = dados
+  const totalCredito = dadosOrdenados
     .filter((item) => item.tp_operacao === 'C')
     .reduce((acc, item) => acc + (Number(item.vl_lancto) || 0), 0);
+
+  // Função auxiliar para formatar histórico
+  const formatarHistorico = (cd_historico) => {
+    const historicos = {
+      6: 'LANÇAMENTO',
+      7: 'ZERAR SALDO',
+      699: 'LANÇAMENTO',
+      888: 'TRANSF EMP',
+      889: 'TRANSF EMP',
+      900: 'LANÇAMENTO',
+      901: 'UTILIZAÇÃO',
+      1075: 'LANÇAMENTO',
+      1144: 'CANCEL CREDEV',
+      1250: 'CANCEL CREDEV',
+      1288: 'LANÇAMENTO',
+    };
+    return historicos[cd_historico] || cd_historico || '-';
+  };
 
   // Função para exportar dados para Excel
   const handleExportExcel = () => {
@@ -168,12 +397,7 @@ const ExtratoCliente = () => {
         Data: formatarDataBR(item.dt_movim),
         'NR CTAPES': item.nr_ctapes || '',
         'Seq Mov': item.nr_seqmov || '',
-        'Cod Histórico':
-          item.cd_historico === '900'
-            ? 'LANÇAMENTO'
-            : item.cd_historico === '901'
-            ? 'UTILIZAÇÃO'
-            : item.cd_historico || '',
+        'Cod Histórico': formatarHistorico(item.cd_historico),
         'Tipo Doc':
           item.tp_documento === '10'
             ? 'ADIANTAMENTO'
@@ -197,7 +421,7 @@ const ExtratoCliente = () => {
       });
 
       const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
-      const nomeArquivo = `extrato-cliente-${cdPessoa}-${hoje}.xlsx`;
+      const nomeArquivo = `extrato-credito-${hoje}.xlsx`;
 
       saveAs(data, nomeArquivo);
 
@@ -208,28 +432,254 @@ const ExtratoCliente = () => {
     }
   };
 
+  // Função para exportar dados para PDF
+  const handleExportPDF = () => {
+    if (dadosOrdenados.length === 0) {
+      alert('Não há dados para exportar!');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF('l', 'mm', 'a4'); // landscape orientation
+
+      // Título do documento
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Extrato de Crédito', 14, 15);
+
+      // Data de geração
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      const dataGeracao = new Date().toLocaleString('pt-BR');
+      doc.text(`Gerado em: ${dataGeracao}`, 14, 22);
+
+      // Informações de filtros aplicados
+      let yPos = 28;
+      if (empresasSelecionadas.length > 0) {
+        const empresasNomes = empresasSelecionadas
+          .map((e) => e.nm_fantasia)
+          .join(', ');
+        doc.text(`Empresas: ${empresasNomes}`, 14, yPos);
+        yPos += 5;
+      }
+      if (tipoDocFiltro !== 'TODOS') {
+        const tipoDocLabel =
+          TIPOS_DOC.find((t) => t.value === tipoDocFiltro)?.label ||
+          tipoDocFiltro;
+        doc.text(`Tipo DOC: ${tipoDocLabel}`, 14, yPos);
+        yPos += 5;
+      }
+      if (historicoFiltro !== 'TODOS') {
+        const historicoLabel =
+          HISTORICOS.find((h) => h.value === historicoFiltro)?.label ||
+          historicoFiltro;
+        doc.text(`Histórico: ${historicoLabel}`, 14, yPos);
+        yPos += 5;
+      }
+
+      // Preparar dados para a tabela
+      const tableData = dadosOrdenados.map((item) => [
+        formatarDataBR(item.dt_movim),
+        item.cd_empresa || '-',
+        item.nr_ctapes || '-',
+        item.nr_seqmov || '-',
+        formatarHistorico(item.cd_historico),
+        item.tp_documento === '10'
+          ? 'ADIANTAMENTO'
+          : item.tp_documento === '20'
+          ? 'CREDEV'
+          : item.tp_documento || '-',
+        item.tp_operacao === 'D' ? 'Débito' : 'Crédito',
+        formatarMoeda(item.vl_lancto),
+        formatarDataBR(item.dt_liq),
+      ]);
+
+      // Criar a tabela
+      autoTable(doc, {
+        startY: yPos + 5,
+        head: [
+          [
+            'Data Movim',
+            'Empresa',
+            'Conta',
+            'Seq Mov',
+            'Histórico',
+            'Tipo Doc',
+            'Operação',
+            'Valor',
+            'Data Liq',
+          ],
+        ],
+        body: tableData,
+        styles: {
+          fontSize: 8,
+          cellPadding: 2,
+        },
+        headStyles: {
+          fillColor: [0, 6, 56], // cor #000638
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          halign: 'center',
+        },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 22 }, // Data Movim
+          1: { halign: 'center', cellWidth: 18 }, // Empresa
+          2: { halign: 'center', cellWidth: 18 }, // Conta
+          3: { halign: 'center', cellWidth: 18 }, // Seq Mov
+          4: { halign: 'left', cellWidth: 32 }, // Histórico
+          5: { halign: 'left', cellWidth: 30 }, // Tipo Doc
+          6: { halign: 'center', cellWidth: 22 }, // Operação
+          7: { halign: 'right', cellWidth: 30 }, // Valor
+          8: { halign: 'center', cellWidth: 22 }, // Data Liq
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245],
+        },
+        margin: { top: 10 },
+      });
+
+      // Adicionar rodapé com totalizadores
+      const finalY =
+        doc.lastAutoTable?.finalY || doc.previousAutoTable?.finalY || yPos + 10;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+
+      // Criar duas colunas de informações
+      const col1X = 14;
+      const col2X = 150;
+
+      // Coluna 1: Movimentações do período
+      doc.text('MOVIMENTAÇÕES DO PERÍODO:', col1X, finalY + 10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(
+        `Total Débito: ${formatarMoeda(totalDebito)}`,
+        col1X,
+        finalY + 16,
+      );
+      doc.text(
+        `Total Crédito: ${formatarMoeda(totalCredito)}`,
+        col1X,
+        finalY + 22,
+      );
+      doc.text(
+        `Diferença: ${formatarMoeda(totalCredito - totalDebito)}`,
+        col1X,
+        finalY + 28,
+      );
+      doc.text(
+        `Total de registros: ${dadosOrdenados.length}`,
+        col1X,
+        finalY + 34,
+      );
+
+      // Coluna 2: Saldos disponíveis
+      doc.setFont('helvetica', 'bold');
+      doc.text('SALDOS DISPONÍVEIS:', col2X, finalY + 10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(
+        `Saldo CREDEV: ${formatarMoeda(saldoCredev)}`,
+        col2X,
+        finalY + 16,
+      );
+      doc.text(
+        `Saldo Adiantamento: ${formatarMoeda(saldoAdiantamento)}`,
+        col2X,
+        finalY + 22,
+      );
+      doc.setFont('helvetica', 'bold');
+      doc.text(
+        `Saldo Total: ${formatarMoeda(saldoCredev + saldoAdiantamento)}`,
+        col2X,
+        finalY + 28,
+      );
+
+      // Salvar o PDF
+      const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+      const nomeArquivo = `extrato-credito-${hoje}.pdf`;
+      doc.save(nomeArquivo);
+
+      console.log('✅ PDF exportado com sucesso:', nomeArquivo);
+    } catch (error) {
+      console.error('❌ Erro ao exportar PDF:', error);
+      alert('Erro ao exportar arquivo PDF. Tente novamente.');
+    }
+  };
+
   // Função para abrir modal e buscar detalhes
   const handleDetalhar = async (item) => {
     setItemSelecionado(item);
     setModalOpen(true);
     setDetalhesLoading(true);
     setDetalhesFatura([]);
+    setObservacoes([]);
+
+    // Buscar observações da movimentação
+    if (item.nr_ctapes && item.nr_seqmov) {
+      setObservacoesLoading(true);
+      try {
+        console.log('📝 Buscando observações da movimentação:', {
+          nr_ctapes: item.nr_ctapes,
+          nr_seqmov: item.nr_seqmov,
+        });
+
+        const obsResult = await apiClient.financial.obsMov({
+          nr_ctapes: item.nr_ctapes,
+          nr_seqmov: item.nr_seqmov,
+        });
+
+        if (obsResult.success) {
+          const obs = Array.isArray(obsResult.data)
+            ? obsResult.data
+            : obsResult.data?.data || [];
+          console.log('✅ Observações recebidas:', obs.length);
+          setObservacoes(obs);
+        } else {
+          console.warn('⚠️ Nenhuma observação encontrada');
+          setObservacoes([]);
+        }
+      } catch (error) {
+        console.error('❌ Erro ao buscar observações:', error);
+        setObservacoes([]);
+      } finally {
+        setObservacoesLoading(false);
+      }
+    }
 
     try {
+      // Verificar se é transferência entre empresas (códigos 888 ou 889)
+      const isTransferenciaEmpresa =
+        item.cd_historico === '888' || item.cd_historico === '889';
+
+      if (isTransferenciaEmpresa) {
+        // Para transferências entre empresas, não buscar detalhes
+        // O modal mostrará apenas a mensagem
+        setDetalhesFatura([]);
+        setDetalhesLoading(false);
+        return;
+      }
+
       // Verificar se é operação de crédito (C) e tipo documento ADIANTAMENTO (10)
       const isCreditoAdiantamento =
         item.tp_operacao === 'C' && item.tp_documento === '10';
 
+      // Verificar se é LANÇAMENTO CREDEV com data de liquidação
+      const isLancamentoCredevComLiquidacao =
+        item.tp_operacao === 'C' &&
+        item.tp_documento === '20' &&
+        item.dt_liq &&
+        item.dt_liq !== null &&
+        item.dt_liq !== '';
+
       if (isCreditoAdiantamento) {
         // Usar rota lanc-ext-adiant para crédito de adiantamento
         console.log('🔍 Buscando lançamentos de adiantamento:', {
-          cd_cliente: cdPessoa,
+          cd_cliente: item.cd_pessoa,
           dt_emissao: item.dt_movim.split('T')[0],
           cd_empresa: item.cd_empresa,
         });
 
         const result = await apiClient.financial.lancExtAdiant({
-          cd_cliente: cdPessoa,
+          cd_cliente: item.cd_pessoa,
           dt_emissao: item.dt_movim.split('T')[0],
           cd_empresa: item.cd_empresa,
         });
@@ -247,15 +697,85 @@ const ExtratoCliente = () => {
           console.error('❌ Erro ao buscar lançamentos:', result.message);
           setDetalhesFatura([]);
         }
+      } else if (isLancamentoCredevComLiquidacao) {
+        // NOVA LÓGICA: Buscar transação através da tabela fgr_liqitemcr
+        const dataLiquidacao = item.dt_liq.split('T')[0];
+        console.log(
+          '🔍 Buscando transação do lançamento CREDEV via fgr_liqitemcr:',
+          {
+            cd_pessoa: item.cd_pessoa,
+            dt_liquidacao: dataLiquidacao,
+            cd_empresa: item.cd_empresa,
+            valor: item.vl_lancto,
+          },
+        );
+
+        // Primeiro, buscar detalhes da fatura para obter o nr_fat
+        const faturaResult = await apiClient.financial.faturaExtCliente({
+          cd_cliente: item.cd_pessoa,
+          vl_fatura: item.vl_lancto,
+        });
+
+        if (faturaResult.success) {
+          const faturas = Array.isArray(faturaResult.data)
+            ? faturaResult.data
+            : faturaResult.data?.data || [];
+
+          console.log('📋 Faturas encontradas:', faturas.length);
+
+          if (faturas.length > 0) {
+            // Pegar a primeira fatura
+            const fatura = faturas[0];
+            console.log('📄 Fatura selecionada:', {
+              cd_cliente: fatura.cd_cliente,
+              nr_fat: fatura.nr_fat,
+              dt_movimfcc: dataLiquidacao,
+            });
+
+            // Buscar transação através da tabela fgr_liqitemcr
+            const transacaoResult =
+              await apiClient.financial.transacaoFaturaCredev({
+                cd_cliente: fatura.cd_cliente,
+                nr_fat: fatura.nr_fat,
+                dt_movimfcc: dataLiquidacao,
+              });
+
+            if (
+              transacaoResult.success &&
+              transacaoResult.data &&
+              transacaoResult.data.length > 0
+            ) {
+              const transacao = transacaoResult.data[0];
+              console.log('🎯 Transação encontrada:', transacao);
+
+              // Buscar produtos da transação
+              if (transacao.nr_transacao) {
+                await buscarProdutosNF(transacao.nr_transacao);
+              }
+
+              // Não precisa buscar detalhes de fatura, apenas mostrar os produtos
+              setDetalhesFatura([]);
+            } else {
+              console.warn('⚠️ Nenhuma transação encontrada via fgr_liqitemcr');
+              setDetalhesFatura([]);
+            }
+          } else {
+            console.warn('⚠️ Nenhuma fatura encontrada para buscar transação');
+            setDetalhesFatura([]);
+          }
+        } else {
+          console.error('❌ Erro ao buscar fatura:', faturaResult.message);
+          setDetalhesFatura([]);
+        }
       } else {
         // Usar rota original fatura-ext-cliente para débito
         console.log('🔍 Buscando detalhes da fatura:', {
-          cd_cliente: cdPessoa,
+          cd_cliente: item.cd_pessoa,
           vl_fatura: item.vl_lancto,
         });
 
         const result = await apiClient.financial.faturaExtCliente({
-          cd_cliente: cdPessoa,
+          cd_cliente: item.cd_pessoa,
           vl_fatura: item.vl_lancto,
         });
 
@@ -283,6 +803,45 @@ const ExtratoCliente = () => {
     setModalOpen(false);
     setItemSelecionado(null);
     setDetalhesFatura([]);
+    setProdutosNF([]);
+    setObservacoes([]);
+  };
+
+  // Função para buscar produtos da nota fiscal
+  const buscarProdutosNF = async (nr_transacao) => {
+    try {
+      setProdutosLoading(true);
+      setProdutosError('');
+      setProdutosNF([]);
+
+      console.log('🔍 Buscando produtos da NF:', nr_transacao);
+
+      const response = await fetch(
+        `${FranchiseURL}detalhenf?nr_transacao=${nr_transacao}`,
+      );
+
+      if (!response.ok) {
+        throw new Error('Erro ao buscar produtos da nota fiscal');
+      }
+
+      const data = await response.json();
+      console.log('✅ Produtos da NF recebidos:', data);
+
+      if (data.success && data.data && data.data.data) {
+        setProdutosNF(data.data.data);
+        console.log(`✅ ${data.data.data.length} produtos encontrados`);
+      } else {
+        setProdutosNF([]);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao buscar produtos:', error);
+      setProdutosError(
+        error.message || 'Erro ao buscar produtos da nota fiscal',
+      );
+      setProdutosNF([]);
+    } finally {
+      setProdutosLoading(false);
+    }
   };
 
   // Função para gerar DANFE a partir da transação
@@ -293,7 +852,7 @@ const ExtratoCliente = () => {
 
       console.log('🔍 Gerando DANFE da transação:', detalhe);
 
-      const cd_pessoa = parseInt(cdPessoa) || 0;
+      const cd_pessoa = parseInt(itemSelecionado?.cd_pessoa) || 0;
 
       // Função auxiliar para tentar gerar DANFE
       const tentarGerarDanfe = async (
@@ -470,7 +1029,7 @@ const ExtratoCliente = () => {
 
       const payload = {
         branchCode: parseInt(itemSelecionado.cd_empresa) || 0,
-        customerCode: cdPessoa || '',
+        customerCode: itemSelecionado?.cd_pessoa || '',
         receivableCode: parseInt(fatura.nr_fat) || 0,
         installmentNumber: parseInt(fatura.nr_parcela) || 0,
       };
@@ -573,142 +1132,168 @@ const ExtratoCliente = () => {
     }
   };
 
+  // Função para ordenar os dados
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
   return (
-    <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-[#000638] mb-2">
-            EXTRATO CLIENTE
-          </h1>
-          <p className="text-gray-600">Extrato detalhado por cliente</p>
-        </div>
-      </div>
+    <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+      <PageTitle
+        title="Extrato de Crédito"
+        subtitle="Consulte o extrato de crédito da sua franquia"
+        icon={CurrencyDollar}
+        iconColor="text-green-600"
+      />
 
-      {erro && (
-        <div className="mb-6 bg-red-100 border border-red-300 text-red-700 px-4 py-3 rounded-lg">
-          {erro}
-        </div>
-      )}
-
-      {/* Filtros */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 mb-8">
-        <div className="flex items-center gap-3 mb-4">
-          <MagnifyingGlass size={20} className="text-[#000638]" />
-          <h3 className="text-lg font-semibold text-[#000638]">
-            Buscar Extrato
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* Código do Cliente */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Código do Cliente
-            </label>
-            <input
-              type="number"
-              value={cdPessoa}
-              onChange={(e) => setCdPessoa(e.target.value)}
-              placeholder="Ex: 1178"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-700 outline-none transition-colors focus:border-[#000638] focus:ring-2 focus:ring-[#000638]/20"
-            />
+      {/* Formulário de Filtros */}
+      <div className="mb-4">
+        <div className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full max-w-7xl mx-auto border border-[#000638]/10">
+          <div className="mb-2">
+            <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
+              <Funnel size={18} weight="bold" />
+              Filtros
+            </span>
+            <span className="text-xs text-gray-500 mt-1">
+              Selecione a empresa e período para consulta
+            </span>
           </div>
 
-          {/* Data Início */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Data Início
-            </label>
-            <input
-              type="date"
-              value={dataInicio}
-              onChange={(e) => setDataInicio(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-700 outline-none transition-colors focus:border-[#000638] focus:ring-2 focus:ring-[#000638]/20"
-            />
-          </div>
+          {erro && (
+            <div className="mb-3 bg-red-100 border border-red-300 text-red-700 px-3 py-2 rounded-lg text-sm">
+              {erro}
+            </div>
+          )}
 
-          {/* Data Fim */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Data Fim
-            </label>
-            <input
-              type="date"
-              value={dataFim}
-              onChange={(e) => setDataFim(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-700 outline-none transition-colors focus:border-[#000638] focus:ring-2 focus:ring-[#000638]/20"
-            />
-          </div>
-
-          {/* Botão Buscar */}
-          <div className="flex items-end">
-            <button
-              onClick={buscarExtrato}
-              disabled={loading}
-              className="flex items-center gap-2 bg-[#000638] text-white px-4 py-2 rounded-lg hover:bg-[#fe0000] transition h-10 text-sm font-bold shadow-md tracking-wide uppercase disabled:opacity-50 w-full justify-center"
-            >
-              <MagnifyingGlass
-                size={18}
-                weight="bold"
-                className={loading ? 'animate-pulse' : ''}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3 ml-7">
+            {/* Filtro de Cliente (CD Pessoa) */}
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                <span className="flex items-center gap-1">
+                  <User size={12} weight="bold" />
+                  Código Cliente
+                </span>
+              </label>
+              <input
+                type="text"
+                value={filtroCliente}
+                onChange={(e) => setFiltroCliente(e.target.value)}
+                placeholder="Ex: 12345"
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs placeholder:text-gray-400"
               />
-              Buscar
-            </button>
+            </div>
+            {/* Filtro Tipo DOC */}
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Tipo DOC
+              </label>
+              <select
+                value={tipoDocFiltro}
+                onChange={(e) => setTipoDocFiltro(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              >
+                {TIPOS_DOC.map((tipo) => (
+                  <option key={tipo.value} value={tipo.value}>
+                    {tipo.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {/* Filtro Histórico */}
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Histórico
+              </label>
+              <select
+                value={historicoFiltro}
+                onChange={(e) => setHistoricoFiltro(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              >
+                {HISTORICOS.map((hist) => (
+                  <option key={hist.value} value={hist.value}>
+                    {hist.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {/* Botão Buscar */}
+            <div className="flex items-center">
+              <label className="block text-xs font-semibold mb-0.5 text-transparent">
+                Buscar
+              </label>
+              <button
+                onClick={buscarExtrato}
+                disabled={loading}
+                className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase justcify-center"
+              >
+                <MagnifyingGlass
+                  size={10}
+                  weight="bold"
+                  className={loading ? 'animate-pulse' : ''}
+                />
+                <span>Buscar</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Cards de Resumo */}
-      {dados.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {/* Total de Movimentações */}
+      {/* Cards de Saldo de Crédito */}
+      {(empresasSelecionadas.length > 0 || filtroCliente.trim()) && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-2 mb-6 max-w-7xl mx-auto">
+          {/* Saldo CREDEV */}
           <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
-                <Receipt size={18} className="text-blue-600" />
-                <CardTitle className="text-sm font-bold text-blue-700">
-                  Total de Movimentações
+                <CurrencyDollar size={14} className="text-blue-600" />
+                <CardTitle className="text-xs font-bold text-blue-700">
+                  Saldo CREDEV
                 </CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-lg font-extrabold text-blue-600">
-                {dados.length}
-              </div>
+            <CardContent className="pt-0 px-2 pb-2">
+              {loadingSaldo ? (
+                <div className="text-xs text-gray-500">Carregando...</div>
+              ) : (
+                <>
+                  <div className="text-sm font-extrabold text-blue-600 mb-0.5 break-words">
+                    {formatarMoeda(saldoCredev)}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    Saldo disponível em CREDEV
+                  </CardDescription>
+                </>
+              )}
             </CardContent>
           </Card>
 
-          {/* Total Débito */}
+          {/* Saldo Adiantamento */}
           <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-red-600" />
-                <CardTitle className="text-sm font-bold text-red-700">
-                  Total Débito
+                <CurrencyDollar size={14} className="text-purple-600" />
+                <CardTitle className="text-xs font-bold text-purple-700">
+                  Saldo Adiantamento
                 </CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-lg font-extrabold text-red-600">
-                {formatarMoeda(totalDebito)}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Total Crédito */}
-          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-green-600" />
-                <CardTitle className="text-sm font-bold text-green-700">
-                  Total Crédito
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-lg font-extrabold text-green-600">
-                {formatarMoeda(totalCredito)}
-              </div>
+            <CardContent className="pt-0 px-2 pb-2">
+              {loadingSaldo ? (
+                <div className="text-xs text-gray-500">Carregando...</div>
+              ) : (
+                <>
+                  <div className="text-sm font-extrabold text-purple-600 mb-0.5 break-words">
+                    {formatarMoeda(saldoAdiantamento)}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    Saldo disponível em adiantamento
+                  </CardDescription>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -716,174 +1301,391 @@ const ExtratoCliente = () => {
           <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
-                <IdentificationCard size={18} className="text-purple-600" />
-                <CardTitle className="text-sm font-bold text-purple-700">
+                <CurrencyDollar size={14} className="text-green-600" />
+                <CardTitle className="text-xs font-bold text-green-700">
                   Saldo Total
                 </CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-lg font-extrabold text-purple-600">
-                {formatarMoeda(saldoTotal)}
+            <CardContent className="pt-0 px-2 pb-2">
+              {loadingSaldo ? (
+                <div className="text-xs text-gray-500">Carregando...</div>
+              ) : (
+                <>
+                  <div className="text-sm font-extrabold text-green-600 mb-0.5 break-words">
+                    {formatarMoeda(saldoCredev + saldoAdiantamento)}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    Saldo total de crédito
+                  </CardDescription>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Cards de Movimentações do Extrato */}
+      {dados.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-2 mb-6 max-w-7xl mx-auto">
+          {/* Total Débito */}
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={14} className="text-red-600" />
+                <CardTitle className="text-xs font-bold text-red-700">
+                  Total Débito
+                </CardTitle>
               </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-2 pb-2">
+              <div className="text-sm font-extrabold text-red-600 mb-0.5 break-words">
+                {formatarMoeda(totalDebito)}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                Valor total debitado no período
+              </CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Total Crédito */}
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={14} className="text-green-600" />
+                <CardTitle className="text-xs font-bold text-green-700">
+                  Total Crédito
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-2 pb-2">
+              <div className="text-sm font-extrabold text-green-600 mb-0.5 break-words">
+                {formatarMoeda(totalCredito)}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                Valor total creditado no período
+              </CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Diferença (Saldo do Período) */}
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={14} className="text-orange-600" />
+                <CardTitle className="text-xs font-bold text-orange-700">
+                  Diferença
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-2 pb-2">
+              <div
+                className={`text-sm font-extrabold mb-0.5 break-words ${
+                  totalCredito - totalDebito >= 0
+                    ? 'text-green-600'
+                    : 'text-red-600'
+                }`}
+              >
+                {formatarMoeda(totalCredito - totalDebito)}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                Crédito - Débito do período
+              </CardDescription>
             </CardContent>
           </Card>
         </div>
       )}
 
       {/* Tabela */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <div className="flex justify-between items-start mb-3">
-            <h2 className="text-xl font-bold text-[#000638]">
-              Movimentações Financeiras
-            </h2>
+      <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 max-w-7xl mx-auto w-full">
+        <div className="p-3 border-b border-[#000638]/10 flex justify-between items-center">
+          <h2 className="text-sm font-bold text-[#000638] font-barlow">
+            Extrato de Crédito
+          </h2>
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-gray-600">
+              {dados.length > 0
+                ? `${dados.length} registros encontrados`
+                : 'Nenhum dado carregado'}
+            </div>
             {dados.length > 0 && (
-              <button
-                onClick={handleExportExcel}
-                className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
-              >
-                <DownloadSimple size={16} />
-                BAIXAR EXCEL
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportExcel}
+                  className="flex items-center gap-1 bg-green-600 text-white px-2 py-1 rounded-lg hover:bg-green-700 transition-colors font-medium text-xs"
+                >
+                  <FileArrowDown size={12} />
+                  EXCEL
+                </button>
+                <button
+                  onClick={handleExportPDF}
+                  className="flex items-center gap-1 bg-red-600 text-white px-2 py-1 rounded-lg hover:bg-red-700 transition-colors font-medium text-xs"
+                >
+                  <FileArrowDown size={12} />
+                  PDF
+                </button>
+              </div>
             )}
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-[#000638]">
-              <tr>
-                <th className="px-3 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                  Data Movim
-                </th>
-                <th className="px-3 py-3 text-center text-xs font-medium text-white uppercase tracking-wider">
-                  Empresa
-                </th>
-                <th className="px-3 py-3 text-center text-xs font-medium text-white uppercase tracking-wider">
-                  NR CTAPES
-                </th>
-                <th className="px-3 py-3 text-center text-xs font-medium text-white uppercase tracking-wider">
-                  Seq Mov
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                  Cód Histórico
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                  Tipo Doc
-                </th>
-                <th className="px-3 py-3 text-center text-xs font-medium text-white uppercase tracking-wider">
-                  Operação
-                </th>
-                <th className="px-3 py-3 text-right text-xs font-medium text-white uppercase tracking-wider">
-                  Valor Lançamento
-                </th>
-                <th className="px-3 py-3 text-right text-xs font-medium text-white uppercase tracking-wider">
-                  Data Liquidação
-                </th>
-                <th className="px-3 py-3 text-center text-xs font-medium text-white uppercase tracking-wider">
-                  Detalhe
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {loading ? (
+        <div className="p-3">
+          <div className="max-w-[350px] md:max-w-[700px] lg:max-w-[900px] xl:max-w-[1100px] 2xl:max-w-[1300px] mx-auto overflow-x-auto">
+            <table className="border-collapse rounded-lg overflow-hidden shadow-lg extrato-table min-w-full">
+              <thead className="bg-[#000638]">
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <LoadingSpinner size="lg" />
-                      <span className="text-gray-500">Carregando dados...</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : dados.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center">
-                    <div className="flex flex-col items-center gap-2">
-                      <Receipt size={48} className="text-gray-400" />
-                      <span className="text-gray-500 font-medium">
-                        Nenhum registro encontrado
-                      </span>
-                      <span className="text-gray-400 text-sm">
-                        Informe o código do cliente e o período para buscar
-                      </span>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                dados.map((item, index) => (
-                  <tr
-                    key={index}
-                    className="hover:bg-blue-50 transition-all duration-200"
+                  <th
+                    className="px-3 py-3 text-left text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000850] transition-colors"
+                    onClick={() => handleSort('dt_movim')}
                   >
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
-                      <div className="flex items-center gap-1">
-                        <Calendar size={14} className="text-gray-400" />
-                        {formatarDataBR(item.dt_movim)}
+                    <div className="flex items-center gap-1">
+                      Data Movim
+                      {sortConfig.key === 'dt_movim' &&
+                        (sortConfig.direction === 'asc' ? (
+                          <CaretUp size={12} />
+                        ) : (
+                          <CaretDown size={12} />
+                        ))}
+                    </div>
+                  </th>
+                  <th
+                    className="px-3 py-3 text-center text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000850] transition-colors"
+                    onClick={() => handleSort('cd_empresa')}
+                  >
+                    <div className="flex items-center justify-center gap-1">
+                      Empresa
+                      {sortConfig.key === 'cd_empresa' &&
+                        (sortConfig.direction === 'asc' ? (
+                          <CaretUp size={12} />
+                        ) : (
+                          <CaretDown size={12} />
+                        ))}
+                    </div>
+                  </th>
+                  <th
+                    className="px-3 py-3 text-center text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000850] transition-colors"
+                    onClick={() => handleSort('nr_ctapes')}
+                  >
+                    <div className="flex items-center justify-center gap-1">
+                      NR CTAPES
+                      {sortConfig.key === 'nr_ctapes' &&
+                        (sortConfig.direction === 'asc' ? (
+                          <CaretUp size={12} />
+                        ) : (
+                          <CaretDown size={12} />
+                        ))}
+                    </div>
+                  </th>
+                  <th
+                    className="px-3 py-3 text-center text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000850] transition-colors"
+                    onClick={() => handleSort('nr_seqmov')}
+                  >
+                    <div className="flex items-center justify-center gap-1">
+                      Seq Mov
+                      {sortConfig.key === 'nr_seqmov' &&
+                        (sortConfig.direction === 'asc' ? (
+                          <CaretUp size={12} />
+                        ) : (
+                          <CaretDown size={12} />
+                        ))}
+                    </div>
+                  </th>
+                  <th
+                    className="px-3 py-3 text-left text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000850] transition-colors"
+                    onClick={() => handleSort('cd_historico')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Cód Histórico
+                      {sortConfig.key === 'cd_historico' &&
+                        (sortConfig.direction === 'asc' ? (
+                          <CaretUp size={12} />
+                        ) : (
+                          <CaretDown size={12} />
+                        ))}
+                    </div>
+                  </th>
+                  <th
+                    className="px-3 py-3 text-left text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000850] transition-colors"
+                    onClick={() => handleSort('tp_documento')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Tipo Doc
+                      {sortConfig.key === 'tp_documento' &&
+                        (sortConfig.direction === 'asc' ? (
+                          <CaretUp size={12} />
+                        ) : (
+                          <CaretDown size={12} />
+                        ))}
+                    </div>
+                  </th>
+                  <th
+                    className="px-3 py-3 text-center text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000850] transition-colors"
+                    onClick={() => handleSort('tp_operacao')}
+                  >
+                    <div className="flex items-center justify-center gap-1">
+                      Operação
+                      {sortConfig.key === 'tp_operacao' &&
+                        (sortConfig.direction === 'asc' ? (
+                          <CaretUp size={12} />
+                        ) : (
+                          <CaretDown size={12} />
+                        ))}
+                    </div>
+                  </th>
+                  <th
+                    className="px-3 py-3 text-right text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000850] transition-colors"
+                    onClick={() => handleSort('vl_lanc')}
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      Valor Lançamento
+                      {sortConfig.key === 'vl_lanc' &&
+                        (sortConfig.direction === 'asc' ? (
+                          <CaretUp size={12} />
+                        ) : (
+                          <CaretDown size={12} />
+                        ))}
+                    </div>
+                  </th>
+                  <th
+                    className="px-3 py-3 text-right text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000850] transition-colors"
+                    onClick={() => handleSort('dt_liquidacao')}
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      Data Liquidação
+                      {sortConfig.key === 'dt_liquidacao' &&
+                        (sortConfig.direction === 'asc' ? (
+                          <CaretUp size={12} />
+                        ) : (
+                          <CaretDown size={12} />
+                        ))}
+                    </div>
+                  </th>
+                  <th className="px-3 py-3 text-center text-xs font-medium text-white uppercase tracking-wider">
+                    Detalhe
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {loading ? (
+                  <tr>
+                    <td colSpan={10} className="px-4 py-12 text-center">
+                      <div className="flex flex-col items-center gap-3">
+                        <LoadingSpinner size="lg" />
+                        <span className="text-gray-500">
+                          Carregando dados...
+                        </span>
                       </div>
                     </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center text-gray-900">
-                      {item.cd_empresa || '-'}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center text-gray-900">
-                      {item.nr_ctapes || '-'}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center text-gray-900">
-                      {item.nr_seqmov || '-'}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
-                      {item.cd_historico === '900'
-                        ? 'LANÇAMENTO'
-                        : item.cd_historico === '901'
-                        ? 'UTILIZAÇÃO'
-                        : item.cd_historico || '-'}
-                    </td>
-                    <td className="px-3 py-3 text-sm text-gray-900">
-                      {item.tp_documento === '10'
-                        ? 'ADIANTAMENTO'
-                        : item.tp_documento === '20'
-                        ? 'CREDEV'
-                        : item.tp_documento || '-'}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-center">
-                      <span
-                        className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          item.tp_operacao === 'D'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-green-100 text-green-800'
-                        }`}
-                      >
-                        {item.tp_operacao === 'D' ? 'Débito' : 'Crédito'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-right font-semibold">
-                      <span
-                        className={
-                          item.tp_operacao === 'D'
-                            ? 'text-red-600'
-                            : 'text-green-600'
-                        }
-                      >
-                        {formatarMoeda(item.vl_lancto)}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-right font-semibold text-blue-600">
-                      {formatarDataBR(item.dt_liq)}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-center">
-                      <button
-                        onClick={() => handleDetalhar(item)}
-                        className="inline-flex items-center gap-1 bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700 transition-colors text-xs font-medium"
-                      >
-                        <Eye size={14} weight="bold" />
-                        Detalhar
-                      </button>
+                  </tr>
+                ) : dados.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="px-4 py-12 text-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <Receipt size={48} className="text-gray-400" />
+                        <span className="text-gray-500 font-medium">
+                          Nenhum registro encontrado
+                        </span>
+                        <span className="text-gray-400 text-sm">
+                          Informe o código do cliente e o período para buscar
+                        </span>
+                      </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  dadosOrdenados.map((item, index) => (
+                    <tr
+                      key={index}
+                      className={`${
+                        index % 2 === 0 ? 'bg-white' : 'bg-gray-100'
+                      } hover:bg-blue-50 transition-all duration-200`}
+                    >
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                        <div className="flex items-center gap-1">
+                          <Calendar size={12} className="text-gray-400" />
+                          {formatarDataBR(item.dt_movim)}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-center text-gray-900">
+                        {item.cd_empresa || '-'}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-center text-gray-900">
+                        {item.nr_ctapes || '-'}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-center text-gray-900">
+                        {item.nr_seqmov || '-'}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                        {item.cd_historico === '6'
+                          ? 'LANÇAMENTO'
+                          : item.cd_historico === '7'
+                          ? 'ZERAR SALDO'
+                          : item.cd_historico === '699'
+                          ? 'LANÇAMENTO'
+                          : item.cd_historico === '888'
+                          ? 'TRANSF EMP'
+                          : item.cd_historico === '889'
+                          ? 'TRANSF EMP'
+                          : item.cd_historico === '900'
+                          ? 'LANÇAMENTO'
+                          : item.cd_historico === '901'
+                          ? 'UTILIZAÇÃO'
+                          : item.cd_historico === '1075'
+                          ? 'LANÇAMENTO'
+                          : item.cd_historico === '1144'
+                          ? 'CANCEL CREDEV'
+                          : item.cd_historico === '1250'
+                          ? 'CANCEL CREDEV'
+                          : item.cd_historico === '1288'
+                          ? 'LANÇAMENTO'
+                          : item.cd_historico || '-'}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-gray-900">
+                        {item.tp_documento === '10'
+                          ? 'ADIANTAMENTO'
+                          : item.tp_documento === '20'
+                          ? 'CREDEV'
+                          : item.tp_documento || '-'}
+                      </td>
+                      <td className="px-2 py-2 whitespace-nowrap text-center">
+                        <span
+                          className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            item.tp_operacao === 'D'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-green-100 text-green-800'
+                          }`}
+                        >
+                          {item.tp_operacao === 'D' ? 'Débito' : 'Crédito'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-right font-semibold">
+                        <span
+                          className={
+                            item.tp_operacao === 'D'
+                              ? 'text-red-600'
+                              : 'text-green-600'
+                          }
+                        >
+                          {formatarMoeda(item.vl_lancto)}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2 whitespace-nowrap text-xs text-right font-semibold text-blue-600">
+                        {formatarDataBR(item.dt_liq)}
+                      </td>
+                      <td className="px-2 py-2 whitespace-nowrap text-center">
+                        <button
+                          onClick={() => handleDetalhar(item)}
+                          className="inline-flex items-center gap-1 bg-blue-600 text-white px-2 py-0.5 rounded-md hover:bg-blue-700 transition-colors text-xs font-medium"
+                        >
+                          <Eye size={12} weight="bold" />
+                          Detalhar
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -912,12 +1714,166 @@ const ExtratoCliente = () => {
 
             {/* Conteúdo do Modal */}
             <div className="flex-1 overflow-y-auto p-6">
+              {/* Seção de Observações */}
+              {observacoesLoading ? (
+                <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2">
+                    <CircleNotch
+                      size={20}
+                      className="animate-spin text-blue-600"
+                    />
+                    <span className="text-sm text-gray-600">
+                      Carregando observações...
+                    </span>
+                  </div>
+                </div>
+              ) : observacoes.length > 0 ? (
+                <div className="mb-6 bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                  <h3 className="text-sm font-bold text-blue-900 mb-3 flex items-center gap-2">
+                    <Receipt size={20} className="text-blue-600" />
+                    Observações da Movimentação
+                  </h3>
+                  <div className="space-y-3">
+                    {observacoes.map((obs, index) => (
+                      <div
+                        key={index}
+                        className="bg-white rounded-lg p-3 border border-blue-200"
+                      >
+                        <p className="text-sm text-gray-800 mb-2">
+                          {obs.ds_obs}
+                        </p>
+                        <div className="flex items-center gap-4 text-xs text-gray-500">
+                          <span>
+                            Data Cadastro: {formatarDataBR(obs.dt_cadastro)}
+                          </span>
+                          <span>
+                            Data Movim: {formatarDataBR(obs.dt_movim)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Seção de Produtos da Transação */}
+              {produtosLoading ? (
+                <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2">
+                    <CircleNotch
+                      size={20}
+                      className="animate-spin text-green-600"
+                    />
+                    <span className="text-sm text-gray-600">
+                      Carregando produtos da nota fiscal...
+                    </span>
+                  </div>
+                </div>
+              ) : produtosError ? (
+                <div className="mb-6 bg-red-50 border-2 border-red-200 rounded-lg p-4">
+                  <h3 className="text-sm font-bold text-red-900 mb-2">
+                    Erro ao carregar produtos
+                  </h3>
+                  <p className="text-sm text-red-700">{produtosError}</p>
+                </div>
+              ) : produtosNF.length > 0 ? (
+                <div className="mb-6 bg-green-50 border-2 border-green-200 rounded-lg p-4">
+                  <h3 className="text-sm font-bold text-green-900 mb-3 flex items-center gap-2">
+                    <Receipt size={20} className="text-green-600" />
+                    Produtos da Nota Fiscal ({produtosNF.length} itens)
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-green-200">
+                      <thead className="bg-green-100">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-green-800 uppercase">
+                            Código
+                          </th>
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-green-800 uppercase">
+                            Descrição
+                          </th>
+                          <th className="px-3 py-2 text-center text-xs font-semibold text-green-800 uppercase">
+                            Quantidade
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-semibold text-green-800 uppercase">
+                            Valor Unit.
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-semibold text-green-800 uppercase">
+                            Valor Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-green-100">
+                        {produtosNF.map((produto, index) => (
+                          <tr key={index} className="hover:bg-green-50">
+                            <td className="px-3 py-2 text-sm text-gray-900">
+                              {produto.cd_produto || '--'}
+                            </td>
+                            <td className="px-3 py-2 text-sm text-gray-900">
+                              {produto.ds_produto || '--'}
+                            </td>
+                            <td className="px-3 py-2 text-sm text-center text-gray-900">
+                              {produto.qt_produto || 0}
+                            </td>
+                            <td className="px-3 py-2 text-sm text-right font-semibold text-gray-900">
+                              {formatarMoeda(produto.vl_unitario)}
+                            </td>
+                            <td className="px-3 py-2 text-sm text-right font-bold text-green-700">
+                              {formatarMoeda(produto.vl_total)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-green-100">
+                        <tr>
+                          <td
+                            colSpan="4"
+                            className="px-3 py-2 text-sm font-bold text-right text-green-900"
+                          >
+                            Total:
+                          </td>
+                          <td className="px-3 py-2 text-sm font-bold text-right text-green-900">
+                            {formatarMoeda(
+                              produtosNF.reduce(
+                                (acc, p) => acc + (parseFloat(p.vl_total) || 0),
+                                0,
+                              ),
+                            )}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+
               {detalhesLoading ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <LoadingSpinner size="lg" />
                   <span className="text-gray-500 mt-4">
                     Carregando detalhes...
                   </span>
+                </div>
+              ) : itemSelecionado?.cd_historico === '888' ||
+                itemSelecionado?.cd_historico === '889' ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-6 max-w-2xl">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="bg-blue-600 rounded-full p-3">
+                        <Receipt
+                          size={32}
+                          className="text-white"
+                          weight="bold"
+                        />
+                      </div>
+                      <h3 className="text-xl font-bold text-blue-900">
+                        Transferência Entre Empresas
+                      </h3>
+                    </div>
+                    <p className="text-center text-blue-800 font-medium text-lg">
+                      PROCESSO INTERNO DE TRANSFERÊNCIA DE SALDO ENTRE EMPRESAS
+                    </p>
+                  </div>
                 </div>
               ) : detalhesFatura.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12">
@@ -1041,18 +1997,6 @@ const ExtratoCliente = () => {
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">
                             NR Transação
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">
-                            Empresa Dest
-                          </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">
-                            Empresa Ori
-                          </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">
-                            Data Trans Dest
-                          </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">
-                            Situação Dest
-                          </th>
                           <th className="px-3 py-2 text-center text-xs font-medium text-gray-700 uppercase">
                             Ações
                           </th>
@@ -1069,18 +2013,6 @@ const ExtratoCliente = () => {
                             </td>
                             <td className="px-3 py-2 text-sm text-gray-900">
                               {detalhe.nr_transacao || '-'}
-                            </td>
-                            <td className="px-3 py-2 text-sm text-gray-900">
-                              {detalhe.cd_empresadest || '-'}
-                            </td>
-                            <td className="px-3 py-2 text-sm text-gray-900">
-                              {detalhe.cd_empresaori || '-'}
-                            </td>
-                            <td className="px-3 py-2 text-sm text-gray-900">
-                              {formatarDataBR(detalhe.dt_transacaodest)}
-                            </td>
-                            <td className="px-3 py-2 text-sm text-gray-900">
-                              {detalhe.tp_situacaodest || '-'}
                             </td>
                             <td className="px-3 py-2 text-center">
                               <button

@@ -209,6 +209,7 @@ const AVAILABLE_PAGES = [
     name: 'Auditoria de Transações',
     category: 'Outros',
   },
+  { path: '/cohort-analysis', name: 'Análise de Cohort', category: 'Outros' },
   { path: '/widgets', name: 'Meus Widgets', category: 'Outros' },
   {
     path: '/ranking-faturamento',

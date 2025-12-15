@@ -89,6 +89,9 @@ const GerenciadorAvisos = lazy(() => import('./pages/GerenciadorAvisos'));
 const AnaliseTransacao = lazy(() => import('./pages/AnaliseTransacao'));
 const Widgets = lazy(() => import('./pages/Widgets'));
 const CohortAnalysis = lazy(() => import('./pages/CohortAnalysis'));
+const AuditoriaAntecipacoes = lazy(() =>
+  import('./pages/AuditoriaAntecipacoes'),
+);
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -188,6 +191,7 @@ const AppRoutes = memo(() => {
     { path: '/meus-cartoes', component: MeusCartoes },
     { path: '/analise-transacao', component: AnaliseTransacao },
     { path: '/cohort-analysis', component: CohortAnalysis },
+    { path: '/auditoria-antecipacoes', component: AuditoriaAntecipacoes },
   ];
 
   // Componente de layout para rotas protegidas
