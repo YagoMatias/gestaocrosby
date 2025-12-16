@@ -3504,4 +3504,283 @@ router.get(
   }),
 );
 
+/**
+ * @route GET /financial/classificacao-clientes
+ * @desc Buscar classificação de clientes (Multimarcas ou Revenda)
+ * @access Public
+ * @query {cd_clientes} - Lista de códigos de clientes separados por vírgula
+ */
+router.get(
+  '/classificacao-clientes',
+  sanitizeInput,
+  validateRequired(['cd_clientes']),
+  asyncHandler(async (req, res) => {
+    const { cd_clientes } = req.query;
+
+    // Converter cd_clientes para array
+    let clientes = Array.isArray(cd_clientes)
+      ? cd_clientes
+      : cd_clientes.split(',');
+
+    // Remover valores vazios ou nulos
+    clientes = clientes
+      .filter((c) => c && c !== '' && c !== 'null' && c !== 'undefined')
+      .map((c) => c.trim());
+
+    if (clientes.length === 0) {
+      return errorResponse(
+        res,
+        'Pelo menos um cliente deve ser fornecido',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    // Criar placeholders para a query
+    const placeholders = clientes.map((_, idx) => `$${idx + 1}`).join(',');
+
+    const query = `
+      SELECT
+        vpp.cd_pessoa,
+        vpp.cd_tipoclas,
+        vpp.cd_classificacao
+      FROM
+        vr_pes_pessoaclas vpp
+      WHERE
+        vpp.cd_pessoa IN (${placeholders})
+    `;
+
+    console.log(`🔍 Classificação de Clientes: ${clientes.length} clientes`);
+
+    try {
+      const { rows } = await pool.query(query, clientes);
+
+      // Classificar cada cliente
+      const classificacoes = {};
+
+      clientes.forEach((cdPessoa) => {
+        // Buscar classificações desse cliente
+        const classifCliente = rows.filter(
+          (r) => String(r.cd_pessoa) === String(cdPessoa),
+        );
+
+        let tipo = 'OUTROS';
+
+        // Verificar se é MULTIMARCAS
+        const ehMultimarcas = classifCliente.some(
+          (c) =>
+            (Number(c.cd_tipoclas) === 20 &&
+              Number(c.cd_classificacao) === 2) ||
+            (Number(c.cd_tipoclas) === 5 && Number(c.cd_classificacao) === 1),
+        );
+
+        // Verificar se é REVENDA
+        const ehRevenda = classifCliente.some(
+          (c) =>
+            (Number(c.cd_tipoclas) === 20 &&
+              Number(c.cd_classificacao) === 3) ||
+            (Number(c.cd_tipoclas) === 7 && Number(c.cd_classificacao) === 1),
+        );
+
+        if (ehMultimarcas) {
+          tipo = 'MULTIMARCAS';
+        } else if (ehRevenda) {
+          tipo = 'REVENDA';
+        }
+
+        classificacoes[cdPessoa] = tipo;
+      });
+
+      successResponse(
+        res,
+        classificacoes,
+        `Classificação de ${clientes.length} clientes processada`,
+      );
+    } catch (error) {
+      console.error('❌ Erro na query de classificação de clientes:', error);
+      throw error;
+    }
+  }),
+);
+
+/**
+ * @route GET /financial/franquias-clientes
+ * @desc Buscar clientes que são franquias (nm_fantasia like '%F%CROSBY%')
+ * @access Public
+ * @query {cd_clientes} - Lista de códigos de clientes separados por vírgula
+ */
+router.get(
+  '/franquias-clientes',
+  sanitizeInput,
+  validateRequired(['cd_clientes']),
+  asyncHandler(async (req, res) => {
+    const { cd_clientes } = req.query;
+
+    // Converter cd_clientes para array
+    let clientes = Array.isArray(cd_clientes)
+      ? cd_clientes
+      : cd_clientes.split(',');
+
+    // Remover valores vazios ou nulos
+    clientes = clientes
+      .filter((c) => c && c !== '' && c !== 'null' && c !== 'undefined')
+      .map((c) => c.trim());
+
+    if (clientes.length === 0) {
+      return errorResponse(
+        res,
+        'Pelo menos um cliente deve ser fornecido',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    // Criar placeholders para a query
+    const placeholders = clientes.map((_, idx) => `$${idx + 1}`).join(',');
+
+    const query = `
+      SELECT
+        pp.cd_pessoa,
+        pp.nm_pessoa,
+        pj.nm_fantasia
+      FROM
+        pes_pessoa pp
+      LEFT JOIN pes_pesjuridica pj ON pp.cd_pessoa = pj.cd_pessoa
+      WHERE
+        pp.cd_pessoa IN (${placeholders})
+        AND pj.nm_fantasia LIKE '%F%CROSBY%'
+    `;
+
+    console.log(`🔍 Franquias Clientes: ${clientes.length} clientes`);
+
+    try {
+      const { rows } = await pool.query(query, clientes);
+
+      // Criar objeto com clientes que são franquias
+      const franquias = {};
+
+      clientes.forEach((cdPessoa) => {
+        const ehFranquia = rows.some(
+          (r) => String(r.cd_pessoa) === String(cdPessoa),
+        );
+        franquias[cdPessoa] = ehFranquia;
+      });
+
+      successResponse(
+        res,
+        franquias,
+        `Verificação de franquias para ${clientes.length} clientes processada`,
+      );
+    } catch (error) {
+      console.error('❌ Erro na query de franquias clientes:', error);
+      throw error;
+    }
+  }),
+);
+
+/**
+ * @route GET /financial/auditoria-faturamento
+ * @desc Buscar auditoria de faturamento com relacionamento entre faturas e transações
+ * @access Public
+ * @query {cd_empresa, dt_inicio, dt_fim}
+ */
+router.get(
+  '/auditoria-faturamento',
+  sanitizeInput,
+  validateRequired(['cd_empresa', 'dt_inicio', 'dt_fim']),
+  validateDateFormat(['dt_inicio', 'dt_fim']),
+  asyncHandler(async (req, res) => {
+    const { cd_empresa, dt_inicio, dt_fim } = req.query;
+
+    // Converter cd_empresa para array
+    let empresas;
+    if (Array.isArray(cd_empresa)) {
+      empresas = cd_empresa;
+    } else if (typeof cd_empresa === 'string' && cd_empresa.includes(',')) {
+      // Se for string com vírgulas, fazer split
+      empresas = cd_empresa.split(',').map((e) => e.trim());
+    } else {
+      // String única
+      empresas = [cd_empresa];
+    }
+
+    // Remover valores vazios ou nulos
+    empresas = empresas.filter(
+      (e) => e && e !== '' && e !== 'null' && e !== 'undefined',
+    );
+
+    if (empresas.length === 0) {
+      return errorResponse(
+        res,
+        'Pelo menos uma empresa deve ser fornecida',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    // Criar placeholders para a query
+    let params = [dt_inicio, dt_fim, ...empresas];
+    let empresaPlaceholders = empresas.map((_, idx) => `$${idx + 3}`).join(',');
+
+    const query = `
+      SELECT
+        ff.cd_cliente,
+        ff.vl_fatura,
+        ff.nr_fat,
+        ff.nr_parcela,
+        ff.dt_vencimento,
+        vff.nr_transacao,
+        ff.tp_documento,
+        tt.tp_operacao,
+        tt.cd_operacao,
+        ff.cd_empresa
+      FROM
+        fcr_faturai ff
+      LEFT JOIN vr_fcr_fattrans vff ON
+        ff.nr_fat = vff.nr_fat
+        AND ff.cd_cliente = vff.cd_cliente
+      LEFT JOIN tra_transacao tt ON
+        tt.nr_transacao = vff.nr_transacao
+      WHERE
+        tt.dt_transacao BETWEEN $1 AND $2
+        AND ff.cd_empresa IN (${empresaPlaceholders})
+        AND ff.nr_fat >= 1
+      GROUP BY
+        ff.cd_cliente,
+        ff.vl_fatura,
+        ff.nr_fat,
+        ff.nr_parcela,
+        vff.nr_transacao,
+        ff.dt_vencimento,
+        ff.tp_documento,
+        tt.tp_operacao,
+        tt.cd_operacao,
+        ff.cd_empresa
+      ORDER BY
+        tt.cd_operacao,
+        ff.nr_fat,
+        ff.nr_parcela
+    `;
+
+    console.log(
+      `🔍 Auditoria Faturamento: empresas=${empresas.join(
+        ',',
+      )}, período=${dt_inicio} a ${dt_fim}`,
+    );
+
+    try {
+      const { rows } = await pool.query(query, params);
+
+      successResponse(
+        res,
+        rows,
+        `${rows.length} registros de auditoria encontrados`,
+      );
+    } catch (error) {
+      console.error('❌ Erro na query de auditoria de faturamento:', error);
+      throw error;
+    }
+  }),
+);
+
 export default router;

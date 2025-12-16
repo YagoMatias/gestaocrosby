@@ -376,6 +376,27 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
     }
   };
 
+  // Funções auxiliares para antecipação (devem vir antes dos filtros que as usam)
+  const getChaveFatura = (item) => {
+    const cdCliente = String(item.cd_cliente || '').trim();
+    const nrFatura = String(item.nr_duplicata || item.nr_fatura || '').trim();
+    const nrParcela = String(item.nr_parcela || '').trim();
+    return `${cdCliente}-${nrFatura}-${nrParcela}`;
+  };
+
+  const isFaturaAntecipada = (item) => {
+    const chave = getChaveFatura(item);
+    return antecipacoesRegistradas.some((ant) => ant.chave === chave);
+  };
+
+  const getBancoAntecipacao = (item) => {
+    const chave = getChaveFatura(item);
+    const antecipacao = antecipacoesRegistradas.find(
+      (ant) => ant.chave === chave,
+    );
+    return antecipacao?.banco || null;
+  };
+
   // Dados filtrados por situação
   const dadosFiltrados = filtrarDadosPorSituacao(dados);
 
@@ -598,20 +619,34 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
       }
 
       // Transformar dados para formato compatível
-      const antecipacoesFormatadas = data.map((ant) => ({
-        chave: `${ant.cd_cliente}-${ant.nr_fatura}-${ant.nr_parcela}`,
-        banco: ant.banco_antecipado,
-        cd_cliente: ant.cd_cliente,
-        nr_fatura: ant.nr_fatura,
-        nr_parcela: ant.nr_parcela,
-        nm_cliente: ant.nm_cliente,
-        vl_fatura: ant.vl_fatura,
-        dt_vencimento: ant.dt_vencimento,
-        dt_registro: ant.created_at,
-        usuario_id: ant.usuario_id,
-        usuario_email: ant.usuario_email,
-        usuario_nome: ant.usuario_nome,
-      }));
+      const antecipacoesFormatadas = data.map((ant) => {
+        const cdCliente = String(ant.cd_cliente || '').trim();
+        const nrFatura = String(ant.nr_fatura || '').trim();
+        const nrParcela = String(ant.nr_parcela || '').trim();
+        return {
+          chave: `${cdCliente}-${nrFatura}-${nrParcela}`,
+          banco: ant.banco_antecipado,
+          cd_cliente: cdCliente,
+          nr_fatura: nrFatura,
+          nr_parcela: nrParcela,
+          nm_cliente: ant.nm_cliente,
+          vl_fatura: ant.vl_fatura,
+          dt_vencimento: ant.dt_vencimento,
+          dt_registro: ant.created_at,
+          usuario_id: ant.usuario_id,
+          usuario_email: ant.usuario_email,
+          usuario_nome: ant.usuario_nome,
+        };
+      });
+
+      console.log(
+        '📦 Antecipações carregadas do banco:',
+        antecipacoesFormatadas.length,
+      );
+      console.log(
+        '🔑 Chaves disponíveis:',
+        antecipacoesFormatadas.map((a) => a.chave),
+      );
 
       setAntecipacoesRegistradas(antecipacoesFormatadas);
     } catch (err) {
@@ -827,30 +862,13 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
     setNomesFantasiaSelecionados([...nomesFantasia]); // Garantir que é um novo array
   };
 
-  // Funções auxiliares para antecipação
-  const getChaveFatura = (item) => {
-    return `${item.cd_cliente}-${item.nr_fatura}-${item.nr_parcela}`;
-  };
-
-  const isFaturaAntecipada = (item) => {
-    const chave = getChaveFatura(item);
-    return antecipacoesRegistradas.some((ant) => ant.chave === chave);
-  };
-
-  const getBancoAntecipacao = (item) => {
-    const chave = getChaveFatura(item);
-    const antecipacao = antecipacoesRegistradas.find(
-      (ant) => ant.chave === chave,
-    );
-    return antecipacao?.banco || null;
-  };
-
   // Funções para manipular seleção de linhas
   const handleSelecionarLinha = (item) => {
+    const nrFatura = item.nr_duplicata || item.nr_fatura;
     const index = linhasSelecionadas.findIndex(
       (linha) =>
         linha.cd_cliente === item.cd_cliente &&
-        linha.nr_fatura === item.nr_fatura &&
+        (linha.nr_duplicata || linha.nr_fatura) === nrFatura &&
         linha.nr_parcela === item.nr_parcela,
     );
 
@@ -874,10 +892,11 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
   };
 
   const isLinhaSelecionada = (item) => {
+    const nrFatura = item.nr_duplicata || item.nr_fatura;
     return linhasSelecionadas.some(
       (linha) =>
         linha.cd_cliente === item.cd_cliente &&
-        linha.nr_fatura === item.nr_fatura &&
+        (linha.nr_duplicata || linha.nr_fatura) === nrFatura &&
         linha.nr_parcela === item.nr_parcela,
     );
   };
@@ -893,6 +912,80 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
   const handleFecharModal = () => {
     setModalBancoAberto(false);
     setBancoSelecionado('');
+  };
+
+  const handleRemoverAntecipacao = async () => {
+    if (!user || (user.role !== 'admin' && user.role !== 'owner')) {
+      alert('Apenas administradores podem remover antecipações!');
+      return;
+    }
+
+    // Filtrar apenas as faturas selecionadas que estão antecipadas
+    const faturasAntecipadasSelecionadas = linhasSelecionadas.filter((item) =>
+      isFaturaAntecipada(item),
+    );
+
+    if (faturasAntecipadasSelecionadas.length === 0) {
+      alert('Nenhuma fatura antecipada selecionada!');
+      return;
+    }
+
+    const confirmar = window.confirm(
+      `Tem certeza que deseja remover a antecipação de ${
+        faturasAntecipadasSelecionadas.length
+      } ${faturasAntecipadasSelecionadas.length === 1 ? 'fatura' : 'faturas'}?`,
+    );
+
+    if (!confirmar) return;
+
+    setLoadingAntecipacoes(true);
+
+    try {
+      // Remover todas as faturas selecionadas
+      const promessas = faturasAntecipadasSelecionadas.map(async (item) => {
+        const cdCliente = String(item.cd_cliente || '').trim();
+        const nrFatura = String(
+          item.nr_duplicata || item.nr_fatura || '',
+        ).trim();
+        const nrParcela = String(item.nr_parcela || '').trim();
+
+        return supabase
+          .from('antecipacoes_faturas')
+          .delete()
+          .eq('cd_cliente', cdCliente)
+          .eq('nr_fatura', nrFatura)
+          .eq('nr_parcela', nrParcela);
+      });
+
+      const resultados = await Promise.all(promessas);
+
+      const erros = resultados.filter((r) => r.error);
+      if (erros.length > 0) {
+        console.error('Erros ao remover antecipações:', erros);
+        alert(
+          `Erro ao remover ${erros.length} antecipação(ões). Verifique o console.`,
+        );
+      }
+
+      console.log('✅ Antecipações removidas com sucesso');
+
+      // Recarregar antecipações do banco
+      await carregarAntecipacoes();
+
+      // Limpar seleção
+      setLinhasSelecionadas([]);
+
+      alert(
+        `${
+          faturasAntecipadasSelecionadas.length - erros.length
+        } antecipação(ões) removida(s) com sucesso!`,
+      );
+    } catch (err) {
+      console.error('Erro ao remover antecipações:', err);
+      alert('Erro inesperado ao remover antecipações.');
+    } finally {
+      setLoadingAntecipacoes(false);
+    }
   };
 
   const handleSalvarAntecipacao = async () => {
@@ -911,18 +1004,20 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
     try {
       // Preparar dados para inserção no Supabase
       const antecipacoesParaInserir = linhasSelecionadas.map((item) => ({
-        cd_cliente: item.cd_cliente?.toString() || '',
+        cd_cliente: String(item.cd_cliente || '').trim(),
         nm_cliente: item.nm_cliente || '',
-        nr_fatura: item.nr_fatura?.toString() || '',
-        nr_parcela: item.nr_parcela?.toString() || '',
+        nr_fatura: String(item.nr_duplicata || item.nr_fatura || '').trim(),
+        nr_parcela: String(item.nr_parcela || '').trim(),
         vl_fatura: parseFloat(item.vl_fatura) || 0,
         dt_vencimento: item.dt_vencimento || null,
-        cd_empresa: item.cd_empresa?.toString() || '',
+        cd_empresa: String(item.cd_empresa || '').trim(),
         banco_antecipado: bancoSelecionado,
         usuario_id: user.id,
         usuario_email: user.email || '',
         usuario_nome: user.user_metadata?.name || user.email || 'Usuário',
       }));
+
+      console.log('📝 Dados para inserir:', antecipacoesParaInserir);
 
       // Inserir no Supabase (upsert para evitar duplicatas)
       const { data, error } = await supabase
@@ -1101,10 +1196,17 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
   const calcularTotais = () => {
     const totais = dadosProcessados.reduce(
       (acc, item) => {
-        acc.valorFaturado += parseFloat(item.vl_fatura) || 0;
+        const valorFatura = parseFloat(item.vl_fatura) || 0;
+        acc.valorFaturado += valorFatura;
         acc.valorPago += parseFloat(item.vl_pago) || 0;
         acc.valorCorrigido += parseFloat(item.vl_corrigido) || 0;
         acc.valorDescontos += parseFloat(item.vl_desconto) || 0;
+
+        // Verificar se a fatura está antecipada
+        if (isFaturaAntecipada(item)) {
+          acc.valorAntecipado += valorFatura;
+        }
+
         return acc;
       },
       {
@@ -1112,6 +1214,7 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
         valorPago: 0,
         valorCorrigido: 0,
         valorDescontos: 0,
+        valorAntecipado: 0,
       },
     );
 
@@ -1281,7 +1384,7 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-9 gap-2 mb-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                 Situação
@@ -1343,7 +1446,7 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
             </div>
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                Banco Antecipado
+                Banco Antecipação
               </label>
               <select
                 value={filtroBancoAntecipado}
@@ -1536,6 +1639,125 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
           </div>
         )}
       </div>
+
+      {/* Cards de Resumo */}
+      {dadosProcessados.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4 max-w-4xl mx-auto">
+          {/* Valor Total das Faturas */}
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={14} className="text-blue-600" />
+                <CardTitle className="text-xs font-bold text-blue-700">
+                  Valor Total
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-2 pb-2">
+              <div className="text-sm font-extrabold text-blue-600 mb-0.5 break-words">
+                {loading ? (
+                  <Spinner size={18} className="animate-spin text-blue-600" />
+                ) : (
+                  totais.valorFaturado.toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })
+                )}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                Soma de todas as faturas
+              </CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Valor Total Antecipado */}
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={14} className="text-green-600" />
+                <CardTitle className="text-xs font-bold text-green-700">
+                  Valor Antecipado
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-2 pb-2">
+              <div className="text-sm font-extrabold text-green-600 mb-0.5 break-words">
+                {loading ? (
+                  <Spinner size={18} className="animate-spin text-green-600" />
+                ) : (
+                  totais.valorAntecipado.toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })
+                )}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                Total de faturas antecipadas
+              </CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Percentual Antecipado */}
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <Percent size={14} className="text-purple-600" />
+                <CardTitle className="text-xs font-bold text-purple-700">
+                  % Antecipado
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-2 pb-2">
+              <div className="text-sm font-extrabold text-purple-600 mb-0.5 break-words">
+                {loading ? (
+                  <Spinner size={18} className="animate-spin text-purple-600" />
+                ) : (
+                  `${
+                    totais.valorFaturado > 0
+                      ? (
+                          (totais.valorAntecipado / totais.valorFaturado) *
+                          100
+                        ).toFixed(1)
+                      : 0
+                  }%`
+                )}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                Percentual antecipado
+              </CardDescription>
+            </CardContent>
+          </Card>
+
+          {/* Valor Não Antecipado */}
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <Warning size={14} className="text-orange-600" />
+                <CardTitle className="text-xs font-bold text-orange-700">
+                  Não Antecipado
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-2 pb-2">
+              <div className="text-sm font-extrabold text-orange-600 mb-0.5 break-words">
+                {loading ? (
+                  <Spinner size={18} className="animate-spin text-orange-600" />
+                ) : (
+                  (
+                    totais.valorFaturado - totais.valorAntecipado
+                  ).toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })
+                )}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                Valor ainda não antecipado
+              </CardDescription>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Legenda de Marcações */}
       <div className="bg-gradient-to-r from-blue-50 to-green-50 p-3 rounded-lg border border-gray-200 mb-3">
@@ -2167,9 +2389,9 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
                 })()}
               </div>
 
-              {/* Botão de Salvar Antecipação */}
+              {/* Botões de Ações */}
               {linhasSelecionadas.length > 0 && (
-                <div className="mt-6 pt-6 border-t border-gray-200 flex justify-center">
+                <div className="mt-6 pt-6 border-t border-gray-200 flex justify-center gap-4">
                   <button
                     onClick={handleAbrirModalBanco}
                     className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors font-bold text-sm shadow-lg"
@@ -2178,6 +2400,26 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
                     SALVAR ANTECIPAÇÃO ({linhasSelecionadas.length}{' '}
                     {linhasSelecionadas.length === 1 ? 'fatura' : 'faturas'})
                   </button>
+
+                  {(user?.role === 'admin' || user?.role === 'owner') &&
+                    linhasSelecionadas.some((item) =>
+                      isFaturaAntecipada(item),
+                    ) && (
+                      <button
+                        onClick={handleRemoverAntecipacao}
+                        disabled={loadingAntecipacoes}
+                        className="flex items-center gap-2 bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-colors font-bold text-sm shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <X size={20} weight="bold" />
+                        REMOVER ANTECIPAÇÕES (
+                        {
+                          linhasSelecionadas.filter((item) =>
+                            isFaturaAntecipada(item),
+                          ).length
+                        }
+                        )
+                      </button>
+                    )}
                 </div>
               )}
 

@@ -166,11 +166,34 @@ const financeiro = [
     roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
-    name: 'Auditoria de Antecipações',
-    href: '/auditoria-antecipacoes',
+    name: 'Auditoria',
+    href: '#',
     icon: MagnifyingGlass,
     color: 'text-amber-600',
     roles: ['owner', 'admin', 'manager', 'user'],
+    children: [
+      {
+        name: 'Antecipações',
+        href: '/auditoria-antecipacoes',
+        icon: MagnifyingGlass,
+        color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Conciliação',
+        href: '/auditoria-conciliacao',
+        icon: MagnifyingGlass,
+        color: 'text-purple-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Faturamento',
+        href: '/auditoria-faturamento',
+        icon: MagnifyingGlass,
+        color: 'text-blue-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+    ],
   },
   {
     name: 'Extrato Cliente',

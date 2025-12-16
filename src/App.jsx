@@ -92,6 +92,8 @@ const CohortAnalysis = lazy(() => import('./pages/CohortAnalysis'));
 const AuditoriaAntecipacoes = lazy(() =>
   import('./pages/AuditoriaAntecipacoes'),
 );
+const AuditoriaConciliacao = lazy(() => import('./pages/AuditoriaConciliacao'));
+const AuditoriaFaturamento = lazy(() => import('./pages/AuditoriaFaturamento'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -192,6 +194,8 @@ const AppRoutes = memo(() => {
     { path: '/analise-transacao', component: AnaliseTransacao },
     { path: '/cohort-analysis', component: CohortAnalysis },
     { path: '/auditoria-antecipacoes', component: AuditoriaAntecipacoes },
+    { path: '/auditoria-conciliacao', component: AuditoriaConciliacao },
+    { path: '/auditoria-faturamento', component: AuditoriaFaturamento },
   ];
 
   // Componente de layout para rotas protegidas

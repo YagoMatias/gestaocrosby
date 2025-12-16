@@ -422,6 +422,29 @@ const useApiClient = () => {
      * @returns {Promise<Object>} Movimentações de contas específicas
      */
     auditoriaConta: () => apiCall('/api/financial/auditoria-conta'),
+
+    /**
+     * Buscar auditoria de faturamento
+     * @param {Object} params - Parâmetros de filtro
+     * @param {string} params.cd_empresa - Código(s) da(s) empresa(s)
+     * @param {string} params.dt_inicio - Data inicial
+     * @param {string} params.dt_fim - Data final
+     * @returns {Promise<Object>} Faturas com relacionamento de transações
+     */
+    auditoriaFaturamento: (params) =>
+      apiCall('/api/financial/auditoria-faturamento', params),
+
+    /**
+     * Classificação de clientes (MULTIMARCAS/REVENDA/OUTROS)
+     */
+    classificacaoClientes: (params) =>
+      apiCall('/api/financial/classificacao-clientes', params),
+
+    /**
+     * Franquias de clientes (nm_fantasia like '%F%CROSBY%')
+     */
+    franquiasClientes: (params) =>
+      apiCall('/api/financial/franquias-clientes', params),
   };
 
   const sales = {
