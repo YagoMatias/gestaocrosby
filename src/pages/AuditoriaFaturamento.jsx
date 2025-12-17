@@ -62,7 +62,13 @@ const AuditoriaFaturamento = () => {
 
   // Estados para filtros locais
   const [filtroCliente, setFiltroCliente] = useState('');
+  const [filtroNrFatura, setFiltroNrFatura] = useState('');
+  const [filtroValor, setFiltroValor] = useState('');
+  const [filtroVencimento, setFiltroVencimento] = useState('');
+  const [filtroNrTransacao, setFiltroNrTransacao] = useState('');
+  const [filtroTipoDoc, setFiltroTipoDoc] = useState('');
   const [filtroOperacao, setFiltroOperacao] = useState('');
+  const [filtroTipoOper, setFiltroTipoOper] = useState('');
 
   // Estado para alternar entre Dashboard e Dados
   const [visualizacao, setVisualizacao] = useState('DADOS');
@@ -156,12 +162,61 @@ const AuditoriaFaturamento = () => {
       );
     }
 
+    // Aplicar filtro de Nr. Fatura
+    if (filtroNrFatura) {
+      resultado = resultado.filter((row) =>
+        String(row.nr_fat).includes(filtroNrFatura),
+      );
+    }
+
+    // Aplicar filtro de Valor
+    if (filtroValor) {
+      resultado = resultado.filter((row) =>
+        String(row.vl_fatura).includes(filtroValor),
+      );
+    }
+
+    // Aplicar filtro de Vencimento
+    if (filtroVencimento) {
+      resultado = resultado.filter((row) => {
+        const dataFormatada = formatarDataBR(row.dt_vencimento);
+        return dataFormatada.includes(filtroVencimento);
+      });
+    }
+
+    // Aplicar filtro de Nr. Transação
+    if (filtroNrTransacao) {
+      resultado = resultado.filter((row) =>
+        String(row.nr_transacao || '').includes(filtroNrTransacao),
+      );
+    }
+
+    // Aplicar filtro de Tipo Documento
+    if (filtroTipoDoc) {
+      resultado = resultado.filter((row) => {
+        const tipoDocNome = converterTipoDocumento(Number(row.tp_documento));
+        return (
+          tipoDocNome.toLowerCase().includes(filtroTipoDoc.toLowerCase()) ||
+          String(row.tp_documento).includes(filtroTipoDoc)
+        );
+      });
+    }
+
     // Aplicar filtro de operação
     if (filtroOperacao) {
       resultado = resultado.filter((row) =>
         String(row.cd_operacao)
           .toLowerCase()
           .includes(filtroOperacao.toLowerCase()),
+      );
+    }
+
+    // Aplicar filtro de Tipo Operação
+    if (filtroTipoOper) {
+      resultado = resultado.filter((row) =>
+        String(row.tp_operacao || '')
+          .toLowerCase()
+          .includes(filtroTipoOper.toLowerCase()),
       );
     }
 
@@ -185,7 +240,18 @@ const AuditoriaFaturamento = () => {
     }
 
     return resultado;
-  }, [dados, ordenacao, filtroCliente, filtroOperacao]);
+  }, [
+    dados,
+    ordenacao,
+    filtroCliente,
+    filtroNrFatura,
+    filtroValor,
+    filtroVencimento,
+    filtroNrTransacao,
+    filtroTipoDoc,
+    filtroOperacao,
+    filtroTipoOper,
+  ]);
 
   // Dados paginados para exibição
   const dadosPaginados = useMemo(() => {
@@ -239,6 +305,13 @@ const AuditoriaFaturamento = () => {
       return acc;
     }, {});
 
+    // Valor total por tipo de documento
+    const valorPorTipoDocumento = dadosProcessados.reduce((acc, row) => {
+      const tipo = row.tp_documento || 'Não especificado';
+      acc[tipo] = (acc[tipo] || 0) + (parseFloat(row.vl_fatura) || 0);
+      return acc;
+    }, {});
+
     // Tipos de operação
     const tiposOperacao = dadosProcessados.reduce((acc, row) => {
       if (row.cd_operacao) {
@@ -273,6 +346,11 @@ const AuditoriaFaturamento = () => {
       return acc;
     }, {});
 
+    // Valor CREDEV em VAREJO (tp_documento = 20)
+    const varejoCredev = dadosVarejo
+      .filter((row) => Number(row.tp_documento) === 20)
+      .reduce((acc, row) => acc + (parseFloat(row.vl_fatura) || 0), 0);
+
     // Filtrar dados de MULTIMARCAS
     const dadosMultimarcas = dadosProcessados.filter(
       (row) => classificacoesClientes[row.cd_cliente] === 'MULTIMARCAS',
@@ -290,6 +368,11 @@ const AuditoriaFaturamento = () => {
       acc[tipo] = (acc[tipo] || 0) + (parseFloat(row.vl_fatura) || 0);
       return acc;
     }, {});
+
+    // Valor CREDEV em MULTIMARCAS (tp_documento = 20)
+    const multimarcasCredev = dadosMultimarcas
+      .filter((row) => Number(row.tp_documento) === 20)
+      .reduce((acc, row) => acc + (parseFloat(row.vl_fatura) || 0), 0);
 
     // Filtrar dados de REVENDA
     const dadosRevenda = dadosProcessados.filter(
@@ -309,6 +392,11 @@ const AuditoriaFaturamento = () => {
       return acc;
     }, {});
 
+    // Valor CREDEV em REVENDA (tp_documento = 20)
+    const revendaCredev = dadosRevenda
+      .filter((row) => Number(row.tp_documento) === 20)
+      .reduce((acc, row) => acc + (parseFloat(row.vl_fatura) || 0), 0);
+
     // Filtrar dados de BAZAR (cd_operacao = 889)
     const dadosBazar = dadosProcessados.filter(
       (row) => Number(row.cd_operacao) === 889,
@@ -324,6 +412,11 @@ const AuditoriaFaturamento = () => {
       acc[tipo] = (acc[tipo] || 0) + (parseFloat(row.vl_fatura) || 0);
       return acc;
     }, {});
+
+    // Valor CREDEV em BAZAR (tp_documento = 20)
+    const bazarCredev = dadosBazar
+      .filter((row) => Number(row.tp_documento) === 20)
+      .reduce((acc, row) => acc + (parseFloat(row.vl_fatura) || 0), 0);
 
     // Filtrar dados de SELLECT (cd_operacao = 55 ou 53)
     const dadosSellect = dadosProcessados.filter((row) =>
@@ -341,6 +434,11 @@ const AuditoriaFaturamento = () => {
       return acc;
     }, {});
 
+    // Valor CREDEV em SELLECT (tp_documento = 20)
+    const sellectCredev = dadosSellect
+      .filter((row) => Number(row.tp_documento) === 20)
+      .reduce((acc, row) => acc + (parseFloat(row.vl_fatura) || 0), 0);
+
     // Filtrar dados de FRANQUIAS (clientes com nm_fantasia like '%F%CROSBY%')
     const dadosFranquias = dadosProcessados.filter(
       (row) => franquiasClientes[row.cd_cliente] === true,
@@ -357,29 +455,41 @@ const AuditoriaFaturamento = () => {
       return acc;
     }, {});
 
+    // Valor CREDEV em FRANQUIAS (tp_documento = 20)
+    const franquiasCredev = dadosFranquias
+      .filter((row) => Number(row.tp_documento) === 20)
+      .reduce((acc, row) => acc + (parseFloat(row.vl_fatura) || 0), 0);
+
+    // Calcular CREDEV total (tp_documento = 20)
+    const totalCredev = dadosProcessados
+      .filter((row) => Number(row.tp_documento) === 20)
+      .reduce((acc, row) => acc + (parseFloat(row.vl_fatura) || 0), 0);
+
     return {
       totalFaturas,
-      faturasComTransacao,
-      faturasSemTransacao,
       valorTotal,
-      valorComTransacao,
-      valorSemTransacao,
-      percentualComTransacao:
-        totalFaturas > 0 ? (faturasComTransacao / totalFaturas) * 100 : 0,
       tiposDocumento,
+      valorPorTipoDocumento,
       tiposOperacao,
       valorVarejo,
       varejoTipoDocumento,
+      varejoCredev,
       valorMultimarcas,
       multimarcasTipoDocumento,
+      multimarcasCredev,
       valorRevenda,
       revendaTipoDocumento,
+      revendaCredev,
       valorBazar,
       bazarTipoDocumento,
+      bazarCredev,
       valorSellect,
       sellectTipoDocumento,
+      sellectCredev,
       valorFranquias,
       franquiasTipoDocumento,
+      franquiasCredev,
+      totalCredev,
     };
   }, [dadosProcessados, classificacoesClientes, franquiasClientes]);
 
@@ -710,7 +820,7 @@ const AuditoriaFaturamento = () => {
 
       {/* Cards de Estatísticas */}
       {dadosCarregados && (
-        <div className="flex flex-row gap-2 mb-8 max-w-full justify-center items-stretch flex-wrap">
+        <div className="grid grid-cols-5 gap-2 mb-8 max-w-full justify-center items-stretch flex-wrap">
           {/* Card Total de Faturas */}
           <Card className="min-w-[140px] max-w-[160px] shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-1 rounded-lg bg-white cursor-pointer p-1">
             <CardHeader className="pb-0 px-1 pt-1">
@@ -740,83 +850,68 @@ const AuditoriaFaturamento = () => {
             </CardContent>
           </Card>
 
-          {/* Card Com Transação */}
-          <Card className="min-w-[140px] max-w-[160px] shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-1 rounded-lg bg-white cursor-pointer p-1">
-            <CardHeader className="pb-0 px-1 pt-1">
-              <div className="flex flex-row items-center gap-1">
-                <CheckCircle size={15} className="text-green-600" />
-                <CardTitle className="text-xs font-bold text-green-600">
-                  Com Transação
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-1 pl-2">
-              <div className="text-lg font-extrabold text-green-600 mb-0.5">
-                {estatisticas.faturasComTransacao}
-              </div>
-              <CardDescription className="text-[10px] text-gray-500">
-                Qtd
-              </CardDescription>
-              <div className="text-xs font-bold text-green-600 mt-0.5">
-                {estatisticas.valorComTransacao.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                })}
-              </div>
-              <CardDescription className="text-[10px] text-gray-500">
-                Valor
-              </CardDescription>
-            </CardContent>
-          </Card>
+          {/* Cards por Tipo de Documento */}
+          {Object.entries(estatisticas.valorPorTipoDocumento)
+            .sort(([a], [b]) => Number(a) - Number(b))
+            .map(([tipo, valor]) => {
+              const tipoNum = Number(tipo);
+              const nomeDocumento = converterTipoDocumento(tipoNum);
+              const isCredev = tipoNum === 20;
 
-          {/* Card Percentual */}
-          <Card className="min-w-[140px] max-w-[160px] shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-1 rounded-lg bg-white cursor-pointer p-1">
-            <CardHeader className="pb-0 px-1 pt-1">
-              <div className="flex flex-row items-center gap-1">
-                <TrendUp size={15} className="text-indigo-600" />
-                <CardTitle className="text-xs font-bold text-indigo-600">
-                  % Conciliado
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-1 pl-2">
-              <div className="text-lg font-extrabold text-indigo-600 mb-0.5">
-                {estatisticas.percentualComTransacao.toFixed(1)}%
-              </div>
-              <CardDescription className="text-[10px] text-gray-500">
-                Taxa
-              </CardDescription>
-            </CardContent>
-          </Card>
-
-          {/* Card Sem Transação */}
-          <Card className="min-w-[140px] max-w-[160px] shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-1 rounded-lg bg-white cursor-pointer p-1">
-            <CardHeader className="pb-0 px-1 pt-1">
-              <div className="flex flex-row items-center gap-1">
-                <Warning size={15} className="text-red-600" />
-                <CardTitle className="text-xs font-bold text-red-600">
-                  Sem Transação
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-1 pl-2">
-              <div className="text-lg font-extrabold text-red-600 mb-0.5">
-                {estatisticas.faturasSemTransacao}
-              </div>
-              <CardDescription className="text-[10px] text-gray-500">
-                Qtd
-              </CardDescription>
-              <div className="text-xs font-bold text-red-600 mt-0.5">
-                {estatisticas.valorSemTransacao.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                })}
-              </div>
-              <CardDescription className="text-[10px] text-gray-500">
-                Valor
-              </CardDescription>
-            </CardContent>
-          </Card>
+              return (
+                <Card
+                  key={tipo}
+                  className={`min-w-[140px] max-w-[160px] shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-1 rounded-lg cursor-pointer p-1 ${
+                    isCredev
+                      ? 'bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-200'
+                      : 'bg-white'
+                  }`}
+                >
+                  <CardHeader className="pb-0 px-1 pt-1">
+                    <div className="flex flex-row items-center gap-1">
+                      <Receipt
+                        size={15}
+                        className={
+                          isCredev ? 'text-red-600' : 'text-purple-600'
+                        }
+                      />
+                      <CardTitle
+                        className={`text-[10px] font-bold ${
+                          isCredev ? 'text-red-600' : 'text-purple-600'
+                        }`}
+                      >
+                        {nomeDocumento}
+                      </CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-1 pl-2">
+                    <div
+                      className={`text-lg font-extrabold mb-0.5 ${
+                        isCredev ? 'text-red-600' : 'text-purple-600'
+                      }`}
+                    >
+                      {estatisticas.tiposDocumento[tipo] || 0}
+                    </div>
+                    <CardDescription className="text-[10px] text-gray-500">
+                      Qtd
+                    </CardDescription>
+                    <div
+                      className={`text-xs font-bold mt-0.5 ${
+                        isCredev ? 'text-red-600' : 'text-purple-600'
+                      }`}
+                    >
+                      {valor.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}
+                    </div>
+                    <CardDescription className="text-[10px] text-gray-500">
+                      Valor
+                    </CardDescription>
+                  </CardContent>
+                </Card>
+              );
+            })}
         </div>
       )}
 
@@ -896,15 +991,28 @@ const AuditoriaFaturamento = () => {
                 </div>
               </CardHeader>
               <CardContent className="pt-2">
-                <div className="text-3xl font-extrabold text-blue-700 mb-2">
-                  {estatisticas.valorVarejo.toLocaleString('pt-BR', {
+                <div className="text-3xl font-extrabold text-blue-700 mb-1">
+                  {(
+                    estatisticas.valorVarejo - estatisticas.varejoCredev
+                  ).toLocaleString('pt-BR', {
                     style: 'currency',
                     currency: 'BRL',
                   })}
                 </div>
-                <CardDescription className="text-xs text-blue-600 mb-3">
-                  Total faturado
+                <CardDescription className="text-xs text-blue-600 mb-1">
+                  Valor Líquido
                 </CardDescription>
+
+                {estatisticas.varejoCredev > 0 && (
+                  <div className="text-sm font-bold text-red-600 mb-2">
+                    -{' '}
+                    {estatisticas.varejoCredev.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}{' '}
+                    (CREDEV)
+                  </div>
+                )}
 
                 {/* Detalhamento por tipo de documento */}
                 <div className="border-t border-blue-300 pt-3 mt-2">
@@ -919,10 +1027,22 @@ const AuditoriaFaturamento = () => {
                           key={tipo}
                           className="flex justify-between items-center text-xs"
                         >
-                          <span className="text-blue-600 font-medium">
+                          <span
+                            className={
+                              Number(tipo) === 20
+                                ? 'text-red-600 font-medium'
+                                : 'text-blue-600 font-medium'
+                            }
+                          >
                             {converterTipoDocumento(Number(tipo))}:
                           </span>
-                          <span className="text-blue-700 font-bold">
+                          <span
+                            className={
+                              Number(tipo) === 20
+                                ? 'text-red-600 font-bold'
+                                : 'text-blue-700 font-bold'
+                            }
+                          >
                             {Number(valor).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
@@ -955,15 +1075,29 @@ const AuditoriaFaturamento = () => {
                 </div>
               </CardHeader>
               <CardContent className="pt-2">
-                <div className="text-3xl font-extrabold text-green-700 mb-2">
-                  {estatisticas.valorMultimarcas.toLocaleString('pt-BR', {
+                <div className="text-3xl font-extrabold text-green-700 mb-1">
+                  {(
+                    estatisticas.valorMultimarcas -
+                    estatisticas.multimarcasCredev
+                  ).toLocaleString('pt-BR', {
                     style: 'currency',
                     currency: 'BRL',
                   })}
                 </div>
-                <CardDescription className="text-xs text-green-600 mb-3">
-                  Total faturado
+                <CardDescription className="text-xs text-green-600 mb-1">
+                  Valor Líquido
                 </CardDescription>
+
+                {estatisticas.multimarcasCredev > 0 && (
+                  <div className="text-sm font-bold text-red-600 mb-2">
+                    -{' '}
+                    {estatisticas.multimarcasCredev.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}{' '}
+                    (CREDEV)
+                  </div>
+                )}
 
                 {/* Detalhamento por tipo de documento */}
                 <div className="border-t border-green-300 pt-3 mt-2">
@@ -978,10 +1112,22 @@ const AuditoriaFaturamento = () => {
                           key={tipo}
                           className="flex justify-between items-center text-xs"
                         >
-                          <span className="text-green-600 font-medium">
+                          <span
+                            className={
+                              Number(tipo) === 20
+                                ? 'text-red-600 font-medium'
+                                : 'text-green-600 font-medium'
+                            }
+                          >
                             {converterTipoDocumento(Number(tipo))}:
                           </span>
-                          <span className="text-green-700 font-bold">
+                          <span
+                            className={
+                              Number(tipo) === 20
+                                ? 'text-red-600 font-bold'
+                                : 'text-green-700 font-bold'
+                            }
+                          >
                             {Number(valor).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
@@ -1014,15 +1160,28 @@ const AuditoriaFaturamento = () => {
                 </div>
               </CardHeader>
               <CardContent className="pt-2">
-                <div className="text-3xl font-extrabold text-purple-700 mb-2">
-                  {estatisticas.valorRevenda.toLocaleString('pt-BR', {
+                <div className="text-3xl font-extrabold text-purple-700 mb-1">
+                  {(
+                    estatisticas.valorRevenda - estatisticas.revendaCredev
+                  ).toLocaleString('pt-BR', {
                     style: 'currency',
                     currency: 'BRL',
                   })}
                 </div>
-                <CardDescription className="text-xs text-purple-600 mb-3">
-                  Total faturado
+                <CardDescription className="text-xs text-purple-600 mb-1">
+                  Valor Líquido
                 </CardDescription>
+
+                {estatisticas.revendaCredev > 0 && (
+                  <div className="text-sm font-bold text-red-600 mb-2">
+                    -{' '}
+                    {estatisticas.revendaCredev.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}{' '}
+                    (CREDEV)
+                  </div>
+                )}
 
                 {/* Detalhamento por tipo de documento */}
                 <div className="border-t border-purple-300 pt-3 mt-2">
@@ -1037,10 +1196,22 @@ const AuditoriaFaturamento = () => {
                           key={tipo}
                           className="flex justify-between items-center text-xs"
                         >
-                          <span className="text-purple-600 font-medium">
+                          <span
+                            className={
+                              Number(tipo) === 20
+                                ? 'text-red-600 font-medium'
+                                : 'text-purple-600 font-medium'
+                            }
+                          >
                             {converterTipoDocumento(Number(tipo))}:
                           </span>
-                          <span className="text-purple-700 font-bold">
+                          <span
+                            className={
+                              Number(tipo) === 20
+                                ? 'text-red-600 font-bold'
+                                : 'text-purple-700 font-bold'
+                            }
+                          >
                             {Number(valor).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
@@ -1073,15 +1244,28 @@ const AuditoriaFaturamento = () => {
                 </div>
               </CardHeader>
               <CardContent className="pt-2">
-                <div className="text-3xl font-extrabold text-orange-700 mb-2">
-                  {estatisticas.valorBazar.toLocaleString('pt-BR', {
+                <div className="text-3xl font-extrabold text-orange-700 mb-1">
+                  {(
+                    estatisticas.valorBazar - estatisticas.bazarCredev
+                  ).toLocaleString('pt-BR', {
                     style: 'currency',
                     currency: 'BRL',
                   })}
                 </div>
-                <CardDescription className="text-xs text-orange-600 mb-3">
-                  Total faturado
+                <CardDescription className="text-xs text-orange-600 mb-1">
+                  Valor Líquido
                 </CardDescription>
+
+                {estatisticas.bazarCredev > 0 && (
+                  <div className="text-sm font-bold text-red-600 mb-2">
+                    -{' '}
+                    {estatisticas.bazarCredev.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}{' '}
+                    (CREDEV)
+                  </div>
+                )}
 
                 {/* Detalhamento por tipo de documento */}
                 <div className="border-t border-orange-300 pt-3 mt-2">
@@ -1096,10 +1280,22 @@ const AuditoriaFaturamento = () => {
                           key={tipo}
                           className="flex justify-between items-center text-xs"
                         >
-                          <span className="text-orange-600 font-medium">
+                          <span
+                            className={
+                              Number(tipo) === 20
+                                ? 'text-red-600 font-medium'
+                                : 'text-orange-600 font-medium'
+                            }
+                          >
                             {converterTipoDocumento(Number(tipo))}:
                           </span>
-                          <span className="text-orange-700 font-bold">
+                          <span
+                            className={
+                              Number(tipo) === 20
+                                ? 'text-red-600 font-bold'
+                                : 'text-orange-700 font-bold'
+                            }
+                          >
                             {Number(valor).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
@@ -1128,15 +1324,28 @@ const AuditoriaFaturamento = () => {
                 </div>
               </CardHeader>
               <CardContent className="pt-2">
-                <div className="text-3xl font-extrabold text-pink-700 mb-2">
-                  {estatisticas.valorSellect.toLocaleString('pt-BR', {
+                <div className="text-3xl font-extrabold text-pink-700 mb-1">
+                  {(
+                    estatisticas.valorSellect - estatisticas.sellectCredev
+                  ).toLocaleString('pt-BR', {
                     style: 'currency',
                     currency: 'BRL',
                   })}
                 </div>
-                <CardDescription className="text-xs text-pink-600 mb-3">
-                  Total faturado
+                <CardDescription className="text-xs text-pink-600 mb-1">
+                  Valor Líquido
                 </CardDescription>
+
+                {estatisticas.sellectCredev > 0 && (
+                  <div className="text-sm font-bold text-red-600 mb-2">
+                    -{' '}
+                    {estatisticas.sellectCredev.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}{' '}
+                    (CREDEV)
+                  </div>
+                )}
 
                 {/* Detalhamento por tipo de documento */}
                 <div className="border-t border-pink-300 pt-3 mt-2">
@@ -1151,10 +1360,22 @@ const AuditoriaFaturamento = () => {
                           key={tipo}
                           className="flex justify-between items-center text-xs"
                         >
-                          <span className="text-pink-600 font-medium">
+                          <span
+                            className={
+                              Number(tipo) === 20
+                                ? 'text-red-600 font-medium'
+                                : 'text-pink-600 font-medium'
+                            }
+                          >
                             {converterTipoDocumento(Number(tipo))}:
                           </span>
-                          <span className="text-pink-700 font-bold">
+                          <span
+                            className={
+                              Number(tipo) === 20
+                                ? 'text-red-600 font-bold'
+                                : 'text-pink-700 font-bold'
+                            }
+                          >
                             {Number(valor).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
@@ -1187,15 +1408,28 @@ const AuditoriaFaturamento = () => {
                 </div>
               </CardHeader>
               <CardContent className="pt-2">
-                <div className="text-3xl font-extrabold text-teal-700 mb-2">
-                  {estatisticas.valorFranquias.toLocaleString('pt-BR', {
+                <div className="text-3xl font-extrabold text-teal-700 mb-1">
+                  {(
+                    estatisticas.valorFranquias - estatisticas.franquiasCredev
+                  ).toLocaleString('pt-BR', {
                     style: 'currency',
                     currency: 'BRL',
                   })}
                 </div>
-                <CardDescription className="text-xs text-teal-600 mb-3">
-                  Total faturado
+                <CardDescription className="text-xs text-teal-600 mb-1">
+                  Valor Líquido
                 </CardDescription>
+
+                {estatisticas.franquiasCredev > 0 && (
+                  <div className="text-sm font-bold text-red-600 mb-2">
+                    -{' '}
+                    {estatisticas.franquiasCredev.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}{' '}
+                    (CREDEV)
+                  </div>
+                )}
 
                 {/* Detalhamento por tipo de documento */}
                 <div className="border-t border-teal-300 pt-3 mt-2">
@@ -1210,10 +1444,22 @@ const AuditoriaFaturamento = () => {
                           key={tipo}
                           className="flex justify-between items-center text-xs"
                         >
-                          <span className="text-teal-600 font-medium">
+                          <span
+                            className={
+                              Number(tipo) === 20
+                                ? 'text-red-600 font-medium'
+                                : 'text-teal-600 font-medium'
+                            }
+                          >
                             {converterTipoDocumento(Number(tipo))}:
                           </span>
-                          <span className="text-teal-700 font-bold">
+                          <span
+                            className={
+                              Number(tipo) === 20
+                                ? 'text-red-600 font-bold'
+                                : 'text-teal-700 font-bold'
+                            }
+                          >
                             {Number(valor).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
@@ -1264,43 +1510,130 @@ const AuditoriaFaturamento = () => {
               {/* Filtros Locais */}
               {dadosCarregados && dados.length > 0 && (
                 <div className="p-4 bg-gray-50 border-b border-gray-200">
-                  <div className="flex items-center gap-4 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm font-semibold text-[#000638] whitespace-nowrap">
-                        Cliente:
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold text-[#000638]">
+                        Cliente
                       </label>
                       <input
                         type="text"
-                        placeholder="Código do cliente..."
+                        placeholder="Filtrar..."
                         value={filtroCliente}
                         onChange={(e) => setFiltroCliente(e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638] text-sm"
+                        className="px-2 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638] text-sm"
                       />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm font-semibold text-[#000638] whitespace-nowrap">
-                        Operação:
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold text-[#000638]">
+                        Nr. Fatura
                       </label>
                       <input
                         type="text"
-                        placeholder="Código operação..."
-                        value={filtroOperacao}
-                        onChange={(e) => setFiltroOperacao(e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638] text-sm"
+                        placeholder="Filtrar..."
+                        value={filtroNrFatura}
+                        onChange={(e) => setFiltroNrFatura(e.target.value)}
+                        className="px-2 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638] text-sm"
                       />
                     </div>
-                    {(filtroCliente || filtroOperacao) && (
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold text-[#000638]">
+                        Valor
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Filtrar..."
+                        value={filtroValor}
+                        onChange={(e) => setFiltroValor(e.target.value)}
+                        className="px-2 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638] text-sm"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold text-[#000638]">
+                        Vencimento
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Filtrar..."
+                        value={filtroVencimento}
+                        onChange={(e) => setFiltroVencimento(e.target.value)}
+                        className="px-2 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638] text-sm"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold text-[#000638]">
+                        Nr. Transação
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Filtrar..."
+                        value={filtroNrTransacao}
+                        onChange={(e) => setFiltroNrTransacao(e.target.value)}
+                        className="px-2 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638] text-sm"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold text-[#000638]">
+                        Tipo Doc
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Filtrar..."
+                        value={filtroTipoDoc}
+                        onChange={(e) => setFiltroTipoDoc(e.target.value)}
+                        className="px-2 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638] text-sm"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold text-[#000638]">
+                        Operação
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Filtrar..."
+                        value={filtroOperacao}
+                        onChange={(e) => setFiltroOperacao(e.target.value)}
+                        className="px-2 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638] text-sm"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold text-[#000638]">
+                        Tipo Oper.
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Filtrar..."
+                        value={filtroTipoOper}
+                        onChange={(e) => setFiltroTipoOper(e.target.value)}
+                        className="px-2 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638] text-sm"
+                      />
+                    </div>
+                  </div>
+                  {(filtroCliente ||
+                    filtroNrFatura ||
+                    filtroValor ||
+                    filtroVencimento ||
+                    filtroNrTransacao ||
+                    filtroTipoDoc ||
+                    filtroOperacao ||
+                    filtroTipoOper) && (
+                    <div className="mt-3 flex justify-end">
                       <button
                         onClick={() => {
                           setFiltroCliente('');
+                          setFiltroNrFatura('');
+                          setFiltroValor('');
+                          setFiltroVencimento('');
+                          setFiltroNrTransacao('');
+                          setFiltroTipoDoc('');
                           setFiltroOperacao('');
+                          setFiltroTipoOper('');
                         }}
                         className="px-4 py-2 text-sm font-medium text-white bg-[#fe0000] rounded-lg hover:bg-[#cc0000] transition-colors"
                       >
-                        Limpar Filtros
+                        Limpar Todos os Filtros
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               )}
 
