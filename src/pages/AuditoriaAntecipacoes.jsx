@@ -50,7 +50,7 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
 
   // Estados para paginação
   const [paginaAtual, setPaginaAtual] = useState(1);
-  const [itensPorPagina] = useState(20);
+  const [itensPorPagina] = useState(50);
 
   // Estados para ordenação
   const [ordenacao, setOrdenacao] = useState({ campo: null, direcao: 'asc' });
@@ -83,6 +83,12 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
   const [linhasSelecionadas, setLinhasSelecionadas] = useState([]);
   const [modalBancoAberto, setModalBancoAberto] = useState(false);
   const [bancoSelecionado, setBancoSelecionado] = useState('');
+
+  // Estados para campos específicos do banco Confiança
+  const [valorDescontado, setValorDescontado] = useState('');
+  const [titulosRecomprados, setTitulosRecomprados] = useState('');
+  const [creditoDebitoCedente, setCreditoDebitoCedente] = useState('');
+  const [saldoPagarCedente, setSaldoPagarCedente] = useState('');
 
   // Estados para antecipações (carregadas do Supabase)
   const [antecipacoesRegistradas, setAntecipacoesRegistradas] = useState([]);
@@ -891,6 +897,16 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
     }
   };
 
+  const handleSelecionarTodasPaginas = () => {
+    if (linhasSelecionadas.length === dadosProcessados.length) {
+      // Se todas estão selecionadas, desmarca todas
+      setLinhasSelecionadas([]);
+    } else {
+      // Seleciona todas as faturas (de todas as páginas)
+      setLinhasSelecionadas([...dadosProcessados]);
+    }
+  };
+
   const isLinhaSelecionada = (item) => {
     const nrFatura = item.nr_duplicata || item.nr_fatura;
     return linhasSelecionadas.some(
@@ -912,6 +928,10 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
   const handleFecharModal = () => {
     setModalBancoAberto(false);
     setBancoSelecionado('');
+    setValorDescontado('');
+    setTitulosRecomprados('');
+    setCreditoDebitoCedente('');
+    setSaldoPagarCedente('');
   };
 
   const handleRemoverAntecipacao = async () => {
@@ -994,6 +1014,45 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
       return;
     }
 
+    // Validação específica para banco Confiança
+    if (bancoSelecionado === 'Confiança') {
+      if (
+        !valorDescontado ||
+        !titulosRecomprados ||
+        !creditoDebitoCedente ||
+        !saldoPagarCedente
+      ) {
+        alert('Todos os campos do banco Confiança são obrigatórios!');
+        return;
+      }
+
+      const numValorDescontado = parseFloat(valorDescontado);
+      const numTitulosRecomprados = parseFloat(titulosRecomprados);
+      const numCreditoDebito = parseFloat(creditoDebitoCedente);
+      const numSaldoPagar = parseFloat(saldoPagarCedente);
+
+      if (isNaN(numValorDescontado) || numValorDescontado < 0) {
+        alert('Valor descontado deve ser um número maior ou igual a zero!');
+        return;
+      }
+      if (isNaN(numTitulosRecomprados) || numTitulosRecomprados < 0) {
+        alert('Títulos recomprados deve ser um número maior ou igual a zero!');
+        return;
+      }
+      if (isNaN(numCreditoDebito) || numCreditoDebito < 0) {
+        alert(
+          'Crédito/Débito da Cedente deve ser um número maior ou igual a zero!',
+        );
+        return;
+      }
+      if (isNaN(numSaldoPagar) || numSaldoPagar < 0) {
+        alert(
+          'Saldo a Pagar para Cedente deve ser um número maior ou igual a zero!',
+        );
+        return;
+      }
+    }
+
     if (!user) {
       alert('Você precisa estar logado para salvar antecipações!');
       return;
@@ -1003,19 +1062,31 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
 
     try {
       // Preparar dados para inserção no Supabase
-      const antecipacoesParaInserir = linhasSelecionadas.map((item) => ({
-        cd_cliente: String(item.cd_cliente || '').trim(),
-        nm_cliente: item.nm_cliente || '',
-        nr_fatura: String(item.nr_duplicata || item.nr_fatura || '').trim(),
-        nr_parcela: String(item.nr_parcela || '').trim(),
-        vl_fatura: parseFloat(item.vl_fatura) || 0,
-        dt_vencimento: item.dt_vencimento || null,
-        cd_empresa: String(item.cd_empresa || '').trim(),
-        banco_antecipado: bancoSelecionado,
-        usuario_id: user.id,
-        usuario_email: user.email || '',
-        usuario_nome: user.user_metadata?.name || user.email || 'Usuário',
-      }));
+      const antecipacoesParaInserir = linhasSelecionadas.map((item) => {
+        const baseData = {
+          cd_cliente: String(item.cd_cliente || '').trim(),
+          nm_cliente: item.nm_cliente || '',
+          nr_fatura: String(item.nr_duplicata || item.nr_fatura || '').trim(),
+          nr_parcela: String(item.nr_parcela || '').trim(),
+          vl_fatura: parseFloat(item.vl_fatura) || 0,
+          dt_vencimento: item.dt_vencimento || null,
+          cd_empresa: String(item.cd_empresa || '').trim(),
+          banco_antecipado: bancoSelecionado,
+          usuario_id: user.id,
+          usuario_email: user.email || '',
+          usuario_nome: user.user_metadata?.name || user.email || 'Usuário',
+        };
+
+        // Adicionar campos específicos do Confiança se aplicável
+        if (bancoSelecionado === 'Confiança') {
+          baseData.valor_descontado = parseFloat(valorDescontado);
+          baseData.titulos_recomprados = parseFloat(titulosRecomprados);
+          baseData.credito_debito_cedente = parseFloat(creditoDebitoCedente);
+          baseData.saldo_pagar_cedente = parseFloat(saldoPagarCedente);
+        }
+
+        return baseData;
+      });
 
       console.log('📝 Dados para inserir:', antecipacoesParaInserir);
 
@@ -1798,13 +1869,29 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
                 : 'Nenhum dado carregado'}
             </div>
             {dadosProcessados.length > 0 && (
-              <button
-                onClick={handleExportExcel}
-                className="flex items-center gap-1 bg-green-600 text-white px-2 py-1 rounded-lg hover:bg-green-700 transition-colors font-medium text-xs"
-              >
-                <FileArrowDown size={12} />
-                BAIXAR EXCEL
-              </button>
+              <>
+                <button
+                  onClick={handleSelecionarTodasPaginas}
+                  className="flex items-center gap-1 bg-blue-600 text-white px-2 py-1 rounded-lg hover:bg-blue-700 transition-colors font-medium text-xs"
+                  title={
+                    linhasSelecionadas.length === dadosProcessados.length
+                      ? 'Desmarcar todas'
+                      : 'Selecionar todas as páginas'
+                  }
+                >
+                  <CheckSquare size={12} />
+                  {linhasSelecionadas.length === dadosProcessados.length
+                    ? 'DESMARCAR TODAS'
+                    : `SELECIONAR TODAS (${dadosProcessados.length})`}
+                </button>
+                <button
+                  onClick={handleExportExcel}
+                  className="flex items-center gap-1 bg-green-600 text-white px-2 py-1 rounded-lg hover:bg-green-700 transition-colors font-medium text-xs"
+                >
+                  <FileArrowDown size={12} />
+                  BAIXAR EXCEL
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -2525,6 +2612,77 @@ const AuditoriaAntecipacoes = ({ modo = 'emissao' }) => {
                 <option value="Bradesco">Bradesco</option>
               </select>
             </div>
+
+            {/* Campos específicos do banco Confiança */}
+            {bancoSelecionado === 'Confiança' && (
+              <div className="mb-6 p-4 bg-green-50 rounded-lg border border-green-200">
+                <h4 className="text-sm font-bold text-green-800 mb-3 flex items-center gap-2">
+                  <CheckCircle size={16} className="text-green-600" />
+                  Informações do Banco Confiança
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                      Valor Descontado *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={valorDescontado}
+                      onChange={(e) => setValorDescontado(e.target.value)}
+                      placeholder="0,00"
+                      className="border border-green-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-[#000638] text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                      Títulos Recomprados *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={titulosRecomprados}
+                      onChange={(e) => setTitulosRecomprados(e.target.value)}
+                      placeholder="0,00"
+                      className="border border-green-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-[#000638] text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                      Crédito/Débito da Cedente *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={creditoDebitoCedente}
+                      onChange={(e) => setCreditoDebitoCedente(e.target.value)}
+                      placeholder="0,00"
+                      className="border border-green-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-[#000638] text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                      Saldo a Pagar para Cedente *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={saldoPagarCedente}
+                      onChange={(e) => setSaldoPagarCedente(e.target.value)}
+                      placeholder="0,00"
+                      className="border border-green-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-[#000638] text-sm"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-green-700 mt-2">
+                  * Todos os campos são obrigatórios
+                </p>
+              </div>
+            )}
 
             <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
               <p className="text-sm text-blue-800">
