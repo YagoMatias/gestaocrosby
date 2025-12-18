@@ -441,6 +441,14 @@ const useApiClient = () => {
       apiCall('/api/financial/classificacao-clientes', params),
 
     /**
+     * Classificação de faturas (considera operação - VAREJO tem prioridade sobre REVENDA)
+     * @param {Object} body - Objeto com array de faturas
+     * @param {Array} body.faturas - Array com {cd_cliente, cd_operacao, cd_empresa}
+     */
+    classificacaoFaturas: (body) =>
+      apiMutate('/api/financial/classificacao-faturas', 'POST', body),
+
+    /**
      * Franquias de clientes (nm_fantasia like '%F%CROSBY%')
      */
     franquiasClientes: (params) =>

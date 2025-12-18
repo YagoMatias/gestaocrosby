@@ -19,6 +19,8 @@ import {
   ShoppingCart,
   Tag,
   Buildings,
+  X,
+  Question,
 } from '@phosphor-icons/react';
 import useApiClient from '../hooks/useApiClient';
 import * as XLSX from 'xlsx';
@@ -73,9 +75,20 @@ const AuditoriaFaturamento = () => {
   // Estado para alternar entre Dashboard e Dados
   const [visualizacao, setVisualizacao] = useState('DADOS');
 
-  // Estado para classificações de clientes
+  // Estado para classificações de clientes (por cliente)
   const [classificacoesClientes, setClassificacoesClientes] = useState({});
   const [franquiasClientes, setFranquiasClientes] = useState({});
+
+  // Estado para classificações de faturas (por fatura, considera operação)
+  const [classificacoesFaturas, setClassificacoesFaturas] = useState({});
+
+  // Estado para modal de faturas por cluster
+  const [modalFaturas, setModalFaturas] = useState({
+    aberto: false,
+    titulo: '',
+    cor: 'blue',
+    dados: [],
+  });
 
   // CSS customizado para a tabela
   useEffect(() => {
@@ -314,6 +327,10 @@ const AuditoriaFaturamento = () => {
       { cd_empresa: '960' },
       { cd_empresa: '970' },
       { cd_empresa: '990' },
+      { cd_empresa: '6156' },
+      { cd_empresa: '6157' },
+      { cd_empresa: '6114' },
+      { cd_empresa: '6115' },
     ];
     setEmpresasSelecionadas(empresasPadrao);
   }, []);
@@ -361,7 +378,7 @@ const AuditoriaFaturamento = () => {
     const codigosVarejo = [
       1, 2, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 8750, 9017,
       9400, 9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405, 1205,
-      1101,
+      1101, 9061,
     ];
 
     // Filtrar dados de VAREJO
@@ -387,10 +404,15 @@ const AuditoriaFaturamento = () => {
       .filter((row) => Number(row.tp_documento) === 20)
       .reduce((acc, row) => acc + (parseFloat(row.vl_fatura) || 0), 0);
 
-    // Filtrar dados de MULTIMARCAS
-    const dadosMultimarcas = dadosProcessados.filter(
-      (row) => classificacoesClientes[row.cd_cliente] === 'MULTIMARCAS',
-    );
+    // Filtrar dados de MULTIMARCAS (usando classificação por fatura)
+    const dadosMultimarcas = dadosProcessados.filter((row) => {
+      const chave = `${row.cd_cliente}-${row.cd_operacao}-${row.cd_empresa}`;
+      return (
+        classificacoesFaturas[chave] === 'MULTIMARCAS' ||
+        (Object.keys(classificacoesFaturas).length === 0 &&
+          classificacoesClientes[row.cd_cliente] === 'MULTIMARCAS')
+      );
+    });
 
     // Valor total MULTIMARCAS
     const valorMultimarcas = dadosMultimarcas.reduce(
@@ -410,10 +432,15 @@ const AuditoriaFaturamento = () => {
       .filter((row) => Number(row.tp_documento) === 20)
       .reduce((acc, row) => acc + (parseFloat(row.vl_fatura) || 0), 0);
 
-    // Filtrar dados de REVENDA
-    const dadosRevenda = dadosProcessados.filter(
-      (row) => classificacoesClientes[row.cd_cliente] === 'REVENDA',
-    );
+    // Filtrar dados de REVENDA (usando classificação por fatura - exclui operações de VAREJO)
+    const dadosRevenda = dadosProcessados.filter((row) => {
+      const chave = `${row.cd_cliente}-${row.cd_operacao}-${row.cd_empresa}`;
+      return (
+        classificacoesFaturas[chave] === 'REVENDA' ||
+        (Object.keys(classificacoesFaturas).length === 0 &&
+          classificacoesClientes[row.cd_cliente] === 'REVENDA')
+      );
+    });
 
     // Valor total REVENDA
     const valorRevenda = dadosRevenda.reduce(
@@ -501,6 +528,41 @@ const AuditoriaFaturamento = () => {
       .filter((row) => Number(row.tp_documento) === 20)
       .reduce((acc, row) => acc + (parseFloat(row.vl_fatura) || 0), 0);
 
+    // Filtrar dados de OUTROS (faturas sem nenhuma classificação)
+    const dadosOutros = dadosProcessados.filter((row) => {
+      const chaveFatura = `${row.cd_cliente}-${row.cd_operacao}-${row.cd_empresa}`;
+      const tipoFatura = classificacoesFaturas[chaveFatura];
+      
+      // Verificar se pertence a alguma classificação
+      const ehVarejo = codigosVarejo.includes(Number(row.cd_operacao));
+      const ehMultimarcas = tipoFatura === 'MULTIMARCAS' || 
+        (Object.keys(classificacoesFaturas).length === 0 && classificacoesClientes[row.cd_cliente] === 'MULTIMARCAS');
+      const ehRevenda = tipoFatura === 'REVENDA' || 
+        (Object.keys(classificacoesFaturas).length === 0 && classificacoesClientes[row.cd_cliente] === 'REVENDA');
+      const ehBazar = Number(row.cd_operacao) === 889;
+      const ehSellect = [55, 53].includes(Number(row.cd_operacao));
+      const ehFranquia = franquiasClientes[row.cd_cliente] === true;
+      
+      // Retorna true se NÃO pertence a nenhuma classificação
+      return !ehVarejo && !ehMultimarcas && !ehRevenda && !ehBazar && !ehSellect && !ehFranquia;
+    });
+
+    const valorOutros = dadosOutros.reduce(
+      (acc, row) => acc + (parseFloat(row.vl_fatura) || 0),
+      0,
+    );
+
+    const outrosTipoDocumento = dadosOutros.reduce((acc, row) => {
+      const tipo = row.tp_documento || 'Não especificado';
+      acc[tipo] = (acc[tipo] || 0) + (parseFloat(row.vl_fatura) || 0);
+      return acc;
+    }, {});
+
+    // Valor CREDEV em OUTROS (tp_documento = 20)
+    const outrosCredev = dadosOutros
+      .filter((row) => Number(row.tp_documento) === 20)
+      .reduce((acc, row) => acc + (parseFloat(row.vl_fatura) || 0), 0);
+
     return {
       totalFaturas,
       valorTotal,
@@ -526,8 +588,223 @@ const AuditoriaFaturamento = () => {
       franquiasTipoDocumento,
       franquiasCredev,
       totalCredev,
+      valorOutros,
+      outrosTipoDocumento,
+      outrosCredev,
     };
-  }, [dadosProcessados, classificacoesClientes, franquiasClientes]);
+  }, [
+    dadosProcessados,
+    classificacoesClientes,
+    classificacoesFaturas,
+    franquiasClientes,
+  ]);
+
+  // Dados filtrados por cluster para uso no modal
+  const dadosPorCluster = useMemo(() => {
+    // Códigos de operação para VAREJO
+    const codigosVarejo = [
+      1, 2, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 8750, 9017,
+      9400, 9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405, 1205,
+      1101, 9061,
+    ];
+
+    return {
+      VAREJO: dadosProcessados.filter((row) =>
+        codigosVarejo.includes(Number(row.cd_operacao)),
+      ),
+      MULTIMARCAS: dadosProcessados.filter((row) => {
+        const chave = `${row.cd_cliente}-${row.cd_operacao}-${row.cd_empresa}`;
+        return (
+          classificacoesFaturas[chave] === 'MULTIMARCAS' ||
+          (Object.keys(classificacoesFaturas).length === 0 &&
+            classificacoesClientes[row.cd_cliente] === 'MULTIMARCAS')
+        );
+      }),
+      REVENDA: dadosProcessados.filter((row) => {
+        const chave = `${row.cd_cliente}-${row.cd_operacao}-${row.cd_empresa}`;
+        return (
+          classificacoesFaturas[chave] === 'REVENDA' ||
+          (Object.keys(classificacoesFaturas).length === 0 &&
+            classificacoesClientes[row.cd_cliente] === 'REVENDA')
+        );
+      }),
+      BAZAR: dadosProcessados.filter((row) => Number(row.cd_operacao) === 889),
+      SELLECT: dadosProcessados.filter((row) =>
+        [55, 53].includes(Number(row.cd_operacao)),
+      ),
+      FRANQUIAS: dadosProcessados.filter(
+        (row) => franquiasClientes[row.cd_cliente] === true,
+      ),
+      OUTROS: dadosProcessados.filter((row) => {
+        const chaveFatura = `${row.cd_cliente}-${row.cd_operacao}-${row.cd_empresa}`;
+        const tipoFatura = classificacoesFaturas[chaveFatura];
+        
+        const ehVarejo = codigosVarejo.includes(Number(row.cd_operacao));
+        const ehMultimarcas = tipoFatura === 'MULTIMARCAS' || 
+          (Object.keys(classificacoesFaturas).length === 0 && classificacoesClientes[row.cd_cliente] === 'MULTIMARCAS');
+        const ehRevenda = tipoFatura === 'REVENDA' || 
+          (Object.keys(classificacoesFaturas).length === 0 && classificacoesClientes[row.cd_cliente] === 'REVENDA');
+        const ehBazar = Number(row.cd_operacao) === 889;
+        const ehSellect = [55, 53].includes(Number(row.cd_operacao));
+        const ehFranquia = franquiasClientes[row.cd_cliente] === true;
+        
+        return !ehVarejo && !ehMultimarcas && !ehRevenda && !ehBazar && !ehSellect && !ehFranquia;
+      }),
+    };
+  }, [
+    dadosProcessados,
+    classificacoesClientes,
+    classificacoesFaturas,
+    franquiasClientes,
+  ]);
+
+  // Mapeamento de faturas com múltiplas classificações
+  const faturasMultiplasClassificacoes = useMemo(() => {
+    const codigosVarejo = [
+      1, 2, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 8750, 9017,
+      9400, 9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405, 1205,
+      1101, 9061,
+    ];
+
+    const mapa = {};
+
+    dadosProcessados.forEach((row) => {
+      const chave = `${row.nr_fat}-${row.cd_cliente}-${row.cd_empresa}`;
+      const chaveFatura = `${row.cd_cliente}-${row.cd_operacao}-${row.cd_empresa}`;
+      const classificacoes = [];
+
+      // Verifica cada cluster usando a nova classificação por fatura
+      if (codigosVarejo.includes(Number(row.cd_operacao))) {
+        classificacoes.push('VAREJO');
+      }
+
+      // Usar classificação por fatura se disponível, senão por cliente
+      const tipoFatura = classificacoesFaturas[chaveFatura];
+      if (
+        tipoFatura === 'MULTIMARCAS' ||
+        (Object.keys(classificacoesFaturas).length === 0 &&
+          classificacoesClientes[row.cd_cliente] === 'MULTIMARCAS')
+      ) {
+        classificacoes.push('MULTIMARCAS');
+      }
+      if (
+        tipoFatura === 'REVENDA' ||
+        (Object.keys(classificacoesFaturas).length === 0 &&
+          classificacoesClientes[row.cd_cliente] === 'REVENDA')
+      ) {
+        classificacoes.push('REVENDA');
+      }
+
+      if (Number(row.cd_operacao) === 889) {
+        classificacoes.push('BAZAR');
+      }
+      if ([55, 53].includes(Number(row.cd_operacao))) {
+        classificacoes.push('SELLECT');
+      }
+      if (franquiasClientes[row.cd_cliente] === true) {
+        classificacoes.push('FRANQUIAS');
+      }
+
+      // Se tiver mais de uma classificação, adiciona ao mapa
+      if (classificacoes.length > 1) {
+        mapa[chave] = classificacoes;
+      }
+    });
+
+    return mapa;
+  }, [
+    dadosProcessados,
+    classificacoesClientes,
+    classificacoesFaturas,
+    franquiasClientes,
+  ]);
+
+  // Função para obter classificações de uma fatura
+  const getClassificacoesFatura = useCallback(
+    (row) => {
+      const chave = `${row.nr_fat}-${row.cd_cliente}-${row.cd_empresa}`;
+      return faturasMultiplasClassificacoes[chave] || null;
+    },
+    [faturasMultiplasClassificacoes],
+  );
+
+  // Função para obter TODAS as classificações de uma fatura (incluindo únicas)
+  const getTodasClassificacoesFatura = useCallback(
+    (row) => {
+      const codigosVarejo = [
+        1, 2, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 8750, 9017,
+        9400, 9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405, 1205,
+        1101, 9061,
+      ];
+
+      const chaveFatura = `${row.cd_cliente}-${row.cd_operacao}-${row.cd_empresa}`;
+      const classificacoes = [];
+
+      // Verificar VAREJO
+      if (codigosVarejo.includes(Number(row.cd_operacao))) {
+        classificacoes.push('VAREJO');
+      }
+
+      // Verificar MULTIMARCAS e REVENDA usando classificação por fatura
+      const tipoFatura = classificacoesFaturas[chaveFatura];
+      if (
+        tipoFatura === 'MULTIMARCAS' ||
+        (Object.keys(classificacoesFaturas).length === 0 &&
+          classificacoesClientes[row.cd_cliente] === 'MULTIMARCAS')
+      ) {
+        classificacoes.push('MULTIMARCAS');
+      }
+      if (
+        tipoFatura === 'REVENDA' ||
+        (Object.keys(classificacoesFaturas).length === 0 &&
+          classificacoesClientes[row.cd_cliente] === 'REVENDA')
+      ) {
+        classificacoes.push('REVENDA');
+      }
+
+      // Verificar BAZAR
+      if (Number(row.cd_operacao) === 889) {
+        classificacoes.push('BAZAR');
+      }
+
+      // Verificar SELLECT
+      if ([55, 53].includes(Number(row.cd_operacao))) {
+        classificacoes.push('SELLECT');
+      }
+
+      // Verificar FRANQUIAS
+      if (franquiasClientes[row.cd_cliente] === true) {
+        classificacoes.push('FRANQUIAS');
+      }
+
+      return classificacoes;
+    },
+    [classificacoesClientes, classificacoesFaturas, franquiasClientes],
+  );
+
+  // Função para abrir modal com faturas do cluster
+  const abrirModalCluster = useCallback(
+    (cluster, cor) => {
+      const dados = dadosPorCluster[cluster] || [];
+      setModalFaturas({
+        aberto: true,
+        titulo: cluster,
+        cor,
+        dados,
+      });
+    },
+    [dadosPorCluster],
+  );
+
+  // Função para fechar modal
+  const fecharModal = useCallback(() => {
+    setModalFaturas({
+      aberto: false,
+      titulo: '',
+      cor: 'blue',
+      dados: [],
+    });
+  }, []);
 
   // Função para buscar dados
   const fetchDados = async (filtrosParam = filtros) => {
@@ -560,25 +837,46 @@ const AuditoriaFaturamento = () => {
     }
   };
 
-  // Função para buscar classificações de clientes
+  // Função para buscar classificações de faturas (considera operação)
   const fetchClassificacoesClientes = async (dadosAuditoria) => {
     try {
-      // Extrair códigos únicos de clientes
-      const clientesUnicos = [
-        ...new Set(dadosAuditoria.map((item) => item.cd_cliente)),
-      ];
+      if (dadosAuditoria.length === 0) return;
 
-      if (clientesUnicos.length === 0) return;
+      // Preparar faturas para a nova rota (com cd_cliente, cd_operacao, cd_empresa)
+      const faturas = dadosAuditoria.map((item) => ({
+        cd_cliente: item.cd_cliente,
+        cd_operacao: item.cd_operacao,
+        cd_empresa: item.cd_empresa,
+      }));
 
-      const response = await apiClient.financial.classificacaoClientes({
-        cd_clientes: clientesUnicos.join(','),
+      const response = await apiClient.financial.classificacaoFaturas({
+        faturas,
       });
 
       if (response.data) {
-        setClassificacoesClientes(response.data);
+        // Criar mapa de classificações por fatura (chave: cd_cliente-cd_operacao-cd_empresa)
+        const classificacoesPorFatura = {};
+        const classificacoesPorCliente = {};
+
+        Object.entries(response.data).forEach(([chave, valor]) => {
+          classificacoesPorFatura[chave] = valor.tipo;
+          // Também manter classificação por cliente para compatibilidade
+          // Prioridade: MULTIMARCAS > REVENDA > VAREJO > OUTROS
+          const clienteAtual = classificacoesPorCliente[valor.cd_cliente];
+          if (
+            !clienteAtual ||
+            valor.tipo === 'MULTIMARCAS' ||
+            (valor.tipo === 'REVENDA' && clienteAtual !== 'MULTIMARCAS')
+          ) {
+            classificacoesPorCliente[valor.cd_cliente] = valor.tipo;
+          }
+        });
+
+        setClassificacoesFaturas(classificacoesPorFatura);
+        setClassificacoesClientes(classificacoesPorCliente);
       }
     } catch (error) {
-      console.error('Erro ao buscar classificações de clientes:', error);
+      console.error('Erro ao buscar classificações de faturas:', error);
       // Não interrompe o fluxo se houver erro nas classificações
     }
   };
@@ -723,6 +1021,294 @@ const AuditoriaFaturamento = () => {
     XLSX.utils.book_append_sheet(wb, ws, 'Auditoria Faturamento');
     XLSX.writeFile(wb, 'auditoria-faturamento.xlsx');
   }
+
+  // Componente Modal para exibir faturas do cluster
+  const ModalFaturasCluster = () => {
+    if (!modalFaturas.aberto) return null;
+
+    const corClasses = {
+      blue: {
+        header: 'bg-blue-600',
+        border: 'border-blue-200',
+        text: 'text-blue-700',
+        textLight: 'text-blue-600',
+        bg: 'bg-blue-50',
+      },
+      green: {
+        header: 'bg-green-600',
+        border: 'border-green-200',
+        text: 'text-green-700',
+        textLight: 'text-green-600',
+        bg: 'bg-green-50',
+      },
+      purple: {
+        header: 'bg-purple-600',
+        border: 'border-purple-200',
+        text: 'text-purple-700',
+        textLight: 'text-purple-600',
+        bg: 'bg-purple-50',
+      },
+      orange: {
+        header: 'bg-orange-600',
+        border: 'border-orange-200',
+        text: 'text-orange-700',
+        textLight: 'text-orange-600',
+        bg: 'bg-orange-50',
+      },
+      pink: {
+        header: 'bg-pink-600',
+        border: 'border-pink-200',
+        text: 'text-pink-700',
+        textLight: 'text-pink-600',
+        bg: 'bg-pink-50',
+      },
+      teal: {
+        header: 'bg-teal-600',
+        border: 'border-teal-200',
+        text: 'text-teal-700',
+        textLight: 'text-teal-600',
+        bg: 'bg-teal-50',
+      },
+      yellow: {
+        header: 'bg-yellow-500',
+        border: 'border-yellow-200',
+        text: 'text-yellow-700',
+        textLight: 'text-yellow-600',
+        bg: 'bg-yellow-50',
+      },
+    };
+
+    const cores = corClasses[modalFaturas.cor] || corClasses.blue;
+    const valorTotal = modalFaturas.dados.reduce(
+      (acc, row) => acc + (parseFloat(row.vl_fatura) || 0),
+      0,
+    );
+
+    // Contagem de faturas com múltiplas classificações
+    const faturasComMultiplasClassif = modalFaturas.dados.filter((row) => {
+      const classificacoes = getClassificacoesFatura(row);
+      return classificacoes && classificacoes.length > 1;
+    }).length;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Overlay */}
+        <div
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          onClick={fecharModal}
+        />
+
+        {/* Modal */}
+        <div className="relative bg-white rounded-2xl shadow-2xl w-[90%] max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
+          {/* Header */}
+          <div
+            className={`${cores.header} px-6 py-4 flex items-center justify-between`}
+          >
+            <div>
+              <h2 className="text-xl font-bold text-white">
+                Faturas - {modalFaturas.titulo}
+              </h2>
+              <div className="flex items-center gap-4">
+                <p className="text-sm text-white/80">
+                  {modalFaturas.dados.length} fatura
+                  {modalFaturas.dados.length !== 1 ? 's' : ''} • Total:{' '}
+                  {valorTotal.toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })}
+                </p>
+                {faturasComMultiplasClassif > 0 && (
+                  <span className="px-2 py-1 text-xs font-bold bg-red-500 text-white rounded-full animate-pulse">
+                    ⚠️ {faturasComMultiplasClassif} com múltiplas classificações
+                  </span>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={fecharModal}
+              className="p-2 rounded-full hover:bg-white/20 transition-colors"
+            >
+              <X size={24} className="text-white" weight="bold" />
+            </button>
+          </div>
+
+          {/* Tabela */}
+          <div className="flex-1 overflow-auto p-4">
+            <table className="w-full border-collapse">
+              <thead className={`${cores.bg} sticky top-0`}>
+                <tr>
+                  <th
+                    className={`px-3 py-2 text-left text-xs font-semibold ${cores.text} border-b ${cores.border}`}
+                  >
+                    Cliente
+                  </th>
+                  <th
+                    className={`px-3 py-2 text-left text-xs font-semibold ${cores.text} border-b ${cores.border}`}
+                  >
+                    Nr. Fatura
+                  </th>
+                  <th
+                    className={`px-3 py-2 text-right text-xs font-semibold ${cores.text} border-b ${cores.border}`}
+                  >
+                    Valor
+                  </th>
+                  <th
+                    className={`px-3 py-2 text-center text-xs font-semibold ${cores.text} border-b ${cores.border}`}
+                  >
+                    Vencimento
+                  </th>
+                  <th
+                    className={`px-3 py-2 text-center text-xs font-semibold ${cores.text} border-b ${cores.border}`}
+                  >
+                    Nr. Transação
+                  </th>
+                  <th
+                    className={`px-3 py-2 text-center text-xs font-semibold ${cores.text} border-b ${cores.border}`}
+                  >
+                    Tipo Doc
+                  </th>
+                  <th
+                    className={`px-3 py-2 text-center text-xs font-semibold ${cores.text} border-b ${cores.border}`}
+                  >
+                    Operação
+                  </th>
+                  <th
+                    className={`px-3 py-2 text-center text-xs font-semibold ${cores.text} border-b ${cores.border}`}
+                  >
+                    Classificações
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {modalFaturas.dados.map((row, index) => {
+                  const classificacoesMultiplas = getClassificacoesFatura(row);
+                  const temMultiplasClassificacoes =
+                    classificacoesMultiplas &&
+                    classificacoesMultiplas.length > 1;
+
+                  return (
+                    <tr
+                      key={`${row.nr_fat}-${index}`}
+                      className={`border-b transition-colors ${
+                        temMultiplasClassificacoes
+                          ? 'bg-red-50 border-red-200 hover:bg-red-100'
+                          : `border-gray-100 hover:${cores.bg}`
+                      }`}
+                    >
+                      <td
+                        className={`px-3 py-2 text-sm ${
+                          temMultiplasClassificacoes
+                            ? 'text-red-700 font-medium'
+                            : 'text-gray-700'
+                        }`}
+                      >
+                        {row.cd_cliente}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-sm ${
+                          temMultiplasClassificacoes
+                            ? 'text-red-700 font-medium'
+                            : 'text-gray-700'
+                        }`}
+                      >
+                        {row.nr_fat}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-sm text-right font-medium ${
+                          temMultiplasClassificacoes
+                            ? 'text-red-700'
+                            : Number(row.tp_documento) === 20
+                            ? 'text-red-600'
+                            : cores.text
+                        }`}
+                      >
+                        {parseFloat(row.vl_fatura).toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        })}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-sm text-center ${
+                          temMultiplasClassificacoes
+                            ? 'text-red-700'
+                            : 'text-gray-600'
+                        }`}
+                      >
+                        {formatarDataBR(row.dt_vencimento)}
+                      </td>
+                      <td className="px-3 py-2 text-sm text-center">
+                        {row.nr_transacao ? (
+                          <span
+                            className={
+                              temMultiplasClassificacoes
+                                ? 'text-red-700 font-medium'
+                                : 'text-green-600 font-medium'
+                            }
+                          >
+                            {row.nr_transacao}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 italic">-</span>
+                        )}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-sm text-center ${
+                          temMultiplasClassificacoes
+                            ? 'text-red-700 font-medium'
+                            : Number(row.tp_documento) === 20
+                            ? 'text-red-600 font-medium'
+                            : 'text-gray-600'
+                        }`}
+                      >
+                        {converterTipoDocumento(Number(row.tp_documento))}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-sm text-center ${
+                          temMultiplasClassificacoes
+                            ? 'text-red-700'
+                            : 'text-gray-600'
+                        }`}
+                      >
+                        {row.cd_operacao}
+                      </td>
+                      <td className="px-3 py-2 text-sm text-center">
+                        {temMultiplasClassificacoes ? (
+                          <div className="flex flex-wrap gap-1 justify-center">
+                            {classificacoesMultiplas.map((classif) => (
+                              <span
+                                key={classif}
+                                className="px-2 py-0.5 text-[10px] font-bold bg-red-600 text-white rounded-full"
+                              >
+                                {classif}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 italic">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Footer */}
+          <div
+            className={`${cores.bg} px-6 py-3 border-t ${cores.border} flex justify-end`}
+          >
+            <button
+              onClick={fecharModal}
+              className={`px-4 py-2 ${cores.header} text-white rounded-lg font-medium hover:opacity-90 transition-opacity`}
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8">
@@ -1008,7 +1594,10 @@ const AuditoriaFaturamento = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* Card VAREJO */}
-            <Card className="shadow-md transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 cursor-pointer">
+            <Card
+              className="shadow-md transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 cursor-pointer"
+              onClick={() => abrirModalCluster('VAREJO', 'blue')}
+            >
               <CardHeader className="pb-2">
                 <div className="flex flex-row items-center justify-between">
                   <div>
@@ -1092,7 +1681,10 @@ const AuditoriaFaturamento = () => {
             </Card>
 
             {/* Card MULTIMARCAS */}
-            <Card className="shadow-md transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-lg bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-200 cursor-pointer">
+            <Card
+              className="shadow-md transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-lg bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-200 cursor-pointer"
+              onClick={() => abrirModalCluster('MULTIMARCAS', 'green')}
+            >
               <CardHeader className="pb-2">
                 <div className="flex flex-row items-center justify-between">
                   <div>
@@ -1177,7 +1769,10 @@ const AuditoriaFaturamento = () => {
             </Card>
 
             {/* Card REVENDA */}
-            <Card className="shadow-md transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-lg bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-200 cursor-pointer">
+            <Card
+              className="shadow-md transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-lg bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-200 cursor-pointer"
+              onClick={() => abrirModalCluster('REVENDA', 'purple')}
+            >
               <CardHeader className="pb-2">
                 <div className="flex flex-row items-center justify-between">
                   <div>
@@ -1261,7 +1856,10 @@ const AuditoriaFaturamento = () => {
             </Card>
 
             {/* Card BAZAR */}
-            <Card className="shadow-md transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-lg bg-gradient-to-br from-orange-50 to-orange-100 border-2 border-orange-200 cursor-pointer">
+            <Card
+              className="shadow-md transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-lg bg-gradient-to-br from-orange-50 to-orange-100 border-2 border-orange-200 cursor-pointer"
+              onClick={() => abrirModalCluster('BAZAR', 'orange')}
+            >
               <CardHeader className="pb-2">
                 <div className="flex flex-row items-center justify-between">
                   <div>
@@ -1345,7 +1943,10 @@ const AuditoriaFaturamento = () => {
             </Card>
 
             {/* Card SELLECT */}
-            <Card className="shadow-md transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-lg bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 cursor-pointer">
+            <Card
+              className="shadow-md transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-lg bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 cursor-pointer"
+              onClick={() => abrirModalCluster('SELLECT', 'pink')}
+            >
               <CardHeader className="pb-2">
                 <div className="flex flex-row items-center justify-between">
                   <div>
@@ -1425,7 +2026,10 @@ const AuditoriaFaturamento = () => {
             </Card>
 
             {/* Card FRANQUIAS */}
-            <Card className="shadow-md transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-lg bg-gradient-to-br from-teal-50 to-teal-100 border-2 border-teal-200 cursor-pointer">
+            <Card
+              className="shadow-md transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-lg bg-gradient-to-br from-teal-50 to-teal-100 border-2 border-teal-200 cursor-pointer"
+              onClick={() => abrirModalCluster('FRANQUIAS', 'teal')}
+            >
               <CardHeader className="pb-2">
                 <div className="flex flex-row items-center justify-between">
                   <div>
@@ -1494,6 +2098,93 @@ const AuditoriaFaturamento = () => {
                               Number(tipo) === 20
                                 ? 'text-red-600 font-bold'
                                 : 'text-teal-700 font-bold'
+                            }
+                          >
+                            {Number(valor).toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL',
+                            })}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Card OUTROS */}
+            <Card
+              className="shadow-md transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-lg bg-gradient-to-br from-yellow-50 to-yellow-100 border-2 border-yellow-300 cursor-pointer"
+              onClick={() => abrirModalCluster('OUTROS', 'yellow')}
+            >
+              <CardHeader className="pb-2">
+                <div className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg font-bold text-yellow-700">
+                      OUTROS
+                    </CardTitle>
+                    <CardDescription className="text-xs text-yellow-600 mt-1">
+                      Sem classificação
+                    </CardDescription>
+                  </div>
+                  <Question
+                    size={32}
+                    className="text-yellow-600"
+                    weight="duotone"
+                  />
+                </div>
+              </CardHeader>
+              <CardContent className="pt-2">
+                <div className="text-3xl font-extrabold text-yellow-700 mb-1">
+                  {(
+                    estatisticas.valorOutros - estatisticas.outrosCredev
+                  ).toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })}
+                </div>
+                <CardDescription className="text-xs text-yellow-600 mb-1">
+                  Valor Líquido
+                </CardDescription>
+
+                {estatisticas.outrosCredev > 0 && (
+                  <div className="text-sm font-bold text-red-600 mb-2">
+                    -{' '}
+                    {estatisticas.outrosCredev.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}{' '}
+                    (CREDEV)
+                  </div>
+                )}
+
+                {/* Detalhamento por tipo de documento */}
+                <div className="border-t border-yellow-300 pt-3 mt-2">
+                  <div className="text-xs font-semibold text-yellow-700 mb-2">
+                    Por Tipo de Documento:
+                  </div>
+                  <div className="space-y-1">
+                    {Object.entries(estatisticas.outrosTipoDocumento || {})
+                      .sort(([a], [b]) => Number(a) - Number(b))
+                      .map(([tipo, valor]) => (
+                        <div
+                          key={tipo}
+                          className="flex justify-between items-center text-xs"
+                        >
+                          <span
+                            className={
+                              Number(tipo) === 20
+                                ? 'text-red-600 font-medium'
+                                : 'text-yellow-600 font-medium'
+                            }
+                          >
+                            {converterTipoDocumento(Number(tipo))}:
+                          </span>
+                          <span
+                            className={
+                              Number(tipo) === 20
+                                ? 'text-red-600 font-bold'
+                                : 'text-yellow-700 font-bold'
                             }
                           >
                             {Number(valor).toLocaleString('pt-BR', {
@@ -1814,6 +2505,20 @@ const AuditoriaFaturamento = () => {
                             </div>
                           </th>
 
+                          <th
+                            className="px-3 py-1 text-center text-[10px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                            onClick={() => handleSort('cd_empresa')}
+                          >
+                            <div className="flex items-center justify-center">
+                              Empresa
+                              {getSortIcon('cd_empresa')}
+                            </div>
+                          </th>
+
+                          <th className="px-3 py-1 text-center text-[10px]">
+                            Classificação
+                          </th>
+
                           <th className="px-3 py-1 text-center text-[10px]">
                             Status
                           </th>
@@ -1823,7 +2528,7 @@ const AuditoriaFaturamento = () => {
                       <tbody>
                         {dadosPaginados.length === 0 ? (
                           <tr>
-                            <td colSpan="10" className="text-center py-20">
+                            <td colSpan="12" className="text-center py-20">
                               <div className="text-center">
                                 <div className="text-gray-500 text-lg mb-2">
                                   Nenhum dado encontrado
@@ -1926,6 +2631,47 @@ const AuditoriaFaturamento = () => {
                                 {/* Tipo Operação */}
                                 <td className="px-2 py-1 text-center text-gray-700">
                                   {row.tp_operacao || '-'}
+                                </td>
+
+                                {/* Empresa */}
+                                <td className="px-2 py-1 text-center text-purple-600 font-medium">
+                                  {row.cd_empresa || '-'}
+                                </td>
+
+                                {/* Classificação */}
+                                <td className="px-2 py-1 text-center">
+                                  {(() => {
+                                    const classificacoes = getTodasClassificacoesFatura(row);
+                                    if (classificacoes.length === 0) {
+                                      return (
+                                        <span className="inline-flex px-2 py-1 text-[10px] font-bold rounded-full bg-yellow-100 text-yellow-800 border border-yellow-300">
+                                          ⚠️ SEM CLASSIF.
+                                        </span>
+                                      );
+                                    }
+                                    return (
+                                      <div className="flex flex-wrap gap-1 justify-center">
+                                        {classificacoes.map((classif) => {
+                                          const cores = {
+                                            VAREJO: 'bg-blue-100 text-blue-700',
+                                            MULTIMARCAS: 'bg-green-100 text-green-700',
+                                            REVENDA: 'bg-purple-100 text-purple-700',
+                                            BAZAR: 'bg-orange-100 text-orange-700',
+                                            SELLECT: 'bg-pink-100 text-pink-700',
+                                            FRANQUIAS: 'bg-teal-100 text-teal-700',
+                                          };
+                                          return (
+                                            <span
+                                              key={classif}
+                                              className={`px-1.5 py-0.5 text-[9px] font-bold rounded ${cores[classif] || 'bg-gray-100 text-gray-700'}`}
+                                            >
+                                              {classif}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  })()}
                                 </td>
 
                                 {/* Status */}
@@ -2053,6 +2799,9 @@ const AuditoriaFaturamento = () => {
           )}
         </div>
       )}
+
+      {/* Modal de Faturas por Cluster */}
+      <ModalFaturasCluster />
     </div>
   );
 };
