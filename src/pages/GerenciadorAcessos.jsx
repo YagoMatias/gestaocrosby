@@ -79,7 +79,6 @@ const AVAILABLE_PAGES = [
     name: 'Extrato Financeiro',
     category: 'Financeiro',
   },
-  { path: '/conciliacao', name: 'Conciliação', category: 'Financeiro' },
   {
     path: '/saldo-bancario-totvs',
     name: 'Saldo Bancário TOTVS',
@@ -100,8 +99,26 @@ const AVAILABLE_PAGES = [
   { path: '/endividamento', name: 'Endividamento', category: 'Financeiro' },
   { path: '/dash-contas-a-receber', name: 'PMR', category: 'Financeiro' },
 
+  // Auditoria
+  { path: '/conciliacao', name: 'Conciliação', category: 'Auditoria' },
+  { path: '/auditoria-cmv', name: 'Auditoria CMV', category: 'Auditoria' },
+  {
+    path: '/auditoria-transacoes',
+    name: 'Auditoria de Transações',
+    category: 'Auditoria',
+  },
+  {
+    path: '/auditoria-faturamento',
+    name: 'Auditoria de Faturamento',
+    category: 'Auditoria',
+  },
+  {
+    path: '/auditoria-antecipacoes',
+    name: 'Auditoria de Antecipações',
+    category: 'Auditoria',
+  },
+
   // CMV
-  { path: '/auditoria-cmv', name: 'Auditoria CMV', category: 'CMV' },
   { path: '/cmv-consolidado', name: 'CMV Consolidado', category: 'CMV' },
   { path: '/cmv-multimarcas', name: 'CMV Multimarcas', category: 'CMV' },
   { path: '/cmv-revenda', name: 'CMV Revenda', category: 'CMV' },
@@ -204,11 +221,6 @@ const AVAILABLE_PAGES = [
 
   // Outros
   { path: '/clientes', name: 'Clientes', category: 'Outros' },
-  {
-    path: '/auditoria-transacoes',
-    name: 'Auditoria de Transações',
-    category: 'Outros',
-  },
   { path: '/cohort-analysis', name: 'Análise de Cohort', category: 'Outros' },
   { path: '/widgets', name: 'Meus Widgets', category: 'Outros' },
   {

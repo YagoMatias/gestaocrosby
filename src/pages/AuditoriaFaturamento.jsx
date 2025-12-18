@@ -282,6 +282,42 @@ const AuditoriaFaturamento = () => {
     setCurrentPage(1);
   }, [dados]);
 
+  // Pré-selecionar empresas na inicialização
+  useEffect(() => {
+    const empresasPadrao = [
+      { cd_empresa: '2' },
+      { cd_empresa: '5' },
+      { cd_empresa: '55' },
+      { cd_empresa: '65' },
+      { cd_empresa: '89' },
+      { cd_empresa: '90' },
+      { cd_empresa: '92' },
+      { cd_empresa: '91' },
+      { cd_empresa: '93' },
+      { cd_empresa: '94' },
+      { cd_empresa: '95' },
+      { cd_empresa: '96' },
+      { cd_empresa: '97' },
+      { cd_empresa: '100' },
+      { cd_empresa: '200' },
+      { cd_empresa: '108' },
+      { cd_empresa: '500' },
+      { cd_empresa: '550' },
+      { cd_empresa: '650' },
+      { cd_empresa: '890' },
+      { cd_empresa: '891' },
+      { cd_empresa: '910' },
+      { cd_empresa: '920' },
+      { cd_empresa: '930' },
+      { cd_empresa: '940' },
+      { cd_empresa: '950' },
+      { cd_empresa: '960' },
+      { cd_empresa: '970' },
+      { cd_empresa: '990' },
+    ];
+    setEmpresasSelecionadas(empresasPadrao);
+  }, []);
+
   // Cálculo de estatísticas
   const estatisticas = useMemo(() => {
     const totalFaturas = dadosProcessados.length;
