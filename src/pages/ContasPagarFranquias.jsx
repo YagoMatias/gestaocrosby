@@ -69,6 +69,98 @@ const ContasPagarFranquias = () => {
   const FranchiseURL =
     'https://apigestaocrosby-bw2v.onrender.com/api/franchise/';
 
+  // Função para formatar observações especiais (ex: promoções Black Friday)
+  const formatarObservacao = (texto) => {
+    if (!texto) return texto;
+
+    // Padrão genérico: CRED PROMO BLACK com datas variáveis
+    const regexBlackGenerico = /^CRED PROMO BLACK\s+(.+)$/i;
+    const matchBlackGenerico = texto.trim().match(regexBlackGenerico);
+
+    if (matchBlackGenerico) {
+      const numeros = matchBlackGenerico[1].split(/\s+/);
+      const datas = [];
+      for (let i = 0; i < numeros.length; i += 2) {
+        if (numeros[i] && numeros[i + 1]) {
+          datas.push(
+            `${numeros[i].padStart(2, '0')}/${numeros[i + 1].padStart(2, '0')}`,
+          );
+        }
+      }
+      if (datas.length > 0) {
+        return `Crédito promocional Black Friday - Parcelamento em ${
+          datas.length
+        }x com vencimentos: ${datas.join(', ')}`;
+      }
+    }
+
+    // Padrão: PROMO JUL, AUTO POR FABIO, 6X DE OUT A DEZ (ou variações)
+    const regexPromoJul =
+      /^PROMO JUL,?\s*AUTO POR FABIO,?\s*(\d+)X DE (\w+) A (\w+)$/i;
+    const matchPromoJul = texto.trim().match(regexPromoJul);
+
+    if (matchPromoJul) {
+      const [, parcelas, mesInicio, mesFim] = matchPromoJul;
+      const meses = {
+        JAN: 'janeiro',
+        FEV: 'fevereiro',
+        MAR: 'março',
+        ABR: 'abril',
+        MAI: 'maio',
+        JUN: 'junho',
+        JUL: 'julho',
+        AGO: 'agosto',
+        SET: 'setembro',
+        OUT: 'outubro',
+        NOV: 'novembro',
+        DEZ: 'dezembro',
+      };
+      const mesInicioFormatado =
+        meses[mesInicio.toUpperCase()] || mesInicio.toLowerCase();
+      const mesFimFormatado =
+        meses[mesFim.toUpperCase()] || mesFim.toLowerCase();
+      return `Promoção de Julho, autorizada pela diretoria, em ${parcelas}x, primeira parcela em ${mesInicioFormatado}, até ${mesFimFormatado}.`;
+    }
+
+    // Padrão: CLIENTE DESISTIU
+    if (texto.trim().toUpperCase() === 'CLIENTE DESISTIU') {
+      return 'Cliente solicitou desistência do crédito.';
+    }
+
+    // Padrão: CREDITO P FRANQUIA SELECIONADAS POR FABIO EM DEZ 2025 (ou variações de mês/ano)
+    const regexCreditoFranquia =
+      /^CREDITO P FRANQUIA SELECIONADAS POR FABIO EM (\w+) (\d{4})$/i;
+    const matchCreditoFranquia = texto.trim().match(regexCreditoFranquia);
+
+    if (matchCreditoFranquia) {
+      const [, mes, ano] = matchCreditoFranquia;
+      const meses = {
+        JAN: 'janeiro',
+        FEV: 'fevereiro',
+        MAR: 'março',
+        ABR: 'abril',
+        MAI: 'maio',
+        JUN: 'junho',
+        JUL: 'julho',
+        AGO: 'agosto',
+        SET: 'setembro',
+        OUT: 'outubro',
+        NOV: 'novembro',
+        DEZ: 'dezembro',
+      };
+      const mesFormatado = meses[mes.toUpperCase()] || mes.toLowerCase();
+      return `Crédito liberado pela Diretoria para franquias selecionadas em ${mesFormatado} de ${ano}.`;
+    }
+
+    // Padrão: REPOSICAO
+    if (texto.trim().toUpperCase() === 'REPOSICAO') {
+      return 'Crédito liberado para Reposição de Estoque.';
+    }
+
+    // Retorna texto normal se não for padrão especial
+    return texto;
+  };
+
   // Helpers de data sem fuso horário
   const parseDateNoTZ = (isoDate) => {
     if (!isoDate) return null;
@@ -791,26 +883,60 @@ const ContasPagarFranquias = () => {
       setObsFatura(rowsFiltradas);
       setObsLoading(false);
 
-      // Buscar observações de movimentação
+      // Buscar observações de movimentação - NOVO FLUXO
       try {
         const cd_empresa = fatura.cd_empresa || '';
         const dt_emissao = fatura.dt_emissao
           ? fatura.dt_emissao.split('T')[0]
           : '';
 
-        console.log('📝 Buscando observações da movimentação:', {
-          cd_cliente,
+        console.log('📝 Passo 1: Buscando nr_ctapes do cliente:', {
+          cd_pessoa: cd_cliente,
           cd_empresa,
-          dt_emissao,
+        });
+
+        // PASSO 1: Buscar nr_ctapes do cliente usando a rota conta-cliente
+        const contaResult = await apiClient.financial.contaCliente({
+          cd_pessoa: cd_cliente,
+          cd_empresa,
+        });
+
+        console.log('📝 Resultado conta-cliente:', contaResult);
+
+        // Verificar se encontrou a conta
+        let nr_ctapes = null;
+        if (contaResult.success && contaResult.data) {
+          const contas = Array.isArray(contaResult.data)
+            ? contaResult.data
+            : contaResult.data?.data || [];
+
+          if (contas.length > 0) {
+            nr_ctapes = contas[0].nr_ctapes;
+            console.log('✅ nr_ctapes encontrado:', nr_ctapes);
+          }
+        }
+
+        if (!nr_ctapes) {
+          console.warn('⚠️ nr_ctapes não encontrado para o cliente');
+          setObsMovimentacao([]);
+          setObsMovLoading(false);
+          return;
+        }
+
+        // PASSO 2: Buscar observações de movimentação usando nr_ctapes e dt_emissao
+        console.log('📝 Passo 2: Buscando observações de movimentação:', {
+          nr_ctapes,
+          dt_movim: dt_emissao,
         });
 
         const obsMovResult = await apiClient.financial.obsMovFatura({
-          cd_cliente,
-          cd_empresa,
-          dt_emissao,
+          nr_ctapes,
+          dt_movim: dt_emissao,
         });
 
-        if (obsMovResult.success) {
+        console.log('📝 Resultado obs-mov-fatura:', obsMovResult);
+
+        if (obsMovResult.success && obsMovResult.data) {
           const obsMov = Array.isArray(obsMovResult.data)
             ? obsMovResult.data
             : obsMovResult.data?.data || [];
@@ -1704,7 +1830,7 @@ const ContasPagarFranquias = () => {
                       <ul className="list-disc pl-5 space-y-1">
                         {obsFatura.map((o, idx) => (
                           <li key={idx} className="text-sm text-gray-700">
-                            {o.ds_observacao}
+                            {formatarObservacao(o.ds_observacao)}
                           </li>
                         ))}
                       </ul>
@@ -1732,7 +1858,7 @@ const ContasPagarFranquias = () => {
                             className="bg-blue-50 rounded-lg p-3 border border-blue-200"
                           >
                             <p className="text-sm text-gray-800 mb-1">
-                              {obs.ds_obs}
+                              {formatarObservacao(obs.ds_obs)}
                             </p>
                             <div className="flex items-center gap-3 text-xs text-gray-500">
                               <span>

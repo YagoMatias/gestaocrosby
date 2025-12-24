@@ -365,6 +365,8 @@ const useApiClient = () => {
       apiCall('/api/financial/lanc-ext-adiant', params),
     // Observações de Movimentação
     obsMov: (params) => apiCall('/api/financial/obs-mov', params),
+    // Conta do Cliente (nr_ctapes)
+    contaCliente: (params) => apiCall('/api/financial/conta-cliente', params),
     // Observações de Movimentação por Fatura
     obsMovFatura: (params) => apiCall('/api/financial/obs-mov-fatura', params),
     // Transação de Fatura CREDEV

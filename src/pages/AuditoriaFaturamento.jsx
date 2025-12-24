@@ -532,19 +532,30 @@ const AuditoriaFaturamento = () => {
     const dadosOutros = dadosProcessados.filter((row) => {
       const chaveFatura = `${row.cd_cliente}-${row.cd_operacao}-${row.cd_empresa}`;
       const tipoFatura = classificacoesFaturas[chaveFatura];
-      
+
       // Verificar se pertence a alguma classificação
       const ehVarejo = codigosVarejo.includes(Number(row.cd_operacao));
-      const ehMultimarcas = tipoFatura === 'MULTIMARCAS' || 
-        (Object.keys(classificacoesFaturas).length === 0 && classificacoesClientes[row.cd_cliente] === 'MULTIMARCAS');
-      const ehRevenda = tipoFatura === 'REVENDA' || 
-        (Object.keys(classificacoesFaturas).length === 0 && classificacoesClientes[row.cd_cliente] === 'REVENDA');
+      const ehMultimarcas =
+        tipoFatura === 'MULTIMARCAS' ||
+        (Object.keys(classificacoesFaturas).length === 0 &&
+          classificacoesClientes[row.cd_cliente] === 'MULTIMARCAS');
+      const ehRevenda =
+        tipoFatura === 'REVENDA' ||
+        (Object.keys(classificacoesFaturas).length === 0 &&
+          classificacoesClientes[row.cd_cliente] === 'REVENDA');
       const ehBazar = Number(row.cd_operacao) === 889;
       const ehSellect = [55, 53].includes(Number(row.cd_operacao));
       const ehFranquia = franquiasClientes[row.cd_cliente] === true;
-      
+
       // Retorna true se NÃO pertence a nenhuma classificação
-      return !ehVarejo && !ehMultimarcas && !ehRevenda && !ehBazar && !ehSellect && !ehFranquia;
+      return (
+        !ehVarejo &&
+        !ehMultimarcas &&
+        !ehRevenda &&
+        !ehBazar &&
+        !ehSellect &&
+        !ehFranquia
+      );
     });
 
     const valorOutros = dadosOutros.reduce(
@@ -638,17 +649,28 @@ const AuditoriaFaturamento = () => {
       OUTROS: dadosProcessados.filter((row) => {
         const chaveFatura = `${row.cd_cliente}-${row.cd_operacao}-${row.cd_empresa}`;
         const tipoFatura = classificacoesFaturas[chaveFatura];
-        
+
         const ehVarejo = codigosVarejo.includes(Number(row.cd_operacao));
-        const ehMultimarcas = tipoFatura === 'MULTIMARCAS' || 
-          (Object.keys(classificacoesFaturas).length === 0 && classificacoesClientes[row.cd_cliente] === 'MULTIMARCAS');
-        const ehRevenda = tipoFatura === 'REVENDA' || 
-          (Object.keys(classificacoesFaturas).length === 0 && classificacoesClientes[row.cd_cliente] === 'REVENDA');
+        const ehMultimarcas =
+          tipoFatura === 'MULTIMARCAS' ||
+          (Object.keys(classificacoesFaturas).length === 0 &&
+            classificacoesClientes[row.cd_cliente] === 'MULTIMARCAS');
+        const ehRevenda =
+          tipoFatura === 'REVENDA' ||
+          (Object.keys(classificacoesFaturas).length === 0 &&
+            classificacoesClientes[row.cd_cliente] === 'REVENDA');
         const ehBazar = Number(row.cd_operacao) === 889;
         const ehSellect = [55, 53].includes(Number(row.cd_operacao));
         const ehFranquia = franquiasClientes[row.cd_cliente] === true;
-        
-        return !ehVarejo && !ehMultimarcas && !ehRevenda && !ehBazar && !ehSellect && !ehFranquia;
+
+        return (
+          !ehVarejo &&
+          !ehMultimarcas &&
+          !ehRevenda &&
+          !ehBazar &&
+          !ehSellect &&
+          !ehFranquia
+        );
       }),
     };
   }, [
@@ -733,8 +755,8 @@ const AuditoriaFaturamento = () => {
     (row) => {
       const codigosVarejo = [
         1, 2, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 8750, 9017,
-        9400, 9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405, 1205,
-        1101, 9061,
+        9400, 9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405,
+        1205, 1101, 9061,
       ];
 
       const chaveFatura = `${row.cd_cliente}-${row.cd_operacao}-${row.cd_empresa}`;
@@ -2641,7 +2663,8 @@ const AuditoriaFaturamento = () => {
                                 {/* Classificação */}
                                 <td className="px-2 py-1 text-center">
                                   {(() => {
-                                    const classificacoes = getTodasClassificacoesFatura(row);
+                                    const classificacoes =
+                                      getTodasClassificacoesFatura(row);
                                     if (classificacoes.length === 0) {
                                       return (
                                         <span className="inline-flex px-2 py-1 text-[10px] font-bold rounded-full bg-yellow-100 text-yellow-800 border border-yellow-300">
@@ -2654,16 +2677,24 @@ const AuditoriaFaturamento = () => {
                                         {classificacoes.map((classif) => {
                                           const cores = {
                                             VAREJO: 'bg-blue-100 text-blue-700',
-                                            MULTIMARCAS: 'bg-green-100 text-green-700',
-                                            REVENDA: 'bg-purple-100 text-purple-700',
-                                            BAZAR: 'bg-orange-100 text-orange-700',
-                                            SELLECT: 'bg-pink-100 text-pink-700',
-                                            FRANQUIAS: 'bg-teal-100 text-teal-700',
+                                            MULTIMARCAS:
+                                              'bg-green-100 text-green-700',
+                                            REVENDA:
+                                              'bg-purple-100 text-purple-700',
+                                            BAZAR:
+                                              'bg-orange-100 text-orange-700',
+                                            SELLECT:
+                                              'bg-pink-100 text-pink-700',
+                                            FRANQUIAS:
+                                              'bg-teal-100 text-teal-700',
                                           };
                                           return (
                                             <span
                                               key={classif}
-                                              className={`px-1.5 py-0.5 text-[9px] font-bold rounded ${cores[classif] || 'bg-gray-100 text-gray-700'}`}
+                                              className={`px-1.5 py-0.5 text-[9px] font-bold rounded ${
+                                                cores[classif] ||
+                                                'bg-gray-100 text-gray-700'
+                                              }`}
                                             >
                                               {classif}
                                             </span>

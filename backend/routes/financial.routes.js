@@ -2845,23 +2845,22 @@ router.get(
 );
 
 /**
- * @route GET /financial/obs-mov-fatura
- * @desc Obter observações de movimentação de uma fatura
+ * @route GET /financial/conta-cliente
+ * @desc Obter nr_ctapes (conta) do cliente
  * @access Private
- * @query cd_cliente - Código do cliente (obrigatório)
+ * @query cd_pessoa - Código do cliente (obrigatório)
  * @query cd_empresa - Código da empresa (obrigatório)
- * @query dt_emissao - Data de emissão da fatura (obrigatório, formato: YYYY-MM-DD)
  */
 router.get(
-  '/obs-mov-fatura',
+  '/conta-cliente',
   asyncHandler(async (req, res) => {
-    const { cd_cliente, cd_empresa, dt_emissao } = req.query;
+    const { cd_pessoa, cd_empresa } = req.query;
 
     // Validação dos parâmetros obrigatórios
-    if (!cd_cliente) {
+    if (!cd_pessoa) {
       return errorResponse(
         res,
-        'Código do cliente (cd_cliente) é obrigatório',
+        'Código do cliente (cd_pessoa) é obrigatório',
         400,
         'MISSING_PARAMETER',
       );
@@ -2876,122 +2875,135 @@ router.get(
       );
     }
 
-    if (!dt_emissao) {
+    console.log('🔍 Buscando conta do cliente:', {
+      cd_pessoa,
+      cd_empresa,
+    });
+
+    try {
+      const query = `
+        SELECT
+          fc.cd_empresa,
+          fc.cd_pessoa,
+          fc.nr_ctapes
+        FROM vr_fcc_ctapes fc
+        WHERE fc.cd_pessoa = $1
+          AND fc.cd_empresa = $2
+      `;
+
+      const result = await pool.query(query, [cd_pessoa, cd_empresa]);
+
+      console.log('✅ Conta do cliente obtida:', {
+        cd_pessoa,
+        cd_empresa,
+        total: result.rows.length,
+        dados: result.rows,
+      });
+
+      successResponse(
+        res,
+        {
+          cd_pessoa,
+          cd_empresa,
+          count: result.rows.length,
+          data: result.rows,
+        },
+        'Conta do cliente obtida com sucesso',
+      );
+    } catch (error) {
+      console.error('❌ Erro ao buscar conta do cliente:', error);
+      errorResponse(
+        res,
+        'Erro ao buscar conta do cliente',
+        500,
+        'DATABASE_ERROR',
+      );
+    }
+  }),
+);
+
+/**
+ * @route GET /financial/obs-mov-fatura
+ * @desc Obter observações de movimentação de uma fatura
+ * @access Private
+ * @query nr_ctapes - Número da conta do cliente (obrigatório)
+ * @query dt_movim - Data da movimentação (obrigatório, formato: YYYY-MM-DD)
+ */
+router.get(
+  '/obs-mov-fatura',
+  asyncHandler(async (req, res) => {
+    const { nr_ctapes, dt_movim } = req.query;
+
+    // Validação dos parâmetros obrigatórios
+    if (!nr_ctapes) {
       return errorResponse(
         res,
-        'Data de emissão (dt_emissao) é obrigatória',
+        'Número da conta (nr_ctapes) é obrigatório',
         400,
         'MISSING_PARAMETER',
       );
     }
 
+    if (!dt_movim) {
+      return errorResponse(
+        res,
+        'Data da movimentação (dt_movim) é obrigatória',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    // Criar range de data: dt_movim 00:00:00 até 23:59:59
+    const dt_inicio = `${dt_movim} 00:00:00`;
+    const dt_fim = `${dt_movim} 23:59:59`;
+
     console.log('🔍 Buscando observações da movimentação:', {
-      cd_cliente,
-      cd_empresa,
-      dt_emissao,
+      nr_ctapes,
+      dt_movim,
+      dt_inicio,
+      dt_fim,
     });
 
     try {
-      // Passo 1: Buscar nr_ctapes do cliente
-      const queryCtapes = `
-        SELECT fc.nr_ctapes
-        FROM fcc_ctapes fc
-        WHERE fc.cd_pessoa = $1
-          AND fc.cd_empresa = $2
-      `;
-
-      const resultCtapes = await pool.query(queryCtapes, [
-        cd_cliente,
-        cd_empresa,
-      ]);
-
-      if (resultCtapes.rows.length === 0) {
-        console.log('⚠️ Nenhum nr_ctapes encontrado para o cliente');
-        return successResponse(
-          res,
-          {
-            cd_cliente,
-            cd_empresa,
-            count: 0,
-            data: [],
-          },
-          'Nenhuma conta encontrada para o cliente',
-        );
-      }
-
-      const nr_ctapes = resultCtapes.rows[0].nr_ctapes;
-      console.log('✅ nr_ctapes encontrado:', nr_ctapes);
-
-      // Passo 2: Buscar observações de movimentação
-      // Criar range de data: dt_emissao 00:00:00 até 23:59:59
-      const dt_inicio = `${dt_emissao} 00:00:00`;
-      const dt_fim = `${dt_emissao} 23:59:59`;
-
-      console.log('🔍 Parâmetros da query:', {
-        dt_inicio,
-        dt_fim,
-        nr_ctapes,
-      });
-
-      const queryObs = `
+      const query = `
         SELECT
           fm.nr_ctapes,
-          om.ds_obs,
-          om.dt_cadastro,
-          om.dt_movim
+          om.ds_obs
         FROM fcc_mov fm
         LEFT JOIN fgr_liqitemcr fl ON fl.nr_ctapes = fm.nr_ctapes
         LEFT JOIN obs_mov om ON om.nr_ctapes = fm.nr_ctapes
         WHERE om.dt_movim BETWEEN $1::timestamp AND $2::timestamp
           AND fm.nr_ctapes = $3
           AND fm.tp_operacao = 'C'
-        GROUP BY fm.nr_ctapes, om.ds_obs, om.dt_cadastro, om.dt_movim
-        ORDER BY om.dt_cadastro DESC
+        GROUP BY fm.nr_ctapes, om.ds_obs
       `;
 
-      const resultObs = await pool.query(queryObs, [
-        dt_inicio,
-        dt_fim,
-        nr_ctapes,
-      ]);
+      const result = await pool.query(query, [dt_inicio, dt_fim, nr_ctapes]);
 
       console.log('✅ Observações da movimentação obtidas:', {
-        cd_cliente,
-        cd_empresa,
         nr_ctapes,
-        total: resultObs.rows.length,
+        dt_movim,
+        total: result.rows.length,
+        dados: result.rows,
       });
 
       successResponse(
         res,
         {
-          cd_cliente,
-          cd_empresa,
           nr_ctapes,
-          count: resultObs.rows.length,
-          data: resultObs.rows,
+          dt_movim,
+          count: result.rows.length,
+          data: result.rows,
         },
-        'Observações da movimentação da fatura obtidas com sucesso',
+        'Observações da movimentação obtidas com sucesso',
       );
     } catch (error) {
       console.error('❌ Erro ao buscar observações da movimentação:', error);
-      console.error('❌ Stack trace:', error.stack);
-      console.error('❌ Detalhes do erro:', {
-        message: error.message,
-        code: error.code,
-        detail: error.detail,
-      });
-
-      // Retornar array vazio em caso de erro, ao invés de erro 500
-      successResponse(
+      errorResponse(
         res,
-        {
-          cd_cliente,
-          cd_empresa,
-          count: 0,
-          data: [],
-        },
-        'Erro ao buscar observações de movimentação',
+        'Erro ao buscar observações da movimentação',
+        500,
+        'DATABASE_ERROR',
       );
     }
   }),
@@ -3533,14 +3545,18 @@ router.post(
     ];
 
     // Extrair clientes únicos
-    const clientesUnicos = [...new Set(faturas.map((f) => String(f.cd_cliente)))];
+    const clientesUnicos = [
+      ...new Set(faturas.map((f) => String(f.cd_cliente))),
+    ];
 
     if (clientesUnicos.length === 0) {
       return successResponse(res, {}, 'Nenhum cliente para processar');
     }
 
     // Criar placeholders para a query
-    const placeholders = clientesUnicos.map((_, idx) => `$${idx + 1}`).join(',');
+    const placeholders = clientesUnicos
+      .map((_, idx) => `$${idx + 1}`)
+      .join(',');
 
     const query = `
       SELECT
@@ -3553,7 +3569,9 @@ router.post(
         vpp.cd_pessoa IN (${placeholders})
     `;
 
-    console.log(`🔍 Classificação de Faturas: ${faturas.length} faturas de ${clientesUnicos.length} clientes`);
+    console.log(
+      `🔍 Classificação de Faturas: ${faturas.length} faturas de ${clientesUnicos.length} clientes`,
+    );
 
     try {
       const { rows } = await pool.query(query, clientesUnicos);
@@ -3568,13 +3586,15 @@ router.post(
 
         const ehMultimarcas = classifCliente.some(
           (c) =>
-            (Number(c.cd_tipoclas) === 20 && Number(c.cd_classificacao) === 2) ||
+            (Number(c.cd_tipoclas) === 20 &&
+              Number(c.cd_classificacao) === 2) ||
             (Number(c.cd_tipoclas) === 5 && Number(c.cd_classificacao) === 1),
         );
 
         const ehRevenda = classifCliente.some(
           (c) =>
-            (Number(c.cd_tipoclas) === 20 && Number(c.cd_classificacao) === 3) ||
+            (Number(c.cd_tipoclas) === 20 &&
+              Number(c.cd_classificacao) === 3) ||
             (Number(c.cd_tipoclas) === 7 && Number(c.cd_classificacao) === 1),
         );
 
@@ -3589,8 +3609,13 @@ router.post(
 
       faturas.forEach((fatura) => {
         const chave = `${fatura.cd_cliente}-${fatura.cd_operacao}-${fatura.cd_empresa}`;
-        const classifBase = classificacoesBase[String(fatura.cd_cliente)] || { multimarcas: false, revenda: false };
-        const ehOperacaoVarejo = codigosVarejo.includes(Number(fatura.cd_operacao));
+        const classifBase = classificacoesBase[String(fatura.cd_cliente)] || {
+          multimarcas: false,
+          revenda: false,
+        };
+        const ehOperacaoVarejo = codigosVarejo.includes(
+          Number(fatura.cd_operacao),
+        );
 
         let tipo = 'OUTROS';
 

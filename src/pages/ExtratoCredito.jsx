@@ -224,6 +224,7 @@ const ExtratoCredito = () => {
       if (todosOsDados.length > 0) {
         // Ordenar por data de movimentação em ordem decrescente (mais recente primeiro)
         // Se datas iguais, débito (D) vem antes de crédito (C)
+        // EXCETO: se for par CTA ORI/CTA DEST com mesmo valor, CTA ORI vem primeiro
         const dadosOrdenados = [...todosOsDados].sort((a, b) => {
           const dataA = new Date(a.dt_movim);
           const dataB = new Date(b.dt_movim);
@@ -231,6 +232,23 @@ const ExtratoCredito = () => {
           // Primeiro ordena por data (decrescente)
           if (dataB - dataA !== 0) {
             return dataB - dataA;
+          }
+
+          // Regra especial: se mesma data e mesmo valor, verificar se é par CTA ORI/CTA ORIG/CTA DEST
+          if (a.vl_lancto === b.vl_lancto) {
+            const isACtaOri =
+              a.ds_aux?.startsWith('CTA ORI') ||
+              a.ds_aux?.startsWith('CTA ORIG');
+            const isACtaDest = a.ds_aux?.startsWith('CTA DEST');
+            const isBCtaOri =
+              b.ds_aux?.startsWith('CTA ORI') ||
+              b.ds_aux?.startsWith('CTA ORIG');
+            const isBCtaDest = b.ds_aux?.startsWith('CTA DEST');
+
+            // Se A é CTA ORI/ORIG e B é CTA DEST, A vem primeiro
+            if (isACtaOri && isBCtaDest) return -1;
+            // Se A é CTA DEST e B é CTA ORI/ORIG, B vem primeiro
+            if (isACtaDest && isBCtaOri) return 1;
           }
 
           // Se datas iguais, ordena por tipo de operação (D antes de C)
@@ -356,6 +374,32 @@ const ExtratoCredito = () => {
 
   const dadosOrdenados = getSortedData();
 
+  // Função para formatar ds_aux
+  const formatarDsAux = (ds_aux, cd_historico) => {
+    // Regras baseadas em cd_historico
+    if (cd_historico === '900' || cd_historico === '1075') {
+      return 'LANÇAMENTO DE CRÉDITO';
+    }
+    if (cd_historico === '901') {
+      return 'UTILIZAÇÃO DE CRÉDITO';
+    }
+
+    if (!ds_aux) return '-';
+
+    let texto = ds_aux;
+
+    // Substituir CTA DEST, CTA ORI ou CTA ORIG por TRANSFERÊNCIA DE CRÉDITO
+    if (
+      texto.startsWith('CTA DEST') ||
+      texto.startsWith('CTA ORI') ||
+      texto.startsWith('CTA ORIG')
+    ) {
+      return 'TRANSFERÊNCIA DE CRÉD';
+    }
+
+    return texto;
+  };
+
   // Calcular totalizadores com base nos dados filtrados
   const saldoTotal = dadosOrdenados.reduce(
     (acc, item) => acc + (Number(item.vl_lancto) || 0),
@@ -369,23 +413,6 @@ const ExtratoCredito = () => {
     .reduce((acc, item) => acc + (Number(item.vl_lancto) || 0), 0);
 
   // Função auxiliar para formatar histórico
-  const formatarHistorico = (cd_historico) => {
-    const historicos = {
-      6: 'LANÇAMENTO',
-      7: 'ZERAR SALDO',
-      699: 'LANÇAMENTO',
-      888: 'TRANSF EMP',
-      889: 'TRANSF EMP',
-      900: 'LANÇAMENTO',
-      901: 'UTILIZAÇÃO',
-      1075: 'LANÇAMENTO',
-      1144: 'CANCEL CREDEV',
-      1250: 'CANCEL CREDEV',
-      1288: 'LANÇAMENTO',
-    };
-    return historicos[cd_historico] || cd_historico || '-';
-  };
-
   // Função para exportar dados para Excel
   const handleExportExcel = () => {
     if (dados.length === 0) {
@@ -398,7 +425,8 @@ const ExtratoCredito = () => {
         Data: formatarDataBR(item.dt_movim),
         'NR CTAPES': item.nr_ctapes || '',
         'Seq Mov': item.nr_seqmov || '',
-        'Cod Histórico': formatarHistorico(item.cd_historico),
+        'Cod Histórico': item.cd_historico || '',
+        Descrição: formatarDsAux(item.ds_aux, item.cd_historico),
         'Tipo Doc':
           item.tp_documento === '10'
             ? 'ADIANTAMENTO'
@@ -484,7 +512,8 @@ const ExtratoCredito = () => {
         item.cd_empresa || '-',
         item.nr_ctapes || '-',
         item.nr_seqmov || '-',
-        formatarHistorico(item.cd_historico),
+        item.cd_historico || '-',
+        formatarDsAux(item.ds_aux, item.cd_historico),
         item.tp_documento === '10'
           ? 'ADIANTAMENTO'
           : item.tp_documento === '20'
@@ -504,7 +533,8 @@ const ExtratoCredito = () => {
             'Empresa',
             'Conta',
             'Seq Mov',
-            'Histórico',
+            'Cód Hist',
+            'Descrição',
             'Tipo Doc',
             'Operação',
             'Valor',
@@ -523,15 +553,16 @@ const ExtratoCredito = () => {
           halign: 'center',
         },
         columnStyles: {
-          0: { halign: 'center', cellWidth: 22 }, // Data Movim
-          1: { halign: 'center', cellWidth: 18 }, // Empresa
-          2: { halign: 'center', cellWidth: 18 }, // Conta
-          3: { halign: 'center', cellWidth: 18 }, // Seq Mov
-          4: { halign: 'left', cellWidth: 32 }, // Histórico
-          5: { halign: 'left', cellWidth: 30 }, // Tipo Doc
-          6: { halign: 'center', cellWidth: 22 }, // Operação
-          7: { halign: 'right', cellWidth: 30 }, // Valor
-          8: { halign: 'center', cellWidth: 22 }, // Data Liq
+          0: { halign: 'center', cellWidth: 20 }, // Data Movim
+          1: { halign: 'center', cellWidth: 15 }, // Empresa
+          2: { halign: 'center', cellWidth: 15 }, // Conta
+          3: { halign: 'center', cellWidth: 15 }, // Seq Mov
+          4: { halign: 'center', cellWidth: 18 }, // Cód Hist
+          5: { halign: 'left', cellWidth: 35 }, // Descrição
+          6: { halign: 'left', cellWidth: 28 }, // Tipo Doc
+          7: { halign: 'center', cellWidth: 20 }, // Operação
+          8: { halign: 'right', cellWidth: 28 }, // Valor
+          9: { halign: 'center', cellWidth: 20 }, // Data Liq
         },
         alternateRowStyles: {
           fillColor: [245, 245, 245],
@@ -643,6 +674,19 @@ const ExtratoCredito = () => {
         setObservacoes([]);
       } finally {
         setObservacoesLoading(false);
+      }
+    }
+
+    // Buscar produtos da transação se for lançamento de crédito CREDEV e tiver ds_doc
+    const isLancamentoCredevCredito =
+      item.tp_operacao === 'C' && item.tp_documento === '20';
+
+    if (isLancamentoCredevCredito && item.ds_doc) {
+      // Usar ds_doc como nr_transacao para buscar produtos
+      const nrTransacao = parseInt(item.ds_doc);
+      if (!isNaN(nrTransacao)) {
+        console.log('🔍 Buscando produtos da transação CREDEV:', nrTransacao);
+        await buscarProdutosNF(nrTransacao);
       }
     }
 
@@ -1518,6 +1562,20 @@ const ExtratoCredito = () => {
                   </th>
                   <th
                     className="px-3 py-3 text-left text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000850] transition-colors"
+                    onClick={() => handleSort('ds_aux')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Descrição
+                      {sortConfig.key === 'ds_aux' &&
+                        (sortConfig.direction === 'asc' ? (
+                          <CaretUp size={12} />
+                        ) : (
+                          <CaretDown size={12} />
+                        ))}
+                    </div>
+                  </th>
+                  <th
+                    className="px-3 py-3 text-left text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#000850] transition-colors"
                     onClick={() => handleSort('tp_documento')}
                   >
                     <div className="flex items-center gap-1">
@@ -1626,30 +1684,11 @@ const ExtratoCredito = () => {
                       <td className="px-3 py-2 whitespace-nowrap text-xs text-center text-gray-900">
                         {item.nr_seqmov || '-'}
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
-                        {item.cd_historico === '6'
-                          ? 'LANÇAMENTO'
-                          : item.cd_historico === '7'
-                          ? 'ZERAR SALDO'
-                          : item.cd_historico === '699'
-                          ? 'LANÇAMENTO'
-                          : item.cd_historico === '888'
-                          ? 'TRANSF EMP'
-                          : item.cd_historico === '889'
-                          ? 'TRANSF EMP'
-                          : item.cd_historico === '900'
-                          ? 'LANÇAMENTO'
-                          : item.cd_historico === '901'
-                          ? 'UTILIZAÇÃO'
-                          : item.cd_historico === '1075'
-                          ? 'LANÇAMENTO'
-                          : item.cd_historico === '1144'
-                          ? 'CANCEL CREDEV'
-                          : item.cd_historico === '1250'
-                          ? 'CANCEL CREDEV'
-                          : item.cd_historico === '1288'
-                          ? 'LANÇAMENTO'
-                          : item.cd_historico || '-'}
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-center text-gray-900">
+                        {item.cd_historico || '-'}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-gray-900">
+                        {formatarDsAux(item.ds_aux, item.cd_historico)}
                       </td>
                       <td className="px-3 py-2 text-xs text-gray-900">
                         {item.tp_documento === '10'
@@ -1825,13 +1864,19 @@ const ExtratoCredito = () => {
                               {produto.ds_produto || '--'}
                             </td>
                             <td className="px-3 py-2 text-sm text-center text-gray-900">
-                              {produto.qt_produto || 0}
+                              {parseFloat(produto.qnt || 0).toLocaleString(
+                                'pt-BR',
+                                {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                },
+                              )}
                             </td>
                             <td className="px-3 py-2 text-sm text-right font-semibold text-gray-900">
-                              {formatarMoeda(produto.vl_unitario)}
+                              {formatarMoeda(produto.vl_unitliquido)}
                             </td>
                             <td className="px-3 py-2 text-sm text-right font-bold text-green-700">
-                              {formatarMoeda(produto.vl_total)}
+                              {formatarMoeda(produto.total)}
                             </td>
                           </tr>
                         ))}
@@ -1847,7 +1892,7 @@ const ExtratoCredito = () => {
                           <td className="px-3 py-2 text-sm font-bold text-right text-green-900">
                             {formatarMoeda(
                               produtosNF.reduce(
-                                (acc, p) => acc + (parseFloat(p.vl_total) || 0),
+                                (acc, p) => acc + (parseFloat(p.total) || 0),
                                 0,
                               ),
                             )}
@@ -1887,14 +1932,14 @@ const ExtratoCredito = () => {
                     </p>
                   </div>
                 </div>
-              ) : detalhesFatura.length === 0 ? (
+              ) : detalhesFatura.length === 0 && produtosNF.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <Receipt size={48} className="text-gray-400" />
                   <span className="text-gray-500 font-medium mt-4">
                     Nenhum detalhe encontrado
                   </span>
                 </div>
-              ) : (
+              ) : detalhesFatura.length > 0 ? (
                 <div className="overflow-x-auto">
                   {/* Verificar se é crédito de adiantamento */}
                   {itemSelecionado?.tp_operacao === 'C' &&
@@ -2043,7 +2088,7 @@ const ExtratoCredito = () => {
                     </table>
                   )}
                 </div>
-              )}
+              ) : null}
             </div>
 
             {/* Footer do Modal */}
