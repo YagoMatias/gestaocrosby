@@ -99,6 +99,27 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
     return `${dd}/${mm}/${yyyy}`;
   };
 
+  // Função para formatar CPF/CNPJ
+  const formatarCpfCnpj = (valor) => {
+    if (!valor) return '--';
+
+    // Remove caracteres não numéricos
+    const numeros = valor.replace(/\D/g, '');
+
+    if (numeros.length === 11) {
+      // CPF: 000.000.000-00
+      return numeros.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    } else if (numeros.length === 14) {
+      // CNPJ: 00.000.000/0000-00
+      return numeros.replace(
+        /(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,
+        '$1.$2.$3/$4-$5',
+      );
+    }
+
+    return valor;
+  };
+
   // CSS customizado para a tabela
   useEffect(() => {
     const styleElement = document.createElement('style');
@@ -308,116 +329,15 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
     });
   };
 
-  // Função para filtrar dados por situação
-  const filtrarDadosPorSituacao = (dadosOriginais) => {
-    if (!dadosOriginais || dadosOriginais.length === 0) return [];
+  // NOTA: Os filtros de situação, status, cobrança, clientes, formas de pagamento,
+  // fatura e portador agora são aplicados diretamente no backend via SQL.
+  // Mantemos apenas os filtros que dependem de infoPessoas (nome fantasia e tipo cliente)
 
-    switch (situacao) {
-      case 'NORMAIS':
-        // Mostra apenas itens que NÃO têm data de cancelamento
-        return dadosOriginais.filter((item) => !item.dt_cancelamento);
-      case 'CANCELADAS':
-        // Mostra apenas itens que TÊM data de cancelamento
-        return dadosOriginais.filter((item) => item.dt_cancelamento);
-      case 'TODAS':
-        // Mostra todos os itens
-        return dadosOriginais;
-      default:
-        return dadosOriginais;
-    }
-  };
-
-  // Função para filtrar dados por status
-  const filtrarDadosPorStatus = (dadosOriginais) => {
-    if (!dadosOriginais || dadosOriginais.length === 0) return [];
-
-    switch (status) {
-      case 'Todos':
-        // Mostra todos os itens
-        return dadosOriginais;
-      case 'Pago':
-        // Mostra apenas itens pagos
-        return dadosOriginais.filter((item) => parseFloat(item.vl_pago) > 0);
-      case 'Vencido':
-        // Mostra apenas itens vencidos (data de vencimento menor que hoje)
-        return dadosOriginais.filter((item) => {
-          const dv = parseDateNoTZ(item.dt_vencimento);
-          const hoje = new Date();
-          hoje.setHours(0, 0, 0, 0);
-          return dv && dv < hoje;
-        });
-      case 'A Vencer':
-        // Mostra apenas itens a vencer (data de vencimento maior ou igual a hoje)
-        return dadosOriginais.filter((item) => {
-          const dv = parseDateNoTZ(item.dt_vencimento);
-          const hoje = new Date();
-          hoje.setHours(0, 0, 0, 0);
-          return !dv || dv >= hoje;
-        });
-      default:
-        return dadosOriginais;
-    }
-  };
-
-  // Dados filtrados por situação
-  const dadosFiltrados = filtrarDadosPorSituacao(dados);
-
-  // Dados filtrados por situação E status
-  const dadosFiltradosCompletos = filtrarDadosPorStatus(dadosFiltrados);
-
-  // Aplicar filtros adicionais aos dados já filtrados por situação e status
-  const dadosComFiltrosAdicionais = dadosFiltradosCompletos.filter((item) => {
-    // Filtro por cliente (seleção múltipla)
-    if (clientesSelecionados.length > 0) {
-      const cdCliente = item.cd_cliente?.toString();
-      const isSelected = clientesSelecionados.some(
-        (cliente) => cliente.cd_cliente?.toString() === cdCliente,
-      );
-      if (!isSelected) {
-        return false;
-      }
-    }
-
-    // Filtro por fatura
-    if (filtroFatura) {
-      const nrFatura = item.nr_fatura || '';
-      if (
-        !nrFatura.toString().toLowerCase().includes(filtroFatura.toLowerCase())
-      ) {
-        return false;
-      }
-    }
-
-    // Filtro por portador (usa nr_portador, igual fatura)
-    if (filtroPortador) {
-      const nrPortador = item.nr_portador || '';
-      if (
-        !nrPortador
-          .toString()
-          .toLowerCase()
-          .includes(filtroPortador.toLowerCase())
-      ) {
-        return false;
-      }
-    }
-
-    // Filtro por forma de pagamento (seleção múltipla)
-    if (formasPagamentoSelecionadas.length > 0) {
-      const tpDocumento = item.tp_documento?.toString();
-      const isSelected = formasPagamentoSelecionadas.some(
-        (forma) => forma.codigo?.toString() === tpDocumento,
-      );
-      if (!isSelected) {
-        return false;
-      }
-    }
-
-    // Filtro por nome fantasia (seleção múltipla)
+  // Aplicar apenas filtros que dependem de infoPessoas (carregados após a busca principal)
+  const dadosComFiltrosAdicionais = dados.filter((item) => {
+    // Filtro por nome fantasia (seleção múltipla) - depende de infoPessoas
     if (nomesFantasiaSelecionados.length > 0) {
-      // Se informações de pessoas ainda não carregaram, não filtrar por nome fantasia
-      if (!infoPessoas || Object.keys(infoPessoas).length === 0) {
-        // Mantém o item até dados estarem disponíveis
-      } else {
+      if (infoPessoas && Object.keys(infoPessoas).length > 0) {
         const key = String(item.cd_cliente || '').trim();
         const fantasia = infoPessoas[key]?.nm_fantasia;
         const isSelected = nomesFantasiaSelecionados.some(
@@ -429,27 +349,9 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
       }
     }
 
-    // Filtro por cobrança
-    if (filtroCobranca !== 'TODOS') {
-      const tipoCobranca = item.tp_cobranca;
-
-      if (filtroCobranca === 'DESCONTADA' && tipoCobranca !== '2') {
-        return false;
-      }
-      if (filtroCobranca === 'NÃO ESTÁ EM COBRANÇA' && tipoCobranca !== '0') {
-        return false;
-      }
-      if (filtroCobranca === 'SIMPLES' && tipoCobranca !== '1') {
-        return false;
-      }
-    }
-
-    // Filtro por Tipo de Cliente (Franquias/Outros)
+    // Filtro por Tipo de Cliente (Franquias/Outros) - depende de infoPessoas
     if (filtroTipoCliente !== 'TODOS') {
-      // Se informações de pessoas ainda não carregaram, não filtrar por tipo
-      if (!infoPessoas || Object.keys(infoPessoas).length === 0) {
-        // Mantém o item até dados estarem disponíveis
-      } else {
+      if (infoPessoas && Object.keys(infoPessoas).length > 0) {
         const key = String(item.cd_cliente || '').trim();
         const fantasia = (infoPessoas[key]?.nm_fantasia || '').toUpperCase();
         const ehFranquia = fantasia.includes(' - CROSBY');
@@ -617,59 +519,105 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
     setLoading(true);
     setPaginaAtual(1); // Reset para primeira página ao buscar novos dados
     try {
-      const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
-        try {
-          const endpoint =
-            modo === 'emissao' ? 'contas-receberemiss' : 'contas-receber';
-          const res = await fetch(
-            `${BaseURL}${endpoint}?dt_inicio=${inicio}&dt_fim=${fim}&cd_empresa=${empresa.cd_empresa}`,
-          );
+      const endpoint =
+        modo === 'emissao' ? 'contas-receberemiss' : 'contas-receber';
 
-          if (!res.ok) {
-            console.warn(
-              `Erro ao buscar empresa ${empresa.cd_empresa}: HTTP ${res.status}`,
-            );
-            return [];
-          }
+      // Construir URL com todos os filtros - TODAS AS EMPRESAS EM UMA ÚNICA REQUISIÇÃO
+      const params = new URLSearchParams();
+      params.append('dt_inicio', inicio);
+      params.append('dt_fim', fim);
 
-          const data = await res.json();
-          console.log(
-            `Resposta da API para empresa ${empresa.cd_empresa}:`,
-            data,
-          );
-
-          let dadosArray = [];
-          if (Array.isArray(data)) {
-            dadosArray = data;
-          } else if (data && typeof data === 'object') {
-            if (data.dados && Array.isArray(data.dados)) {
-              dadosArray = data.dados;
-            } else if (data.data && Array.isArray(data.data)) {
-              dadosArray = data.data;
-            } else if (
-              data.data &&
-              data.data.data &&
-              Array.isArray(data.data.data)
-            ) {
-              dadosArray = data.data.data;
-            } else if (data.result && Array.isArray(data.result)) {
-              dadosArray = data.result;
-            } else if (data.contas && Array.isArray(data.contas)) {
-              dadosArray = data.contas;
-            } else {
-              dadosArray = Object.values(data);
-            }
-          }
-
-          return dadosArray.filter((item) => item && typeof item === 'object');
-        } catch (err) {
-          console.warn(`Erro ao buscar empresa ${empresa.cd_empresa}:`, err);
-          return [];
-        }
+      // Adicionar todas as empresas selecionadas
+      empresasSelecionadas.forEach((empresa) => {
+        params.append('cd_empresa', empresa.cd_empresa);
       });
 
-      const resultados = await Promise.all(todasAsPromises);
-      const todosOsDados = resultados.flat();
+      // Adicionar filtro de status
+      if (status && status !== 'Todos') {
+        params.append('status', status);
+      }
+
+      // Adicionar filtro de situação
+      if (situacao && situacao !== 'TODAS') {
+        params.append('situacao', situacao);
+      }
+
+      // Adicionar filtro de cobrança
+      if (filtroCobranca && filtroCobranca !== 'TODOS') {
+        // Converter para o formato esperado pelo backend
+        let cobrancaParam = filtroCobranca;
+        if (filtroCobranca === 'NÃO ESTÁ EM COBRANÇA') {
+          cobrancaParam = 'NAO_COBRANCA';
+        }
+        params.append('tp_cobranca', cobrancaParam);
+      }
+
+      // Adicionar filtro de clientes (múltiplos)
+      if (clientesSelecionados.length > 0) {
+        clientesSelecionados.forEach((cliente) => {
+          params.append('cd_cliente', cliente.cd_cliente);
+        });
+      }
+
+      // Adicionar filtro de formas de pagamento (múltiplas)
+      if (formasPagamentoSelecionadas.length > 0) {
+        formasPagamentoSelecionadas.forEach((forma) => {
+          params.append('tp_documento', forma.codigo);
+        });
+      }
+
+      // Adicionar filtro de fatura
+      if (filtroFatura && filtroFatura.trim() !== '') {
+        params.append('nr_fatura', filtroFatura.trim());
+      }
+
+      // Adicionar filtro de portador
+      if (filtroPortador && filtroPortador.trim() !== '') {
+        params.append('nr_portador', filtroPortador.trim());
+      }
+
+      const url = `${BaseURL}${endpoint}?${params.toString()}`;
+      console.log('🔍 URL da requisição única:', url);
+
+      const res = await fetch(url);
+
+      if (!res.ok) {
+        console.warn(`Erro ao buscar dados: HTTP ${res.status}`);
+        setDados([]);
+        setDadosFiltrados([]);
+        setLoading(false);
+        return;
+      }
+
+      const data = await res.json();
+      console.log('📦 Resposta da API:', data);
+
+      let todosOsDados = [];
+      if (Array.isArray(data)) {
+        todosOsDados = data;
+      } else if (data && typeof data === 'object') {
+        if (data.dados && Array.isArray(data.dados)) {
+          todosOsDados = data.dados;
+        } else if (data.data && Array.isArray(data.data)) {
+          todosOsDados = data.data;
+        } else if (
+          data.data &&
+          data.data.data &&
+          Array.isArray(data.data.data)
+        ) {
+          todosOsDados = data.data.data;
+        } else if (data.result && Array.isArray(data.result)) {
+          todosOsDados = data.result;
+        } else if (data.contas && Array.isArray(data.contas)) {
+          todosOsDados = data.contas;
+        } else {
+          todosOsDados = Object.values(data);
+        }
+      }
+
+      todosOsDados = todosOsDados.filter(
+        (item) => item && typeof item === 'object',
+      );
 
       console.log('📊 Total de dados:', todosOsDados.length);
 
@@ -1572,6 +1520,15 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
                     </th>
                     <th
                       className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('nr_cpfcnpj')}
+                    >
+                      <div className="flex items-center justify-center">
+                        CPF/CNPJ
+                        {getSortIcon('nr_cpfcnpj')}
+                      </div>
+                    </th>
+                    <th
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSort('nm_fantasia')}
                     >
                       <div className="flex items-center justify-center">
@@ -1832,6 +1789,9 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
                       </td>
                       <td className="text-left text-gray-900 px-0.5 py-0.5">
                         {item.nm_cliente || '--'}
+                      </td>
+                      <td className="text-center text-gray-900 px-0.5 py-0.5">
+                        {formatarCpfCnpj(item.nr_cpfcnpj)}
                       </td>
                       <td className="text-center text-gray-900 px-0.5 py-0.5">
                         {(() => {
