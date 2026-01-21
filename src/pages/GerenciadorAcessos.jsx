@@ -218,6 +218,11 @@ const AVAILABLE_PAGES = [
     category: 'Minha Franquia',
   },
   { path: '/notas-fiscais', name: 'Notas Fiscais', category: 'Minha Franquia' },
+  {
+    path: '/extrato-credito',
+    name: 'Extrato de Crédito',
+    category: 'Minha Franquia',
+  },
 
   // Outros
   { path: '/clientes', name: 'Clientes', category: 'Outros' },

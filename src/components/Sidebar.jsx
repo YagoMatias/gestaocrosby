@@ -39,6 +39,7 @@ import {
   ClipboardText,
   Handshake,
   MagnifyingGlass,
+  Wallet,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -101,6 +102,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
     ],
+  },
+  {
+    name: 'Batida de Carteira',
+    href: '/batida-carteira',
+    icon: Wallet,
+    color: 'text-emerald-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
     name: 'Análise de Crédito',

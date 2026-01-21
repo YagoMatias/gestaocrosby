@@ -724,9 +724,12 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
         return {
           Cliente: item.cd_cliente || '',
           'Nome Cliente': item.nm_cliente || '',
+          'CPF/CNPJ': item.nr_cpfcnpj || '',
+          Telefone: item.nr_telefone || '',
           'Nome Fantasia': fantasia || '',
           'Tipo Cliente': ehFranquia ? 'FRANQUIA' : 'OUTRO',
           Estado: estado || '',
+          'NR Fatura': item.nr_fat || '',
           Emissão:
             formatDateBR(item.dt_emissao) === '--'
               ? ''
@@ -1529,6 +1532,15 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
                     </th>
                     <th
                       className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('nr_telefone')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Telefone
+                        {getSortIcon('nr_telefone')}
+                      </div>
+                    </th>
+                    <th
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSort('nm_fantasia')}
                     >
                       <div className="flex items-center justify-center">
@@ -1543,6 +1555,15 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
                       <div className="flex items-center justify-center">
                         Estado
                         {getSortIcon('ds_siglaest')}
+                      </div>
+                    </th>
+                    <th
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('nr_fat')}
+                    >
+                      <div className="flex items-center justify-center">
+                        NR Fatura
+                        {getSortIcon('nr_fat')}
                       </div>
                     </th>
                     <th
@@ -1794,6 +1815,9 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
                         {formatarCpfCnpj(item.nr_cpfcnpj)}
                       </td>
                       <td className="text-center text-gray-900 px-0.5 py-0.5">
+                        {item.nr_telefone || '--'}
+                      </td>
+                      <td className="text-center text-gray-900 px-0.5 py-0.5">
                         {(() => {
                           const key = String(item.cd_cliente).trim();
                           const fantasia = infoPessoas[key]?.nm_fantasia || '';
@@ -1815,6 +1839,9 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
                       <td className="text-center text-gray-900 px-0.5 py-0.5">
                         {infoPessoas[String(item.cd_cliente).trim()]
                           ?.ds_siglaest || '--'}
+                      </td>
+                      <td className="text-center text-gray-900 px-0.5 py-0.5">
+                        {item.nr_fat || '--'}
                       </td>
                       <td className="text-center text-gray-900 px-0.5 py-0.5">
                         {formatDateBR(item.dt_emissao)}
