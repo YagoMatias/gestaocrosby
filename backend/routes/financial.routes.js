@@ -329,8 +329,8 @@ router.get(
     const queryType = isVeryHeavyQuery
       ? 'muito-pesada'
       : isHeavyQuery
-      ? 'pesada'
-      : 'completa';
+        ? 'pesada'
+        : 'completa';
     console.log(
       `🔍 Contas-pagar: ${empresas.length} empresas, período: ${dt_inicio} a ${dt_fim}, query: ${queryType}`,
     );
@@ -524,8 +524,8 @@ router.get(
     const queryType = isVeryHeavyQuery
       ? 'muito-pesada'
       : isHeavyQuery
-      ? 'pesada'
-      : 'completa';
+        ? 'pesada'
+        : 'completa';
     console.log(
       `🔍 Contas-pagar-emissao: ${empresas.length} empresas, período: ${dt_inicio} a ${dt_fim}, query: ${queryType}`,
     );
@@ -664,8 +664,8 @@ router.get(
     const queryType = isVeryHeavyQuery
       ? 'muito-pesada'
       : isHeavyQuery
-      ? 'pesada'
-      : 'completa';
+        ? 'pesada'
+        : 'completa';
     console.log(
       `🔍 Fluxocaixa-saida: ${empresas.length} empresas, período: ${dt_inicio} a ${dt_fim}, query: ${queryType}`,
     );
@@ -702,8 +702,8 @@ router.get(
           limiteAplicado: isVeryHeavyQuery
             ? 50000
             : isHeavyQuery
-            ? 100000
-            : 'sem limite',
+              ? 100000
+              : 'sem limite',
         },
         data: rows,
       },
@@ -1693,7 +1693,7 @@ router.get(
  * @route GET /financial/inadimplentes-multimarcas
  * @desc Buscar inadimplentes multimarcas com filtros de classificação
  * @access Public
- * @query {dt_inicio, dt_fim, dt_vencimento_ini, limit, offset}
+ * @query {dt_inicio, dt_fim, dt_vencimento_ini, cd_empresa_min, cd_empresa_max, limit, offset}
  */
 router.get(
   '/inadimplentes-multimarcas',
@@ -1702,9 +1702,26 @@ router.get(
   validateDateFormat(['dt_inicio', 'dt_fim', 'dt_vencimento_ini']),
   validatePagination,
   asyncHandler(async (req, res) => {
-    const { dt_inicio, dt_fim, dt_vencimento_ini } = req.query;
+    const {
+      dt_inicio,
+      dt_fim,
+      dt_vencimento_ini,
+      cd_empresa_min,
+      cd_empresa_max,
+    } = req.query;
     const limit = parseInt(req.query.limit, 10) || 50000000;
     const offset = parseInt(req.query.offset, 10) || 0;
+
+    // Construir condição adicional para filtro de empresas
+    let empresaCondition = '';
+    let queryParams = [dt_inicio, dt_fim, dt_vencimento_ini];
+    let limitOffsetIndex = 4;
+
+    if (cd_empresa_min && cd_empresa_max) {
+      empresaCondition = ` AND vff.cd_empresa BETWEEN $4 AND $5`;
+      queryParams.push(cd_empresa_min, cd_empresa_max);
+      limitOffsetIndex = 6;
+    }
 
     const query = `
       SELECT
@@ -1748,9 +1765,9 @@ router.get(
         AND (
           (vpp.cd_tipoclas = 20 AND vpp.cd_classificacao::integer = 2)
           OR (vpp.cd_tipoclas = 5 AND vpp.cd_classificacao::integer = 1)
-        )
+        )${empresaCondition}
       ORDER BY vff.dt_emissao DESC
-      LIMIT $4 OFFSET $5
+      LIMIT $${limitOffsetIndex} OFFSET $${limitOffsetIndex + 1}
     `;
 
     const countQuery = `
@@ -1766,12 +1783,12 @@ router.get(
         AND (
           (vpp.cd_tipoclas = 20 AND vpp.cd_classificacao::integer = 2)
           OR (vpp.cd_tipoclas = 5 AND vpp.cd_classificacao::integer = 1)
-        )
+        )${empresaCondition}
     `;
 
     const [resultado, totalResult] = await Promise.all([
-      pool.query(query, [dt_inicio, dt_fim, dt_vencimento_ini, limit, offset]),
-      pool.query(countQuery, [dt_inicio, dt_fim, dt_vencimento_ini]),
+      pool.query(query, [...queryParams, limit, offset]),
+      pool.query(countQuery, queryParams),
     ]);
 
     const total = parseInt(totalResult.rows[0].total, 10);
@@ -1783,7 +1800,13 @@ router.get(
         limit,
         offset,
         hasMore: offset + limit < total,
-        filtros: { dt_inicio, dt_fim, dt_vencimento_ini },
+        filtros: {
+          dt_inicio,
+          dt_fim,
+          dt_vencimento_ini,
+          cd_empresa_min,
+          cd_empresa_max,
+        },
         data: resultado.rows,
       },
       'Inadimplentes multimarcas obtidos com sucesso',
@@ -3755,9 +3778,8 @@ router.get(
     const { banco } = req.params;
 
     // Importação dinâmica do extractorManager
-    const { processExtractsByBank } = await import(
-      '../utils/extratos/extractorManager.js'
-    );
+    const { processExtractsByBank } =
+      await import('../utils/extratos/extractorManager.js');
 
     try {
       const result = await processExtractsByBank(banco);
@@ -4270,6 +4292,7 @@ router.get(
 
 // Importar parsers de bancos
 import { processConfiancaFile } from '../utils/extratos/CONFIANCA.js';
+import { processSantanderFile } from '../utils/extratos/SANTANDER.js';
 
 // Configuração do multer para upload de arquivos bancários
 const uploadBancario = multer({
@@ -4354,13 +4377,8 @@ router.post(
           'NOT_IMPLEMENTED',
         );
       case 'SANTANDER':
-        // TODO: Implementar parser do Santander
-        return errorResponse(
-          res,
-          'Parser do Santander ainda não implementado',
-          501,
-          'NOT_IMPLEMENTED',
-        );
+        resultado = processSantanderFile(file.buffer);
+        break;
       case 'BB':
         // TODO: Implementar parser do BB
         return errorResponse(
@@ -4444,7 +4462,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const bancos = [
       { codigo: 'BRADESCO', nome: 'Bradesco', implementado: false },
-      { codigo: 'SANTANDER', nome: 'Santander', implementado: false },
+      { codigo: 'SANTANDER', nome: 'Santander', implementado: true },
       { codigo: 'BB', nome: 'Banco do Brasil', implementado: false },
       { codigo: 'CEF', nome: 'Caixa Econômica Federal', implementado: false },
       { codigo: 'ITAU', nome: 'Itaú', implementado: false },

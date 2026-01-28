@@ -66,6 +66,8 @@ const InadimplentesMultimarcas = () => {
     buscarClassificacoes,
     deletarClassificacao,
     buscarHistorico,
+    salvarObservacao,
+    buscarObservacoes,
   } = useClassificacoesInadimplentes();
 
   const [dados, setDados] = useState([]);
@@ -96,12 +98,38 @@ const InadimplentesMultimarcas = () => {
   // Estado para Feeling e Status de cada cliente (valores salvos)
   const [clienteFeeling, setClienteFeeling] = useState({}); // { cd_cliente: 'POSSÍVEL PAGAMENTO' | 'ATRASO' }
   const [clienteStatus, setClienteStatus] = useState({}); // { cd_cliente: 'ACORDO' | 'ACORDO EM ANDAMENTO' | 'COBRANÇA' | 'PROTESTADO' }
+  const [clienteRepresentante, setClienteRepresentante] = useState({}); // { cd_cliente: 'Nome do Representante' }
 
   // Estados para controle de edição
   const [editandoFeeling, setEditandoFeeling] = useState(null); // cd_cliente em edição
   const [editandoStatus, setEditandoStatus] = useState(null); // cd_cliente em edição
+  const [editandoRepresentante, setEditandoRepresentante] = useState(null); // cd_cliente em edição
   const [tempFeeling, setTempFeeling] = useState(''); // valor temporário do select
   const [tempStatus, setTempStatus] = useState(''); // valor temporário do select
+  const [tempRepresentante, setTempRepresentante] = useState(''); // valor temporário do input
+
+  // Estados para modal de observações
+  const [modalObservacoesAberto, setModalObservacoesAberto] = useState(false);
+  const [clienteObservacoes, setClienteObservacoes] = useState(null); // cliente selecionado para observações
+  const [observacoesList, setObservacoesList] = useState([]); // lista de observações do cliente
+  const [novaObservacao, setNovaObservacao] = useState(''); // texto da nova observação
+  const [loadingObservacoes, setLoadingObservacoes] = useState(false);
+
+  // Estados para controle de ordenação
+  const [ordenarPor, setOrdenarPor] = useState(null); // coluna atual de ordenação
+  const [direcaoOrdenacao, setDirecaoOrdenacao] = useState('asc'); // 'asc' ou 'desc'
+
+  // Função para ordenar colunas
+  const ordenarColuna = (coluna) => {
+    if (ordenarPor === coluna) {
+      // Se já está ordenando por esta coluna, inverte a direção
+      setDirecaoOrdenacao(direcaoOrdenacao === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Nova coluna, começa com ascendente
+      setOrdenarPor(coluna);
+      setDirecaoOrdenacao('asc');
+    }
+  };
 
   // Handlers para iniciar edição
   const iniciarEdicaoFeeling = (cdCliente, e) => {
@@ -216,6 +244,124 @@ const InadimplentesMultimarcas = () => {
     e.stopPropagation();
     setEditandoStatus(null);
     setTempStatus('');
+  };
+
+  const cancelarEdicaoRepresentante = (e) => {
+    e.stopPropagation();
+    setEditandoRepresentante(null);
+    setTempRepresentante('');
+  };
+
+  // Handler para iniciar edição do representante
+  const iniciarEdicaoRepresentante = (cdCliente, e) => {
+    e.stopPropagation();
+    setEditandoRepresentante(cdCliente);
+    setTempRepresentante(clienteRepresentante[cdCliente] || '');
+  };
+
+  // Handler para salvar representante
+  const salvarRepresentante = async (cdCliente, e) => {
+    e.stopPropagation();
+    if (!tempRepresentante) return;
+
+    // Atualizar estado local
+    setClienteRepresentante((prev) => ({
+      ...prev,
+      [cdCliente]: tempRepresentante,
+    }));
+    setEditandoRepresentante(null);
+    setTempRepresentante('');
+
+    // SALVAR NO SUPABASE
+    const cliente = clientesAgrupados.find((c) => c.cd_cliente === cdCliente);
+
+    if (cliente && user) {
+      const classificacao = {
+        cd_cliente: cliente.cd_cliente,
+        nm_cliente: cliente.nm_cliente,
+        valor_total: cliente.valor_total,
+        ds_siglaest: cliente.ds_siglaest?.trim() || null,
+        situacao: cliente.situacao,
+        feeling: clienteFeeling[cdCliente] || null,
+        status: clienteStatus[cdCliente] || null,
+        representante: tempRepresentante,
+        usuario: user.email || user.id,
+      };
+
+      const { success, error } = await salvarClassificacao(classificacao);
+
+      if (success) {
+        setNotification({
+          type: 'success',
+          message: 'Representante salvo com sucesso!',
+        });
+        setTimeout(() => setNotification(null), 3000);
+      } else {
+        setNotification({
+          type: 'error',
+          message: `Erro ao salvar: ${error}`,
+        });
+      }
+    }
+  };
+
+  // Handler para abrir modal de observações
+  const abrirModalObservacoes = async (cliente, e) => {
+    e.stopPropagation();
+    setClienteObservacoes(cliente);
+    setModalObservacoesAberto(true);
+    setLoadingObservacoes(true);
+
+    // Buscar observações do cliente
+    const { success, data } = await buscarObservacoes(cliente.cd_cliente);
+    if (success) {
+      setObservacoesList(data || []);
+    } else {
+      setObservacoesList([]);
+    }
+    setLoadingObservacoes(false);
+  };
+
+  // Handler para fechar modal de observações
+  const fecharModalObservacoes = () => {
+    setModalObservacoesAberto(false);
+    setClienteObservacoes(null);
+    setObservacoesList([]);
+    setNovaObservacao('');
+  };
+
+  // Handler para adicionar nova observação
+  const adicionarObservacao = async () => {
+    if (!novaObservacao.trim() || !clienteObservacoes) return;
+
+    setLoadingObservacoes(true);
+
+    const observacao = {
+      cd_cliente: clienteObservacoes.cd_cliente,
+      nm_cliente: clienteObservacoes.nm_cliente,
+      observacao: novaObservacao.trim(),
+      usuario: user?.email || user?.id || 'Usuário',
+    };
+
+    const { success, data } = await salvarObservacao(observacao);
+
+    if (success) {
+      // Adicionar nova observação no início da lista
+      setObservacoesList((prev) => [data[0], ...prev]);
+      setNovaObservacao('');
+      setNotification({
+        type: 'success',
+        message: 'Observação adicionada com sucesso!',
+      });
+      setTimeout(() => setNotification(null), 3000);
+    } else {
+      setNotification({
+        type: 'error',
+        message: 'Erro ao adicionar observação',
+      });
+    }
+
+    setLoadingObservacoes(false);
   };
 
   // Funções para determinar classes CSS dos badges
@@ -376,15 +522,16 @@ const InadimplentesMultimarcas = () => {
 
       const params = {
         dt_vencimento_ini: '2024-01-01', // Data fixa obrigatória
+        cd_empresa_min: 1, // Filtrar apenas empresas de 1 a 1000
+        cd_empresa_max: 1000, // Filtrar apenas empresas de 1 a 1000
       };
 
       if (filtroDataInicial) params.dt_inicio = filtroDataInicial;
       if (filtroDataFinal) params.dt_fim = filtroDataFinal;
       // Nota: filtro por cliente será aplicado client-side via multi-select
 
-      const response = await apiClient.financial.inadimplentesMultimarcas(
-        params,
-      );
+      const response =
+        await apiClient.financial.inadimplentesMultimarcas(params);
 
       // Verificar estrutura da resposta
       let dadosRecebidos = [];
@@ -405,6 +552,7 @@ const InadimplentesMultimarcas = () => {
         if (success && classificacoesSalvas) {
           const feelingMap = {};
           const statusMap = {};
+          const representanteMap = {};
 
           classificacoesSalvas.forEach((c) => {
             if (c.feeling) {
@@ -413,13 +561,18 @@ const InadimplentesMultimarcas = () => {
             if (c.status) {
               statusMap[c.cd_cliente] = c.status;
             }
+            if (c.representante) {
+              representanteMap[c.cd_cliente] = c.representante;
+            }
           });
 
           setClienteFeeling(feelingMap);
           setClienteStatus(statusMap);
+          setClienteRepresentante(representanteMap);
           console.log('✅ Classificações carregadas do Supabase:', {
             feeling: Object.keys(feelingMap).length,
             status: Object.keys(statusMap).length,
+            representante: Object.keys(representanteMap).length,
           });
         }
       }
@@ -457,9 +610,24 @@ const InadimplentesMultimarcas = () => {
       const diferencaMs = hoje - vencimento;
       const diasAtraso = Math.floor(diferencaMs / (1000 * 60 * 60 * 24));
 
-      const estaAtrasado = diasAtraso >= 1;
+      const estaVencido = diasAtraso >= 1;
 
-      return matchCliente && estaAtrasado && matchEstado;
+      // Verificar se o título NÃO foi pago (igual ao ContasPagarFranquias)
+      const valorPago = parseFloat(item.vl_pago) || 0;
+      const valorFatura = parseFloat(item.vl_fatura) || 0;
+      const temLiquidacao =
+        item.dt_liquidacao &&
+        item.dt_liquidacao !== null &&
+        item.dt_liquidacao !== '';
+
+      // Se tem valor pago >= valor da fatura OU tem data de liquidação, não é inadimplente
+      const foiPago =
+        (valorPago > 0 && valorPago >= valorFatura) || temLiquidacao;
+
+      // Só considera inadimplente se estiver vencido E não foi pago
+      const estaInadimplente = estaVencido && !foiPago;
+
+      return matchCliente && estaInadimplente && matchEstado;
     });
   }, [dados, filtroClientes, filtroEstados]);
 
@@ -508,8 +676,8 @@ const InadimplentesMultimarcas = () => {
       return acc;
     }, {});
 
-    // Calcular situação de cada cliente (INADIMPLENTE se atraso > 31 dias)
-    return Object.values(agrupado).map((cliente) => {
+    // Calcular situação de cada cliente (INADIMPLENTE se atraso > 60 dias)
+    const resultado = Object.values(agrupado).map((cliente) => {
       const diasAtrasoMax = (cliente.faturas || []).reduce((max, fatura) => {
         if (!fatura.dt_vencimento) return max;
         const diff = Math.floor(
@@ -518,15 +686,75 @@ const InadimplentesMultimarcas = () => {
         return Math.max(max, diff);
       }, 0);
 
-      const situacao = diasAtrasoMax > 31 ? 'INADIMPLENTE' : 'ATRASADO';
+      const situacao = diasAtrasoMax > 60 ? 'INADIMPLENTE' : 'ATRASADO';
 
       return {
         ...cliente,
         diasAtrasoMax,
         situacao,
+        feeling: clienteFeeling[cliente.cd_cliente] || null,
+        status: clienteStatus[cliente.cd_cliente] || null,
+        representante: clienteRepresentante[cliente.cd_cliente] || null,
       };
     });
-  }, [dadosFiltrados]);
+
+    // Aplicar ordenação
+    if (ordenarPor) {
+      resultado.sort((a, b) => {
+        let valorA, valorB;
+
+        switch (ordenarPor) {
+          case 'cd_cliente':
+            valorA = a.cd_cliente || '';
+            valorB = b.cd_cliente || '';
+            break;
+          case 'nm_cliente':
+            valorA = (a.nm_cliente || '').toLowerCase();
+            valorB = (b.nm_cliente || '').toLowerCase();
+            break;
+          case 'ds_siglaest':
+            valorA = (a.ds_siglaest || '').trim().toLowerCase();
+            valorB = (b.ds_siglaest || '').trim().toLowerCase();
+            break;
+          case 'valor_total':
+            valorA = parseFloat(a.valor_total) || 0;
+            valorB = parseFloat(b.valor_total) || 0;
+            break;
+          case 'situacao':
+            valorA = (a.situacao || '').toLowerCase();
+            valorB = (b.situacao || '').toLowerCase();
+            break;
+          case 'feeling':
+            valorA = (a.feeling || '').toLowerCase();
+            valorB = (b.feeling || '').toLowerCase();
+            break;
+          case 'status':
+            valorA = (a.status || '').toLowerCase();
+            valorB = (b.status || '').toLowerCase();
+            break;
+          case 'representante':
+            valorA = (a.representante || '').toLowerCase();
+            valorB = (b.representante || '').toLowerCase();
+            break;
+          default:
+            return 0;
+        }
+
+        if (valorA < valorB) return direcaoOrdenacao === 'asc' ? -1 : 1;
+        if (valorA > valorB) return direcaoOrdenacao === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return resultado;
+  }, [
+    dadosFiltrados,
+    clienteFeeling,
+    clienteStatus,
+    clienteRepresentante,
+    ordenarPor,
+    direcaoOrdenacao,
+  ]);
 
   // Calcular métricas
   const metricas = useMemo(() => {
@@ -1724,20 +1952,110 @@ const InadimplentesMultimarcas = () => {
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                   <tr>
-                    <th className="px-4 py-3">Código Cliente</th>
-                    <th className="px-4 py-3">Nome Cliente</th>
-                    <th className="px-4 py-3">Estado</th>
-                    <th className="px-4 py-3">Valor Total</th>
-                    <th className="px-4 py-3">Situação</th>
-                    <th className="px-4 py-3">Feeling</th>
-                    <th className="px-4 py-3">Status</th>
+                    <th
+                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => ordenarColuna('cd_cliente')}
+                      title="Clique para ordenar"
+                    >
+                      <div className="flex items-center gap-1">
+                        Código Cliente
+                        {ordenarPor === 'cd_cliente' && (
+                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => ordenarColuna('nm_cliente')}
+                      title="Clique para ordenar"
+                    >
+                      <div className="flex items-center gap-1">
+                        Nome Cliente
+                        {ordenarPor === 'nm_cliente' && (
+                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => ordenarColuna('ds_siglaest')}
+                      title="Clique para ordenar"
+                    >
+                      <div className="flex items-center gap-1">
+                        Estado
+                        {ordenarPor === 'ds_siglaest' && (
+                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => ordenarColuna('valor_total')}
+                      title="Clique para ordenar"
+                    >
+                      <div className="flex items-center gap-1">
+                        Valor Total
+                        {ordenarPor === 'valor_total' && (
+                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => ordenarColuna('situacao')}
+                      title="Clique para ordenar"
+                    >
+                      <div className="flex items-center gap-1">
+                        Situação
+                        {ordenarPor === 'situacao' && (
+                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => ordenarColuna('feeling')}
+                      title="Clique para ordenar"
+                    >
+                      <div className="flex items-center gap-1">
+                        Feeling
+                        {ordenarPor === 'feeling' && (
+                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => ordenarColuna('status')}
+                      title="Clique para ordenar"
+                    >
+                      <div className="flex items-center gap-1">
+                        Status
+                        {ordenarPor === 'status' && (
+                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => ordenarColuna('representante')}
+                      title="Clique para ordenar"
+                    >
+                      <div className="flex items-center gap-1">
+                        Representante
+                        {ordenarPor === 'representante' && (
+                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
+                    </th>
+                    <th className="px-4 py-3">Observações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {clientesAgrupados.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={7}
+                        colSpan={9}
                         className="px-4 py-8 text-center text-gray-500"
                       >
                         Nenhum cliente inadimplente encontrado
@@ -1814,10 +2132,10 @@ const InadimplentesMultimarcas = () => {
                                 iniciarEdicaoFeeling(cliente.cd_cliente, e)
                               }
                               className={`text-xs font-semibold px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity ${getFeelingBadgeClass(
-                                clienteFeeling[cliente.cd_cliente],
+                                cliente.feeling,
                               )}`}
                             >
-                              {clienteFeeling[cliente.cd_cliente] || '---'}
+                              {cliente.feeling || '---'}
                             </span>
                           )}
                         </td>
@@ -1877,12 +2195,70 @@ const InadimplentesMultimarcas = () => {
                                 iniciarEdicaoStatus(cliente.cd_cliente, e)
                               }
                               className={`text-xs font-semibold px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity ${getStatusBadgeClass(
-                                clienteStatus[cliente.cd_cliente],
+                                cliente.status,
                               )}`}
                             >
-                              {clienteStatus[cliente.cd_cliente] || '---'}
+                              {cliente.status || '---'}
                             </span>
                           )}
+                        </td>
+                        {/* Coluna Representante */}
+                        <td
+                          className="px-4 py-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {editandoRepresentante === cliente.cd_cliente ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={tempRepresentante}
+                                onChange={(e) =>
+                                  setTempRepresentante(e.target.value)
+                                }
+                                className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white w-32"
+                                placeholder="Nome do representante"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <button
+                                onClick={(e) =>
+                                  salvarRepresentante(cliente.cd_cliente, e)
+                                }
+                                className="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1 rounded transition-colors"
+                              >
+                                Salvar
+                              </button>
+                              <button
+                                onClick={cancelarEdicaoRepresentante}
+                                className="bg-gray-400 hover:bg-gray-500 text-white text-xs px-2 py-1 rounded transition-colors"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <span
+                              onClick={(e) =>
+                                iniciarEdicaoRepresentante(
+                                  cliente.cd_cliente,
+                                  e,
+                                )
+                              }
+                              className="text-xs font-semibold px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity bg-purple-100 text-purple-800"
+                            >
+                              {cliente.representante || '---'}
+                            </span>
+                          )}
+                        </td>
+                        {/* Coluna Observações */}
+                        <td
+                          className="px-4 py-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            onClick={(e) => abrirModalObservacoes(cliente, e)}
+                            className="bg-[#000638] hover:bg-[#fe0000] text-white text-xs font-medium px-3 py-1 rounded transition-colors"
+                          >
+                            OBS
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -1983,6 +2359,128 @@ const InadimplentesMultimarcas = () => {
               <button
                 onClick={fecharModalLista}
                 className="px-4 py-2 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Observações */}
+      {modalObservacoesAberto && clienteObservacoes && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-hidden mx-4 flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-2">
+                <ChatCircleDots
+                  size={24}
+                  weight="bold"
+                  className="text-[#000638]"
+                />
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Observações - {clienteObservacoes.nm_cliente}
+                </h3>
+              </div>
+              <button
+                onClick={fecharModalObservacoes}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-600 mb-4">
+              Cliente: {clienteObservacoes.cd_cliente} | Valor:{' '}
+              {formatarMoeda(clienteObservacoes.valor_total)}
+            </p>
+
+            {/* Área de chat com observações */}
+            <div className="flex-1 overflow-y-auto bg-gray-50 rounded-lg p-4 mb-4 min-h-[300px] max-h-[400px]">
+              {loadingObservacoes ? (
+                <div className="flex justify-center items-center py-8">
+                  <CircleNotch
+                    size={32}
+                    className="animate-spin text-[#000638]"
+                  />
+                </div>
+              ) : observacoesList.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <ChatCircleDots
+                    size={48}
+                    className="mx-auto mb-2 opacity-50"
+                  />
+                  <p>Nenhuma observação registrada ainda</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {observacoesList.map((obs, index) => (
+                    <div
+                      key={index}
+                      className="bg-white rounded-lg p-4 shadow-sm border border-gray-200"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center gap-2">
+                          <Users size={16} className="text-[#000638]" />
+                          <span className="text-sm font-semibold text-[#000638]">
+                            {obs.usuario}
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          {new Date(obs.data_criacao).toLocaleString('pt-BR', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                        {obs.observacao}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Campo para adicionar nova observação */}
+            <div className="border-t pt-4">
+              <div className="flex gap-2">
+                <textarea
+                  value={novaObservacao}
+                  onChange={(e) => setNovaObservacao(e.target.value)}
+                  placeholder="Digite sua observação..."
+                  className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#000638] resize-none"
+                  rows={3}
+                />
+                <button
+                  onClick={adicionarObservacao}
+                  disabled={!novaObservacao.trim() || loadingObservacoes}
+                  className="bg-[#000638] hover:bg-[#fe0000] text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed self-end"
+                >
+                  Enviar
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={fecharModalObservacoes}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition-colors"
               >
                 Fechar
               </button>

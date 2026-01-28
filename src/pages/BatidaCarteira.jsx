@@ -29,6 +29,7 @@ import {
   XSquare,
   DownloadSimple,
   CurrencyCircleDollar,
+  Coins,
 } from '@phosphor-icons/react';
 
 const BatidaCarteira = () => {
@@ -64,7 +65,7 @@ const BatidaCarteira = () => {
   // Estados para modal de importação
   const [modalImportarAberto, setModalImportarAberto] = useState(false);
   const [bancoSelecionado, setBancoSelecionado] = useState('');
-  const [arquivoSelecionado, setArquivoSelecionado] = useState(null);
+  const [arquivosSelecionados, setArquivosSelecionados] = useState([]); // Array para múltiplos arquivos
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadResultado, setUploadResultado] = useState(null);
   const [dadosImportados, setDadosImportados] = useState([]);
@@ -369,14 +370,14 @@ const BatidaCarteira = () => {
     setClientesSelecionados([...clientes]);
   };
 
-  // Função para fazer upload do arquivo bancário
+  // Função para fazer upload do arquivo bancário (suporta múltiplos arquivos)
   const handleUploadArquivo = async () => {
     if (!bancoSelecionado) {
       alert('Selecione um banco!');
       return;
     }
-    if (!arquivoSelecionado) {
-      alert('Selecione um arquivo!');
+    if (arquivosSelecionados.length === 0) {
+      alert('Selecione pelo menos um arquivo!');
       return;
     }
 
@@ -384,36 +385,77 @@ const BatidaCarteira = () => {
     setUploadResultado(null);
 
     try {
-      const formData = new FormData();
-      formData.append('arquivo', arquivoSelecionado);
-      formData.append('banco', bancoSelecionado);
+      // Processar cada arquivo e combinar os resultados
+      let todosRegistros = [];
+      let totalRegistros = 0;
+      let valorTotalPago = 0;
+      let valorTotalOriginal = 0;
+      const arquivosProcessados = [];
+      const erros = [];
 
-      const response = await fetch(`${BaseURL}batida-carteira/upload`, {
-        method: 'POST',
-        body: formData,
-      });
+      for (const arquivo of arquivosSelecionados) {
+        const formData = new FormData();
+        formData.append('arquivo', arquivo);
+        formData.append('banco', bancoSelecionado);
 
-      const data = await response.json();
+        const response = await fetch(`${BaseURL}batida-carteira/upload`, {
+          method: 'POST',
+          body: formData,
+        });
 
-      if (response.ok && data.success !== false) {
+        const data = await response.json();
+
+        if (response.ok && data.success !== false) {
+          const registros = data.data?.registros || data.registros || [];
+          const stats = data.data?.stats || data.stats || {};
+
+          todosRegistros = [...todosRegistros, ...registros];
+          totalRegistros += stats.totalRegistros || registros.length;
+          valorTotalPago += stats.valorTotalPago || 0;
+          valorTotalOriginal += stats.valorTotalOriginal || 0;
+
+          arquivosProcessados.push({
+            arquivo: arquivo.name,
+            success: true,
+            registros: registros.length,
+            tipoArquivo: stats.tipoArquivo || 'DESCONHECIDO',
+          });
+        } else {
+          erros.push({
+            arquivo: arquivo.name,
+            erro: data.message || data.error || 'Erro ao processar arquivo',
+          });
+        }
+      }
+
+      if (todosRegistros.length > 0) {
         setUploadResultado({
           success: true,
-          message: data.message || 'Arquivo processado com sucesso!',
-          stats: data.data?.stats || data.stats,
+          message: `${arquivosProcessados.length} arquivo(s) processado(s) com sucesso!`,
+          stats: {
+            totalRegistros,
+            valorTotalPago,
+            valorTotalOriginal,
+            arquivosProcessados,
+            erros: erros.length > 0 ? erros : null,
+          },
         });
-        setDadosImportados(data.data?.registros || data.registros || []);
-        setBancoImportado(bancoSelecionado); // Salvar o banco importado
+        setDadosImportados(todosRegistros);
+        setBancoImportado(bancoSelecionado);
       } else {
         setUploadResultado({
           success: false,
-          message: data.message || data.error || 'Erro ao processar arquivo',
+          message:
+            erros.length > 0
+              ? `Erro ao processar arquivos: ${erros.map((e) => e.erro).join(', ')}`
+              : 'Nenhum registro encontrado nos arquivos',
         });
       }
     } catch (error) {
       console.error('Erro no upload:', error);
       setUploadResultado({
         success: false,
-        message: 'Erro ao enviar arquivo. Verifique sua conexão.',
+        message: 'Erro ao enviar arquivos. Verifique sua conexão.',
       });
     } finally {
       setUploadLoading(false);
@@ -424,7 +466,7 @@ const BatidaCarteira = () => {
   const fecharModalImportar = () => {
     setModalImportarAberto(false);
     setBancoSelecionado('');
-    setArquivoSelecionado(null);
+    setArquivosSelecionados([]);
     setUploadResultado(null);
   };
 
@@ -479,19 +521,95 @@ const BatidaCarteira = () => {
     )}|${normalizarData(dataVencimento)}`;
   };
 
+  // Normalizar nome do cliente para comparação (remove acentos, números, caracteres especiais)
+  const normalizarNomeCliente = (nome) => {
+    if (!nome) return '';
+    return String(nome)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+      .toUpperCase()
+      .replace(/[0-9]/g, '') // Remove números
+      .replace(/[^A-Z\s]/g, '') // Remove tudo que não for letra ou espaço (remove &, -, ., etc)
+      .replace(/\s+/g, ' ') // Múltiplos espaços vira um só
+      .trim();
+  };
+
+  // Comparar valores com tolerância (para Santander que tem diferença de ~R$ 1,00)
+  // Retorna true se a diferença entre os valores for menor ou igual à tolerância
+  const valoresProximos = (valor1, valor2, tolerancia = 1.50) => {
+    const v1 = parseFloat(valor1) || 0;
+    const v2 = parseFloat(valor2) || 0;
+    return Math.abs(v1 - v2) <= tolerancia;
+  };
+
+  // Criar chave de comparação para SANTANDER (por valor + vencimento + nome)
+  // O nome é apenas para referência, a comparação real usa "contém"
+  const criarChaveComparacaoSantander = (valor, dataVencimento, nomeCliente) => {
+    const nomeNorm = normalizarNomeCliente(nomeCliente);
+    return `SANT|${normalizarValor(valor)}|${normalizarData(dataVencimento)}|${nomeNorm}`;
+  };
+
+  // Verificar se nome do sistema CONTÉM o nome do arquivo (Santander)
+  // O arquivo tem nome cortado, então verificamos se o nome completo do sistema contém o nome do arquivo
+  const nomeClienteContem = (nomeSistema, nomeArquivo) => {
+    if (!nomeSistema || !nomeArquivo) return false;
+    const sistNorm = normalizarNomeCliente(nomeSistema);
+    const arqNorm = normalizarNomeCliente(nomeArquivo);
+    // Verifica se o nome do sistema contém o nome do arquivo (que pode estar cortado)
+    return sistNorm.includes(arqNorm) || arqNorm.includes(sistNorm);
+  };
+
+  // Lista de exceções específicas para títulos EFIGENIA MARIA NOGUE
+  // Esses títulos têm datas diferentes no sistema (05/12) e arquivo (30/12)
+  // mas devem ser considerados como batidos
+  const excecoesEfigenia = useMemo(() => {
+    const cpfcnpj = '45512784000175';
+    const valores = [
+      1431.96, 1069.01, 791.06, 1575.18, 2675.51, 1955.13, 4242.06, 2401.81,
+      1069.01, 1922.83, 2571.38, 703.93,
+    ];
+    // Criar mapa de valor -> data do arquivo (30/12/2025)
+    const mapa = new Map();
+    valores.forEach((val) => {
+      const chaveValor = `${normalizarCpfCnpj(cpfcnpj)}|${normalizarValor(val)}`;
+      mapa.set(chaveValor, '2025-12-30');
+    });
+    return mapa;
+  }, []);
+
+  // Função para verificar se item é exceção
+  const verificarExcecao = useCallback(
+    (cpfcnpj, valor) => {
+      const chaveValor = `${normalizarCpfCnpj(cpfcnpj)}|${normalizarValor(valor)}`;
+      return excecoesEfigenia.get(chaveValor);
+    },
+    [excecoesEfigenia],
+  );
+
   // Set de chaves dos dados importados para comparação rápida
   const chavesImportados = useMemo(() => {
     const set = new Set();
     dadosImportados.forEach((item) => {
+      // Chave padrão (CPF/CNPJ + Valor + Data)
       const chave = criarChaveComparacao(
         item.nr_cpfcnpj,
         item.vl_original,
         item.dt_vencimento,
       );
       set.add(chave);
+
+      // Para SANTANDER: adicionar chave alternativa por valor + vencimento + nome
+      if (bancoImportado === 'SANTANDER') {
+        const chaveSantander = criarChaveComparacaoSantander(
+          item.vl_original,
+          item.dt_vencimento,
+          item.nm_cliente,
+        );
+        set.add(chaveSantander);
+      }
     });
     return set;
-  }, [dadosImportados]);
+  }, [dadosImportados, bancoImportado]);
 
   // Set de chaves dos dados do sistema para comparação rápida
   const chavesSistema = useMemo(() => {
@@ -499,15 +617,122 @@ const BatidaCarteira = () => {
     dados.forEach((item) => {
       // Adicionar 0.98 ao valor da fatura do sistema para comparar
       const valorComTaxa = parseFloat(item.vl_fatura || 0) + 0.98;
+
+      // Chave padrão (CPF/CNPJ + Valor + Data)
       const chave = criarChaveComparacao(
         item.nr_cpfcnpj,
         valorComTaxa,
         item.dt_vencimento,
       );
       set.add(chave);
+
+      // Para SANTANDER: adicionar chave alternativa por valor + vencimento + nome
+      if (bancoImportado === 'SANTANDER') {
+        const chaveSantander = criarChaveComparacaoSantander(
+          valorComTaxa,
+          item.dt_vencimento,
+          item.nm_cliente,
+        );
+        set.add(chaveSantander);
+      }
     });
     return set;
-  }, [dados]);
+  }, [dados, bancoImportado]);
+
+  // Função para verificar se item do sistema bate com importados (incluindo exceções)
+  const verificarItemSistemaBate = useCallback(
+    (item) => {
+      const valorComTaxa = parseFloat(item.vl_fatura || 0) + 0.98;
+      const chave = criarChaveComparacao(
+        item.nr_cpfcnpj,
+        valorComTaxa,
+        item.dt_vencimento,
+      );
+
+      // Verificar batida normal
+      if (chavesImportados.has(chave)) return true;
+
+      // Para SANTANDER: verificar por valor + vencimento + nome (contém)
+      if (bancoImportado === 'SANTANDER') {
+        // Buscar no arquivo importado por valor, vencimento e nome que contém
+        const bateNoSantander = dadosImportados.some((itemArq) => {
+          // Verificar valor com tolerância (diferença de ~R$ 1,00 entre sistema e arquivo)
+          const valorArquivo = parseFloat(itemArq.vl_original) || 0;
+          const valorMatch = valoresProximos(valorArquivo, valorComTaxa);
+          // Verificar data de vencimento
+          const dataMatch = normalizarData(itemArq.dt_vencimento) === normalizarData(item.dt_vencimento);
+          // Verificar se nome do sistema contém nome do arquivo (que é cortado)
+          const nomeMatch = nomeClienteContem(item.nm_cliente, itemArq.nm_cliente);
+          return valorMatch && dataMatch && nomeMatch;
+        });
+        if (bateNoSantander) return true;
+      }
+
+      // Verificar exceção (EFIGENIA)
+      const dataExcecao = verificarExcecao(item.nr_cpfcnpj, valorComTaxa);
+      if (dataExcecao) {
+        // Criar chave com a data do arquivo (30/12) ao invés da data do sistema
+        const chaveExcecao = criarChaveComparacao(
+          item.nr_cpfcnpj,
+          valorComTaxa,
+          dataExcecao,
+        );
+        return chavesImportados.has(chaveExcecao);
+      }
+
+      return false;
+    },
+    [chavesImportados, verificarExcecao, bancoImportado, dadosImportados],
+  );
+
+  // Função para verificar se item do arquivo bate com sistema (incluindo exceções)
+  const verificarItemArquivoBate = useCallback(
+    (item) => {
+      const chave = criarChaveComparacao(
+        item.nr_cpfcnpj,
+        item.vl_original,
+        item.dt_vencimento,
+      );
+
+      // Verificar batida normal
+      if (chavesSistema.has(chave)) return true;
+
+      // Para SANTANDER: verificar por valor + vencimento + nome (contém)
+      if (bancoImportado === 'SANTANDER') {
+        // Buscar no sistema por valor, vencimento e nome que contém
+        const bateNoSantander = dados.some((itemSist) => {
+          // Verificar valor com tolerância (diferença de ~R$ 1,00 entre sistema e arquivo)
+          const valorSistema = parseFloat(itemSist.vl_fatura || 0);
+          const valorArquivo = parseFloat(item.vl_original) || 0;
+          const valorMatch = valoresProximos(valorSistema, valorArquivo);
+          // Verificar data de vencimento
+          const dataMatch = normalizarData(itemSist.dt_vencimento) === normalizarData(item.dt_vencimento);
+          // Verificar se nome do sistema contém nome do arquivo (que é cortado)
+          const nomeMatch = nomeClienteContem(itemSist.nm_cliente, item.nm_cliente);
+          return valorMatch && dataMatch && nomeMatch;
+        });
+        if (bateNoSantander) return true;
+      }
+
+      // Verificar exceção (EFIGENIA) - se o item está na lista de exceções
+      const dataExcecao = verificarExcecao(item.nr_cpfcnpj, item.vl_original);
+      if (dataExcecao && normalizarData(item.dt_vencimento) === '2025-12-30') {
+        // Esse item do arquivo é uma exceção, verificar se existe no sistema com outra data
+        // Procurar no dados do sistema por CPF/CNPJ e valor
+        return dados.some((itemSistema) => {
+          const valorSistema = parseFloat(itemSistema.vl_fatura || 0) + 0.98;
+          return (
+            normalizarCpfCnpj(itemSistema.nr_cpfcnpj) ===
+              normalizarCpfCnpj(item.nr_cpfcnpj) &&
+            normalizarValor(valorSistema) === normalizarValor(item.vl_original)
+          );
+        });
+      }
+
+      return false;
+    },
+    [chavesSistema, verificarExcecao, dados, bancoImportado],
+  );
 
   // Dados ordenados com batidos primeiro e alinhados
   const dadosOrdenados = useMemo(() => {
@@ -545,7 +770,7 @@ const BatidaCarteira = () => {
         valorComTaxa,
         item.dt_vencimento,
       );
-      if (chavesImportados.has(chave)) {
+      if (verificarItemSistemaBate(item)) {
         batidos.push({ ...item, _chaveComparacao: chave });
       } else {
         naoBatidos.push(item);
@@ -602,7 +827,7 @@ const BatidaCarteira = () => {
         item.vl_original,
         item.dt_vencimento,
       );
-      if (chavesSistema.has(chave)) {
+      if (verificarItemArquivoBate(item)) {
         batidos.push({ ...item, _chaveComparacao: chave });
       } else {
         naoBatidos.push(item);
@@ -616,33 +841,28 @@ const BatidaCarteira = () => {
 
     // Retornar batidos primeiro, depois não batidos
     return [...batidos, ...naoBatidos];
-  }, [dadosImportados, dados, chavesSistema, ordenacaoImportados]);
+  }, [
+    dadosImportados,
+    dados,
+    chavesSistema,
+    ordenacaoImportados,
+    verificarItemArquivoBate,
+  ]);
 
   // Função para verificar se item do sistema está nos importados
   const itemSistemaEncontrado = useCallback(
     (item) => {
-      const valorComTaxa = parseFloat(item.vl_fatura || 0) + 0.98;
-      const chave = criarChaveComparacao(
-        item.nr_cpfcnpj,
-        valorComTaxa,
-        item.dt_vencimento,
-      );
-      return chavesImportados.has(chave);
+      return verificarItemSistemaBate(item);
     },
-    [chavesImportados],
+    [verificarItemSistemaBate],
   );
 
   // Função para verificar se item importado está no sistema
   const itemImportadoEncontrado = useCallback(
     (item) => {
-      const chave = criarChaveComparacao(
-        item.nr_cpfcnpj,
-        item.vl_original,
-        item.dt_vencimento,
-      );
-      return chavesSistema.has(chave);
+      return verificarItemArquivoBate(item);
     },
-    [chavesSistema],
+    [verificarItemArquivoBate],
   );
 
   // Calcular totais para os cards
@@ -668,12 +888,7 @@ const BatidaCarteira = () => {
     // Verificar dados do sistema
     dados.forEach((item) => {
       const valorComTaxa = parseFloat(item.vl_fatura || 0) + 0.98;
-      const chave = criarChaveComparacao(
-        item.nr_cpfcnpj,
-        valorComTaxa,
-        item.dt_vencimento,
-      );
-      if (chavesImportados.has(chave)) {
+      if (verificarItemSistemaBate(item)) {
         batidosQtd++;
         batidosValor += valorComTaxa;
       } else {
@@ -684,12 +899,7 @@ const BatidaCarteira = () => {
 
     // Verificar dados importados que não estão no sistema
     dadosImportados.forEach((item) => {
-      const chave = criarChaveComparacao(
-        item.nr_cpfcnpj,
-        item.vl_original,
-        item.dt_vencimento,
-      );
-      if (!chavesSistema.has(chave)) {
+      if (!verificarItemArquivoBate(item)) {
         naoBatidosImportadosQtd++;
         naoBatidosImportadosValor += parseFloat(item.vl_original || 0);
       }
@@ -703,43 +913,25 @@ const BatidaCarteira = () => {
       naoBatidosImportadosQtd,
       naoBatidosImportadosValor,
     };
-  }, [dados, dadosImportados, chavesImportados, chavesSistema]);
+  }, [
+    dados,
+    dadosImportados,
+    verificarItemSistemaBate,
+    verificarItemArquivoBate,
+  ]);
 
   // Listas filtradas para os modais
   const listaBatidosSistema = useMemo(() => {
-    return dados.filter((item) => {
-      const valorComTaxa = parseFloat(item.vl_fatura || 0) + 0.98;
-      const chave = criarChaveComparacao(
-        item.nr_cpfcnpj,
-        valorComTaxa,
-        item.dt_vencimento,
-      );
-      return chavesImportados.has(chave);
-    });
-  }, [dados, chavesImportados]);
+    return dados.filter((item) => verificarItemSistemaBate(item));
+  }, [dados, verificarItemSistemaBate]);
 
   const listaNaoBatidosSistema = useMemo(() => {
-    return dados.filter((item) => {
-      const valorComTaxa = parseFloat(item.vl_fatura || 0) + 0.98;
-      const chave = criarChaveComparacao(
-        item.nr_cpfcnpj,
-        valorComTaxa,
-        item.dt_vencimento,
-      );
-      return !chavesImportados.has(chave);
-    });
-  }, [dados, chavesImportados]);
+    return dados.filter((item) => !verificarItemSistemaBate(item));
+  }, [dados, verificarItemSistemaBate]);
 
   const listaNaoBatidosImportados = useMemo(() => {
-    return dadosImportados.filter((item) => {
-      const chave = criarChaveComparacao(
-        item.nr_cpfcnpj,
-        item.vl_original,
-        item.dt_vencimento,
-      );
-      return !chavesSistema.has(chave);
-    });
-  }, [dadosImportados, chavesSistema]);
+    return dadosImportados.filter((item) => !verificarItemArquivoBate(item));
+  }, [dadosImportados, verificarItemArquivoBate]);
 
   // Mapa para buscar dados do arquivo importado por chave (para pegar liquidação nos batidos)
   const mapaImportadosPorChave = useMemo(() => {
@@ -751,9 +943,26 @@ const BatidaCarteira = () => {
         item.dt_vencimento,
       );
       mapa.set(chave, item);
+
+      // Para SANTANDER: adicionar também pela chave valor|vencimento|nome
+      if (bancoImportado === 'SANTANDER') {
+        const chaveSantander = criarChaveComparacaoSantander(
+          item.vl_original,
+          item.dt_vencimento,
+          item.nm_cliente,
+        );
+        mapa.set(chaveSantander, item);
+      }
+
+      // Para exceções EFIGENIA, adicionar também pela chave CPF|Valor (sem data)
+      const dataExcecao = verificarExcecao(item.nr_cpfcnpj, item.vl_original);
+      if (dataExcecao) {
+        const chaveSimples = `${normalizarCpfCnpj(item.nr_cpfcnpj)}|${normalizarValor(item.vl_original)}`;
+        mapa.set(chaveSimples, item);
+      }
     });
     return mapa;
-  }, [dadosImportados]);
+  }, [dadosImportados, verificarExcecao, bancoImportado]);
 
   // Lista de registros com baixa "PGTO DE TITULO EFETUADO P/CEDENTE" ou "TITULO DEBITADO EM OPERACAO" (somente CONFIANCA)
   const listaPgtoCedente = useMemo(() => {
@@ -786,6 +995,88 @@ const BatidaCarteira = () => {
     return { qtd, valor, batidosQtd, naoBatidosQtd };
   }, [listaPgtoCedente, chavesSistema]);
 
+  // Lista de faturas PAGAS - batidas que possuem valor pago em ambas tabelas (sistema e arquivo)
+  const listaPagos = useMemo(() => {
+    return listaBatidosSistema.filter((itemSistema) => {
+      // Verificar se o sistema tem valor pago
+      const vlPagoSistema = parseFloat(itemSistema.vl_pago || 0);
+      if (vlPagoSistema <= 0) return false;
+
+      // Buscar o item correspondente no arquivo importado
+      const valorComTaxa = parseFloat(itemSistema.vl_fatura || 0) + 0.98;
+      const chave = criarChaveComparacao(
+        itemSistema.nr_cpfcnpj,
+        valorComTaxa,
+        itemSistema.dt_vencimento,
+      );
+      const itemArquivo = mapaImportadosPorChave.get(chave);
+
+      // Verificar se o arquivo também tem valor pago
+      if (!itemArquivo) return false;
+      const vlPagoArquivo = parseFloat(itemArquivo.vl_pago || 0);
+      return vlPagoArquivo > 0;
+    });
+  }, [listaBatidosSistema, mapaImportadosPorChave]);
+
+  // Totais para o card PAGOS
+  const totaisPagos = useMemo(() => {
+    const qtd = listaPagos.length;
+    const valorSistema = listaPagos.reduce(
+      (acc, item) => acc + parseFloat(item.vl_pago || 0),
+      0,
+    );
+    const valorArquivo = listaPagos.reduce((acc, itemSistema) => {
+      const valorComTaxa = parseFloat(itemSistema.vl_fatura || 0) + 0.98;
+      const chave = criarChaveComparacao(
+        itemSistema.nr_cpfcnpj,
+        valorComTaxa,
+        itemSistema.dt_vencimento,
+      );
+      const itemArquivo = mapaImportadosPorChave.get(chave);
+      return acc + parseFloat(itemArquivo?.vl_pago || 0);
+    }, 0);
+    return { qtd, valorSistema, valorArquivo };
+  }, [listaPagos, mapaImportadosPorChave]);
+
+  // Lista de faturas pagas SOMENTE no Sistema (batidas, mas sem pagamento no arquivo)
+  const listaPagosSoSistema = useMemo(() => {
+    return listaBatidosSistema.filter((itemSistema) => {
+      const vlPagoSistema = parseFloat(itemSistema.vl_pago || 0);
+      if (vlPagoSistema <= 0) return false;
+
+      const valorComTaxa = parseFloat(itemSistema.vl_fatura || 0) + 0.98;
+      const chave = criarChaveComparacao(
+        itemSistema.nr_cpfcnpj,
+        valorComTaxa,
+        itemSistema.dt_vencimento,
+      );
+      const itemArquivo = mapaImportadosPorChave.get(chave);
+
+      if (!itemArquivo) return false;
+      const vlPagoArquivo = parseFloat(itemArquivo.vl_pago || 0);
+      return vlPagoArquivo <= 0; // Pago no sistema, mas NÃO no arquivo
+    });
+  }, [listaBatidosSistema, mapaImportadosPorChave]);
+
+  // Lista de faturas pagas SOMENTE no Arquivo (batidas, mas sem pagamento no sistema)
+  const listaPagosSoArquivo = useMemo(() => {
+    return listaBatidosSistema.filter((itemSistema) => {
+      const vlPagoSistema = parseFloat(itemSistema.vl_pago || 0);
+
+      const valorComTaxa = parseFloat(itemSistema.vl_fatura || 0) + 0.98;
+      const chave = criarChaveComparacao(
+        itemSistema.nr_cpfcnpj,
+        valorComTaxa,
+        itemSistema.dt_vencimento,
+      );
+      const itemArquivo = mapaImportadosPorChave.get(chave);
+
+      if (!itemArquivo) return false;
+      const vlPagoArquivo = parseFloat(itemArquivo.vl_pago || 0);
+      return vlPagoSistema <= 0 && vlPagoArquivo > 0; // NÃO pago no sistema, mas pago no arquivo
+    });
+  }, [listaBatidosSistema, mapaImportadosPorChave]);
+
   // Função para buscar item do arquivo correspondente ao item do sistema
   const buscarItemImportadoCorrespondente = useCallback(
     (itemSistema) => {
@@ -795,9 +1086,38 @@ const BatidaCarteira = () => {
         valorComTaxa,
         itemSistema.dt_vencimento,
       );
-      return mapaImportadosPorChave.get(chave);
+
+      // Busca normal
+      let resultado = mapaImportadosPorChave.get(chave);
+      if (resultado) return resultado;
+
+      // Para SANTANDER: buscar por valor + vencimento + nome (contém) com tolerância
+      if (bancoImportado === 'SANTANDER') {
+        // Buscar manualmente no dadosImportados comparando nome e valor com tolerância
+        const valorSistema = parseFloat(itemSistema.vl_fatura || 0);
+        resultado = dadosImportados.find((itemArq) => {
+          const valorArquivo = parseFloat(itemArq.vl_original) || 0;
+          const valorMatch = valoresProximos(valorSistema, valorArquivo);
+          const dataMatch = normalizarData(itemArq.dt_vencimento) === normalizarData(itemSistema.dt_vencimento);
+          const nomeMatch = nomeClienteContem(itemSistema.nm_cliente, itemArq.nm_cliente);
+          return valorMatch && dataMatch && nomeMatch;
+        });
+        if (resultado) return resultado;
+      }
+
+      // Busca por exceção (EFIGENIA) - usando chave simples CPF|Valor
+      const dataExcecao = verificarExcecao(
+        itemSistema.nr_cpfcnpj,
+        valorComTaxa,
+      );
+      if (dataExcecao) {
+        const chaveSimples = `${normalizarCpfCnpj(itemSistema.nr_cpfcnpj)}|${normalizarValor(valorComTaxa)}`;
+        resultado = mapaImportadosPorChave.get(chaveSimples);
+      }
+
+      return resultado;
     },
-    [mapaImportadosPorChave],
+    [mapaImportadosPorChave, verificarExcecao, bancoImportado, dadosImportados],
   );
 
   // Função para exportar dados para Excel
@@ -813,6 +1133,7 @@ const BatidaCarteira = () => {
       soArquivo: 'SoNoArquivo',
       divergentes: 'TotalDivergentes',
       pgtoCedente: 'PgtoCedente',
+      pagos: 'FaturasPagas',
     };
     const nomeCard = nomesCard[modalDetalheAberto];
     const nomeArquivo = `${nomeBanco}-${dataAtual}-${nomeCard}.xlsx`;
@@ -839,6 +1160,9 @@ const BatidaCarteira = () => {
           Valor: parseFloat(item.vl_fatura || 0) + 0.98,
           Vencimento: formatDateBR(item.dt_vencimento),
           Empresa: item.cd_empresa || '',
+          'Vl.Pago': parseFloat(item.vl_pago || 0),
+          'Dt.Liq': formatDateBR(item.dt_liquidacao),
+          Portador: item.nr_portador || '',
           ...(modalDetalheAberto === 'batidos' && {
             Liquidação: formatDateBR(itemImportado?.dt_pagamento),
           }),
@@ -900,6 +1224,65 @@ const BatidaCarteira = () => {
       XLSX.utils.book_append_sheet(workbook, wsPgtoCedente, 'Dados');
     }
 
+    // Preparar dados do modal PAGOS
+    if (modalDetalheAberto === 'pagos') {
+      // Aba 1: Pagos em AMBOS
+      const dadosPagos = listaPagos.map((itemSistema) => {
+        const itemArquivo = buscarItemImportadoCorrespondente(itemSistema);
+        return {
+          Cód: itemSistema.cd_cliente || '',
+          Fatura: itemSistema.nr_fat || '',
+          Cliente: itemSistema.nm_cliente || '',
+          'CPF/CNPJ': itemSistema.nr_cpfcnpj || '',
+          'Valor Fatura': parseFloat(itemSistema.vl_fatura || 0) + 0.98,
+          'Vl.Pago Sistema': parseFloat(itemSistema.vl_pago || 0),
+          'Vl.Pago Arquivo': parseFloat(itemArquivo?.vl_pago || 0),
+          Vencimento: formatDateBR(itemSistema.dt_vencimento),
+          'Dt.Liq Sistema': formatDateBR(itemSistema.dt_pagamento),
+          'Dt.Liq Arquivo': formatDateBR(itemArquivo?.dt_pagamento),
+        };
+      });
+      const wsPagos = XLSX.utils.json_to_sheet(dadosPagos);
+      XLSX.utils.book_append_sheet(workbook, wsPagos, 'Pagos Ambos');
+
+      // Aba 2: Pagos SOMENTE no Sistema
+      if (listaPagosSoSistema.length > 0) {
+        const dadosSoSistema = listaPagosSoSistema.map((itemSistema) => ({
+          Cód: itemSistema.cd_cliente || '',
+          Fatura: itemSistema.nr_fat || '',
+          Cliente: itemSistema.nm_cliente || '',
+          'CPF/CNPJ': itemSistema.nr_cpfcnpj || '',
+          'Valor Fatura': parseFloat(itemSistema.vl_fatura || 0) + 0.98,
+          'Vl.Pago Sistema': parseFloat(itemSistema.vl_pago || 0),
+          'Vl.Pago Arquivo': 0,
+          Vencimento: formatDateBR(itemSistema.dt_vencimento),
+          'Dt.Liq Sistema': formatDateBR(itemSistema.dt_pagamento),
+        }));
+        const wsSoSistema = XLSX.utils.json_to_sheet(dadosSoSistema);
+        XLSX.utils.book_append_sheet(workbook, wsSoSistema, 'Só Sistema');
+      }
+
+      // Aba 3: Pagos SOMENTE no Arquivo
+      if (listaPagosSoArquivo.length > 0) {
+        const dadosSoArquivo = listaPagosSoArquivo.map((itemSistema) => {
+          const itemArquivo = buscarItemImportadoCorrespondente(itemSistema);
+          return {
+            Cód: itemSistema.cd_cliente || '',
+            Fatura: itemSistema.nr_fat || '',
+            Cliente: itemSistema.nm_cliente || '',
+            'CPF/CNPJ': itemSistema.nr_cpfcnpj || '',
+            'Valor Fatura': parseFloat(itemSistema.vl_fatura || 0) + 0.98,
+            'Vl.Pago Sistema': 0,
+            'Vl.Pago Arquivo': parseFloat(itemArquivo?.vl_pago || 0),
+            Vencimento: formatDateBR(itemSistema.dt_vencimento),
+            'Dt.Liq Arquivo': formatDateBR(itemArquivo?.dt_pagamento),
+          };
+        });
+        const wsSoArquivo = XLSX.utils.json_to_sheet(dadosSoArquivo);
+        XLSX.utils.book_append_sheet(workbook, wsSoArquivo, 'Só Arquivo');
+      }
+    }
+
     const excelBuffer = XLSX.write(workbook, {
       bookType: 'xlsx',
       type: 'array',
@@ -915,8 +1298,12 @@ const BatidaCarteira = () => {
     listaNaoBatidosSistema,
     listaNaoBatidosImportados,
     listaPgtoCedente,
+    listaPagos,
+    listaPagosSoSistema,
+    listaPagosSoArquivo,
     chavesSistema,
     formatDateBR,
+    buscarItemImportadoCorrespondente,
   ]);
 
   // Paginação
@@ -997,16 +1384,30 @@ const BatidaCarteira = () => {
                 </select>
               </div>
 
+              {/* Dica para Confiança */}
+              {bancoSelecionado === 'CONFIANCA' && (
+                <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-3 text-xs text-cyan-800">
+                  <strong>💡 Dica:</strong> Você pode selecionar múltiplos
+                  arquivos ao mesmo tempo (ex: TituloLiquidado.csv e
+                  TituloAberto.csv). Segure{' '}
+                  <kbd className="px-1 py-0.5 bg-cyan-200 rounded">Ctrl</kbd> e
+                  clique nos arquivos desejados.
+                </div>
+              )}
+
               {/* Upload de Arquivo */}
               <div>
                 <label className="block text-sm font-semibold text-[#000638] mb-2">
-                  Selecione o Arquivo (CSV ou Excel)
+                  Selecione o(s) Arquivo(s) (CSV ou Excel)
                 </label>
                 <div className="border-2 border-dashed border-[#000638]/30 rounded-lg p-4 text-center hover:border-[#000638]/50 transition-colors">
                   <input
                     type="file"
                     accept=".csv,.xls,.xlsx,.txt"
-                    onChange={(e) => setArquivoSelecionado(e.target.files[0])}
+                    multiple
+                    onChange={(e) =>
+                      setArquivosSelecionados(Array.from(e.target.files))
+                    }
                     className="hidden"
                     id="arquivo-upload"
                   />
@@ -1015,13 +1416,34 @@ const BatidaCarteira = () => {
                     className="cursor-pointer flex flex-col items-center gap-2"
                   >
                     <File size={40} className="text-[#000638]/50" />
-                    {arquivoSelecionado ? (
-                      <span className="text-sm text-[#000638] font-medium">
-                        {arquivoSelecionado.name}
-                      </span>
+                    {arquivosSelecionados.length > 0 ? (
+                      <div className="text-sm text-[#000638]">
+                        <span className="font-bold">
+                          {arquivosSelecionados.length} arquivo(s)
+                          selecionado(s):
+                        </span>
+                        <ul className="mt-1 text-xs text-gray-600">
+                          {arquivosSelecionados.map((arq, idx) => (
+                            <li
+                              key={idx}
+                              className="flex items-center gap-1 justify-center"
+                            >
+                              <CheckCircle
+                                size={12}
+                                className="text-green-600"
+                              />
+                              {arq.name}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     ) : (
                       <span className="text-sm text-gray-500">
-                        Clique para selecionar um arquivo
+                        Clique para selecionar arquivo(s)
+                        <br />
+                        <span className="text-xs">
+                          (Segure Ctrl para múltiplos)
+                        </span>
                       </span>
                     )}
                   </label>
@@ -1071,22 +1493,99 @@ const BatidaCarteira = () => {
                     {uploadResultado.message}
                   </p>
                   {uploadResultado.success && uploadResultado.stats && (
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                      <div className="bg-white p-2 rounded">
-                        <span className="text-gray-500">Total Registros:</span>
-                        <span className="font-bold text-[#000638] ml-1">
-                          {uploadResultado.stats.totalRegistros}
-                        </span>
+                    <div className="mt-3 space-y-2">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-white p-2 rounded">
+                          <span className="text-gray-500">
+                            Total Registros:
+                          </span>
+                          <span className="font-bold text-[#000638] ml-1">
+                            {uploadResultado.stats.totalRegistros}
+                          </span>
+                        </div>
+                        <div className="bg-white p-2 rounded">
+                          <span className="text-gray-500">Valor Total:</span>
+                          <span className="font-bold text-[#000638] ml-1">
+                            {(
+                              uploadResultado.stats.valorTotalPago ||
+                              uploadResultado.stats.valorTotalOriginal ||
+                              0
+                            ).toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL',
+                            })}
+                          </span>
+                        </div>
                       </div>
-                      <div className="bg-white p-2 rounded">
-                        <span className="text-gray-500">Valor Total:</span>
-                        <span className="font-bold text-[#000638] ml-1">
-                          {uploadResultado.stats.valorTotalPago?.toLocaleString(
-                            'pt-BR',
-                            { style: 'currency', currency: 'BRL' },
-                          )}
-                        </span>
-                      </div>
+                      {/* Detalhes por arquivo */}
+                      {uploadResultado.stats.arquivosProcessados && (
+                        <div className="bg-white p-2 rounded text-xs">
+                          <span className="text-gray-500 font-semibold">
+                            Arquivos processados:
+                          </span>
+                          <ul className="mt-1 space-y-1">
+                            {uploadResultado.stats.arquivosProcessados.map(
+                              (arq, idx) => (
+                                <li
+                                  key={idx}
+                                  className="flex items-center gap-2"
+                                >
+                                  <CheckCircle
+                                    size={12}
+                                    className="text-green-600"
+                                  />
+                                  <span className="font-medium">
+                                    {arq.arquivo}
+                                  </span>
+                                  <span className="text-gray-400">|</span>
+                                  <span className="text-gray-600">
+                                    {arq.registros} registros
+                                  </span>
+                                  {arq.tipoArquivo &&
+                                    arq.tipoArquivo !== 'DESCONHECIDO' && (
+                                      <>
+                                        <span className="text-gray-400">|</span>
+                                        <span
+                                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                            arq.tipoArquivo === 'LIQUIDADO'
+                                              ? 'bg-green-100 text-green-700'
+                                              : arq.tipoArquivo === 'ABERTO'
+                                                ? 'bg-orange-100 text-orange-700'
+                                                : 'bg-gray-100 text-gray-700'
+                                          }`}
+                                        >
+                                          {arq.tipoArquivo}
+                                        </span>
+                                      </>
+                                    )}
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </div>
+                      )}
+                      {/* Erros se houver */}
+                      {uploadResultado.stats.erros &&
+                        uploadResultado.stats.erros.length > 0 && (
+                          <div className="bg-red-50 p-2 rounded text-xs border border-red-200">
+                            <span className="text-red-600 font-semibold">
+                              Erros:
+                            </span>
+                            <ul className="mt-1 space-y-1">
+                              {uploadResultado.stats.erros.map((err, idx) => (
+                                <li
+                                  key={idx}
+                                  className="flex items-center gap-2 text-red-600"
+                                >
+                                  <WarningCircle size={12} />
+                                  <span>
+                                    {err.arquivo}: {err.erro}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                     </div>
                   )}
                 </div>
@@ -1104,7 +1603,9 @@ const BatidaCarteira = () => {
               <button
                 onClick={handleUploadArquivo}
                 disabled={
-                  uploadLoading || !bancoSelecionado || !arquivoSelecionado
+                  uploadLoading ||
+                  !bancoSelecionado ||
+                  arquivosSelecionados.length === 0
                 }
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -1116,7 +1617,9 @@ const BatidaCarteira = () => {
                 ) : (
                   <>
                     <UploadSimple size={16} />
-                    Processar Arquivo
+                    {arquivosSelecionados.length > 1
+                      ? `Processar ${arquivosSelecionados.length} Arquivos`
+                      : 'Processar Arquivo'}
                   </>
                 )}
               </button>
@@ -1475,6 +1978,50 @@ const BatidaCarteira = () => {
               </Card>
             </button>
           )}
+
+          {/* Card PAGOS - Faturas batidas com valor pago em ambas tabelas */}
+          {listaPagos.length > 0 && (
+            <button
+              onClick={() => setModalDetalheAberto('pagos')}
+              className="text-left w-full"
+            >
+              <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white border-l-4 border-l-blue-500 cursor-pointer">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Coins size={16} className="text-blue-600" weight="fill" />
+                    <CardTitle className="text-xs font-bold text-blue-700">
+                      PAGOS
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-3 pb-3">
+                  <div className="text-lg font-extrabold text-blue-600 mb-0.5">
+                    {totaisPagos.qtd} registros
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    <div className="font-bold">
+                      Sistema:{' '}
+                      <span className="text-blue-700">
+                        {totaisPagos.valorSistema.toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        })}
+                      </span>
+                    </div>
+                    <div className="font-bold">
+                      Arquivo:{' '}
+                      <span className="text-blue-700">
+                        {totaisPagos.valorArquivo.toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </button>
+          )}
         </div>
       )}
 
@@ -1488,12 +2035,14 @@ const BatidaCarteira = () => {
                 modalDetalheAberto === 'batidos'
                   ? 'bg-green-600'
                   : modalDetalheAberto === 'soSistema'
-                  ? 'bg-red-600'
-                  : modalDetalheAberto === 'soArquivo'
-                  ? 'bg-orange-600'
-                  : modalDetalheAberto === 'pgtoCedente'
-                  ? 'bg-cyan-600'
-                  : 'bg-purple-600'
+                    ? 'bg-red-600'
+                    : modalDetalheAberto === 'soArquivo'
+                      ? 'bg-orange-600'
+                      : modalDetalheAberto === 'pgtoCedente'
+                        ? 'bg-cyan-600'
+                        : modalDetalheAberto === 'pagos'
+                          ? 'bg-blue-600'
+                          : 'bg-purple-600'
               }`}
             >
               <div className="flex items-center gap-2">
@@ -1512,6 +2061,9 @@ const BatidaCarteira = () => {
                 {modalDetalheAberto === 'pgtoCedente' && (
                   <CurrencyCircleDollar size={24} weight="bold" />
                 )}
+                {modalDetalheAberto === 'pagos' && (
+                  <Coins size={24} weight="bold" />
+                )}
                 <h2 className="text-lg font-bold">
                   {modalDetalheAberto === 'batidos' && 'Faturas Batidas'}
                   {modalDetalheAberto === 'soSistema' && 'Só no Sistema'}
@@ -1519,6 +2071,8 @@ const BatidaCarteira = () => {
                   {modalDetalheAberto === 'divergentes' && 'Total Divergentes'}
                   {modalDetalheAberto === 'pgtoCedente' &&
                     'PGTO Cedente / Título Debitado'}
+                  {modalDetalheAberto === 'pagos' &&
+                    'Faturas Pagas (Sistema + Arquivo)'}
                 </h2>
               </div>
               <button
@@ -1553,8 +2107,8 @@ const BatidaCarteira = () => {
                           modalDetalheAberto === 'batidos'
                             ? 'bg-green-600'
                             : modalDetalheAberto === 'soSistema'
-                            ? 'bg-red-600'
-                            : 'bg-red-600'
+                              ? 'bg-red-600'
+                              : 'bg-red-600'
                         }`}
                       >
                         <tr>
@@ -1579,6 +2133,20 @@ const BatidaCarteira = () => {
                           <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
                             Empresa
                           </th>
+                          {(modalDetalheAberto === 'soSistema' ||
+                            modalDetalheAberto === 'divergentes') && (
+                            <>
+                              <th className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">
+                                Vl.Pago
+                              </th>
+                              <th className="px-2 py-1.5 text-center font-semibold whitespace-nowrap">
+                                Dt.Liq
+                              </th>
+                              <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                                Portador
+                              </th>
+                            </>
+                          )}
                           {modalDetalheAberto === 'batidos' && (
                             <th className="px-2 py-1.5 text-center font-semibold whitespace-nowrap">
                               Liquidação
@@ -1618,6 +2186,28 @@ const BatidaCarteira = () => {
                             <td className="px-2 py-1 whitespace-nowrap">
                               {item.cd_empresa || '--'}
                             </td>
+                            {(modalDetalheAberto === 'soSistema' ||
+                              modalDetalheAberto === 'divergentes') && (
+                              <>
+                                <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-emerald-700">
+                                  {item.vl_pago
+                                    ? parseFloat(item.vl_pago).toLocaleString(
+                                        'pt-BR',
+                                        {
+                                          style: 'currency',
+                                          currency: 'BRL',
+                                        },
+                                      )
+                                    : '--'}
+                                </td>
+                                <td className="px-2 py-1 text-center whitespace-nowrap">
+                                  {formatDateBR(item.dt_liquidacao)}
+                                </td>
+                                <td className="px-2 py-1 whitespace-nowrap">
+                                  {item.nr_portador || '--'}
+                                </td>
+                              </>
+                            )}
                             {modalDetalheAberto === 'batidos' && (
                               <td className="px-2 py-1 text-center whitespace-nowrap text-emerald-700 font-semibold">
                                 {formatDateBR(
@@ -1833,18 +2423,332 @@ const BatidaCarteira = () => {
                 </div>
               )}
 
+              {/* Tabela PAGOS - Faturas pagas em ambas tabelas */}
+              {modalDetalheAberto === 'pagos' && (
+                <div>
+                  {/* Seção: Pagos em AMBOS os canais */}
+                  <h3 className="text-sm font-bold text-blue-700 mb-2 flex items-center gap-2">
+                    <CheckCircle
+                      size={16}
+                      weight="fill"
+                      className="text-blue-600"
+                    />
+                    Pago em Ambos - Sistema e Arquivo ({listaPagos.length}{' '}
+                    registros)
+                  </h3>
+                  <div className="overflow-x-auto max-h-[300px] overflow-y-auto bg-gray-50 rounded-lg border">
+                    <table className="min-w-full text-[10px]">
+                      <thead className="bg-blue-600 text-white sticky top-0">
+                        <tr>
+                          <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                            Cód
+                          </th>
+                          <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                            Fatura
+                          </th>
+                          <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                            Cliente
+                          </th>
+                          <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                            CPF/CNPJ
+                          </th>
+                          <th className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">
+                            Valor Fatura
+                          </th>
+                          <th className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">
+                            Vl.Pago Sistema
+                          </th>
+                          <th className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">
+                            Vl.Pago Arquivo
+                          </th>
+                          <th className="px-2 py-1.5 text-center font-semibold whitespace-nowrap">
+                            Vencimento
+                          </th>
+                          <th className="px-2 py-1.5 text-center font-semibold whitespace-nowrap">
+                            Dt.Liq Sistema
+                          </th>
+                          <th className="px-2 py-1.5 text-center font-semibold whitespace-nowrap">
+                            Dt.Liq Arquivo
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {listaPagos.map((itemSistema, idx) => {
+                          const itemArquivo =
+                            buscarItemImportadoCorrespondente(itemSistema);
+                          return (
+                            <tr
+                              key={idx}
+                              className="border-b bg-white hover:bg-blue-50"
+                            >
+                              <td className="px-2 py-1 whitespace-nowrap">
+                                {itemSistema.cd_cliente || '--'}
+                              </td>
+                              <td className="px-2 py-1 whitespace-nowrap">
+                                {itemSistema.nr_fat || '--'}
+                              </td>
+                              <td className="px-2 py-1 whitespace-nowrap">
+                                {itemSistema.nm_cliente || '--'}
+                              </td>
+                              <td className="px-2 py-1 whitespace-nowrap">
+                                {formatCpfCnpj(itemSistema.nr_cpfcnpj)}
+                              </td>
+                              <td className="px-2 py-1 text-right whitespace-nowrap font-bold">
+                                {parseFloat(
+                                  itemSistema.vl_fatura || 0,
+                                ).toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                })}
+                              </td>
+                              <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-blue-700">
+                                {parseFloat(
+                                  itemSistema.vl_pago || 0,
+                                ).toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                })}
+                              </td>
+                              <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-blue-700">
+                                {parseFloat(
+                                  itemArquivo?.vl_pago || 0,
+                                ).toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                })}
+                              </td>
+                              <td className="px-2 py-1 text-center whitespace-nowrap">
+                                {formatDateBR(itemSistema.dt_vencimento)}
+                              </td>
+                              <td className="px-2 py-1 text-center whitespace-nowrap">
+                                {formatDateBR(itemSistema.dt_pagamento)}
+                              </td>
+                              <td className="px-2 py-1 text-center whitespace-nowrap">
+                                {formatDateBR(itemArquivo?.dt_pagamento)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Tabela: Pagos SOMENTE no Sistema */}
+                  {listaPagosSoSistema.length > 0 && (
+                    <>
+                      <h3 className="text-sm font-bold text-amber-700 mb-2 mt-4 flex items-center gap-2">
+                        <WarningCircle
+                          size={16}
+                          weight="fill"
+                          className="text-amber-600"
+                        />
+                        Pago só no Sistema ({listaPagosSoSistema.length}{' '}
+                        registros)
+                      </h3>
+                      <div className="overflow-x-auto max-h-[250px] overflow-y-auto bg-amber-50 rounded-lg border border-amber-200">
+                        <table className="min-w-full text-[10px]">
+                          <thead className="bg-amber-500 text-white sticky top-0">
+                            <tr>
+                              <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                                Cód
+                              </th>
+                              <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                                Fatura
+                              </th>
+                              <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                                Cliente
+                              </th>
+                              <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                                CPF/CNPJ
+                              </th>
+                              <th className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">
+                                Valor Fatura
+                              </th>
+                              <th className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">
+                                Vl.Pago Sistema
+                              </th>
+                              <th className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">
+                                Vl.Pago Arquivo
+                              </th>
+                              <th className="px-2 py-1.5 text-center font-semibold whitespace-nowrap">
+                                Vencimento
+                              </th>
+                              <th className="px-2 py-1.5 text-center font-semibold whitespace-nowrap">
+                                Dt.Liq Sistema
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {listaPagosSoSistema.map((itemSistema, idx) => {
+                              const itemArquivo =
+                                buscarItemImportadoCorrespondente(itemSistema);
+                              return (
+                                <tr
+                                  key={idx}
+                                  className="border-b bg-white hover:bg-amber-100"
+                                >
+                                  <td className="px-2 py-1 whitespace-nowrap">
+                                    {itemSistema.cd_cliente || '--'}
+                                  </td>
+                                  <td className="px-2 py-1 whitespace-nowrap">
+                                    {itemSistema.nr_fat || '--'}
+                                  </td>
+                                  <td className="px-2 py-1 whitespace-nowrap">
+                                    {itemSistema.nm_cliente || '--'}
+                                  </td>
+                                  <td className="px-2 py-1 whitespace-nowrap">
+                                    {formatCpfCnpj(itemSistema.nr_cpfcnpj)}
+                                  </td>
+                                  <td className="px-2 py-1 text-right whitespace-nowrap font-bold">
+                                    {parseFloat(
+                                      itemSistema.vl_fatura || 0,
+                                    ).toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })}
+                                  </td>
+                                  <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-amber-700">
+                                    {parseFloat(
+                                      itemSistema.vl_pago || 0,
+                                    ).toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })}
+                                  </td>
+                                  <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-gray-400">
+                                    --
+                                  </td>
+                                  <td className="px-2 py-1 text-center whitespace-nowrap">
+                                    {formatDateBR(itemSistema.dt_vencimento)}
+                                  </td>
+                                  <td className="px-2 py-1 text-center whitespace-nowrap">
+                                    {formatDateBR(itemSistema.dt_pagamento)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Tabela: Pagos SOMENTE no Arquivo */}
+                  {listaPagosSoArquivo.length > 0 && (
+                    <>
+                      <h3 className="text-sm font-bold text-rose-700 mb-2 mt-4 flex items-center gap-2">
+                        <WarningCircle
+                          size={16}
+                          weight="fill"
+                          className="text-rose-600"
+                        />
+                        Pago só no Arquivo ({listaPagosSoArquivo.length}{' '}
+                        registros)
+                      </h3>
+                      <div className="overflow-x-auto max-h-[250px] overflow-y-auto bg-rose-50 rounded-lg border border-rose-200">
+                        <table className="min-w-full text-[10px]">
+                          <thead className="bg-rose-500 text-white sticky top-0">
+                            <tr>
+                              <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                                Cód
+                              </th>
+                              <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                                Fatura
+                              </th>
+                              <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                                Cliente
+                              </th>
+                              <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                                CPF/CNPJ
+                              </th>
+                              <th className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">
+                                Valor Fatura
+                              </th>
+                              <th className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">
+                                Vl.Pago Sistema
+                              </th>
+                              <th className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">
+                                Vl.Pago Arquivo
+                              </th>
+                              <th className="px-2 py-1.5 text-center font-semibold whitespace-nowrap">
+                                Vencimento
+                              </th>
+                              <th className="px-2 py-1.5 text-center font-semibold whitespace-nowrap">
+                                Dt.Liq Arquivo
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {listaPagosSoArquivo.map((itemSistema, idx) => {
+                              const itemArquivo =
+                                buscarItemImportadoCorrespondente(itemSistema);
+                              return (
+                                <tr
+                                  key={idx}
+                                  className="border-b bg-white hover:bg-rose-100"
+                                >
+                                  <td className="px-2 py-1 whitespace-nowrap">
+                                    {itemSistema.cd_cliente || '--'}
+                                  </td>
+                                  <td className="px-2 py-1 whitespace-nowrap">
+                                    {itemSistema.nr_fat || '--'}
+                                  </td>
+                                  <td className="px-2 py-1 whitespace-nowrap">
+                                    {itemSistema.nm_cliente || '--'}
+                                  </td>
+                                  <td className="px-2 py-1 whitespace-nowrap">
+                                    {formatCpfCnpj(itemSistema.nr_cpfcnpj)}
+                                  </td>
+                                  <td className="px-2 py-1 text-right whitespace-nowrap font-bold">
+                                    {parseFloat(
+                                      itemSistema.vl_fatura || 0,
+                                    ).toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })}
+                                  </td>
+                                  <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-gray-400">
+                                    --
+                                  </td>
+                                  <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-rose-700">
+                                    {parseFloat(
+                                      itemArquivo?.vl_pago || 0,
+                                    ).toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })}
+                                  </td>
+                                  <td className="px-2 py-1 text-center whitespace-nowrap">
+                                    {formatDateBR(itemSistema.dt_vencimento)}
+                                  </td>
+                                  <td className="px-2 py-1 text-center whitespace-nowrap">
+                                    {formatDateBR(itemArquivo?.dt_pagamento)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* Resumo */}
               <div
                 className={`mt-4 p-3 rounded-lg ${
                   modalDetalheAberto === 'batidos'
                     ? 'bg-green-50 border border-green-200'
                     : modalDetalheAberto === 'soSistema'
-                    ? 'bg-red-50 border border-red-200'
-                    : modalDetalheAberto === 'soArquivo'
-                    ? 'bg-orange-50 border border-orange-200'
-                    : modalDetalheAberto === 'pgtoCedente'
-                    ? 'bg-cyan-50 border border-cyan-200'
-                    : 'bg-purple-50 border border-purple-200'
+                      ? 'bg-red-50 border border-red-200'
+                      : modalDetalheAberto === 'soArquivo'
+                        ? 'bg-orange-50 border border-orange-200'
+                        : modalDetalheAberto === 'pgtoCedente'
+                          ? 'bg-cyan-50 border border-cyan-200'
+                          : modalDetalheAberto === 'pagos'
+                            ? 'bg-blue-50 border border-blue-200'
+                            : 'bg-purple-50 border border-purple-200'
                 }`}
               >
                 <div className="flex justify-between items-center">
@@ -1854,12 +2758,14 @@ const BatidaCarteira = () => {
                       modalDetalheAberto === 'batidos'
                         ? 'text-green-600'
                         : modalDetalheAberto === 'soSistema'
-                        ? 'text-red-600'
-                        : modalDetalheAberto === 'soArquivo'
-                        ? 'text-orange-600'
-                        : modalDetalheAberto === 'pgtoCedente'
-                        ? 'text-cyan-600'
-                        : 'text-purple-600'
+                          ? 'text-red-600'
+                          : modalDetalheAberto === 'soArquivo'
+                            ? 'text-orange-600'
+                            : modalDetalheAberto === 'pgtoCedente'
+                              ? 'text-cyan-600'
+                              : modalDetalheAberto === 'pagos'
+                                ? 'text-blue-600'
+                                : 'text-purple-600'
                     }`}
                   >
                     {modalDetalheAberto === 'batidos' &&
@@ -1903,6 +2809,51 @@ const BatidaCarteira = () => {
                       )} (${totaisPgtoCedente.batidosQtd} batidos / ${
                         totaisPgtoCedente.naoBatidosQtd
                       } não batidos)`}
+                    {modalDetalheAberto === 'pagos' && (
+                      <div className="flex flex-col text-right text-sm">
+                        <span className="text-blue-600">
+                          Ambos: {totaisPagos.qtd} reg - Sis:{' '}
+                          {totaisPagos.valorSistema.toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })}{' '}
+                          / Arq:{' '}
+                          {totaisPagos.valorArquivo.toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })}
+                        </span>
+                        {listaPagosSoSistema.length > 0 && (
+                          <span className="text-amber-600 text-xs">
+                            Só Sistema: {listaPagosSoSistema.length} reg -{' '}
+                            {listaPagosSoSistema
+                              .reduce(
+                                (acc, i) => acc + parseFloat(i.vl_pago || 0),
+                                0,
+                              )
+                              .toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })}
+                          </span>
+                        )}
+                        {listaPagosSoArquivo.length > 0 && (
+                          <span className="text-rose-600 text-xs">
+                            Só Arquivo: {listaPagosSoArquivo.length} reg -{' '}
+                            {listaPagosSoArquivo
+                              .reduce((acc, i) => {
+                                const itemArq =
+                                  buscarItemImportadoCorrespondente(i);
+                                return acc + parseFloat(itemArq?.vl_pago || 0);
+                              }, 0)
+                              .toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </span>
                 </div>
               </div>
@@ -2018,6 +2969,14 @@ const BatidaCarteira = () => {
                           Dt.Liq {getSortIcon('dt_liquidacao')}
                         </div>
                       </th>
+                      <th
+                        className="px-1 py-1 text-left cursor-pointer hover:bg-[#001050] whitespace-nowrap"
+                        onClick={() => handleSort('nr_portador')}
+                      >
+                        <div className="flex items-center gap-1">
+                          Portador {getSortIcon('nr_portador')}
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2032,8 +2991,8 @@ const BatidaCarteira = () => {
                             encontrado
                               ? 'bg-emerald-300 hover:bg-emerald-400'
                               : index % 2 === 0
-                              ? 'bg-white hover:bg-gray-50'
-                              : 'bg-gray-50 hover:bg-gray-100'
+                                ? 'bg-white hover:bg-gray-50'
+                                : 'bg-gray-50 hover:bg-gray-100'
                           }`}
                         >
                           <td
@@ -2120,6 +3079,15 @@ const BatidaCarteira = () => {
                             }`}
                           >
                             {formatDateBR(item.dt_liquidacao)}
+                          </td>
+                          <td
+                            className={`px-1 py-0.5 whitespace-nowrap ${
+                              encontrado
+                                ? 'text-emerald-900 font-semibold'
+                                : 'text-gray-700'
+                            }`}
+                          >
+                            {item.nr_portador || '--'}
                           </td>
                         </tr>
                       );
@@ -2231,8 +3199,8 @@ const BatidaCarteira = () => {
                             encontrado
                               ? 'bg-emerald-300 hover:bg-emerald-400'
                               : index % 2 === 0
-                              ? 'bg-white hover:bg-emerald-50'
-                              : 'bg-gray-50 hover:bg-emerald-50'
+                                ? 'bg-white hover:bg-emerald-50'
+                                : 'bg-gray-50 hover:bg-emerald-50'
                           }`}
                         >
                           <td

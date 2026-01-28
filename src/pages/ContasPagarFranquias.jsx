@@ -1609,8 +1609,8 @@ const ContasPagarFranquias = () => {
                             pagina === paginaAtual
                               ? 'bg-[#000638] text-white'
                               : typeof pagina === 'number'
-                              ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
-                              : 'text-gray-400 cursor-default'
+                                ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                : 'text-gray-400 cursor-default'
                           }`}
                         >
                           {pagina}

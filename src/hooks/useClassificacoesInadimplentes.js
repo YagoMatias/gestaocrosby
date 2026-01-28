@@ -23,6 +23,7 @@ export const useClassificacoesInadimplentes = () => {
         situacao: classificacao.situacao,
         feeling: classificacao.feeling || null,
         status: classificacao.status || null,
+        representante: classificacao.representante || null,
         usuario: classificacao.usuario,
         data_alteracao: new Date().toISOString(),
       };
@@ -155,6 +156,7 @@ export const useClassificacoesInadimplentes = () => {
         situacao: c.situacao,
         feeling: c.feeling || null,
         status: c.status || null,
+        representante: c.representante || null,
         usuario: c.usuario,
         data_alteracao: new Date().toISOString(),
       }));
@@ -216,6 +218,73 @@ export const useClassificacoesInadimplentes = () => {
     }
   };
 
+  /**
+   * Salvar observação de um cliente
+   * @param {Object} observacao - Dados da observação
+   * @returns {Object} - Resultado da operação
+   */
+  const salvarObservacao = async (observacao) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const dadosParaSalvar = {
+        cd_cliente: observacao.cd_cliente,
+        nm_cliente: observacao.nm_cliente,
+        observacao: observacao.observacao,
+        usuario: observacao.usuario,
+        data_criacao: new Date().toISOString(),
+      };
+
+      const { data, error: insertError } = await supabase
+        .from('observacoes_inadimplentes')
+        .insert(dadosParaSalvar)
+        .select();
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      return { success: true, data };
+    } catch (err) {
+      console.error('Erro ao salvar observação:', err);
+      setError(err.message);
+      return { success: false, error: err.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Buscar observações de um cliente
+   * @param {string} cdCliente - Código do cliente
+   * @returns {Object} - Lista de observações
+   */
+  const buscarObservacoes = async (cdCliente) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('observacoes_inadimplentes')
+        .select('*')
+        .eq('cd_cliente', cdCliente)
+        .order('data_criacao', { ascending: false });
+
+      if (fetchError) {
+        throw fetchError;
+      }
+
+      return { success: true, data };
+    } catch (err) {
+      console.error('Erro ao buscar observações:', err);
+      setError(err.message);
+      return { success: false, error: err.message, data: [] };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     loading,
     error,
@@ -225,6 +294,8 @@ export const useClassificacoesInadimplentes = () => {
     deletarClassificacao,
     salvarClassificacoesEmLote,
     buscarHistorico,
+    salvarObservacao,
+    buscarObservacoes,
   };
 };
 
