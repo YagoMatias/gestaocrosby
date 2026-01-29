@@ -269,7 +269,7 @@ export const useClassificacoesInadimplentes = () => {
         .from('observacoes_inadimplentes')
         .select('*')
         .eq('cd_cliente', cdCliente)
-        .order('data_criacao', { ascending: false });
+        .order('data_criacao', { ascending: true });
 
       if (fetchError) {
         throw fetchError;

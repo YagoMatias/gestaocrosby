@@ -346,8 +346,8 @@ const InadimplentesMultimarcas = () => {
     const { success, data } = await salvarObservacao(observacao);
 
     if (success) {
-      // Adicionar nova observação no início da lista
-      setObservacoesList((prev) => [data[0], ...prev]);
+      // Adicionar nova observação no final da lista (ordem de envio)
+      setObservacoesList((prev) => [...prev, data[0]]);
       setNovaObservacao('');
       setNotification({
         type: 'success',
@@ -2459,7 +2459,7 @@ const InadimplentesMultimarcas = () => {
 
             {/* Campo para adicionar nova observação */}
             <div className="border-t pt-4">
-              <div className="flex gap-2">
+              <div className="flex flex-col justbetween mb-4">
                 <textarea
                   value={novaObservacao}
                   onChange={(e) => setNovaObservacao(e.target.value)}
@@ -2467,23 +2467,16 @@ const InadimplentesMultimarcas = () => {
                   className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#000638] resize-none"
                   rows={3}
                 />
-                <button
-                  onClick={adicionarObservacao}
-                  disabled={!novaObservacao.trim() || loadingObservacoes}
-                  className="bg-[#000638] hover:bg-[#fe0000] text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed self-end"
-                >
-                  Enviar
-                </button>
+                <div>
+                  <button
+                    onClick={adicionarObservacao}
+                    disabled={!novaObservacao.trim() || loadingObservacoes}
+                    className="bg-[#000638] hover:bg-[#fe0000] text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed self-end mt-2"
+                  >
+                    Enviar
+                  </button>
+                </div>
               </div>
-            </div>
-
-            <div className="mt-4 flex justify-end">
-              <button
-                onClick={fecharModalObservacoes}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition-colors"
-              >
-                Fechar
-              </button>
             </div>
           </div>
         </div>

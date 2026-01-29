@@ -69,7 +69,28 @@ const RankingFaturamento = () => {
           amostra: dadosArray.slice(0, 2),
         });
 
-        const ordenado = [...dadosArray].sort(
+        // Filtrar registros com "TESTE" no nome e remover duplicatas de cd_grupoempresa
+        const dadosFiltrados = dadosArray.filter(
+          (item) => !item.nome_fantasia?.toUpperCase().includes('TESTE'),
+        );
+
+        // Remover duplicatas mantendo apenas a primeira ocorrência de cada cd_grupoempresa
+        const dadosUnicos = [];
+        const gruposVistos = new Set();
+        dadosFiltrados.forEach((item) => {
+          if (!gruposVistos.has(item.cd_grupoempresa)) {
+            gruposVistos.add(item.cd_grupoempresa);
+            dadosUnicos.push(item);
+          }
+        });
+
+        console.log('🔧 Filtros aplicados:', {
+          original: dadosArray.length,
+          semTeste: dadosFiltrados.length,
+          semDuplicatas: dadosUnicos.length,
+        });
+
+        const ordenado = [...dadosUnicos].sort(
           (a, b) =>
             parseFloat(b.faturamento || 0) - parseFloat(a.faturamento || 0),
         );
@@ -121,7 +142,17 @@ const RankingFaturamento = () => {
           amostra: dadosArray.slice(0, 2),
         });
 
-        const ordenado = [...dadosArray].sort(
+        // Filtrar registros com "TESTE" no nome
+        const dadosFiltrados = dadosArray.filter(
+          (item) => !item.nome_vendedor?.toUpperCase().includes('TESTE'),
+        );
+
+        console.log('🔧 Filtros aplicados (vendedores):', {
+          original: dadosArray.length,
+          semTeste: dadosFiltrados.length,
+        });
+
+        const ordenado = [...dadosFiltrados].sort(
           (a, b) =>
             parseFloat(b.faturamento || 0) - parseFloat(a.faturamento || 0),
         );
