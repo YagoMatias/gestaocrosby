@@ -352,6 +352,9 @@ const useApiClient = () => {
       apiCall('/api/financial/inadimplentes-franquias', params),
     inadimplentesRevenda: (params) =>
       apiCall('/api/financial/inadimplentes-revenda', params),
+    // Telefone de clientes
+    telefoneClientes: (cd_pessoa) =>
+      apiCall(`/api/financial/telefone-clientes/${cd_pessoa}`),
     // Observações de faturas (obsfati)
     obsFati: (params) => apiCall('/api/financial/obsfati', params),
     // Extrato Cliente

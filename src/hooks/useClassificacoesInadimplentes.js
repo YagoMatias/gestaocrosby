@@ -285,6 +285,131 @@ export const useClassificacoesInadimplentes = () => {
     }
   };
 
+  /**
+   * Salvar observação de um cliente de franquia
+   * @param {Object} observacao - Dados da observação
+   * @returns {Object} - Resultado da operação
+   */
+  const salvarObservacaoFranquia = async (observacao) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const dadosParaSalvar = {
+        cd_cliente: observacao.cd_cliente,
+        nm_cliente: observacao.nm_cliente,
+        observacao: observacao.observacao,
+        usuario: observacao.usuario,
+        data_criacao: new Date().toISOString(),
+      };
+
+      const { data, error: insertError } = await supabase
+        .from('observacoes_inadimplentes_franquias')
+        .insert(dadosParaSalvar)
+        .select();
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      return { success: true, data };
+    } catch (err) {
+      console.error('Erro ao salvar observação de franquia:', err);
+      setError(err.message);
+      return { success: false, error: err.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Buscar observações de um cliente de franquia
+   * @param {string} cdCliente - Código do cliente
+   * @returns {Object} - Lista de observações
+   */
+  const buscarObservacoesFranquia = async (cdCliente) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('observacoes_inadimplentes_franquias')
+        .select('*')
+        .eq('cd_cliente', cdCliente)
+        .order('data_criacao', { ascending: true });
+
+      if (fetchError) {
+        throw fetchError;
+      }
+
+      return { success: true, data };
+    } catch (err) {
+      console.error('Erro ao buscar observações de franquia:', err);
+      setError(err.message);
+      return { success: false, error: err.message, data: [] };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Deletar observação (Multimarcas)
+   * @param {number} id - ID da observação
+   * @returns {Object} - Resultado da operação
+   */
+  const deletarObservacao = async (id) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { error: deleteError } = await supabase
+        .from('observacoes_inadimplentes')
+        .delete()
+        .eq('id', id);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      return { success: true };
+    } catch (err) {
+      console.error('Erro ao deletar observação:', err);
+      setError(err.message);
+      return { success: false, error: err.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Deletar observação (Franquias)
+   * @param {number} id - ID da observação
+   * @returns {Object} - Resultado da operação
+   */
+  const deletarObservacaoFranquia = async (id) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { error: deleteError } = await supabase
+        .from('observacoes_inadimplentes_franquias')
+        .delete()
+        .eq('id', id);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      return { success: true };
+    } catch (err) {
+      console.error('Erro ao deletar observação de franquia:', err);
+      setError(err.message);
+      return { success: false, error: err.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     loading,
     error,
@@ -296,6 +421,10 @@ export const useClassificacoesInadimplentes = () => {
     buscarHistorico,
     salvarObservacao,
     buscarObservacoes,
+    salvarObservacaoFranquia,
+    buscarObservacoesFranquia,
+    deletarObservacao,
+    deletarObservacaoFranquia,
   };
 };
 
