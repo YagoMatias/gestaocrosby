@@ -434,8 +434,39 @@ const InadimplentesMultimarcas = () => {
           // Limpar telefone (remover caracteres especiais)
           const telefoneClean = telefone.replace(/\D/g, '');
 
-          // Abrir WhatsApp
-          const whatsappUrl = `https://wa.me/55${telefoneClean}`;
+          // Construir lista de faturas
+          const listaFaturas = (cliente.faturas || [])
+            .map((fatura) => {
+              const numeroFatura = fatura.nr_fat || fatura.nr_fatura || 'N/A';
+              const vencimento = fatura.dt_vencimento
+                ? new Date(fatura.dt_vencimento).toLocaleDateString('pt-BR')
+                : 'N/A';
+              const valor = formatarMoeda(fatura.vl_fatura || 0);
+
+              return `*Fatura:* ${numeroFatura}\n*Vencimento:* ${vencimento}\n*Valor:* ${valor}`;
+            })
+            .join('\n\n');
+
+          // Mensagem padrão pré-definida
+          const mensagemPadrao = `Olá, tudo bem? *${cliente.nm_cliente}*
+Somos da área de Recuperação de Créditos da Crosby.
+Consta em nosso sistema a existência de pendências financeiras em aberto em seu cadastro.
+Entramos em contato para alinhar e verificar a melhor forma de regularização.
+
+Segue a lista dos títulos em aberto:
+
+${listaFaturas}
+
+*Observação:* Caso os pagamentos já tenham sido realizados, pedimos gentilmente que desconsidere esta mensagem e nos envie o comprovante para atualização em nosso sistema.
+
+Atenciosamente,
+Crosby`;
+
+          // Codificar a mensagem para URL
+          const mensagemCodificada = encodeURIComponent(mensagemPadrao);
+
+          // Abrir WhatsApp com mensagem pré-definida
+          const whatsappUrl = `https://wa.me/55${telefoneClean}?text=${mensagemCodificada}`;
           window.open(whatsappUrl, '_blank');
         } else {
           setNotification({
