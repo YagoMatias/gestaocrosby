@@ -86,6 +86,8 @@ const InadimplentesMultimarcas = () => {
   const [modalAberto, setModalAberto] = useState(false);
   const [clienteSelecionado, setClienteSelecionado] = useState(null);
   const [faturasSelecionadas, setFaturasSelecionadas] = useState([]);
+  const [faturasAVencer, setFaturasAVencer] = useState([]);
+  const [loadingFaturasModal, setLoadingFaturasModal] = useState(false);
 
   // Estado para o modal de lista de clientes filtrados
   const [modalListaAberto, setModalListaAberto] = useState(false);
@@ -120,6 +122,9 @@ const InadimplentesMultimarcas = () => {
   // Estados para controle de ordenação
   const [ordenarPor, setOrdenarPor] = useState(null); // coluna atual de ordenação
   const [direcaoOrdenacao, setDirecaoOrdenacao] = useState('asc'); // 'asc' ou 'desc'
+
+  // Estado para valores a vencer (agrupados por cliente)
+  const [valoresAVencer, setValoresAVencer] = useState({});
 
   // Função para ordenar colunas
   const ordenarColuna = (coluna) => {
@@ -658,8 +663,11 @@ Crosby`;
       if (filtroDataFinal) params.dt_fim = filtroDataFinal;
       // Nota: filtro por cliente será aplicado client-side via multi-select
 
-      const response =
-        await apiClient.financial.inadimplentesMultimarcas(params);
+      // Buscar inadimplentes e valores a vencer em paralelo
+      const [response, aVencerResponse] = await Promise.all([
+        apiClient.financial.inadimplentesMultimarcas(params),
+        apiClient.financial.aVencerMultimarcas(params),
+      ]);
 
       // Verificar estrutura da resposta
       let dadosRecebidos = [];
@@ -671,6 +679,19 @@ Crosby`;
 
       console.log('📊 Dados recebidos de inadimplentes:', dadosRecebidos);
       setDados(dadosRecebidos);
+
+      // Processar valores a vencer
+      if (aVencerResponse?.success && aVencerResponse?.data) {
+        const aVencerMap = {};
+        aVencerResponse.data.forEach((item) => {
+          aVencerMap[item.cd_cliente] = parseFloat(item.valor_a_vencer) || 0;
+        });
+        setValoresAVencer(aVencerMap);
+        console.log(
+          '📊 Valores a vencer carregados:',
+          Object.keys(aVencerMap).length,
+        );
+      }
 
       // CARREGAR CLASSIFICAÇÕES DO SUPABASE
       if (dadosRecebidos.length > 0) {
@@ -823,6 +844,7 @@ Crosby`;
         feeling: clienteFeeling[cliente.cd_cliente] || null,
         status: clienteStatus[cliente.cd_cliente] || null,
         representante: clienteRepresentante[cliente.cd_cliente] || null,
+        valor_a_vencer: valoresAVencer[cliente.cd_cliente] || 0,
       };
     });
 
@@ -864,6 +886,10 @@ Crosby`;
             valorA = (a.representante || '').toLowerCase();
             valorB = (b.representante || '').toLowerCase();
             break;
+          case 'valor_a_vencer':
+            valorA = parseFloat(a.valor_a_vencer) || 0;
+            valorB = parseFloat(b.valor_a_vencer) || 0;
+            break;
           default:
             return 0;
         }
@@ -880,6 +906,7 @@ Crosby`;
     clienteFeeling,
     clienteStatus,
     clienteRepresentante,
+    valoresAVencer,
     ordenarPor,
     direcaoOrdenacao,
   ]);
@@ -1266,16 +1293,34 @@ Crosby`;
   };
 
   // Funções do modal
-  const abrirModal = (cliente) => {
+  const abrirModal = async (cliente) => {
     setClienteSelecionado(cliente);
     setFaturasSelecionadas(cliente.faturas);
+    setFaturasAVencer([]);
     setModalAberto(true);
+    setLoadingFaturasModal(true);
+
+    // Buscar faturas a vencer do cliente
+    try {
+      const response =
+        await apiClient.financial.faturasAVencerClienteMultimarcas(
+          cliente.cd_cliente,
+        );
+      if (response?.success && response?.data) {
+        setFaturasAVencer(response.data);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar faturas a vencer:', error);
+    } finally {
+      setLoadingFaturasModal(false);
+    }
   };
 
   const fecharModal = () => {
     setModalAberto(false);
     setClienteSelecionado(null);
     setFaturasSelecionadas([]);
+    setFaturasAVencer([]);
   };
 
   // Funções do modal de histórico
@@ -2122,8 +2167,20 @@ Crosby`;
                       title="Clique para ordenar"
                     >
                       <div className="flex items-center gap-1">
-                        Valor Total
+                        Valor Vencido
                         {ordenarPor === 'valor_total' && (
+                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => ordenarColuna('valor_a_vencer')}
+                      title="Clique para ordenar"
+                    >
+                      <div className="flex items-center gap-1">
+                        A Vencer
+                        {ordenarPor === 'valor_a_vencer' && (
                           <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
                         )}
                       </div>
@@ -2184,7 +2241,7 @@ Crosby`;
                   {clientesAgrupados.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={10}
+                        colSpan={11}
                         className="px-4 py-8 text-center text-gray-500"
                       >
                         Nenhum cliente inadimplente encontrado
@@ -2208,8 +2265,11 @@ Crosby`;
                             {cliente.ds_siglaest?.trim() || 'N/A'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 font-medium text-green-600">
+                        <td className="px-4 py-3 font-medium text-red-600">
                           {formatarMoeda(cliente.valor_total)}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-orange-600">
+                          {formatarMoeda(cliente.valor_a_vencer)}
                         </td>
                         <td className="px-4 py-3">
                           <span
@@ -2798,7 +2858,7 @@ Crosby`;
       {/* Modal de Detalhes das Faturas */}
       {modalAberto && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-6xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg p-6 max-w-6xl max-h-[90vh] overflow-y-auto w-full mx-4">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
                 Detalhes das Faturas - {clienteSelecionado?.nm_cliente}
@@ -2823,49 +2883,171 @@ Crosby`;
               </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
-                <thead className="text-xs text-gray-700 uppercase bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3">Empresa</th>
-                    <th className="px-4 py-3">Emissão</th>
-                    <th className="px-4 py-3">Vencimento</th>
-                    <th className="px-4 py-3">Valor Fatura</th>
-                    <th className="px-4 py-3">Juros</th>
-                    <th className="px-4 py-3">Parcela</th>
-                    <th className="px-4 py-3">Tempo Inadimplência</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {faturasSelecionadas.map((fatura, index) => (
-                    <tr key={index} className="bg-white border-b">
-                      <td className="px-4 py-3">
-                        {fatura.cd_empresa || 'N/A'}
-                      </td>
-                      <td className="px-4 py-3">
-                        {formatarData(fatura.dt_emissao)}
-                      </td>
-                      <td className="px-4 py-3">
-                        {formatarData(fatura.dt_vencimento)}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-green-600">
-                        {formatarMoeda(fatura.vl_fatura)}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-red-600">
-                        {formatarMoeda(fatura.vl_juros)}
-                      </td>
-                      <td className="px-4 py-3">
-                        {fatura.nr_parcela || 'N/A'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="bg-yellow-100 text-yellow-800 text-xs font-medium px-2 py-1 rounded">
-                          {calcularTempoInadimplencia(fatura.dt_vencimento)}
-                        </span>
-                      </td>
+            {/* Tabela de Faturas Vencidas */}
+            <div className="mb-6">
+              <h4 className="text-md font-semibold text-red-700 mb-3 flex items-center gap-2">
+                <Warning size={20} weight="bold" className="text-red-600" />
+                Faturas Vencidas ({faturasSelecionadas.length})
+              </h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-white uppercase bg-red-600">
+                    <tr>
+                      <th className="px-4 py-3">Empresa</th>
+                      <th className="px-4 py-3">Nº Fatura</th>
+                      <th className="px-4 py-3">Emissão</th>
+                      <th className="px-4 py-3">Vencimento</th>
+                      <th className="px-4 py-3">Valor Fatura</th>
+                      <th className="px-4 py-3">Juros</th>
+                      <th className="px-4 py-3">Parcela</th>
+                      <th className="px-4 py-3">Tempo Inadimplência</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {faturasSelecionadas.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={8}
+                          className="px-4 py-4 text-center text-gray-500"
+                        >
+                          Nenhuma fatura vencida encontrada
+                        </td>
+                      </tr>
+                    ) : (
+                      faturasSelecionadas.map((fatura, index) => (
+                        <tr
+                          key={index}
+                          className="bg-red-50 border-b border-red-100"
+                        >
+                          <td className="px-4 py-3">
+                            {fatura.cd_empresa || 'N/A'}
+                          </td>
+                          <td className="px-4 py-3 font-medium">
+                            {fatura.nr_fat || fatura.nr_fatura || 'N/A'}
+                          </td>
+                          <td className="px-4 py-3">
+                            {formatarData(fatura.dt_emissao)}
+                          </td>
+                          <td className="px-4 py-3">
+                            {formatarData(fatura.dt_vencimento)}
+                          </td>
+                          <td className="px-4 py-3 font-medium text-red-600">
+                            {formatarMoeda(fatura.vl_fatura)}
+                          </td>
+                          <td className="px-4 py-3 font-medium text-red-600">
+                            {formatarMoeda(fatura.vl_juros)}
+                          </td>
+                          <td className="px-4 py-3">
+                            {fatura.nr_parcela || 'N/A'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="bg-red-100 text-red-800 text-xs font-medium px-2 py-1 rounded">
+                              {calcularTempoInadimplencia(fatura.dt_vencimento)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Tabela de Faturas a Vencer */}
+            <div className="mb-4">
+              <h4 className="text-md font-semibold text-orange-700 mb-3 flex items-center gap-2">
+                <Clock size={20} weight="bold" className="text-orange-600" />
+                Faturas a Vencer (
+                {loadingFaturasModal ? '...' : faturasAVencer.length})
+              </h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-white uppercase bg-orange-500">
+                    <tr>
+                      <th className="px-4 py-3">Empresa</th>
+                      <th className="px-4 py-3">Nº Fatura</th>
+                      <th className="px-4 py-3">Emissão</th>
+                      <th className="px-4 py-3">Vencimento</th>
+                      <th className="px-4 py-3">Valor Fatura</th>
+                      <th className="px-4 py-3">Parcela</th>
+                      <th className="px-4 py-3">Dias para Vencer</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingFaturasModal ? (
+                      <tr>
+                        <td
+                          colSpan={7}
+                          className="px-4 py-4 text-center text-gray-500"
+                        >
+                          <div className="flex items-center justify-center gap-2">
+                            <CircleNotch
+                              size={18}
+                              className="animate-spin text-orange-500"
+                            />
+                            Carregando faturas a vencer...
+                          </div>
+                        </td>
+                      </tr>
+                    ) : faturasAVencer.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={7}
+                          className="px-4 py-4 text-center text-gray-500"
+                        >
+                          Nenhuma fatura a vencer encontrada
+                        </td>
+                      </tr>
+                    ) : (
+                      faturasAVencer.map((fatura, index) => {
+                        const diasParaVencer = Math.ceil(
+                          (new Date(fatura.dt_vencimento) - new Date()) /
+                            (1000 * 60 * 60 * 24),
+                        );
+                        return (
+                          <tr
+                            key={index}
+                            className="bg-orange-50 border-b border-orange-100"
+                          >
+                            <td className="px-4 py-3">
+                              {fatura.cd_empresa || 'N/A'}
+                            </td>
+                            <td className="px-4 py-3 font-medium">
+                              {fatura.nr_fat || fatura.nr_fatura || 'N/A'}
+                            </td>
+                            <td className="px-4 py-3">
+                              {formatarData(fatura.dt_emissao)}
+                            </td>
+                            <td className="px-4 py-3">
+                              {formatarData(fatura.dt_vencimento)}
+                            </td>
+                            <td className="px-4 py-3 font-medium text-orange-600">
+                              {formatarMoeda(fatura.vl_fatura)}
+                            </td>
+                            <td className="px-4 py-3">
+                              {fatura.nr_parcela || 'N/A'}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={`text-xs font-medium px-2 py-1 rounded ${
+                                  diasParaVencer <= 7
+                                    ? 'bg-red-100 text-red-800'
+                                    : diasParaVencer <= 30
+                                      ? 'bg-yellow-100 text-yellow-800'
+                                      : 'bg-green-100 text-green-800'
+                                }`}
+                              >
+                                {diasParaVencer}{' '}
+                                {diasParaVencer === 1 ? 'dia' : 'dias'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <div className="mt-4 flex justify-end">

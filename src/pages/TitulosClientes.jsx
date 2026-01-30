@@ -23,6 +23,8 @@ import {
   FileArrowDown,
   Eye,
   CheckCircle,
+  MagnifyingGlass,
+  X,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -34,6 +36,14 @@ const TitulosClientes = () => {
   const [dadosCarregados, setDadosCarregados] = useState(false);
   const [status, setStatus] = useState('todos');
   const [cdCliente, setCdCliente] = useState('');
+
+  // Estados para busca de clientes
+  const [termoBuscaNome, setTermoBuscaNome] = useState('');
+  const [termoBuscaFantasia, setTermoBuscaFantasia] = useState('');
+  const [clientesEncontrados, setClientesEncontrados] = useState([]);
+  const [modalBuscaAberto, setModalBuscaAberto] = useState(false);
+  const [buscandoClientes, setBuscandoClientes] = useState(false);
+  const [clienteSelecionado, setClienteSelecionado] = useState(null);
 
   // Estados para paginação
   const [paginaAtual, setPaginaAtual] = useState(1);
@@ -236,9 +246,73 @@ const TitulosClientes = () => {
   // Total de páginas para paginação
   const totalPages = Math.ceil(dadosProcessados.length / itensPorPagina);
 
+  // Função para buscar clientes por nome ou fantasia
+  const buscarClientes = async () => {
+    const nome = termoBuscaNome.trim();
+    const fantasia = termoBuscaFantasia.trim();
+
+    if (!nome && !fantasia) {
+      alert('Digite o nome ou nome fantasia para buscar!');
+      return;
+    }
+
+    setBuscandoClientes(true);
+    try {
+      // Construir query com filtros
+      let query = '';
+      if (nome && fantasia) {
+        query = `nm_pessoa=${encodeURIComponent(nome)}&nm_fantasia=${encodeURIComponent(fantasia)}`;
+      } else if (nome) {
+        query = `nm_pessoa=${encodeURIComponent(nome)}`;
+      } else if (fantasia) {
+        query = `nm_fantasia=${encodeURIComponent(fantasia)}`;
+      }
+
+      console.log('🔍 Buscando clientes:', { nome, fantasia });
+
+      const response = await fetch(`${BaseURL}buscar-clientes?${query}`);
+
+      if (!response.ok) {
+        throw new Error('Erro ao buscar clientes');
+      }
+
+      const data = await response.json();
+      console.log('✅ Clientes encontrados:', data);
+
+      let clientes = [];
+      if (data.success && data.data && Array.isArray(data.data)) {
+        clientes = data.data;
+      } else if (Array.isArray(data)) {
+        clientes = data;
+      }
+
+      if (clientes.length === 0) {
+        alert('Nenhum cliente encontrado com os critérios informados.');
+      } else {
+        setClientesEncontrados(clientes);
+        setModalBuscaAberto(true);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao buscar clientes:', error);
+      alert('Erro ao buscar clientes. Tente novamente.');
+    } finally {
+      setBuscandoClientes(false);
+    }
+  };
+
+  // Função para selecionar um cliente da lista
+  const selecionarCliente = (cliente) => {
+    setClienteSelecionado(cliente);
+    setCdCliente(cliente.cd_pessoa);
+    setModalBuscaAberto(false);
+    console.log('✅ Cliente selecionado:', cliente);
+  };
+
   const buscarDados = async () => {
     if (!cdCliente || cdCliente.trim() === '') {
-      alert('Digite o código do cliente para consultar!');
+      alert(
+        'Selecione um cliente ou digite o código do cliente para consultar!',
+      );
       return;
     }
 
@@ -1062,6 +1136,69 @@ const TitulosClientes = () => {
             </span>
           </div>
 
+          {/* Busca por Nome/Fantasia */}
+          <div className="mb-3">
+            <p className="text-xs font-semibold text-[#000638] mb-2">
+              Buscar Cliente por Nome
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="relative">
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                  Nome da Pessoa
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={termoBuscaNome}
+                    onChange={(e) => setTermoBuscaNome(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && buscarClientes()}
+                    placeholder="Digite o nome..."
+                    className="border border-[#000638]/30 rounded-lg px-2 py-1.5 pr-8 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                  />
+                  <button
+                    onClick={buscarClientes}
+                    disabled={buscandoClientes}
+                    className="absolute right-2 top-1/3 -translate-y-1/2 text-[#000638] hover:text-[#fe0000] disabled:text-gray-400"
+                    title="Buscar cliente"
+                  >
+                    {buscandoClientes ? (
+                      <Spinner size={14} className="animate-spin" />
+                    ) : (
+                      <MagnifyingGlass size={14} weight="bold" />
+                    )}
+                  </button>
+                </div>
+              </div>
+              <div className="relative">
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                  Nome Fantasia
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={termoBuscaFantasia}
+                    onChange={(e) => setTermoBuscaFantasia(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && buscarClientes()}
+                    placeholder="Digite o nome fantasia..."
+                    className="border border-[#000638]/30 rounded-lg px-2 py-1.5 pr-8 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                  />
+                  <button
+                    onClick={buscarClientes}
+                    disabled={buscandoClientes}
+                    className="absolute right-2 top-1/3 -translate-y-1/2 text-[#000638] hover:text-[#fe0000] disabled:text-gray-400"
+                    title="Buscar cliente"
+                  >
+                    {buscandoClientes ? (
+                      <Spinner size={14} className="animate-spin" />
+                    ) : (
+                      <MagnifyingGlass size={14} weight="bold" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-3">
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
@@ -1071,7 +1208,7 @@ const TitulosClientes = () => {
                 type="number"
                 value={cdCliente}
                 onChange={(e) => setCdCliente(e.target.value)}
-                placeholder="Digite o código do cliente"
+                placeholder="Digite o código ou busque por nome"
                 className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
               />
             </div>
@@ -1090,7 +1227,7 @@ const TitulosClientes = () => {
                 <option value="vencidos">VENCIDOS</option>
               </select>
             </div>
-            <div className="flex items-end">
+            <div className="flex items-center">
               <button
                 type="submit"
                 className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
@@ -1110,6 +1247,35 @@ const TitulosClientes = () => {
               </button>
             </div>
           </div>
+
+          {/* Cliente Selecionado - Rodapé */}
+          {clienteSelecionado && (
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-600">
+                  <span className="font-semibold text-gray-700">Cliente:</span>{' '}
+                  {clienteSelecionado.cd_pessoa} -{' '}
+                  {clienteSelecionado.nm_pessoa}
+                  {clienteSelecionado.nm_fantasia && (
+                    <span className="text-gray-500">
+                      {' '}
+                      ({clienteSelecionado.nm_fantasia})
+                    </span>
+                  )}
+                </span>
+                <button
+                  onClick={() => {
+                    setClienteSelecionado(null);
+                    setCdCliente('');
+                  }}
+                  className="text-gray-400 hover:text-red-600 transition-colors"
+                  title="Limpar seleção"
+                >
+                  <X size={16} weight="bold" />
+                </button>
+              </div>
+            </div>
+          )}
         </form>
       </div>
 
@@ -1191,7 +1357,7 @@ const TitulosClientes = () => {
       <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 max-w-7xl mx-auto w-full">
         <div className="p-3 border-b border-[#000638]/10 flex justify-between items-center">
           <h2 className="text-sm font-bold text-[#000638] font-barlow">
-            Contas a Pagar - Franquias
+            Contas a Pagar
           </h2>
           <div className="flex items-center gap-2">
             <div className="text-xs text-gray-600">
@@ -1420,8 +1586,8 @@ const TitulosClientes = () => {
                             pagina === paginaAtual
                               ? 'bg-[#000638] text-white'
                               : typeof pagina === 'number'
-                              ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
-                              : 'text-gray-400 cursor-default'
+                                ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                : 'text-gray-400 cursor-default'
                           }`}
                         >
                           {pagina}
@@ -1445,6 +1611,86 @@ const TitulosClientes = () => {
           )}
         </div>
       </div>
+
+      {/* Modal de Busca de Clientes */}
+      {modalBuscaAberto && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          style={{ zIndex: 99998 }}
+        >
+          <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <MagnifyingGlass size={24} className="text-blue-600" />
+                Clientes Encontrados
+              </h2>
+              <button
+                onClick={() => setModalBuscaAberto(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={24} weight="bold" />
+              </button>
+            </div>
+
+            <div className="text-sm text-gray-600 mb-4">
+              {clientesEncontrados.length} cliente(s) encontrado(s)
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full border border-gray-200 rounded-lg">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
+                      Código
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
+                      Nome
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
+                      Nome Fantasia
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">
+                      Ação
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {clientesEncontrados.map((cliente, index) => (
+                    <tr key={index} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm text-gray-900 font-medium">
+                        {cliente.cd_pessoa}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {cliente.nm_pessoa}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {cliente.nm_fantasia || '--'}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => selecionarCliente(cliente)}
+                          className="px-4 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          Selecionar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setModalBuscaAberto(false)}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Observações e Boleto */}
       {obsModalAberto && (

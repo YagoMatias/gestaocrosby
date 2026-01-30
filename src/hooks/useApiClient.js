@@ -350,6 +350,19 @@ const useApiClient = () => {
     // Nova rota para inadimplentes (franquias)
     inadimplentesFranquias: (params) =>
       apiCall('/api/financial/inadimplentes-franquias', params),
+    // Nova rota para faturas a vencer (franquias)
+    aVencerFranquias: () => apiCall('/api/financial/a-vencer-franquias'),
+    // Nova rota para faturas a vencer de um cliente específico (franquias)
+    faturasAVencerCliente: (cd_cliente) =>
+      apiCall(`/api/financial/faturas-a-vencer-cliente/${cd_cliente}`),
+    // Nova rota para faturas a vencer (multimarcas)
+    aVencerMultimarcas: (params) =>
+      apiCall('/api/financial/a-vencer-multimarcas', params),
+    // Nova rota para faturas a vencer de um cliente específico (multimarcas)
+    faturasAVencerClienteMultimarcas: (cd_cliente) =>
+      apiCall(
+        `/api/financial/faturas-a-vencer-cliente-multimarcas/${cd_cliente}`,
+      ),
     inadimplentesRevenda: (params) =>
       apiCall('/api/financial/inadimplentes-revenda', params),
     // Telefone de clientes
