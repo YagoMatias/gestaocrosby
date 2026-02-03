@@ -111,6 +111,13 @@ const financeiro = [
     roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
+    name: 'Extrato Bancário',
+    href: '/extrato-bancario',
+    icon: Bank,
+    color: 'text-teal-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
+  {
     name: 'Análise de Crédito',
     href: '/analise-credito',
     icon: ClipboardText,

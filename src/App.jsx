@@ -18,8 +18,8 @@ const CheckInCard = lazy(() => import('./pages/CheckInCard'));
 const MeusCartoes = lazy(() => import('./pages/MeusCartoes'));
 const ContasAPagarEmissao = lazy(() => import('./pages/ContasAPagarEmissao'));
 const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
-const ContasAReceberEmissao = lazy(() =>
-  import('./pages/ContasAReceberEmissao'),
+const ContasAReceberEmissao = lazy(
+  () => import('./pages/ContasAReceberEmissao'),
 );
 const BatidaCarteira = lazy(() => import('./pages/BatidaCarteira'));
 const ContasPagarFranquias = lazy(() => import('./pages/ContasPagarFranquias'));
@@ -72,29 +72,30 @@ const DashboardFranquias = lazy(() => import('./pages/DashboardFranquias'));
 const DashboardRevenda = lazy(() => import('./pages/DashboardRevenda'));
 const CrosbyBot = lazy(() => import('./pages/CrosbyBot'));
 const AnaliseCashback = lazy(() => import('./pages/AnaliseCashback'));
-const InadimplentesMultimarcas = lazy(() =>
-  import('./pages/InadimplentesMultimarcas'),
+const InadimplentesMultimarcas = lazy(
+  () => import('./pages/InadimplentesMultimarcas'),
 );
 const InadimplentesRevenda = lazy(() => import('./pages/InadimplentesRevenda'));
-const InadimplentesFranquias = lazy(() =>
-  import('./pages/InadimplentesFranquias'),
+const InadimplentesFranquias = lazy(
+  () => import('./pages/InadimplentesFranquias'),
 );
 const CMVVarejo = lazy(() => import('./pages/CMVVarejo'));
 const DRE = lazy(() => import('./pages/DRE'));
 const AuditoriaTransacoes = lazy(() => import('./pages/AuditoriaTransacoes'));
-const GerenciadorDashboards = lazy(() =>
-  import('./pages/GerenciadorDashboards'),
+const GerenciadorDashboards = lazy(
+  () => import('./pages/GerenciadorDashboards'),
 );
 const GerenciadorAcessos = lazy(() => import('./pages/GerenciadorAcessos'));
 const GerenciadorAvisos = lazy(() => import('./pages/GerenciadorAvisos'));
 const AnaliseTransacao = lazy(() => import('./pages/AnaliseTransacao'));
 const Widgets = lazy(() => import('./pages/Widgets'));
 const CohortAnalysis = lazy(() => import('./pages/CohortAnalysis'));
-const AuditoriaAntecipacoes = lazy(() =>
-  import('./pages/AuditoriaAntecipacoes'),
+const AuditoriaAntecipacoes = lazy(
+  () => import('./pages/AuditoriaAntecipacoes'),
 );
 const AuditoriaConciliacao = lazy(() => import('./pages/AuditoriaConciliacao'));
 const AuditoriaFaturamento = lazy(() => import('./pages/AuditoriaFaturamento'));
+const ExtratoBancario = lazy(() => import('./pages/ExtratoBancario'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -142,6 +143,7 @@ const AppRoutes = memo(() => {
     { path: '/contas-a-receber', component: ContasAReceber },
     { path: '/contas-a-receber-emissao', component: ContasAReceberEmissao },
     { path: '/batida-carteira', component: BatidaCarteira },
+    { path: '/extrato-bancario', component: ExtratoBancario },
     { path: '/contas-pagar-franquias', component: ContasPagarFranquias },
     { path: '/titulos-clientes', component: TitulosClientes },
     { path: '/solicitacao-credito', component: SolicitacaoCredito },

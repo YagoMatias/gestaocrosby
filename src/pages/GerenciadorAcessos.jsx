@@ -84,6 +84,11 @@ const AVAILABLE_PAGES = [
     name: 'Saldo Bancário TOTVS',
     category: 'Financeiro',
   },
+  {
+    path: '/extrato-bancario',
+    name: 'Extrato Bancário',
+    category: 'Financeiro',
+  },
   { path: '/dre', name: 'DRE', category: 'Financeiro' },
   { path: '/receita-liquida', name: 'Receita Líquida', category: 'Financeiro' },
   {
@@ -857,8 +862,8 @@ const GerenciadorAcessos = () => {
                             allSelected
                               ? 'bg-purple-600 border-purple-600'
                               : someSelected
-                              ? 'bg-purple-300 border-purple-300'
-                              : 'border-gray-300'
+                                ? 'bg-purple-300 border-purple-300'
+                                : 'border-gray-300'
                           }`}
                         >
                           {allSelected && (
