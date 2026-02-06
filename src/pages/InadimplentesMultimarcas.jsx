@@ -759,7 +759,12 @@ Crosby`;
       // Calcular dias de inadimplencia com base em dt_vencimento
       if (!item.dt_vencimento) return false;
       const hoje = new Date();
-      const vencimento = new Date(item.dt_vencimento);
+      hoje.setHours(0, 0, 0, 0);
+      // Parsear data sem timezone para evitar diferença de 1 dia
+      const [datePart] = String(item.dt_vencimento).split('T');
+      const [y, m, d] = datePart.split('-').map((n) => parseInt(n, 10));
+      const vencimento = new Date(y, m - 1, d);
+      vencimento.setHours(0, 0, 0, 0);
       const diferencaMs = hoje - vencimento;
       const diasAtraso = Math.floor(diferencaMs / (1000 * 60 * 60 * 24));
 
@@ -833,9 +838,13 @@ Crosby`;
     const resultado = Object.values(agrupado).map((cliente) => {
       const diasAtrasoMax = (cliente.faturas || []).reduce((max, fatura) => {
         if (!fatura.dt_vencimento) return max;
-        const diff = Math.floor(
-          (new Date() - new Date(fatura.dt_vencimento)) / (1000 * 60 * 60 * 24),
-        );
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        const [datePart] = String(fatura.dt_vencimento).split('T');
+        const [y, m, d] = datePart.split('-').map((n) => parseInt(n, 10));
+        const venc = new Date(y, m - 1, d);
+        venc.setHours(0, 0, 0, 0);
+        const diff = Math.floor((hoje - venc) / (1000 * 60 * 60 * 24));
         return Math.max(max, diff);
       }, 0);
 
@@ -1227,9 +1236,13 @@ Crosby`;
     return sorted.map((c) => {
       const diasMax = (c.faturas || []).reduce((max, f) => {
         if (!f.dt_vencimento) return max;
-        const diff = Math.floor(
-          (new Date() - new Date(f.dt_vencimento)) / (1000 * 60 * 60 * 24),
-        );
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        const [datePart] = String(f.dt_vencimento).split('T');
+        const [y, m, d] = datePart.split('-').map((n) => parseInt(n, 10));
+        const venc = new Date(y, m - 1, d);
+        venc.setHours(0, 0, 0, 0);
+        const diff = Math.floor((hoje - venc) / (1000 * 60 * 60 * 24));
         return Math.max(max, diff);
       }, 0);
       return { ...c, diasAtrasoMax: diasMax };
@@ -3004,9 +3017,18 @@ Crosby`;
                       </tr>
                     ) : (
                       faturasAVencer.map((fatura, index) => {
+                        const hoje = new Date();
+                        hoje.setHours(0, 0, 0, 0);
+                        const [datePart] = String(fatura.dt_vencimento).split(
+                          'T',
+                        );
+                        const [y, m, d] = datePart
+                          .split('-')
+                          .map((n) => parseInt(n, 10));
+                        const venc = new Date(y, m - 1, d);
+                        venc.setHours(0, 0, 0, 0);
                         const diasParaVencer = Math.ceil(
-                          (new Date(fatura.dt_vencimento) - new Date()) /
-                            (1000 * 60 * 60 * 24),
+                          (venc - hoje) / (1000 * 60 * 60 * 24),
                         );
                         return (
                           <tr
