@@ -536,7 +536,7 @@ const BatidaCarteira = () => {
 
   // Comparar valores com tolerância (para Santander que tem diferença de ~R$ 1,00)
   // Retorna true se a diferença entre os valores for menor ou igual à tolerância
-  const valoresProximos = (valor1, valor2, tolerancia = 1.50) => {
+  const valoresProximos = (valor1, valor2, tolerancia = 1.5) => {
     const v1 = parseFloat(valor1) || 0;
     const v2 = parseFloat(valor2) || 0;
     return Math.abs(v1 - v2) <= tolerancia;
@@ -544,7 +544,11 @@ const BatidaCarteira = () => {
 
   // Criar chave de comparação para SANTANDER (por valor + vencimento + nome)
   // O nome é apenas para referência, a comparação real usa "contém"
-  const criarChaveComparacaoSantander = (valor, dataVencimento, nomeCliente) => {
+  const criarChaveComparacaoSantander = (
+    valor,
+    dataVencimento,
+    nomeCliente,
+  ) => {
     const nomeNorm = normalizarNomeCliente(nomeCliente);
     return `SANT|${normalizarValor(valor)}|${normalizarData(dataVencimento)}|${nomeNorm}`;
   };
@@ -660,12 +664,37 @@ const BatidaCarteira = () => {
           const valorArquivo = parseFloat(itemArq.vl_original) || 0;
           const valorMatch = valoresProximos(valorArquivo, valorComTaxa);
           // Verificar data de vencimento
-          const dataMatch = normalizarData(itemArq.dt_vencimento) === normalizarData(item.dt_vencimento);
+          const dataMatch =
+            normalizarData(itemArq.dt_vencimento) ===
+            normalizarData(item.dt_vencimento);
           // Verificar se nome do sistema contém nome do arquivo (que é cortado)
-          const nomeMatch = nomeClienteContem(item.nm_cliente, itemArq.nm_cliente);
+          const nomeMatch = nomeClienteContem(
+            item.nm_cliente,
+            itemArq.nm_cliente,
+          );
           return valorMatch && dataMatch && nomeMatch;
         });
         if (bateNoSantander) return true;
+      }
+
+      // Para SICREDI: verificar por nome + valor (com tolerância) + vencimento
+      if (bancoImportado === 'SICREDI') {
+        const bateNoSicredi = dadosImportados.some((itemArq) => {
+          // Verificar valor com tolerância (diferença de ~R$ 1,00 entre sistema e arquivo)
+          const valorArquivo = parseFloat(itemArq.vl_original) || 0;
+          const valorMatch = valoresProximos(valorArquivo, valorComTaxa);
+          // Verificar data de vencimento
+          const dataMatch =
+            normalizarData(itemArq.dt_vencimento) ===
+            normalizarData(item.dt_vencimento);
+          // Verificar se nome do sistema contém nome do arquivo
+          const nomeMatch = nomeClienteContem(
+            item.nm_cliente,
+            itemArq.nm_cliente,
+          );
+          return valorMatch && dataMatch && nomeMatch;
+        });
+        if (bateNoSicredi) return true;
       }
 
       // Verificar exceção (EFIGENIA)
@@ -706,12 +735,38 @@ const BatidaCarteira = () => {
           const valorArquivo = parseFloat(item.vl_original) || 0;
           const valorMatch = valoresProximos(valorSistema, valorArquivo);
           // Verificar data de vencimento
-          const dataMatch = normalizarData(itemSist.dt_vencimento) === normalizarData(item.dt_vencimento);
+          const dataMatch =
+            normalizarData(itemSist.dt_vencimento) ===
+            normalizarData(item.dt_vencimento);
           // Verificar se nome do sistema contém nome do arquivo (que é cortado)
-          const nomeMatch = nomeClienteContem(itemSist.nm_cliente, item.nm_cliente);
+          const nomeMatch = nomeClienteContem(
+            itemSist.nm_cliente,
+            item.nm_cliente,
+          );
           return valorMatch && dataMatch && nomeMatch;
         });
         if (bateNoSantander) return true;
+      }
+
+      // Para SICREDI: verificar por nome + valor (com tolerância) + vencimento
+      if (bancoImportado === 'SICREDI') {
+        const bateNoSicredi = dados.some((itemSist) => {
+          // Verificar valor com tolerância (diferença de ~R$ 1,00 entre sistema e arquivo)
+          const valorSistema = parseFloat(itemSist.vl_fatura || 0);
+          const valorArquivo = parseFloat(item.vl_original) || 0;
+          const valorMatch = valoresProximos(valorSistema, valorArquivo);
+          // Verificar data de vencimento
+          const dataMatch =
+            normalizarData(itemSist.dt_vencimento) ===
+            normalizarData(item.dt_vencimento);
+          // Verificar se nome do sistema contém nome do arquivo
+          const nomeMatch = nomeClienteContem(
+            itemSist.nm_cliente,
+            item.nm_cliente,
+          );
+          return valorMatch && dataMatch && nomeMatch;
+        });
+        if (bateNoSicredi) return true;
       }
 
       // Verificar exceção (EFIGENIA) - se o item está na lista de exceções
@@ -1098,8 +1153,31 @@ const BatidaCarteira = () => {
         resultado = dadosImportados.find((itemArq) => {
           const valorArquivo = parseFloat(itemArq.vl_original) || 0;
           const valorMatch = valoresProximos(valorSistema, valorArquivo);
-          const dataMatch = normalizarData(itemArq.dt_vencimento) === normalizarData(itemSistema.dt_vencimento);
-          const nomeMatch = nomeClienteContem(itemSistema.nm_cliente, itemArq.nm_cliente);
+          const dataMatch =
+            normalizarData(itemArq.dt_vencimento) ===
+            normalizarData(itemSistema.dt_vencimento);
+          const nomeMatch = nomeClienteContem(
+            itemSistema.nm_cliente,
+            itemArq.nm_cliente,
+          );
+          return valorMatch && dataMatch && nomeMatch;
+        });
+        if (resultado) return resultado;
+      }
+
+      // Para SICREDI: buscar por nome + valor (com tolerância) + vencimento
+      if (bancoImportado === 'SICREDI') {
+        const valorSistema = parseFloat(itemSistema.vl_fatura || 0);
+        resultado = dadosImportados.find((itemArq) => {
+          const valorArquivo = parseFloat(itemArq.vl_original) || 0;
+          const valorMatch = valoresProximos(valorSistema, valorArquivo);
+          const dataMatch =
+            normalizarData(itemArq.dt_vencimento) ===
+            normalizarData(itemSistema.dt_vencimento);
+          const nomeMatch = nomeClienteContem(
+            itemSistema.nm_cliente,
+            itemArq.nm_cliente,
+          );
           return valorMatch && dataMatch && nomeMatch;
         });
         if (resultado) return resultado;

@@ -752,6 +752,10 @@ Crosby`;
       const matchEstado =
         filtroEstados.length === 0 || filtroEstados.includes(sigla);
 
+      // Filtrar apenas tp_documento = 1 (igual ContasPagarFranquias)
+      const tipoDocumento = parseInt(item.tp_documento) || 0;
+      if (tipoDocumento !== 1) return false;
+
       // Calcular dias de inadimplencia com base em dt_vencimento
       if (!item.dt_vencimento) return false;
       const hoje = new Date();
