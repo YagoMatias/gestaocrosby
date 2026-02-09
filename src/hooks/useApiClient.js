@@ -453,6 +453,24 @@ const useApiClient = () => {
       apiCall('/api/financial/auditoria-faturamento', params),
 
     /**
+     * Devoluções por transação (para MTM, REVENDA, FRANQUIAS)
+     * Usa tp_situacao = 4 e cd_operacao específicos
+     * @param {string} params.dt_inicio - Data inicial
+     * @param {string} params.dt_fim - Data final
+     * @returns {Promise<Object>} Devoluções calculadas por transação
+     */
+    devolucoesTransacao: (params) =>
+      apiCall('/api/financial/devolucoes-transacao', params),
+
+    /**
+     * Impostos por transações (separados por canal) - Rota POST simples
+     * @param {Object} body - { varejo: [nr_transacao], multimarcas: [...], franquias: [...], revenda: [...] }
+     * @returns {Promise<Object>} { varejo: {icms, pis, cofins, total}, multimarcas: {...}, ... }
+     */
+    impostosPorTransacoes: (body) =>
+      apiMutate('/api/financial/impostos-por-transacoes', 'POST', body),
+
+    /**
      * Classificação de clientes (MULTIMARCAS/REVENDA/OUTROS)
      */
     classificacaoClientes: (params) =>
@@ -468,9 +486,10 @@ const useApiClient = () => {
 
     /**
      * Franquias de clientes (nm_fantasia like '%F%CROSBY%')
+     * Usa POST para suportar muitos clientes (evita erro 431 de URL muito longa)
      */
-    franquiasClientes: (params) =>
-      apiCall('/api/financial/franquias-clientes', params),
+    franquiasClientes: (body) =>
+      apiMutate('/api/financial/franquias-clientes', 'POST', body),
   };
 
   const sales = {

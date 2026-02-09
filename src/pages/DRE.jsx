@@ -43,24 +43,28 @@ const DRE = () => {
     totalDevolucoes: 0,
     totalCMV: 0,
     totalLiquido: 0,
+    totalDescontos: 0,
   });
   const [totaisMultimarcas, setTotaisMultimarcas] = useState({
     totalBruto: 0,
     totalDevolucoes: 0,
     totalCMV: 0,
     totalLiquido: 0,
+    totalDescontos: 0,
   });
   const [totaisFranquias, setTotaisFranquias] = useState({
     totalBruto: 0,
     totalDevolucoes: 0,
     totalCMV: 0,
     totalLiquido: 0,
+    totalDescontos: 0,
   });
   const [totaisRevenda, setTotaisRevenda] = useState({
     totalBruto: 0,
     totalDevolucoes: 0,
     totalCMV: 0,
     totalLiquido: 0,
+    totalDescontos: 0,
   });
   // Despesas Operacionais (Contas a Pagar - Emissão)
   const [planoDespesasNodes, setPlanoDespesasNodes] = useState([]);
@@ -241,28 +245,28 @@ const DRE = () => {
       totalDevolucoes: 0,
       totalCMV: 0,
       totalLiquido: 0,
-      descontos: 0,
+      totalDescontos: 0,
     },
     totaisMultimarcas: {
       totalBruto: 0,
       totalDevolucoes: 0,
       totalCMV: 0,
       totalLiquido: 0,
-      descontos: 0,
+      totalDescontos: 0,
     },
     totaisFranquias: {
       totalBruto: 0,
       totalDevolucoes: 0,
       totalCMV: 0,
       totalLiquido: 0,
-      descontos: 0,
+      totalDescontos: 0,
     },
     totaisRevenda: {
       totalBruto: 0,
       totalDevolucoes: 0,
       totalCMV: 0,
       totalLiquido: 0,
-      descontos: 0,
+      totalDescontos: 0,
     },
     impostosVarejo: { icms: 0, pis: 0, cofins: 0 },
     impostosMultimarcas: { icms: 0, pis: 0, cofins: 0 },
@@ -557,13 +561,26 @@ const DRE = () => {
       totalPeriodos > 1 ? `[${periodoIndex + 1}/${totalPeriodos}] ` : '';
 
     try {
-      // Parâmetros padronizados para as novas rotas materializadas
-      const paramsFaturamento = {
-        dataInicio: periodo.dt_inicio,
-        dataFim: periodo.dt_fim,
-      };
+      // ============================================
+      // NOVA LÓGICA: Usar Auditoria de Faturamento
+      // (igual à página AuditoriaFaturamento.jsx)
+      // ============================================
 
-      // Parâmetros para as rotas de CMV
+      // Lista de empresas para buscar faturas
+      const empresasFaturamento = [
+        2, 5, 55, 65, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 100, 200, 108,
+        500, 550, 650, 890, 891, 910, 920, 930, 940, 950, 960, 970, 990, 6156,
+        6157, 6114, 6115,
+      ];
+
+      // Códigos de operação para VAREJO
+      const codigosVarejo = [
+        1, 2, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 8750, 9017,
+        9400, 9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405,
+        1205, 1101, 9061,
+      ];
+
+      // Parâmetros para as rotas de CMV (mantidos para compatibilidade)
       const empresasFixas = [
         91, 2, 5, 6, 7, 11, 11, 12, 13, 14, 15, 16, 31, 55, 65, 75, 85, 90, 91,
         92, 93, 94, 95, 96, 97, 99,
@@ -572,6 +589,366 @@ const DRE = () => {
         2, 5, 11, 12, 13, 14, 15, 16, 55, 65, 90, 91, 92, 93, 94, 95, 96, 97,
         200, 500, 550, 650, 890, 910, 920, 930, 940, 950, 960, 970,
       ];
+
+      // ============================================
+      // BUSCAR FATURAS (Auditoria de Faturamento)
+      // ============================================
+      setLoadingStatus(`${statusPrefix}Buscando faturas...`);
+
+      const paramsFaturas = {
+        cd_empresa: empresasFaturamento.join(','),
+        dt_inicio: periodo.dt_inicio,
+        dt_fim: periodo.dt_fim,
+      };
+
+      const responseFaturas =
+        await api.financial.auditoriaFaturamento(paramsFaturas);
+
+      let dadosFaturas = [];
+      if (responseFaturas?.data && Array.isArray(responseFaturas.data)) {
+        dadosFaturas = responseFaturas.data;
+      } else if (Array.isArray(responseFaturas)) {
+        dadosFaturas = responseFaturas;
+      }
+
+      console.log(`📊 Total de faturas encontradas: ${dadosFaturas.length}`);
+
+      // ============================================
+      // BUSCAR CLASSIFICAÇÕES DE CLIENTES
+      // ============================================
+      setLoadingStatus(`${statusPrefix}Buscando classificações...`);
+
+      let classificacoesFaturas = {};
+      let classificacoesClientes = {};
+      let franquiasClientes = {};
+
+      if (dadosFaturas.length > 0) {
+        // Preparar faturas para a rota de classificação
+        const faturasParaClassificar = dadosFaturas.map((item) => ({
+          cd_cliente: item.cd_cliente,
+          cd_operacao: item.cd_operacao,
+          cd_empresa: item.cd_empresa,
+        }));
+
+        try {
+          const responseClassificacao =
+            await api.financial.classificacaoFaturas({
+              faturas: faturasParaClassificar,
+            });
+
+          if (responseClassificacao?.data) {
+            Object.entries(responseClassificacao.data).forEach(
+              ([chave, valor]) => {
+                classificacoesFaturas[chave] = valor.tipo;
+                const clienteAtual = classificacoesClientes[valor.cd_cliente];
+                if (
+                  !clienteAtual ||
+                  valor.tipo === 'MULTIMARCAS' ||
+                  (valor.tipo === 'REVENDA' && clienteAtual !== 'MULTIMARCAS')
+                ) {
+                  classificacoesClientes[valor.cd_cliente] = valor.tipo;
+                }
+              },
+            );
+          }
+        } catch (err) {
+          console.warn('⚠️ Erro ao buscar classificações:', err);
+        }
+
+        // Buscar franquias
+        try {
+          const clientesUnicos = [
+            ...new Set(dadosFaturas.map((f) => f.cd_cliente)),
+          ];
+          const responseFranquias = await api.financial.franquiasClientes({
+            cd_clientes: clientesUnicos, // Array de clientes (POST suporta muitos clientes)
+          });
+
+          // A resposta é um objeto { cd_cliente: true/false }
+          // Salvar diretamente como na AuditoriaFaturamento.jsx
+          if (
+            responseFranquias?.data &&
+            typeof responseFranquias.data === 'object'
+          ) {
+            franquiasClientes = responseFranquias.data;
+          }
+
+          // Contar quantos são franquias
+          const qtdFranquias = Object.values(franquiasClientes).filter(
+            (v) => v === true,
+          ).length;
+          console.log(
+            `📊 Franquias identificadas: ${qtdFranquias} de ${clientesUnicos.length} clientes`,
+          );
+        } catch (err) {
+          console.warn('⚠️ Erro ao buscar franquias:', err);
+        }
+      }
+
+      console.log(
+        `📊 Classificações carregadas: ${Object.keys(classificacoesFaturas).length} faturas`,
+      );
+      console.log(
+        `📊 Franquias carregadas: ${Object.keys(franquiasClientes).length} clientes`,
+      );
+
+      // ============================================
+      // CLASSIFICAR FATURAS POR CANAL
+      // ============================================
+      setLoadingStatus(`${statusPrefix}Classificando por canal...`);
+
+      // Função auxiliar para classificar uma fatura
+      const classificarFatura = (row) => {
+        const cdOperacao = Number(row.cd_operacao);
+        const cdCliente = String(row.cd_cliente); // Converter para string para comparação
+        const chaveFatura = `${row.cd_cliente}-${row.cd_operacao}-${row.cd_empresa}`;
+        const tipoFatura = classificacoesFaturas[chaveFatura];
+
+        // Verificar se é franquia (prioridade máxima)
+        // Verificar tanto como string quanto como número
+        if (
+          franquiasClientes[cdCliente] === true ||
+          franquiasClientes[row.cd_cliente] === true
+        ) {
+          return 'FRANQUIAS';
+        }
+
+        // Verificar se é VAREJO (por código de operação)
+        if (codigosVarejo.includes(cdOperacao)) {
+          return 'VAREJO';
+        }
+
+        // Verificar classificação por fatura/cliente
+        if (
+          tipoFatura === 'MULTIMARCAS' ||
+          classificacoesClientes[cdCliente] === 'MULTIMARCAS' ||
+          classificacoesClientes[row.cd_cliente] === 'MULTIMARCAS'
+        ) {
+          return 'MULTIMARCAS';
+        }
+
+        if (
+          tipoFatura === 'REVENDA' ||
+          classificacoesClientes[cdCliente] === 'REVENDA' ||
+          classificacoesClientes[row.cd_cliente] === 'REVENDA'
+        ) {
+          return 'REVENDA';
+        }
+
+        // Default: OUTROS (será ignorado nos cálculos principais)
+        return 'OUTROS';
+      };
+
+      // Classificar todas as faturas e calcular totais
+      const faturasVarejo = [];
+      const faturasMultimarcas = [];
+      const faturasFranquias = [];
+      const faturasRevenda = [];
+      const faturasOutros = [];
+
+      dadosFaturas.forEach((fatura) => {
+        const canal = classificarFatura(fatura);
+        switch (canal) {
+          case 'VAREJO':
+            faturasVarejo.push(fatura);
+            break;
+          case 'MULTIMARCAS':
+            faturasMultimarcas.push(fatura);
+            break;
+          case 'FRANQUIAS':
+            faturasFranquias.push(fatura);
+            break;
+          case 'REVENDA':
+            faturasRevenda.push(fatura);
+            break;
+          default:
+            faturasOutros.push(fatura);
+        }
+      });
+
+      console.log(
+        `📊 Faturas por canal: VAREJO=${faturasVarejo.length}, MTM=${faturasMultimarcas.length}, FRANQ=${faturasFranquias.length}, REV=${faturasRevenda.length}, OUTROS=${faturasOutros.length}`,
+      );
+
+      // ============================================
+      // CALCULAR TOTAIS POR CANAL
+      // Usando valores das TRANSAÇÕES (não das faturas)
+      // DEVOLUÇÕES:
+      //   - VAREJO: tp_documento = 20 (CREDEV por fatura)
+      //   - MTM/REVENDA/FRANQUIAS: via API devolucoesTransacao
+      // ============================================
+
+      // Função para calcular totais do canal
+      // calcularDevolucoesFatura = true apenas para VAREJO
+      const calcularTotaisCanal = (
+        faturas,
+        calcularDevolucoesFatura = false,
+      ) => {
+        // Agrupar por nr_transacao para evitar duplicação
+        // (múltiplas faturas podem apontar para a mesma transação)
+        const transacoesUnicas = new Map();
+        let totalDevolucoesLiquido = 0;
+        let countDevolucoes = 0;
+
+        faturas.forEach((fat) => {
+          const nrTransacao = fat.nr_transacao;
+          const tpDocumento = Number(fat.tp_documento);
+
+          // Devoluções por fatura (tp_documento = 20) - APENAS VAREJO
+          if (calcularDevolucoesFatura && tpDocumento === 20) {
+            const valorDevolucao = Math.abs(parseFloat(fat.vl_fatura) || 0);
+            totalDevolucoesLiquido += valorDevolucao;
+            countDevolucoes++;
+          }
+
+          // Para transações únicas, pegar os valores brutos e descontos
+          if (nrTransacao && !transacoesUnicas.has(nrTransacao)) {
+            transacoesUnicas.set(nrTransacao, {
+              vl_bruto: parseFloat(fat.vl_bruto_transacao) || 0,
+              vl_desconto: parseFloat(fat.vl_desconto_transacao) || 0,
+              vl_liquido: parseFloat(fat.vl_transacao) || 0,
+            });
+          }
+        });
+
+        // Log de debug para devoluções
+        if (countDevolucoes > 0) {
+          console.log(
+            `🔄 Devoluções por fatura encontradas: ${countDevolucoes} faturas, total: ${totalDevolucoesLiquido}`,
+          );
+        }
+
+        // Somar valores das transações únicas
+        let totalBruto = 0;
+        let totalDescontos = 0;
+        let totalLiquido = 0;
+
+        transacoesUnicas.forEach((trans) => {
+          totalBruto += trans.vl_bruto;
+          totalDescontos += trans.vl_desconto;
+          totalLiquido += trans.vl_liquido;
+        });
+
+        return {
+          totalBruto, // Receita Bruta (antes de descontos)
+          totalDescontos, // Descontos concedidos
+          totalLiquido, // Valor líquido da transação
+          totalDevolucoes: totalDevolucoesLiquido, // Devoluções (CREDEV) - apenas para VAREJO
+          transacoesCount: transacoesUnicas.size,
+        };
+      };
+
+      // VAREJO: calcular devoluções por fatura (tp_documento = 20)
+      let totaisVarejo = calcularTotaisCanal(faturasVarejo, true);
+      // MTM, FRANQUIAS, REVENDA: NÃO calcular devoluções por fatura aqui
+      let totaisMultimarcas = calcularTotaisCanal(faturasMultimarcas, false);
+      let totaisFranquias = calcularTotaisCanal(faturasFranquias, false);
+      let totaisRevenda = calcularTotaisCanal(faturasRevenda, false);
+
+      // ============================================
+      // BUSCAR DEVOLUÇÕES POR TRANSAÇÃO (MTM, REVENDA, FRANQUIAS)
+      // Usa tp_situacao = 4 e cd_operacao específicos
+      // ============================================
+      setLoadingStatus(`${statusPrefix}Buscando devoluções por transação...`);
+
+      try {
+        const devolucoesTransacaoResponse =
+          await api.financial.devolucoesTransacao({
+            dt_inicio: periodo.dt_inicio,
+            dt_fim: periodo.dt_fim,
+          });
+
+        if (
+          devolucoesTransacaoResponse?.success &&
+          devolucoesTransacaoResponse?.data?.devolucoes
+        ) {
+          const devolucoesArr = devolucoesTransacaoResponse.data.devolucoes;
+
+          console.log(
+            `📦 Devoluções por transação: ${devolucoesArr.length} registros encontrados`,
+          );
+
+          // Classificar devoluções por canal usando franquiasClientes e classificacoesClientes
+          let devMtm = 0;
+          let devFranquias = 0;
+          let devRevenda = 0;
+
+          devolucoesArr.forEach((dev) => {
+            const cdCliente = String(dev.cd_cliente);
+            const valor = Math.abs(parseFloat(dev.vl_transacao) || 0);
+
+            // Verificar se é franquia
+            if (
+              franquiasClientes[cdCliente] === true ||
+              franquiasClientes[dev.cd_cliente] === true
+            ) {
+              devFranquias += valor;
+            }
+            // Verificar se é MULTIMARCAS
+            else if (
+              classificacoesClientes[cdCliente] === 'MULTIMARCAS' ||
+              classificacoesClientes[dev.cd_cliente] === 'MULTIMARCAS'
+            ) {
+              devMtm += valor;
+            }
+            // Verificar se é REVENDA
+            else if (
+              classificacoesClientes[cdCliente] === 'REVENDA' ||
+              classificacoesClientes[dev.cd_cliente] === 'REVENDA'
+            ) {
+              devRevenda += valor;
+            }
+            // Default: considerar como REVENDA (operações B2B)
+            else {
+              devRevenda += valor;
+            }
+          });
+
+          // Adicionar devoluções aos totais
+          totaisMultimarcas.totalDevolucoes = devMtm;
+          totaisFranquias.totalDevolucoes = devFranquias;
+          totaisRevenda.totalDevolucoes = devRevenda;
+
+          console.log(
+            `📊 Devoluções classificadas: MTM=${devMtm}, FRANQ=${devFranquias}, REV=${devRevenda}`,
+          );
+        }
+      } catch (error) {
+        console.warn('⚠️ Erro ao buscar devoluções por transação:', error);
+        // Continuar com devoluções zeradas para esses canais
+      }
+
+      console.log(`📊 Totais calculados (das transações):`, {
+        varejo: {
+          bruto: totaisVarejo.totalBruto,
+          desconto: totaisVarejo.totalDescontos,
+          devolucoes: totaisVarejo.totalDevolucoes,
+          trans: totaisVarejo.transacoesCount,
+        },
+        multimarcas: {
+          bruto: totaisMultimarcas.totalBruto,
+          desconto: totaisMultimarcas.totalDescontos,
+          devolucoes: totaisMultimarcas.totalDevolucoes,
+          trans: totaisMultimarcas.transacoesCount,
+        },
+        franquias: {
+          bruto: totaisFranquias.totalBruto,
+          desconto: totaisFranquias.totalDescontos,
+          devolucoes: totaisFranquias.totalDevolucoes,
+          trans: totaisFranquias.transacoesCount,
+        },
+        revenda: {
+          bruto: totaisRevenda.totalBruto,
+          desconto: totaisRevenda.totalDescontos,
+          devolucoes: totaisRevenda.totalDevolucoes,
+          trans: totaisRevenda.transacoesCount,
+        },
+      });
+
+      // ============================================
+      // BUSCAR CMV (mantendo rotas existentes)
+      // ============================================
+      setLoadingStatus(`${statusPrefix}Buscando CMV...`);
 
       const paramsCMVVarejo = {
         dataInicio: periodo.dt_inicio,
@@ -597,29 +974,6 @@ const DRE = () => {
         cd_grupoempresa: empresasFixas,
       };
 
-      // Buscar dados de FATURAMENTO
-      setLoadingStatus(`${statusPrefix}Buscando faturamento Varejo...`);
-      const faturamentoVarejo = await api.sales.faturamentoVarejo(
-        paramsFaturamento,
-      );
-
-      setLoadingStatus(`${statusPrefix}Buscando faturamento Multimarcas...`);
-      const faturamentoMultimarcas = await api.sales.faturamentoMtm(
-        paramsFaturamento,
-      );
-
-      setLoadingStatus(`${statusPrefix}Buscando faturamento Franquias...`);
-      const faturamentoFranquias = await api.sales.faturamentoFranquias(
-        paramsFaturamento,
-      );
-
-      setLoadingStatus(`${statusPrefix}Buscando faturamento Revenda...`);
-      const faturamentoRevenda = await api.sales.faturamentoRevenda(
-        paramsFaturamento,
-      );
-
-      // Buscar dados de CMV
-      setLoadingStatus(`${statusPrefix}Buscando CMV...`);
       const [cmvVarejo, cmvMultimarcas, cmvFranquias, cmvRevenda] =
         await Promise.all([
           api.sales.cmvVarejo(paramsCMVVarejo),
@@ -629,46 +983,6 @@ const DRE = () => {
         ]);
 
       setLoadingStatus(`${statusPrefix}Processando dados...`);
-
-      // Calcular dados de faturamento usando views materializadas
-      const calcularDadosFaturamento = (responseFaturamento) => {
-        if (!responseFaturamento?.success || !responseFaturamento?.data)
-          return {
-            receitaBruta: 0,
-            devolucoesBrutas: 0,
-            receitaLiquida: 0,
-            devolucoesLiquidas: 0,
-            descontos: 0,
-          };
-
-        const data = Array.isArray(responseFaturamento.data)
-          ? responseFaturamento.data
-          : [];
-
-        let receitaBruta = 0;
-        let devolucoesBrutas = 0;
-        let receitaLiquida = 0;
-        let devolucoesLiquidas = 0;
-
-        for (const row of data) {
-          receitaBruta += parseFloat(row?.valor_sem_desconto_saida || 0);
-          devolucoesBrutas += parseFloat(row?.valor_sem_desconto_entrada || 0);
-          receitaLiquida += parseFloat(row?.valor_com_desconto || 0);
-          devolucoesLiquidas += parseFloat(
-            row?.valor_com_desconto_entrada || 0,
-          );
-        }
-
-        const descontos = receitaBruta - receitaLiquida;
-
-        return {
-          receitaBruta,
-          devolucoesBrutas,
-          receitaLiquida,
-          devolucoesLiquidas,
-          descontos,
-        };
-      };
 
       // Calcular CMV
       const calcularCMV = (responseCMV) => {
@@ -689,42 +1003,36 @@ const DRE = () => {
         return { cmv: cmvTotal, produtosSaida, produtosEntrada };
       };
 
-      // Processar dados
-      const dadosFaturamentoVarejo =
-        calcularDadosFaturamento(faturamentoVarejo);
-      const dadosFaturamentoMultimarcas = calcularDadosFaturamento(
-        faturamentoMultimarcas,
-      );
-      const dadosFaturamentoFranquias =
-        calcularDadosFaturamento(faturamentoFranquias);
-      const dadosFaturamentoRevenda =
-        calcularDadosFaturamento(faturamentoRevenda);
-
+      // Processar CMV
       const dadosCMVVarejo = calcularCMV(cmvVarejo);
       const dadosCMVMultimarcas = calcularCMV(cmvMultimarcas);
       const dadosCMVFranquias = calcularCMV(cmvFranquias);
       const dadosCMVRevenda = calcularCMV(cmvRevenda);
 
-      // Calcular totais
-      const totalReceitaBruta =
-        dadosFaturamentoVarejo.receitaBruta +
-        dadosFaturamentoMultimarcas.receitaBruta +
-        dadosFaturamentoFranquias.receitaBruta +
-        dadosFaturamentoRevenda.receitaBruta;
+      // Adicionar CMV aos totais por canal
+      totaisVarejo.totalCMV = dadosCMVVarejo.cmv;
+      totaisMultimarcas.totalCMV = dadosCMVMultimarcas.cmv;
+      totaisFranquias.totalCMV = dadosCMVFranquias.cmv;
+      totaisRevenda.totalCMV = dadosCMVRevenda.cmv;
 
-      const totalVendasBrutas = totalReceitaBruta;
+      // Calcular totais gerais
+      const totalVendasBrutas =
+        totaisVarejo.totalBruto +
+        totaisMultimarcas.totalBruto +
+        totaisFranquias.totalBruto +
+        totaisRevenda.totalBruto;
 
       const totalDevolucoesLiquidas =
-        dadosFaturamentoVarejo.devolucoesLiquidas +
-        dadosFaturamentoMultimarcas.devolucoesLiquidas +
-        dadosFaturamentoFranquias.devolucoesLiquidas +
-        dadosFaturamentoRevenda.devolucoesLiquidas;
+        totaisVarejo.totalDevolucoes +
+        totaisMultimarcas.totalDevolucoes +
+        totaisFranquias.totalDevolucoes +
+        totaisRevenda.totalDevolucoes;
 
       const totalDescontos =
-        dadosFaturamentoVarejo.descontos +
-        dadosFaturamentoMultimarcas.descontos +
-        dadosFaturamentoFranquias.descontos +
-        dadosFaturamentoRevenda.descontos;
+        totaisVarejo.totalDescontos +
+        totaisMultimarcas.totalDescontos +
+        totaisFranquias.totalDescontos +
+        totaisRevenda.totalDescontos;
 
       const totalCMV =
         dadosCMVVarejo.cmv +
@@ -732,147 +1040,76 @@ const DRE = () => {
         dadosCMVFranquias.cmv +
         dadosCMVRevenda.cmv;
 
-      // Criar estrutura de totais por canal
-      const totaisVarejo = {
-        totalBruto: dadosFaturamentoVarejo.receitaBruta,
-        totalDevolucoes: dadosFaturamentoVarejo.devolucoesLiquidas,
-        totalLiquido: dadosFaturamentoVarejo.receitaLiquida,
-        totalCMV: dadosCMVVarejo.cmv,
-        descontos: dadosFaturamentoVarejo.descontos,
-      };
+      console.log(
+        `📊 Totais gerais: VendasBrutas=${totalVendasBrutas}, Descontos=${totalDescontos}, Devoluções=${totalDevolucoesLiquidas}, CMV=${totalCMV}`,
+      );
 
-      const totaisMultimarcas = {
-        totalBruto: dadosFaturamentoMultimarcas.receitaBruta,
-        totalDevolucoes: dadosFaturamentoMultimarcas.devolucoesLiquidas,
-        totalLiquido: dadosFaturamentoMultimarcas.receitaLiquida,
-        totalCMV: dadosCMVMultimarcas.cmv,
-        descontos: dadosFaturamentoMultimarcas.descontos,
-      };
-
-      const totaisFranquias = {
-        totalBruto: dadosFaturamentoFranquias.receitaBruta,
-        totalDevolucoes: dadosFaturamentoFranquias.devolucoesLiquidas,
-        totalLiquido: dadosFaturamentoFranquias.receitaLiquida,
-        totalCMV: dadosCMVFranquias.cmv,
-        descontos: dadosFaturamentoFranquias.descontos,
-      };
-
-      const totaisRevenda = {
-        totalBruto: dadosFaturamentoRevenda.receitaBruta,
-        totalDevolucoes: dadosFaturamentoRevenda.devolucoesLiquidas,
-        totalLiquido: dadosFaturamentoRevenda.receitaLiquida,
-        totalCMV: dadosCMVRevenda.cmv,
-        descontos: dadosFaturamentoRevenda.descontos,
-      };
-
-      // Buscar impostos usando a nova rota /vlimposto
+      // ============================================
+      // BUSCAR IMPOSTOS (Rota POST simples)
+      // ============================================
       setLoadingStatus(`${statusPrefix}Buscando impostos...`);
       let impostosData = null;
       try {
-        // Coletar todas as nr_transacao de cada canal (acessar .data do response)
-        const transacoesVarejo = (faturamentoVarejo?.data || [])
-          .map((item) => item.nr_transacao)
-          .filter(Boolean);
+        // Coletar transações únicas de cada canal
+        const transacoesVarejo = [
+          ...new Set(
+            faturasVarejo
+              .map((item) => item.nr_transacao)
+              .filter((t) => t !== null && t !== undefined && t !== ''),
+          ),
+        ];
 
-        const transacoesMultimarcas = (faturamentoMultimarcas?.data || [])
-          .map((item) => item.nr_transacao)
-          .filter(Boolean);
+        const transacoesMultimarcas = [
+          ...new Set(
+            faturasMultimarcas
+              .map((item) => item.nr_transacao)
+              .filter((t) => t !== null && t !== undefined && t !== ''),
+          ),
+        ];
 
-        const transacoesFranquias = (faturamentoFranquias?.data || [])
-          .map((item) => item.nr_transacao)
-          .filter(Boolean);
+        const transacoesFranquias = [
+          ...new Set(
+            faturasFranquias
+              .map((item) => item.nr_transacao)
+              .filter((t) => t !== null && t !== undefined && t !== ''),
+          ),
+        ];
 
-        const transacoesRevenda = (faturamentoRevenda?.data || [])
-          .map((item) => item.nr_transacao)
-          .filter(Boolean);
+        const transacoesRevenda = [
+          ...new Set(
+            faturasRevenda
+              .map((item) => item.nr_transacao)
+              .filter((t) => t !== null && t !== undefined && t !== ''),
+          ),
+        ];
 
-        console.log('📊 Transações coletadas:', {
+        console.log('📊 Transações para impostos:', {
           varejo: transacoesVarejo.length,
           multimarcas: transacoesMultimarcas.length,
           franquias: transacoesFranquias.length,
           revenda: transacoesRevenda.length,
         });
 
-        // Buscar impostos por canal
-        const [
-          impostosVarejo,
-          impostosMultimarcas,
-          impostosFranquias,
-          impostosRevenda,
-        ] = await Promise.all([
-          transacoesVarejo.length > 0
-            ? buscarImpostosEmLotes(transacoesVarejo)
-            : Promise.resolve({ success: true, data: { data: [] } }),
+        // Chamada única à rota POST simplificada
+        const respostaImpostos = await api.financial.impostosPorTransacoes({
+          varejo: transacoesVarejo,
+          multimarcas: transacoesMultimarcas,
+          franquias: transacoesFranquias,
+          revenda: transacoesRevenda,
+        });
 
-          transacoesMultimarcas.length > 0
-            ? buscarImpostosEmLotes(transacoesMultimarcas)
-            : Promise.resolve({ success: true, data: { data: [] } }),
-
-          transacoesFranquias.length > 0
-            ? buscarImpostosEmLotes(transacoesFranquias)
-            : Promise.resolve({ success: true, data: { data: [] } }),
-
-          transacoesRevenda.length > 0
-            ? buscarImpostosEmLotes(transacoesRevenda)
-            : Promise.resolve({ success: true, data: { data: [] } }),
-        ]);
-
-        // Processar impostos por canal agrupando por cd_imposto
-        const processarImpostos = (dadosImposto) => {
-          console.log('🔍 Estrutura recebida:', dadosImposto);
-
-          if (!dadosImposto?.success) {
-            console.warn('⚠️ Response sem success');
-            return { icms: 0, pis: 0, cofins: 0 };
-          }
-
-          // buscarImpostosEmLotes retorna: { success: true, data: [...] }
-          // onde data já é o array de impostos
-          const impostos = Array.isArray(dadosImposto.data)
-            ? dadosImposto.data
-            : dadosImposto.data?.data || [];
-
-          console.log('📊 Impostos extraídos:', impostos);
-
-          if (!Array.isArray(impostos) || impostos.length === 0) {
-            console.warn('⚠️ Nenhum imposto encontrado ou formato inválido');
-            return { icms: 0, pis: 0, cofins: 0 };
-          }
-
-          const totais = { icms: 0, pis: 0, cofins: 0 };
-
-          impostos.forEach((item) => {
-            const valor = parseFloat(item.valorimposto || 0);
-            const cdImposto = parseInt(item.cd_imposto);
-
-            console.log(`  - cd_imposto: ${cdImposto}, valor: ${valor}`);
-
-            // ICMS: cd_imposto 1, 2, 3
-            if ([1, 2, 3].includes(cdImposto)) {
-              totais.icms += valor;
-            }
-            // PIS: cd_imposto 6
-            else if (cdImposto === 6) {
-              totais.pis += valor;
-            }
-            // COFINS: cd_imposto 5
-            else if (cdImposto === 5) {
-              totais.cofins += valor;
-            }
-          });
-
-          console.log('✅ Totais calculados:', totais);
-          return totais;
-        };
-
-        impostosData = {
-          varejo: processarImpostos(impostosVarejo),
-          multimarcas: processarImpostos(impostosMultimarcas),
-          franquias: processarImpostos(impostosFranquias),
-          revenda: processarImpostos(impostosRevenda),
-        };
-
-        console.log('✅ Impostos processados por canal:', impostosData);
+        if (respostaImpostos?.success) {
+          impostosData = respostaImpostos.data;
+          console.log('✅ Impostos recebidos:', impostosData);
+        } else {
+          console.warn('⚠️ Resposta de impostos sem success');
+          impostosData = {
+            varejo: { icms: 0, pis: 0, cofins: 0, total: 0 },
+            multimarcas: { icms: 0, pis: 0, cofins: 0, total: 0 },
+            franquias: { icms: 0, pis: 0, cofins: 0, total: 0 },
+            revenda: { icms: 0, pis: 0, cofins: 0, total: 0 },
+          };
+        }
       } catch (error) {
         console.error('⚠️ Erro ao buscar impostos:', error);
         impostosData = {
@@ -938,7 +1175,7 @@ const DRE = () => {
       const receitaLiquidaVarejoCalc =
         totaisVarejo.totalBruto -
         (totaisVarejo.totalDevolucoes +
-          Math.abs(totaisVarejo.descontos) +
+          Math.abs(totaisVarejo.totalDescontos) +
           impostosVarejoData.icms +
           impostosVarejoData.pis +
           impostosVarejoData.cofins);
@@ -946,7 +1183,7 @@ const DRE = () => {
       const receitaLiquidaMultimarcasCalc =
         totaisMultimarcas.totalBruto -
         (totaisMultimarcas.totalDevolucoes +
-          Math.abs(totaisMultimarcas.descontos) +
+          Math.abs(totaisMultimarcas.totalDescontos) +
           impostosMultimarcasData.icms +
           impostosMultimarcasData.pis +
           impostosMultimarcasData.cofins);
@@ -954,7 +1191,7 @@ const DRE = () => {
       const receitaLiquidaFranquiasCalc =
         totaisFranquias.totalBruto -
         (totaisFranquias.totalDevolucoes +
-          Math.abs(totaisFranquias.descontos) +
+          Math.abs(totaisFranquias.totalDescontos) +
           impostosFranquiasData.icms +
           impostosFranquiasData.pis +
           impostosFranquiasData.cofins);
@@ -962,7 +1199,7 @@ const DRE = () => {
       const receitaLiquidaRevendaCalc =
         totaisRevenda.totalBruto -
         (totaisRevenda.totalDevolucoes +
-          Math.abs(totaisRevenda.descontos) +
+          Math.abs(totaisRevenda.totalDescontos) +
           impostosRevendaData.icms +
           impostosRevendaData.pis +
           impostosRevendaData.cofins);
@@ -1058,9 +1295,8 @@ const DRE = () => {
       if (despesasManuais.length > 0) {
         try {
           const idsDespesas = despesasManuais.map((dm) => dm.id);
-          const resultado = await buscarObservacoesMultiplasDespesas(
-            idsDespesas,
-          );
+          const resultado =
+            await buscarObservacoesMultiplasDespesas(idsDespesas);
           observacoesManuaisMap = resultado.data || new Map();
           console.log(
             `✅ Observações de ${observacoesManuaisMap.size} despesas manuais carregadas`,
@@ -1251,13 +1487,13 @@ const DRE = () => {
         const despesasData = Array.isArray(despesasResp?.data)
           ? despesasResp.data
           : Array.isArray(despesasResp)
-          ? despesasResp
-          : [];
+            ? despesasResp
+            : [];
         const fornecedoresData = Array.isArray(fornecedoresResp?.data)
           ? fornecedoresResp.data
           : Array.isArray(fornecedoresResp)
-          ? fornecedoresResp
-          : [];
+            ? fornecedoresResp
+            : [];
 
         // Converter códigos para números para garantir compatibilidade
         despesaMap = new Map(
@@ -1966,7 +2202,7 @@ const DRE = () => {
         totalDevolucoes: dadosFaturamentoVarejo.devolucoesLiquidas,
         totalLiquido: dadosFaturamentoVarejo.receitaLiquida,
         totalCMV: dadosCMVVarejo.cmv,
-        descontos: dadosFaturamentoVarejo.descontos,
+        totalDescontos: dadosFaturamentoVarejo.descontos,
       };
 
       const totaisMultimarcas = {
@@ -1974,7 +2210,7 @@ const DRE = () => {
         totalDevolucoes: dadosFaturamentoMultimarcas.devolucoesLiquidas,
         totalLiquido: dadosFaturamentoMultimarcas.receitaLiquida,
         totalCMV: dadosCMVMultimarcas.cmv,
-        descontos: dadosFaturamentoMultimarcas.descontos,
+        totalDescontos: dadosFaturamentoMultimarcas.descontos,
       };
 
       const totaisFranquias = {
@@ -1982,7 +2218,7 @@ const DRE = () => {
         totalDevolucoes: dadosFaturamentoFranquias.devolucoesLiquidas,
         totalLiquido: dadosFaturamentoFranquias.receitaLiquida,
         totalCMV: dadosCMVFranquias.cmv,
-        descontos: dadosFaturamentoFranquias.descontos,
+        totalDescontos: dadosFaturamentoFranquias.descontos,
       };
 
       const totaisRevenda = {
@@ -1990,104 +2226,58 @@ const DRE = () => {
         totalDevolucoes: dadosFaturamentoRevenda.devolucoesLiquidas,
         totalLiquido: dadosFaturamentoRevenda.receitaLiquida,
         totalCMV: dadosCMVRevenda.cmv,
-        descontos: dadosFaturamentoRevenda.descontos,
+        totalDescontos: dadosFaturamentoRevenda.descontos,
       };
 
       // ========== BUSCAR IMPOSTOS ==========
-      // Buscar impostos usando a nova rota /vlimposto
       setLoadingStatus('Buscando impostos por canal...');
 
       let impostosData = null;
       try {
-        // Coletar todas as nr_transacao de cada canal (acessar .data do response)
-        const transacoesVarejo = (faturamentoVarejo?.data || [])
+        // Coletar transações únicas de cada canal
+        const transacoesVarejo = [...new Set((faturamentoVarejo?.data || [])
           .map(item => item.nr_transacao)
-          .filter(Boolean);
+          .filter(Boolean))];
         
-        const transacoesMultimarcas = (faturamentoMultimarcas?.data || [])
+        const transacoesMultimarcas = [...new Set((faturamentoMultimarcas?.data || [])
           .map(item => item.nr_transacao)
-          .filter(Boolean);
+          .filter(Boolean))];
         
-        const transacoesFranquias = (faturamentoFranquias?.data || [])
+        const transacoesFranquias = [...new Set((faturamentoFranquias?.data || [])
           .map(item => item.nr_transacao)
-          .filter(Boolean);
+          .filter(Boolean))];
         
-        const transacoesRevenda = (faturamentoRevenda?.data || [])
+        const transacoesRevenda = [...new Set((faturamentoRevenda?.data || [])
           .map(item => item.nr_transacao)
-          .filter(Boolean);
+          .filter(Boolean))];
 
-        console.log('📊 Transações coletadas:', {
+        console.log('📊 Transações para impostos:', {
           varejo: transacoesVarejo.length,
           multimarcas: transacoesMultimarcas.length,
           franquias: transacoesFranquias.length,
           revenda: transacoesRevenda.length,
         });
 
-        // Buscar impostos por canal
-        const [impostosVarejo, impostosMultimarcas, impostosFranquias, impostosRevenda] = await Promise.all([
-          transacoesVarejo.length > 0 
-            ? buscarImpostosEmLotes(transacoesVarejo)
-            : Promise.resolve({ success: true, data: { data: [] } }),
-          
-          transacoesMultimarcas.length > 0
-            ? buscarImpostosEmLotes(transacoesMultimarcas)
-            : Promise.resolve({ success: true, data: { data: [] } }),
-          
-          transacoesFranquias.length > 0
-            ? buscarImpostosEmLotes(transacoesFranquias)
-            : Promise.resolve({ success: true, data: { data: [] } }),
-          
-          transacoesRevenda.length > 0
-            ? buscarImpostosEmLotes(transacoesRevenda)
-            : Promise.resolve({ success: true, data: { data: [] } }),
-        ]);
+        // Chamada única à rota POST simplificada
+        const respostaImpostos = await api.financial.impostosPorTransacoes({
+          varejo: transacoesVarejo,
+          multimarcas: transacoesMultimarcas,
+          franquias: transacoesFranquias,
+          revenda: transacoesRevenda,
+        });
 
-        // Processar impostos por canal agrupando por cd_imposto
-        const processarImpostos = (dadosImposto) => {
-          if (!dadosImposto?.success) {
-            return { icms: 0, pis: 0, cofins: 0 };
-          }
-
-          // buscarImpostosEmLotes retorna: { success: true, data: [...] }
-          const impostos = Array.isArray(dadosImposto.data) 
-            ? dadosImposto.data 
-            : (dadosImposto.data?.data || []);
-          
-          if (!Array.isArray(impostos) || impostos.length === 0) {
-            return { icms: 0, pis: 0, cofins: 0 };
-          }
-
-          const totais = { icms: 0, pis: 0, cofins: 0 };
-
-          impostos.forEach(item => {
-            const valor = parseFloat(item.valorimposto || 0);
-            const cdImposto = parseInt(item.cd_imposto);
-
-            // ICMS: cd_imposto 1, 2, 3
-            if ([1, 2, 3].includes(cdImposto)) {
-              totais.icms += valor;
-            }
-            // PIS: cd_imposto 6
-            else if (cdImposto === 6) {
-              totais.pis += valor;
-            }
-            // COFINS: cd_imposto 5
-            else if (cdImposto === 5) {
-              totais.cofins += valor;
-            }
-          });
-
-          return totais;
-        };
-
-        impostosData = {
-          varejo: processarImpostos(impostosVarejo),
-          multimarcas: processarImpostos(impostosMultimarcas),
-          franquias: processarImpostos(impostosFranquias),
-          revenda: processarImpostos(impostosRevenda),
-        };
-
-        console.log('✅ Impostos processados por canal:', impostosData);
+        if (respostaImpostos?.success) {
+          impostosData = respostaImpostos.data;
+          console.log('✅ Impostos recebidos:', impostosData);
+        } else {
+          console.warn('⚠️ Resposta de impostos sem success');
+          impostosData = {
+            varejo: { icms: 0, pis: 0, cofins: 0, total: 0 },
+            multimarcas: { icms: 0, pis: 0, cofins: 0, total: 0 },
+            franquias: { icms: 0, pis: 0, cofins: 0, total: 0 },
+            revenda: { icms: 0, pis: 0, cofins: 0, total: 0 },
+          };
+        }
 
       } catch (error) {
         console.error(
@@ -2190,7 +2380,7 @@ const DRE = () => {
       const receitaLiquidaVarejoCalc =
         totaisVarejo.totalBruto -
         (totaisVarejo.totalDevolucoes +
-          Math.abs(totaisVarejo.descontos) +
+          Math.abs(totaisVarejo.totalDescontos) +
           impostosVarejoData.icms +
           impostosVarejoData.pis +
           impostosVarejoData.cofins);
@@ -2198,7 +2388,7 @@ const DRE = () => {
       const receitaLiquidaMultimarcasCalc =
         totaisMultimarcas.totalBruto -
         (totaisMultimarcas.totalDevolucoes +
-          Math.abs(totaisMultimarcas.descontos) +
+          Math.abs(totaisMultimarcas.totalDescontos) +
           impostosMultimarcasData.icms +
           impostosMultimarcasData.pis +
           impostosMultimarcasData.cofins);
@@ -2206,7 +2396,7 @@ const DRE = () => {
       const receitaLiquidaFranquiasCalc =
         totaisFranquias.totalBruto -
         (totaisFranquias.totalDevolucoes +
-          Math.abs(totaisFranquias.descontos) +
+          Math.abs(totaisFranquias.totalDescontos) +
           impostosFranquiasData.icms +
           impostosFranquiasData.pis +
           impostosFranquiasData.cofins);
@@ -2214,7 +2404,7 @@ const DRE = () => {
       const receitaLiquidaRevendaCalc =
         totaisRevenda.totalBruto -
         (totaisRevenda.totalDevolucoes +
-          Math.abs(totaisRevenda.descontos) +
+          Math.abs(totaisRevenda.totalDescontos) +
           impostosRevendaData.icms +
           impostosRevendaData.pis +
           impostosRevendaData.cofins);
@@ -2367,7 +2557,7 @@ const DRE = () => {
           totalDevolucoes: dadosFaturamentoVarejoPeriodo2.devolucoesLiquidas,
           totalLiquido: dadosFaturamentoVarejoPeriodo2.receitaLiquida,
           totalCMV: dadosCMVVarejoPeriodo2.cmv,
-          descontos: dadosFaturamentoVarejoPeriodo2.descontos,
+          totalDescontos: dadosFaturamentoVarejoPeriodo2.descontos,
         };
 
         const totaisMultimarcasPeriodo2 = {
@@ -2376,7 +2566,7 @@ const DRE = () => {
             dadosFaturamentoMultimarcasPeriodo2.devolucoesLiquidas,
           totalLiquido: dadosFaturamentoMultimarcasPeriodo2.receitaLiquida,
           totalCMV: dadosCMVMultimarcasPeriodo2.cmv,
-          descontos: dadosFaturamentoMultimarcasPeriodo2.descontos,
+          totalDescontos: dadosFaturamentoMultimarcasPeriodo2.descontos,
         };
 
         const totaisFranquiasPeriodo2 = {
@@ -2384,7 +2574,7 @@ const DRE = () => {
           totalDevolucoes: dadosFaturamentoFranquiasPeriodo2.devolucoesLiquidas,
           totalLiquido: dadosFaturamentoFranquiasPeriodo2.receitaLiquida,
           totalCMV: dadosCMVFranquiasPeriodo2.cmv,
-          descontos: dadosFaturamentoFranquiasPeriodo2.descontos,
+          totalDescontos: dadosFaturamentoFranquiasPeriodo2.descontos,
         };
 
         const totaisRevendaPeriodo2 = {
@@ -2392,101 +2582,56 @@ const DRE = () => {
           totalDevolucoes: dadosFaturamentoRevendaPeriodo2.devolucoesLiquidas,
           totalLiquido: dadosFaturamentoRevendaPeriodo2.receitaLiquida,
           totalCMV: dadosCMVRevendaPeriodo2.cmv,
-          descontos: dadosFaturamentoRevendaPeriodo2.descontos,
+          totalDescontos: dadosFaturamentoRevendaPeriodo2.descontos,
         };
 
-        // Buscar impostos do Período 2 usando a nova rota /vlimposto
+        // ========== BUSCAR IMPOSTOS PERÍODO 2 ==========
         let impostosDataPeriodo2 = null;
         try {
-          // Coletar todas as nr_transacao de cada canal do Período 2 (acessar .data do response)
-          const transacoesVarejoPeriodo2 = (faturamentoVarejoPeriodo2?.data || [])
+          // Coletar transações únicas de cada canal do Período 2
+          const transacoesVarejoPeriodo2 = [...new Set((faturamentoVarejoPeriodo2?.data || [])
             .map(item => item.nr_transacao)
-            .filter(Boolean);
+            .filter(Boolean))];
           
-          const transacoesMultimarcasPeriodo2 = (faturamentoMultimarcasPeriodo2?.data || [])
+          const transacoesMultimarcasPeriodo2 = [...new Set((faturamentoMultimarcasPeriodo2?.data || [])
             .map(item => item.nr_transacao)
-            .filter(Boolean);
+            .filter(Boolean))];
           
-          const transacoesFranquiasPeriodo2 = (faturamentoFranquiasPeriodo2?.data || [])
+          const transacoesFranquiasPeriodo2 = [...new Set((faturamentoFranquiasPeriodo2?.data || [])
             .map(item => item.nr_transacao)
-            .filter(Boolean);
+            .filter(Boolean))];
           
-          const transacoesRevendaPeriodo2 = (faturamentoRevendaPeriodo2?.data || [])
+          const transacoesRevendaPeriodo2 = [...new Set((faturamentoRevendaPeriodo2?.data || [])
             .map(item => item.nr_transacao)
-            .filter(Boolean);
+            .filter(Boolean))];
 
-          console.log('📊 Transações Período 2 coletadas:', {
+          console.log('📊 Transações Período 2 para impostos:', {
             varejo: transacoesVarejoPeriodo2.length,
             multimarcas: transacoesMultimarcasPeriodo2.length,
             franquias: transacoesFranquiasPeriodo2.length,
             revenda: transacoesRevendaPeriodo2.length,
           });
 
-          // Buscar impostos por canal do Período 2
-          const [impostosVarejoPer2, impostosMultimarcasPer2, impostosFranquiasPer2, impostosRevendaPer2] = await Promise.all([
-            transacoesVarejoPeriodo2.length > 0 
-              ? buscarImpostosEmLotes(transacoesVarejoPeriodo2)
-              : Promise.resolve({ success: true, data: { data: [] } }),
-            
-            transacoesMultimarcasPeriodo2.length > 0
-              ? buscarImpostosEmLotes(transacoesMultimarcasPeriodo2)
-              : Promise.resolve({ success: true, data: { data: [] } }),
-            
-            transacoesFranquiasPeriodo2.length > 0
-              ? buscarImpostosEmLotes(transacoesFranquiasPeriodo2)
-              : Promise.resolve({ success: true, data: { data: [] } }),
-            
-            transacoesRevendaPeriodo2.length > 0
-              ? buscarImpostosEmLotes(transacoesRevendaPeriodo2)
-              : Promise.resolve({ success: true, data: { data: [] } }),
-          ]);
+          // Chamada única à rota POST simplificada
+          const respostaImpostosPer2 = await api.financial.impostosPorTransacoes({
+            varejo: transacoesVarejoPeriodo2,
+            multimarcas: transacoesMultimarcasPeriodo2,
+            franquias: transacoesFranquiasPeriodo2,
+            revenda: transacoesRevendaPeriodo2,
+          });
 
-          // Processar impostos por canal agrupando por cd_imposto
-          const processarImpostosPer2 = (dadosImposto) => {
-            if (!dadosImposto?.success) {
-              return { icms: 0, pis: 0, cofins: 0 };
-            }
-
-            // buscarImpostosEmLotes retorna: { success: true, data: [...] }
-            const impostos = Array.isArray(dadosImposto.data) 
-              ? dadosImposto.data 
-              : (dadosImposto.data?.data || []);
-            
-            if (!Array.isArray(impostos) || impostos.length === 0) {
-              return { icms: 0, pis: 0, cofins: 0 };
-            }
-
-            const totais = { icms: 0, pis: 0, cofins: 0 };
-
-            impostos.forEach(item => {
-              const valor = parseFloat(item.valorimposto || 0);
-              const cdImposto = parseInt(item.cd_imposto);
-
-              // ICMS: cd_imposto 1, 2, 3
-              if ([1, 2, 3].includes(cdImposto)) {
-                totais.icms += valor;
-              }
-              // PIS: cd_imposto 6
-              else if (cdImposto === 6) {
-                totais.pis += valor;
-              }
-              // COFINS: cd_imposto 5
-              else if (cdImposto === 5) {
-                totais.cofins += valor;
-              }
-            });
-
-            return totais;
-          };
-
-          impostosDataPeriodo2 = {
-            varejo: processarImpostosPer2(impostosVarejoPer2),
-            multimarcas: processarImpostosPer2(impostosMultimarcasPer2),
-            franquias: processarImpostosPer2(impostosFranquiasPer2),
-            revenda: processarImpostosPer2(impostosRevendaPer2),
-          };
-
-          console.log('✅ Impostos Período 2 processados por canal:', impostosDataPeriodo2);
+          if (respostaImpostosPer2?.success) {
+            impostosDataPeriodo2 = respostaImpostosPer2.data;
+            console.log('✅ Impostos Período 2 recebidos:', impostosDataPeriodo2);
+          } else {
+            console.warn('⚠️ Resposta de impostos Período 2 sem success');
+            impostosDataPeriodo2 = {
+              varejo: { icms: 0, pis: 0, cofins: 0, total: 0 },
+              multimarcas: { icms: 0, pis: 0, cofins: 0, total: 0 },
+              franquias: { icms: 0, pis: 0, cofins: 0, total: 0 },
+              revenda: { icms: 0, pis: 0, cofins: 0, total: 0 },
+            };
+          }
 
         } catch (error) {
           console.error('⚠️ Erro ao buscar impostos Período 2:', error);
@@ -2559,7 +2704,7 @@ const DRE = () => {
         const receitaLiquidaVarejoPeriodo2 =
           totaisVarejoPeriodo2.totalBruto -
           (totaisVarejoPeriodo2.totalDevolucoes +
-            Math.abs(totaisVarejoPeriodo2.descontos) +
+            Math.abs(totaisVarejoPeriodo2.totalDescontos) +
             impostosVarejoPeriodo2.icms +
             impostosVarejoPeriodo2.pis +
             impostosVarejoPeriodo2.cofins);
@@ -2567,7 +2712,7 @@ const DRE = () => {
         const receitaLiquidaMultimarcasPeriodo2 =
           totaisMultimarcasPeriodo2.totalBruto -
           (totaisMultimarcasPeriodo2.totalDevolucoes +
-            Math.abs(totaisMultimarcasPeriodo2.descontos) +
+            Math.abs(totaisMultimarcasPeriodo2.totalDescontos) +
             impostosMultimarcasPeriodo2.icms +
             impostosMultimarcasPeriodo2.pis +
             impostosMultimarcasPeriodo2.cofins);
@@ -2575,7 +2720,7 @@ const DRE = () => {
         const receitaLiquidaFranquiasPeriodo2 =
           totaisFranquiasPeriodo2.totalBruto -
           (totaisFranquiasPeriodo2.totalDevolucoes +
-            Math.abs(totaisFranquiasPeriodo2.descontos) +
+            Math.abs(totaisFranquiasPeriodo2.totalDescontos) +
             impostosFranquiasPeriodo2.icms +
             impostosFranquiasPeriodo2.pis +
             impostosFranquiasPeriodo2.cofins);
@@ -2583,7 +2728,7 @@ const DRE = () => {
         const receitaLiquidaRevendaPeriodo2 =
           totaisRevendaPeriodo2.totalBruto -
           (totaisRevendaPeriodo2.totalDevolucoes +
-            Math.abs(totaisRevendaPeriodo2.descontos) +
+            Math.abs(totaisRevendaPeriodo2.totalDescontos) +
             impostosRevendaPeriodo2.icms +
             impostosRevendaPeriodo2.pis +
             impostosRevendaPeriodo2.cofins);
@@ -3596,17 +3741,24 @@ const DRE = () => {
               id: 'descontos',
               label: 'Descontos Concedidos',
               description: 'Descontos dados aos clientes',
-              value: tv.descontos + tm.descontos + tr.descontos + tf.descontos,
+              value:
+                tv.totalDescontos +
+                tm.totalDescontos +
+                tr.totalDescontos +
+                tf.totalDescontos,
               type: 'deducao',
               children: (function () {
                 // 🔍 DEBUG: Valores dos descontos na criação da estrutura
                 console.log('📊 CRIAÇÃO ESTRUTURA - DESCONTOS (CORRIGIDO):', {
-                  descontoVarejo: tv.descontos,
-                  descontoMultimarcas: tm.descontos,
-                  descontoRevenda: tr.descontos,
-                  descontoFranquias: tf.descontos,
+                  descontoVarejo: tv.totalDescontos,
+                  descontoMultimarcas: tm.totalDescontos,
+                  descontoRevenda: tr.totalDescontos,
+                  descontoFranquias: tf.totalDescontos,
                   totalDescontos:
-                    tv.descontos + tm.descontos + tr.descontos + tf.descontos,
+                    tv.totalDescontos +
+                    tm.totalDescontos +
+                    tr.totalDescontos +
+                    tf.totalDescontos,
                   observacao:
                     'Descontos JÁ VÊM NEGATIVOS da API, não aplicar sinal negativo novamente',
                 });
@@ -3616,10 +3768,10 @@ const DRE = () => {
                     id: 'descontos-varejo',
                     label: 'Varejo',
                     description: 'Descontos do canal Varejo',
-                    value: tv.descontos,
+                    value: tv.totalDescontos,
                     type: 'deducao',
                     porcentagem: calcularPorcentagem(
-                      Math.abs(tv.descontos),
+                      Math.abs(tv.totalDescontos),
                       Math.abs(desc),
                     ).toFixed(1),
                   },
@@ -3627,10 +3779,10 @@ const DRE = () => {
                     id: 'descontos-multimarcas',
                     label: 'Multimarcas',
                     description: 'Descontos do canal Multimarcas',
-                    value: tm.descontos,
+                    value: tm.totalDescontos,
                     type: 'deducao',
                     porcentagem: calcularPorcentagem(
-                      Math.abs(tm.descontos),
+                      Math.abs(tm.totalDescontos),
                       Math.abs(desc),
                     ).toFixed(1),
                   },
@@ -3638,10 +3790,10 @@ const DRE = () => {
                     id: 'descontos-revenda',
                     label: 'Revenda',
                     description: 'Descontos do canal Revenda',
-                    value: tr.descontos,
+                    value: tr.totalDescontos,
                     type: 'deducao',
                     porcentagem: calcularPorcentagem(
-                      Math.abs(tr.descontos),
+                      Math.abs(tr.totalDescontos),
                       Math.abs(desc),
                     ).toFixed(1),
                   },
@@ -3649,10 +3801,10 @@ const DRE = () => {
                     id: 'descontos-franquias',
                     label: 'Franquias',
                     description: 'Descontos do canal Franquias',
-                    value: tf.descontos,
+                    value: tf.totalDescontos,
                     type: 'deducao',
                     porcentagem: calcularPorcentagem(
-                      Math.abs(tf.descontos),
+                      Math.abs(tf.totalDescontos),
                       Math.abs(desc),
                     ).toFixed(1),
                   },
@@ -5460,16 +5612,16 @@ const DRE = () => {
                       width: loadingStatus.includes('Varejo')
                         ? '20%'
                         : loadingStatus.includes('Multimarcas')
-                        ? '40%'
-                        : loadingStatus.includes('Franquia')
-                        ? '60%'
-                        : loadingStatus.includes('Revenda')
-                        ? '80%'
-                        : loadingStatus.includes('impostos')
-                        ? '95%'
-                        : loadingStatus.includes('Processando')
-                        ? '100%'
-                        : '0%',
+                          ? '40%'
+                          : loadingStatus.includes('Franquia')
+                            ? '60%'
+                            : loadingStatus.includes('Revenda')
+                              ? '80%'
+                              : loadingStatus.includes('impostos')
+                                ? '95%'
+                                : loadingStatus.includes('Processando')
+                                  ? '100%'
+                                  : '0%',
                     }}
                   ></div>
                 </div>

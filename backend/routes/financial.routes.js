@@ -4199,6 +4199,329 @@ router.get(
 );
 
 /**
+ * @route POST /financial/franquias-clientes
+ * @desc Buscar clientes que são franquias (nm_fantasia like '%F%CROSBY%') - versão POST para muitos clientes
+ * @access Public
+ * @body {cd_clientes} - Array de códigos de clientes
+ */
+router.post(
+  '/franquias-clientes',
+  sanitizeInput,
+  asyncHandler(async (req, res) => {
+    const { cd_clientes } = req.body;
+
+    // Validar entrada
+    if (!cd_clientes) {
+      return errorResponse(
+        res,
+        'Lista de clientes deve ser fornecida no body',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    // Converter cd_clientes para array se for string
+    let clientes = Array.isArray(cd_clientes)
+      ? cd_clientes
+      : cd_clientes.split(',');
+
+    // Remover valores vazios ou nulos
+    clientes = clientes
+      .filter((c) => c && c !== '' && c !== 'null' && c !== 'undefined')
+      .map((c) => String(c).trim());
+
+    if (clientes.length === 0) {
+      return errorResponse(
+        res,
+        'Pelo menos um cliente deve ser fornecido',
+        400,
+        'MISSING_PARAMETER',
+      );
+    }
+
+    // Criar placeholders para a query
+    const placeholders = clientes.map((_, idx) => `$${idx + 1}`).join(',');
+
+    const query = `
+      SELECT
+        pp.cd_pessoa,
+        pp.nm_pessoa,
+        pj.nm_fantasia
+      FROM
+        pes_pessoa pp
+      LEFT JOIN pes_pesjuridica pj ON pp.cd_pessoa = pj.cd_pessoa
+      WHERE
+        pp.cd_pessoa IN (${placeholders})
+        AND pj.nm_fantasia LIKE '%F%CROSBY%'
+    `;
+
+    console.log(`🔍 Franquias Clientes (POST): ${clientes.length} clientes`);
+
+    try {
+      const { rows } = await pool.query(query, clientes);
+
+      // Criar objeto com clientes que são franquias
+      const franquias = {};
+
+      clientes.forEach((cdPessoa) => {
+        const ehFranquia = rows.some(
+          (r) => String(r.cd_pessoa) === String(cdPessoa),
+        );
+        franquias[cdPessoa] = ehFranquia;
+      });
+
+      successResponse(
+        res,
+        franquias,
+        `Verificação de franquias para ${clientes.length} clientes processada`,
+      );
+    } catch (error) {
+      console.error('❌ Erro na query de franquias clientes (POST):', error);
+      throw error;
+    }
+  }),
+);
+
+/**
+ * @route GET /financial/devolucoes-transacao
+ * @desc Buscar devoluções por transação (para MTM, REVENDA, FRANQUIAS)
+ * @access Public
+ * @query {dt_inicio, dt_fim, canal}
+ * Usa tp_situacao = 4 e cd_operacao específicos para devoluções
+ */
+router.get(
+  '/devolucoes-transacao',
+  sanitizeInput,
+  validateRequired(['dt_inicio', 'dt_fim']),
+  validateDateFormat(['dt_inicio', 'dt_fim']),
+  asyncHandler(async (req, res) => {
+    const { dt_inicio, dt_fim } = req.query;
+
+    // Empresas para buscar devoluções (conforme especificado)
+    const empresas = [
+      85, 850, 99, 990, 1, 100, 2, 200, 11, 111, 75, 750, 6, 600, 92, 920, 31,
+      311,
+    ];
+
+    // Códigos de operação de devolução
+    const codigosOperacao = [
+      21, 401, 1202, 1204, 1206, 1209, 1408, 1950, 2207, 3202, 3203,
+    ];
+
+    // Criar placeholders
+    const empresaPlaceholders = empresas
+      .map((_, idx) => `$${idx + 3}`)
+      .join(',');
+    const operacaoPlaceholders = codigosOperacao
+      .map((_, idx) => `$${idx + 3 + empresas.length}`)
+      .join(',');
+
+    const params = [dt_inicio, dt_fim, ...empresas, ...codigosOperacao];
+
+    const query = `
+      SELECT
+        tt.nr_transacao,
+        tt.vl_total as vl_transacao,
+        tt.cd_empresa,
+        tt.cd_operacao,
+        tt.cd_pessoa as cd_cliente
+      FROM
+        tra_transacao tt
+      WHERE
+        tt.cd_empresa IN (${empresaPlaceholders})
+        AND tt.dt_transacao BETWEEN $1 AND $2
+        AND tt.tp_situacao = 4
+        AND tt.cd_operacao IN (${operacaoPlaceholders})
+    `;
+
+    console.log(
+      `🔍 Devoluções por Transação: período=${dt_inicio} a ${dt_fim}`,
+    );
+
+    try {
+      const { rows } = await pool.query(query, params);
+
+      // Calcular total de devoluções
+      const totalDevolucoes = rows.reduce(
+        (acc, row) => acc + (parseFloat(row.vl_transacao) || 0),
+        0,
+      );
+
+      successResponse(
+        res,
+        {
+          devolucoes: rows,
+          total: totalDevolucoes,
+          count: rows.length,
+        },
+        `${rows.length} devoluções encontradas`,
+      );
+    } catch (error) {
+      console.error('❌ Erro na query de devoluções por transação:', error);
+      throw error;
+    }
+  }),
+);
+
+/**
+ * @route GET /financial/test-impostos
+ * @desc Testar se a tabela tra_itemimposto tem dados
+ * @access Public
+ * @query {nr_transacao} - Transação para testar (opcional)
+ */
+router.get(
+  '/test-impostos',
+  sanitizeInput,
+  asyncHandler(async (req, res) => {
+    const { nr_transacao } = req.query;
+    
+    // Verificar quantidade total de registros
+    const countResult = await pool.query(`
+      SELECT COUNT(*) as total 
+      FROM tra_itemimposto 
+      WHERE cd_empresa < 5999 AND cd_imposto IN (1, 5, 6)
+    `);
+    
+    // Pegar 10 registros de exemplo
+    const sampleResult = await pool.query(`
+      SELECT nr_transacao, cd_imposto, vl_imposto, dt_transacao 
+      FROM tra_itemimposto 
+      WHERE cd_empresa < 5999 AND cd_imposto IN (1, 5, 6)
+      LIMIT 10
+    `);
+    
+    let testTransacao = null;
+    if (nr_transacao) {
+      const testResult = await pool.query(`
+        SELECT cd_imposto, SUM(vl_imposto) as valor 
+        FROM tra_itemimposto 
+        WHERE nr_transacao = $1 AND cd_empresa < 5999 AND cd_imposto IN (1, 5, 6)
+        GROUP BY cd_imposto
+      `, [parseInt(nr_transacao)]);
+      testTransacao = testResult.rows;
+    }
+    
+    successResponse(res, {
+      total: countResult.rows[0]?.total,
+      sample: sampleResult.rows,
+      testTransacao
+    }, 'Teste da tabela tra_itemimposto');
+  }),
+);
+
+/**
+ * @route POST /financial/impostos-por-transacoes
+ * @desc Buscar impostos das transações separadas por canal (simples e direto)
+ * @access Public
+ * @body { varejo: [nr_transacao], multimarcas: [nr_transacao], franquias: [nr_transacao], revenda: [nr_transacao] }
+ */
+router.post(
+  '/impostos-por-transacoes',
+  sanitizeInput,
+  asyncHandler(async (req, res) => {
+    const { varejo = [], multimarcas = [], franquias = [], revenda = [] } = req.body;
+
+    console.log('📊 Impostos por transações (POST) - Recebido:', {
+      varejo: varejo.length,
+      multimarcas: multimarcas.length,
+      franquias: franquias.length,
+      revenda: revenda.length,
+      exemplosVarejo: varejo.slice(0, 5),
+      tipoVarejo: typeof varejo[0],
+    });
+
+    // Função para buscar impostos de um array de transações
+    const buscarImpostosCanal = async (nomeCanal, transacoes) => {
+      if (!transacoes || transacoes.length === 0) {
+        console.log(`📊 ${nomeCanal}: Nenhuma transação recebida`);
+        return { icms: 0, pis: 0, cofins: 0, total: 0 };
+      }
+
+      // Filtrar transações válidas
+      const transacoesValidas = transacoes.filter(
+        (t) => t !== null && t !== undefined && !isNaN(parseInt(t)) && parseInt(t) > 0,
+      );
+
+      console.log(`📊 ${nomeCanal}: ${transacoes.length} transações recebidas, ${transacoesValidas.length} válidas`);
+
+      if (transacoesValidas.length === 0) {
+        return { icms: 0, pis: 0, cofins: 0, total: 0 };
+      }
+
+      // Query usando tra_itemimposto: buscar impostos agrupados por tipo
+      const placeholders = transacoesValidas.map((_, idx) => `$${idx + 1}`).join(',');
+      const params = transacoesValidas.map((t) => parseInt(t));
+
+      const query = `
+        SELECT
+          ti.cd_imposto,
+          COALESCE(SUM(ti.vl_imposto), 0) as valor
+        FROM
+          tra_itemimposto ti
+        WHERE
+          ti.cd_empresa < 5999
+          AND ti.cd_imposto IN (1, 5, 6)
+          AND ti.nr_transacao IN (${placeholders})
+        GROUP BY
+          ti.cd_imposto
+      `;
+
+      const { rows } = await pool.query(query, params);
+      console.log(`📊 ${nomeCanal}: Query retornou ${rows.length} registros de impostos`);
+      
+      if (rows.length > 0) {
+        console.log(`📊 ${nomeCanal}: Primeiros resultados:`, rows.slice(0, 5));
+      }
+
+      // Agregar por tipo de imposto
+      const resultado = { icms: 0, pis: 0, cofins: 0, total: 0 };
+
+      rows.forEach((row) => {
+        const valor = parseFloat(row.valor || 0);
+        const cdImposto = parseInt(row.cd_imposto);
+
+        // ICMS: cd_imposto 1, 2, 3
+        if ([1, 2, 3].includes(cdImposto)) {
+          resultado.icms += valor;
+        }
+        // COFINS: cd_imposto 5
+        else if (cdImposto === 5) {
+          resultado.cofins += valor;
+        }
+        // PIS: cd_imposto 6
+        else if (cdImposto === 6) {
+          resultado.pis += valor;
+        }
+
+        resultado.total += valor;
+      });
+
+      return resultado;
+    };
+
+    // Buscar impostos para cada canal em paralelo
+    const [impostosVarejo, impostosMultimarcas, impostosFranquias, impostosRevenda] =
+      await Promise.all([
+        buscarImpostosCanal('VAREJO', varejo),
+        buscarImpostosCanal('MULTIMARCAS', multimarcas),
+        buscarImpostosCanal('FRANQUIAS', franquias),
+        buscarImpostosCanal('REVENDA', revenda),
+      ]);
+
+    const resultado = {
+      varejo: impostosVarejo,
+      multimarcas: impostosMultimarcas,
+      franquias: impostosFranquias,
+      revenda: impostosRevenda,
+    };
+
+    console.log('✅ Impostos calculados:', resultado);
+
+    successResponse(res, resultado, 'Impostos calculados com sucesso');
+  }),
+);
+
+/**
  * @route GET /financial/auditoria-faturamento
  * @desc Buscar auditoria de faturamento com relacionamento entre faturas e transações
  * @access Public
@@ -4253,7 +4576,10 @@ router.get(
         ff.tp_documento,
         tt.tp_operacao,
         tt.cd_operacao,
-        ff.cd_empresa
+        ff.cd_empresa,
+        tt.vl_total as vl_transacao,
+        tt.vl_desconto as vl_desconto_transacao,
+        (COALESCE(tt.vl_total, 0) + COALESCE(tt.vl_desconto, 0)) as vl_bruto_transacao
       FROM
         fcr_faturai ff
       LEFT JOIN vr_fcr_fattrans vff ON
@@ -4276,7 +4602,9 @@ router.get(
         ff.tp_documento,
         tt.tp_operacao,
         tt.cd_operacao,
-        ff.cd_empresa
+        ff.cd_empresa,
+        tt.vl_total,
+        tt.vl_desconto
       ORDER BY
         tt.cd_operacao,
         ff.nr_fat,

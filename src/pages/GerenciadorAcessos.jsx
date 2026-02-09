@@ -89,6 +89,11 @@ const AVAILABLE_PAGES = [
     name: 'Extrato Bancário',
     category: 'Financeiro',
   },
+  {
+    path: '/batida-carteira',
+    name: 'Batida de Carteira',
+    category: 'Financeiro',
+  },
   { path: '/dre', name: 'DRE', category: 'Financeiro' },
   { path: '/receita-liquida', name: 'Receita Líquida', category: 'Financeiro' },
   {

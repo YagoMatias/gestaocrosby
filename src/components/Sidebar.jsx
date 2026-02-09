@@ -181,6 +181,13 @@ const financeiro = [
     roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
+    name: 'NF Clientes',
+    href: '/nf-clientes',
+    icon: Article,
+    color: 'text-teal-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
+  {
     name: 'Auditoria',
     href: '#',
     icon: MagnifyingGlass,

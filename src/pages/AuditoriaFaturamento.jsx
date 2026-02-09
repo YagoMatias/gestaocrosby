@@ -302,6 +302,7 @@ const AuditoriaFaturamento = () => {
       { cd_empresa: '5' },
       { cd_empresa: '55' },
       { cd_empresa: '65' },
+      { cd_empresa: '88' },
       { cd_empresa: '89' },
       { cd_empresa: '90' },
       { cd_empresa: '92' },
@@ -1240,8 +1241,8 @@ const AuditoriaFaturamento = () => {
                           temMultiplasClassificacoes
                             ? 'text-red-700'
                             : Number(row.tp_documento) === 20
-                            ? 'text-red-600'
-                            : cores.text
+                              ? 'text-red-600'
+                              : cores.text
                         }`}
                       >
                         {parseFloat(row.vl_fatura).toLocaleString('pt-BR', {
@@ -1278,8 +1279,8 @@ const AuditoriaFaturamento = () => {
                           temMultiplasClassificacoes
                             ? 'text-red-700 font-medium'
                             : Number(row.tp_documento) === 20
-                            ? 'text-red-600 font-medium'
-                            : 'text-gray-600'
+                              ? 'text-red-600 font-medium'
+                              : 'text-gray-600'
                         }`}
                       >
                         {converterTipoDocumento(Number(row.tp_documento))}
@@ -2573,8 +2574,8 @@ const AuditoriaFaturamento = () => {
                                   linhasSelecionadas.has(globalIndex)
                                     ? 'bg-blue-100 hover:bg-blue-200'
                                     : temTransacao
-                                    ? 'bg-green-50 hover:bg-green-100'
-                                    : 'bg-red-50 hover:bg-red-100'
+                                      ? 'bg-green-50 hover:bg-green-100'
+                                      : 'bg-red-50 hover:bg-red-100'
                                 }`}
                               >
                                 {/* Checkbox de seleção */}
