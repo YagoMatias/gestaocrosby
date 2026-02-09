@@ -1,8 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
-import FiltroCliente from '../components/FiltroCliente';
 import FiltroFormaPagamento from '../components/FiltroFormaPagamento';
-import FiltroNomeFantasia from '../components/FiltroNomeFantasia';
 import {
   Card,
   CardContent,
@@ -29,6 +27,8 @@ import {
   CaretUpDown,
   Percent,
   FileArrowDown,
+  MagnifyingGlass,
+  X,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -65,15 +65,18 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
   const [clientesSelecionados, setClientesSelecionados] = useState([]);
   const [formasPagamentoSelecionadas, setFormasPagamentoSelecionadas] =
     useState([]);
-  const [nomesFantasiaSelecionados, setNomesFantasiaSelecionados] = useState(
-    [],
-  );
-  const [dadosClientes, setDadosClientes] = useState([]);
   const [dadosFormasPagamento, setDadosFormasPagamento] = useState([]);
-  const [dadosNomesFantasia, setDadosNomesFantasia] = useState([]);
 
   // Estado para informações de pessoas
   const [infoPessoas, setInfoPessoas] = useState({});
+
+  // Estados para busca de cliente por nome (igual TitulosClientes)
+  const [termoBuscaNome, setTermoBuscaNome] = useState('');
+  const [termoBuscaFantasia, setTermoBuscaFantasia] = useState('');
+  const [clientesEncontrados, setClientesEncontrados] = useState([]);
+  const [modalBuscaAberto, setModalBuscaAberto] = useState(false);
+  const [buscandoClientes, setBuscandoClientes] = useState(false);
+  const [clienteBuscaSelecionado, setClienteBuscaSelecionado] = useState(null);
 
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
 
@@ -335,20 +338,6 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
 
   // Aplicar apenas filtros que dependem de infoPessoas (carregados após a busca principal)
   const dadosComFiltrosAdicionais = dados.filter((item) => {
-    // Filtro por nome fantasia (seleção múltipla) - depende de infoPessoas
-    if (nomesFantasiaSelecionados.length > 0) {
-      if (infoPessoas && Object.keys(infoPessoas).length > 0) {
-        const key = String(item.cd_cliente || '').trim();
-        const fantasia = infoPessoas[key]?.nm_fantasia;
-        const isSelected = nomesFantasiaSelecionados.some(
-          (nome) => nome.nm_fantasia === fantasia,
-        );
-        if (!isSelected) {
-          return false;
-        }
-      }
-    }
-
     // Filtro por Tipo de Cliente (Franquias/Outros) - depende de infoPessoas
     if (filtroTipoCliente !== 'TODOS') {
       if (infoPessoas && Object.keys(infoPessoas).length > 0) {
@@ -508,6 +497,73 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
     }
   };
 
+  // Função para buscar clientes por nome ou fantasia (mesma rota do TitulosClientes)
+  const buscarClientesPorNome = async () => {
+    const nome = termoBuscaNome.trim();
+    const fantasia = termoBuscaFantasia.trim();
+
+    if (!nome && !fantasia) {
+      alert('Digite o nome ou nome fantasia para buscar!');
+      return;
+    }
+
+    setBuscandoClientes(true);
+    try {
+      let query = '';
+      if (nome && fantasia) {
+        query = `nm_pessoa=${encodeURIComponent(nome)}&nm_fantasia=${encodeURIComponent(fantasia)}`;
+      } else if (nome) {
+        query = `nm_pessoa=${encodeURIComponent(nome)}`;
+      } else if (fantasia) {
+        query = `nm_fantasia=${encodeURIComponent(fantasia)}`;
+      }
+
+      console.log('🔍 Buscando clientes:', { nome, fantasia });
+
+      const response = await fetch(`${BaseURL}buscar-clientes?${query}`);
+
+      if (!response.ok) {
+        throw new Error('Erro ao buscar clientes');
+      }
+
+      const data = await response.json();
+      console.log('✅ Clientes encontrados:', data);
+
+      let clientes = [];
+      if (data.success && data.data && Array.isArray(data.data)) {
+        clientes = data.data;
+      } else if (Array.isArray(data)) {
+        clientes = data;
+      }
+
+      if (clientes.length === 0) {
+        alert('Nenhum cliente encontrado com os critérios informados.');
+      } else {
+        setClientesEncontrados(clientes);
+        setModalBuscaAberto(true);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao buscar clientes:', error);
+      alert('Erro ao buscar clientes. Tente novamente.');
+    } finally {
+      setBuscandoClientes(false);
+    }
+  };
+
+  // Função para selecionar um cliente da busca por nome
+  const selecionarClienteBusca = (cliente) => {
+    setClienteBuscaSelecionado(cliente);
+    setModalBuscaAberto(false);
+    console.log('✅ Cliente selecionado para filtro:', cliente);
+  };
+
+  // Função para limpar cliente selecionado
+  const limparClienteBusca = () => {
+    setClienteBuscaSelecionado(null);
+    setTermoBuscaNome('');
+    setTermoBuscaFantasia('');
+  };
+
   const buscarDados = async (inicio = dataInicio, fim = dataFim) => {
     if (!inicio || !fim) return;
 
@@ -564,6 +620,11 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
         formasPagamentoSelecionadas.forEach((forma) => {
           params.append('tp_documento', forma.codigo);
         });
+      }
+
+      // Adicionar filtro de cliente selecionado pela busca por nome
+      if (clienteBuscaSelecionado) {
+        params.append('cd_cliente', clienteBuscaSelecionado.cd_pessoa);
       }
 
       // Adicionar filtro de fatura
@@ -631,36 +692,8 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
       const infoPessoasData = await buscarInfoPessoas(codigosClientes);
       setInfoPessoas(infoPessoasData);
 
-      // Extrair dados únicos de nomes fantasia das informações de pessoas
-      const nomesFantasiaUnicos = Object.entries(infoPessoasData)
-        .filter(([key, pessoa]) => pessoa.nm_fantasia)
-        .map(([key, pessoa]) => ({
-          cd_cliente: key,
-          nm_fantasia: pessoa.nm_fantasia,
-        }))
-        .filter(
-          (item, index, self) =>
-            index === self.findIndex((t) => t.nm_fantasia === item.nm_fantasia),
-        );
-      setDadosNomesFantasia(nomesFantasiaUnicos);
-
       setDados(todosOsDados);
       setDadosCarregados(true);
-
-      // Extrair dados únicos de clientes
-      const clientesUnicos = [
-        ...new Set(
-          todosOsDados.map((item) =>
-            JSON.stringify({
-              cd_cliente: item.cd_cliente?.toString(),
-              nm_cliente: item.nm_cliente,
-            }),
-          ),
-        ),
-      ]
-        .map((str) => JSON.parse(str))
-        .filter((cliente) => cliente.cd_cliente && cliente.nm_cliente);
-      setDadosClientes(clientesUnicos);
 
       // Extrair dados únicos de formas de pagamento
       const formasPagamentoUnicas = [
@@ -700,10 +733,6 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
 
   const handleSelectFormasPagamento = (formasPagamento) => {
     setFormasPagamentoSelecionadas([...formasPagamento]); // Garantir que é um novo array
-  };
-
-  const handleSelectNomesFantasia = (nomesFantasia) => {
-    setNomesFantasiaSelecionados([...nomesFantasia]); // Garantir que é um novo array
   };
 
   // Função para exportar dados para Excel
@@ -906,7 +935,6 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
     filtroFatura,
     filtroPortador,
     formasPagamentoSelecionadas,
-    nomesFantasiaSelecionados,
     filtroCobranca,
     filtroTipoCliente,
   ]);
@@ -1096,25 +1124,73 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
                 className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
               />
             </div>
-            <div className="lg:col-span-1">
-              <FiltroCliente
-                clientesSelecionados={clientesSelecionados}
-                onSelectClientes={handleSelectClientes}
-                dadosClientes={dadosClientes}
-              />
+            <div className="relative">
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Buscar Cliente
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={termoBuscaNome}
+                  onChange={(e) => setTermoBuscaNome(e.target.value)}
+                  onKeyPress={(e) =>
+                    e.key === 'Enter' &&
+                    (e.preventDefault(), buscarClientesPorNome())
+                  }
+                  placeholder="Nome do cliente..."
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 pr-8 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={buscarClientesPorNome}
+                  disabled={buscandoClientes}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#000638] hover:text-[#fe0000] disabled:text-gray-400"
+                  title="Buscar cliente"
+                >
+                  {buscandoClientes ? (
+                    <Spinner size={14} className="animate-spin" />
+                  ) : (
+                    <MagnifyingGlass size={14} weight="bold" />
+                  )}
+                </button>
+              </div>
             </div>
-            <div className="lg:col-3">
+            <div className="relative">
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Buscar Fantasia
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={termoBuscaFantasia}
+                  onChange={(e) => setTermoBuscaFantasia(e.target.value)}
+                  onKeyPress={(e) =>
+                    e.key === 'Enter' &&
+                    (e.preventDefault(), buscarClientesPorNome())
+                  }
+                  placeholder="Nome fantasia..."
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 pr-8 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={buscarClientesPorNome}
+                  disabled={buscandoClientes}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#000638] hover:text-[#fe0000] disabled:text-gray-400"
+                  title="Buscar cliente"
+                >
+                  {buscandoClientes ? (
+                    <Spinner size={14} className="animate-spin" />
+                  ) : (
+                    <MagnifyingGlass size={14} weight="bold" />
+                  )}
+                </button>
+              </div>
+            </div>
+            <div className="lg:col-span-1">
               <FiltroFormaPagamento
                 formasPagamentoSelecionadas={formasPagamentoSelecionadas}
                 onSelectFormasPagamento={handleSelectFormasPagamento}
                 dadosFormasPagamento={dadosFormasPagamento}
-              />
-            </div>
-            <div className="lg:col-span-3">
-              <FiltroNomeFantasia
-                nomesFantasiaSelecionados={nomesFantasiaSelecionados}
-                onSelectNomesFantasia={handleSelectNomesFantasia}
-                dadosNomesFantasia={dadosNomesFantasia}
               />
             </div>
             <div className="flex items-end">
@@ -2041,8 +2117,8 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
                             pagina === paginaAtual
                               ? 'bg-[#000638] text-white'
                               : typeof pagina === 'number'
-                              ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
-                              : 'text-gray-400 cursor-default'
+                                ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                : 'text-gray-400 cursor-default'
                           }`}
                         >
                           {pagina}
@@ -2069,6 +2145,85 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
           )}
         </div>
       </div>
+      {/* Modal de Busca de Clientes */}
+      {modalBuscaAberto && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          style={{ zIndex: 99998 }}
+        >
+          <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <MagnifyingGlass size={24} className="text-blue-600" />
+                Clientes Encontrados
+              </h2>
+              <button
+                onClick={() => setModalBuscaAberto(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={24} weight="bold" />
+              </button>
+            </div>
+
+            <div className="text-sm text-gray-600 mb-4">
+              {clientesEncontrados.length} cliente(s) encontrado(s)
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full border border-gray-200 rounded-lg">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
+                      Código
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
+                      Nome
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
+                      Nome Fantasia
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">
+                      Ação
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {clientesEncontrados.map((cliente, index) => (
+                    <tr key={index} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm text-gray-900 font-medium">
+                        {cliente.cd_pessoa}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {cliente.nm_pessoa}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {cliente.nm_fantasia || '--'}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => selecionarClienteBusca(cliente)}
+                          className="px-4 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          Selecionar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setModalBuscaAberto(false)}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

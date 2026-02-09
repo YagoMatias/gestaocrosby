@@ -4,8 +4,8 @@ import { useAuth } from '../components/AuthContext';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import FiltroCentroCusto from '../components/FiltroCentroCusto';
 import FiltroDespesas from '../components/FiltroDespesas';
-import FiltroFornecedor from '../components/FiltroFornecedor';
 import useApiClient from '../hooks/useApiClient';
+import { API_BASE_URL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
 import {
   Card,
@@ -42,6 +42,8 @@ import {
   FileArrowDown,
   XCircle,
   Trash,
+  MagnifyingGlass,
+  X,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -102,6 +104,17 @@ const ContasAPagar = (props) => {
 
   const [dados, setDados] = useState([]);
   const [dadosFornecedor, setDadosFornecedor] = useState([]);
+
+  // Estados para busca de fornecedor por nome
+  const [termoBuscaFornecedor, setTermoBuscaFornecedor] = useState('');
+  const [termoBuscaFantasiaFornecedor, setTermoBuscaFantasiaFornecedor] =
+    useState('');
+  const [fornecedoresEncontrados, setFornecedoresEncontrados] = useState([]);
+  const [modalBuscaFornecedorAberto, setModalBuscaFornecedorAberto] =
+    useState(false);
+  const [buscandoFornecedores, setBuscandoFornecedores] = useState(false);
+  const [fornecedorBuscaSelecionado, setFornecedorBuscaSelecionado] =
+    useState(null);
   const [dadosCentroCusto, setDadosCentroCusto] = useState([]);
   const [dadosDespesa, setDadosDespesa] = useState([]);
   const [dataInicio, setDataInicio] = useState('');
@@ -505,7 +518,6 @@ const ContasAPagar = (props) => {
   // Centros de custo selecionados (carregados dos dados filtrados)
   const [centrosCustoSelecionados, setCentrosCustoSelecionados] = useState([]);
   const [despesasSelecionadas, setDespesasSelecionadas] = useState([]);
-  const [fornecedoresSelecionados, setFornecedoresSelecionados] = useState([]);
 
   // Estados para o modal de observações
   const [modalAberto, setModalAberto] = useState(false);
@@ -521,93 +533,10 @@ const ContasAPagar = (props) => {
   const [columnFilters, setColumnFilters] = useState({}); // { colKey: { sortDirection: 'asc', searchTerm: '', selected: ['val1', 'val2'] } }
   const [openFilterDropdown, setOpenFilterDropdown] = useState(null); // colKey of the open dropdown
 
-  // Função para filtrar dados por situação
-  const filtrarDadosPorSituacao = (dadosOriginais) => {
-    if (!dadosOriginais || dadosOriginais.length === 0) return [];
-
-    switch (situacao) {
-      case 'NORMAIS':
-        // Mostra apenas itens com tp_situacao = 'N' (Normais)
-        return dadosOriginais.filter((item) => item.tp_situacao === 'N');
-      case 'CANCELADAS':
-        // Mostra apenas itens com tp_situacao = 'C' (Canceladas)
-        return dadosOriginais.filter((item) => item.tp_situacao === 'C');
-      case 'TODAS':
-        // Mostra todos os itens
-        return dadosOriginais;
-      default:
-        return dadosOriginais;
-    }
-  };
-
-  // Dados filtrados por situação
-  const dadosFiltrados = filtrarDadosPorSituacao(dados);
-
-  // Função para filtrar dados por status
-  const filtrarDadosPorStatus = (dadosOriginais) => {
-    if (!dadosOriginais || dadosOriginais.length === 0) return [];
-
-    switch (status) {
-      case 'Todos':
-        // Mostra todos os itens
-        return dadosOriginais;
-      case 'Pago':
-        // Mostra apenas itens pagos
-        return dadosOriginais.filter((item) => parseFloat(item.vl_pago) > 0);
-      case 'Vencido':
-        // Mostra apenas itens vencidos (data de vencimento menor que hoje)
-        return dadosOriginais.filter((item) => {
-          if (!item.dt_vencimento) return false;
-          const dataVencimento = criarDataSemFusoHorario(item.dt_vencimento);
-          const hoje = new Date();
-          hoje.setHours(0, 0, 0, 0);
-          return dataVencimento < hoje;
-        });
-      case 'A Vencer':
-        // Mostra apenas itens a vencer (data de vencimento maior ou igual a hoje)
-        return dadosOriginais.filter((item) => {
-          if (!item.dt_vencimento) return true;
-          const dataVencimento = criarDataSemFusoHorario(item.dt_vencimento);
-          const hoje = new Date();
-          hoje.setHours(0, 0, 0, 0);
-          return dataVencimento >= hoje;
-        });
-      default:
-        return dadosOriginais;
-    }
-  };
-
-  // Função para filtrar dados por previsão
-  const filtrarDadosPorPrevisao = (dadosOriginais) => {
-    if (!dadosOriginais || dadosOriginais.length === 0) return [];
-
-    switch (previsao) {
-      case 'TODOS':
-        // Mostra todos os itens
-        return dadosOriginais;
-      case 'PREVISÃO':
-        // Mostra apenas itens com tp_previsaoreal = 'P' (Previsão)
-        return dadosOriginais.filter((item) => item.tp_previsaoreal === '1');
-      case 'REAL':
-        // Mostra apenas itens com tp_previsaoreal = 'R' (Real)
-        return dadosOriginais.filter((item) => item.tp_previsaoreal === '2');
-      case 'CONSIGNADO':
-        // Mostra apenas itens com tp_previsaoreal = 'C' (Consignado)
-        return dadosOriginais.filter((item) => item.tp_previsaoreal === '3');
-      default:
-        return dadosOriginais;
-    }
-  };
-
-  const dadosFiltradosPorAutorizacao = useMemo(() => {
-    // Simplificado - retorna todos os dados já que removemos a lógica de autorização
-    return dadosFiltrados;
-  }, [dadosFiltrados]);
-
-  // Dados filtrados por situação, status e previsão
-  const dadosFiltradosCompletos = useMemo(() => {
-    return filtrarDadosPorPrevisao(filtrarDadosPorStatus(dadosFiltrados));
-  }, [dadosFiltrados]);
+  // Filtros agora são aplicados pelo backend (SQL) - dados já vêm filtrados da API
+  const dadosFiltrados = dados;
+  const dadosFiltradosPorAutorizacao = dados;
+  const dadosFiltradosCompletos = dados;
 
   // Função para ordenar os dados
   const handleSort = (key) => {
@@ -994,6 +923,46 @@ const ContasAPagar = (props) => {
 
       if (codigosEmpresas.length > 0) {
         params.cd_empresa = codigosEmpresas;
+      }
+
+      // Adicionar filtro de status
+      if (status && status !== 'Todos') {
+        params.status = status;
+      }
+
+      // Adicionar filtro de situação
+      if (situacao && situacao !== 'TODAS') {
+        params.situacao = situacao;
+      }
+
+      // Adicionar filtro de previsão
+      if (previsao && previsao !== 'TODOS') {
+        // Converter para o formato esperado pelo backend
+        let previsaoParam = previsao;
+        if (previsao === 'PREVISÃO') previsaoParam = 'PREVISAO';
+        params.previsao = previsaoParam;
+      }
+
+      // Adicionar filtro de fornecedor (busca por nome)
+      if (fornecedorBuscaSelecionado) {
+        params.cd_fornecedor = [fornecedorBuscaSelecionado.cd_pessoa];
+      }
+
+      // Adicionar filtro de centros de custo (múltiplos)
+      if (centrosCustoSelecionados.length > 0) {
+        params.cd_ccusto = centrosCustoSelecionados.map((c) => c.cd_ccusto);
+      }
+
+      // Adicionar filtro de despesas (múltiplas)
+      if (despesasSelecionadas.length > 0) {
+        params.cd_despesaitem = despesasSelecionadas.map(
+          (d) => d.cd_despesaitem,
+        );
+      }
+
+      // Adicionar filtro de duplicata
+      if (duplicata && duplicata.trim() !== '') {
+        params.nr_duplicata = duplicata.trim();
       }
 
       console.log('📋 Parâmetros da requisição:', params);
@@ -1565,56 +1534,8 @@ const ContasAPagar = (props) => {
     setDataFim(ultimoDia.toISOString().split('T')[0]);
   }, []);
 
-  // Aplicar filtros adicionais aos dados já filtrados por situação e status
-  const dadosComFiltrosAdicionais = dadosFiltradosCompletos.filter((item) => {
-    // Filtro por fornecedor (dropdown)
-    if (fornecedoresSelecionados.length > 0) {
-      const cdFornecedor = item.cd_fornecedor || '';
-      const isSelected = fornecedoresSelecionados.some(
-        (fornecedor) => fornecedor.cd_fornecedor === cdFornecedor,
-      );
-
-      if (!isSelected) {
-        return false;
-      }
-    }
-
-    // Filtro por duplicata
-    if (duplicata) {
-      const nrDuplicata = item.nr_duplicata || '';
-      if (
-        !nrDuplicata.toString().toLowerCase().includes(duplicata.toLowerCase())
-      ) {
-        return false;
-      }
-    }
-
-    // Filtro por centro de custo (dropdown)
-    if (centrosCustoSelecionados.length > 0) {
-      const cdCentroCusto = item.cd_ccusto || '';
-      const isSelected = centrosCustoSelecionados.some(
-        (centro) => centro.cd_ccusto === cdCentroCusto,
-      );
-
-      if (!isSelected) {
-        return false;
-      }
-    }
-
-    // Filtro por despesa (dropdown)
-    if (despesasSelecionadas.length > 0) {
-      const cdDespesa = item.cd_despesaitem || '';
-      const isSelected = despesasSelecionadas.some(
-        (despesa) => despesa.cd_despesaitem === cdDespesa,
-      );
-
-      if (!isSelected) {
-        return false;
-      }
-    }
-
-    return true;
-  });
+  // Filtros de fornecedor, duplicata, centro de custo e despesa já aplicados pelo backend
+  const dadosComFiltrosAdicionais = dadosFiltradosCompletos;
 
   // Aplicar filtro mensal aos dados filtrados
   const dadosComFiltroMensal = aplicarFiltroMensal(
@@ -1830,9 +1751,71 @@ const ContasAPagar = (props) => {
     setDespesasSelecionadas([...despesas]); // Garantir que é um novo array
   };
 
-  // Função para lidar com seleção de fornecedores
-  const handleSelectFornecedores = (fornecedores) => {
-    setFornecedoresSelecionados([...fornecedores]); // Garantir que é um novo array
+  // Função para buscar fornecedores por nome ou fantasia (mesma rota buscar-clientes)
+  const buscarFornecedorPorNome = async () => {
+    const nome = termoBuscaFornecedor.trim();
+    const fantasia = termoBuscaFantasiaFornecedor.trim();
+
+    if (!nome && !fantasia) {
+      alert('Digite o nome ou nome fantasia para buscar!');
+      return;
+    }
+
+    setBuscandoFornecedores(true);
+    try {
+      let query = '';
+      if (nome && fantasia) {
+        query = `nm_pessoa=${encodeURIComponent(nome)}&nm_fantasia=${encodeURIComponent(fantasia)}`;
+      } else if (nome) {
+        query = `nm_pessoa=${encodeURIComponent(nome)}`;
+      } else if (fantasia) {
+        query = `nm_fantasia=${encodeURIComponent(fantasia)}`;
+      }
+
+      console.log('🔍 Buscando fornecedores:', { nome, fantasia });
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/financial/buscar-clientes?${query}`,
+      );
+
+      if (!response.ok) {
+        throw new Error('Erro ao buscar fornecedores');
+      }
+
+      const data = await response.json();
+      console.log('✅ Fornecedores encontrados:', data);
+
+      let fornecedores = [];
+      if (data.success && data.data && Array.isArray(data.data)) {
+        fornecedores = data.data;
+      } else if (Array.isArray(data)) {
+        fornecedores = data;
+      }
+
+      if (fornecedores.length === 0) {
+        alert('Nenhum fornecedor encontrado com os critérios informados.');
+      } else {
+        setFornecedoresEncontrados(fornecedores);
+        setModalBuscaFornecedorAberto(true);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao buscar fornecedores:', error);
+      alert('Erro ao buscar fornecedores. Tente novamente.');
+    } finally {
+      setBuscandoFornecedores(false);
+    }
+  };
+
+  const selecionarFornecedorBusca = (fornecedor) => {
+    setFornecedorBuscaSelecionado(fornecedor);
+    setModalBuscaFornecedorAberto(false);
+    console.log('✅ Fornecedor selecionado para filtro:', fornecedor);
+  };
+
+  const limparFornecedorBusca = () => {
+    setFornecedorBuscaSelecionado(null);
+    setTermoBuscaFornecedor('');
+    setTermoBuscaFantasiaFornecedor('');
   };
 
   const handleFiltrar = (e) => {
@@ -2432,6 +2415,7 @@ const ContasAPagar = (props) => {
                 className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
               >
                 <option value="Todos">TODOS</option>
+                <option value="Em Aberto">EM ABERTO</option>
                 <option value="Pago">PAGO</option>
                 <option value="Vencido">VENCIDO</option>
                 <option value="A Vencer">A VENCER</option>
@@ -2469,13 +2453,114 @@ const ContasAPagar = (props) => {
                 <option value="CONSIGNADO">CONSIGNADO</option>
               </select>
             </div>
-            {/* Filtro de autorização removido */}
-            <div>
-              <FiltroFornecedor
-                fornecedoresSelecionados={fornecedoresSelecionados}
-                onSelectFornecedores={handleSelectFornecedores}
-                dadosFornecedor={dadosFornecedor}
-              />
+            {/* Busca de fornecedor por nome */}
+            <div className="relative">
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Buscar Fornecedor
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={
+                    fornecedorBuscaSelecionado
+                      ? fornecedorBuscaSelecionado.nm_pessoa
+                      : termoBuscaFornecedor
+                  }
+                  onChange={(e) => {
+                    setTermoBuscaFornecedor(e.target.value);
+                    if (fornecedorBuscaSelecionado)
+                      setFornecedorBuscaSelecionado(null);
+                  }}
+                  onKeyPress={(e) =>
+                    e.key === 'Enter' &&
+                    (e.preventDefault(), buscarFornecedorPorNome())
+                  }
+                  placeholder="Nome do fornecedor..."
+                  className={`border border-[#000638]/30 rounded-lg px-2 py-1.5 pr-8 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] text-xs ${
+                    fornecedorBuscaSelecionado
+                      ? 'bg-blue-50 text-blue-800 font-medium'
+                      : 'bg-[#f8f9fb] text-[#000638]'
+                  }`}
+                />
+                {fornecedorBuscaSelecionado ? (
+                  <button
+                    type="button"
+                    onClick={limparFornecedorBusca}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-red-500 hover:text-red-700"
+                    title="Limpar fornecedor"
+                  >
+                    <X size={14} weight="bold" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={buscarFornecedorPorNome}
+                    disabled={buscandoFornecedores}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[#000638] hover:text-[#000638]/70 disabled:opacity-50"
+                    title="Buscar fornecedor"
+                  >
+                    {buscandoFornecedores ? (
+                      <Spinner size={14} className="animate-spin" />
+                    ) : (
+                      <MagnifyingGlass size={14} weight="bold" />
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="relative">
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Buscar Fantasia
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={
+                    fornecedorBuscaSelecionado
+                      ? fornecedorBuscaSelecionado.nm_fantasia || ''
+                      : termoBuscaFantasiaFornecedor
+                  }
+                  onChange={(e) => {
+                    setTermoBuscaFantasiaFornecedor(e.target.value);
+                    if (fornecedorBuscaSelecionado)
+                      setFornecedorBuscaSelecionado(null);
+                  }}
+                  onKeyPress={(e) =>
+                    e.key === 'Enter' &&
+                    (e.preventDefault(), buscarFornecedorPorNome())
+                  }
+                  placeholder="Nome fantasia..."
+                  className={`border border-[#000638]/30 rounded-lg px-2 py-1.5 pr-8 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] text-xs ${
+                    fornecedorBuscaSelecionado
+                      ? 'bg-blue-50 text-blue-800 font-medium'
+                      : 'bg-[#f8f9fb] text-[#000638]'
+                  }`}
+                />
+                {fornecedorBuscaSelecionado ? (
+                  <button
+                    type="button"
+                    onClick={limparFornecedorBusca}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-red-500 hover:text-red-700"
+                    title="Limpar fornecedor"
+                  >
+                    <X size={14} weight="bold" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={buscarFornecedorPorNome}
+                    disabled={buscandoFornecedores}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[#000638] hover:text-[#000638]/70 disabled:opacity-50"
+                    title="Buscar fornecedor"
+                  >
+                    {buscandoFornecedores ? (
+                      <Spinner size={14} className="animate-spin" />
+                    ) : (
+                      <MagnifyingGlass size={14} weight="bold" />
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
             <div>
               <FiltroDespesas
@@ -3892,8 +3977,8 @@ const ContasAPagar = (props) => {
                               isSelected
                                 ? 'bg-blue-100 hover:bg-blue-200'
                                 : index % 2 === 0
-                                ? 'bg-white hover:bg-gray-100'
-                                : 'bg-gray-50 hover:bg-gray-100'
+                                  ? 'bg-white hover:bg-gray-100'
+                                  : 'bg-gray-50 hover:bg-gray-100'
                             }`}
                             onClick={() => abrirModalDetalhes(grupo.item)}
                             title="Clique para ver detalhes da conta"
@@ -4477,6 +4562,93 @@ const ContasAPagar = (props) => {
               <button
                 onClick={fecharModalCard}
                 className="bg-[#000638] text-white px-6 py-2 rounded-lg hover:bg-[#fe0000] transition-colors font-medium"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Busca de Fornecedores */}
+      {modalBuscaFornecedorAberto && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"
+          style={{ zIndex: 99998 }}
+          onClick={() => setModalBuscaFornecedorAberto(false)}
+        >
+          <div
+            className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-[#000638] flex items-center gap-2">
+                <MagnifyingGlass size={20} weight="bold" />
+                Fornecedores Encontrados
+              </h2>
+              <button
+                onClick={() => setModalBuscaFornecedorAberto(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={20} weight="bold" />
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-600 mb-3">
+              {fornecedoresEncontrados.length} fornecedor(es) encontrado(s)
+            </p>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#000638] text-white">
+                    <th className="px-3 py-2 text-left rounded-tl-lg">
+                      Código
+                    </th>
+                    <th className="px-3 py-2 text-left">Nome</th>
+                    <th className="px-3 py-2 text-left">Nome Fantasia</th>
+                    <th className="px-3 py-2 text-center rounded-tr-lg">
+                      Ação
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fornecedoresEncontrados.map((fornecedor, index) => (
+                    <tr
+                      key={fornecedor.cd_pessoa || index}
+                      className={`border-b hover:bg-blue-50 cursor-pointer ${
+                        index % 2 === 0 ? 'bg-gray-50' : 'bg-white'
+                      }`}
+                      onClick={() => selecionarFornecedorBusca(fornecedor)}
+                    >
+                      <td className="px-3 py-2 font-mono text-xs">
+                        {fornecedor.cd_pessoa}
+                      </td>
+                      <td className="px-3 py-2">{fornecedor.nm_pessoa}</td>
+                      <td className="px-3 py-2 text-gray-600">
+                        {fornecedor.nm_fantasia || '--'}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            selecionarFornecedorBusca(fornecedor);
+                          }}
+                          className="bg-[#000638] text-white px-3 py-1 rounded text-xs hover:bg-[#000638]/80 transition-colors"
+                        >
+                          Selecionar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => setModalBuscaFornecedorAberto(false)}
+                className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors text-sm"
               >
                 Fechar
               </button>
@@ -5909,8 +6081,8 @@ const DespesasPorCategoria = ({
                                                         isSelected
                                                           ? 'bg-blue-100 hover:bg-blue-200'
                                                           : index % 2 === 0
-                                                          ? 'bg-white hover:bg-gray-100'
-                                                          : 'bg-gray-50 hover:bg-gray-100'
+                                                            ? 'bg-white hover:bg-gray-100'
+                                                            : 'bg-gray-50 hover:bg-gray-100'
                                                       }`}
                                                       onClick={() =>
                                                         abrirModalDetalhes(

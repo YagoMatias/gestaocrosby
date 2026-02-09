@@ -236,9 +236,9 @@ router.get(
 
 /**
  * @route GET /financial/contas-pagar
- * @desc Buscar contas a pagar
+ * @desc Buscar contas a pagar com filtros avançados
  * @access Public
- * @query {dt_inicio, dt_fim, cd_empresa, limit, offset}
+ * @query {dt_inicio, dt_fim, cd_empresa[], status, situacao, previsao, cd_fornecedor[], cd_ccusto[], cd_despesaitem[], nr_duplicata}
  */
 router.get(
   '/contas-pagar',
@@ -246,93 +246,178 @@ router.get(
   validateRequired(['dt_inicio', 'dt_fim', 'cd_empresa']),
   validateDateFormat(['dt_inicio', 'dt_fim']),
   asyncHandler(async (req, res) => {
-    const { dt_inicio, dt_fim, cd_empresa } = req.query;
+    const {
+      dt_inicio,
+      dt_fim,
+      cd_empresa,
+      status,
+      situacao,
+      previsao,
+      cd_fornecedor,
+      cd_ccusto,
+      cd_despesaitem,
+      nr_duplicata,
+    } = req.query;
 
     // Seguir o padrão de performance do fluxo de caixa: múltiplas empresas, sem paginação/COUNT
     let empresas = Array.isArray(cd_empresa) ? cd_empresa : [cd_empresa];
-    let params = [dt_inicio, dt_fim, ...empresas];
-    let empresaPlaceholders = empresas.map((_, idx) => `$${3 + idx}`).join(',');
 
-    // Otimização baseada no número de empresas e período
-    const isHeavyQuery =
-      empresas.length > 10 ||
-      new Date(dt_fim) - new Date(dt_inicio) > 30 * 24 * 60 * 60 * 1000; // 30 dias
-    const isVeryHeavyQuery =
-      empresas.length > 20 ||
-      new Date(dt_fim) - new Date(dt_inicio) > 90 * 24 * 60 * 60 * 1000; // 90 dias
+    // Construir query dinâmica com filtros
+    let params = [dt_inicio, dt_fim];
+    let paramIndex = 3;
 
-    const query = isVeryHeavyQuery
-      ? `
-      SELECT
-        fd.cd_empresa,
-        fd.cd_fornecedor,
-        fd.nr_duplicata,
-        fd.nr_portador,
-        fd.nr_parcela,
-        fd.dt_emissao,
-        fd.dt_vencimento,
-        fd.dt_entrada,
-        fd.dt_liq,
-        fd.tp_situacao,
-        fd.tp_estagio,
-        fd.vl_duplicata,
-        fd.vl_juros,
-        fd.vl_acrescimo,
-        fd.vl_desconto,
-        fd.vl_pago,
-        vfd.vl_rateio,
-        fd.in_aceite,
-        vfd.cd_despesaitem,
-        fd.tp_previsaoreal,
-        vfd.cd_ccusto
-      FROM vr_fcp_duplicatai fd
-      LEFT JOIN vr_fcp_despduplicatai vfd ON fd.nr_duplicata = vfd.nr_duplicata 
-        AND fd.cd_empresa = vfd.cd_empresa 
-        AND fd.cd_fornecedor = vfd.cd_fornecedor
+    // Criar placeholders para múltiplas empresas
+    const empresaPlaceholders = empresas
+      .map((_, idx) => `$${paramIndex + idx}`)
+      .join(',');
+    params.push(...empresas);
+    paramIndex += empresas.length;
+
+    let whereConditions = `
       WHERE fd.dt_vencimento BETWEEN $1 AND $2
         AND fd.cd_empresa IN (${empresaPlaceholders})
-      ORDER BY fd.dt_vencimento DESC
-    `
-      : `
-      SELECT
-        fd.cd_empresa,
-        fd.cd_fornecedor,
-        fd.nr_duplicata,
-        fd.nr_portador,
-        fd.nr_parcela,
-        fd.dt_emissao,
-        fd.dt_vencimento,
-        fd.dt_entrada,
-        fd.dt_liq,
-        fd.tp_situacao,
-        fd.tp_estagio,
-        fd.vl_duplicata,
-        fd.vl_juros,
-        fd.vl_acrescimo,
-        fd.vl_desconto,
-        fd.vl_pago,
-        vfd.vl_rateio,
-        fd.in_aceite,
-        vfd.cd_despesaitem,
-        fd.tp_previsaoreal,
-        vfd.cd_ccusto
-      FROM vr_fcp_duplicatai fd
-      LEFT JOIN vr_fcp_despduplicatai vfd ON fd.nr_duplicata = vfd.nr_duplicata 
-        AND fd.cd_empresa = vfd.cd_empresa 
-        AND fd.cd_fornecedor = vfd.cd_fornecedor
-      WHERE fd.dt_vencimento BETWEEN $1 AND $2
-        AND fd.cd_empresa IN (${empresaPlaceholders})
-      ORDER BY fd.dt_liq DESC
-      
     `;
 
-    const queryType = isVeryHeavyQuery
-      ? 'muito-pesada'
-      : isHeavyQuery
-        ? 'pesada'
-        : 'completa';
+    // Filtro por situação (Normais, Canceladas, Todas)
+    if (situacao && situacao !== 'TODAS') {
+      if (situacao === 'NORMAIS') {
+        whereConditions += ` AND fd.tp_situacao = 'N'`;
+      } else if (situacao === 'CANCELADAS') {
+        whereConditions += ` AND fd.tp_situacao = 'C'`;
+      }
+    }
+
+    // Filtro por status (Pago, Vencido, A Vencer, Em Aberto)
+    if (status && status !== 'Todos') {
+      if (status === 'Pago') {
+        whereConditions += ` AND fd.vl_pago > 0`;
+      } else if (status === 'Vencido') {
+        whereConditions += ` AND (fd.vl_pago = 0 OR fd.vl_pago IS NULL) AND fd.dt_vencimento < CURRENT_DATE`;
+      } else if (status === 'A Vencer') {
+        whereConditions += ` AND (fd.vl_pago = 0 OR fd.vl_pago IS NULL) AND fd.dt_vencimento >= CURRENT_DATE`;
+      } else if (status === 'Em Aberto') {
+        whereConditions += ` AND (fd.vl_pago = 0 OR fd.vl_pago IS NULL)`;
+      }
+    }
+
+    // Filtro por previsão (PREVISÃO, REAL, CONSIGNADO)
+    if (previsao && previsao !== 'TODOS') {
+      let previsaoValue;
+      if (previsao === 'PREVISAO') previsaoValue = '1';
+      else if (previsao === 'REAL') previsaoValue = '2';
+      else if (previsao === 'CONSIGNADO') previsaoValue = '3';
+
+      if (previsaoValue) {
+        whereConditions += ` AND fd.tp_previsaoreal = $${paramIndex}`;
+        params.push(previsaoValue);
+        paramIndex++;
+      }
+    }
+
+    // Filtro por fornecedores (múltiplos)
+    if (cd_fornecedor) {
+      const fornecedores = Array.isArray(cd_fornecedor)
+        ? cd_fornecedor
+        : [cd_fornecedor];
+      const fornecedoresFiltrados = fornecedores.filter(
+        (f) => f && f !== '' && f !== 'null',
+      );
+
+      if (fornecedoresFiltrados.length > 0) {
+        const placeholders = fornecedoresFiltrados
+          .map((_, idx) => `$${paramIndex + idx}`)
+          .join(',');
+        whereConditions += ` AND fd.cd_fornecedor IN (${placeholders})`;
+        params.push(...fornecedoresFiltrados);
+        paramIndex += fornecedoresFiltrados.length;
+      }
+    }
+
+    // Filtro por centros de custo (múltiplos)
+    if (cd_ccusto) {
+      const centrosCusto = Array.isArray(cd_ccusto) ? cd_ccusto : [cd_ccusto];
+      const centrosFiltrados = centrosCusto.filter(
+        (c) => c && c !== '' && c !== 'null',
+      );
+
+      if (centrosFiltrados.length > 0) {
+        const placeholders = centrosFiltrados
+          .map((_, idx) => `$${paramIndex + idx}`)
+          .join(',');
+        whereConditions += ` AND vfd.cd_ccusto IN (${placeholders})`;
+        params.push(...centrosFiltrados);
+        paramIndex += centrosFiltrados.length;
+      }
+    }
+
+    // Filtro por despesas (múltiplas)
+    if (cd_despesaitem) {
+      const despesas = Array.isArray(cd_despesaitem)
+        ? cd_despesaitem
+        : [cd_despesaitem];
+      const despesasFiltradas = despesas.filter(
+        (d) => d && d !== '' && d !== 'null',
+      );
+
+      if (despesasFiltradas.length > 0) {
+        const placeholders = despesasFiltradas
+          .map((_, idx) => `$${paramIndex + idx}`)
+          .join(',');
+        whereConditions += ` AND vfd.cd_despesaitem IN (${placeholders})`;
+        params.push(...despesasFiltradas);
+        paramIndex += despesasFiltradas.length;
+      }
+    }
+
+    // Filtro por número da duplicata (busca parcial)
+    if (nr_duplicata && nr_duplicata.trim() !== '') {
+      whereConditions += ` AND CAST(fd.nr_duplicata AS TEXT) ILIKE $${paramIndex}`;
+      params.push(`%${nr_duplicata.trim()}%`);
+      paramIndex++;
+    }
+
+    const query = `
+      SELECT
+        fd.cd_empresa,
+        fd.cd_fornecedor,
+        fd.nr_duplicata,
+        fd.nr_portador,
+        fd.nr_parcela,
+        fd.dt_emissao,
+        fd.dt_vencimento,
+        fd.dt_entrada,
+        fd.dt_liq,
+        fd.tp_situacao,
+        fd.tp_estagio,
+        fd.vl_duplicata,
+        fd.vl_juros,
+        fd.vl_acrescimo,
+        fd.vl_desconto,
+        fd.vl_pago,
+        vfd.vl_rateio,
+        fd.in_aceite,
+        vfd.cd_despesaitem,
+        fd.tp_previsaoreal,
+        vfd.cd_ccusto
+      FROM vr_fcp_duplicatai fd
+      LEFT JOIN vr_fcp_despduplicatai vfd ON fd.nr_duplicata = vfd.nr_duplicata 
+        AND fd.cd_empresa = vfd.cd_empresa 
+        AND fd.cd_fornecedor = vfd.cd_fornecedor
+      ${whereConditions}
+      ORDER BY fd.dt_vencimento DESC
+    `;
+
     console.log(
-      `🔍 Contas-pagar: ${empresas.length} empresas, período: ${dt_inicio} a ${dt_fim}, query: ${queryType}`,
+      `🔍 Contas-pagar: ${empresas.length} empresas, período: ${dt_inicio} a ${dt_fim}`,
+      {
+        status,
+        situacao,
+        previsao,
+        cd_fornecedor: cd_fornecedor ? 'sim' : 'não',
+        cd_ccusto: cd_ccusto ? 'sim' : 'não',
+        cd_despesaitem: cd_despesaitem ? 'sim' : 'não',
+        nr_duplicata,
+      },
     );
 
     const { rows } = await pool.query(query, params);
@@ -356,28 +441,27 @@ router.get(
         empresas,
         totals,
         count: rows.length,
-        optimized: isHeavyQuery || isVeryHeavyQuery,
-        queryType: queryType,
-        performance: {
-          isHeavyQuery,
-          isVeryHeavyQuery,
-          diasPeriodo: Math.ceil(
-            (new Date(dt_fim) - new Date(dt_inicio)) / (1000 * 60 * 60 * 24),
-          ),
-          limiteAplicado: 'sem limite',
+        filtros: {
+          status,
+          situacao,
+          previsao,
+          cd_fornecedor,
+          cd_ccusto,
+          cd_despesaitem,
+          nr_duplicata,
         },
         data: rows,
       },
-      `Contas a pagar obtidas com sucesso (${queryType})`,
+      `Contas a pagar obtidas com sucesso`,
     );
   }),
 );
 
 /**
  * @route GET /financial/contas-pagar-emissao
- * @desc Buscar contas a pagar por data de emissão
+ * @desc Buscar contas a pagar por data de emissão com filtros avançados
  * @access Public
- * @query {dt_inicio, dt_fim, cd_empresa, limit, offset}
+ * @query {dt_inicio, dt_fim, cd_empresa[], status, situacao, previsao, cd_fornecedor[], cd_ccusto[], cd_despesaitem[], nr_duplicata}
  */
 router.get(
   '/contas-pagar-emissao',
@@ -385,149 +469,191 @@ router.get(
   validateRequired(['dt_inicio', 'dt_fim', 'cd_empresa']),
   validateDateFormat(['dt_inicio', 'dt_fim']),
   asyncHandler(async (req, res) => {
-    const { dt_inicio, dt_fim, cd_empresa } = req.query;
+    const {
+      dt_inicio,
+      dt_fim,
+      cd_empresa,
+      status,
+      situacao,
+      previsao,
+      cd_fornecedor,
+      cd_ccusto,
+      cd_despesaitem,
+      nr_duplicata,
+    } = req.query;
 
     // Seguir o padrão de performance do fluxo de caixa: múltiplas empresas, sem paginação/COUNT
     let empresas = Array.isArray(cd_empresa) ? cd_empresa : [cd_empresa];
-    let params = [dt_inicio, dt_fim, ...empresas];
-    let empresaPlaceholders = empresas.map((_, idx) => `$${3 + idx}`).join(',');
 
-    // Otimização baseada no número de empresas e período
-    const isHeavyQuery =
-      empresas.length > 10 ||
-      new Date(dt_fim) - new Date(dt_inicio) > 30 * 24 * 60 * 60 * 1000; // 30 dias
-    const isVeryHeavyQuery =
-      empresas.length > 20 ||
-      new Date(dt_fim) - new Date(dt_inicio) > 90 * 24 * 60 * 60 * 1000; // 90 dias
+    // Construir query dinâmica com filtros
+    let params = [dt_inicio, dt_fim];
+    let paramIndex = 3;
 
-    const query = isVeryHeavyQuery
-      ? `
-      select
-        fd.cd_empresa,
-        fd.cd_fornecedor,
-        fd.nr_duplicata,
-        fd.nr_portador,
-        fd.nr_parcela,
-        vfd.vl_rateio,
-        vfd.cd_ccusto,
-        vfd.cd_despesaitem,
-        fd.dt_emissao,
-        fd.dt_vencimento,
-        fd.dt_entrada,
-        fd.dt_liq,
-        fd.tp_situacao,
-        fd.tp_estagio,
-        fd.vl_duplicata,
-        fd.vl_juros,
-        fd.vl_acrescimo,
-        fd.vl_desconto,
-        fd.vl_pago,
-        fd.in_aceite,
-        fd.tp_previsaoreal
-      from
-        vr_fcp_duplicatai fd
-      left join vr_fcp_despduplicatai vfd on
-        fd.nr_duplicata = vfd.nr_duplicata
-        and fd.cd_empresa = vfd.cd_empresa
-        and fd.cd_fornecedor = vfd.cd_fornecedor
-        and fd.dt_emissao = vfd.dt_emissao
-        and fd.nr_parcela = vfd.nr_parcela
-      where
-        fd.dt_emissao between $1 and $2
-        and fd.cd_empresa in (${empresaPlaceholders})
-        and fd.tp_situacao = 'N'
-        and fd.tp_previsaoreal = 2
-      group by
-        fd.cd_empresa,
-        fd.cd_fornecedor,
-        fd.nr_duplicata,
-        fd.nr_portador,
-        fd.nr_parcela,
-        fd.dt_emissao,
-        fd.dt_vencimento,
-        fd.dt_entrada,
-        fd.dt_liq,
-        fd.tp_situacao,
-        fd.tp_estagio,
-        fd.vl_duplicata,
-        fd.vl_juros,
-        fd.vl_acrescimo,
-        fd.vl_desconto,
-        fd.vl_pago,
-        fd.in_aceite,
-        fd.tp_previsaoreal,
-        vfd.vl_rateio,
-        vfd.cd_ccusto,
-        vfd.cd_despesaitem
-    `
-      : `
-      select
-        fd.cd_empresa,
-        fd.cd_fornecedor,
-        fd.nr_duplicata,
-        fd.nr_portador,
-        fd.nr_parcela,
-        vfd.vl_rateio,
-        vfd.cd_ccusto,
-        vfd.cd_despesaitem,
-        fd.dt_emissao,
-        fd.dt_vencimento,
-        fd.dt_entrada,
-        fd.dt_liq,
-        fd.tp_situacao,
-        fd.tp_estagio,
-        fd.vl_duplicata,
-        fd.vl_juros,
-        fd.vl_acrescimo,
-        fd.vl_desconto,
-        fd.vl_pago,
-        fd.in_aceite,
-        fd.tp_previsaoreal
-      from
-        vr_fcp_duplicatai fd
-      left join vr_fcp_despduplicatai vfd on
-        fd.nr_duplicata = vfd.nr_duplicata
-        and fd.cd_empresa = vfd.cd_empresa
-        and fd.cd_fornecedor = vfd.cd_fornecedor
-        and fd.dt_emissao = vfd.dt_emissao
-        and fd.nr_parcela = vfd.nr_parcela
-      where
-        fd.dt_emissao between $1 and $2
-        and fd.cd_empresa in (${empresaPlaceholders})
-        and fd.tp_situacao = 'N'
-        and fd.tp_previsaoreal = 2
-      group by
-        fd.cd_empresa,
-        fd.cd_fornecedor,
-        fd.nr_duplicata,
-        fd.nr_portador,
-        fd.nr_parcela,
-        fd.dt_emissao,
-        fd.dt_vencimento,
-        fd.dt_entrada,
-        fd.dt_liq,
-        fd.tp_situacao,
-        fd.tp_estagio,
-        fd.vl_duplicata,
-        fd.vl_juros,
-        fd.vl_acrescimo,
-        fd.vl_desconto,
-        fd.vl_pago,
-        fd.in_aceite,
-        fd.tp_previsaoreal,
-        vfd.vl_rateio,
-        vfd.cd_ccusto,
-        vfd.cd_despesaitem
-      
+    // Criar placeholders para múltiplas empresas
+    const empresaPlaceholders = empresas
+      .map((_, idx) => `$${paramIndex + idx}`)
+      .join(',');
+    params.push(...empresas);
+    paramIndex += empresas.length;
+
+    let whereConditions = `
+      WHERE fd.dt_emissao BETWEEN $1 AND $2
+        AND fd.cd_empresa IN (${empresaPlaceholders})
     `;
 
-    const queryType = isVeryHeavyQuery
-      ? 'muito-pesada'
-      : isHeavyQuery
-        ? 'pesada'
-        : 'completa';
+    // Filtro por situação (Normais, Canceladas, Todas)
+    if (situacao && situacao !== 'TODAS') {
+      if (situacao === 'NORMAIS') {
+        whereConditions += ` AND fd.tp_situacao = 'N'`;
+      } else if (situacao === 'CANCELADAS') {
+        whereConditions += ` AND fd.tp_situacao = 'C'`;
+      }
+    } else if (!situacao) {
+      // Manter comportamento padrão original: apenas normais
+      whereConditions += ` AND fd.tp_situacao = 'N'`;
+    }
+
+    // Filtro por status (Pago, Vencido, A Vencer, Em Aberto)
+    if (status && status !== 'Todos') {
+      if (status === 'Pago') {
+        whereConditions += ` AND fd.vl_pago > 0`;
+      } else if (status === 'Vencido') {
+        whereConditions += ` AND (fd.vl_pago = 0 OR fd.vl_pago IS NULL) AND fd.dt_vencimento < CURRENT_DATE`;
+      } else if (status === 'A Vencer') {
+        whereConditions += ` AND (fd.vl_pago = 0 OR fd.vl_pago IS NULL) AND fd.dt_vencimento >= CURRENT_DATE`;
+      } else if (status === 'Em Aberto') {
+        whereConditions += ` AND (fd.vl_pago = 0 OR fd.vl_pago IS NULL)`;
+      }
+    }
+
+    // Filtro por previsão (PREVISÃO, REAL, CONSIGNADO)
+    if (previsao && previsao !== 'TODOS') {
+      let previsaoValue;
+      if (previsao === 'PREVISAO') previsaoValue = '1';
+      else if (previsao === 'REAL') previsaoValue = '2';
+      else if (previsao === 'CONSIGNADO') previsaoValue = '3';
+
+      if (previsaoValue) {
+        whereConditions += ` AND fd.tp_previsaoreal = $${paramIndex}`;
+        params.push(previsaoValue);
+        paramIndex++;
+      }
+    } else if (!previsao) {
+      // Manter comportamento padrão original: apenas real
+      whereConditions += ` AND fd.tp_previsaoreal = 2`;
+    }
+
+    // Filtro por fornecedores (múltiplos)
+    if (cd_fornecedor) {
+      const fornecedores = Array.isArray(cd_fornecedor)
+        ? cd_fornecedor
+        : [cd_fornecedor];
+      const fornecedoresFiltrados = fornecedores.filter(
+        (f) => f && f !== '' && f !== 'null',
+      );
+
+      if (fornecedoresFiltrados.length > 0) {
+        const placeholders = fornecedoresFiltrados
+          .map((_, idx) => `$${paramIndex + idx}`)
+          .join(',');
+        whereConditions += ` AND fd.cd_fornecedor IN (${placeholders})`;
+        params.push(...fornecedoresFiltrados);
+        paramIndex += fornecedoresFiltrados.length;
+      }
+    }
+
+    // Filtro por centros de custo (múltiplos)
+    if (cd_ccusto) {
+      const centrosCusto = Array.isArray(cd_ccusto) ? cd_ccusto : [cd_ccusto];
+      const centrosFiltrados = centrosCusto.filter(
+        (c) => c && c !== '' && c !== 'null',
+      );
+
+      if (centrosFiltrados.length > 0) {
+        const placeholders = centrosFiltrados
+          .map((_, idx) => `$${paramIndex + idx}`)
+          .join(',');
+        whereConditions += ` AND vfd.cd_ccusto IN (${placeholders})`;
+        params.push(...centrosFiltrados);
+        paramIndex += centrosFiltrados.length;
+      }
+    }
+
+    // Filtro por despesas (múltiplas)
+    if (cd_despesaitem) {
+      const despesas = Array.isArray(cd_despesaitem)
+        ? cd_despesaitem
+        : [cd_despesaitem];
+      const despesasFiltradas = despesas.filter(
+        (d) => d && d !== '' && d !== 'null',
+      );
+
+      if (despesasFiltradas.length > 0) {
+        const placeholders = despesasFiltradas
+          .map((_, idx) => `$${paramIndex + idx}`)
+          .join(',');
+        whereConditions += ` AND vfd.cd_despesaitem IN (${placeholders})`;
+        params.push(...despesasFiltradas);
+        paramIndex += despesasFiltradas.length;
+      }
+    }
+
+    // Filtro por número da duplicata (busca parcial)
+    if (nr_duplicata && nr_duplicata.trim() !== '') {
+      whereConditions += ` AND CAST(fd.nr_duplicata AS TEXT) ILIKE $${paramIndex}`;
+      params.push(`%${nr_duplicata.trim()}%`);
+      paramIndex++;
+    }
+
+    const query = `
+      SELECT
+        fd.cd_empresa,
+        fd.cd_fornecedor,
+        fd.nr_duplicata,
+        fd.nr_portador,
+        fd.nr_parcela,
+        vfd.vl_rateio,
+        vfd.cd_ccusto,
+        vfd.cd_despesaitem,
+        fd.dt_emissao,
+        fd.dt_vencimento,
+        fd.dt_entrada,
+        fd.dt_liq,
+        fd.tp_situacao,
+        fd.tp_estagio,
+        fd.vl_duplicata,
+        fd.vl_juros,
+        fd.vl_acrescimo,
+        fd.vl_desconto,
+        fd.vl_pago,
+        fd.in_aceite,
+        fd.tp_previsaoreal
+      FROM vr_fcp_duplicatai fd
+      LEFT JOIN vr_fcp_despduplicatai vfd ON
+        fd.nr_duplicata = vfd.nr_duplicata
+        AND fd.cd_empresa = vfd.cd_empresa
+        AND fd.cd_fornecedor = vfd.cd_fornecedor
+        AND fd.dt_emissao = vfd.dt_emissao
+        AND fd.nr_parcela = vfd.nr_parcela
+      ${whereConditions}
+      GROUP BY
+        fd.cd_empresa, fd.cd_fornecedor, fd.nr_duplicata, fd.nr_portador, fd.nr_parcela,
+        fd.dt_emissao, fd.dt_vencimento, fd.dt_entrada, fd.dt_liq, fd.tp_situacao,
+        fd.tp_estagio, fd.vl_duplicata, fd.vl_juros, fd.vl_acrescimo, fd.vl_desconto,
+        fd.vl_pago, fd.in_aceite, fd.tp_previsaoreal, vfd.vl_rateio, vfd.cd_ccusto, vfd.cd_despesaitem
+    `;
+
     console.log(
-      `🔍 Contas-pagar-emissao: ${empresas.length} empresas, período: ${dt_inicio} a ${dt_fim}, query: ${queryType}`,
+      `🔍 Contas-pagar-emissao: ${empresas.length} empresas, período: ${dt_inicio} a ${dt_fim}`,
+      {
+        status,
+        situacao,
+        previsao,
+        cd_fornecedor: cd_fornecedor ? 'sim' : 'não',
+        cd_ccusto: cd_ccusto ? 'sim' : 'não',
+        cd_despesaitem: cd_despesaitem ? 'sim' : 'não',
+        nr_duplicata,
+      },
     );
 
     const { rows } = await pool.query(query, params);
@@ -551,19 +677,18 @@ router.get(
         empresas,
         totals,
         count: rows.length,
-        optimized: isHeavyQuery || isVeryHeavyQuery,
-        queryType: queryType,
-        performance: {
-          isHeavyQuery,
-          isVeryHeavyQuery,
-          diasPeriodo: Math.ceil(
-            (new Date(dt_fim) - new Date(dt_inicio)) / (1000 * 60 * 60 * 24),
-          ),
-          limiteAplicado: 'sem limite',
+        filtros: {
+          status,
+          situacao,
+          previsao,
+          cd_fornecedor,
+          cd_ccusto,
+          cd_despesaitem,
+          nr_duplicata,
         },
         data: rows,
       },
-      `Contas a pagar por data de emissão obtidas com sucesso (${queryType})`,
+      `Contas a pagar por data de emissão obtidas com sucesso`,
     );
   }),
 );
@@ -3699,355 +3824,6 @@ router.get(
   }),
 );
 
-// Configuração de upload para PDFs de extratos bancários
-const uploadPDF = multer({
-  storage: multer.memoryStorage(),
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/pdf') {
-      cb(null, true);
-    } else {
-      cb(new Error('Apenas arquivos PDF são permitidos'), false);
-    }
-  },
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB
-  },
-}).array('pdfs', 50); // Máximo 50 PDFs por vez
-
-/**
- * @route POST /financial/processar-extrato-pdf
- * @desc Processar arquivos PDF de extratos bancários
- * @access Private
- */
-router.post(
-  '/processar-extrato-pdf',
-  (req, res, next) => {
-    uploadPDF(req, res, (err) => {
-      if (err instanceof multer.MulterError) {
-        return errorResponse(
-          res,
-          `Erro no upload: ${err.message}`,
-          400,
-          'UPLOAD_ERROR',
-        );
-      } else if (err) {
-        return errorResponse(res, err.message, 400, 'FILE_TYPE_ERROR');
-      }
-      next();
-    });
-  },
-  asyncHandler(async (req, res) => {
-    if (!req.files || req.files.length === 0) {
-      return errorResponse(
-        res,
-        'Nenhum arquivo PDF foi enviado',
-        400,
-        'NO_FILES',
-      );
-    }
-
-    const pdfParse = (await import('pdf-parse')).default;
-    const extratosProcessados = [];
-
-    console.log(`📄 Processando ${req.files.length} arquivo(s) PDF...`);
-
-    for (const file of req.files) {
-      try {
-        // Processar PDF
-        const data = await pdfParse(file.buffer);
-        const texto = data.text;
-
-        console.log(`📖 Lendo: ${file.originalname}`);
-
-        // Identificar banco
-        const banco = identificarBancoPDF(texto);
-
-        // Extrair dados gerais
-        const dadosGerais = extrairDadosGeraisPDF(texto, banco.codigo);
-
-        // Extrair movimentações
-        const movimentacoes = extrairMovimentacoesPDF(texto, banco.codigo);
-
-        // Calcular totais
-        const totalCreditos = movimentacoes
-          .filter((m) => m.tipo === 'C')
-          .reduce((acc, m) => acc + m.valor, 0);
-
-        const totalDebitos = movimentacoes
-          .filter((m) => m.tipo === 'D')
-          .reduce((acc, m) => acc + Math.abs(m.valor), 0);
-
-        extratosProcessados.push({
-          arquivo: file.originalname,
-          banco: banco,
-          periodo: dadosGerais.periodo,
-          agencia: dadosGerais.agencia,
-          conta: dadosGerais.conta,
-          saldoAnterior: dadosGerais.saldoAnterior,
-          saldoAtual: dadosGerais.saldoAtual,
-          totalCreditos: totalCreditos,
-          totalDebitos: totalDebitos,
-          movimentacoes: movimentacoes,
-          numPaginas: data.numpages,
-        });
-
-        console.log(
-          `✅ ${file.originalname}: ${movimentacoes.length} movimentações`,
-        );
-      } catch (error) {
-        console.error(
-          `❌ Erro ao processar ${file.originalname}:`,
-          error.message,
-        );
-
-        extratosProcessados.push({
-          arquivo: file.originalname,
-          erro: true,
-          mensagem: `Erro ao processar: ${error.message}`,
-        });
-      }
-    }
-
-    successResponse(
-      res,
-      {
-        totalArquivos: req.files.length,
-        processados: extratosProcessados.filter((e) => !e.erro).length,
-        erros: extratosProcessados.filter((e) => e.erro).length,
-        extratos: extratosProcessados,
-      },
-      'Extratos processados com sucesso',
-    );
-  }),
-);
-
-// Função para identificar banco pelo texto do PDF
-function identificarBancoPDF(texto) {
-  const textoLower = texto.toLowerCase();
-
-  if (
-    textoLower.includes('banco do brasil') ||
-    textoLower.includes('001-9') ||
-    textoLower.includes('001.9')
-  ) {
-    return { nome: 'Banco do Brasil', codigo: '001', cor: 'yellow' };
-  }
-  if (
-    textoLower.includes('bradesco') ||
-    textoLower.includes('237-2') ||
-    textoLower.includes('237.2')
-  ) {
-    return { nome: 'Bradesco', codigo: '237', cor: 'red' };
-  }
-  if (
-    textoLower.includes('caixa econômica') ||
-    textoLower.includes('caixa econômica federal') ||
-    textoLower.includes('104-0') ||
-    textoLower.includes('104.0') ||
-    textoLower.includes('c a i x a')
-  ) {
-    return { nome: 'Caixa Econômica Federal', codigo: '104', cor: 'blue' };
-  }
-  if (
-    textoLower.includes('itaú') ||
-    textoLower.includes('itau') ||
-    textoLower.includes('341-7') ||
-    textoLower.includes('341.7')
-  ) {
-    return { nome: 'Itaú', codigo: '341', cor: 'orange' };
-  }
-  if (
-    textoLower.includes('santander') ||
-    textoLower.includes('033-7') ||
-    textoLower.includes('033.7')
-  ) {
-    return { nome: 'Santander', codigo: '033', cor: 'red' };
-  }
-  if (
-    textoLower.includes('sicredi') ||
-    textoLower.includes('748-x') ||
-    textoLower.includes('748.x')
-  ) {
-    return { nome: 'Sicredi', codigo: '748', cor: 'green' };
-  }
-  if (
-    textoLower.includes('unicred') ||
-    textoLower.includes('136-1') ||
-    textoLower.includes('136.1')
-  ) {
-    return { nome: 'Unicred', codigo: '136', cor: 'purple' };
-  }
-  if (
-    textoLower.includes('bnb') ||
-    textoLower.includes('banco do nordeste') ||
-    textoLower.includes('004-3') ||
-    textoLower.includes('004.3')
-  ) {
-    return { nome: 'Banco do Nordeste', codigo: '004', cor: 'blue' };
-  }
-
-  return { nome: 'Banco Não Identificado', codigo: '000', cor: 'gray' };
-}
-
-// Função para extrair dados gerais do extrato
-function extrairDadosGeraisPDF(texto, codigoBanco) {
-  const dados = {
-    periodo: { inicio: '', fim: '' },
-    agencia: '',
-    conta: '',
-    saldoAnterior: 0,
-    saldoAtual: 0,
-  };
-
-  try {
-    // Extrair período
-    const regexPeriodo =
-      /per[ií]odo[:\s]+(\d{2}[\/\-]\d{2}[\/\-]\d{4})\s+(?:a|at[ée])\s+(\d{2}[\/\-]\d{2}[\/\-]\d{4})/i;
-    const matchPeriodo = texto.match(regexPeriodo);
-    if (matchPeriodo) {
-      dados.periodo.inicio = matchPeriodo[1].replace(/-/g, '/');
-      dados.periodo.fim = matchPeriodo[2].replace(/-/g, '/');
-    }
-
-    // Extrair agência e conta (padrões comuns)
-    const regexAgencia = /ag[êe]ncia[:\s]+(\d{4,5})/i;
-    const matchAgencia = texto.match(regexAgencia);
-    if (matchAgencia) {
-      dados.agencia = matchAgencia[1];
-    }
-
-    const regexConta = /conta[:\s]+(\d{5,12}[\-\.]?\d?)/i;
-    const matchConta = texto.match(regexConta);
-    if (matchConta) {
-      dados.conta = matchConta[1];
-    }
-
-    // Extrair saldos
-    const regexSaldoAnterior = /saldo\s+anterior[:\s]+r?\$?\s*([\d\.,]+)/i;
-    const matchSaldoAnterior = texto.match(regexSaldoAnterior);
-    if (matchSaldoAnterior) {
-      dados.saldoAnterior = parseFloat(
-        matchSaldoAnterior[1].replace(/\./g, '').replace(',', '.'),
-      );
-    }
-
-    const regexSaldoAtual = /saldo\s+(?:atual|final)[:\s]+r?\$?\s*([\d\.,]+)/i;
-    const matchSaldoAtual = texto.match(regexSaldoAtual);
-    if (matchSaldoAtual) {
-      dados.saldoAtual = parseFloat(
-        matchSaldoAtual[1].replace(/\./g, '').replace(',', '.'),
-      );
-    }
-  } catch (error) {
-    console.error('Erro ao extrair dados gerais:', error.message);
-  }
-
-  return dados;
-}
-
-// Função para extrair movimentações do extrato
-function extrairMovimentacoesPDF(texto, codigoBanco) {
-  const movimentacoes = [];
-
-  try {
-    // Padrão genérico para linhas de movimentação
-    // Formato: DD/MM/YYYY ou DD/MM  DESCRIÇÃO  VALOR  SALDO
-    const linhas = texto.split('\n');
-
-    for (let i = 0; i < linhas.length; i++) {
-      const linha = linhas[i].trim();
-
-      // Regex para detectar movimentações (flexível para diferentes formatos)
-      const regexMovimentacao =
-        /(\d{2}[\/\-]\d{2}(?:[\/\-]\d{2,4})?)\s+(.+?)\s+([\d\.,]+)(?:\s+[CD])?\s+([\d\.,]+)/;
-      const match = linha.match(regexMovimentacao);
-
-      if (match) {
-        const data = match[1];
-        let historico = match[2].trim();
-        const valor = parseFloat(match[3].replace(/\./g, '').replace(',', '.'));
-        const saldo = parseFloat(match[4].replace(/\./g, '').replace(',', '.'));
-
-        // Detectar se é crédito ou débito pela palavra-chave ou contexto
-        let tipo = 'D';
-        const historicoLower = historico.toLowerCase();
-
-        if (
-          historicoLower.includes('deposito') ||
-          historicoLower.includes('crédito') ||
-          historicoLower.includes('credito') ||
-          historicoLower.includes('pix recebido') ||
-          historicoLower.includes('ted recebida') ||
-          historicoLower.includes('doc creditado') ||
-          historicoLower.includes('entrada') ||
-          historicoLower.includes('recebimento')
-        ) {
-          tipo = 'C';
-        }
-
-        // Extrair documento se houver
-        const regexDoc = /\b(\d{6,})\b/;
-        const matchDoc = historico.match(regexDoc);
-        const documento = matchDoc ? matchDoc[1] : '';
-
-        movimentacoes.push({
-          id: movimentacoes.length,
-          data: data,
-          historico: historico.substring(0, 100), // Limitar tamanho
-          documento: documento,
-          tipo: tipo,
-          valor: tipo === 'C' ? valor : -valor,
-          saldo: saldo,
-        });
-      }
-    }
-  } catch (error) {
-    console.error('Erro ao extrair movimentações:', error.message);
-  }
-
-  return movimentacoes;
-}
-
-/**
- * @route GET /financial/extratos/:banco
- * @desc Processar e retornar extratos bancários de um banco específico
- * @access Public
- * @param {string} banco - Nome do banco (bb, caixa, santander, itau, sicredi, bnb, unicred, bradesco)
- */
-router.get(
-  '/extratos/:banco',
-  asyncHandler(async (req, res) => {
-    const { banco } = req.params;
-
-    // Importação dinâmica do extractorManager
-    const { processExtractsByBank } =
-      await import('../utils/extratos/extractorManager.js');
-
-    try {
-      const result = await processExtractsByBank(banco);
-
-      successResponse(
-        res,
-        result,
-        `Extratos do banco ${banco.toUpperCase()} processados com sucesso`,
-      );
-    } catch (error) {
-      if (error.message.includes('Banco não suportado')) {
-        errorResponse(res, error.message, 400, 'INVALID_BANK');
-      } else if (error.message.includes('Diretório não encontrado')) {
-        errorResponse(
-          res,
-          `Nenhum extrato encontrado para o banco ${banco.toUpperCase()}`,
-          404,
-          'EXTRATOS_NOT_FOUND',
-        );
-      } else {
-        throw error;
-      }
-    }
-  }),
-);
-
 /**
  * @route GET /financial/auditoria-conta
  * @desc Buscar movimentações de contas específicas para auditoria
@@ -4525,192 +4301,6 @@ router.get(
       console.error('❌ Erro na query de auditoria de faturamento:', error);
       throw error;
     }
-  }),
-);
-
-// ============================================
-// BATIDA DE CARTEIRA - UPLOAD DE ARQUIVOS BANCÁRIOS
-// ============================================
-
-// Importar parsers de bancos
-import { processConfiancaFile } from '../utils/extratos/CONFIANCA.js';
-import { processSantanderFile } from '../utils/extratos/SANTANDER.js';
-import { processSicrediFile } from '../utils/extratos/SICREDI.js';
-
-// Configuração do multer para upload de arquivos bancários
-const uploadBancario = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = [
-      'text/csv',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'text/plain',
-    ];
-    const allowedExtensions = ['.csv', '.xls', '.xlsx', '.txt'];
-    const ext = path.extname(file.originalname).toLowerCase();
-
-    if (
-      allowedTypes.includes(file.mimetype) ||
-      allowedExtensions.includes(ext)
-    ) {
-      cb(null, true);
-    } else {
-      cb(
-        new Error('Tipo de arquivo não permitido. Use CSV, XLS, XLSX ou TXT.'),
-      );
-    }
-  },
-});
-
-/**
- * @route POST /financial/batida-carteira/upload
- * @desc Processar arquivo de retorno bancário
- * @access Private
- */
-router.post(
-  '/batida-carteira/upload',
-  (req, res, next) => {
-    uploadBancario.single('arquivo')(req, res, (err) => {
-      if (err instanceof multer.MulterError) {
-        return errorResponse(
-          res,
-          `Erro no upload: ${err.message}`,
-          400,
-          'UPLOAD_ERROR',
-        );
-      } else if (err) {
-        return errorResponse(res, err.message, 400, 'UPLOAD_ERROR');
-      }
-      next();
-    });
-  },
-  asyncHandler(async (req, res) => {
-    const { banco } = req.body;
-    const file = req.file;
-
-    if (!file) {
-      return errorResponse(res, 'Nenhum arquivo enviado', 400, 'NO_FILE');
-    }
-
-    if (!banco) {
-      return errorResponse(res, 'Banco não informado', 400, 'NO_BANK');
-    }
-
-    const bancoUpper = banco.toUpperCase();
-    console.log(
-      `📁 Processando arquivo do banco ${bancoUpper}: ${file.originalname}`,
-    );
-
-    let resultado;
-
-    switch (bancoUpper) {
-      case 'CONFIANCA':
-        resultado = processConfiancaFile(file.buffer);
-        break;
-      case 'BRADESCO':
-        // TODO: Implementar parser do Bradesco
-        return errorResponse(
-          res,
-          'Parser do Bradesco ainda não implementado',
-          501,
-          'NOT_IMPLEMENTED',
-        );
-      case 'SANTANDER':
-        resultado = processSantanderFile(file.buffer);
-        break;
-      case 'BB':
-        // TODO: Implementar parser do BB
-        return errorResponse(
-          res,
-          'Parser do BB ainda não implementado',
-          501,
-          'NOT_IMPLEMENTED',
-        );
-      case 'CEF':
-        // TODO: Implementar parser da CEF
-        return errorResponse(
-          res,
-          'Parser da CEF ainda não implementado',
-          501,
-          'NOT_IMPLEMENTED',
-        );
-      case 'ITAU':
-        // TODO: Implementar parser do Itaú
-        return errorResponse(
-          res,
-          'Parser do Itaú ainda não implementado',
-          501,
-          'NOT_IMPLEMENTED',
-        );
-      case 'SICREDI':
-        resultado = processSicrediFile(file.buffer);
-        break;
-      case 'UNICRED':
-        // TODO: Implementar parser do Unicred
-        return errorResponse(
-          res,
-          'Parser do Unicred ainda não implementado',
-          501,
-          'NOT_IMPLEMENTED',
-        );
-      case 'DAYCOVAL':
-        // TODO: Implementar parser do Daycoval
-        return errorResponse(
-          res,
-          'Parser do Daycoval ainda não implementado',
-          501,
-          'NOT_IMPLEMENTED',
-        );
-      default:
-        return errorResponse(
-          res,
-          `Banco não suportado: ${banco}`,
-          400,
-          'UNSUPPORTED_BANK',
-        );
-    }
-
-    if (!resultado.success) {
-      return errorResponse(res, resultado.error, 400, 'PARSE_ERROR');
-    }
-
-    console.log(
-      `✅ Arquivo processado: ${resultado.stats.totalRegistros} registros`,
-    );
-
-    successResponse(
-      res,
-      resultado,
-      `Arquivo processado com sucesso: ${resultado.stats.totalRegistros} registros`,
-    );
-  }),
-);
-
-/**
- * @route GET /financial/batida-carteira/bancos
- * @desc Listar bancos disponíveis para importação
- * @access Public
- */
-router.get(
-  '/batida-carteira/bancos',
-  asyncHandler(async (req, res) => {
-    const bancos = [
-      { codigo: 'BRADESCO', nome: 'Bradesco', implementado: false },
-      { codigo: 'SANTANDER', nome: 'Santander', implementado: true },
-      { codigo: 'BB', nome: 'Banco do Brasil', implementado: false },
-      { codigo: 'CEF', nome: 'Caixa Econômica Federal', implementado: false },
-      { codigo: 'ITAU', nome: 'Itaú', implementado: false },
-      { codigo: 'SICREDI', nome: 'Sicredi', implementado: true },
-      { codigo: 'UNICRED', nome: 'Unicred', implementado: false },
-      { codigo: 'DAYCOVAL', nome: 'Daycoval', implementado: false },
-      { codigo: 'CONFIANCA', nome: 'Confiança', implementado: true },
-    ];
-
-    successResponse(res, bancos, 'Lista de bancos disponíveis');
   }),
 );
 
