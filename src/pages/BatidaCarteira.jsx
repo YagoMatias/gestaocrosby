@@ -74,6 +74,7 @@ const BatidaCarteira = () => {
   // Estado para modal de detalhes dos cards
   const [modalDetalheAberto, setModalDetalheAberto] = useState(null); // null, 'batidos', 'soSistema', 'soArquivo', 'divergentes'
 
+  // Bancos para importação de arquivo bancário
   const bancos = [
     { codigo: 'BRADESCO', nome: 'Bradesco' },
     { codigo: 'SANTANDER', nome: 'Santander' },
@@ -84,6 +85,12 @@ const BatidaCarteira = () => {
     { codigo: 'UNICRED', nome: 'Unicred' },
     { codigo: 'DAYCOVAL', nome: 'Daycoval' },
     { codigo: 'CONFIANCA', nome: 'Confiança' },
+  ];
+
+  // Opções para importar dados do sistema (quando API está indisponível)
+  const fontesSystem = [
+    { codigo: 'SISTEMA_CONFIANCA', nome: 'Sistema - Confiança (CSV)' },
+    { codigo: 'SISTEMA_SICREDI', nome: 'Sistema - Sicredi (CSV)' },
   ];
 
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
@@ -440,8 +447,19 @@ const BatidaCarteira = () => {
             erros: erros.length > 0 ? erros : null,
           },
         });
-        setDadosImportados(todosRegistros);
-        setBancoImportado(bancoSelecionado);
+
+        // Se é importação do SISTEMA (CSV exportado), colocar nos dados do sistema
+        if (bancoSelecionado.startsWith('SISTEMA_')) {
+          setDados(todosRegistros);
+          setDadosCarregados(true);
+          // Extrair o banco real (SISTEMA_CONFIANCA -> CONFIANCA)
+          const bancoReal = bancoSelecionado.replace('SISTEMA_', '');
+          setBancoImportado(bancoReal);
+        } else {
+          // Importação normal do arquivo do banco
+          setDadosImportados(todosRegistros);
+          setBancoImportado(bancoSelecionado);
+        }
       } else {
         setUploadResultado({
           success: false,
@@ -1443,24 +1461,43 @@ const BatidaCarteira = () => {
 
             {/* Conteúdo do Modal */}
             <div className="p-4 space-y-4">
-              {/* Seleção do Banco */}
+              {/* Seleção do Banco/Fonte */}
               <div>
                 <label className="block text-sm font-semibold text-[#000638] mb-2">
-                  Selecione o Banco
+                  Selecione a Fonte de Dados
                 </label>
                 <select
                   value={bancoSelecionado}
                   onChange={(e) => setBancoSelecionado(e.target.value)}
                   className="w-full border border-[#000638]/30 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638]"
                 >
-                  <option value="">Selecione um banco...</option>
-                  {bancos.map((banco) => (
-                    <option key={banco.codigo} value={banco.codigo}>
-                      {banco.nome}
-                    </option>
-                  ))}
+                  <option value="">Selecione uma opção...</option>
+                  <optgroup label="📁 Arquivo do Banco">
+                    {bancos.map((banco) => (
+                      <option key={banco.codigo} value={banco.codigo}>
+                        {banco.nome}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="💾 Dados do Sistema (Offline)">
+                    {fontesSystem.map((fonte) => (
+                      <option key={fonte.codigo} value={fonte.codigo}>
+                        {fonte.nome}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
               </div>
+
+              {/* Aviso para importação do sistema */}
+              {bancoSelecionado.startsWith('SISTEMA_') && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+                  <strong>⚠️ Modo Offline:</strong> Você está importando dados
+                  do <strong>SISTEMA</strong> via CSV. Esses dados substituirão
+                  os dados que normalmente viriam da API. Depois, importe o
+                  arquivo do banco para fazer a batida.
+                </div>
+              )}
 
               {/* Dica para Confiança */}
               {bancoSelecionado === 'CONFIANCA' && (

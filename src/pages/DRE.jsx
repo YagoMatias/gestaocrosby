@@ -946,68 +946,94 @@ const DRE = () => {
       });
 
       // ============================================
-      // BUSCAR CMV (mantendo rotas existentes)
+      // BUSCAR CMV (usando transações por canal)
       // ============================================
       setLoadingStatus(`${statusPrefix}Buscando CMV...`);
 
-      const paramsCMVVarejo = {
-        dataInicio: periodo.dt_inicio,
-        dataFim: periodo.dt_fim,
-        cd_grupoempresa: empresasVarejo,
-      };
+      // Coletar transações únicas de cada canal para o CMV
+      const transacoesVarejoCMV = [
+        ...new Set(
+          faturasVarejo
+            .map((item) => item.nr_transacao)
+            .filter((t) => t !== null && t !== undefined && t !== ''),
+        ),
+      ];
 
-      const paramsCMVMultimarcas = {
-        dataInicio: periodo.dt_inicio,
-        dataFim: periodo.dt_fim,
-        cd_grupoempresa: empresasFixas,
-      };
+      const transacoesMultimarcasCMV = [
+        ...new Set(
+          faturasMultimarcas
+            .map((item) => item.nr_transacao)
+            .filter((t) => t !== null && t !== undefined && t !== ''),
+        ),
+      ];
 
-      const paramsCMVFranquias = {
-        dataInicio: periodo.dt_inicio,
-        dataFim: periodo.dt_fim,
-        cd_grupoempresa: empresasFixas,
-      };
+      const transacoesFranquiasCMV = [
+        ...new Set(
+          faturasFranquias
+            .map((item) => item.nr_transacao)
+            .filter((t) => t !== null && t !== undefined && t !== ''),
+        ),
+      ];
 
-      const paramsCMVRevenda = {
-        dataInicio: periodo.dt_inicio,
-        dataFim: periodo.dt_fim,
-        cd_grupoempresa: empresasFixas,
-      };
+      const transacoesRevendaCMV = [
+        ...new Set(
+          faturasRevenda
+            .map((item) => item.nr_transacao)
+            .filter((t) => t !== null && t !== undefined && t !== ''),
+        ),
+      ];
 
-      const [cmvVarejo, cmvMultimarcas, cmvFranquias, cmvRevenda] =
-        await Promise.all([
-          api.sales.cmvVarejo(paramsCMVVarejo),
-          api.sales.cmvMultimarcas(paramsCMVMultimarcas),
-          api.sales.cmvFranquias(paramsCMVFranquias),
-          api.sales.cmvRevenda(paramsCMVRevenda),
-        ]);
+      console.log('📊 Transações para CMV:', {
+        varejo: transacoesVarejoCMV.length,
+        multimarcas: transacoesMultimarcasCMV.length,
+        franquias: transacoesFranquiasCMV.length,
+        revenda: transacoesRevendaCMV.length,
+      });
+
+      // Chamada única à nova rota de CMV
+      const respostaCMV = await api.financial.cmvPorTransacoes({
+        varejo: transacoesVarejoCMV,
+        multimarcas: transacoesMultimarcasCMV,
+        franquias: transacoesFranquiasCMV,
+        revenda: transacoesRevendaCMV,
+      });
+
+      let dadosCMVVarejo = { cmv: 0, produtosSaida: 0, produtosEntrada: 0 };
+      let dadosCMVMultimarcas = {
+        cmv: 0,
+        produtosSaida: 0,
+        produtosEntrada: 0,
+      };
+      let dadosCMVFranquias = { cmv: 0, produtosSaida: 0, produtosEntrada: 0 };
+      let dadosCMVRevenda = { cmv: 0, produtosSaida: 0, produtosEntrada: 0 };
+
+      if (respostaCMV?.success && respostaCMV?.data) {
+        dadosCMVVarejo = respostaCMV.data?.varejo || {
+          cmv: 0,
+          produtosSaida: 0,
+          produtosEntrada: 0,
+        };
+        dadosCMVMultimarcas = respostaCMV.data?.multimarcas || {
+          cmv: 0,
+          produtosSaida: 0,
+          produtosEntrada: 0,
+        };
+        dadosCMVFranquias = respostaCMV.data?.franquias || {
+          cmv: 0,
+          produtosSaida: 0,
+          produtosEntrada: 0,
+        };
+        dadosCMVRevenda = respostaCMV.data?.revenda || {
+          cmv: 0,
+          produtosSaida: 0,
+          produtosEntrada: 0,
+        };
+        console.log('✅ CMV recebido:', respostaCMV.data);
+      } else {
+        console.warn('⚠️ Resposta de CMV sem success');
+      }
 
       setLoadingStatus(`${statusPrefix}Processando dados...`);
-
-      // Calcular CMV
-      const calcularCMV = (responseCMV) => {
-        if (!responseCMV?.success || !responseCMV?.data)
-          return { cmv: 0, produtosSaida: 0, produtosEntrada: 0 };
-
-        const data = Array.isArray(responseCMV.data) ? responseCMV.data : [];
-        let cmvTotal = 0;
-        let produtosSaida = 0;
-        let produtosEntrada = 0;
-
-        for (const row of data) {
-          cmvTotal += parseFloat(row?.cmv || 0);
-          produtosSaida += parseFloat(row?.produtos_saida || 0);
-          produtosEntrada += parseFloat(row?.produtos_entrada || 0);
-        }
-
-        return { cmv: cmvTotal, produtosSaida, produtosEntrada };
-      };
-
-      // Processar CMV
-      const dadosCMVVarejo = calcularCMV(cmvVarejo);
-      const dadosCMVMultimarcas = calcularCMV(cmvMultimarcas);
-      const dadosCMVFranquias = calcularCMV(cmvFranquias);
-      const dadosCMVRevenda = calcularCMV(cmvRevenda);
 
       // Adicionar CMV aos totais por canal
       totaisVarejo.totalCMV = dadosCMVVarejo.cmv;
@@ -3741,11 +3767,12 @@ const DRE = () => {
               id: 'descontos',
               label: 'Descontos Concedidos',
               description: 'Descontos dados aos clientes',
-              value:
-                tv.totalDescontos +
-                tm.totalDescontos +
-                tr.totalDescontos +
-                tf.totalDescontos,
+              value: -(
+                Math.abs(tv.totalDescontos) +
+                Math.abs(tm.totalDescontos) +
+                Math.abs(tr.totalDescontos) +
+                Math.abs(tf.totalDescontos)
+              ),
               type: 'deducao',
               children: (function () {
                 // 🔍 DEBUG: Valores dos descontos na criação da estrutura
@@ -3760,7 +3787,7 @@ const DRE = () => {
                     tr.totalDescontos +
                     tf.totalDescontos,
                   observacao:
-                    'Descontos JÁ VÊM NEGATIVOS da API, não aplicar sinal negativo novamente',
+                    'Descontos são deduções - devem aparecer negativos (vermelho)',
                 });
 
                 return [
@@ -3768,7 +3795,7 @@ const DRE = () => {
                     id: 'descontos-varejo',
                     label: 'Varejo',
                     description: 'Descontos do canal Varejo',
-                    value: tv.totalDescontos,
+                    value: -Math.abs(tv.totalDescontos),
                     type: 'deducao',
                     porcentagem: calcularPorcentagem(
                       Math.abs(tv.totalDescontos),
@@ -3779,7 +3806,7 @@ const DRE = () => {
                     id: 'descontos-multimarcas',
                     label: 'Multimarcas',
                     description: 'Descontos do canal Multimarcas',
-                    value: tm.totalDescontos,
+                    value: -Math.abs(tm.totalDescontos),
                     type: 'deducao',
                     porcentagem: calcularPorcentagem(
                       Math.abs(tm.totalDescontos),
@@ -3790,7 +3817,7 @@ const DRE = () => {
                     id: 'descontos-revenda',
                     label: 'Revenda',
                     description: 'Descontos do canal Revenda',
-                    value: tr.totalDescontos,
+                    value: -Math.abs(tr.totalDescontos),
                     type: 'deducao',
                     porcentagem: calcularPorcentagem(
                       Math.abs(tr.totalDescontos),
@@ -3801,7 +3828,7 @@ const DRE = () => {
                     id: 'descontos-franquias',
                     label: 'Franquias',
                     description: 'Descontos do canal Franquias',
-                    value: tf.totalDescontos,
+                    value: -Math.abs(tf.totalDescontos),
                     type: 'deducao',
                     porcentagem: calcularPorcentagem(
                       Math.abs(tf.totalDescontos),

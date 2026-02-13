@@ -471,6 +471,14 @@ const useApiClient = () => {
       apiMutate('/api/financial/impostos-por-transacoes', 'POST', body),
 
     /**
+     * CMV por transações (separados por canal) - Rota POST simples
+     * @param {Object} body - { varejo: [nr_transacao], multimarcas: [...], franquias: [...], revenda: [...] }
+     * @returns {Promise<Object>} { varejo: {cmv, produtosSaida, produtosEntrada}, multimarcas: {...}, ... }
+     */
+    cmvPorTransacoes: (body) =>
+      apiMutate('/api/financial/cmv-por-transacoes', 'POST', body),
+
+    /**
      * Classificação de clientes (MULTIMARCAS/REVENDA/OUTROS)
      */
     classificacaoClientes: (params) =>

@@ -16,6 +16,12 @@ import { BankReturnParser } from '../utils/bankReturnParser.js';
 import fs from 'fs';
 import path from 'path';
 
+// Parsers específicos para batida de carteira
+import processConfiancaFile from '../utils/extratos/CONFIANCA.js';
+import processSicrediFile from '../utils/extratos/SICREDI.js';
+import processSistemaConfiancaFile from '../utils/extratos/SISTEMA_CONFIANCA.js';
+import processSistemaSicrediFile from '../utils/extratos/SISTEMA_SICREDI.js';
+
 const router = express.Router();
 
 /**
@@ -69,6 +75,44 @@ const upload = multer({
     }
   },
   // Removidos os limites de tamanho de arquivo
+});
+
+// Configuração para upload de arquivos de batida de carteira (CSV, XLS, XLSX)
+const storageBatidaCarteira = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = './uploads';
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+  },
+});
+
+const uploadBatidaCarteira = multer({
+  storage: storageBatidaCarteira,
+  fileFilter: (req, file, cb) => {
+    const fileName = file.originalname.toLowerCase();
+    const allowedExtensions = ['.csv', '.xls', '.xlsx', '.txt'];
+    const hasAllowedExtension = allowedExtensions.some((ext) =>
+      fileName.endsWith(ext),
+    );
+    if (
+      hasAllowedExtension ||
+      file.mimetype === 'text/plain' ||
+      file.mimetype === 'text/csv' ||
+      file.mimetype.includes('spreadsheet') ||
+      file.mimetype.includes('excel')
+    ) {
+      cb(null, true);
+    } else {
+      cb(new Error('Apenas arquivos CSV, XLS ou XLSX são permitidos'), false);
+    }
+  },
 });
 
 // Configuração para upload múltiplo
@@ -4374,14 +4418,14 @@ router.get(
   sanitizeInput,
   asyncHandler(async (req, res) => {
     const { nr_transacao } = req.query;
-    
+
     // Verificar quantidade total de registros
     const countResult = await pool.query(`
       SELECT COUNT(*) as total 
       FROM tra_itemimposto 
       WHERE cd_empresa < 5999 AND cd_imposto IN (1, 5, 6)
     `);
-    
+
     // Pegar 10 registros de exemplo
     const sampleResult = await pool.query(`
       SELECT nr_transacao, cd_imposto, vl_imposto, dt_transacao 
@@ -4389,23 +4433,30 @@ router.get(
       WHERE cd_empresa < 5999 AND cd_imposto IN (1, 5, 6)
       LIMIT 10
     `);
-    
+
     let testTransacao = null;
     if (nr_transacao) {
-      const testResult = await pool.query(`
+      const testResult = await pool.query(
+        `
         SELECT cd_imposto, SUM(vl_imposto) as valor 
         FROM tra_itemimposto 
         WHERE nr_transacao = $1 AND cd_empresa < 5999 AND cd_imposto IN (1, 5, 6)
         GROUP BY cd_imposto
-      `, [parseInt(nr_transacao)]);
+      `,
+        [parseInt(nr_transacao)],
+      );
       testTransacao = testResult.rows;
     }
-    
-    successResponse(res, {
-      total: countResult.rows[0]?.total,
-      sample: sampleResult.rows,
-      testTransacao
-    }, 'Teste da tabela tra_itemimposto');
+
+    successResponse(
+      res,
+      {
+        total: countResult.rows[0]?.total,
+        sample: sampleResult.rows,
+        testTransacao,
+      },
+      'Teste da tabela tra_itemimposto',
+    );
   }),
 );
 
@@ -4419,7 +4470,12 @@ router.post(
   '/impostos-por-transacoes',
   sanitizeInput,
   asyncHandler(async (req, res) => {
-    const { varejo = [], multimarcas = [], franquias = [], revenda = [] } = req.body;
+    const {
+      varejo = [],
+      multimarcas = [],
+      franquias = [],
+      revenda = [],
+    } = req.body;
 
     console.log('📊 Impostos por transações (POST) - Recebido:', {
       varejo: varejo.length,
@@ -4439,17 +4495,25 @@ router.post(
 
       // Filtrar transações válidas
       const transacoesValidas = transacoes.filter(
-        (t) => t !== null && t !== undefined && !isNaN(parseInt(t)) && parseInt(t) > 0,
+        (t) =>
+          t !== null &&
+          t !== undefined &&
+          !isNaN(parseInt(t)) &&
+          parseInt(t) > 0,
       );
 
-      console.log(`📊 ${nomeCanal}: ${transacoes.length} transações recebidas, ${transacoesValidas.length} válidas`);
+      console.log(
+        `📊 ${nomeCanal}: ${transacoes.length} transações recebidas, ${transacoesValidas.length} válidas`,
+      );
 
       if (transacoesValidas.length === 0) {
         return { icms: 0, pis: 0, cofins: 0, total: 0 };
       }
 
       // Query usando tra_itemimposto: buscar impostos agrupados por tipo
-      const placeholders = transacoesValidas.map((_, idx) => `$${idx + 1}`).join(',');
+      const placeholders = transacoesValidas
+        .map((_, idx) => `$${idx + 1}`)
+        .join(',');
       const params = transacoesValidas.map((t) => parseInt(t));
 
       const query = `
@@ -4467,8 +4531,10 @@ router.post(
       `;
 
       const { rows } = await pool.query(query, params);
-      console.log(`📊 ${nomeCanal}: Query retornou ${rows.length} registros de impostos`);
-      
+      console.log(
+        `📊 ${nomeCanal}: Query retornou ${rows.length} registros de impostos`,
+      );
+
       if (rows.length > 0) {
         console.log(`📊 ${nomeCanal}: Primeiros resultados:`, rows.slice(0, 5));
       }
@@ -4500,13 +4566,17 @@ router.post(
     };
 
     // Buscar impostos para cada canal em paralelo
-    const [impostosVarejo, impostosMultimarcas, impostosFranquias, impostosRevenda] =
-      await Promise.all([
-        buscarImpostosCanal('VAREJO', varejo),
-        buscarImpostosCanal('MULTIMARCAS', multimarcas),
-        buscarImpostosCanal('FRANQUIAS', franquias),
-        buscarImpostosCanal('REVENDA', revenda),
-      ]);
+    const [
+      impostosVarejo,
+      impostosMultimarcas,
+      impostosFranquias,
+      impostosRevenda,
+    ] = await Promise.all([
+      buscarImpostosCanal('VAREJO', varejo),
+      buscarImpostosCanal('MULTIMARCAS', multimarcas),
+      buscarImpostosCanal('FRANQUIAS', franquias),
+      buscarImpostosCanal('REVENDA', revenda),
+    ]);
 
     const resultado = {
       varejo: impostosVarejo,
@@ -4518,6 +4588,148 @@ router.post(
     console.log('✅ Impostos calculados:', resultado);
 
     successResponse(res, resultado, 'Impostos calculados com sucesso');
+  }),
+);
+
+/**
+ * @route POST /financial/cmv-por-transacoes
+ * @desc Calcular CMV das transações separadas por canal
+ * @access Public
+ * @body { varejo: [nr_transacao], multimarcas: [nr_transacao], franquias: [nr_transacao], revenda: [nr_transacao] }
+ */
+router.post(
+  '/cmv-por-transacoes',
+  sanitizeInput,
+  asyncHandler(async (req, res) => {
+    const {
+      varejo = [],
+      multimarcas = [],
+      franquias = [],
+      revenda = [],
+    } = req.body;
+
+    console.log('📊 CMV por transações (POST) - Recebido:', {
+      varejo: varejo.length,
+      multimarcas: multimarcas.length,
+      franquias: franquias.length,
+      revenda: revenda.length,
+    });
+
+    // Função para calcular CMV de um array de transações
+    const calcularCMVCanal = async (nomeCanal, transacoes) => {
+      if (!transacoes || transacoes.length === 0) {
+        console.log(`📊 ${nomeCanal}: Nenhuma transação recebida`);
+        return { cmv: 0, produtosSaida: 0, produtosEntrada: 0 };
+      }
+
+      // Filtrar transações válidas
+      const transacoesValidas = transacoes.filter(
+        (t) =>
+          t !== null &&
+          t !== undefined &&
+          !isNaN(parseInt(t)) &&
+          parseInt(t) > 0,
+      );
+
+      console.log(
+        `📊 ${nomeCanal}: ${transacoes.length} transações recebidas, ${transacoesValidas.length} válidas`,
+      );
+
+      if (transacoesValidas.length === 0) {
+        return { cmv: 0, produtosSaida: 0, produtosEntrada: 0 };
+      }
+
+      // Query para calcular CMV
+      const placeholders = transacoesValidas
+        .map((_, idx) => `$${idx + 1}`)
+        .join(',');
+      const params = transacoesValidas.map((t) => parseInt(t));
+
+      const query = `
+        SELECT
+          COALESCE(SUM(
+            CASE
+              WHEN fisnf.qt_faturado IS NOT NULL AND fisnf.qt_faturado <> 0 AND fisnf.tp_operacao = 'S' THEN fisnf.qt_faturado
+              ELSE 0
+            END), 0) as produtos_saida,
+          COALESCE(SUM(
+            CASE
+              WHEN fisnf.qt_faturado IS NOT NULL AND fisnf.qt_faturado <> 0 AND fisnf.tp_operacao = 'E' THEN fisnf.qt_faturado
+              ELSE 0
+            END), 0) as produtos_entrada,
+          COALESCE(SUM(
+            CASE
+              WHEN fisnf.qt_faturado IS NOT NULL AND fisnf.qt_faturado <> 0 AND fisnf.tp_operacao = 'S' THEN vpv.vl_produto
+              ELSE 0
+            END -
+            CASE
+              WHEN fisnf.qt_faturado IS NOT NULL AND fisnf.qt_faturado <> 0 AND fisnf.tp_operacao = 'E' THEN vpv.vl_produto
+              ELSE 0
+            END), 0) as cmv
+        FROM
+          vr_fis_nfitemprod fisnf
+        LEFT JOIN prd_valor vpv ON fisnf.cd_produto = vpv.cd_produto
+        WHERE
+          fisnf.tp_situacao NOT IN ('C', 'X')
+          AND fisnf.vl_unitbruto IS NOT NULL
+          AND fisnf.vl_unitliquido IS NOT NULL
+          AND fisnf.qt_faturado IS NOT NULL
+          AND fisnf.qt_faturado <> 0
+          AND vpv.cd_valor = 3
+          AND vpv.cd_empresa = 1
+          AND vpv.tp_valor = 'C'
+          AND fisnf.nr_transacao IN (${placeholders})
+      `;
+
+      const { rows } = await pool.query(query, params);
+
+      const resultado = {
+        cmv: parseFloat(rows[0]?.cmv || 0),
+        produtosSaida: parseFloat(rows[0]?.produtos_saida || 0),
+        produtosEntrada: parseFloat(rows[0]?.produtos_entrada || 0),
+      };
+
+      console.log(`📊 ${nomeCanal}: CMV = ${resultado.cmv.toFixed(2)}`);
+
+      return resultado;
+    };
+
+    // Calcular CMV para cada canal em paralelo
+    const [cmvVarejo, cmvMultimarcas, cmvFranquias, cmvRevenda] =
+      await Promise.all([
+        calcularCMVCanal('VAREJO', varejo),
+        calcularCMVCanal('MULTIMARCAS', multimarcas),
+        calcularCMVCanal('FRANQUIAS', franquias),
+        calcularCMVCanal('REVENDA', revenda),
+      ]);
+
+    const resultado = {
+      varejo: cmvVarejo,
+      multimarcas: cmvMultimarcas,
+      franquias: cmvFranquias,
+      revenda: cmvRevenda,
+      total: {
+        cmv:
+          cmvVarejo.cmv +
+          cmvMultimarcas.cmv +
+          cmvFranquias.cmv +
+          cmvRevenda.cmv,
+        produtosSaida:
+          cmvVarejo.produtosSaida +
+          cmvMultimarcas.produtosSaida +
+          cmvFranquias.produtosSaida +
+          cmvRevenda.produtosSaida,
+        produtosEntrada:
+          cmvVarejo.produtosEntrada +
+          cmvMultimarcas.produtosEntrada +
+          cmvFranquias.produtosEntrada +
+          cmvRevenda.produtosEntrada,
+      },
+    };
+
+    console.log('✅ CMV calculado:', resultado);
+
+    successResponse(res, resultado, 'CMV calculado com sucesso');
   }),
 );
 
@@ -4676,6 +4888,109 @@ router.get(
       resultado.rows[0],
       'Telefone do cliente obtido com sucesso',
     );
+  }),
+);
+
+/**
+ * @route POST /financial/batida-carteira/upload
+ * @desc Upload e processamento de arquivo para batida de carteira
+ * @access Public
+ * @body {file} arquivo - Arquivo CSV/XLS/XLSX do banco ou sistema
+ * @body {string} banco - Código do banco (CONFIANCA, SICREDI, SISTEMA_CONFIANCA, etc.)
+ */
+router.post(
+  '/batida-carteira/upload',
+  uploadBatidaCarteira.single('arquivo'),
+  asyncHandler(async (req, res) => {
+    if (!req.file) {
+      return errorResponse(
+        res,
+        'Nenhum arquivo foi enviado',
+        400,
+        'NO_FILE_UPLOADED',
+      );
+    }
+
+    const banco = req.body.banco?.toUpperCase();
+    if (!banco) {
+      // Limpar arquivo
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      return errorResponse(
+        res,
+        'Código do banco é obrigatório',
+        400,
+        'MISSING_BANCO',
+      );
+    }
+
+    try {
+      // Ler o arquivo (como buffer para suportar XLS)
+      const fileContent = fs.readFileSync(req.file.path);
+
+      let result;
+
+      // Processar de acordo com o banco
+      switch (banco) {
+        case 'CONFIANCA':
+          result = processConfiancaFile(fileContent.toString('utf-8'));
+          break;
+
+        case 'SICREDI':
+          result = processSicrediFile(fileContent);
+          break;
+
+        case 'SISTEMA_CONFIANCA':
+          // Para importar dados do sistema via CSV
+          result = processSistemaConfiancaFile(fileContent.toString('utf-8'));
+          break;
+
+        case 'SISTEMA_SICREDI':
+          // Para importar dados do sistema via CSV (portador 748)
+          result = processSistemaSicrediFile(fileContent.toString('utf-8'));
+          break;
+
+        default:
+          throw new Error(
+            `Banco não suportado para batida de carteira: ${banco}`,
+          );
+      }
+
+      // Limpar arquivo temporário
+      fs.unlinkSync(req.file.path);
+
+      if (!result.success) {
+        return errorResponse(
+          res,
+          result.error || 'Erro ao processar arquivo',
+          400,
+          'FILE_PROCESSING_ERROR',
+        );
+      }
+
+      // Adicionar informações do arquivo
+      result.arquivo = {
+        nomeOriginal: req.file.originalname,
+        tamanho: req.file.size,
+        dataUpload: new Date().toISOString(),
+        banco: banco,
+      };
+
+      successResponse(res, result, `Arquivo ${banco} processado com sucesso`);
+    } catch (error) {
+      // Limpar arquivo em caso de erro
+      if (req.file && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+
+      return errorResponse(
+        res,
+        `Erro ao processar arquivo: ${error.message}`,
+        400,
+        'FILE_PROCESSING_ERROR',
+      );
+    }
   }),
 );
 
