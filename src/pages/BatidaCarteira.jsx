@@ -633,6 +633,39 @@ const BatidaCarteira = () => {
     return set;
   }, [dadosImportados, bancoImportado]);
 
+  // Mapa otimizado para SICREDI/SANTANDER: indexa por data+valor para busca O(1)
+  // Chave: "data|valorArredondado", Valor: array de {item, nomeNormalizado}
+  const mapaImportadosPorDataValor = useMemo(() => {
+    if (bancoImportado !== 'SICREDI' && bancoImportado !== 'SANTANDER') {
+      return new Map();
+    }
+    const mapa = new Map();
+    dadosImportados.forEach((item) => {
+      const data = normalizarData(item.dt_vencimento);
+      const valor = parseFloat(item.vl_original) || 0;
+      // Criar chaves para valores próximos (tolerância de 1.5)
+      const valoresChave = [
+        Math.floor(valor),
+        Math.ceil(valor),
+        Math.round(valor),
+      ];
+      const nomeNorm = normalizarNomeCliente(item.nm_cliente);
+
+      valoresChave.forEach((v) => {
+        const chave = `${data}|${v}`;
+        if (!mapa.has(chave)) {
+          mapa.set(chave, []);
+        }
+        // Evitar duplicatas
+        const arr = mapa.get(chave);
+        if (!arr.some((x) => x.item === item)) {
+          arr.push({ item, nomeNorm });
+        }
+      });
+    });
+    return mapa;
+  }, [dadosImportados, bancoImportado]);
+
   // Set de chaves dos dados do sistema para comparação rápida
   const chavesSistema = useMemo(() => {
     const set = new Set();
@@ -674,45 +707,58 @@ const BatidaCarteira = () => {
       // Verificar batida normal
       if (chavesImportados.has(chave)) return true;
 
-      // Para SANTANDER: verificar por valor + vencimento + nome (contém)
+      // Para SANTANDER: verificar por valor + vencimento + nome (contém) - OTIMIZADO
       if (bancoImportado === 'SANTANDER') {
-        // Buscar no arquivo importado por valor, vencimento e nome que contém
-        const bateNoSantander = dadosImportados.some((itemArq) => {
-          // Verificar valor com tolerância (diferença de ~R$ 1,00 entre sistema e arquivo)
-          const valorArquivo = parseFloat(itemArq.vl_original) || 0;
-          const valorMatch = valoresProximos(valorArquivo, valorComTaxa);
-          // Verificar data de vencimento
-          const dataMatch =
-            normalizarData(itemArq.dt_vencimento) ===
-            normalizarData(item.dt_vencimento);
-          // Verificar se nome do sistema contém nome do arquivo (que é cortado)
-          const nomeMatch = nomeClienteContem(
-            item.nm_cliente,
-            itemArq.nm_cliente,
-          );
-          return valorMatch && dataMatch && nomeMatch;
-        });
-        if (bateNoSantander) return true;
+        const dataSist = normalizarData(item.dt_vencimento);
+        const nomeSistNorm = normalizarNomeCliente(item.nm_cliente);
+        // Buscar no mapa por data+valor (O(1) em vez de O(n))
+        const chavesMapa = [
+          `${dataSist}|${Math.floor(valorComTaxa)}`,
+          `${dataSist}|${Math.ceil(valorComTaxa)}`,
+          `${dataSist}|${Math.round(valorComTaxa)}`,
+        ];
+        for (const chaveMapa of chavesMapa) {
+          const candidatos = mapaImportadosPorDataValor.get(chaveMapa);
+          if (candidatos) {
+            const bate = candidatos.some(({ item: itemArq, nomeNorm }) => {
+              const valorArquivo = parseFloat(itemArq.vl_original) || 0;
+              if (!valoresProximos(valorArquivo, valorComTaxa)) return false;
+              // Verificar se nome do sistema contém nome do arquivo
+              return (
+                nomeSistNorm.includes(nomeNorm) ||
+                nomeNorm.includes(nomeSistNorm.substring(0, 15))
+              );
+            });
+            if (bate) return true;
+          }
+        }
       }
 
-      // Para SICREDI: verificar por nome + valor (com tolerância) + vencimento
+      // Para SICREDI: verificar por nome + valor (com tolerância) + vencimento - OTIMIZADO
       if (bancoImportado === 'SICREDI') {
-        const bateNoSicredi = dadosImportados.some((itemArq) => {
-          // Verificar valor com tolerância (diferença de ~R$ 1,00 entre sistema e arquivo)
-          const valorArquivo = parseFloat(itemArq.vl_original) || 0;
-          const valorMatch = valoresProximos(valorArquivo, valorComTaxa);
-          // Verificar data de vencimento
-          const dataMatch =
-            normalizarData(itemArq.dt_vencimento) ===
-            normalizarData(item.dt_vencimento);
-          // Verificar se nome do sistema contém nome do arquivo
-          const nomeMatch = nomeClienteContem(
-            item.nm_cliente,
-            itemArq.nm_cliente,
-          );
-          return valorMatch && dataMatch && nomeMatch;
-        });
-        if (bateNoSicredi) return true;
+        const dataSist = normalizarData(item.dt_vencimento);
+        const nomeSistNorm = normalizarNomeCliente(item.nm_cliente);
+        // Buscar no mapa por data+valor (O(1) em vez de O(n))
+        const chavesMapa = [
+          `${dataSist}|${Math.floor(valorComTaxa)}`,
+          `${dataSist}|${Math.ceil(valorComTaxa)}`,
+          `${dataSist}|${Math.round(valorComTaxa)}`,
+        ];
+        for (const chaveMapa of chavesMapa) {
+          const candidatos = mapaImportadosPorDataValor.get(chaveMapa);
+          if (candidatos) {
+            const bate = candidatos.some(({ item: itemArq, nomeNorm }) => {
+              const valorArquivo = parseFloat(itemArq.vl_original) || 0;
+              if (!valoresProximos(valorArquivo, valorComTaxa)) return false;
+              // Verificar se nome do sistema contém nome do arquivo
+              return (
+                nomeSistNorm.includes(nomeNorm) ||
+                nomeNorm.includes(nomeSistNorm.substring(0, 15))
+              );
+            });
+            if (bate) return true;
+          }
+        }
       }
 
       // Verificar exceção (EFIGENIA)
@@ -729,8 +775,43 @@ const BatidaCarteira = () => {
 
       return false;
     },
-    [chavesImportados, verificarExcecao, bancoImportado, dadosImportados],
+    [
+      chavesImportados,
+      verificarExcecao,
+      bancoImportado,
+      mapaImportadosPorDataValor,
+    ],
   );
+
+  // Mapa otimizado dos dados do SISTEMA indexado por data+valor para busca O(1)
+  const mapaSistemaPorDataValor = useMemo(() => {
+    if (bancoImportado !== 'SICREDI' && bancoImportado !== 'SANTANDER') {
+      return new Map();
+    }
+    const mapa = new Map();
+    dados.forEach((item) => {
+      const data = normalizarData(item.dt_vencimento);
+      const valor = parseFloat(item.vl_fatura || 0);
+      const valoresChave = [
+        Math.floor(valor),
+        Math.ceil(valor),
+        Math.round(valor),
+      ];
+      const nomeNorm = normalizarNomeCliente(item.nm_cliente);
+
+      valoresChave.forEach((v) => {
+        const chave = `${data}|${v}`;
+        if (!mapa.has(chave)) {
+          mapa.set(chave, []);
+        }
+        const arr = mapa.get(chave);
+        if (!arr.some((x) => x.item === item)) {
+          arr.push({ item, nomeNorm });
+        }
+      });
+    });
+    return mapa;
+  }, [dados, bancoImportado]);
 
   // Função para verificar se item do arquivo bate com sistema (incluindo exceções)
   const verificarItemArquivoBate = useCallback(
@@ -744,47 +825,32 @@ const BatidaCarteira = () => {
       // Verificar batida normal
       if (chavesSistema.has(chave)) return true;
 
-      // Para SANTANDER: verificar por valor + vencimento + nome (contém)
-      if (bancoImportado === 'SANTANDER') {
-        // Buscar no sistema por valor, vencimento e nome que contém
-        const bateNoSantander = dados.some((itemSist) => {
-          // Verificar valor com tolerância (diferença de ~R$ 1,00 entre sistema e arquivo)
-          const valorSistema = parseFloat(itemSist.vl_fatura || 0);
-          const valorArquivo = parseFloat(item.vl_original) || 0;
-          const valorMatch = valoresProximos(valorSistema, valorArquivo);
-          // Verificar data de vencimento
-          const dataMatch =
-            normalizarData(itemSist.dt_vencimento) ===
-            normalizarData(item.dt_vencimento);
-          // Verificar se nome do sistema contém nome do arquivo (que é cortado)
-          const nomeMatch = nomeClienteContem(
-            itemSist.nm_cliente,
-            item.nm_cliente,
-          );
-          return valorMatch && dataMatch && nomeMatch;
-        });
-        if (bateNoSantander) return true;
-      }
-
-      // Para SICREDI: verificar por nome + valor (com tolerância) + vencimento
-      if (bancoImportado === 'SICREDI') {
-        const bateNoSicredi = dados.some((itemSist) => {
-          // Verificar valor com tolerância (diferença de ~R$ 1,00 entre sistema e arquivo)
-          const valorSistema = parseFloat(itemSist.vl_fatura || 0);
-          const valorArquivo = parseFloat(item.vl_original) || 0;
-          const valorMatch = valoresProximos(valorSistema, valorArquivo);
-          // Verificar data de vencimento
-          const dataMatch =
-            normalizarData(itemSist.dt_vencimento) ===
-            normalizarData(item.dt_vencimento);
-          // Verificar se nome do sistema contém nome do arquivo
-          const nomeMatch = nomeClienteContem(
-            itemSist.nm_cliente,
-            item.nm_cliente,
-          );
-          return valorMatch && dataMatch && nomeMatch;
-        });
-        if (bateNoSicredi) return true;
+      // Para SANTANDER/SICREDI: verificar por valor + vencimento + nome (OTIMIZADO)
+      if (bancoImportado === 'SANTANDER' || bancoImportado === 'SICREDI') {
+        const dataArq = normalizarData(item.dt_vencimento);
+        const valorArquivo = parseFloat(item.vl_original) || 0;
+        const nomeArqNorm = normalizarNomeCliente(item.nm_cliente);
+        // Buscar no mapa por data+valor (O(1) em vez de O(n))
+        const chavesMapa = [
+          `${dataArq}|${Math.floor(valorArquivo)}`,
+          `${dataArq}|${Math.ceil(valorArquivo)}`,
+          `${dataArq}|${Math.round(valorArquivo)}`,
+        ];
+        for (const chaveMapa of chavesMapa) {
+          const candidatos = mapaSistemaPorDataValor.get(chaveMapa);
+          if (candidatos) {
+            const bate = candidatos.some(({ item: itemSist, nomeNorm }) => {
+              const valorSistema = parseFloat(itemSist.vl_fatura || 0);
+              if (!valoresProximos(valorSistema, valorArquivo)) return false;
+              // Verificar se nome do sistema contém nome do arquivo
+              return (
+                nomeNorm.includes(nomeArqNorm) ||
+                nomeArqNorm.includes(nomeNorm.substring(0, 15))
+              );
+            });
+            if (bate) return true;
+          }
+        }
       }
 
       // Verificar exceção (EFIGENIA) - se o item está na lista de exceções
@@ -804,7 +870,13 @@ const BatidaCarteira = () => {
 
       return false;
     },
-    [chavesSistema, verificarExcecao, dados, bancoImportado],
+    [
+      chavesSistema,
+      verificarExcecao,
+      dados,
+      bancoImportado,
+      mapaSistemaPorDataValor,
+    ],
   );
 
   // Dados ordenados com batidos primeiro e alinhados
@@ -1164,41 +1236,33 @@ const BatidaCarteira = () => {
       let resultado = mapaImportadosPorChave.get(chave);
       if (resultado) return resultado;
 
-      // Para SANTANDER: buscar por valor + vencimento + nome (contém) com tolerância
-      if (bancoImportado === 'SANTANDER') {
-        // Buscar manualmente no dadosImportados comparando nome e valor com tolerância
+      // Para SANTANDER/SICREDI: buscar por valor + vencimento + nome (OTIMIZADO)
+      if (bancoImportado === 'SANTANDER' || bancoImportado === 'SICREDI') {
         const valorSistema = parseFloat(itemSistema.vl_fatura || 0);
-        resultado = dadosImportados.find((itemArq) => {
-          const valorArquivo = parseFloat(itemArq.vl_original) || 0;
-          const valorMatch = valoresProximos(valorSistema, valorArquivo);
-          const dataMatch =
-            normalizarData(itemArq.dt_vencimento) ===
-            normalizarData(itemSistema.dt_vencimento);
-          const nomeMatch = nomeClienteContem(
-            itemSistema.nm_cliente,
-            itemArq.nm_cliente,
-          );
-          return valorMatch && dataMatch && nomeMatch;
-        });
-        if (resultado) return resultado;
-      }
-
-      // Para SICREDI: buscar por nome + valor (com tolerância) + vencimento
-      if (bancoImportado === 'SICREDI') {
-        const valorSistema = parseFloat(itemSistema.vl_fatura || 0);
-        resultado = dadosImportados.find((itemArq) => {
-          const valorArquivo = parseFloat(itemArq.vl_original) || 0;
-          const valorMatch = valoresProximos(valorSistema, valorArquivo);
-          const dataMatch =
-            normalizarData(itemArq.dt_vencimento) ===
-            normalizarData(itemSistema.dt_vencimento);
-          const nomeMatch = nomeClienteContem(
-            itemSistema.nm_cliente,
-            itemArq.nm_cliente,
-          );
-          return valorMatch && dataMatch && nomeMatch;
-        });
-        if (resultado) return resultado;
+        const dataSist = normalizarData(itemSistema.dt_vencimento);
+        const nomeSistNorm = normalizarNomeCliente(itemSistema.nm_cliente);
+        // Buscar no mapa por data+valor
+        const chavesMapa = [
+          `${dataSist}|${Math.floor(valorSistema)}`,
+          `${dataSist}|${Math.ceil(valorSistema)}`,
+          `${dataSist}|${Math.round(valorSistema)}`,
+        ];
+        for (const chaveMapa of chavesMapa) {
+          const candidatos = mapaImportadosPorDataValor.get(chaveMapa);
+          if (candidatos) {
+            const encontrado = candidatos.find(
+              ({ item: itemArq, nomeNorm }) => {
+                const valorArquivo = parseFloat(itemArq.vl_original) || 0;
+                if (!valoresProximos(valorSistema, valorArquivo)) return false;
+                return (
+                  nomeSistNorm.includes(nomeNorm) ||
+                  nomeNorm.includes(nomeSistNorm.substring(0, 15))
+                );
+              },
+            );
+            if (encontrado) return encontrado.item;
+          }
+        }
       }
 
       // Busca por exceção (EFIGENIA) - usando chave simples CPF|Valor
@@ -1213,7 +1277,12 @@ const BatidaCarteira = () => {
 
       return resultado;
     },
-    [mapaImportadosPorChave, verificarExcecao, bancoImportado, dadosImportados],
+    [
+      mapaImportadosPorChave,
+      verificarExcecao,
+      bancoImportado,
+      mapaImportadosPorDataValor,
+    ],
   );
 
   // Função para exportar dados para Excel
