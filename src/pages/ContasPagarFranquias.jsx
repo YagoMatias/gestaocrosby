@@ -24,6 +24,8 @@ import {
   FileArrowDown,
   Eye,
   CheckCircle,
+  FilePdf,
+  X,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -63,6 +65,14 @@ const ContasPagarFranquias = () => {
   // Estados para DANFE
   const [danfeLoading, setDanfeLoading] = useState(false);
   const [danfeError, setDanfeError] = useState('');
+
+  // Estados para seleção em massa de boletos
+  const [titulosSelecionados, setTitulosSelecionados] = useState(new Set());
+  const [gerandoBoletosMassa, setGerandoBoletosMassa] = useState(false);
+  const [progressoBoletos, setProgressoBoletos] = useState({
+    atual: 0,
+    total: 0,
+  });
 
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
   const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
@@ -366,6 +376,7 @@ const ContasPagarFranquias = () => {
 
     setLoading(true);
     setPaginaAtual(1);
+    setTitulosSelecionados(new Set());
     try {
       // branchCodeList = SUAS EMPRESAS (filiais carregadas da API)
       const branchCodeList =
@@ -1161,6 +1172,158 @@ const ContasPagarFranquias = () => {
     }
   };
 
+  // Função para gerar chave única de um título
+  const chaveTitulo = (item) =>
+    `${item.cd_empresa}-${item.cd_cliente}-${item.nr_fat}-${item.nr_parcela}`;
+
+  // Toggle seleção de um título
+  const toggleSelecionarTitulo = (item) => {
+    setTitulosSelecionados((prev) => {
+      const next = new Set(prev);
+      const key = chaveTitulo(item);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  // Selecionar / desselecionar todos na página
+  const toggleSelecionarTodos = () => {
+    const todosDaPagina = dadosPaginados.map(chaveTitulo);
+    const todosSelecionados = todosDaPagina.every((k) =>
+      titulosSelecionados.has(k),
+    );
+    setTitulosSelecionados((prev) => {
+      const next = new Set(prev);
+      if (todosSelecionados) {
+        todosDaPagina.forEach((k) => next.delete(k));
+      } else {
+        todosDaPagina.forEach((k) => next.add(k));
+      }
+      return next;
+    });
+  };
+
+  // Selecionar TODOS os dados (não só a página atual)
+  const selecionarTodosOsDados = () => {
+    const todas = dadosProcessados.map(chaveTitulo);
+    setTitulosSelecionados(new Set(todas));
+  };
+
+  // Gerar boletos em massa
+  const gerarBoletosMassa = async () => {
+    if (titulosSelecionados.size === 0) {
+      alert('Selecione ao menos um título para gerar boleto.');
+      return;
+    }
+
+    const itensSelecionados = dadosProcessados.filter((item) =>
+      titulosSelecionados.has(chaveTitulo(item)),
+    );
+
+    const confirma = window.confirm(
+      `Deseja gerar ${itensSelecionados.length} boleto(s)?`,
+    );
+    if (!confirma) return;
+
+    setGerandoBoletosMassa(true);
+    setProgressoBoletos({ atual: 0, total: itensSelecionados.length });
+
+    let sucessos = 0;
+    let erros = 0;
+
+    for (let i = 0; i < itensSelecionados.length; i++) {
+      const item = itensSelecionados[i];
+      setProgressoBoletos({ atual: i + 1, total: itensSelecionados.length });
+
+      try {
+        const payload = {
+          branchCode: parseInt(item.cd_empresa) || 0,
+          customerCode: item.cd_cliente || '',
+          receivableCode: parseInt(item.nr_fat) || 0,
+          installmentNumber: parseInt(item.nr_parcela) || 0,
+        };
+
+        console.log(
+          `📄 [${i + 1}/${itensSelecionados.length}] Gerando boleto:`,
+          payload,
+        );
+
+        const response = await fetch(`${TotvsURL}bank-slip`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        let base64 = '';
+        if (typeof data === 'string') {
+          base64 = data;
+        } else if (data.data?.base64) {
+          base64 =
+            typeof data.data.base64 === 'string'
+              ? data.data.base64
+              : data.data.base64.content || '';
+        } else if (data.data && typeof data.data === 'string') {
+          base64 = data.data;
+        } else if (data.base64) {
+          base64 =
+            typeof data.base64 === 'string'
+              ? data.base64
+              : data.base64.content || '';
+        }
+
+        if (base64) {
+          const cleanBase64 = base64.replace(
+            /^data:application\/pdf;base64,/,
+            '',
+          );
+          const binaryString = window.atob(cleanBase64);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let j = 0; j < binaryString.length; j++) {
+            bytes[j] = binaryString.charCodeAt(j);
+          }
+          const blob = new Blob([bytes], { type: 'application/pdf' });
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `boleto-${item.nr_fat}-parcela-${item.nr_parcela}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(url);
+          sucessos++;
+        } else {
+          console.error(`❌ Base64 não encontrado para fatura ${item.nr_fat}`);
+          erros++;
+        }
+      } catch (error) {
+        console.error(`❌ Erro ao gerar boleto fatura ${item.nr_fat}:`, error);
+        erros++;
+      }
+
+      if (i < itensSelecionados.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+
+    setGerandoBoletosMassa(false);
+    setProgressoBoletos({ atual: 0, total: 0 });
+    setTitulosSelecionados(new Set());
+
+    alert(
+      `Geração concluída!\n✅ ${sucessos} boleto(s) baixado(s)\n${erros > 0 ? `❌ ${erros} erro(s)` : ''}`,
+    );
+  };
+
   // Função para converter base64 em PDF e abrir em nova aba
   const abrirPDF = (base64String) => {
     try {
@@ -1513,13 +1676,34 @@ const ContasPagarFranquias = () => {
                 : 'Nenhum dado carregado'}
             </div>
             {dadosProcessados.length > 0 && (
-              <button
-                onClick={handleExportExcel}
-                className="flex items-center gap-1 bg-green-600 text-white px-2 py-1 rounded-lg hover:bg-green-700 transition-colors font-medium text-xs"
-              >
-                <FileArrowDown size={12} />
-                BAIXAR EXCEL
-              </button>
+              <div className="flex items-center gap-2">
+                {titulosSelecionados.size > 0 && (
+                  <button
+                    onClick={gerarBoletosMassa}
+                    disabled={gerandoBoletosMassa}
+                    className="flex items-center gap-1 bg-red-600 text-white px-2 py-1 rounded-lg hover:bg-red-700 transition-colors font-medium text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {gerandoBoletosMassa ? (
+                      <>
+                        <Spinner size={12} className="animate-spin" />
+                        {progressoBoletos.atual}/{progressoBoletos.total}
+                      </>
+                    ) : (
+                      <>
+                        <FilePdf size={12} />
+                        GERAR {titulosSelecionados.size} BOLETO(S)
+                      </>
+                    )}
+                  </button>
+                )}
+                <button
+                  onClick={handleExportExcel}
+                  className="flex items-center gap-1 bg-green-600 text-white px-2 py-1 rounded-lg hover:bg-green-700 transition-colors font-medium text-xs"
+                >
+                  <FileArrowDown size={12} />
+                  BAIXAR EXCEL
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -1558,9 +1742,45 @@ const ContasPagarFranquias = () => {
             </div>
           ) : (
             <div className="max-w-[350px] md:max-w-[700px] lg:max-w-[900px] xl:max-w-[1100px] 2xl:max-w-[1300px] mx-auto overflow-x-auto">
+              {/* Banner de seleção */}
+              {titulosSelecionados.size > 0 && (
+                <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-2 text-xs">
+                  <span className="text-red-700 font-medium">
+                    {titulosSelecionados.size} título(s) selecionado(s)
+                    {titulosSelecionados.size < dadosProcessados.length && (
+                      <button
+                        onClick={selecionarTodosOsDados}
+                        className="ml-2 text-red-600 underline hover:text-red-800"
+                      >
+                        Selecionar todos os {dadosProcessados.length} títulos
+                      </button>
+                    )}
+                  </span>
+                  <button
+                    onClick={() => setTitulosSelecionados(new Set())}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <X size={14} weight="bold" />
+                  </button>
+                </div>
+              )}
               <table className="border-collapse rounded-lg overflow-hidden shadow-lg extrato-table">
                 <thead className="bg-[#000638] text-white text-sm uppercase tracking-wider">
                   <tr>
+                    <th className="px-2 py-2 text-center w-8">
+                      <input
+                        type="checkbox"
+                        checked={
+                          dadosPaginados.length > 0 &&
+                          dadosPaginados.every((item) =>
+                            titulosSelecionados.has(chaveTitulo(item)),
+                          )
+                        }
+                        onChange={toggleSelecionarTodos}
+                        className="w-4 h-4 rounded border-white accent-red-600 cursor-pointer"
+                        title="Selecionar todos da página"
+                      />
+                    </th>
                     <th
                       className="px-2 py-2 text-left cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSort('nm_cliente')}
@@ -1633,6 +1853,15 @@ const ContasPagarFranquias = () => {
                         {getSortIcon('vl_pago')}
                       </div>
                     </th>
+                    <th
+                      className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('nm_portador')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Portador
+                        {getSortIcon('nm_portador')}
+                      </div>
+                    </th>
                     <th className="px-2 py-2 text-center">
                       <div className="flex items-center justify-center">
                         Detalhar
@@ -1642,7 +1871,22 @@ const ContasPagarFranquias = () => {
                 </thead>
                 <tbody className="bg-white">
                   {dadosPaginados.map((item, index) => (
-                    <tr key={index} className="text-sm transition-colors">
+                    <tr
+                      key={index}
+                      className={`text-sm transition-colors ${
+                        titulosSelecionados.has(chaveTitulo(item))
+                          ? 'bg-red-50'
+                          : ''
+                      }`}
+                    >
+                      <td className="text-center px-2 py-2 w-8">
+                        <input
+                          type="checkbox"
+                          checked={titulosSelecionados.has(chaveTitulo(item))}
+                          onChange={() => toggleSelecionarTitulo(item)}
+                          className="w-4 h-4 rounded border-gray-300 accent-red-600 cursor-pointer"
+                        />
+                      </td>
                       <td className="text-left text-gray-900 px-2 py-2">
                         {item.nm_cliente || '--'}
                       </td>
@@ -1678,6 +1922,19 @@ const ContasPagarFranquias = () => {
                             currency: 'BRL',
                           },
                         )}
+                      </td>
+                      <td className="text-center text-gray-900 px-2 py-2 text-xs">
+                        {(() => {
+                          const nome = item.nm_portador || '';
+                          const upper = nome.toUpperCase();
+                          if (
+                            upper.includes('FABIO') ||
+                            upper.includes('IRMAOS') ||
+                            upper.includes('CROSBY')
+                          )
+                            return '--';
+                          return nome || '--';
+                        })()}
                       </td>
                       <td className="text-center px-2 py-2">
                         <button

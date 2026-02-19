@@ -1856,7 +1856,7 @@ const TitulosClientes = () => {
                           )
                             return nome.split(' ')[0]; // Exibe apenas o primeiro nome
                           else if (
-                            upper.includes('BAIXADO POR SOLICITACAO DA EMPRESA')
+                            upper.includes('BAIXADO POR SOLICITACAO DA EMPRESA') ||                            upper.includes('TITULO EM CARTEIRA')
                           )
                             return 'CROSBY';
                           return nome || '--';

@@ -94,6 +94,7 @@ const BatidaCarteira = () => {
   ];
 
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
+  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
   // Helpers de data
   const parseDateNoTZ = (isoDate) => {
@@ -229,6 +230,57 @@ const BatidaCarteira = () => {
     setDataFim(formatarData(ultimoDia));
   }, []);
 
+  // Função para buscar informações de pessoas (nomes) via API TOTVS
+  const buscarInfoPessoas = async (codigosPessoa) => {
+    if (!codigosPessoa || codigosPessoa.length === 0) return {};
+
+    try {
+      const codigosUnicos = [
+        ...new Set(
+          codigosPessoa
+            .filter(Boolean)
+            .map(Number)
+            .filter((c) => c > 0),
+        ),
+      ];
+      console.log(
+        `👥 Buscando dados de ${codigosUnicos.length} clientes via TOTVS...`,
+      );
+
+      const response = await fetch(`${TotvsURL}persons/batch-lookup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personCodes: codigosUnicos }),
+      });
+
+      if (!response.ok) {
+        console.warn('Erro ao buscar dados de pessoas:', response.status);
+        return {};
+      }
+
+      const data = await response.json();
+      const pessoasMap = data?.data || data || {};
+
+      const infoPessoasObj = {};
+      for (const [code, pessoa] of Object.entries(pessoasMap)) {
+        infoPessoasObj[String(code).trim()] = {
+          cd_pessoa: code,
+          nm_pessoa: pessoa.name || '',
+          nm_fantasia: pessoa.fantasyName || '',
+          nr_telefone: pessoa.phone || '',
+        };
+      }
+
+      console.log(
+        `✅ ${Object.keys(infoPessoasObj).length} clientes encontrados via TOTVS`,
+      );
+      return infoPessoasObj;
+    } catch (err) {
+      console.error('Erro ao buscar informações de pessoas:', err);
+      return {};
+    }
+  };
+
   const buscarDados = async (inicio = dataInicio, fim = dataFim) => {
     if (!inicio || !fim) return;
 
@@ -240,103 +292,122 @@ const BatidaCarteira = () => {
     setLoading(true);
     setPaginaAtual(1);
     try {
+      // Construir query params para a rota TOTVS otimizada
       const params = new URLSearchParams();
       params.append('dt_inicio', inicio);
       params.append('dt_fim', fim);
+      params.append('modo', 'vencimento');
 
-      // Adicionar todas as empresas selecionadas
-      empresasSelecionadas.forEach((empresa) => {
-        params.append('cd_empresa', empresa.cd_empresa);
-      });
-
-      // Adicionar filtro de status
+      // Filtro de status
       if (status && status !== 'Todos') {
         params.append('status', status);
       }
 
-      // Adicionar filtro de situação
+      // Filtro de situação
       if (situacao && situacao !== 'TODAS') {
-        params.append('situacao', situacao);
+        if (situacao === 'NORMAIS') {
+          params.append('situacao', '1');
+        } else if (situacao === 'CANCELADAS') {
+          params.append('situacao', '3');
+        }
       }
 
-      // Adicionar filtro de cobrança
+      // Filtro de cobrança
       if (filtroCobranca && filtroCobranca !== 'TODOS') {
         let cobrancaParam = filtroCobranca;
         if (filtroCobranca === 'NÃO ESTÁ EM COBRANÇA') {
-          cobrancaParam = 'NAO_COBRANCA';
+          cobrancaParam = '0';
+        } else if (filtroCobranca === 'SIMPLES') {
+          cobrancaParam = '1';
+        } else if (filtroCobranca === 'DESCONTADA') {
+          cobrancaParam = '2';
         }
         params.append('tp_cobranca', cobrancaParam);
       }
 
-      // Adicionar filtro de clientes
+      // Filtro de clientes
       if (clientesSelecionados.length > 0) {
-        clientesSelecionados.forEach((cliente) => {
-          params.append('cd_cliente', cliente.cd_cliente);
-        });
+        const clientesIds = clientesSelecionados
+          .map((c) => c.cd_cliente)
+          .join(',');
+        params.append('cd_cliente', clientesIds);
       }
 
       // Forma de pagamento fixo em 1 - FATURA
       params.append('tp_documento', '1');
 
-      // Adicionar filtro de fatura
+      // Filtro de fatura
       if (filtroFatura && filtroFatura.trim() !== '') {
         params.append('nr_fatura', filtroFatura.trim());
       }
 
-      // Adicionar filtro de portador (suporta múltiplos separados por vírgula)
+      // Filtro de portador
       if (filtroPortador && filtroPortador.trim() !== '') {
         const portadores = filtroPortador
           .split(',')
           .map((p) => p.trim())
           .filter((p) => p !== '');
-        portadores.forEach((portador) => {
-          params.append('nr_portador', portador);
-        });
+        params.append('cd_portador', portadores.join(','));
       }
 
-      const url = `${BaseURL}contas-receber?${params.toString()}`;
-      console.log('🔍 URL da requisição:', url);
+      // Filtro de empresas selecionadas (branchCodes)
+      if (empresasSelecionadas.length > 0) {
+        const branchCodes = empresasSelecionadas
+          .map((e) => e.cd_empresa)
+          .join(',');
+        params.append('branches', branchCodes);
+      }
+
+      const url = `${TotvsURL}accounts-receivable/filter?${params.toString()}`;
+      console.log('🔍 Buscando batida de carteira via TOTVS:', url);
 
       const res = await fetch(url);
 
       if (!res.ok) {
-        console.warn(`Erro ao buscar dados: HTTP ${res.status}`);
-        setDados([]);
-        setLoading(false);
-        return;
+        const errorData = await res.json();
+        console.error('❌ Erro da API TOTVS:', errorData);
+        throw new Error(errorData.message || `HTTP ${res.status}`);
       }
 
-      const data = await res.json();
-      console.log('📦 Resposta da API:', data);
+      const result = await res.json();
+      console.log('✅ Resposta TOTVS:', result);
 
-      let todosOsDados = [];
-      if (Array.isArray(data)) {
-        todosOsDados = data;
-      } else if (data && typeof data === 'object') {
-        if (data.dados && Array.isArray(data.dados)) {
-          todosOsDados = data.dados;
-        } else if (data.data && Array.isArray(data.data)) {
-          todosOsDados = data.data;
-        } else if (
-          data.data &&
-          data.data.data &&
-          Array.isArray(data.data.data)
-        ) {
-          todosOsDados = data.data.data;
-        } else if (data.result && Array.isArray(data.result)) {
-          todosOsDados = data.result;
-        } else if (data.contas && Array.isArray(data.contas)) {
-          todosOsDados = data.contas;
-        } else {
-          todosOsDados = Object.values(data);
+      let todosOsDados = result.data?.items || [];
+
+      // A rota já mapeia para formato legacy (cd_empresa, cd_cliente, etc.)
+      // Adicionar nr_portador como alias de cd_portador para compatibilidade
+      todosOsDados = todosOsDados.map((item) => ({
+        ...item,
+        nr_portador: item.cd_portador || item.nm_portador || '',
+      }));
+
+      console.log(`📊 Total de dados TOTVS: ${todosOsDados.length}`);
+
+      // Buscar nomes dos clientes via batch-lookup
+      const codigosClientes = [
+        ...new Set(todosOsDados.map((item) => item.cd_cliente).filter(Boolean)),
+      ];
+
+      if (codigosClientes.length > 0) {
+        const info = await buscarInfoPessoas(codigosClientes);
+        if (info && Object.keys(info).length > 0) {
+          console.log(
+            `👤 ${Object.keys(info).length} nomes de clientes carregados`,
+          );
+          todosOsDados = todosOsDados.map((item) => {
+            const key = String(item.cd_cliente).trim();
+            const pessoa = info[key];
+            if (pessoa) {
+              return {
+                ...item,
+                nm_cliente: pessoa.nm_pessoa || item.nm_cliente,
+                nm_fantasia: pessoa.nm_fantasia || '',
+              };
+            }
+            return item;
+          });
         }
       }
-
-      todosOsDados = todosOsDados.filter(
-        (item) => item && typeof item === 'object',
-      );
-
-      console.log('📊 Total de dados:', todosOsDados.length);
 
       setDados(todosOsDados);
       setDadosCarregados(true);
@@ -356,7 +427,8 @@ const BatidaCarteira = () => {
         .filter((cliente) => cliente.cd_cliente && cliente.nm_cliente);
       setDadosClientes(clientesUnicos);
     } catch (err) {
-      console.error('Erro ao buscar dados:', err);
+      console.error('❌ Erro ao buscar dados:', err);
+      alert(`Erro ao buscar dados: ${err.message}`);
       setDados([]);
       setDadosCarregados(false);
     } finally {
