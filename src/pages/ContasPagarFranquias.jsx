@@ -69,6 +69,32 @@ const ContasPagarFranquias = () => {
   const FranchiseURL =
     'https://apigestaocrosby-bw2v.onrender.com/api/franchise/';
 
+  // Estado para armazenar códigos das filiais (empresas próprias)
+  const [filiaisCodigos, setFiliaisCodigos] = useState([]);
+
+  // Buscar filiais (empresas) da API TOTVS ao carregar
+  useEffect(() => {
+    const buscarFiliais = async () => {
+      try {
+        const response = await fetch(`${TotvsURL}branches`);
+        if (response.ok) {
+          const data = await response.json();
+          // Extrair códigos das filiais (cd_empresa)
+          const codigos = data
+            .map((branch) => parseInt(branch.cd_empresa))
+            .filter((code) => !isNaN(code) && code > 0);
+          console.log('📋 Filiais carregadas:', codigos);
+          setFiliaisCodigos(codigos);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar filiais:', error);
+        // Fallback para filiais padrão
+        setFiliaisCodigos([1, 2, 6, 100, 101, 99, 990, 200, 400, 4, 850, 85]);
+      }
+    };
+    buscarFiliais();
+  }, []);
+
   // Função para formatar observações especiais (ex: promoções Black Friday)
   const formatarObservacao = (texto) => {
     if (!texto) return texto;
@@ -341,93 +367,190 @@ const ContasPagarFranquias = () => {
     setLoading(true);
     setPaginaAtual(1);
     try {
-      const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
-        try {
-          // Usar cd_pessoa do FiltroEmpresa como cd_cliente na rota
-          const cdCliente = empresa.cd_pessoa;
+      // branchCodeList = SUAS EMPRESAS (filiais carregadas da API)
+      const branchCodeList =
+        filiaisCodigos.length > 0 ? filiaisCodigos : [1, 2, 3, 4, 5];
 
-          console.log(
-            `🔍 Buscando dados para cd_cliente: ${cdCliente} (empresa: ${empresa.cd_empresa}), status: ${status}`,
-          );
+      // customerCodeList = códigos dos CLIENTES (franquias 6000-9000) selecionados no filtro
+      const customerCodeList = empresasSelecionadas
+        .map((empresa) => parseInt(empresa.personCode))
+        .filter((code) => !isNaN(code) && code > 0);
 
-          const res = await fetch(
-            `${BaseURL}contas-receber-cliente?cd_cliente=${cdCliente}&status=todos`,
-          );
+      // Coletar CNPJs como fallback caso não tenha personCode
+      const customerCpfCnpjList = empresasSelecionadas
+        .map((empresa) => empresa.cnpj?.replace(/\D/g, ''))
+        .filter((cnpj) => cnpj && cnpj.length === 14);
 
-          if (!res.ok) {
-            console.warn(
-              `Erro ao buscar cliente ${cdCliente}: HTTP ${res.status}`,
-            );
-            return [];
-          }
-
-          const data = await res.json();
-          console.log(`✅ Resposta da API para cliente ${cdCliente}:`, data);
-
-          let dadosArray = [];
-          if (Array.isArray(data)) {
-            dadosArray = data;
-          } else if (data && typeof data === 'object') {
-            if (data.data && Array.isArray(data.data)) {
-              dadosArray = data.data;
-            } else if (
-              data.data &&
-              data.data.data &&
-              Array.isArray(data.data.data)
-            ) {
-              dadosArray = data.data.data;
-            } else {
-              dadosArray = Object.values(data);
-            }
-          }
-
-          console.log(
-            `📦 ${dadosArray.length} registros encontrados para cliente ${cdCliente}`,
-          );
-
-          return dadosArray.filter((item) => item && typeof item === 'object');
-        } catch (err) {
-          console.warn(`Erro ao buscar cliente ${empresa.cd_pessoa}:`, err);
-          return [];
-        }
+      console.log('🔍 Buscando contas a receber via TOTVS:', {
+        branchCodeList,
+        customerCodeList,
+        customerCpfCnpjList,
+        status,
       });
 
-      const resultados = await Promise.all(todasAsPromises);
-      let todosOsDados = resultados.flat();
+      // Montar filtro para API TOTVS
+      const filter = {
+        branchCodeList, // Filiais fixas (suas empresas)
+      };
+
+      // customerCodeList = franquias selecionadas no filtro
+      if (customerCodeList.length > 0) {
+        filter.customerCodeList = customerCodeList;
+      } else if (customerCpfCnpjList.length > 0) {
+        filter.customerCpfCnpjList = customerCpfCnpjList;
+      }
+
+      // Filtrar por status se não for "todos"
+      if (status === 'em_aberto' || status === 'vencidos') {
+        filter.hasOpenInvoices = true;
+        filter.dischargeTypeList = [0]; // Título não baixado
+      }
+
+      const response = await fetch(
+        `${TotvsURL}accounts-receivable/search-all`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            filter,
+            expand: 'invoice,calculateValue',
+            order: '-expiredDate',
+            maxPages: 20,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('❌ Erro da API TOTVS:', errorData);
+        throw new Error(
+          errorData.message ||
+            errorData.details?.message ||
+            `HTTP ${response.status}`,
+        );
+      }
+
+      const result = await response.json();
+      console.log('✅ Resposta TOTVS accounts-receivable:', result);
+
+      let todosOsDados = result.data?.items || [];
 
       console.log(
         '📊 Total de dados consolidados (antes do filtro):',
         todosOsDados.length,
       );
 
+      // Criar mapa de clientes para associar nome com base no personCode
+      const clientesMap = {};
+      empresasSelecionadas.forEach((emp) => {
+        if (emp.personCode) {
+          clientesMap[emp.personCode] =
+            emp.nm_grupoempresa ||
+            emp.fantasyName ||
+            emp.personName ||
+            emp.cnpj;
+        }
+      });
+
+      // Mapear dados TOTVS para formato esperado pelo componente
+      todosOsDados = todosOsDados.map((item) => ({
+        // Campos originais TOTVS
+        ...item,
+        // Mapeamento para compatibilidade com layout existente
+        cd_empresa: item.branchCode,
+        cd_cliente: item.customerCode,
+        nm_cliente:
+          item.customerName ||
+          clientesMap[item.customerCode] ||
+          item.customerCpfCnpj, // Nome do cliente
+        nr_cpfcnpj: item.customerCpfCnpj,
+        nr_fatura: item.receivableCode,
+        nr_fat: item.receivableCode, // Alias para compatibilidade
+        nr_parcela: item.installmentCode,
+        dt_vencimento: item.expiredDate,
+        dt_liq: item.paymentDate || item.settlementDate,
+        dt_emissao: item.issueDate,
+        vl_fatura: item.installmentValue,
+        vl_pago: item.paidValue || 0,
+        vl_liquido: item.netValue,
+        vl_desconto: item.discountValue,
+        vl_abatimento: item.rebateValue,
+        vl_juros: item.interestValue,
+        vl_multa: item.assessmentValue,
+        cd_barras: item.barCode,
+        linha_digitavel: item.digitableLine,
+        nosso_numero: item.ourNumber,
+        qr_code_pix: item.qrCodePix,
+        tp_situacao: item.status,
+        tp_documento: item.documentType,
+        tp_faturamento: item.billingType,
+        tp_baixa: item.dischargeType,
+        tp_cobranca: item.chargeType,
+        cd_portador: item.bearerCode,
+        nm_portador: item.bearerName,
+        cancelado: item.canceled,
+        // Valores calculados (juros/multa para títulos vencidos)
+        dias_atraso: item.calculatedValues?.daysLate,
+        vl_acrescimo: item.calculatedValues?.increaseValue,
+        vl_juros_calc: item.calculatedValues?.interestValue,
+        vl_multa_calc: item.calculatedValues?.fineValue,
+        vl_desconto_calc: item.calculatedValues?.discountValue,
+        vl_corrigido: item.calculatedValues?.correctedValue,
+        // Dados da nota fiscal (invoice)
+        invoice: item.invoice,
+      }));
+
+      // FILTRAR: DOCUMENTO = FATURA e SITUAÇÃO = NORMAL
+      todosOsDados = todosOsDados.filter((item) => {
+        // Apenas documentos do tipo FATURA
+        const isFatura =
+          item.tp_documento === 'FATURA' ||
+          item.tp_documento === 1 ||
+          String(item.tp_documento).toUpperCase().includes('FATURA');
+
+        // Apenas situação NORMAL (não cancelado)
+        const isNormal =
+          item.tp_situacao === 'NORMAL' ||
+          item.tp_situacao === 1 ||
+          item.tp_situacao === 0 ||
+          String(item.tp_situacao).toUpperCase() === 'NORMAL';
+
+        console.log(
+          `📄 Item ${item.nr_fatura}: documento=${item.tp_documento}, situacao=${item.tp_situacao}, isFatura=${isFatura}, isNormal=${isNormal}`,
+        );
+
+        return isFatura && isNormal;
+      });
+
+      console.log(
+        `📊 Total após filtrar FATURA + NORMAL: ${todosOsDados.length}`,
+      );
+
       // Aplicar filtro local baseado no status selecionado
-      // REGRA: Se tem dt_liq preenchida, é SEMPRE considerado PAGO
       if (status !== 'todos') {
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+
         todosOsDados = todosOsDados.filter((item) => {
-          const temDataLiquidacao =
-            item.dt_liq && item.dt_liq !== null && item.dt_liq !== '';
+          const temDataLiquidacao = item.dt_liq && item.dt_liq !== null;
           const dataVencimento = item.dt_vencimento
             ? new Date(item.dt_vencimento)
             : null;
-          const hoje = new Date();
-          hoje.setHours(0, 0, 0, 0);
 
-          // Se tem data de liquidação, é PAGO
-          if (temDataLiquidacao) {
+          // Se tem data de liquidação (baixa), é PAGO
+          if (temDataLiquidacao || item.dischargeType > 0) {
             return status === 'pagos';
           }
 
-          // Se não tem data de liquidação, aplicar lógica normal
-          const valorFaturado = parseFloat(item.vl_fatura) || 0;
-          const valorPago = parseFloat(item.vl_pago) || 0;
-          const estaPago = valorPago >= valorFaturado && valorFaturado > 0;
-
+          // Se não tem baixa
           if (status === 'pagos') {
-            return estaPago;
+            return false;
           } else if (status === 'vencidos') {
-            return !estaPago && dataVencimento && dataVencimento < hoje;
+            return dataVencimento && dataVencimento < hoje;
           } else if (status === 'em_aberto') {
-            return !estaPago && (!dataVencimento || dataVencimento >= hoje);
+            return !dataVencimento || dataVencimento >= hoje;
           }
 
           return true;
@@ -443,6 +566,7 @@ const ContasPagarFranquias = () => {
       setDadosCarregados(true);
     } catch (err) {
       console.error('❌ Erro ao buscar dados:', err);
+      alert(`Erro ao buscar dados: ${err.message}`);
       setDados([]);
       setDadosCarregados(false);
     } finally {

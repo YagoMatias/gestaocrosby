@@ -65,6 +65,8 @@ const InadimplentesFranquias = () => {
   const [filtroClientes, setFiltroClientes] = useState([]);
   const [filtroEstados, setFiltroEstados] = useState([]);
 
+  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
+
   const [modalAberto, setModalAberto] = useState(false);
   const [clienteSelecionado, setClienteSelecionado] = useState(null);
   const [faturasSelecionadas, setFaturasSelecionadas] = useState([]);
@@ -102,46 +104,186 @@ const InadimplentesFranquias = () => {
     try {
       setLoading(true);
 
-      const params = {
-        dt_vencimento_ini: '2024-01-01',
-      };
+      const dataIni = filtroDataInicial || '2024-01-01';
+      const dataFim = filtroDataFinal || hojeStr;
 
-      if (filtroDataInicial) params.dt_inicio = filtroDataInicial;
-      if (filtroDataFinal) params.dt_fim = filtroDataFinal;
+      // Calcular data de amanhã para buscar "a vencer"
+      const amanha = new Date();
+      amanha.setDate(amanha.getDate() + 1);
+      const amanhaStr = amanha.toISOString().split('T')[0];
+      // 1 ano a frente para faturas a vencer
+      const umAnoFrente = new Date();
+      umAnoFrente.setFullYear(umAnoFrente.getFullYear() + 1);
+      const umAnoFrenteStr = umAnoFrente.toISOString().split('T')[0];
 
-      // Rota específica para franquias (inclui pp.ds_uf e nome fantasia)
-      const [response, aVencerResponse] = await Promise.all([
-        apiClient.financial.inadimplentesFranquias(params),
-        apiClient.financial.aVencerFranquias(),
+      // ============================================================
+      // PASSO 1: Buscar códigos dos clientes FRANQUIA (classificação TOTVS)
+      // ============================================================
+      console.log('🔍 Buscando clientes FRANQUIA...');
+      const respFranquias = await fetch(`${TotvsURL}franchise-clients`);
+      if (!respFranquias.ok) {
+        const errData = await respFranquias.json().catch(() => ({}));
+        throw new Error(
+          errData.message ||
+            `Erro ao buscar franquias: HTTP ${respFranquias.status}`,
+        );
+      }
+      const resultFranquias = await respFranquias.json();
+      const franquias = resultFranquias.data || [];
+
+      if (franquias.length === 0) {
+        console.warn('⚠️ Nenhum cliente franquia encontrado.');
+        setDados([]);
+        setValoresAVencer({});
+        return;
+      }
+
+      // Montar mapa de franquias para enriquecer depois (nome, fantasia)
+      const franquiasMap = {};
+      franquias.forEach((f) => {
+        franquiasMap[String(f.code)] = f;
+      });
+
+      // Códigos de franquias separados por vírgula para query param
+      const codigosFranquias = franquias.map((f) => f.code).join(',');
+      console.log(`📋 ${franquias.length} clientes franquia encontrados`);
+
+      // ============================================================
+      // PASSO 2: Buscar contas a receber APENAS dos clientes franquia
+      // ============================================================
+      const paramsVencidas = new URLSearchParams({
+        dt_inicio: dataIni,
+        dt_fim: dataFim,
+        modo: 'vencimento',
+        situacao: '1',
+        status: 'Vencido',
+        cd_cliente: codigosFranquias,
+      });
+
+      const paramsAVencer = new URLSearchParams({
+        dt_inicio: amanhaStr,
+        dt_fim: umAnoFrenteStr,
+        modo: 'vencimento',
+        situacao: '1',
+        status: 'Em Aberto',
+        cd_cliente: codigosFranquias,
+      });
+
+      console.log('🔍 Buscando inadimplentes (apenas franquias) via TOTVS...');
+
+      const [responseVencidas, responseAVencer] = await Promise.all([
+        fetch(
+          `${TotvsURL}accounts-receivable/filter?${paramsVencidas.toString()}`,
+        ),
+        fetch(
+          `${TotvsURL}accounts-receivable/filter?${paramsAVencer.toString()}`,
+        ),
       ]);
 
-      let dadosRecebidos = [];
-      if (response?.success && response?.data) {
-        dadosRecebidos = Array.isArray(response.data) ? response.data : [];
-      } else if (Array.isArray(response)) {
-        dadosRecebidos = response;
+      if (!responseVencidas.ok) {
+        const errData = await responseVencidas.json();
+        throw new Error(
+          errData.message || `Erro HTTP ${responseVencidas.status}`,
+        );
       }
 
-      // Processar valores a vencer
-      const aVencerMap = {};
-      if (aVencerResponse?.success && aVencerResponse?.data) {
-        aVencerResponse.data.forEach((item) => {
-          aVencerMap[item.cd_cliente] = parseFloat(item.valor_a_vencer) || 0;
-        });
-      } else if (Array.isArray(aVencerResponse)) {
-        aVencerResponse.forEach((item) => {
-          aVencerMap[item.cd_cliente] = parseFloat(item.valor_a_vencer) || 0;
-        });
+      const resultVencidas = await responseVencidas.json();
+      const faturasVencidas = resultVencidas.data?.items || [];
+
+      let faturasAVencerTodas = [];
+      if (responseAVencer.ok) {
+        const resultAVencer = await responseAVencer.json();
+        faturasAVencerTodas = resultAVencer.data?.items || [];
       }
+
+      console.log(
+        `📊 Faturas franquias — vencidas: ${faturasVencidas.length}, A vencer: ${faturasAVencerTodas.length}`,
+      );
+
+      // Filtrar apenas tipo documento FATURA (tp_documento = 1)
+      const vencidasFiltradas = faturasVencidas.filter(
+        (item) => item.tp_documento === 1 || item.tp_documento === '1',
+      );
+
+      const aVencerFiltradas = faturasAVencerTodas.filter(
+        (item) => item.tp_documento === 1 || item.tp_documento === '1',
+      );
+
+      console.log(
+        `📊 Após filtro FATURA: vencidas=${vencidasFiltradas.length}, a vencer=${aVencerFiltradas.length}`,
+      );
+
+      // ============================================================
+      // PASSO 3: Enriquecer com dados de pessoa (telefone, UF)
+      // ============================================================
+      const todosCodigosClientes = [
+        ...new Set(
+          [
+            ...vencidasFiltradas.map((item) => item.cd_cliente),
+            ...aVencerFiltradas.map((item) => item.cd_cliente),
+          ].filter(Boolean),
+        ),
+      ];
+
+      let pessoasMap = {};
+      if (todosCodigosClientes.length > 0) {
+        try {
+          const respPessoas = await fetch(`${TotvsURL}persons/batch-lookup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ personCodes: todosCodigosClientes }),
+          });
+          if (respPessoas.ok) {
+            const dataPessoas = await respPessoas.json();
+            pessoasMap = dataPessoas?.data || {};
+            console.log(
+              `👤 ${Object.keys(pessoasMap).length} clientes encontrados via batch-lookup`,
+            );
+          }
+        } catch (err) {
+          console.warn('⚠️ Erro ao buscar dados de pessoas:', err.message);
+        }
+      }
+
+      // Enriquecer faturas vencidas com dados de pessoa + dados do cache de franquias
+      const dadosEnriquecidos = vencidasFiltradas.map((item) => {
+        const pessoa = pessoasMap[String(item.cd_cliente)] || {};
+        const franquia = franquiasMap[String(item.cd_cliente)] || {};
+        return {
+          ...item,
+          nm_cliente:
+            pessoa.name ||
+            franquia.name ||
+            item.nm_cliente ||
+            item.nr_cpfcnpj ||
+            `Cliente ${item.cd_cliente}`,
+          nm_fantasia:
+            pessoa.fantasyName ||
+            franquia.fantasyName ||
+            item.nm_fantasia ||
+            '',
+          nr_telefone: pessoa.phone || '',
+          ds_uf: pessoa.uf || item.ds_uf || '',
+        };
+      });
+
+      // Processar valores a vencer por cd_cliente
+      const aVencerMap = {};
+      aVencerFiltradas.forEach((item) => {
+        const cd = String(item.cd_cliente);
+        aVencerMap[cd] =
+          (aVencerMap[cd] || 0) + (parseFloat(item.vl_fatura) || 0);
+      });
       setValoresAVencer(aVencerMap);
 
       console.log(
-        '📊 Dados recebidos de inadimplentes Franquias:',
-        dadosRecebidos,
+        '📊 Dados inadimplentes franquias via TOTVS:',
+        dadosEnriquecidos.length,
       );
-      setDados(dadosRecebidos);
+      setDados(dadosEnriquecidos);
     } catch (error) {
-      console.error('Erro ao buscar dados de inadimplentes:', error);
+      console.error('❌ Erro ao buscar dados de inadimplentes:', error);
+      alert(`Erro ao buscar dados: ${error.message}`);
       setDados([]);
     } finally {
       setLoading(false);
@@ -154,67 +296,34 @@ const InadimplentesFranquias = () => {
 
   const dadosFiltrados = useMemo(() => {
     return dados.filter((item) => {
-      // REGRA 1: Filtrar apenas tp_documento = 1 (faturas de mercadoria)
-      const tipoDocumentoValido =
-        !item.tp_documento ||
-        item.tp_documento === 1 ||
-        item.tp_documento === '1';
-
-      // REGRA 2: Filtrar apenas tp_situacao = 1 (situação ativa/normal)
-      const situacaoValida =
-        !item.tp_situacao || item.tp_situacao === 1 || item.tp_situacao === '1';
-
-      // REGRA 3: Não mostrar faturas canceladas (dt_cancelamento deve ser null)
-      const naoCancelada =
-        !item.dt_cancelamento || item.dt_cancelamento === null;
-
-      // REGRA 4: Não mostrar faturas liquidadas (dt_liq deve ser null)
-      const naoLiquidada = !item.dt_liq || item.dt_liq === null;
-
-      // REGRA 5: Não mostrar faturas com valor pago
-      const valorPago = parseFloat(item.vl_pago) || 0;
-      const valorFatura = parseFloat(item.vl_fatura) || 0;
-      const temPagamento = valorPago > 0 && valorPago >= valorFatura;
-      const naoPago = !temPagamento;
+      // Filtros já aplicados no backend: tipo documento, situação, vencido sem pagamento
+      // Aqui só filtramos por cliente e estado selecionados no frontend
 
       const matchCliente =
         filtroClientes.length === 0 ||
         filtroClientes.includes(String(item.cd_cliente));
 
-      // Para franquias o estado vem em pp.ds_uf (campo aninhado). Priorize pp.ds_uf
-      const sigla =
-        item.pp && item.pp.ds_uf
-          ? String(item.pp.ds_uf).trim()
-          : (item.ds_uf || '').trim();
+      const sigla = (item.ds_uf || '').trim();
       const matchEstado =
         filtroEstados.length === 0 || filtroEstados.includes(sigla);
 
+      // Confirmar que está vencido (segurança local)
       if (!item.dt_vencimento) return false;
       const hoje = new Date();
       const vencimento = new Date(item.dt_vencimento);
-      const diferencaMs = hoje - vencimento;
-      const diasAtraso = Math.floor(diferencaMs / (1000 * 60 * 60 * 24));
-
+      const diasAtraso = Math.floor(
+        (hoje - vencimento) / (1000 * 60 * 60 * 24),
+      );
       const estaAtrasado = diasAtraso >= 1;
 
-      return (
-        matchCliente &&
-        estaAtrasado &&
-        matchEstado &&
-        tipoDocumentoValido &&
-        situacaoValida &&
-        naoCancelada &&
-        naoLiquidada &&
-        naoPago
-      );
+      return matchCliente && estaAtrasado && matchEstado;
     });
   }, [dados, filtroClientes, filtroEstados]);
 
   const estadosDisponiveis = useMemo(() => {
     const setEstados = new Set();
     dados.forEach((d) => {
-      const sigla =
-        d.pp && d.pp.ds_uf ? String(d.pp.ds_uf).trim() : (d.ds_uf || '').trim();
+      const sigla = (d.ds_uf || '').trim();
       if (sigla) setEstados.add(sigla);
     });
     return Array.from(setEstados).filter(Boolean).sort();
@@ -243,14 +352,10 @@ const InadimplentesFranquias = () => {
       if (!acc[cdCliente]) {
         acc[cdCliente] = {
           cd_cliente: cdCliente,
-          // guardar nome fantasia separadamente e nome legal
           nm_fantasia: item.nm_fantasia || null,
           nm_cliente: item.nm_cliente || null,
-          // estado usando pp.ds_uf quando disponível
-          ds_uf:
-            item.pp && item.pp.ds_uf
-              ? String(item.pp.ds_uf).trim()
-              : item.ds_uf || null,
+          nr_telefone: item.nr_telefone || '',
+          ds_uf: (item.ds_uf || '').trim() || null,
           valor_total: 0,
           faturas: [],
         };
@@ -342,11 +447,7 @@ const InadimplentesFranquias = () => {
 
   const dadosPorEstado = useMemo(() => {
     const agrupado = dadosFiltrados.reduce((acc, item) => {
-      const estado =
-        (item.pp && item.pp.ds_uf
-          ? String(item.pp.ds_uf).trim()
-          : item.ds_uf || ''
-        ).trim() || 'Não informado';
+      const estado = (item.ds_uf || '').trim() || 'Não informado';
       if (!acc[estado]) {
         acc[estado] = { clientes: 0, valor: 0 };
       }
@@ -449,18 +550,33 @@ const InadimplentesFranquias = () => {
     setLoadingFaturasModal(true);
 
     try {
-      // Buscar faturas a vencer do cliente
-      const response = await apiClient.financial.faturasAVencerCliente(
-        cliente.cd_cliente,
+      // Buscar faturas a vencer do cliente via TOTVS
+      const amanha = new Date();
+      amanha.setDate(amanha.getDate() + 1);
+      const amanhaStr = amanha.toISOString().split('T')[0];
+      const umAno = new Date();
+      umAno.setFullYear(umAno.getFullYear() + 1);
+      const umAnoStr = umAno.toISOString().split('T')[0];
+
+      const params = new URLSearchParams({
+        dt_inicio: amanhaStr,
+        dt_fim: umAnoStr,
+        modo: 'vencimento',
+        situacao: '1',
+        status: 'Em Aberto',
+        cd_cliente: String(cliente.cd_cliente),
+      });
+
+      const response = await fetch(
+        `${TotvsURL}accounts-receivable/filter?${params.toString()}`,
       );
 
       let faturasAVencerRecebidas = [];
-      if (response?.success && response?.data) {
-        faturasAVencerRecebidas = Array.isArray(response.data)
-          ? response.data
-          : [];
-      } else if (Array.isArray(response)) {
-        faturasAVencerRecebidas = response;
+      if (response.ok) {
+        const result = await response.json();
+        faturasAVencerRecebidas = (result.data?.items || []).filter(
+          (item) => item.tp_documento === 1 || item.tp_documento === '1',
+        );
       }
 
       setFaturasAVencer(faturasAVencerRecebidas);
@@ -611,39 +727,39 @@ const InadimplentesFranquias = () => {
   };
 
   // Handler para abrir WhatsApp do cliente
-  const abrirWhatsApp = async (cliente, e) => {
+  const abrirWhatsApp = (cliente, e) => {
     e.stopPropagation();
 
-    try {
-      // Buscar telefone do cliente
-      const response = await apiClient.financial.telefoneClientes(
-        cliente.cd_cliente,
-      );
+    const telefone = cliente.nr_telefone || '';
 
-      if (response.success && response.data) {
-        const telefone =
-          response.data.nr_telefone ||
-          response.data.nr_ddd + response.data.nr_telefone;
+    if (!telefone) {
+      alert('Telefone não encontrado para este cliente');
+      return;
+    }
 
-        if (telefone) {
-          // Limpar telefone (remover caracteres especiais)
-          const telefoneClean = telefone.replace(/\D/g, '');
+    // Limpar telefone (remover caracteres especiais)
+    const telefoneClean = telefone.replace(/\D/g, '');
 
-          // Construir lista de faturas
-          const listaFaturas = (cliente.faturas || [])
-            .map((fatura) => {
-              const numeroFatura = fatura.nr_fat || fatura.nr_fatura || 'N/A';
-              const vencimento = fatura.dt_vencimento
-                ? new Date(fatura.dt_vencimento).toLocaleDateString('pt-BR')
-                : 'N/A';
-              const valor = formatarMoeda(fatura.vl_fatura || 0);
+    if (!telefoneClean) {
+      alert('Telefone não encontrado para este cliente');
+      return;
+    }
 
-              return `*Fatura:* ${numeroFatura}\n*Vencimento:* ${vencimento}\n*Valor:* ${valor}`;
-            })
-            .join('\n\n');
+    // Construir lista de faturas
+    const listaFaturas = (cliente.faturas || [])
+      .map((fatura) => {
+        const numeroFatura = fatura.nr_fat || fatura.nr_fatura || 'N/A';
+        const vencimento = fatura.dt_vencimento
+          ? new Date(fatura.dt_vencimento).toLocaleDateString('pt-BR')
+          : 'N/A';
+        const valor = formatarMoeda(fatura.vl_fatura || 0);
 
-          // Mensagem padrão pré-definida
-          const mensagemPadrao = `Olá, tudo bem? *${cliente.nm_fantasia || cliente.nm_cliente}*
+        return `*Fatura:* ${numeroFatura}\n*Vencimento:* ${vencimento}\n*Valor:* ${valor}`;
+      })
+      .join('\n\n');
+
+    // Mensagem padrão pré-definida
+    const mensagemPadrao = `Olá, tudo bem? *${cliente.nm_fantasia || cliente.nm_cliente}*
 Somos da área de Recuperação de Créditos da Crosby.
 Consta em nosso sistema a existência de pendências financeiras em aberto em seu cadastro.
 Entramos em contato para alinhar e verificar a melhor forma de regularização.
@@ -657,22 +773,12 @@ ${listaFaturas}
 Atenciosamente,
 Crosby`;
 
-          // Codificar a mensagem para URL
-          const mensagemCodificada = encodeURIComponent(mensagemPadrao);
+    // Codificar a mensagem para URL
+    const mensagemCodificada = encodeURIComponent(mensagemPadrao);
 
-          // Abrir WhatsApp com mensagem pré-definida
-          const whatsappUrl = `https://wa.me/55${telefoneClean}?text=${mensagemCodificada}`;
-          window.open(whatsappUrl, '_blank');
-        } else {
-          alert('Telefone não encontrado para este cliente');
-        }
-      } else {
-        alert('Telefone não encontrado para este cliente');
-      }
-    } catch (error) {
-      console.error('Erro ao buscar telefone:', error);
-      alert('Erro ao buscar telefone do cliente');
-    }
+    // Abrir WhatsApp com mensagem pré-definida
+    const whatsappUrl = `https://wa.me/55${telefoneClean}?text=${mensagemCodificada}`;
+    window.open(whatsappUrl, '_blank');
   };
 
   // Função para exportar dados para PDF

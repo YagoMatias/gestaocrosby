@@ -1026,15 +1026,15 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             isActive={false}
           />
 
-          {/* Clientes */}
+          {/* Consulta Cliente */}
           <MenuItem
             item={{
-              name: 'Clientes',
-              href: '/clientes',
+              name: 'Consulta Cliente',
+              href: '/consulta-cliente',
               icon: IdentificationCard,
               color: 'text-blue-600',
             }}
-            isActive={location.pathname === '/clientes'}
+            isActive={location.pathname === '/consulta-cliente'}
           />
 
           {/* Auditoria de Transações */}

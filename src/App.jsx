@@ -38,7 +38,6 @@ const ExtratoCliente = lazy(() => import('./pages/ExtratoCliente'));
 const ExtratoCredito = lazy(() => import('./pages/ExtratoCredito'));
 const Conciliacao = lazy(() => import('./pages/Conciliacao'));
 const SaldoBancarioTotvs = lazy(() => import('./pages/SaldoBancarioTotvs'));
-const Clientes = lazy(() => import('./pages/Clientes'));
 
 const MetasVarejo = lazy(() => import('./pages/MetasVarejo'));
 
@@ -97,6 +96,7 @@ const AuditoriaAntecipacoes = lazy(
 const AuditoriaConciliacao = lazy(() => import('./pages/AuditoriaConciliacao'));
 const AuditoriaFaturamento = lazy(() => import('./pages/AuditoriaFaturamento'));
 const ExtratoBancario = lazy(() => import('./pages/ExtratoBancario'));
+const ConsultaCliente = lazy(() => import('./pages/ConsultaCliente'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -125,7 +125,6 @@ const AppRoutes = memo(() => {
 
   // Lista de rotas protegidas (evita centenas de blocos repetidos)
   const protectedRoutes = [
-    { path: '/clientes', component: Clientes },
     { path: '/auditoria-transacoes', component: AuditoriaTransacoes },
     { path: '/gerenciador-dashboards', component: GerenciadorDashboards },
     { path: '/widgets', component: Widgets },
@@ -202,6 +201,7 @@ const AppRoutes = memo(() => {
     { path: '/auditoria-antecipacoes', component: AuditoriaAntecipacoes },
     { path: '/auditoria-conciliacao', component: AuditoriaConciliacao },
     { path: '/auditoria-faturamento', component: AuditoriaFaturamento },
+    { path: '/consulta-cliente', component: ConsultaCliente },
   ];
 
   // Componente de layout para rotas protegidas

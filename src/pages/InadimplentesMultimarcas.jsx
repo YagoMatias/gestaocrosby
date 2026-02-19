@@ -82,6 +82,8 @@ const InadimplentesMultimarcas = () => {
   const [filtroClientes, setFiltroClientes] = useState([]); // array de cd_cliente selecionados
   const [filtroEstados, setFiltroEstados] = useState([]); // array de siglas selecionadas
 
+  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
+
   // Estado para o modal de detalhes do cliente
   const [modalAberto, setModalAberto] = useState(false);
   const [clienteSelecionado, setClienteSelecionado] = useState(null);
@@ -172,7 +174,7 @@ const InadimplentesMultimarcas = () => {
         cd_cliente: cliente.cd_cliente,
         nm_cliente: cliente.nm_cliente,
         valor_total: cliente.valor_total,
-        ds_siglaest: cliente.ds_siglaest?.trim() || null,
+        ds_siglaest: cliente.ds_uf?.trim() || null,
         situacao: cliente.situacao,
         feeling: tempFeeling,
         status: clienteStatus[cdCliente] || null,
@@ -216,7 +218,7 @@ const InadimplentesMultimarcas = () => {
         cd_cliente: cliente.cd_cliente,
         nm_cliente: cliente.nm_cliente,
         valor_total: cliente.valor_total,
-        ds_siglaest: cliente.ds_siglaest?.trim() || null,
+        ds_siglaest: cliente.ds_uf?.trim() || null,
         situacao: cliente.situacao,
         feeling: clienteFeeling[cdCliente] || null,
         status: tempStatus,
@@ -287,7 +289,7 @@ const InadimplentesMultimarcas = () => {
         cd_cliente: cliente.cd_cliente,
         nm_cliente: cliente.nm_cliente,
         valor_total: cliente.valor_total,
-        ds_siglaest: cliente.ds_siglaest?.trim() || null,
+        ds_siglaest: cliente.ds_uf?.trim() || null,
         situacao: cliente.situacao,
         feeling: clienteFeeling[cdCliente] || null,
         status: clienteStatus[cdCliente] || null,
@@ -420,40 +422,39 @@ const InadimplentesMultimarcas = () => {
     return diferencaSegundos <= 120; // 120 segundos = 2 minutos
   };
 
-  // Handler para abrir WhatsApp do cliente
-  const abrirWhatsApp = async (cliente, e) => {
+  // Handler para abrir WhatsApp do cliente (usa nr_telefone já enriquecido via TOTVS)
+  const abrirWhatsApp = (cliente, e) => {
     e.stopPropagation();
 
-    try {
-      // Buscar telefone do cliente
-      const response = await apiClient.financial.telefoneClientes(
-        cliente.cd_cliente,
-      );
+    const telefone = cliente.nr_telefone || '';
 
-      if (response.success && response.data) {
-        const telefone =
-          response.data.nr_telefone ||
-          response.data.nr_ddd + response.data.nr_telefone;
+    if (!telefone) {
+      setNotification({
+        type: 'error',
+        message: 'Telefone não encontrado para este cliente',
+      });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
 
-        if (telefone) {
-          // Limpar telefone (remover caracteres especiais)
-          const telefoneClean = telefone.replace(/\D/g, '');
+    // Limpar telefone (remover caracteres especiais)
+    const telefoneClean = telefone.replace(/\D/g, '');
 
-          // Construir lista de faturas
-          const listaFaturas = (cliente.faturas || [])
-            .map((fatura) => {
-              const numeroFatura = fatura.nr_fat || fatura.nr_fatura || 'N/A';
-              const vencimento = fatura.dt_vencimento
-                ? new Date(fatura.dt_vencimento).toLocaleDateString('pt-BR')
-                : 'N/A';
-              const valor = formatarMoeda(fatura.vl_fatura || 0);
+    // Construir lista de faturas
+    const listaFaturas = (cliente.faturas || [])
+      .map((fatura) => {
+        const numeroFatura = fatura.nr_fat || fatura.nr_fatura || 'N/A';
+        const vencimento = fatura.dt_vencimento
+          ? new Date(fatura.dt_vencimento).toLocaleDateString('pt-BR')
+          : 'N/A';
+        const valor = formatarMoeda(fatura.vl_fatura || 0);
 
-              return `*Fatura:* ${numeroFatura}\n*Vencimento:* ${vencimento}\n*Valor:* ${valor}`;
-            })
-            .join('\n\n');
+        return `*Fatura:* ${numeroFatura}\n*Vencimento:* ${vencimento}\n*Valor:* ${valor}`;
+      })
+      .join('\n\n');
 
-          // Mensagem padrão pré-definida
-          const mensagemPadrao = `Olá, tudo bem? *${cliente.nm_cliente}*
+    // Mensagem padrão pré-definida
+    const mensagemPadrao = `Olá, tudo bem? *${cliente.nm_cliente}*
 Somos da área de Recuperação de Créditos da Crosby.
 Consta em nosso sistema a existência de pendências financeiras em aberto em seu cadastro.
 Entramos em contato para alinhar e verificar a melhor forma de regularização.
@@ -467,34 +468,12 @@ ${listaFaturas}
 Atenciosamente,
 Crosby`;
 
-          // Codificar a mensagem para URL
-          const mensagemCodificada = encodeURIComponent(mensagemPadrao);
+    // Codificar a mensagem para URL
+    const mensagemCodificada = encodeURIComponent(mensagemPadrao);
 
-          // Abrir WhatsApp com mensagem pré-definida
-          const whatsappUrl = `https://wa.me/55${telefoneClean}?text=${mensagemCodificada}`;
-          window.open(whatsappUrl, '_blank');
-        } else {
-          setNotification({
-            type: 'error',
-            message: 'Telefone não encontrado para este cliente',
-          });
-          setTimeout(() => setNotification(null), 3000);
-        }
-      } else {
-        setNotification({
-          type: 'error',
-          message: 'Telefone não encontrado para este cliente',
-        });
-        setTimeout(() => setNotification(null), 3000);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar telefone:', error);
-      setNotification({
-        type: 'error',
-        message: 'Erro ao buscar telefone do cliente',
-      });
-      setTimeout(() => setNotification(null), 3000);
-    }
+    // Abrir WhatsApp com mensagem pré-definida
+    const whatsappUrl = `https://wa.me/55${telefoneClean}?text=${mensagemCodificada}`;
+    window.open(whatsappUrl, '_blank');
   };
 
   // Funções para determinar classes CSS dos badges
@@ -648,53 +627,193 @@ Crosby`;
     abrirModalLista(titulo, clientes);
   };
 
-  // Buscar dados da API
+  // Buscar dados da API via TOTVS
   const fetchDados = async () => {
     try {
       setLoading(true);
 
-      const params = {
-        dt_vencimento_ini: '2024-01-01', // Data fixa obrigatória
-        cd_empresa_min: 1, // Filtrar apenas empresas de 1 a 1000
-        cd_empresa_max: 1000, // Filtrar apenas empresas de 1 a 1000
-      };
+      const dataIni = filtroDataInicial || '2024-01-01';
+      const dataFim = filtroDataFinal || hojeStr;
 
-      if (filtroDataInicial) params.dt_inicio = filtroDataInicial;
-      if (filtroDataFinal) params.dt_fim = filtroDataFinal;
-      // Nota: filtro por cliente será aplicado client-side via multi-select
+      // Calcular data de amanhã para buscar "a vencer"
+      const amanha = new Date();
+      amanha.setDate(amanha.getDate() + 1);
+      const amanhaStr = amanha.toISOString().split('T')[0];
+      // 1 ano a frente para faturas a vencer
+      const umAnoFrente = new Date();
+      umAnoFrente.setFullYear(umAnoFrente.getFullYear() + 1);
+      const umAnoFrenteStr = umAnoFrente.toISOString().split('T')[0];
 
-      // Buscar inadimplentes e valores a vencer em paralelo
-      const [response, aVencerResponse] = await Promise.all([
-        apiClient.financial.inadimplentesMultimarcas(params),
-        apiClient.financial.aVencerMultimarcas(params),
-      ]);
+      // ============================================================
+      // PASSO 1: Buscar códigos dos clientes MULTIMARCAS (classificação TOTVS)
+      // ============================================================
+      console.log('🔍 Buscando clientes MULTIMARCAS...');
+      const respMultimarcas = await fetch(`${TotvsURL}multibrand-clients`);
+      if (!respMultimarcas.ok) {
+        const errData = await respMultimarcas.json().catch(() => ({}));
+        throw new Error(
+          errData.message ||
+            `Erro ao buscar multimarcas: HTTP ${respMultimarcas.status}`,
+        );
+      }
+      const resultMultimarcas = await respMultimarcas.json();
+      const multimarcas = resultMultimarcas.data || [];
 
-      // Verificar estrutura da resposta
-      let dadosRecebidos = [];
-      if (response?.success && response?.data) {
-        dadosRecebidos = Array.isArray(response.data) ? response.data : [];
-      } else if (Array.isArray(response)) {
-        dadosRecebidos = response;
+      if (multimarcas.length === 0) {
+        console.warn('⚠️ Nenhum cliente multimarcas encontrado.');
+        setDados([]);
+        setValoresAVencer({});
+        return;
       }
 
-      console.log('📊 Dados recebidos de inadimplentes:', dadosRecebidos);
-      setDados(dadosRecebidos);
+      // Montar mapa de multimarcas para enriquecer depois (nome, fantasia)
+      const multimarcasMap = {};
+      multimarcas.forEach((m) => {
+        multimarcasMap[String(m.code)] = m;
+      });
 
-      // Processar valores a vencer
-      if (aVencerResponse?.success && aVencerResponse?.data) {
-        const aVencerMap = {};
-        aVencerResponse.data.forEach((item) => {
-          aVencerMap[item.cd_cliente] = parseFloat(item.valor_a_vencer) || 0;
-        });
-        setValoresAVencer(aVencerMap);
-        console.log(
-          '📊 Valores a vencer carregados:',
-          Object.keys(aVencerMap).length,
+      // Códigos separados por vírgula para query param
+      const codigosMultimarcas = multimarcas.map((m) => m.code).join(',');
+      console.log(`📋 ${multimarcas.length} clientes multimarcas encontrados`);
+
+      // ============================================================
+      // PASSO 2: Buscar contas a receber APENAS dos clientes multimarcas
+      // ============================================================
+      const paramsVencidas = new URLSearchParams({
+        dt_inicio: dataIni,
+        dt_fim: dataFim,
+        modo: 'vencimento',
+        situacao: '1',
+        status: 'Vencido',
+        cd_cliente: codigosMultimarcas,
+      });
+
+      const paramsAVencer = new URLSearchParams({
+        dt_inicio: amanhaStr,
+        dt_fim: umAnoFrenteStr,
+        modo: 'vencimento',
+        situacao: '1',
+        status: 'Em Aberto',
+        cd_cliente: codigosMultimarcas,
+      });
+
+      console.log(
+        '🔍 Buscando inadimplentes (apenas multimarcas) via TOTVS...',
+      );
+
+      const [responseVencidas, responseAVencer] = await Promise.all([
+        fetch(
+          `${TotvsURL}accounts-receivable/filter?${paramsVencidas.toString()}`,
+        ),
+        fetch(
+          `${TotvsURL}accounts-receivable/filter?${paramsAVencer.toString()}`,
+        ),
+      ]);
+
+      if (!responseVencidas.ok) {
+        const errData = await responseVencidas.json();
+        throw new Error(
+          errData.message || `Erro HTTP ${responseVencidas.status}`,
         );
       }
 
+      const resultVencidas = await responseVencidas.json();
+      const faturasVencidas = resultVencidas.data?.items || [];
+
+      let faturasAVencerTodas = [];
+      if (responseAVencer.ok) {
+        const resultAVencer = await responseAVencer.json();
+        faturasAVencerTodas = resultAVencer.data?.items || [];
+      }
+
+      console.log(
+        `📊 Faturas multimarcas — vencidas: ${faturasVencidas.length}, A vencer: ${faturasAVencerTodas.length}`,
+      );
+
+      // Filtrar apenas tipo documento FATURA (tp_documento = 1)
+      const vencidasFiltradas = faturasVencidas.filter(
+        (item) => item.tp_documento === 1 || item.tp_documento === '1',
+      );
+
+      const aVencerFiltradas = faturasAVencerTodas.filter(
+        (item) => item.tp_documento === 1 || item.tp_documento === '1',
+      );
+
+      console.log(
+        `📊 Após filtro FATURA: vencidas=${vencidasFiltradas.length}, a vencer=${aVencerFiltradas.length}`,
+      );
+
+      // ============================================================
+      // PASSO 3: Enriquecer com dados de pessoa (telefone, UF)
+      // ============================================================
+      const todosCodigosClientes = [
+        ...new Set(
+          [
+            ...vencidasFiltradas.map((item) => item.cd_cliente),
+            ...aVencerFiltradas.map((item) => item.cd_cliente),
+          ].filter(Boolean),
+        ),
+      ];
+
+      let pessoasMap = {};
+      if (todosCodigosClientes.length > 0) {
+        try {
+          const respPessoas = await fetch(`${TotvsURL}persons/batch-lookup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ personCodes: todosCodigosClientes }),
+          });
+          if (respPessoas.ok) {
+            const dataPessoas = await respPessoas.json();
+            pessoasMap = dataPessoas?.data || {};
+            console.log(
+              `👤 ${Object.keys(pessoasMap).length} clientes encontrados via batch-lookup`,
+            );
+          }
+        } catch (err) {
+          console.warn('⚠️ Erro ao buscar dados de pessoas:', err.message);
+        }
+      }
+
+      // Enriquecer faturas vencidas com dados de pessoa + dados do cache de multimarcas
+      const dadosEnriquecidos = vencidasFiltradas.map((item) => {
+        const pessoa = pessoasMap[String(item.cd_cliente)] || {};
+        const multimarca = multimarcasMap[String(item.cd_cliente)] || {};
+        return {
+          ...item,
+          nm_cliente:
+            pessoa.name ||
+            multimarca.name ||
+            item.nm_cliente ||
+            item.nr_cpfcnpj ||
+            `Cliente ${item.cd_cliente}`,
+          nm_fantasia:
+            pessoa.fantasyName ||
+            multimarca.fantasyName ||
+            item.nm_fantasia ||
+            '',
+          nr_telefone: pessoa.phone || '',
+          ds_uf: pessoa.uf || item.ds_uf || '',
+        };
+      });
+
+      // Processar valores a vencer por cd_cliente
+      const aVencerMap = {};
+      aVencerFiltradas.forEach((item) => {
+        const cd = String(item.cd_cliente);
+        aVencerMap[cd] =
+          (aVencerMap[cd] || 0) + (parseFloat(item.vl_fatura) || 0);
+      });
+      setValoresAVencer(aVencerMap);
+
+      console.log(
+        '📊 Dados inadimplentes multimarcas via TOTVS:',
+        dadosEnriquecidos.length,
+      );
+      setDados(dadosEnriquecidos);
+
       // CARREGAR CLASSIFICAÇÕES DO SUPABASE
-      if (dadosRecebidos.length > 0) {
+      if (dadosEnriquecidos.length > 0) {
         const { success, data: classificacoesSalvas } =
           await buscarClassificacoes();
 
@@ -726,11 +845,11 @@ Crosby`;
         }
       }
     } catch (error) {
-      console.error('Erro ao buscar dados de inadimplentes:', error);
+      console.error('❌ Erro ao buscar dados de inadimplentes:', error);
       setDados([]);
       setNotification({
         type: 'error',
-        message: 'Erro ao carregar dados de inadimplentes',
+        message: `Erro ao carregar dados: ${error.message}`,
       });
     } finally {
       setLoading(false);
@@ -742,50 +861,16 @@ Crosby`;
     fetchDados();
   }, []);
 
-  // Dados filtrados
+  // Dados filtrados (tipo documento e vencimento já filtrados no backend)
   const dadosFiltrados = useMemo(() => {
     return dados.filter((item) => {
       const matchCliente =
         filtroClientes.length === 0 ||
         filtroClientes.includes(String(item.cd_cliente));
-      const sigla = item.ds_siglaest?.trim() || '';
+      const uf = item.ds_uf?.trim() || '';
       const matchEstado =
-        filtroEstados.length === 0 || filtroEstados.includes(sigla);
-
-      // Filtrar apenas tp_documento = 1 (igual ContasPagarFranquias)
-      const tipoDocumento = parseInt(item.tp_documento) || 0;
-      if (tipoDocumento !== 1) return false;
-
-      // Calcular dias de inadimplencia com base em dt_vencimento
-      if (!item.dt_vencimento) return false;
-      const hoje = new Date();
-      hoje.setHours(0, 0, 0, 0);
-      // Parsear data sem timezone para evitar diferença de 1 dia
-      const [datePart] = String(item.dt_vencimento).split('T');
-      const [y, m, d] = datePart.split('-').map((n) => parseInt(n, 10));
-      const vencimento = new Date(y, m - 1, d);
-      vencimento.setHours(0, 0, 0, 0);
-      const diferencaMs = hoje - vencimento;
-      const diasAtraso = Math.floor(diferencaMs / (1000 * 60 * 60 * 24));
-
-      const estaVencido = diasAtraso >= 1;
-
-      // Verificar se o título NÃO foi pago (igual ao ContasPagarFranquias)
-      const valorPago = parseFloat(item.vl_pago) || 0;
-      const valorFatura = parseFloat(item.vl_fatura) || 0;
-      const temLiquidacao =
-        item.dt_liquidacao &&
-        item.dt_liquidacao !== null &&
-        item.dt_liquidacao !== '';
-
-      // Se tem valor pago >= valor da fatura OU tem data de liquidação, não é inadimplente
-      const foiPago =
-        (valorPago > 0 && valorPago >= valorFatura) || temLiquidacao;
-
-      // Só considera inadimplente se estiver vencido E não foi pago
-      const estaInadimplente = estaVencido && !foiPago;
-
-      return matchCliente && estaInadimplente && matchEstado;
+        filtroEstados.length === 0 || filtroEstados.includes(uf);
+      return matchCliente && matchEstado;
     });
   }, [dados, filtroClientes, filtroEstados]);
 
@@ -793,7 +878,7 @@ Crosby`;
   const estadosDisponiveis = useMemo(() => {
     const setEstados = new Set();
     dados.forEach((d) => {
-      if (d.ds_siglaest) setEstados.add(d.ds_siglaest.trim());
+      if (d.ds_uf) setEstados.add(d.ds_uf.trim());
     });
     return Array.from(setEstados).filter(Boolean).sort();
   }, [dados]);
@@ -824,7 +909,9 @@ Crosby`;
         acc[cdCliente] = {
           cd_cliente: cdCliente,
           nm_cliente: item.nm_cliente,
-          ds_siglaest: item.ds_siglaest,
+          nm_fantasia: item.nm_fantasia || '',
+          nr_telefone: item.nr_telefone || '',
+          ds_uf: item.ds_uf || '',
           valor_total: 0,
           faturas: [],
         };
@@ -875,9 +962,9 @@ Crosby`;
             valorA = (a.nm_cliente || '').toLowerCase();
             valorB = (b.nm_cliente || '').toLowerCase();
             break;
-          case 'ds_siglaest':
-            valorA = (a.ds_siglaest || '').trim().toLowerCase();
-            valorB = (b.ds_siglaest || '').trim().toLowerCase();
+          case 'ds_uf':
+            valorA = (a.ds_uf || '').trim().toLowerCase();
+            valorB = (b.ds_uf || '').trim().toLowerCase();
             break;
           case 'valor_total':
             valorA = parseFloat(a.valor_total) || 0;
@@ -1204,7 +1291,7 @@ Crosby`;
   // Dados para gráfico por estado
   const dadosPorEstado = useMemo(() => {
     const agrupado = dadosFiltrados.reduce((acc, item) => {
-      const estado = item.ds_siglaest?.trim() || 'Não informado';
+      const estado = item.ds_uf?.trim() || 'Não informado';
       if (!acc[estado]) {
         acc[estado] = { clientes: 0, valor: 0 };
       }
@@ -1317,14 +1404,35 @@ Crosby`;
     setModalAberto(true);
     setLoadingFaturasModal(true);
 
-    // Buscar faturas a vencer do cliente
+    // Buscar faturas a vencer do cliente via TOTVS
     try {
-      const response =
-        await apiClient.financial.faturasAVencerClienteMultimarcas(
-          cliente.cd_cliente,
+      const amanha = new Date();
+      amanha.setDate(amanha.getDate() + 1);
+      const amanhaStr = amanha.toISOString().split('T')[0];
+      const umAnoFrente = new Date();
+      umAnoFrente.setFullYear(umAnoFrente.getFullYear() + 1);
+      const umAnoFrenteStr = umAnoFrente.toISOString().split('T')[0];
+
+      const params = new URLSearchParams({
+        dt_inicio: amanhaStr,
+        dt_fim: umAnoFrenteStr,
+        modo: 'vencimento',
+        situacao: '1',
+        status: 'Em Aberto',
+        cd_cliente: String(cliente.cd_cliente),
+      });
+
+      const response = await fetch(
+        `${TotvsURL}accounts-receivable/filter?${params.toString()}`,
+      );
+      if (response.ok) {
+        const result = await response.json();
+        const items = result.data?.items || [];
+        // Filtrar apenas faturas (tp_documento = 1)
+        const faturas = items.filter(
+          (item) => item.tp_documento === 1 || item.tp_documento === '1',
         );
-      if (response?.success && response?.data) {
-        setFaturasAVencer(response.data);
+        setFaturasAVencer(faturas);
       }
     } catch (error) {
       console.error('Erro ao buscar faturas a vencer:', error);
@@ -2168,12 +2276,12 @@ Crosby`;
                     </th>
                     <th
                       className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => ordenarColuna('ds_siglaest')}
+                      onClick={() => ordenarColuna('ds_uf')}
                       title="Clique para ordenar"
                     >
                       <div className="flex items-center gap-1">
                         Estado
-                        {ordenarPor === 'ds_siglaest' && (
+                        {ordenarPor === 'ds_uf' && (
                           <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
                         )}
                       </div>
@@ -2279,7 +2387,7 @@ Crosby`;
                         </td>
                         <td className="px-4 py-3">
                           <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded">
-                            {cliente.ds_siglaest?.trim() || 'N/A'}
+                            {cliente.ds_uf?.trim() || 'N/A'}
                           </span>
                         </td>
                         <td className="px-4 py-3 font-medium text-red-600">
@@ -2563,7 +2671,7 @@ Crosby`;
                         </td>
                         <td className="px-4 py-3">
                           <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded">
-                            {cliente.ds_siglaest?.trim() || 'N/A'}
+                            {cliente.ds_uf?.trim() || 'N/A'}
                           </span>
                         </td>
                         <td className="px-4 py-3 font-medium text-green-600">

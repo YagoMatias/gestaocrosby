@@ -14,15 +14,15 @@ const FiltroEmpresa = ({
   const [loading, setLoading] = useState(true);
   const dropdownRef = useRef(null);
 
-  // Buscar empresas do banco de dados
+  // Buscar empresas da API TOTVS
   useEffect(() => {
     const buscarEmpresas = async () => {
       setLoading(true);
       try {
-        console.log('🔍 Buscando empresas da API...');
+        console.log('🔍 Buscando empresas da API TOTVS...');
 
         const response = await fetch(
-          'https://apigestaocrosby-bw2v.onrender.com/api/company/empresas',
+          'https://apigestaocrosby-bw2v.onrender.com/api/totvs/branches',
         );
 
         if (!response.ok) {
@@ -30,35 +30,20 @@ const FiltroEmpresa = ({
         }
 
         const result = await response.json();
-        console.log('📊 Resposta da API:', result);
+        console.log('📊 Resposta da API TOTVS:', result);
 
-        // A API retorna: { success: boolean, message: string, data: object, timestamp: string }
-        if (result.data && typeof result.data === 'object') {
-          console.log('📊 Estrutura do data:', result.data);
-
-          // Verificar se data tem a propriedade data (array de empresas)
+        // A API retorna: { success: boolean, message: string, data: { data: [], total: number }, timestamp: string }
+        if (result.success && result.data) {
           let empresasArray = [];
+
           if (result.data.data && Array.isArray(result.data.data)) {
             empresasArray = result.data.data;
-            console.log(`✅ Recebidas ${empresasArray.length} empresas da API`);
           } else if (Array.isArray(result.data)) {
             empresasArray = result.data;
-            console.log(
-              `✅ Recebidas ${empresasArray.length} empresas da API (data direto)`,
-            );
-          } else {
-            console.log(
-              '📊 Propriedades disponíveis em data:',
-              Object.keys(result.data),
-            );
-            throw new Error('Estrutura de dados não reconhecida');
           }
 
-          // Não filtrar por códigos - usar todas as empresas da API
-          // A filtragem por empresas vinculadas (franquias) será feita no useEffect abaixo
-
           console.log(
-            `✅ Carregadas ${empresasArray.length} empresas da API (todas disponíveis)`,
+            `✅ Recebidas ${empresasArray.length} empresas da API TOTVS`,
           );
 
           // Ordenar por código da empresa
@@ -71,9 +56,12 @@ const FiltroEmpresa = ({
 
           console.log(
             '✅ Empresas carregadas com sucesso:',
-            empresasOrdenadas.map(
-              (e) => `${e.cd_empresa} - ${e.nm_grupoempresa}`,
-            ),
+            empresasOrdenadas
+              .slice(0, 5)
+              .map((e) => `${e.cd_empresa} - ${e.nm_grupoempresa}`),
+            empresasOrdenadas.length > 5
+              ? `... e mais ${empresasOrdenadas.length - 5}`
+              : '',
           );
         } else {
           throw new Error('Formato de resposta inválido da API');
@@ -166,8 +154,8 @@ const FiltroEmpresa = ({
           {loading
             ? 'Carregando empresas...'
             : empresasSelecionadas.length === 0
-            ? 'Selecione as empresas'
-            : `${empresasSelecionadas.length} empresa(s) selecionada(s)`}
+              ? 'Selecione as empresas'
+              : `${empresasSelecionadas.length} empresa(s) selecionada(s)`}
         </span>
         {loading ? (
           <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">

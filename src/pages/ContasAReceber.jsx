@@ -79,6 +79,7 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
   const [clienteBuscaSelecionado, setClienteBuscaSelecionado] = useState(null);
 
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
+  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
   // Helpers de data sem fuso horário (tratar 'YYYY-MM-DD' como data local)
   const parseDateNoTZ = (isoDate) => {
@@ -437,59 +438,53 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
   }, []);
 
   // Função para buscar informações de pessoas (em lotes para evitar URL muito longa)
+  // Busca nomes, fantasia e telefone via API TOTVS (igual ConsultaCliente)
   const buscarInfoPessoas = async (codigosPessoa) => {
     if (!codigosPessoa || codigosPessoa.length === 0) return {};
 
     try {
-      const codigosUnicos = [...new Set(codigosPessoa.filter(Boolean))];
-      const CHUNK_SIZE = 50; // Número de códigos por requisição
-      const chunks = [];
-      for (let i = 0; i < codigosUnicos.length; i += CHUNK_SIZE) {
-        chunks.push(codigosUnicos.slice(i, i + CHUNK_SIZE));
-      }
-
-      const results = await Promise.all(
-        chunks.map(async (chunk) => {
-          const queryParams = chunk
-            .map((codigo) => `cd_pessoa=${encodeURIComponent(codigo)}`)
-            .join('&');
-          const url = `${BaseURL}infopessoa?${queryParams}`;
-          try {
-            const res = await fetch(url);
-            if (!res.ok) {
-              console.warn(
-                'Erro ao buscar informações de pessoas (lote):',
-                res.status,
-                res.statusText,
-                url,
-              );
-              return [];
-            }
-            const data = await res.json();
-            // Formatos suportados:
-            // 1) { success, data: { data: [ ... ] } }
-            // 2) { success, data: [ ... ] }
-            // 3) [ ... ]
-            if (data?.data?.data && Array.isArray(data.data.data))
-              return data.data.data;
-            if (Array.isArray(data?.data)) return data.data;
-            if (Array.isArray(data)) return data;
-            return [];
-          } catch (e) {
-            console.warn('Falha ao buscar lote de pessoas:', e);
-            return [];
-          }
-        }),
+      const codigosUnicos = [
+        ...new Set(
+          codigosPessoa
+            .filter(Boolean)
+            .map(Number)
+            .filter((c) => c > 0),
+        ),
+      ];
+      console.log(
+        `👥 Buscando dados de ${codigosUnicos.length} clientes via TOTVS...`,
       );
 
-      const infoPessoasObj = {};
-      results.flat().forEach((pessoa) => {
-        if (pessoa && pessoa.cd_pessoa != null) {
-          const key = String(pessoa.cd_pessoa).trim();
-          infoPessoasObj[key] = pessoa;
-        }
+      const response = await fetch(`${TotvsURL}persons/batch-lookup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personCodes: codigosUnicos }),
       });
 
+      if (!response.ok) {
+        console.warn('Erro ao buscar dados de pessoas:', response.status);
+        return {};
+      }
+
+      const data = await response.json();
+      // Resposta: { success, data: { "12345": { name, fantasyName, phone, uf }, ... } }
+      const pessoasMap = data?.data || data || {};
+
+      // Converter para formato compatível com infoPessoas
+      const infoPessoasObj = {};
+      for (const [code, pessoa] of Object.entries(pessoasMap)) {
+        infoPessoasObj[String(code).trim()] = {
+          cd_pessoa: code,
+          nm_pessoa: pessoa.name || '',
+          nm_fantasia: pessoa.fantasyName || '',
+          nr_telefone: pessoa.phone || '',
+          ds_siglaest: pessoa.uf || '',
+        };
+      }
+
+      console.log(
+        `✅ ${Object.keys(infoPessoasObj).length} clientes encontrados via TOTVS`,
+      );
       return infoPessoasObj;
     } catch (err) {
       console.error('Erro ao buscar informações de pessoas:', err);
@@ -573,126 +568,126 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
     }
 
     setLoading(true);
-    setPaginaAtual(1); // Reset para primeira página ao buscar novos dados
+    setPaginaAtual(1);
     try {
-      const endpoint =
-        modo === 'emissao' ? 'contas-receberemiss' : 'contas-receber';
-
-      // Construir URL com todos os filtros - TODAS AS EMPRESAS EM UMA ÚNICA REQUISIÇÃO
+      // Construir query params para a nova rota otimizada
       const params = new URLSearchParams();
       params.append('dt_inicio', inicio);
       params.append('dt_fim', fim);
+      params.append('modo', modo);
 
-      // Adicionar todas as empresas selecionadas
-      empresasSelecionadas.forEach((empresa) => {
-        params.append('cd_empresa', empresa.cd_empresa);
-      });
-
-      // Adicionar filtro de status
+      // Filtro de status
       if (status && status !== 'Todos') {
         params.append('status', status);
       }
 
-      // Adicionar filtro de situação
-      if (situacao && situacao !== 'TODAS') {
-        params.append('situacao', situacao);
-      }
-
-      // Adicionar filtro de cobrança
-      if (filtroCobranca && filtroCobranca !== 'TODOS') {
-        // Converter para o formato esperado pelo backend
-        let cobrancaParam = filtroCobranca;
-        if (filtroCobranca === 'NÃO ESTÁ EM COBRANÇA') {
-          cobrancaParam = 'NAO_COBRANCA';
-        }
-        params.append('tp_cobranca', cobrancaParam);
-      }
-
-      // Adicionar filtro de clientes (múltiplos)
-      if (clientesSelecionados.length > 0) {
-        clientesSelecionados.forEach((cliente) => {
-          params.append('cd_cliente', cliente.cd_cliente);
-        });
-      }
-
-      // Adicionar filtro de formas de pagamento (múltiplas)
-      if (formasPagamentoSelecionadas.length > 0) {
-        formasPagamentoSelecionadas.forEach((forma) => {
-          params.append('tp_documento', forma.codigo);
-        });
-      }
-
-      // Adicionar filtro de cliente selecionado pela busca por nome
+      // Filtro de cliente selecionado pela busca por nome
       if (clienteBuscaSelecionado) {
         params.append('cd_cliente', clienteBuscaSelecionado.cd_pessoa);
       }
 
-      // Adicionar filtro de fatura
+      // Filtro de clientes (múltiplos)
+      if (clientesSelecionados.length > 0) {
+        const clientesIds = clientesSelecionados
+          .map((c) => c.cd_cliente)
+          .join(',');
+        params.append('cd_cliente', clientesIds);
+      }
+
+      // Filtro de fatura específica
       if (filtroFatura && filtroFatura.trim() !== '') {
         params.append('nr_fatura', filtroFatura.trim());
       }
 
-      // Adicionar filtro de portador
+      // Filtro de portador
       if (filtroPortador && filtroPortador.trim() !== '') {
-        params.append('nr_portador', filtroPortador.trim());
+        params.append('cd_portador', filtroPortador.trim());
       }
 
-      const url = `${BaseURL}${endpoint}?${params.toString()}`;
-      console.log('🔍 URL da requisição única:', url);
-
-      const res = await fetch(url);
-
-      if (!res.ok) {
-        console.warn(`Erro ao buscar dados: HTTP ${res.status}`);
-        setDados([]);
-        setDadosFiltrados([]);
-        setLoading(false);
-        return;
+      // Filtro de formas de pagamento
+      if (formasPagamentoSelecionadas.length > 0) {
+        const tiposDoc = formasPagamentoSelecionadas
+          .map((f) => f.codigo)
+          .join(',');
+        params.append('tp_documento', tiposDoc);
       }
 
-      const data = await res.json();
-      console.log('📦 Resposta da API:', data);
+      // Filtro de cobrança (valores numéricos: 0=Não está em cobrança, 1=Simples, 2=Descontada)
+      if (filtroCobranca && filtroCobranca !== 'TODOS') {
+        params.append('tp_cobranca', filtroCobranca);
+      }
 
-      let todosOsDados = [];
-      if (Array.isArray(data)) {
-        todosOsDados = data;
-      } else if (data && typeof data === 'object') {
-        if (data.dados && Array.isArray(data.dados)) {
-          todosOsDados = data.dados;
-        } else if (data.data && Array.isArray(data.data)) {
-          todosOsDados = data.data;
-        } else if (
-          data.data &&
-          data.data.data &&
-          Array.isArray(data.data.data)
-        ) {
-          todosOsDados = data.data.data;
-        } else if (data.result && Array.isArray(data.result)) {
-          todosOsDados = data.result;
-        } else if (data.contas && Array.isArray(data.contas)) {
-          todosOsDados = data.contas;
-        } else {
-          todosOsDados = Object.values(data);
+      // Filtro de situação (Normal/Cancelada/Todas)
+      if (situacao && situacao !== 'TODAS') {
+        if (situacao === 'NORMAIS') {
+          params.append('situacao', '1');
+        } else if (situacao === 'CANCELADAS') {
+          params.append('situacao', '3');
         }
       }
 
-      todosOsDados = todosOsDados.filter(
-        (item) => item && typeof item === 'object',
+      // Filtro de empresas selecionadas (branchCodes)
+      if (empresasSelecionadas.length > 0) {
+        const branchCodes = empresasSelecionadas
+          .map((e) => e.cd_empresa)
+          .join(',');
+        params.append('branches', branchCodes);
+      }
+
+      const url = `${TotvsURL}accounts-receivable/filter?${params.toString()}`;
+      console.log('🔍 Buscando contas a receber:', url);
+
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('❌ Erro da API:', errorData);
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Resposta:', result);
+
+      const todosOsDados = result.data?.items || [];
+
+      console.log(
+        `📊 Total de faturas: ${todosOsDados.length} (${result.data?.timeMs}ms)`,
       );
 
-      console.log('📊 Total de dados:', todosOsDados.length);
-
-      // Extrair códigos únicos de clientes para buscar informações de pessoas
+      // Buscar dados dos clientes (nome, fantasia, telefone) antes de exibir
       const codigosClientes = [
         ...new Set(todosOsDados.map((item) => item.cd_cliente).filter(Boolean)),
       ];
-      console.log('👥 Códigos de clientes únicos:', codigosClientes);
 
-      // Buscar informações de pessoas
-      const infoPessoasData = await buscarInfoPessoas(codigosClientes);
-      setInfoPessoas(infoPessoasData);
+      let dadosFinais = todosOsDados;
 
-      setDados(todosOsDados);
+      if (codigosClientes.length > 0) {
+        const info = await buscarInfoPessoas(codigosClientes);
+        if (info && Object.keys(info).length > 0) {
+          console.log(
+            `👤 ${Object.keys(info).length} nomes de clientes carregados`,
+          );
+          setInfoPessoas(info);
+
+          // Mesclar dados de clientes nas faturas
+          dadosFinais = todosOsDados.map((item) => {
+            const key = String(item.cd_cliente).trim();
+            const pessoa = info[key];
+            if (pessoa) {
+              return {
+                ...item,
+                nm_cliente: pessoa.nm_pessoa || item.nm_cliente,
+                nm_fantasia: pessoa.nm_fantasia || '',
+                nr_telefone: pessoa.nr_telefone || item.nr_telefone || '',
+              };
+            }
+            return item;
+          });
+        }
+      }
+
+      // Só exibe quando faturas E dados de clientes carregaram
+      setDados(dadosFinais);
       setDadosCarregados(true);
 
       // Extrair dados únicos de formas de pagamento
@@ -710,7 +705,8 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
         .filter((forma) => forma.codigo && forma.descricao);
       setDadosFormasPagamento(formasPagamentoUnicas);
     } catch (err) {
-      console.error('Erro ao buscar dados:', err);
+      console.error('❌ Erro ao buscar dados:', err);
+      alert(`Erro ao buscar dados: ${err.message}`);
       setDados([]);
       setDadosCarregados(false);
     } finally {
@@ -796,7 +792,7 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
           'Valor Líquido': parseFloat(item.vl_liquido) || 0,
           Acréscimo: parseFloat(item.vl_acrescimo) || 0,
           Multa: parseFloat(item.vl_multa) || 0,
-          Portador: item.nr_portador || '',
+          Portador: item.nm_portador || '',
           Renegociação: parseFloat(item.vl_renegociacao) || 0,
           Juros: parseFloat(item.vl_juros) || 0,
           '% Juros/Mês': item.pr_juromes ? parseFloat(item.pr_juromes) : 0,
@@ -900,15 +896,16 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
 
   // Função para determinar status baseado nos dados
   const getStatusFromData = (item) => {
-    if (parseFloat(item.vl_pago) > 0) return 'Pago';
+    // PAGO: tem valor pago OU data de liquidação
+    if (parseFloat(item.vl_pago) > 0 || item.dt_liq) return 'Pago';
     if (item.dt_vencimento) {
       const dv = parseDateNoTZ(item.dt_vencimento);
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
-      // Vencido: data de vencimento menor que hoje (passou da data)
+      // Vencido: data de vencimento menor que hoje, sem pagamento
       if (dv && dv < hoje) return 'Vencido';
     }
-    // A Vencer: data de vencimento maior ou igual a hoje (incluindo hoje)
+    // A Vencer: data de vencimento maior ou igual a hoje, sem pagamento
     return 'A Vencer';
   };
 
@@ -1047,6 +1044,7 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
               >
                 <option value="Todos">TODOS</option>
                 <option value="Pago">PAGO</option>
+                <option value="Em Aberto">EM ABERTO</option>
                 <option value="Vencido">VENCIDO</option>
                 <option value="A Vencer">A VENCER</option>
               </select>
@@ -1078,11 +1076,9 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
                 className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
               >
                 <option value="TODOS">TODOS</option>
-                <option value="DESCONTADA">DESCONTADA</option>
-                <option value="NÃO ESTÁ EM COBRANÇA">
-                  NÃO ESTÁ EM COBRANÇA
-                </option>
-                <option value="SIMPLES">SIMPLES</option>
+                <option value="0">NÃO ESTÁ EM COBRANÇA</option>
+                <option value="1">SIMPLES</option>
+                <option value="2">DESCONTADA</option>
               </select>
             </div>
             <div>
@@ -1833,11 +1829,11 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
                     </th>
                     <th
                       className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('nr_portador')}
+                      onClick={() => handleSort('nm_portador')}
                     >
                       <div className="flex items-center justify-center">
                         Portador
-                        {getSortIcon('nr_portador')}
+                        {getSortIcon('nm_portador')}
                       </div>
                     </th>
                     <th
@@ -2043,7 +2039,7 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
                         )}
                       </td>
                       <td className="text-center text-gray-900 px-0.5 py-0.5">
-                        {item.nr_portador || '--'}
+                        {item.nm_portador || '--'}
                       </td>
                       <td className="text-center text-gray-900 px-0.5 py-0.5">
                         {(parseFloat(item.vl_renegociacao) || 0).toLocaleString(
