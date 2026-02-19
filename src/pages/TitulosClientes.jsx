@@ -70,10 +70,36 @@ const TitulosClientes = () => {
   const [danfeLoading, setDanfeLoading] = useState(false);
   const [danfeError, setDanfeError] = useState('');
 
+  // Estado para armazenar códigos das filiais (empresas próprias)
+  const [filiaisCodigos, setFiliaisCodigos] = useState([]);
+
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
   const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
   const FranchiseURL =
     'https://apigestaocrosby-bw2v.onrender.com/api/franchise/';
+
+  // Buscar filiais (empresas) da API TOTVS ao carregar
+  useEffect(() => {
+    const buscarFiliais = async () => {
+      try {
+        const response = await fetch(`${TotvsURL}branches`);
+        if (response.ok) {
+          const data = await response.json();
+          // Extrair códigos das filiais (cd_empresa)
+          const codigos = data
+            .map((branch) => parseInt(branch.cd_empresa))
+            .filter((code) => !isNaN(code) && code > 0);
+          console.log('📋 Filiais carregadas:', codigos);
+          setFiliaisCodigos(codigos);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar filiais:', error);
+        // Fallback para filiais padrão
+        setFiliaisCodigos([1, 2, 6, 100, 101, 99, 990, 200, 400, 4, 850, 85]);
+      }
+    };
+    buscarFiliais();
+  }, []);
 
   // Helpers de data sem fuso horário
   const parseDateNoTZ = (isoDate) => {
@@ -246,58 +272,11 @@ const TitulosClientes = () => {
   // Total de páginas para paginação
   const totalPages = Math.ceil(dadosProcessados.length / itensPorPagina);
 
-  // Função para buscar clientes por nome ou fantasia
-  const buscarClientes = async () => {
-    const nome = termoBuscaNome.trim();
-    const fantasia = termoBuscaFantasia.trim();
-
-    if (!nome && !fantasia) {
-      alert('Digite o nome ou nome fantasia para buscar!');
-      return;
-    }
-
-    setBuscandoClientes(true);
-    try {
-      // Construir query com filtros
-      let query = '';
-      if (nome && fantasia) {
-        query = `nm_pessoa=${encodeURIComponent(nome)}&nm_fantasia=${encodeURIComponent(fantasia)}`;
-      } else if (nome) {
-        query = `nm_pessoa=${encodeURIComponent(nome)}`;
-      } else if (fantasia) {
-        query = `nm_fantasia=${encodeURIComponent(fantasia)}`;
-      }
-
-      console.log('🔍 Buscando clientes:', { nome, fantasia });
-
-      const response = await fetch(`${BaseURL}buscar-clientes?${query}`);
-
-      if (!response.ok) {
-        throw new Error('Erro ao buscar clientes');
-      }
-
-      const data = await response.json();
-      console.log('✅ Clientes encontrados:', data);
-
-      let clientes = [];
-      if (data.success && data.data && Array.isArray(data.data)) {
-        clientes = data.data;
-      } else if (Array.isArray(data)) {
-        clientes = data;
-      }
-
-      if (clientes.length === 0) {
-        alert('Nenhum cliente encontrado com os critérios informados.');
-      } else {
-        setClientesEncontrados(clientes);
-        setModalBuscaAberto(true);
-      }
-    } catch (error) {
-      console.error('❌ Erro ao buscar clientes:', error);
-      alert('Erro ao buscar clientes. Tente novamente.');
-    } finally {
-      setBuscandoClientes(false);
-    }
+  // Busca de clientes por nome desabilitada - usar código do cliente diretamente
+  const buscarClientes = () => {
+    alert(
+      'Busca por nome desabilitada. Use o código do cliente para consultar.',
+    );
   };
 
   // Função para selecionar um cliente da lista
@@ -310,66 +289,137 @@ const TitulosClientes = () => {
 
   const buscarDados = async () => {
     if (!cdCliente || cdCliente.trim() === '') {
-      alert(
-        'Selecione um cliente ou digite o código do cliente para consultar!',
-      );
+      alert('Digite o código do cliente para consultar!');
       return;
     }
 
     setLoading(true);
     setPaginaAtual(1);
     try {
-      console.log(
-        `🔍 Buscando dados para cd_cliente: ${cdCliente}, status: ${status}`,
-      );
-
-      const res = await fetch(
-        `${BaseURL}contas-receber-cliente?cd_cliente=${cdCliente}&status=todos`,
-      );
-
-      if (!res.ok) {
-        throw new Error(`Erro na API: ${res.status}`);
+      const codigoCliente = parseInt(cdCliente.trim(), 10);
+      if (isNaN(codigoCliente) || codigoCliente <= 0) {
+        throw new Error('Código do cliente inválido');
       }
 
-      const data = await res.json();
-      console.log(`✅ Resposta da API para cliente ${cdCliente}:`, data);
-
-      let todosOsDados = [];
-      if (Array.isArray(data)) {
-        todosOsDados = data;
-      } else if (data && typeof data === 'object') {
-        if (data.data && Array.isArray(data.data)) {
-          todosOsDados = data.data;
-        } else if (
-          data.data &&
-          data.data.data &&
-          Array.isArray(data.data.data)
-        ) {
-          todosOsDados = data.data.data;
-        } else {
-          todosOsDados = Object.values(data);
-        }
-      }
-
-      todosOsDados = todosOsDados.filter(
-        (item) => item && typeof item === 'object',
+      console.log(
+        `🔍 Buscando dados via TOTVS para cd_cliente: ${codigoCliente}, status: ${status}`,
       );
 
+      // Montar filtro para API TOTVS (mesma rota que ContasPagarFranquias)
+      const branchCodeList =
+        filiaisCodigos.length > 0
+          ? filiaisCodigos
+          : [1, 2, 6, 100, 101, 99, 990, 200, 400, 4, 850, 85];
+      const filter = {
+        branchCodeList,
+        customerCodeList: [codigoCliente],
+      };
+
+      // Filtrar por status se não for "todos"
+      if (status === 'em_aberto' || status === 'vencidos') {
+        filter.hasOpenInvoices = true;
+        filter.dischargeTypeList = [0];
+      }
+
+      const response = await fetch(
+        `${TotvsURL}accounts-receivable/search-all`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            filter,
+            expand: 'invoice,calculateValue',
+            order: '-expiredDate',
+            maxPages: 20,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Erro HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Resposta TOTVS accounts-receivable:', result);
+
+      let todosOsDados = result.data?.items || [];
+
+      // Mapear dados TOTVS para formato esperado pelo componente
+      todosOsDados = todosOsDados.map((item) => ({
+        ...item,
+        cd_empresa: item.branchCode,
+        cd_cliente: item.customerCode,
+        nm_cliente:
+          item.customerName ||
+          item.customerCpfCnpj ||
+          `Cliente ${item.customerCode}`,
+        nr_cpfcnpj: item.customerCpfCnpj,
+        nr_fatura: item.receivableCode,
+        nr_fat: item.receivableCode,
+        nr_parcela: item.installmentCode,
+        dt_vencimento: item.expiredDate,
+        dt_liq: item.paymentDate || item.settlementDate,
+        dt_emissao: item.issueDate,
+        vl_fatura: item.installmentValue,
+        vl_pago: item.paidValue || 0,
+        vl_liquido: item.netValue,
+        vl_desconto: item.discountValue,
+        vl_abatimento: item.rebateValue,
+        vl_juros: item.interestValue,
+        vl_multa: item.assessmentValue,
+        cd_barras: item.barCode,
+        linha_digitavel: item.digitableLine,
+        nosso_numero: item.ourNumber,
+        qr_code_pix: item.qrCodePix,
+        tp_situacao: item.status,
+        tp_documento: item.documentType,
+        tp_faturamento: item.billingType,
+        tp_baixa: item.dischargeType,
+        tp_cobranca: item.chargeType,
+        cd_portador: item.bearerCode,
+        nm_portador: item.bearerName,
+        cancelado: item.canceled,
+        dias_atraso: item.calculatedValues?.daysLate,
+        vl_acrescimo: item.calculatedValues?.increaseValue,
+        vl_juros_calc: item.calculatedValues?.interestValue,
+        vl_multa_calc: item.calculatedValues?.fineValue,
+        vl_desconto_calc: item.calculatedValues?.discountValue,
+        vl_corrigido: item.calculatedValues?.correctedValue,
+        invoice: item.invoice,
+      }));
+
+      // Filtrar apenas FATURA + NORMAL
+      todosOsDados = todosOsDados.filter((item) => {
+        const isFatura =
+          item.tp_documento === 'FATURA' ||
+          item.tp_documento === 1 ||
+          String(item.tp_documento).toUpperCase().includes('FATURA');
+        const isNormal =
+          item.tp_situacao === 'NORMAL' ||
+          item.tp_situacao === 1 ||
+          item.tp_situacao === 0 ||
+          String(item.tp_situacao).toUpperCase() === 'NORMAL';
+        return isFatura && isNormal;
+      });
+
       console.log(
-        `📦 ${todosOsDados.length} registros encontrados para cliente ${cdCliente}`,
+        `📊 Total após filtrar FATURA + NORMAL: ${todosOsDados.length}`,
       );
 
       // Aplicar filtro local baseado no status selecionado
-      // REGRA: Se tem dt_liq preenchida, é SEMPRE considerado PAGO
       if (status !== 'todos') {
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+
         todosOsDados = todosOsDados.filter((item) => {
           const temDataLiquidacao =
             item.dt_liq && item.dt_liq !== null && item.dt_liq !== '';
           const dataVencimento = item.dt_vencimento
             ? new Date(item.dt_vencimento)
             : null;
-          const hoje = new Date();
-          hoje.setHours(0, 0, 0, 0);
 
           // Se tem data de liquidação, é PAGO
           if (temDataLiquidacao) {
@@ -1114,7 +1164,7 @@ const TitulosClientes = () => {
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
       <PageTitle
-        title="Portal de Títulos - Clientes"
+        title="Portal de Títulos MTM"
         subtitle="Consulta de títulos dos nossos clientes"
         icon={Receipt}
         iconColor="text-red-600"
@@ -1136,64 +1186,38 @@ const TitulosClientes = () => {
             </span>
           </div>
 
-          {/* Busca por Nome/Fantasia */}
-          <div className="mb-3">
-            <p className="text-xs font-semibold text-[#000638] mb-2">
-              Buscar Cliente por Nome
+          {/* Busca por Nome/Fantasia - DESABILITADO */}
+          <div className="mb-3 opacity-50 pointer-events-none">
+            <p className="text-xs font-semibold text-gray-400 mb-2">
+              Buscar Cliente por Nome (desabilitado)
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <div className="relative">
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                <label className="block text-xs font-semibold mb-0.5 text-gray-400">
                   Nome da Pessoa
                 </label>
                 <div className="relative">
                   <input
                     type="text"
                     value={termoBuscaNome}
-                    onChange={(e) => setTermoBuscaNome(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && buscarClientes()}
-                    placeholder="Digite o nome..."
-                    className="border border-[#000638]/30 rounded-lg px-2 py-1.5 pr-8 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                    disabled
+                    placeholder="Desabilitado - use o código do cliente"
+                    className="border border-gray-200 rounded-lg px-2 py-1.5 pr-8 w-full bg-gray-100 text-gray-400 text-xs cursor-not-allowed"
                   />
-                  <button
-                    onClick={buscarClientes}
-                    disabled={buscandoClientes}
-                    className="absolute right-2 top-1/3 -translate-y-1/2 text-[#000638] hover:text-[#fe0000] disabled:text-gray-400"
-                    title="Buscar cliente"
-                  >
-                    {buscandoClientes ? (
-                      <Spinner size={14} className="animate-spin" />
-                    ) : (
-                      <MagnifyingGlass size={14} weight="bold" />
-                    )}
-                  </button>
                 </div>
               </div>
               <div className="relative">
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                <label className="block text-xs font-semibold mb-0.5 text-gray-400">
                   Nome Fantasia
                 </label>
                 <div className="relative">
                   <input
                     type="text"
                     value={termoBuscaFantasia}
-                    onChange={(e) => setTermoBuscaFantasia(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && buscarClientes()}
-                    placeholder="Digite o nome fantasia..."
-                    className="border border-[#000638]/30 rounded-lg px-2 py-1.5 pr-8 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                    disabled
+                    placeholder="Desabilitado - use o código do cliente"
+                    className="border border-gray-200 rounded-lg px-2 py-1.5 pr-8 w-full bg-gray-100 text-gray-400 text-xs cursor-not-allowed"
                   />
-                  <button
-                    onClick={buscarClientes}
-                    disabled={buscandoClientes}
-                    className="absolute right-2 top-1/3 -translate-y-1/2 text-[#000638] hover:text-[#fe0000] disabled:text-gray-400"
-                    title="Buscar cliente"
-                  >
-                    {buscandoClientes ? (
-                      <Spinner size={14} className="animate-spin" />
-                    ) : (
-                      <MagnifyingGlass size={14} weight="bold" />
-                    )}
-                  </button>
                 </div>
               </div>
             </div>

@@ -259,13 +259,6 @@ const financeiro = [
     color: 'text-purple-600',
     roles: ['owner', 'admin', 'manager', 'user'],
   },
-  {
-    name: 'Títulos Clientes',
-    href: '/titulos-clientes',
-    icon: Receipt,
-    color: 'text-blue-600',
-    roles: ['owner', 'admin', 'manager', 'user'],
-  },
 ];
 
 const faturamento = [
@@ -370,6 +363,12 @@ const multimarcas = [
     href: '/inadimplentes-multimarcas',
     icon: ChartBar,
     color: 'text-purple-600',
+  },
+  {
+    name: 'Portal de Títulos MTM',
+    href: '/titulos-clientes',
+    icon: Receipt,
+    color: 'text-blue-600',
   },
 ];
 

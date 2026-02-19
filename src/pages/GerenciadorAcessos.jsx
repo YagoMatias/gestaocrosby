@@ -214,8 +214,8 @@ const AVAILABLE_PAGES = [
   },
   {
     path: '/titulos-clientes',
-    name: 'Títulos Clientes',
-    category: 'Financeiro',
+    name: 'Portal de Títulos MTM',
+    category: 'Multimarcas',
   },
   {
     path: '/solicitacao-credito',
