@@ -401,6 +401,39 @@ const TitulosClientes = () => {
         invoice: item.invoice,
       }));
 
+      // Buscar nome real do cliente via rota de consulta de pessoa jurídica
+      try {
+        console.log(
+          `🔍 Buscando nome do cliente código ${codigoCliente} via legal-entity/search...`,
+        );
+        const resCliente = await fetch(`${TotvsURL}legal-entity/search`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ personCode: codigoCliente }),
+        });
+
+        if (resCliente.ok) {
+          const dataCliente = await resCliente.json();
+          const pessoa =
+            dataCliente?.data?.items?.[0] || dataCliente?.data?.[0];
+          const nomeCliente =
+            pessoa?.corporateName || pessoa?.fantasyName || pessoa?.name;
+
+          if (nomeCliente) {
+            console.log(`✅ Nome do cliente encontrado: ${nomeCliente}`);
+            todosOsDados = todosOsDados.map((item) => ({
+              ...item,
+              nm_cliente: nomeCliente,
+            }));
+          }
+        }
+      } catch (errCliente) {
+        console.warn(
+          '⚠️ Não foi possível buscar nome do cliente:',
+          errCliente.message,
+        );
+      }
+
       // Filtrar apenas FATURA + NORMAL
       todosOsDados = todosOsDados.filter((item) => {
         const isFatura =
@@ -1813,7 +1846,17 @@ const TitulosClientes = () => {
                         )}
                       </td>
                       <td className="text-center text-gray-900 px-2 py-2 text-xs">
-                        {item.nm_portador || '--'}
+                        {(() => {
+                          const nome = item.nm_portador || '';
+                          const upper = nome.toUpperCase();
+                          if (
+                            upper.includes('FABIO') ||
+                            upper.includes('IRMAOS') ||
+                            upper.includes('CROSBY')
+                          )
+                            return nome.split(' ')[0]; // Exibe apenas o primeiro nome
+                          return nome || '--';
+                        })()}
                       </td>
                       <td className="text-center px-2 py-2">
                         <button
