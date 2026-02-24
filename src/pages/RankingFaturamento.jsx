@@ -1,1228 +1,872 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import useApiClient from '../hooks/useApiClient';
+import { useAuth } from '../components/AuthContext';
+import PageTitle from '../components/ui/PageTitle';
 import {
   Card,
-  CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
+  CardContent,
+  CardDescription,
 } from '../components/ui/cards';
-import useApiClient from '../hooks/useApiClient';
 import {
-  Calendar,
-  Funnel,
   Spinner,
-  CurrencyDollar,
-  Trophy,
-  Users,
-  Storefront,
-  ChartLineUp,
-  Star,
-  Buildings,
-  User,
-  ArrowClockwise,
+  MagnifyingGlass,
+  ChartBar,
   CaretDown,
   CaretUp,
-  FileText,
+  Buildings,
+  X,
+  CurrencyDollar,
+  Trophy,
+  ShoppingCart,
+  Tote,
+  Funnel,
 } from '@phosphor-icons/react';
 
+// ==========================================
+// HELPERS
+// ==========================================
+const formatBRL = (value) =>
+  typeof value === 'number'
+    ? value.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    : '-';
+
+const formatDateBR = (isoDate) => {
+  if (!isoDate) return '--';
+  try {
+    const [datePart] = String(isoDate).split('T');
+    const [y, m, d] = datePart.split('-').map((n) => parseInt(n, 10));
+    if (!y || !m || !d) return '--';
+    return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+  } catch {
+    return '--';
+  }
+};
+
+// ==========================================
+// COMPONENTE PRINCIPAL
+// ==========================================
 const RankingFaturamento = () => {
   const apiClient = useApiClient();
-  const [dados, setDados] = useState([]);
-  const [dadosVendedores, setDadosVendedores] = useState([]);
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
+  const { user } = useAuth();
+
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [loading, setLoading] = useState(false);
-  const [loadingVendedores, setLoadingVendedores] = useState(false);
-  const [tipoLoja, setTipoLoja] = useState('Todos');
-  const [rankingTipo, setRankingTipo] = useState('lojas');
-  // Ordenação específica para a tabela de Vendedores (igual ao padrão do Saldo Bancário)
-  const [ordenacaoVend, setOrdenacaoVend] = useState({
-    campo: null,
-    direcao: 'asc',
-  });
+  const [error, setError] = useState('');
+  const [invoices, setInvoices] = useState([]);
+  const [meta, setMeta] = useState(null);
+  const [filterType, setFilterType] = useState('todas'); // 'todas' | 'franquia' | 'filial'
 
-  console.log('RankingFaturamento: Componente renderizado');
+  // Modal
+  const [modalGroup, setModalGroup] = useState(null);
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
-  const buscarDados = async (inicio, fim) => {
-    if (!inicio || !fim) return;
+  // Mapas de empresas
+  const [branchNames, setBranchNames] = useState({});
+  const [branchGroupMap, setBranchGroupMap] = useState({});
 
-    console.log('🔍 Iniciando busca de faturamento por lojas:', {
-      inicio,
-      fim,
-    });
+  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
+
+  // ==========================================
+  // FETCH: Nomes das empresas
+  // ==========================================
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        const response = await fetch(`${TotvsURL}branches`);
+        if (response.ok) {
+          const result = await response.json();
+          let empresas = [];
+          if (result.success && result.data) {
+            empresas = result.data.data || result.data;
+            if (!Array.isArray(empresas)) empresas = [];
+          }
+          const nameMap = {};
+          const groupMap = {};
+          empresas.forEach((emp) => {
+            const code = parseInt(emp.cd_empresa);
+            const nome =
+              emp.nm_grupoempresa ||
+              emp.fantasyName ||
+              emp.description ||
+              `Empresa ${code}`;
+            nameMap[code] = nome;
+            groupMap[code] = nome;
+          });
+          setBranchNames(nameMap);
+          setBranchGroupMap(groupMap);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar nomes das empresas:', err);
+      }
+    };
+    fetchBranches();
+  }, []);
+
+  // ==========================================
+  // FETCH: Buscar invoices
+  // ==========================================
+  const handleSearch = async () => {
+    if (!startDate || !endDate) {
+      setError('Informe as datas de início e fim.');
+      return;
+    }
+
     setLoading(true);
-    try {
-      const params = {
-        dt_inicio: inicio,
-        dt_fim: fim,
-        cd_grupoempresa_ini: 1,
-        cd_grupoempresa_fim: 9999,
-      };
+    setError('');
+    setInvoices([]);
+    setMeta(null);
+    setModalGroup(null);
 
-      const result = await apiClient.company.faturamentoLojas(params);
+    try {
+      const result = await apiClient.totvs.invoicesSearch({
+        startDate,
+        endDate,
+        invoiceStatusList: ['Normal', 'Issued'],
+        operationCodeList: [
+          1, 2, 55, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 9017,
+          9400, 9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405,
+          1205, 1101, 9065, 9064, 9063, 9062, 9061, 9420, 9026,
+        ],
+      });
 
       if (result.success) {
-        const dadosArray = result.data || [];
-        console.log('✅ Dados de lojas recebidos:', {
-          total: dadosArray.length,
-          estatisticas: result.metadata?.estatisticas,
-          amostra: dadosArray.slice(0, 2),
+        const data = result.data;
+        setInvoices(data?.items || []);
+        setMeta({
+          count: data?.count,
+          totalPages: data?.totalPages,
+          totalItems: data?.totalItems,
+          queryTime: data?.queryTime,
+          fromCache: data?.fromCache,
         });
-
-        // Filtrar registros com "TESTE" no nome e remover duplicatas de cd_grupoempresa
-        const dadosFiltrados = dadosArray.filter(
-          (item) => !item.nome_fantasia?.toUpperCase().includes('TESTE'),
-        );
-
-        // Remover duplicatas mantendo apenas a primeira ocorrência de cada cd_grupoempresa
-        const dadosUnicos = [];
-        const gruposVistos = new Set();
-        dadosFiltrados.forEach((item) => {
-          if (!gruposVistos.has(item.cd_grupoempresa)) {
-            gruposVistos.add(item.cd_grupoempresa);
-            dadosUnicos.push(item);
-          }
-        });
-
-        console.log('🔧 Filtros aplicados:', {
-          original: dadosArray.length,
-          semTeste: dadosFiltrados.length,
-          semDuplicatas: dadosUnicos.length,
-        });
-
-        const ordenado = [...dadosUnicos].sort(
-          (a, b) =>
-            parseFloat(b.faturamento || 0) - parseFloat(a.faturamento || 0),
-        );
-        const comRank = ordenado.map((item, index) => ({
-          ...item,
-          rank: index + 1,
-          faturamento: parseFloat(item.faturamento || 0),
-        }));
-
-        setDados(comRank);
       } else {
-        throw new Error(
-          result.message || 'Erro ao buscar dados de faturamento',
-        );
+        setError(result.message || 'Erro ao buscar invoices.');
       }
     } catch (err) {
-      console.error('❌ Erro ao buscar dados de lojas:', err);
-      alert('Erro ao carregar dados. Tente novamente.');
-      setDados([]);
+      console.error('Erro ao buscar invoices:', err);
+      setError(err.message || 'Erro desconhecido.');
     } finally {
       setLoading(false);
     }
   };
 
-  const buscarDadosVendedores = async (inicio, fim) => {
-    if (!inicio || !fim) return;
-
-    console.log('🔍 Iniciando busca de ranking de vendedores:', {
-      inicio,
-      fim,
+  // ==========================================
+  // FILTRO: invoiceDate dentro do range exato
+  // ==========================================
+  const filteredInvoices = useMemo(() => {
+    if (!startDate || !endDate || invoices.length === 0) return invoices;
+    return invoices.filter((inv) => {
+      if (!inv.invoiceDate) return false;
+      const d = inv.invoiceDate.slice(0, 10);
+      return d >= startDate && d <= endDate;
     });
-    setLoadingVendedores(true);
-    try {
-      const params = {
-        inicio: inicio,
-        fim: fim,
-      };
+  }, [invoices, startDate, endDate]);
 
-      const result = await apiClient.sales.rankingVendedores(params);
+  // ==========================================
+  // AGRUPAMENTO: Por GRUPO EMPRESA
+  // ==========================================
+  const { grouped, grandTotal } = useMemo(() => {
+    const map = {};
+    let total = {
+      totalValue: 0,
+      saidaValue: 0,
+      entradaValue: 0,
+      saidaCount: 0,
+      saidaQuantity: 0,
+      entradaQuantity: 0,
+      count: 0,
+    };
 
-      if (result.success) {
-        const dadosArray = result.data || [];
-        console.log(
-          '✅ [DEBUG] Quantidade de vendedores recebidos da API:',
-          dadosArray.length,
-        );
-        console.log('✅ Dados de vendedores recebidos:', {
-          total: dadosArray.length,
-          amostra: dadosArray.slice(0, 2),
-        });
+    filteredInvoices.forEach((inv) => {
+      const code = inv.branchCode ?? 0;
+      const grupoKey =
+        branchGroupMap[code] || branchNames[code] || `Empresa ${code}`;
 
-        // Filtrar registros com "TESTE" no nome
-        const dadosFiltrados = dadosArray.filter(
-          (item) => !item.nome_vendedor?.toUpperCase().includes('TESTE'),
-        );
+      if (!map[grupoKey]) {
+        map[grupoKey] = {
+          grupoKey,
+          branchName: grupoKey,
+          branchCodes: new Set(),
+          items: [],
+          totalValue: 0,
+          saidaValue: 0,
+          entradaValue: 0,
+          saidaCount: 0,
+          saidaQuantity: 0,
+          entradaQuantity: 0,
+        };
+      }
 
-        console.log('🔧 Filtros aplicados (vendedores):', {
-          original: dadosArray.length,
-          semTeste: dadosFiltrados.length,
-        });
+      map[grupoKey].branchCodes.add(code);
 
-        const ordenado = [...dadosFiltrados].sort(
-          (a, b) =>
-            parseFloat(b.faturamento || 0) - parseFloat(a.faturamento || 0),
-        );
-        const comRank = ordenado.map((item, index) => ({
-          ...item,
-          rank: index + 1,
-          faturamento: parseFloat(item.faturamento || 0),
-        }));
+      const val = Number(inv.totalValue ?? 0);
+      const qty = Number(inv.quantity ?? 0);
+      const isEntrada =
+        String(inv.operationType || '').toLowerCase() === 'input';
 
-        setDadosVendedores(comRank);
+      map[grupoKey].items.push(inv);
+
+      if (isEntrada) {
+        map[grupoKey].entradaValue += val;
+        map[grupoKey].entradaQuantity += qty;
+        total.entradaValue += val;
+        total.entradaQuantity += qty;
       } else {
-        throw new Error(result.message || 'Erro ao buscar dados de vendedores');
-      }
-    } catch (err) {
-      console.error('❌ Erro ao buscar dados de vendedores:', err);
-      alert('Erro ao carregar dados de vendedores. Tente novamente.');
-      setDadosVendedores([]);
-    } finally {
-      setLoadingVendedores(false);
-    }
-  };
-
-  const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    }).format(value);
-  };
-
-  const formatDisplayDate = (dateStr) => {
-    if (!dateStr) return '';
-    const [year, month, day] = dateStr.split('-');
-    return `${day}-${month}-${year}`;
-  };
-
-  // Função auxiliar para carregar imagem
-  const loadImage = (src) => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error(`Falha ao carregar imagem: ${src}`));
-
-      img.src = src;
-    });
-  };
-
-  const exportarPDFLojas = async () => {
-    try {
-      console.log('Iniciando exportação PDF - Lojas');
-      console.log('Dados disponíveis:', dadosLojasFiltrados.length);
-
-      // Importação dinâmica da biblioteca
-      console.log('Importando jsPDF...');
-      const jsPDF = (await import('jspdf')).default;
-      console.log('jsPDF importado com sucesso');
-
-      console.log('Criando documento...');
-      const doc = new jsPDF();
-      console.log('Documento criado');
-
-      // Adicionar logo
-      console.log('Adicionando logo...');
-      try {
-        const img = await loadImage('/cr.png');
-        console.log('Logo carregado com sucesso, adicionando ao PDF...');
-        doc.addImage(img, 'PNG', 14, 10, 50, 20);
-        console.log('Logo adicionado ao PDF');
-      } catch (logoError) {
-        console.log('Erro ao carregar logo, usando texto:', logoError);
-        doc.setFontSize(16);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(0, 6, 56);
-        doc.text('CROSBY', 14, 20);
-      }
-      console.log('Logo adicionado');
-
-      // Título
-      console.log('Adicionando título...');
-      doc.setFontSize(18);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(0, 0, 0);
-      doc.text('Ranking de Faturamento - Lojas', 14, 45);
-      console.log('Título adicionado');
-
-      // Informações do período
-      console.log('Adicionando informações do período...');
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'normal');
-      doc.text(
-        `Período: ${formatDisplayDate(dataInicio)} a ${formatDisplayDate(
-          dataFim,
-        )}`,
-        14,
-        55,
-      );
-      doc.text(`Tipo: ${tipoLoja}`, 14, 63);
-      console.log('Informações do período adicionadas');
-
-      // Cabeçalho da tabela
-      console.log('Adicionando cabeçalho da tabela...');
-      const headerY = 75;
-      const headerHeight = 8;
-
-      // Fundo azul do cabeçalho
-      doc.setFillColor(0, 6, 56);
-      doc.rect(14, headerY - 5, 186, headerHeight, 'F');
-
-      // Texto do cabeçalho em branco
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(255, 255, 255);
-      doc.text('#', 17, headerY);
-      doc.text('Loja', 35, headerY);
-      doc.text('Faturamento', 125, headerY);
-      doc.text('PA', 165, headerY);
-      doc.text('TM', 185, headerY);
-      console.log('Cabeçalho da tabela adicionado');
-
-      // Dados da tabela com listagem zebrada
-      console.log('Adicionando dados da tabela...');
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'normal');
-
-      let yPosition = headerY + 10;
-      let itemCount = 0;
-
-      dadosLojasFiltrados.forEach((item, index) => {
-        try {
-          console.log(`Processando item ${index + 1}:`, item);
-
-          if (yPosition > 270) {
-            console.log('Adicionando nova página...');
-            doc.addPage();
-            yPosition = 20;
-          }
-
-          // Listagem zebrada (cinza mais forte para linhas pares)
-          if (index % 2 === 1) {
-            doc.setFillColor(230, 232, 235);
-            doc.rect(14, yPosition - 5, 186, 8, 'F');
-          }
-
-          // Calcular ticket médio
-          const transacoesSaida = Number(item.transacoes_saida) || 0;
-          const ticketMedio =
-            transacoesSaida > 0 ? item.faturamento / transacoesSaida : 0;
-
-          doc.setTextColor(0, 0, 0);
-          // Calcular PA
-          const transacoesSaidaPDF = Number(item.transacoes_saida) || 0;
-          const paSaidaPDF = Number(item.pa_saida) || 0;
-          const paEntradaPDF = Number(item.pa_entrada) || 0;
-          const paCalculado =
-            transacoesSaidaPDF > 0
-              ? (paSaidaPDF - paEntradaPDF) / transacoesSaidaPDF
-              : 0;
-
-          doc.text(String(item.rank || ''), 17, yPosition);
-          doc.text(String(item.nome_fantasia || 'N/A'), 35, yPosition);
-          doc.text(formatCurrency(item.faturamento || 0), 125, yPosition);
-          doc.text(String(paCalculado.toFixed(2)), 165, yPosition);
-          doc.text(formatCurrency(ticketMedio), 185, yPosition);
-
-          yPosition += 10;
-          itemCount++;
-        } catch (itemError) {
-          console.error(`Erro ao processar item ${index}:`, itemError);
-        }
-      });
-
-      console.log(`Total de itens processados: ${itemCount}`);
-
-      const fileName = `ranking-lojas-${dataInicio}-${dataFim}.pdf`;
-      console.log('Salvando arquivo:', fileName);
-      doc.save(fileName);
-      console.log('PDF gerado com sucesso!');
-    } catch (error) {
-      console.error('Erro ao gerar PDF - Lojas:', error);
-      console.error('Stack trace:', error.stack);
-      alert('Erro ao gerar PDF. Verifique o console para mais detalhes.');
-    }
-  };
-
-  const exportarPDFVendedores = async () => {
-    try {
-      console.log('Iniciando exportação PDF - Vendedores');
-      // Limita o PDF para os 100 primeiros vendedores
-      const dadosVendedoresPDF = dadosVendedoresFiltrados.slice(0, 100);
-      console.log(
-        'Dados disponíveis para PDF (limitado a 100):',
-        dadosVendedoresPDF.length,
-      );
-
-      // Importação dinâmica da biblioteca
-      console.log('Importando jsPDF...');
-      const jsPDF = (await import('jspdf')).default;
-      console.log('jsPDF importado com sucesso');
-
-      console.log('Criando documento...');
-      const doc = new jsPDF();
-      console.log('Documento criado');
-
-      // Adicionar logo
-      console.log('Adicionando logo...');
-      try {
-        const img = await loadImage('/cr.png');
-        console.log('Logo carregado com sucesso, adicionando ao PDF...');
-        doc.addImage(img, 'PNG', 14, 10, 50, 20);
-        console.log('Logo adicionado ao PDF');
-      } catch (logoError) {
-        console.log('Erro ao carregar logo, usando texto:', logoError);
-        doc.setFontSize(16);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(0, 6, 56);
-        doc.text('CROSBY', 14, 20);
-      }
-      console.log('Logo adicionado');
-
-      // Título
-      console.log('Adicionando título...');
-      doc.setFontSize(18);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(0, 0, 0);
-      doc.text('Ranking de Faturamento - Vendedores', 14, 45);
-      console.log('Título adicionado');
-
-      // Informações do período
-      console.log('Adicionando informações do período...');
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'normal');
-      doc.text(
-        `Período: ${formatDisplayDate(dataInicio)} a ${formatDisplayDate(
-          dataFim,
-        )}`,
-        14,
-        55,
-      );
-      doc.text(`Tipo: ${tipoLoja}`, 14, 63);
-      console.log('Informações do período adicionadas');
-
-      // Cabeçalho da tabela
-      console.log('Adicionando cabeçalho da tabela...');
-      const headerY = 75;
-      const headerHeight = 8;
-
-      // Fundo azul do cabeçalho
-      doc.setFillColor(0, 6, 56);
-      doc.rect(14, headerY - 5, 186, headerHeight, 'F');
-
-      // Texto do cabeçalho em branco
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(255, 255, 255);
-      doc.text('#', 17, headerY);
-      doc.text('Vendedor', 35, headerY);
-      doc.text('Faturamento', 125, headerY);
-      doc.text('PA', 165, headerY);
-      doc.text('TM', 185, headerY);
-      console.log('Cabeçalho da tabela adicionado');
-
-      // Dados da tabela com listagem zebrada
-      console.log('Adicionando dados da tabela...');
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'normal');
-
-      let yPosition = headerY + 10;
-      let itemCount = 0;
-
-      dadosVendedoresPDF.forEach((item, index) => {
-        try {
-          console.log(`Processando item ${index + 1}:`, item);
-
-          if (yPosition > 270) {
-            console.log('Adicionando nova página...');
-            doc.addPage();
-            yPosition = 20;
-          }
-
-          // Listagem zebrada (cinza mais forte para linhas pares)
-          if (index % 2 === 1) {
-            doc.setFillColor(230, 232, 235);
-            doc.rect(14, yPosition - 5, 186, 8, 'F');
-          }
-
-          // Calcular ticket médio
-          const transacoesSaida = Number(item.transacoes_saida) || 0;
-          const ticketMedio =
-            transacoesSaida > 0 ? item.faturamento / transacoesSaida : 0;
-
-          // Calcular PA
-          const transacoesSaidaPDF = Number(item.transacoes_saida) || 0;
-          const paSaidaPDF = Number(item.pa_saida) || 0;
-          const paEntradaPDF = Number(item.pa_entrada) || 0;
-          const paCalculado =
-            transacoesSaidaPDF > 0
-              ? (paSaidaPDF - paEntradaPDF) / transacoesSaidaPDF
-              : 0;
-
-          doc.setTextColor(0, 0, 0);
-          doc.text(String(item.rank || ''), 17, yPosition);
-          doc.text(String(item.nome_vendedor || 'N/A'), 35, yPosition);
-          doc.text(formatCurrency(item.faturamento || 0), 125, yPosition);
-          doc.text(String(paCalculado.toFixed(2)), 165, yPosition);
-          doc.text(formatCurrency(ticketMedio), 185, yPosition);
-
-          yPosition += 10;
-          itemCount++;
-        } catch (itemError) {
-          console.error(`Erro ao processar item ${index}:`, itemError);
-        }
-      });
-
-      console.log(`Total de itens processados: ${itemCount}`);
-
-      const fileName = `ranking-vendedores-${dataInicio}-${dataFim}.pdf`;
-      console.log('Salvando arquivo:', fileName);
-      doc.save(fileName);
-      console.log('PDF gerado com sucesso!');
-    } catch (error) {
-      console.error('Erro ao gerar PDF - Vendedores:', error);
-      console.error('Stack trace:', error.stack);
-      alert('Erro ao gerar PDF. Verifique o console para mais detalhes.');
-    }
-  };
-
-  const getStatusByRank = (rank) => {
-    if (rank === 1) return 'destaque';
-    if (rank <= 3) return 'ativo';
-    return 'regular';
-  };
-
-  // Define datas padrão (1º dia do mês até hoje) sem buscar automaticamente
-  useEffect(() => {
-    const hoje = new Date();
-    const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-    const toISODate = (d) => d.toISOString().split('T')[0];
-    setDataInicio(toISODate(primeiroDiaMes));
-    setDataFim(toISODate(hoje));
-  }, []);
-
-  // Filtros para lojas
-  console.log('Total de dados recebidos:', dados.length);
-  const dadosLojasFiltrados = dados
-    .filter((item) => {
-      const nomeFantasia = item.nome_fantasia?.toUpperCase() || '';
-      console.log(
-        'Filtrando loja:',
-        nomeFantasia,
-        'Tipo selecionado:',
-        tipoLoja,
-      );
-
-      if (tipoLoja === 'Franquias') {
-        const isFranquia = nomeFantasia.includes('F0');
-        console.log('É franquia?', isFranquia);
-        return isFranquia;
+        map[grupoKey].saidaValue += val;
+        map[grupoKey].saidaCount += 1;
+        map[grupoKey].saidaQuantity += qty;
+        total.saidaValue += val;
+        total.saidaCount += 1;
+        total.saidaQuantity += qty;
       }
 
-      if (tipoLoja === 'Proprias') {
-        const isFranquia =
-          nomeFantasia.includes('-') || nomeFantasia.includes('- CROSBY');
-        console.log('É própria?', !isFranquia);
-        return !isFranquia;
-      }
-
-      return true;
-    })
-    .filter((item) => {
-      const temFaturamento = item.faturamento > 0;
-      if (!temFaturamento) {
-        console.log(
-          'Item sem faturamento:',
-          item.nome_fantasia,
-          'Faturamento:',
-          item.faturamento,
-        );
-      }
-      return temFaturamento;
+      total.count += 1;
     });
 
-  console.log('Itens após filtros:', dadosLojasFiltrados.length);
+    Object.values(map).forEach((g) => {
+      g.totalValue = g.saidaValue - g.entradaValue;
+      g.branchCodesArr = [...g.branchCodes].sort((a, b) => a - b);
+      // Ticket Médio = faturamento (saída - entrada) / vendas (saída)
+      g.ticketMedio = g.saidaCount > 0 ? g.totalValue / g.saidaCount : 0;
+      // PA = (peças saída - peças entrada) / vendas (saída)
+      g.pa =
+        g.saidaCount > 0
+          ? (g.saidaQuantity - g.entradaQuantity) / g.saidaCount
+          : 0;
+    });
 
-  // Filtros para vendedores
-  const dadosVendedoresFiltrados = dadosVendedores
-    .filter((item) => {
-      if (tipoLoja === 'Franquias')
-        return !item.nome_vendedor?.includes('- INT');
-      if (tipoLoja === 'Proprias') return item.nome_vendedor?.includes('- INT');
-      return true;
-    })
-    .filter((item) => item.faturamento > 0);
+    total.totalValue = total.saidaValue - total.entradaValue;
+    total.ticketMedio =
+      total.saidaCount > 0 ? total.totalValue / total.saidaCount : 0;
+    total.pa =
+      total.saidaCount > 0
+        ? (total.saidaQuantity - total.entradaQuantity) / total.saidaCount
+        : 0;
 
-  const totalFaturamentoLojas = dadosLojasFiltrados.reduce(
-    (acc, item) => acc + item.faturamento,
-    0,
-  );
-  const totalFaturamentoVendedores = dadosVendedoresFiltrados.reduce(
-    (acc, item) => acc + item.faturamento,
-    0,
-  );
+    let groups = Object.values(map).sort((a, b) => b.totalValue - a.totalValue);
 
-  // Cálculos para lojas
-  const ticketMedioLojas =
-    dadosLojasFiltrados.length > 0
-      ? dadosLojasFiltrados.reduce((acc, item) => {
-          const transacoesSaida = Number(item.transacoes_saida) || 0;
-          const ticketItem =
-            transacoesSaida > 0 ? item.faturamento / transacoesSaida : 0;
-          return acc + ticketItem;
-        }, 0) / dadosLojasFiltrados.length
-      : 0;
+    return { grouped: groups, grandTotal: total };
+  }, [filteredInvoices, branchNames, branchGroupMap]);
 
-  const paLojas =
-    dadosLojasFiltrados.length > 0
-      ? dadosLojasFiltrados.reduce((acc, item) => {
-          const transacoesSaida = Number(item.transacoes_saida) || 0;
-          const paSaida = Number(item.pa_saida) || 0;
-          const paEntrada = Number(item.pa_entrada) || 0;
-          const paItem =
-            transacoesSaida > 0 ? (paSaida - paEntrada) / transacoesSaida : 0;
-          return acc + paItem;
-        }, 0) / dadosLojasFiltrados.length
-      : 0;
+  // ==========================================
+  // FILTRO: Franquia / Filial
+  // ==========================================
+  const filteredGrouped = useMemo(() => {
+    if (filterType === 'todas') return grouped;
+    if (filterType === 'franquia') {
+      return grouped.filter((g) =>
+        g.branchName.toUpperCase().includes('FRANQUIA'),
+      );
+    }
+    if (filterType === 'filial') {
+      return grouped.filter((g) => {
+        const name = g.branchName.toUpperCase();
+        return name.includes('CROSBY') && !name.includes('FRANQUIA');
+      });
+    }
+    return grouped;
+  }, [grouped, filterType]);
 
-  // Cálculos para vendedores
-  const ticketMedioVendedores =
-    dadosVendedoresFiltrados.length > 0
-      ? dadosVendedoresFiltrados.reduce((acc, item) => {
-          const transacoesSaida = Number(item.transacoes_saida) || 0;
-          const ticketItem =
-            transacoesSaida > 0 ? item.faturamento / transacoesSaida : 0;
-          return acc + ticketItem;
-        }, 0) / dadosVendedoresFiltrados.length
-      : 0;
+  // ==========================================
+  // MODAL: Itens ordenados
+  // ==========================================
+  const modalItems = useMemo(() => {
+    if (!modalGroup) return [];
+    const items = [...modalGroup.items];
+    if (sortConfig.key) {
+      items.sort((a, b) => {
+        const aVal = a[sortConfig.key];
+        const bVal = b[sortConfig.key];
+        if (aVal == null && bVal == null) return 0;
+        if (aVal == null) return 1;
+        if (bVal == null) return -1;
+        if (typeof aVal === 'number' && typeof bVal === 'number')
+          return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+        const strA = String(aVal).toLowerCase();
+        const strB = String(bVal).toLowerCase();
+        if (strA < strB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (strA > strB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return items;
+  }, [modalGroup, sortConfig]);
 
-  const paVendedores =
-    dadosVendedoresFiltrados.length > 0
-      ? dadosVendedoresFiltrados.reduce((acc, item) => {
-          const transacoesSaida = Number(item.transacoes_saida) || 0;
-          const paSaida = Number(item.pa_saida) || 0;
-          const paEntrada = Number(item.pa_entrada) || 0;
-          const paItem =
-            transacoesSaida > 0 ? (paSaida - paEntrada) / transacoesSaida : 0;
-          return acc + paItem;
-        }, 0) / dadosVendedoresFiltrados.length
-      : 0;
-
-  // Mapa de calor para Ticket Médio (aplicado apenas para vendedores)
-  const getTicketColorClass = (ticket) => {
-    if (ticket >= 400) return 'bg-green-200';
-    if (ticket >= 375) return 'bg-green-100';
-    if (ticket >= 350) return 'bg-lime-100';
-    if (ticket >= 325) return 'bg-lime-200';
-    if (ticket >= 300) return 'bg-yellow-100';
-    if (ticket >= 275) return 'bg-yellow-200';
-    if (ticket >= 250) return 'bg-amber-200';
-    if (ticket >= 230) return 'bg-orange-100';
-    if (ticket >= 200) return 'bg-orange-200';
-    if (ticket >= 175) return 'bg-red-100';
-    if (ticket >= 150) return 'bg-red-200';
-    return '';
-  };
-
-  // Ordenação -Z (A/Z) para Vendedores, similar a SaldoBancario
-  const handleOrdenarVend = (campo) => {
-    setOrdenacaoVend((prev) => ({
-      campo,
-      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc',
+  const handleSort = (key) => {
+    setSortConfig((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
     }));
   };
 
-  const getIconeOrdenacaoVend = (campo) => {
-    if (ordenacaoVend.campo !== campo) return null;
-    return ordenacaoVend.direcao === 'asc' ? (
-      <CaretUp size={12} className="ml-1 inline-block" />
+  const openModal = (group) => {
+    // Franquias só podem ver detalhes da própria loja
+    if (user?.role === 'franquias' && user?.allowedCompanies) {
+      const allowed = user.allowedCompanies.map((c) => Number(c));
+      const groupCodes = [...(group.branchCodes || [])];
+      const hasAccess = groupCodes.some((code) =>
+        allowed.includes(Number(code)),
+      );
+      if (!hasAccess) return; // Bloqueia abertura do modal
+    }
+    setSortConfig({ key: null, direction: 'asc' });
+    setModalGroup(group);
+  };
+
+  const SortIcon = ({ columnKey }) => {
+    if (sortConfig.key !== columnKey)
+      return <CaretDown size={12} className="opacity-30" />;
+    return sortConfig.direction === 'asc' ? (
+      <CaretUp size={12} className="text-blue-400" />
     ) : (
-      <CaretDown size={12} className="ml-1 inline-block" />
+      <CaretDown size={12} className="text-blue-400" />
     );
   };
 
-  const dadosVendedoresOrdenados = React.useMemo(() => {
-    if (!ordenacaoVend.campo) return dadosVendedoresFiltrados;
-    const computePA = (x) => {
-      const saida = Number(x.transacoes_saida) || 0;
-      const paS = Number(x.pa_saida) || 0;
-      const paE = Number(x.pa_entrada) || 0;
-      return saida > 0 ? (paS - paE) / saida : 0;
-    };
-    const computeTM = (x) => {
-      const saida = Number(x.transacoes_saida) || 0;
-      return saida > 0 ? (Number(x.faturamento) || 0) / saida : 0;
-    };
-    return [...dadosVendedoresFiltrados].sort((a, b) => {
-      let valorA;
-      let valorB;
-      switch (ordenacaoVend.campo) {
-        case 'rank':
-          valorA = a.rank || 0;
-          valorB = b.rank || 0;
-          break;
-        case 'nome':
-          valorA = (a.nome_vendedor || '').toLowerCase();
-          valorB = (b.nome_vendedor || '').toLowerCase();
-          break;
-        case 'faturamento':
-          valorA = Number(a.faturamento) || 0;
-          valorB = Number(b.faturamento) || 0;
-          break;
-        case 'pa':
-          valorA = computePA(a);
-          valorB = computePA(b);
-          break;
-        case 'tm':
-          valorA = computeTM(a);
-          valorB = computeTM(b);
-          break;
-        default:
-          valorA = 0;
-          valorB = 0;
-      }
-      if (valorA < valorB) return ordenacaoVend.direcao === 'asc' ? -1 : 1;
-      if (valorA > valorB) return ordenacaoVend.direcao === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [dadosVendedoresFiltrados, ordenacaoVend]);
+  const columns = [
+    { key: 'invoiceCode', label: 'Nº NF' },
+    { key: 'serialCode', label: 'Série' },
+    { key: 'invoiceDate', label: 'Data Emissão' },
+    { key: 'personCode', label: 'Cód. Pessoa' },
+    { key: 'personName', label: 'Nome Pessoa' },
+    { key: 'operationType', label: 'Tipo' },
+    { key: 'operatioCode', label: 'Cód. Op.' },
+    { key: 'operatioName', label: 'Operação' },
+    { key: 'invoiceStatus', label: 'Status' },
+    { key: 'totalValue', label: 'Valor Total', numeric: true },
+    { key: 'productValue', label: 'Valor Produto', numeric: true },
+    { key: 'quantity', label: 'Qtd', numeric: true },
+    { key: 'discountPercentage', label: '% Desc', numeric: true },
+    { key: 'paymentConditionName', label: 'Cond. Pagamento' },
+  ];
 
-  // Destaques
-  const lojaDestaque =
-    dadosLojasFiltrados.length > 0 ? dadosLojasFiltrados[0] : null;
-  const vendedorDestaque =
-    dadosVendedoresFiltrados.length > 0 ? dadosVendedoresFiltrados[0] : null;
+  const formatCell = (value, col) => {
+    if (value == null || value === '') return '-';
+    if (col.numeric && typeof value === 'number') return formatBRL(value);
+    if (col.key === 'invoiceDate' && typeof value === 'string')
+      return formatDateBR(value);
+    return String(value);
+  };
 
+  // Ícone de posição: bolinha azul com número branco
+  const getPositionBadge = (position) => (
+    <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-[#000638] text-white text-xs font-bold">
+      {position + 1}
+    </span>
+  );
+
+  const top1 = filteredGrouped.length > 0 ? filteredGrouped[0] : null;
+
+  // ==========================================
+  // RENDER
+  // ==========================================
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col items-stretch justify-start py-8 px-4">
-      <h1 className="text-3xl font-bold mb-6 text-center text-[#000638]">
-        Ranking de Faturamento
-      </h1>
+    <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+      {/* Page Title */}
+      <PageTitle
+        title="Ranking de Faturamento"
+        subtitle="Acompanhe o desempenho das lojas em tempo real"
+        icon={Trophy}
+        iconColor="text-yellow-600"
+      />
 
       {/* Filtros */}
-      <div className="bg-white rounded-2xl shadow-lg mb-4 border border-[#000638]/10">
-        <div className="p-3 pb-2">
-          <div className="flex items-center mb-1.5">
-            <Funnel size={18} weight="bold" className="text-[#000638] mr-2" />
-            <h2 className="text-lg font-semibold text-[#000638]">Filtros</h2>
-          </div>
-          <p className="text-xs text-gray-600">
-            Selecione o período e tipo de loja para análise
-          </p>
-        </div>
-        <div className="p-3 pt-0">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
-            <div>
-              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                Data Início
-              </label>
-              <input
-                type="date"
-                value={dataInicio}
-                onChange={(e) => setDataInicio(e.target.value)}
-                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                Data Fim
-              </label>
-              <input
-                type="date"
-                value={dataFim}
-                onChange={(e) => setDataFim(e.target.value)}
-                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
-              />
-            </div>
-          </div>
-
-          <div className="mb-4">
+      <div className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full mx-auto border border-[#000638]/10 mb-4">
+        <span className="text-lg font-bold text-[#000638] flex items-center gap-1 mb-1">
+          <Funnel size={18} weight="bold" />
+          Filtros
+        </span>
+        <span className="text-xs text-gray-500 mb-3">
+          Selecione o período para gerar o ranking
+        </span>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
             <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-              Tipo de Loja
+              Data Início
             </label>
-            <select
-              value={tipoLoja}
-              onChange={(e) => setTipoLoja(e.target.value)}
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
               className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-            >
-              <option value="Todos">Todos</option>
-              <option value="Proprias">Próprias</option>
-              <option value="Franquias">Franquias</option>
-            </select>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            <button
-              onClick={() => {
-                buscarDados(dataInicio, dataFim);
-                buscarDadosVendedores(dataInicio, dataFim);
-              }}
-              disabled={loading || loadingVendedores}
-              className={`flex items-center justify-center px-3 py-1 h-7 rounded-lg font-semibold text-white transition-colors text-xs ${
-                loading || loadingVendedores
-                  ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-[#000638] hover:bg-[#fe0000]'
-              }`}
-            >
-              {loading || loadingVendedores ? (
-                <>
-                  <Spinner size={12} className="animate-spin mr-2" />
-                  <span>Atualizando...</span>
-                </>
-              ) : (
-                <>
-                  <ArrowClockwise size={12} className="mr-2" />
-                  <span>Atualizar</span>
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={exportarPDFLojas}
-              disabled={dadosLojasFiltrados.length === 0}
-              className={`flex items-center justify-center px-3 py-1 h-7 rounded-lg font-semibold text-white transition-colors text-xs ${
-                dadosLojasFiltrados.length === 0
-                  ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-[#000638] hover:bg-[#fe0000]'
-              }`}
-            >
-              <FileText size={12} className="mr-2" />
-              <span>Baixar Lojas</span>
-            </button>
-
-            <button
-              onClick={exportarPDFVendedores}
-              disabled={dadosVendedoresFiltrados.length === 0}
-              className={`flex items-center justify-center px-3 py-1 h-7 rounded-lg font-semibold text-white transition-colors text-xs ${
-                dadosVendedoresFiltrados.length === 0
-                  ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-[#000638] hover:bg-[#fe0000]'
-              }`}
-            >
-              <FileText size={12} className="mr-2" />
-              <span>Baixar Vendedores</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Seletor de Ranking */}
-      <div className="bg-white rounded-2xl shadow-lg mb-6 border border-[#000638]/10">
-        <div className="p-6 pb-4">
-          <div className="flex items-center mb-2">
-            <ChartLineUp
-              size={22}
-              weight="bold"
-              className="text-[#000638] mr-2"
             />
-            <h2 className="text-xl font-semibold text-[#000638]">
-              Tipo de Ranking
-            </h2>
           </div>
-          <p className="text-xs text-gray-600">
-            Escolha entre ranking de lojas ou vendedores
-          </p>
+          <div>
+            <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+              Data Fim
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+            />
+          </div>
+          <button
+            onClick={handleSearch}
+            disabled={loading}
+            className="flex items-center gap-2 bg-[#000638] text-white px-4 py-1.5 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-bold shadow-md tracking-wide uppercase h-7"
+          >
+            {loading ? (
+              <Spinner size={14} className="animate-spin" />
+            ) : (
+              <MagnifyingGlass size={14} weight="bold" />
+            )}
+            {loading ? 'Buscando...' : 'Buscar'}
+          </button>
         </div>
-        <div className="p-6 pt-0">
-          <div className="grid grid-cols-2 gap-4">
-            <button
-              onClick={() => setRankingTipo('lojas')}
-              className={`flex items-center justify-center px-2 py-1 rounded-lg border transition-colors text-xs ${
-                rankingTipo === 'lojas'
-                  ? 'bg-[#000638] border-[#000638] text-white'
-                  : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <Storefront size={20} className="mr-2" />
-              <span className="font-semibold">Lojas</span>
-            </button>
 
-            <button
-              onClick={() => setRankingTipo('vendedores')}
-              className={`flex items-center justify-center px-2 py-1 rounded-lg border transition-colors text-xs ${
-                rankingTipo === 'vendedores'
-                  ? 'bg-[#000638] border-[#000638] text-white'
-                  : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <Users size={20} className="mr-2" />
-              <span className="font-semibold">Vendedores</span>
-            </button>
+        {/* Filtro Franquia / Filial */}
+        {grouped.length > 0 && (
+          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+            <span className="text-xs font-semibold text-[#000638] mr-1">
+              <Buildings size={14} weight="bold" className="inline mr-1" />
+              Tipo:
+            </span>
+            {[
+              { key: 'todas', label: 'Todas' },
+              { key: 'filial', label: 'Filial' },
+              { key: 'franquia', label: 'Franquia' },
+            ].map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setFilterType(opt.key)}
+                className={`px-3 py-1 rounded-full text-xs font-bold transition-all duration-150 ${
+                  filterType === opt.key
+                    ? 'bg-[#000638] text-white shadow-md'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Loading */}
-      {(loading || loadingVendedores) && (
-        <div className="flex justify-center items-center py-12">
-          <Spinner size={32} className="animate-spin text-[#000638] mr-3" />
-          <span className="text-gray-600">Carregando dados...</span>
+      {/* Erro */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-sm text-red-700">
+          {error}
         </div>
       )}
 
-      {/* Conteúdo quando não está carregando */}
-      {!loading && !loadingVendedores && (
+      {/* Loading */}
+      {loading && (
+        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+          <Spinner size={40} className="animate-spin mb-3" />
+          <p className="text-sm font-medium">Carregando dados das lojas...</p>
+          <p className="text-xs text-gray-300 mt-1">
+            Isso pode levar alguns segundos
+          </p>
+        </div>
+      )}
+
+      {/* ==========================================
+          DASHBOARD: Cards de Resumo + Top 1
+          ========================================== */}
+      {!loading && filteredGrouped.length > 0 && (
         <>
-          {/* Cards de Métricas */}
-          <div className="flex flex-wrap gap-4 mb-8 justify-center">
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
-              <CardHeader className="pb-0">
+          {/* Cards de Resumo */}
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
+            {/* Card: Faturamento Total */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-1 pt-3 px-3">
                 <div className="flex items-center gap-2">
-                  <CurrencyDollar size={18} className="text-blue-600" />
-                  <CardTitle className="text-sm font-bold text-blue-700">
-                    TM
-                  </CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-2xl font-extrabold text-blue-600 mb-1">
-                  {loading ? (
-                    <Spinner size={24} className="animate-spin text-blue-600" />
-                  ) : (
-                    formatCurrency(
-                      rankingTipo === 'lojas'
-                        ? ticketMedioLojas
-                        : ticketMedioVendedores,
-                    )
-                  )}
-                </div>
-                <CardDescription className="text-xs text-gray-500">
-                  {rankingTipo === 'lojas'
-                    ? 'Média das lojas'
-                    : 'Média dos vendedores'}
-                </CardDescription>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
-              <CardHeader className="pb-0">
-                <div className="flex items-center gap-2">
-                  <ChartLineUp size={18} className="text-purple-600" />
-                  <CardTitle className="text-sm font-bold text-purple-700">
-                    Performance (PA)
-                  </CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-2xl font-extrabold text-purple-600 mb-1">
-                  {loading ? (
-                    <Spinner
-                      size={24}
-                      className="animate-spin text-purple-600"
-                    />
-                  ) : (
-                    (rankingTipo === 'lojas' ? paLojas : paVendedores).toFixed(
-                      2,
-                    )
-                  )}
-                </div>
-                <CardDescription className="text-xs text-gray-500">
-                  {rankingTipo === 'lojas'
-                    ? 'Média das lojas'
-                    : 'Média dos vendedores'}
-                </CardDescription>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
-              <CardHeader className="pb-0">
-                <div className="flex items-center gap-2">
-                  <Storefront size={18} className="text-orange-600" />
-                  <CardTitle className="text-sm font-bold text-orange-700">
-                    Total de {rankingTipo === 'lojas' ? 'Lojas' : 'Vendedores'}
-                  </CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-2xl font-extrabold text-orange-600 mb-1">
-                  {loading ? (
-                    <Spinner
-                      size={24}
-                      className="animate-spin text-orange-600"
-                    />
-                  ) : rankingTipo === 'lojas' ? (
-                    dadosLojasFiltrados.length
-                  ) : (
-                    dadosVendedoresFiltrados.length
-                  )}
-                </div>
-                <CardDescription className="text-xs text-gray-500">
-                  {rankingTipo === 'lojas' ? 'Lojas' : 'Vendedores'} no período
-                </CardDescription>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
-              <CardHeader className="pb-0">
-                <div className="flex items-center gap-2">
-                  <CurrencyDollar size={18} className="text-green-600" />
-                  <CardTitle className="text-sm font-bold text-green-700">
+                  <CurrencyDollar
+                    size={16}
+                    weight="bold"
+                    className="text-green-600"
+                  />
+                  <CardTitle className="text-xs font-bold text-green-700">
                     Faturamento Total
                   </CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-2xl font-extrabold text-green-600 mb-1 break-words">
-                  {loading ? (
-                    <Spinner
-                      size={24}
-                      className="animate-spin text-green-600"
-                    />
-                  ) : (
-                    formatCurrency(
-                      rankingTipo === 'lojas'
-                        ? totalFaturamentoLojas
-                        : totalFaturamentoVendedores,
-                    )
-                  )}
+              <CardContent className="pt-0 px-3 pb-3">
+                <div className="text-base font-extrabold text-green-600 break-words">
+                  R$ {formatBRL(grandTotal.totalValue)}
                 </div>
                 <CardDescription className="text-xs text-gray-500">
-                  {rankingTipo === 'lojas'
-                    ? 'Faturamento das lojas'
-                    : 'Faturamento dos vendedores'}
+                  Resultado (Saída - Entrada)
                 </CardDescription>
               </CardContent>
             </Card>
 
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl w-64 bg-white">
-              <CardHeader className="pb-0">
+            {/* Card: Ticket Médio Geral */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-1 pt-3 px-3">
                 <div className="flex items-center gap-2">
-                  <Trophy size={18} className="text-yellow-600" />
-                  <CardTitle className="text-sm font-bold text-yellow-700">
-                    {rankingTipo === 'lojas'
-                      ? 'Loja Destaque'
-                      : 'Vendedor Destaque'}
+                  <ShoppingCart
+                    size={16}
+                    weight="bold"
+                    className="text-blue-600"
+                  />
+                  <CardTitle className="text-xs font-bold text-blue-700">
+                    Ticket Médio
                   </CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                {rankingTipo === 'lojas' ? (
-                  lojaDestaque ? (
-                    <>
-                      <div className="text-lg font-bold text-yellow-600 mb-1 truncate">
-                        {lojaDestaque.nome_fantasia ||
-                          lojaDestaque.nome ||
-                          'Loja Destaque'}
-                      </div>
-                      <CardDescription className="text-xs text-gray-500 mb-2">
-                        1º Lugar no Ranking
-                      </CardDescription>
-                      <div className="text-sm font-semibold text-yellow-600">
-                        {formatCurrency(Number(lojaDestaque.faturamento))}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-lg font-bold text-gray-400 mb-1">
-                        Nenhuma loja
-                      </div>
-                      <CardDescription className="text-xs text-gray-400">
-                        Sem dados disponíveis
-                      </CardDescription>
-                    </>
-                  )
-                ) : vendedorDestaque ? (
-                  <>
-                    <div className="text-lg font-bold text-yellow-600 mb-1 truncate">
-                      {vendedorDestaque.nome_vendedor || 'Vendedor Destaque'}
-                    </div>
-                    <CardDescription className="text-xs text-gray-500 mb-2">
-                      1º Lugar no Ranking
-                    </CardDescription>
-                    <div className="text-sm font-semibold text-yellow-600">
-                      {formatCurrency(Number(vendedorDestaque.faturamento))}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="text-lg font-bold text-gray-400 mb-1">
-                      Nenhum vendedor
-                    </div>
-                    <CardDescription className="text-xs text-gray-400">
-                      Sem dados disponíveis
-                    </CardDescription>
-                  </>
-                )}
+              <CardContent className="pt-0 px-3 pb-3">
+                <div className="text-base font-extrabold text-blue-600 break-words">
+                  R$ {formatBRL(grandTotal.ticketMedio)}
+                </div>
+                <CardDescription className="text-xs text-gray-500">
+                  Valor médio das vendas
+                </CardDescription>
+              </CardContent>
+            </Card>
+
+            {/* Card: PA Geral */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-1 pt-3 px-3">
+                <div className="flex items-center gap-2">
+                  <Tote size={16} weight="bold" className="text-purple-600" />
+                  <CardTitle className="text-xs font-bold text-purple-700">
+                    PA (Peças/Atendimento)
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-3 pb-3">
+                <div className="text-base font-extrabold text-purple-600 break-words">
+                  {grandTotal.pa.toFixed(2)}
+                </div>
+                <CardDescription className="text-xs text-gray-500">
+                  Média geral de peças por venda
+                </CardDescription>
+              </CardContent>
+            </Card>
+
+            {/* Card: Lojas */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-1 pt-3 px-3">
+                <div className="flex items-center gap-2">
+                  <Buildings
+                    size={16}
+                    weight="bold"
+                    className="text-[#000638]"
+                  />
+                  <CardTitle className="text-xs font-bold text-[#000638]">
+                    Lojas
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-3 pb-3">
+                <div className="text-base font-extrabold text-[#000638] break-words">
+                  {filteredGrouped.length}
+                </div>
+                <CardDescription className="text-xs text-gray-500">
+                  {grandTotal.saidaCount} vendas |{' '}
+                  {meta?.queryTime
+                    ? `${(meta.queryTime / 1000).toFixed(1)}s`
+                    : ''}
+                  {meta?.fromCache ? ' (cache)' : ''}
+                </CardDescription>
               </CardContent>
             </Card>
           </div>
 
-          {/* Ranking */}
-          <div className="bg-white rounded-2xl shadow-lg border border-[#000638]/10">
-            <div className="p-6 pb-4">
-              <div className="flex items-center mb-2">
-                {rankingTipo === 'lojas' ? (
-                  <Storefront
-                    size={22}
-                    weight="bold"
-                    className="text-[#000638] mr-2"
-                  />
-                ) : (
-                  <Users
-                    size={22}
-                    weight="bold"
-                    className="text-[#000638] mr-2"
-                  />
-                )}
-                <h2 className="text-xl font-semibold text-[#000638]">
-                  Ranking de {rankingTipo === 'lojas' ? 'Lojas' : 'Vendedores'}
-                </h2>
+          {/* TOP 1 — Destaque */}
+          {top1 && (
+            <div className="relative mb-4 bg-gradient-to-r from-yellow-50 via-amber-50 to-yellow-50 border-2 border-yellow-300 rounded-xl shadow-lg p-4 overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 opacity-5 pointer-events-none">
+                <Trophy size={128} weight="fill" />
               </div>
-              <p className="text-sm text-gray-600">
-                {rankingTipo === 'lojas' ? 'lojas' : 'vendedores'} por
-                faturamento
-              </p>
+              <div className="flex items-center gap-4">
+                <div className="flex-shrink-0 w-14 h-14 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center shadow-md">
+                  <Trophy size={28} weight="fill" className="text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-xs font-bold uppercase tracking-wider text-yellow-700 bg-yellow-200 px-2 py-0.5 rounded-full">
+                      TOP 1
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-bold text-[#000638] truncate">
+                    {top1.branchName}
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-4 mt-1 text-xs text-gray-600">
+                    <span>
+                      Ticket Médio:{' '}
+                      <strong className="text-blue-700">
+                        R$ {formatBRL(top1.ticketMedio)}
+                      </strong>
+                    </span>
+                    <span>
+                      PA:{' '}
+                      <strong className="text-purple-700">
+                        {top1.pa.toFixed(2)}
+                      </strong>
+                    </span>
+                    <span>
+                      Vendas:{' '}
+                      <strong className="text-gray-700">
+                        {top1.saidaCount}
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+                <div className="flex-shrink-0 text-right">
+                  <p className="text-2xl font-extrabold text-green-700">
+                    R$ {formatBRL(top1.totalValue)}
+                  </p>
+                  <p className="text-xs text-gray-500">Faturamento líquido</p>
+                </div>
+              </div>
             </div>
-            <div className="max-w-[350px] md:max-w-[700px] lg:max-w-[900px] xl:max-w-[1100px] 2xl:max-w-[1300px] mx-auto overflow-x-auto">
-              <div className="overflow-x-auto">
-                <table className="min-w-full border border-gray-200 rounded-lg">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-16">
-                        <button
-                          type="button"
-                          className="inline-flex items-center hover:text-[#000638]"
-                          onClick={() =>
-                            rankingTipo === 'vendedores' &&
-                            handleOrdenarVend('rank')
-                          }
-                        >
-                          #{' '}
-                          {rankingTipo === 'vendedores' &&
-                            getIconeOrdenacaoVend('rank')}
-                        </button>
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        <button
-                          type="button"
-                          className="inline-flex items-center hover:text-[#000638]"
-                          onClick={() =>
-                            rankingTipo === 'vendedores' &&
-                            handleOrdenarVend('nome')
-                          }
-                        >
-                          {rankingTipo === 'lojas' ? 'Loja' : 'Vendedor'}{' '}
-                          {rankingTipo === 'vendedores' &&
-                            getIconeOrdenacaoVend('nome')}
-                        </button>
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-40">
-                        <button
-                          type="button"
-                          className="inline-flex items-center hover:text-[#000638]"
-                          onClick={() =>
-                            rankingTipo === 'vendedores' &&
-                            handleOrdenarVend('faturamento')
-                          }
-                        >
-                          Faturamento{' '}
-                          {rankingTipo === 'vendedores' &&
-                            getIconeOrdenacaoVend('faturamento')}
-                        </button>
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-24">
-                        <button
-                          type="button"
-                          className="inline-flex items-center hover:text-[#000638]"
-                          onClick={() =>
-                            rankingTipo === 'vendedores' &&
-                            handleOrdenarVend('pa')
-                          }
-                        >
-                          PA{' '}
-                          {rankingTipo === 'vendedores' &&
-                            getIconeOrdenacaoVend('pa')}
-                        </button>
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-40">
-                        <button
-                          type="button"
-                          className="inline-flex items-center hover:text-[#000638]"
-                          onClick={() =>
-                            rankingTipo === 'vendedores' &&
-                            handleOrdenarVend('tm')
-                          }
-                        >
-                          TM{' '}
-                          {rankingTipo === 'vendedores' &&
-                            getIconeOrdenacaoVend('tm')}
-                        </button>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {(rankingTipo === 'lojas'
-                      ? dadosLojasFiltrados
-                      : dadosVendedoresOrdenados
-                    ).map((item) => (
-                      <tr
-                        key={item.rank}
-                        className={`hover:bg-gray-50 ${(() => {
-                          if (rankingTipo !== 'vendedores') return '';
-                          const transacoesSaida =
-                            Number(item.transacoes_saida) || 0;
-                          const ticket =
-                            transacoesSaida > 0
-                              ? item.faturamento / transacoesSaida
-                              : 0;
-                          return getTicketColorClass(ticket);
-                        })()}`}
-                      >
-                        <td className="px-4 py-3 text-xs font-bold text-blue-600">
-                          {item.rank}
-                        </td>
-                        <td className="px-4 py-3 text-xs  text-gray-900">
-                          {rankingTipo === 'lojas'
-                            ? item.nome_fantasia ||
-                              item.nome ||
-                              `Loja ${item.rank}`
-                            : item.nome_vendedor || `Vendedor ${item.rank}`}
-                        </td>
-                        <td className="px-4 py-3 text-xs font-semibold text-green-600">
-                          {formatCurrency(Number(item.faturamento))}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-900">
-                          {(() => {
-                            const transacoesSaida =
-                              Number(item.transacoes_saida) || 0;
-                            const paSaida = Number(item.pa_saida) || 0;
-                            const paEntrada = Number(item.pa_entrada) || 0;
-                            return transacoesSaida > 0
-                              ? (
-                                  (paSaida - paEntrada) /
-                                  transacoesSaida
-                                ).toFixed(2)
-                              : '0.00';
-                          })()}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-900">
-                          {(() => {
-                            const transacoesSaida =
-                              Number(item.transacoes_saida) || 0;
-                            return transacoesSaida > 0
-                              ? formatCurrency(
-                                  item.faturamento / transacoesSaida,
-                                )
-                              : 'R$ 0,00';
-                          })()}
-                        </td>
-                      </tr>
-                    ))}
+          )}
 
-                    {(rankingTipo === 'lojas'
-                      ? dadosLojasFiltrados
-                      : dadosVendedoresFiltrados
-                    ).length === 0 && (
-                      <tr>
-                        <td
-                          colSpan={5}
-                          className="px-4 py-8 text-center text-gray-600"
-                        >
-                          Nenhum {rankingTipo === 'lojas' ? 'loja' : 'vendedor'}{' '}
-                          encontrado para o período selecionado
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+          {/* ==========================================
+              RANKING: Lista de lojas
+              ========================================== */}
+          <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 w-full overflow-hidden">
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-[#000638]/10 flex items-center gap-2">
+              <ChartBar size={18} weight="bold" className="text-[#000638]" />
+              <h2 className="text-sm font-bold text-[#000638]">
+                Ranking por Loja
+              </h2>
+              <span className="ml-auto text-xs text-gray-400">
+                Clique para ver detalhes
+              </span>
             </div>
+
+            {/* Table header */}
+            <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-[#000638] text-white text-xs font-bold uppercase tracking-wider">
+              <div className="col-span-1 text-center">#</div>
+              <div className="col-span-4">Loja</div>
+              <div className="col-span-2 text-right">Faturamento</div>
+              <div className="col-span-2 text-right">Ticket Médio</div>
+              <div className="col-span-1 text-right">PA</div>
+              <div className="col-span-2 text-right">Vendas</div>
+            </div>
+
+            {/* Rows */}
+            {filteredGrouped.map((group, index) => {
+              // Verificar se franquia tem acesso a esta loja
+              const isFranchiseUser =
+                user?.role === 'franquias' && user?.allowedCompanies;
+              const canViewDetails =
+                !isFranchiseUser ||
+                [...(group.branchCodes || [])].some((code) =>
+                  user.allowedCompanies
+                    .map((c) => Number(c))
+                    .includes(Number(code)),
+                );
+
+              return (
+                <button
+                  key={group.grupoKey}
+                  onClick={() => openModal(group)}
+                  disabled={!canViewDetails}
+                  title={
+                    !canViewDetails
+                      ? 'Você só pode ver detalhes da sua própria loja'
+                      : 'Clique para ver detalhes'
+                  }
+                  className={`w-full grid grid-cols-12 gap-2 px-4 py-3 items-center text-sm transition-all duration-150 border-b border-gray-100 last:border-b-0 ${
+                    index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'
+                  } ${canViewDetails ? 'hover:bg-blue-50 cursor-pointer' : 'cursor-default opacity-70'}`}
+                >
+                  {/* # Posição */}
+                  <div className="col-span-1 text-center">
+                    {getPositionBadge(index)}
+                  </div>
+
+                  {/* Loja */}
+                  <div className="col-span-4 text-left truncate">
+                    <span
+                      className={`font-semibold ${index < 3 ? 'text-[#000638]' : 'text-gray-700'}`}
+                    >
+                      {group.branchName}
+                    </span>
+                  </div>
+
+                  {/* Faturamento */}
+                  <div className="col-span-2 text-right">
+                    <span
+                      className={`font-bold font-mono ${
+                        group.totalValue >= 0
+                          ? 'text-green-700'
+                          : 'text-red-600'
+                      }`}
+                    >
+                      R$ {formatBRL(group.totalValue)}
+                    </span>
+                  </div>
+
+                  {/* Ticket Médio */}
+                  <div className="col-span-2 text-right">
+                    <span className="text-blue-700 font-mono font-medium">
+                      R$ {formatBRL(group.ticketMedio)}
+                    </span>
+                  </div>
+
+                  {/* PA */}
+                  <div className="col-span-1 text-right">
+                    <span className="text-purple-700 font-mono font-medium">
+                      {group.pa.toFixed(1)}
+                    </span>
+                  </div>
+
+                  {/* Vendas */}
+                  <div className="col-span-2 text-right flex items-center justify-end gap-1">
+                    <span className="text-gray-600 font-mono">
+                      {group.saidaCount}
+                    </span>
+                    <CaretDown
+                      size={12}
+                      className="text-gray-300 group-hover:text-blue-500 transition-colors"
+                    />
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </>
+      )}
+
+      {/* Empty state */}
+      {!loading && invoices.length === 0 && !error && (
+        <div className="text-center py-20 text-gray-400">
+          <Trophy
+            size={56}
+            weight="light"
+            className="mx-auto mb-3 opacity-30"
+          />
+          <p className="text-sm font-medium">
+            Selecione o período e clique em Buscar para gerar o ranking.
+          </p>
+        </div>
+      )}
+
+      {/* ==========================================
+          MODAL: Detalhes da Loja
+          ========================================== */}
+      {modalGroup && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setModalGroup(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#000638]/10 bg-gray-50 rounded-t-xl">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#000638] flex items-center justify-center">
+                  <Buildings size={20} className="text-white" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-[#000638]">
+                    {modalGroup.branchName}
+                  </h2>
+                  <p className="text-xs text-gray-500">
+                    {modalGroup.items.length} nota(s) fiscal(is)
+                  </p>
+                </div>
+              </div>
+
+              {/* Mini cards no header do modal */}
+              <div className="flex items-center gap-4">
+                <div className="text-center px-3">
+                  <p className="text-xs text-gray-500">Faturamento</p>
+                  <p
+                    className={`text-base font-bold font-mono ${modalGroup.totalValue >= 0 ? 'text-green-700' : 'text-red-600'}`}
+                  >
+                    R$ {formatBRL(modalGroup.totalValue)}
+                  </p>
+                </div>
+                <div className="w-px h-8 bg-gray-200" />
+                <div className="text-center px-3">
+                  <p className="text-xs text-gray-500">Ticket Médio</p>
+                  <p className="text-base font-bold font-mono text-blue-700">
+                    R$ {formatBRL(modalGroup.ticketMedio)}
+                  </p>
+                </div>
+                <div className="w-px h-8 bg-gray-200" />
+                <div className="text-center px-3">
+                  <p className="text-xs text-gray-500">PA</p>
+                  <p className="text-base font-bold font-mono text-purple-700">
+                    {modalGroup.pa.toFixed(2)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setModalGroup(null)}
+                  className="ml-2 p-2 hover:bg-gray-200 rounded-full transition-colors"
+                >
+                  <X size={20} className="text-gray-500" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body - Tabela */}
+            <div className="overflow-auto flex-1">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0">
+                  <tr className="bg-[#000638] text-white">
+                    {columns.map((col) => (
+                      <th
+                        key={col.key}
+                        onClick={() => handleSort(col.key)}
+                        className={`px-3 py-2.5 text-left font-medium text-xs cursor-pointer hover:bg-[#000638]/80 whitespace-nowrap select-none uppercase tracking-wider ${
+                          col.numeric ? 'text-right' : ''
+                        }`}
+                      >
+                        <span className="flex items-center gap-1">
+                          {col.label}
+                          <SortIcon columnKey={col.key} />
+                        </span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {modalItems.map((inv, idx) => (
+                    <tr
+                      key={idx}
+                      className={`border-b last:border-b-0 hover:bg-blue-50/40 transition-colors ${
+                        idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+                      }`}
+                    >
+                      {columns.map((col) => (
+                        <td
+                          key={col.key}
+                          className={`px-3 py-2 whitespace-nowrap ${
+                            col.numeric ? 'text-right font-mono' : ''
+                          }`}
+                        >
+                          {formatCell(inv[col.key], col)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+                {/* Footer summary */}
+                <tfoot>
+                  <tr className="bg-green-50 border-t-2 border-green-200 font-semibold text-xs">
+                    <td
+                      colSpan={9}
+                      className="px-3 py-3 text-right text-[#000638]"
+                    >
+                      Resultado: R$ {formatBRL(modalGroup.totalValue)} | TM: R${' '}
+                      {formatBRL(modalGroup.ticketMedio)} | PA:{' '}
+                      {modalGroup.pa.toFixed(2)}
+                    </td>
+                    <td colSpan={5} />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

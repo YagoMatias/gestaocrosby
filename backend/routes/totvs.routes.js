@@ -1,11 +1,32 @@
 import express from 'express';
 import axios from 'axios';
+import https from 'https';
+import http from 'http';
 import {
   asyncHandler,
   successResponse,
   errorResponse,
 } from '../utils/errorHandler.js';
 import { getToken, getTokenInfo } from '../utils/totvsTokenManager.js';
+
+// ==========================================
+// AGENTS keep-alive para reutilizar conexões TCP/TLS
+// Evita handshake SSL a cada request (economia ~200-500ms/chamada)
+// ==========================================
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 20,
+  maxFreeSockets: 10,
+  timeout: 60000,
+  rejectUnauthorized: false,
+});
+
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  maxSockets: 20,
+  maxFreeSockets: 10,
+  timeout: 60000,
+});
 
 const router = express.Router();
 
@@ -3086,7 +3107,12 @@ router.get(
       const endpoint = `${TOTVS_BASE_URL}/person/v2/legal-entities/search`;
 
       // Buscar com filtro de classificação direto na API TOTVS
-      const doRequest = async (accessToken, classificationType, codeList, page) => {
+      const doRequest = async (
+        accessToken,
+        classificationType,
+        codeList,
+        page,
+      ) => {
         const payload = {
           filter: {
             classifications: [
@@ -3120,12 +3146,22 @@ router.get(
         while (hasMore && currentPage <= maxPages) {
           let response;
           try {
-            response = await doRequest(token, classificationType, codeList, currentPage);
+            response = await doRequest(
+              token,
+              classificationType,
+              codeList,
+              currentPage,
+            );
           } catch (error) {
             if (error.response?.status === 401) {
               const newTokenData = await getToken(true);
               token = newTokenData.access_token;
-              response = await doRequest(token, classificationType, codeList, currentPage);
+              response = await doRequest(
+                token,
+                classificationType,
+                codeList,
+                currentPage,
+              );
             } else {
               throw error;
             }
@@ -3197,6 +3233,475 @@ router.get(
     } catch (error) {
       console.error('❌ Erro ao buscar multimarcas:', error.message);
       return errorResponse(res, error.message, 500, 'INTERNAL_ERROR');
+    }
+  }),
+);
+
+// ==========================================
+// FISCAL MOVEMENT - RANKING DE FATURAMENTO
+// Busca movimentos fiscais por empresa e por vendedor
+// Endpoint TOTVS: analytics/v2/fiscal-movement/search
+// ==========================================
+
+/**
+ * @route POST /totvs/fiscal-movement/search
+ * @desc Busca movimentos fiscais na API TOTVS (ranking de faturamento)
+ * @access Public
+ * @body {
+ *   filter: {
+ *     branchCodeList: number[] (obrigatório),
+ *     startMovementDate: string (ISO date-time, obrigatório),
+ *     endMovementDate: string (ISO date-time, obrigatório)
+ *   },
+ *   page: number (página inicial é 1),
+ *   pageSize: number (máx 1000)
+ * }
+ */
+router.post(
+  '/fiscal-movement/search',
+  asyncHandler(async (req, res) => {
+    const startTime = Date.now();
+    try {
+      const tokenData = await getToken();
+
+      if (!tokenData || !tokenData.access_token) {
+        return errorResponse(
+          res,
+          'Não foi possível obter token de autenticação TOTVS',
+          503,
+          'TOKEN_UNAVAILABLE',
+        );
+      }
+
+      const { filter, page, pageSize } = req.body;
+
+      if (
+        !filter ||
+        !filter.branchCodeList ||
+        !filter.startMovementDate ||
+        !filter.endMovementDate
+      ) {
+        return errorResponse(
+          res,
+          'Os campos filter.branchCodeList, filter.startMovementDate e filter.endMovementDate são obrigatórios',
+          400,
+          'MISSING_REQUIRED_FIELDS',
+        );
+      }
+
+      const endpoint = `${TOTVS_BASE_URL}/analytics/v2/fiscal-movement/search`;
+
+      const payload = {
+        filter: {
+          branchCodeList: filter.branchCodeList,
+          startMovementDate: filter.startMovementDate,
+          endMovementDate: filter.endMovementDate,
+        },
+        page: page || 1,
+        pageSize: Math.min(pageSize || 1000, 1000),
+      };
+
+      console.log('📊 Buscando movimentos fiscais na API TOTVS:', {
+        endpoint,
+        branches: payload.filter.branchCodeList.length,
+        periodo: `${payload.filter.startMovementDate} a ${payload.filter.endMovementDate}`,
+        page: payload.page,
+        pageSize: payload.pageSize,
+      });
+
+      const doRequest = async (accessToken, requestPayload) =>
+        axios.post(endpoint, requestPayload, {
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          timeout: 60000,
+        });
+
+      // Buscar primeira página
+      let response;
+      try {
+        response = await doRequest(tokenData.access_token, payload);
+      } catch (error) {
+        if (error.response?.status === 401) {
+          console.log('🔄 Token inválido. Renovando token...');
+          const newTokenData = await getToken(true);
+          response = await doRequest(newTokenData.access_token, payload);
+        } else {
+          throw error;
+        }
+      }
+
+      // Coletar todos os itens (paginação automática)
+      let allItems = response.data?.items || response.data?.data || [];
+      const hasNext = response.data?.hasNext ?? false;
+      const totalRecords =
+        response.data?.total || response.data?.totalRecords || allItems.length;
+
+      console.log(
+        `📊 Página 1: ${allItems.length} itens | hasNext: ${hasNext} | total: ${totalRecords}`,
+      );
+
+      // Se há mais páginas, buscar todas
+      if (hasNext && totalRecords > payload.pageSize) {
+        const totalPages = Math.ceil(totalRecords / payload.pageSize);
+        const currentToken = tokenData.access_token;
+
+        for (let p = 2; p <= totalPages; p++) {
+          const nextPayload = { ...payload, page: p };
+          try {
+            const nextResponse = await doRequest(currentToken, nextPayload);
+            const nextItems =
+              nextResponse.data?.items || nextResponse.data?.data || [];
+            allItems = [...allItems, ...nextItems];
+            console.log(
+              `📊 Página ${p}/${totalPages}: +${nextItems.length} itens (total acumulado: ${allItems.length})`,
+            );
+
+            if (!nextResponse.data?.hasNext) break;
+          } catch (pageError) {
+            console.error(`⚠️ Erro na página ${p}:`, pageError.message);
+            break;
+          }
+        }
+      }
+
+      const totalTime = Date.now() - startTime;
+      console.log(
+        `✅ Movimentos fiscais obtidos: ${allItems.length} itens em ${totalTime}ms`,
+      );
+
+      successResponse(
+        res,
+        {
+          items: allItems,
+          total: allItems.length,
+          totalRecords,
+          hasNext: false,
+          queryTime: totalTime,
+        },
+        `${allItems.length} movimentos fiscais obtidos em ${totalTime}ms`,
+      );
+    } catch (error) {
+      console.error('❌ Erro ao buscar movimentos fiscais na API TOTVS:', {
+        message: error.message,
+        code: error.code,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
+
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message ||
+          error.response.data?.error ||
+          error.response.data?.error_description ||
+          (typeof error.response.data === 'string'
+            ? error.response.data
+            : 'Erro ao buscar movimentos fiscais na API TOTVS');
+
+        return res.status(error.response.status || 400).json({
+          success: false,
+          message: errorMessage,
+          error: 'TOTVS_API_ERROR',
+          timestamp: new Date().toISOString(),
+          details: error.response.data,
+          payload: req.body,
+        });
+      } else if (error.request) {
+        const errorMessage =
+          error.code === 'ENOTFOUND'
+            ? 'URL da API TOTVS não encontrada.'
+            : error.code === 'ECONNREFUSED'
+              ? 'Conexão recusada pela API TOTVS.'
+              : `Não foi possível conectar à API TOTVS (${error.code || 'Erro desconhecido'})`;
+
+        return errorResponse(res, errorMessage, 503, 'TOTVS_CONNECTION_ERROR');
+      }
+
+      throw new Error(`Erro ao chamar API TOTVS: ${error.message}`);
+    }
+  }),
+);
+
+// ==========================================
+// CACHE de invoices em memória (LRU simples)
+// Chave: hash dos parâmetros da consulta
+// TTL: 10 minutos
+// ==========================================
+const invoicesCache = new Map();
+const INVOICES_CACHE_TTL = 10 * 60 * 1000; // 10 minutos
+const INVOICES_CACHE_MAX_SIZE = 20;
+
+function getInvoicesCacheKey(body) {
+  return JSON.stringify({
+    s: body.startDate,
+    e: body.endDate,
+    b: body.branchCodeList ? [...body.branchCodeList].sort() : null,
+    o: body.operationType || null,
+    p: body.personCodeList ? [...body.personCodeList].sort() : null,
+    is: body.invoiceStatusList ? [...body.invoiceStatusList].sort() : null,
+    oc: body.operationCodeList ? [...body.operationCodeList].sort() : null,
+  });
+}
+
+function getFromInvoicesCache(key) {
+  const entry = invoicesCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > INVOICES_CACHE_TTL) {
+    invoicesCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setInvoicesCache(key, data) {
+  if (invoicesCache.size >= INVOICES_CACHE_MAX_SIZE) {
+    const oldestKey = invoicesCache.keys().next().value;
+    invoicesCache.delete(oldestKey);
+  }
+  invoicesCache.set(key, { data, timestamp: Date.now() });
+}
+
+/**
+ * @route POST /totvs/invoices/search
+ * @desc Proxy para fiscal/v2/invoices/search da API TOTVS Moda.
+ *       OTIMIZADO: pageSize 500, 10 páginas paralelas, cache 10min, keep-alive.
+ *       Usa change.startDate/endDate (data de ALTERAÇÃO da NF) com margem ±3 dias.
+ *       Popula branchCodeList automaticamente se não informado.
+ *       Busca TODAS as páginas automaticamente.
+ * @access Public
+ * @body {
+ *   startDate: string (YYYY-MM-DD, obrigatório),
+ *   endDate: string (YYYY-MM-DD, obrigatório),
+ *   branchCodeList: number[] (opcional),
+ *   operationType: string (opcional),
+ *   personCodeList: number[] (opcional),
+ *   invoiceStatusList: string[] (opcional),
+ *   operationCodeList: number[] (opcional),
+ *   maxPages: number (opcional, default: 100),
+ *   noCache: boolean (opcional, forçar bypass do cache)
+ * }
+ */
+router.post(
+  '/invoices/search',
+  asyncHandler(async (req, res) => {
+    const startTime = Date.now();
+    try {
+      // ====== CACHE CHECK ======
+      const cacheKey = getInvoicesCacheKey(req.body);
+      if (!req.body.noCache) {
+        const cached = getFromInvoicesCache(cacheKey);
+        if (cached) {
+          const cacheTime = Date.now() - startTime;
+          console.log(
+            `⚡ [Invoices] CACHE HIT — ${cached.totalItems} itens em ${cacheTime}ms`,
+          );
+          return successResponse(
+            res,
+            { ...cached, fromCache: true, queryTime: cacheTime },
+            `${cached.totalItems} invoices (cache) em ${cacheTime}ms`,
+          );
+        }
+      }
+
+      const tokenData = await getToken();
+
+      if (!tokenData || !tokenData.access_token) {
+        return errorResponse(
+          res,
+          'Não foi possível obter token de autenticação TOTVS',
+          503,
+          'TOKEN_UNAVAILABLE',
+        );
+      }
+
+      let token = tokenData.access_token;
+
+      const {
+        startDate,
+        endDate,
+        branchCodeList,
+        operationType,
+        personCodeList,
+        invoiceStatusList,
+        operationCodeList,
+        maxPages: maxPagesParam,
+      } = req.body;
+
+      const MAX_PAGES = Math.min(parseInt(maxPagesParam) || 100, 200);
+
+      if (!startDate || !endDate) {
+        return errorResponse(
+          res,
+          'Os campos startDate e endDate são obrigatórios (formato YYYY-MM-DD)',
+          400,
+          'MISSING_REQUIRED_FIELDS',
+        );
+      }
+
+      const branches =
+        branchCodeList && branchCodeList.length > 0
+          ? branchCodeList
+          : await getBranchCodes(token);
+
+      // Margem de ±3 dias nas datas de alteração (change) para cobrir NFs
+      // cuja data de transação (invoiceDate) difere da data de alteração.
+      // O frontend filtra depois por invoiceDate dentro do range real.
+      const MARGIN_DAYS = 3;
+      const marginStart = new Date(startDate);
+      marginStart.setDate(marginStart.getDate() - MARGIN_DAYS);
+      const marginEnd = new Date(endDate);
+      marginEnd.setDate(marginEnd.getDate() + MARGIN_DAYS);
+      const changeStartDate = marginStart.toISOString().slice(0, 10);
+      const changeEndDate = marginEnd.toISOString().slice(0, 10);
+
+      const endpoint = `${TOTVS_BASE_URL}/fiscal/v2/invoices/search`;
+      const filter = {
+        branchCodeList: branches,
+        change: {
+          startDate: `${changeStartDate}T00:00:00.000Z`,
+          endDate: `${changeEndDate}T23:59:59.999Z`,
+        },
+      };
+
+      if (operationType) filter.operationType = operationType;
+      if (personCodeList?.length > 0) filter.personCodeList = personCodeList;
+      if (invoiceStatusList?.length > 0)
+        filter.invoiceStatusList = invoiceStatusList;
+      if (operationCodeList?.length > 0)
+        filter.operationCodeList = operationCodeList;
+
+      // ====== OTIMIZAÇÃO: 10 paralelas + keep-alive + cache ======
+      const PAGE_SIZE = 100;
+      const PARALLEL_BATCH = 10;
+
+      console.log(
+        `📊 [Invoices] ${branches.length} branches | change ${changeStartDate}→${changeEndDate} (±${MARGIN_DAYS}d)` +
+          `${operationType ? ` | tipo: ${operationType}` : ''}` +
+          `${invoiceStatusList?.length ? ` | status: ${invoiceStatusList.join(',')}` : ''}` +
+          `${operationCodeList?.length ? ` | ${operationCodeList.length} ops` : ''}` +
+          ` | pageSize: ${PAGE_SIZE} | parallel: ${PARALLEL_BATCH}`,
+      );
+
+      // Request com keep-alive agent para reutilizar conexão TCP/TLS
+      const makeRequest = async (accessToken, pageNum) =>
+        axios.post(
+          endpoint,
+          { filter, page: pageNum, pageSize: PAGE_SIZE },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+              Authorization: `Bearer ${accessToken}`,
+              Connection: 'keep-alive',
+            },
+            timeout: 60000,
+            httpsAgent,
+            httpAgent,
+          },
+        );
+
+      // PASSO 1: Buscar página 1 para descobrir totalPages
+      let firstResponse;
+      try {
+        firstResponse = await makeRequest(token, 1);
+      } catch (error) {
+        if (error.response?.status === 401) {
+          const newTokenData = await getToken(true);
+          token = newTokenData.access_token;
+          firstResponse = await makeRequest(token, 1);
+        } else {
+          throw error;
+        }
+      }
+
+      const apiTotalPages = firstResponse.data?.totalPages || 1;
+      const totalPages = Math.min(apiTotalPages, MAX_PAGES);
+      const totalCount = firstResponse.data?.count || 0;
+      let allItems = [...(firstResponse.data?.items || [])];
+
+      console.log(
+        `📄 [Invoices] Pg 1/${totalPages} | count: ${totalCount} | itens: ${allItems.length} (${Date.now() - startTime}ms)`,
+      );
+
+      // PASSO 2: Buscar páginas restantes — PARALLEL_BATCH por vez
+      if (totalPages > 1) {
+        const remainingPages = [];
+        for (let p = 2; p <= totalPages; p++) remainingPages.push(p);
+
+        for (let i = 0; i < remainingPages.length; i += PARALLEL_BATCH) {
+          const batch = remainingPages.slice(i, i + PARALLEL_BATCH);
+
+          const results = await Promise.all(
+            batch.map((p) =>
+              makeRequest(token, p).catch((err) => {
+                // Retry uma vez em caso de timeout
+                if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+                  console.warn(`⚠️ [Invoices] Retry pg ${p} (timeout)`);
+                  return makeRequest(token, p).catch(() => null);
+                }
+                console.warn(`⚠️ [Invoices] Erro pg ${p}: ${err.message}`);
+                return null;
+              }),
+            ),
+          );
+
+          for (const r of results) {
+            if (r?.data?.items) {
+              allItems = allItems.concat(r.data.items);
+            }
+          }
+
+          const batchEnd = batch[batch.length - 1];
+          console.log(
+            `📄 [Invoices] Batch pg ${batch[0]}-${batchEnd}/${totalPages} | acum: ${allItems.length} (${Date.now() - startTime}ms)`,
+          );
+        }
+      }
+
+      const totalTime = Date.now() - startTime;
+
+      const responseData = {
+        items: allItems,
+        count: totalCount,
+        totalPages,
+        totalItems: allItems.length,
+        hasNext: false,
+        queryTime: totalTime,
+      };
+
+      // ====== SALVAR NO CACHE ======
+      setInvoicesCache(cacheKey, responseData);
+
+      console.log(
+        `✅ [Invoices] ${allItems.length} invoices | ${totalPages} pgs (×${PAGE_SIZE}) | ${totalTime}ms`,
+      );
+
+      successResponse(
+        res,
+        responseData,
+        `${allItems.length} invoices em ${totalTime}ms`,
+      );
+    } catch (error) {
+      console.error('❌ Erro ao buscar invoices:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
+
+      if (error.response) {
+        return res.status(error.response.status || 400).json({
+          success: false,
+          message:
+            error.response.data?.message ||
+            'Erro ao buscar invoices na API TOTVS',
+          error: 'TOTVS_API_ERROR',
+          details: error.response.data,
+        });
+      }
+
+      throw new Error(`Erro ao buscar invoices: ${error.message}`);
     }
   }),
 );

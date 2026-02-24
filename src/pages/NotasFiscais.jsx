@@ -59,29 +59,54 @@ const NotasFiscais = () => {
   const [produtosLoading, setProdutosLoading] = useState(false);
   const [produtosError, setProdutosError] = useState('');
 
-  const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/franchise/';
   const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
+  const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/franchise/';
+
+  // Estado para armazenar códigos das filiais (empresas próprias)
+  const [filiaisCodigos, setFiliaisCodigos] = useState([]);
+
+  // Buscar filiais (empresas) da API TOTVS ao carregar
+  useEffect(() => {
+    const buscarFiliais = async () => {
+      try {
+        const response = await fetch(`${TotvsURL}branches`);
+        if (response.ok) {
+          const result = await response.json();
+          let empresasArray = [];
+          if (result.success && result.data) {
+            if (result.data.data && Array.isArray(result.data.data)) {
+              empresasArray = result.data.data;
+            } else if (Array.isArray(result.data)) {
+              empresasArray = result.data;
+            }
+          }
+          // Extrair códigos das filiais (cd_empresa)
+          const codigos = empresasArray
+            .map((branch) => parseInt(branch.cd_empresa))
+            .filter((code) => !isNaN(code) && code > 0);
+          console.log('📋 Filiais carregadas:', codigos);
+          setFiliaisCodigos(codigos);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar filiais:', error);
+        // Fallback para filiais padrão
+        setFiliaisCodigos([1, 2, 6, 100, 101, 99, 990, 200, 400, 4, 850, 85]);
+      }
+    };
+    buscarFiliais();
+  }, []);
 
   // Helpers de data sem fuso horário
-  const parseDateNoTZ = (isoDate) => {
-    if (!isoDate) return null;
+  const formatDateBR = (isoDate) => {
+    if (!isoDate) return '--';
     try {
       const [datePart] = String(isoDate).split('T');
       const [y, m, d] = datePart.split('-').map((n) => parseInt(n, 10));
-      if (!y || !m || !d) return null;
-      return new Date(y, m - 1, d);
+      if (!y || !m || !d) return '--';
+      return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
     } catch {
-      return null;
+      return '--';
     }
-  };
-
-  const formatDateBR = (isoDate) => {
-    const d = parseDateNoTZ(isoDate);
-    if (!d) return '--';
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = String(d.getFullYear());
-    return `${dd}/${mm}/${yyyy}`;
   };
 
   // Inicializar período padrão (mês atual)
@@ -200,16 +225,28 @@ const NotasFiscais = () => {
         let valorA = a[ordenacao.campo];
         let valorB = b[ordenacao.campo];
 
-        // Tratamento especial para datas
-        if (ordenacao.campo.includes('dt_')) {
-          valorA = valorA ? new Date(valorA) : new Date(0);
-          valorB = valorB ? new Date(valorB) : new Date(0);
+        // Campos de data (string YYYY-MM-DD)
+        if (
+          ['invoiceDate', 'issueDate', 'transactionDate'].includes(
+            ordenacao.campo,
+          )
+        ) {
+          valorA = valorA || '';
+          valorB = valorB || '';
         }
 
-        // Tratamento especial para valores numéricos
+        // Campos numéricos
         if (
-          ordenacao.campo.includes('vl_') ||
-          ordenacao.campo.includes('nr_')
+          [
+            'totalValue',
+            'productValue',
+            'quantity',
+            'discountPercentage',
+            'branchCode',
+            'personCode',
+            'invoiceCode',
+            'transactionCode',
+          ].includes(ordenacao.campo)
         ) {
           valorA = parseFloat(valorA) || 0;
           valorB = parseFloat(valorB) || 0;
@@ -218,7 +255,7 @@ const NotasFiscais = () => {
         // Tratamento para strings
         if (typeof valorA === 'string') {
           valorA = valorA.toLowerCase();
-          valorB = valorB.toLowerCase();
+          valorB = (valorB || '').toLowerCase();
         }
 
         if (valorA < valorB) return ordenacao.direcao === 'asc' ? -1 : 1;
@@ -240,78 +277,67 @@ const NotasFiscais = () => {
   // Total de páginas para paginação
   const totalPages = Math.ceil(dadosProcessados.length / itensPorPagina);
 
+  const handleSelectEmpresas = (empresas) => {
+    setEmpresasSelecionadas(empresas);
+  };
+
   const buscarDados = async () => {
-    if (empresasSelecionadas.length === 0) {
-      alert('Selecione pelo menos uma empresa para consultar!');
+    if (!periodo.dt_inicio || !periodo.dt_fim) {
+      alert('Selecione o período inicial e final!');
       return;
     }
 
-    if (!periodo.dt_inicio || !periodo.dt_fim) {
-      alert('Selecione o período inicial e final!');
+    if (empresasSelecionadas.length === 0) {
+      alert('Selecione pelo menos uma empresa (cliente) para consultar!');
       return;
     }
 
     setLoading(true);
     setPaginaAtual(1);
     try {
-      const todasAsPromises = empresasSelecionadas.map(async (empresa) => {
-        try {
-          // Usar cd_pessoa do FiltroEmpresa como cd_pessoa na rota
-          const cdPessoa = empresa.cd_pessoa;
+      // branchCodeList = SUAS FILIAIS (empresas próprias)
+      const branchCodeList =
+        filiaisCodigos.length > 0 ? filiaisCodigos : [1, 2, 3, 4, 5];
 
-          console.log(
-            `🔍 Buscando pedidos para cd_pessoa: ${cdPessoa} (empresa: ${empresa.cd_empresa}), período: ${periodo.dt_inicio} a ${periodo.dt_fim}`,
-          );
+      // personCodeList = códigos dos CLIENTES selecionados no FiltroEmpresa
+      const personCodeList = empresasSelecionadas
+        .map((empresa) => parseInt(empresa.personCode || empresa.cd_pessoa))
+        .filter((code) => !isNaN(code) && code > 0);
 
-          const res = await fetch(
-            `${BaseURL}meuspedidos?cd_pessoa=${cdPessoa}&dt_inicio=${periodo.dt_inicio}&dt_fim=${periodo.dt_fim}`,
-          );
-
-          if (!res.ok) {
-            console.warn(
-              `Erro ao buscar pessoa ${cdPessoa}: HTTP ${res.status}`,
-            );
-            return [];
-          }
-
-          const data = await res.json();
-          console.log(`✅ Resposta da API para pessoa ${cdPessoa}:`, data);
-
-          let dadosArray = [];
-          if (Array.isArray(data)) {
-            dadosArray = data;
-          } else if (data && typeof data === 'object') {
-            if (data.data && Array.isArray(data.data)) {
-              dadosArray = data.data;
-            } else if (
-              data.data &&
-              data.data.data &&
-              Array.isArray(data.data.data)
-            ) {
-              dadosArray = data.data.data;
-            } else {
-              dadosArray = Object.values(data);
-            }
-          }
-
-          console.log(
-            `📦 ${dadosArray.length} registros encontrados para pessoa ${cdPessoa}`,
-          );
-
-          return dadosArray.filter((item) => item && typeof item === 'object');
-        } catch (err) {
-          console.warn(`Erro ao buscar pessoa ${empresa.cd_pessoa}:`, err);
-          return [];
-        }
+      console.log('🔍 Buscando invoices TOTVS:', {
+        branchCodeList,
+        personCodeList,
+        periodo: `${periodo.dt_inicio} a ${periodo.dt_fim}`,
       });
 
-      const resultados = await Promise.all(todasAsPromises);
-      const todosOsDados = resultados.flat();
+      const result = await apiClient.totvs.invoicesSearch({
+        startDate: periodo.dt_inicio,
+        endDate: periodo.dt_fim,
+        branchCodeList,
+        personCodeList,
+      });
 
-      console.log('📊 Total de dados consolidados:', todosOsDados.length);
+      if (result.success) {
+        const items = result.data?.items || [];
 
-      setDados(todosOsDados);
-      setDadosCarregados(true);
+        // Filtrar por invoiceDate dentro do range (comparação string YYYY-MM-DD)
+        const filtrados = items.filter((inv) => {
+          if (!inv.invoiceDate) return false;
+          const d = inv.invoiceDate.slice(0, 10);
+          return d >= periodo.dt_inicio && d <= periodo.dt_fim;
+        });
+
+        console.log(
+          `📊 ${filtrados.length} invoices no período (de ${items.length} retornados)`,
+        );
+
+        setDados(filtrados);
+        setDadosCarregados(true);
+      } else {
+        console.warn('⚠️ Erro na resposta:', result.message);
+        setDados([]);
+        setDadosCarregados(true);
+      }
     } catch (err) {
       console.error('❌ Erro ao buscar dados:', err);
       setDados([]);
@@ -326,21 +352,17 @@ const NotasFiscais = () => {
     buscarDados();
   };
 
-  const handleSelectEmpresas = (empresas) => {
-    setEmpresasSelecionadas(empresas);
-  };
-
   // Função para buscar produtos da nota fiscal
-  const buscarProdutosNF = async (nr_transacao) => {
+  const buscarProdutosNF = async (transactionCode) => {
     try {
       setProdutosLoading(true);
       setProdutosError('');
       setProdutosNF([]);
 
-      console.log('🔍 Buscando produtos da NF:', nr_transacao);
+      console.log('🔍 Buscando produtos da NF, transação:', transactionCode);
 
       const response = await fetch(
-        `${BaseURL}detalhenf?nr_transacao=${nr_transacao}`,
+        `${BaseURL}detalhenf?nr_transacao=${transactionCode}`,
       );
 
       if (!response.ok) {
@@ -374,8 +396,12 @@ const NotasFiscais = () => {
     setDanfeBase64('');
     setDanfeError('');
 
-    // Buscar produtos da nota fiscal
-    buscarProdutosNF(pedido.nr_transacao);
+    // Buscar produtos da nota fiscal usando transactionCode
+    if (pedido.transactionCode) {
+      buscarProdutosNF(pedido.transactionCode);
+    } else {
+      setProdutosNF([]);
+    }
   };
 
   // Função para gerar DANFE (chamada pelo botão)
@@ -389,17 +415,21 @@ const NotasFiscais = () => {
 
       console.log('🔍 Gerando DANFE do pedido:', pedidoSelecionado);
 
-      // Formatar a data no formato esperado pela API (YYYY-MM-DD)
-      const dataTransacao = pedidoSelecionado.dt_transacao
-        ? pedidoSelecionado.dt_transacao.split('T')[0]
-        : '';
+      // Usar campos TOTVS diretamente
+      const dataTransacao = pedidoSelecionado.transactionDate
+        ? pedidoSelecionado.transactionDate.split('T')[0]
+        : pedidoSelecionado.invoiceDate
+          ? pedidoSelecionado.invoiceDate.split('T')[0]
+          : '';
 
       const payload = {
         filter: {
-          branchCodeList: [parseInt(pedidoSelecionado.cd_grupoempresa)],
-          personCodeList: [pedidoSelecionado.cd_pessoa],
-          transactionBranchCode: parseInt(pedidoSelecionado.cd_grupoempresa),
-          transactionCode: parseInt(pedidoSelecionado.nr_transacao),
+          branchCodeList: [pedidoSelecionado.branchCode],
+          personCodeList: [pedidoSelecionado.personCode],
+          transactionBranchCode:
+            pedidoSelecionado.transactionBranchCode ||
+            pedidoSelecionado.branchCode,
+          transactionCode: pedidoSelecionado.transactionCode,
           transactionDate: dataTransacao,
         },
       };
@@ -487,8 +517,10 @@ const NotasFiscais = () => {
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `danfe-pedido-${
-      pedidoSelecionado?.nr_transacao || 'pedido'
+    link.download = `danfe-nf-${
+      pedidoSelecionado?.invoiceCode ||
+      pedidoSelecionado?.transactionCode ||
+      'pedido'
     }.pdf`;
     document.body.appendChild(link);
     link.click();
@@ -506,15 +538,19 @@ const NotasFiscais = () => {
 
     try {
       const dadosParaExportar = dadosProcessados.map((item) => ({
-        Empresa: item.cd_grupoempresa || '',
-        'Data Transação':
-          formatDateBR(item.dt_transacao) === '--'
-            ? ''
-            : formatDateBR(item.dt_transacao),
-        'Nº Transação': item.nr_transacao || '',
-        Cliente: item.cd_pessoa || '',
-        'Nome Fantasia': item.nm_fantasia || '',
-        'Valor Total': parseFloat(item.vl_total) || 0,
+        Empresa: item.branchCode || '',
+        CNPJ: item.branchCnpj || '',
+        'Data Emissão': formatDateBR(item.invoiceDate),
+        'Nº NF': item.invoiceCode || '',
+        Série: item.serialCode || '',
+        'Nº Transação': item.transactionCode || '',
+        'Cód. Cliente': item.personCode || '',
+        Cliente: item.personName || '',
+        Operação: item.operatioName || '',
+        Status: item.invoiceStatus || '',
+        'Valor Total': parseFloat(item.totalValue) || 0,
+        'Valor Produto': parseFloat(item.productValue) || 0,
+        Quantidade: parseFloat(item.quantity) || 0,
       }));
 
       const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
@@ -559,7 +595,7 @@ const NotasFiscais = () => {
   const calcularTotais = () => {
     const totais = dadosProcessados.reduce(
       (acc, item) => {
-        acc.valorTotal += parseFloat(item.vl_total) || 0;
+        acc.valorTotal += parseFloat(item.totalValue) || 0;
         acc.quantidadePedidos += 1;
         return acc;
       },
@@ -679,7 +715,7 @@ const NotasFiscais = () => {
                 className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
               />
             </div>
-            <div className="flex items-center">
+            <div className="flex items-end">
               <button
                 type="submit"
                 className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
@@ -836,56 +872,74 @@ const NotasFiscais = () => {
                   <tr>
                     <th
                       className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('cd_grupoempresa')}
+                      onClick={() => handleSort('branchCode')}
                     >
                       <div className="flex items-center justify-center">
                         Empresa
-                        {getSortIcon('cd_grupoempresa')}
+                        {getSortIcon('branchCode')}
                       </div>
                     </th>
                     <th
                       className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('dt_transacao')}
+                      onClick={() => handleSort('invoiceDate')}
                     >
                       <div className="flex items-center justify-center">
-                        Data Transação
-                        {getSortIcon('dt_transacao')}
+                        Data Emissão
+                        {getSortIcon('invoiceDate')}
                       </div>
                     </th>
                     <th
                       className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('nr_transacao')}
+                      onClick={() => handleSort('invoiceCode')}
                     >
                       <div className="flex items-center justify-center">
-                        Nº Transação
-                        {getSortIcon('nr_transacao')}
+                        Nº NF
+                        {getSortIcon('invoiceCode')}
                       </div>
                     </th>
                     <th
                       className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('cd_pessoa')}
+                      onClick={() => handleSort('personCode')}
                     >
                       <div className="flex items-center justify-center">
-                        Cliente
-                        {getSortIcon('cd_pessoa')}
+                        Cód. Cliente
+                        {getSortIcon('personCode')}
                       </div>
                     </th>
                     <th
                       className="px-2 py-2 text-left cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('nm_fantasia')}
+                      onClick={() => handleSort('personName')}
                     >
                       <div className="flex items-center">
-                        Nome Fantasia
-                        {getSortIcon('nm_fantasia')}
+                        Cliente
+                        {getSortIcon('personName')}
+                      </div>
+                    </th>
+                    <th
+                      className="px-2 py-2 text-left cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('operatioName')}
+                    >
+                      <div className="flex items-center">
+                        Operação
+                        {getSortIcon('operatioName')}
                       </div>
                     </th>
                     <th
                       className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                      onClick={() => handleSort('vl_total')}
+                      onClick={() => handleSort('invoiceStatus')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Status
+                        {getSortIcon('invoiceStatus')}
+                      </div>
+                    </th>
+                    <th
+                      className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('totalValue')}
                     >
                       <div className="flex items-center justify-center">
                         Valor Total
-                        {getSortIcon('vl_total')}
+                        {getSortIcon('totalValue')}
                       </div>
                     </th>
                     <th className="px-2 py-2 text-center">
@@ -899,22 +953,40 @@ const NotasFiscais = () => {
                   {dadosPaginados.map((item, index) => (
                     <tr key={index} className="text-sm transition-colors">
                       <td className="text-center text-gray-900 px-2 py-2">
-                        {item.cd_grupoempresa || '--'}
+                        {item.branchCode || '--'}
                       </td>
                       <td className="text-center text-gray-900 px-2 py-2">
-                        {formatDateBR(item.dt_transacao)}
+                        {formatDateBR(item.invoiceDate)}
                       </td>
                       <td className="text-center text-gray-900 px-2 py-2">
-                        {item.nr_transacao || '--'}
+                        {item.invoiceCode || '--'}
                       </td>
                       <td className="text-center text-gray-900 px-2 py-2">
-                        {item.cd_pessoa || '--'}
+                        {item.personCode || '--'}
                       </td>
                       <td className="text-left text-gray-900 px-2 py-2">
-                        {item.nm_fantasia || '--'}
+                        {item.personName || '--'}
+                      </td>
+                      <td className="text-left text-gray-900 px-2 py-2 text-xs">
+                        {item.operatioName || '--'}
+                      </td>
+                      <td className="text-center px-2 py-2">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                            item.invoiceStatus === 'Issued'
+                              ? 'bg-green-100 text-green-700'
+                              : item.invoiceStatus === 'Normal'
+                                ? 'bg-blue-100 text-blue-700'
+                                : item.invoiceStatus === 'Canceled'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-gray-100 text-gray-700'
+                          }`}
+                        >
+                          {item.invoiceStatus || '--'}
+                        </span>
                       </td>
                       <td className="text-center font-semibold text-green-600 px-2 py-2">
-                        {(parseFloat(item.vl_total) || 0).toLocaleString(
+                        {(parseFloat(item.totalValue) || 0).toLocaleString(
                           'pt-BR',
                           {
                             style: 'currency',
@@ -926,7 +998,7 @@ const NotasFiscais = () => {
                         <button
                           onClick={() => abrirModalDanfe(item)}
                           className="flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs mx-auto font-medium"
-                          title="Ver DANFE do pedido"
+                          title="Ver detalhes e DANFE"
                         >
                           <Eye size={14} weight="bold" />
                           Detalhar
@@ -976,8 +1048,8 @@ const NotasFiscais = () => {
                             pagina === paginaAtual
                               ? 'bg-[#000638] text-white'
                               : typeof pagina === 'number'
-                              ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
-                              : 'text-gray-400 cursor-default'
+                                ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                : 'text-gray-400 cursor-default'
                           }`}
                         >
                           {pagina}
@@ -1025,46 +1097,73 @@ const NotasFiscais = () => {
             {pedidoSelecionado && (
               <div className="bg-gray-50 p-4 rounded-lg mb-6">
                 <h3 className="text-sm font-semibold text-gray-700 mb-2">
-                  Informações do Pedido
+                  Informações da Nota Fiscal
                 </h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                   <div>
                     <span className="text-gray-500">Empresa:</span>
                     <p className="font-medium">
-                      {pedidoSelecionado.cd_grupoempresa}
+                      {pedidoSelecionado.branchCode}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Nº NF:</span>
+                    <p className="font-medium">
+                      {pedidoSelecionado.invoiceCode} (Série{' '}
+                      {pedidoSelecionado.serialCode})
                     </p>
                   </div>
                   <div>
                     <span className="text-gray-500">Nº Transação:</span>
                     <p className="font-medium">
-                      {pedidoSelecionado.nr_transacao}
+                      {pedidoSelecionado.transactionCode || '--'}
                     </p>
                   </div>
                   <div>
-                    <span className="text-gray-500">Cliente:</span>
-                    <p className="font-medium">{pedidoSelecionado.cd_pessoa}</p>
+                    <span className="text-gray-500">Data Emissão:</span>
+                    <p className="font-medium">
+                      {formatDateBR(pedidoSelecionado.invoiceDate)}
+                    </p>
                   </div>
                   <div>
-                    <span className="text-gray-500">Data:</span>
+                    <span className="text-gray-500">Cód. Cliente:</span>
                     <p className="font-medium">
-                      {formatDateBR(pedidoSelecionado.dt_transacao)}
+                      {pedidoSelecionado.personCode}
                     </p>
                   </div>
                   <div className="col-span-2">
-                    <span className="text-gray-500">Nome Fantasia:</span>
+                    <span className="text-gray-500">Cliente:</span>
                     <p className="font-medium">
-                      {pedidoSelecionado.nm_fantasia}
+                      {pedidoSelecionado.personName}
                     </p>
                   </div>
                   <div>
                     <span className="text-gray-500">Valor Total:</span>
                     <p className="font-medium text-green-600">
                       {(
-                        parseFloat(pedidoSelecionado.vl_total) || 0
+                        parseFloat(pedidoSelecionado.totalValue) || 0
                       ).toLocaleString('pt-BR', {
                         style: 'currency',
                         currency: 'BRL',
                       })}
+                    </p>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-gray-500">Operação:</span>
+                    <p className="font-medium text-xs">
+                      {pedidoSelecionado.operatioName || '--'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Status:</span>
+                    <p className="font-medium">
+                      {pedidoSelecionado.invoiceStatus}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Cond. Pagamento:</span>
+                    <p className="font-medium">
+                      {pedidoSelecionado.paymentConditionName || '--'}
                     </p>
                   </div>
                 </div>

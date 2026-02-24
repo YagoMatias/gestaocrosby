@@ -638,6 +638,23 @@ const useApiClient = () => {
     pcp: (params) => apiCall('/api/company/pcp', params),
   };
 
+  const totvs = {
+    /**
+     * Busca movimentos fiscais raw na API TOTVS
+     * @param {Object} body - { filter: { branchCodeList, startMovementDate, endMovementDate }, page, pageSize }
+     */
+    fiscalMovementSearch: (body) =>
+      apiMutate('/api/totvs/fiscal-movement/search', 'POST', body),
+
+    /**
+     * Proxy para fiscal/v2/invoices/search da API TOTVS Moda.
+     * Retorna dados brutos. Popula branchCodeList automaticamente se não informado.
+     * @param {Object} body - { startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD', branchCodeList?: number[] }
+     */
+    invoicesSearch: (body) =>
+      apiMutate('/api/totvs/invoices/search', 'POST', body),
+  };
+
   const franchise = {
     franquiasCredev: (params) =>
       apiCall('/api/franchise/franquias-credev', params),
@@ -664,6 +681,7 @@ const useApiClient = () => {
     financial,
     sales,
     company,
+    totvs,
     franchise,
     utils,
   };

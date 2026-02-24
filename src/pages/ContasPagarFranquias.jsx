@@ -1386,23 +1386,36 @@ const ContasPagarFranquias = () => {
     }
 
     try {
-      const dadosParaExportar = dadosProcessados.map((item) => ({
-        Cliente: item.nm_cliente || '',
-        'Nº Fatura': item.nr_fat || '',
-        Parcela: item.nr_parcela || '',
-        Emissão:
-          formatDateBR(item.dt_emissao) === '--'
-            ? ''
-            : formatDateBR(item.dt_emissao),
-        Vencimento:
-          formatDateBR(item.dt_vencimento) === '--'
-            ? ''
-            : formatDateBR(item.dt_vencimento),
-        Liquidação:
-          formatDateBR(item.dt_liq) === '--' ? '' : formatDateBR(item.dt_liq),
-        'Valor Fatura': parseFloat(item.vl_fatura) || 0,
-        'Valor Pago': parseFloat(item.vl_pago) || 0,
-      }));
+      const dadosParaExportar = dadosProcessados.map((item) => {
+        let portador = item.nm_portador || '';
+        const upper = portador.toUpperCase();
+        if (
+          upper.includes('FABIO') ||
+          upper.includes('IRMAOS') ||
+          upper.includes('CROSBY')
+        ) {
+          portador = '';
+        }
+
+        return {
+          Cliente: item.nm_cliente || '',
+          'Nº Fatura': item.nr_fat || '',
+          Parcela: item.nr_parcela || '',
+          Emissão:
+            formatDateBR(item.dt_emissao) === '--'
+              ? ''
+              : formatDateBR(item.dt_emissao),
+          Vencimento:
+            formatDateBR(item.dt_vencimento) === '--'
+              ? ''
+              : formatDateBR(item.dt_vencimento),
+          Liquidação:
+            formatDateBR(item.dt_liq) === '--' ? '' : formatDateBR(item.dt_liq),
+          'Valor Fatura': parseFloat(item.vl_fatura) || 0,
+          'Valor Pago': parseFloat(item.vl_pago) || 0,
+          Portador: portador,
+        };
+      });
 
       const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
       const wb = XLSX.utils.book_new();
