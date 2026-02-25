@@ -30,6 +30,8 @@ import {
   DownloadSimple,
   CurrencyCircleDollar,
   Coins,
+  ArrowsOutSimple,
+  ArrowsInSimple,
 } from '@phosphor-icons/react';
 
 const BatidaCarteira = () => {
@@ -73,6 +75,12 @@ const BatidaCarteira = () => {
 
   // Estado para modal de detalhes dos cards
   const [modalDetalheAberto, setModalDetalheAberto] = useState(null); // null, 'batidos', 'soSistema', 'soArquivo', 'divergentes'
+
+  // Estados para baixa de títulos (settle)
+  const [selectedForSettle, setSelectedForSettle] = useState(new Set());
+  const [settleLoading, setSettleLoading] = useState(false);
+  const [expandPagoSoArquivo, setExpandPagoSoArquivo] = useState(false);
+  const [filtroBaixaArquivo, setFiltroBaixaArquivo] = useState('TODOS'); // TODOS, SACADO, LIQUIDACAO, CEDENTE, DEBITADO
 
   // Bancos para importação de arquivo bancário
   const bancos = [
@@ -1550,6 +1558,168 @@ const BatidaCarteira = () => {
     paginaAtual * itensPorPagina,
   );
 
+  // ==========================================
+  // FUNÇÕES DE BAIXA DE TÍTULOS (SETTLE)
+  // ==========================================
+
+  // Verifica se um item é elegível para baixa (LIQUIDAÇÃO DE COBRANÇA ou PAGO PELO SACADO)
+  const isElegivelParaBaixa = useCallback(
+    (itemSistema) => {
+      const itemArquivo = buscarItemImportadoCorrespondente(itemSistema);
+      const baixaArq = (itemArquivo?.descricao_baixa || '').toUpperCase();
+      if (baixaArq.includes('SACADO')) return true;
+      if (baixaArq.includes('LIQUIDAC') || baixaArq.includes('LIQUIDAÇ'))
+        return true;
+      return false;
+    },
+    [buscarItemImportadoCorrespondente],
+  );
+
+  // Gera uma chave única para identificar o item na seleção
+  const getSettleKey = (itemSistema) =>
+    `${itemSistema.cd_empresa || ''}_${itemSistema.cd_cliente || ''}_${itemSistema.nr_fat || ''}_${itemSistema.nr_parcela || ''}`;
+
+  // Toggle de seleção individual
+  const toggleSettleItem = (itemSistema) => {
+    const key = getSettleKey(itemSistema);
+    setSelectedForSettle((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  // Selecionar/desselecionar todos os elegíveis (respeitando filtro ativo)
+  const toggleSelectAllSettle = () => {
+    const filtrados = listaPagosSoArquivo.filter((itemSistema) => {
+      if (filtroBaixaArquivo === 'TODOS') return true;
+      const arq = buscarItemImportadoCorrespondente(itemSistema);
+      const desc = (arq?.descricao_baixa || '').toUpperCase();
+      if (filtroBaixaArquivo === 'SACADO') return desc.includes('SACADO');
+      if (filtroBaixaArquivo === 'LIQUIDACAO')
+        return desc.includes('LIQUIDAC') || desc.includes('LIQUIDAÇ');
+      if (filtroBaixaArquivo === 'ELEGIVEIS')
+        return (
+          desc.includes('SACADO') ||
+          desc.includes('LIQUIDAC') ||
+          desc.includes('LIQUIDAÇ')
+        );
+      return true;
+    });
+    const elegiveis = filtrados.filter(isElegivelParaBaixa);
+    const keys = elegiveis.map(getSettleKey);
+    const allSelected =
+      keys.length > 0 && keys.every((k) => selectedForSettle.has(k));
+    if (allSelected) {
+      // Desselecionar apenas os do filtro ativo
+      setSelectedForSettle((prev) => {
+        const next = new Set(prev);
+        for (const k of keys) next.delete(k);
+        return next;
+      });
+    } else {
+      setSelectedForSettle((prev) => {
+        const next = new Set(prev);
+        for (const k of keys) next.add(k);
+        return next;
+      });
+    }
+  };
+
+  // Efetuar baixa dos títulos selecionados
+  const handleSettleInvoices = async () => {
+    if (selectedForSettle.size === 0) return;
+
+    const itensSelecionados = listaPagosSoArquivo.filter((item) =>
+      selectedForSettle.has(getSettleKey(item)),
+    );
+
+    if (itensSelecionados.length === 0) return;
+
+    const confirmar = window.confirm(
+      `Deseja efetuar a baixa de ${itensSelecionados.length} título(s) no TOTVS?\n\nEssa ação não pode ser desfeita.`,
+    );
+    if (!confirmar) return;
+
+    setSettleLoading(true);
+    try {
+      const items = itensSelecionados.map((item) => {
+        // Usar vl_fatura do sistema (valor real no TOTVS), NÃO vl_pago do arquivo
+        // O arquivo inclui taxa de +0.98 que não faz parte do valor da fatura no TOTVS
+        const paidValue = parseFloat(item.vl_fatura || 0);
+        // Data de pagamento/liquidação do arquivo
+        const itemArquivo = buscarItemImportadoCorrespondente(item);
+        const settlementDate = itemArquivo?.dt_pagamento || null;
+        return {
+          branchCode: item.cd_empresa,
+          customerCode: item.cd_cliente,
+          receivableCode: item.nr_fat,
+          installmentCode: item.nr_parcela,
+          paidValue,
+          settlementDate,
+        };
+      });
+
+      console.log('📋 Payload de baixa:', JSON.stringify({ items }, null, 2));
+
+      const response = await fetch(`${TotvsURL}invoices-settle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      });
+
+      const result = await response.json();
+      console.log('📋 Resposta da baixa:', JSON.stringify(result, null, 2));
+
+      if (result.success) {
+        alert(`✅ ${result.message}`);
+        setSelectedForSettle(new Set());
+      } else {
+        // Mostrar detalhes completos do erro (incluindo detalhes do TOTVS)
+        const erroMsg = result.errors
+          ?.map((e) => {
+            let msg = `Fatura ${e.receivableCode}: ${e.error}`;
+            if (e.details) {
+              msg += `\nDetalhes TOTVS: ${JSON.stringify(e.details)}`;
+            }
+            if (e.payloadSent) {
+              msg += `\nPayload: ${JSON.stringify(e.payloadSent)}`;
+            }
+            return msg;
+          })
+          .join('\n\n');
+        alert(
+          `⚠️ ${result.message}\n\n${result.successCount} baixas com sucesso, ${result.errorCount} erros.${erroMsg ? '\n\nErros:\n' + erroMsg : ''}`,
+        );
+        // Remover da seleção os que foram com sucesso
+        if (result.results?.length > 0) {
+          const successKeys = new Set(
+            result.results.map(
+              (r) =>
+                `${r.branchCode}_${r.customerCode || ''}_${r.receivableCode}_${r.installmentCode}`,
+            ),
+          );
+          setSelectedForSettle((prev) => {
+            const next = new Set(prev);
+            for (const key of successKeys) {
+              next.delete(key);
+            }
+            return next;
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao efetuar baixa:', error);
+      alert(`❌ Erro ao efetuar baixa: ${error.message}`);
+    } finally {
+      setSettleLoading(false);
+    }
+  };
+
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
       <div className="flex justify-between items-start mb-2">
@@ -2892,24 +3062,138 @@ const BatidaCarteira = () => {
                   {/* Tabela: Pagos SOMENTE no Arquivo */}
                   {listaPagosSoArquivo.length > 0 && (
                     <>
-                      <h3 className="text-sm font-bold text-rose-700 mb-2 mt-4 flex items-center gap-2">
-                        <WarningCircle
-                          size={16}
-                          weight="fill"
-                          className="text-rose-600"
-                        />
-                        Pago só no Arquivo ({listaPagosSoArquivo.length}{' '}
-                        registros)
-                      </h3>
-                      <div className="overflow-x-auto max-h-[250px] overflow-y-auto bg-rose-50 rounded-lg border border-rose-200">
+                      <div className="flex items-center justify-between mt-4 mb-2 flex-wrap gap-2">
+                        <h3 className="text-sm font-bold text-rose-700 flex items-center gap-2">
+                          <WarningCircle
+                            size={16}
+                            weight="fill"
+                            className="text-rose-600"
+                          />
+                          Pago só no Arquivo ({listaPagosSoArquivo.length}{' '}
+                          registros)
+                        </h3>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* Filtro por tipo de baixa */}
+                          <div className="flex items-center gap-1 bg-white border border-rose-200 rounded-lg px-1 py-0.5">
+                            <Funnel size={12} className="text-rose-500 ml-1" />
+                            {[
+                              { value: 'TODOS', label: 'Todos' },
+                              { value: 'SACADO', label: 'Sacado' },
+                              { value: 'LIQUIDACAO', label: 'Liquidação' },
+                              { value: 'ELEGIVEIS', label: 'Elegíveis' },
+                            ].map((opt) => (
+                              <button
+                                key={opt.value}
+                                onClick={() => setFiltroBaixaArquivo(opt.value)}
+                                className={`px-2 py-0.5 text-[10px] font-bold rounded transition-colors ${
+                                  filtroBaixaArquivo === opt.value
+                                    ? 'bg-[#000638] text-white'
+                                    : 'text-gray-600 hover:bg-rose-100'
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                          {/* Botão expandir/recolher */}
+                          <button
+                            onClick={() =>
+                              setExpandPagoSoArquivo((prev) => !prev)
+                            }
+                            className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-rose-700 bg-white border border-rose-200 rounded-lg hover:bg-rose-100 transition-colors"
+                            title={
+                              expandPagoSoArquivo
+                                ? 'Recolher tabela'
+                                : 'Expandir tabela'
+                            }
+                          >
+                            {expandPagoSoArquivo ? (
+                              <ArrowsInSimple size={13} weight="bold" />
+                            ) : (
+                              <ArrowsOutSimple size={13} weight="bold" />
+                            )}
+                            {expandPagoSoArquivo ? 'Recolher' : 'Expandir'}
+                          </button>
+                          {/* Botão de baixa */}
+                          {selectedForSettle.size > 0 && (
+                            <button
+                              onClick={handleSettleInvoices}
+                              disabled={settleLoading}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-[#000638] hover:bg-[#fe0000] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {settleLoading ? (
+                                <>
+                                  <Spinner size={14} className="animate-spin" />
+                                  Processando...
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle size={14} weight="bold" />
+                                  Efetuar Baixa ({selectedForSettle.size})
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div
+                        className={`overflow-x-auto ${expandPagoSoArquivo ? 'max-h-[80vh]' : 'max-h-[250px]'} overflow-y-auto bg-rose-50 rounded-lg border border-rose-200 transition-all duration-300`}
+                      >
                         <table className="min-w-full text-[10px]">
                           <thead className="bg-rose-500 text-white sticky top-0">
                             <tr>
+                              <th className="px-2 py-1.5 text-center font-semibold whitespace-nowrap w-8">
+                                <input
+                                  type="checkbox"
+                                  className="accent-white cursor-pointer"
+                                  checked={(() => {
+                                    const filtrados =
+                                      listaPagosSoArquivo.filter((it) => {
+                                        if (filtroBaixaArquivo === 'TODOS')
+                                          return true;
+                                        const arq =
+                                          buscarItemImportadoCorrespondente(it);
+                                        const desc = (
+                                          arq?.descricao_baixa || ''
+                                        ).toUpperCase();
+                                        if (filtroBaixaArquivo === 'SACADO')
+                                          return desc.includes('SACADO');
+                                        if (filtroBaixaArquivo === 'LIQUIDACAO')
+                                          return (
+                                            desc.includes('LIQUIDAC') ||
+                                            desc.includes('LIQUIDAÇ')
+                                          );
+                                        if (filtroBaixaArquivo === 'ELEGIVEIS')
+                                          return (
+                                            desc.includes('SACADO') ||
+                                            desc.includes('LIQUIDAC') ||
+                                            desc.includes('LIQUIDAÇ')
+                                          );
+                                        return true;
+                                      });
+                                    const elegiveis =
+                                      filtrados.filter(isElegivelParaBaixa);
+                                    return (
+                                      elegiveis.length > 0 &&
+                                      elegiveis.every((item) =>
+                                        selectedForSettle.has(
+                                          getSettleKey(item),
+                                        ),
+                                      )
+                                    );
+                                  })()}
+                                  onChange={toggleSelectAllSettle}
+                                  title="Selecionar todos elegíveis para baixa"
+                                />
+                              </th>
                               <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
                                 Cód
                               </th>
                               <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
                                 Fatura
+                              </th>
+                              <th className="px-2 py-1.5 text-center font-semibold whitespace-nowrap">
+                                Parcela
                               </th>
                               <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
                                 Cliente
@@ -2932,57 +3216,146 @@ const BatidaCarteira = () => {
                               <th className="px-2 py-1.5 text-center font-semibold whitespace-nowrap">
                                 Dt.Liq Arquivo
                               </th>
+                              <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                                Tipo Baixa
+                              </th>
                             </tr>
                           </thead>
                           <tbody>
-                            {listaPagosSoArquivo.map((itemSistema, idx) => {
-                              const itemArquivo =
-                                buscarItemImportadoCorrespondente(itemSistema);
-                              return (
-                                <tr
-                                  key={idx}
-                                  className="border-b bg-white hover:bg-rose-100"
-                                >
-                                  <td className="px-2 py-1 whitespace-nowrap">
-                                    {itemSistema.cd_cliente || '--'}
-                                  </td>
-                                  <td className="px-2 py-1 whitespace-nowrap">
-                                    {itemSistema.nr_fat || '--'}
-                                  </td>
-                                  <td className="px-2 py-1 whitespace-nowrap">
-                                    {itemSistema.nm_cliente || '--'}
-                                  </td>
-                                  <td className="px-2 py-1 whitespace-nowrap">
-                                    {formatCpfCnpj(itemSistema.nr_cpfcnpj)}
-                                  </td>
-                                  <td className="px-2 py-1 text-right whitespace-nowrap font-bold">
-                                    {parseFloat(
-                                      itemSistema.vl_fatura || 0,
-                                    ).toLocaleString('pt-BR', {
-                                      style: 'currency',
-                                      currency: 'BRL',
-                                    })}
-                                  </td>
-                                  <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-gray-400">
-                                    --
-                                  </td>
-                                  <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-rose-700">
-                                    {parseFloat(
-                                      itemArquivo?.vl_pago || 0,
-                                    ).toLocaleString('pt-BR', {
-                                      style: 'currency',
-                                      currency: 'BRL',
-                                    })}
-                                  </td>
-                                  <td className="px-2 py-1 text-center whitespace-nowrap">
-                                    {formatDateBR(itemSistema.dt_vencimento)}
-                                  </td>
-                                  <td className="px-2 py-1 text-center whitespace-nowrap">
-                                    {formatDateBR(itemArquivo?.dt_pagamento)}
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                            {listaPagosSoArquivo
+                              .filter((itemSistema) => {
+                                if (filtroBaixaArquivo === 'TODOS') return true;
+                                const arq =
+                                  buscarItemImportadoCorrespondente(
+                                    itemSistema,
+                                  );
+                                const desc = (
+                                  arq?.descricao_baixa || ''
+                                ).toUpperCase();
+                                if (filtroBaixaArquivo === 'SACADO')
+                                  return desc.includes('SACADO');
+                                if (filtroBaixaArquivo === 'LIQUIDACAO')
+                                  return (
+                                    desc.includes('LIQUIDAC') ||
+                                    desc.includes('LIQUIDAÇ')
+                                  );
+                                if (filtroBaixaArquivo === 'ELEGIVEIS')
+                                  return (
+                                    desc.includes('SACADO') ||
+                                    desc.includes('LIQUIDAC') ||
+                                    desc.includes('LIQUIDAÇ')
+                                  );
+                                return true;
+                              })
+                              .map((itemSistema, idx) => {
+                                const itemArquivo =
+                                  buscarItemImportadoCorrespondente(
+                                    itemSistema,
+                                  );
+                                const baixaArq = (
+                                  itemArquivo?.descricao_baixa || ''
+                                ).toUpperCase();
+                                let tipoBaixa =
+                                  itemArquivo?.descricao_baixa || '--';
+                                let tipoBaixaCor = 'text-gray-600';
+                                if (baixaArq.includes('CEDENTE')) {
+                                  tipoBaixa = 'PAGO PELO CEDENTE';
+                                  tipoBaixaCor = 'text-amber-700';
+                                } else if (baixaArq.includes('SACADO')) {
+                                  tipoBaixa = 'PAGO PELO SACADO';
+                                  tipoBaixaCor = 'text-blue-700';
+                                } else if (baixaArq.includes('DEBITADO')) {
+                                  tipoBaixa = 'TÍTULO DEBITADO EM OPERAÇÃO';
+                                  tipoBaixaCor = 'text-rose-700';
+                                } else if (
+                                  baixaArq.includes('LIQUIDAC') ||
+                                  baixaArq.includes('LIQUIDAÇ')
+                                ) {
+                                  tipoBaixa = 'LIQUIDAÇÃO DE COBRANÇA';
+                                  tipoBaixaCor = 'text-green-700';
+                                }
+                                const elegivel =
+                                  baixaArq.includes('SACADO') ||
+                                  baixaArq.includes('LIQUIDAC') ||
+                                  baixaArq.includes('LIQUIDAÇ');
+                                const settleKey = getSettleKey(itemSistema);
+                                const isSelected =
+                                  selectedForSettle.has(settleKey);
+                                return (
+                                  <tr
+                                    key={idx}
+                                    className={`border-b hover:bg-rose-100 ${isSelected ? 'bg-green-50' : 'bg-white'}`}
+                                  >
+                                    <td className="px-2 py-1 text-center whitespace-nowrap">
+                                      {elegivel ? (
+                                        <input
+                                          type="checkbox"
+                                          className="accent-[#000638] cursor-pointer"
+                                          checked={isSelected}
+                                          onChange={() =>
+                                            toggleSettleItem(itemSistema)
+                                          }
+                                          title="Selecionar para baixa"
+                                        />
+                                      ) : (
+                                        <span
+                                          className="text-gray-300"
+                                          title="Tipo de baixa não elegível"
+                                        >
+                                          —
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="px-2 py-1 whitespace-nowrap">
+                                      {itemSistema.cd_cliente || '--'}
+                                    </td>
+                                    <td className="px-2 py-1 whitespace-nowrap">
+                                      {itemSistema.nr_fat || '--'}
+                                    </td>
+                                    <td className="px-2 py-1 text-center whitespace-nowrap">
+                                      {itemArquivo?.nr_parcela ||
+                                        itemSistema.nr_parcela ||
+                                        '--'}
+                                    </td>
+                                    <td className="px-2 py-1 whitespace-nowrap">
+                                      {itemSistema.nm_cliente || '--'}
+                                    </td>
+                                    <td className="px-2 py-1 whitespace-nowrap">
+                                      {formatCpfCnpj(itemSistema.nr_cpfcnpj)}
+                                    </td>
+                                    <td className="px-2 py-1 text-right whitespace-nowrap font-bold">
+                                      {parseFloat(
+                                        itemSistema.vl_fatura || 0,
+                                      ).toLocaleString('pt-BR', {
+                                        style: 'currency',
+                                        currency: 'BRL',
+                                      })}
+                                    </td>
+                                    <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-gray-400">
+                                      --
+                                    </td>
+                                    <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-rose-700">
+                                      {parseFloat(
+                                        itemArquivo?.vl_pago || 0,
+                                      ).toLocaleString('pt-BR', {
+                                        style: 'currency',
+                                        currency: 'BRL',
+                                      })}
+                                    </td>
+                                    <td className="px-2 py-1 text-center whitespace-nowrap">
+                                      {formatDateBR(itemSistema.dt_vencimento)}
+                                    </td>
+                                    <td className="px-2 py-1 text-center whitespace-nowrap">
+                                      {formatDateBR(itemArquivo?.dt_pagamento)}
+                                    </td>
+                                    <td
+                                      className={`px-2 py-1 whitespace-nowrap font-semibold ${tipoBaixaCor}`}
+                                    >
+                                      {tipoBaixa}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                           </tbody>
                         </table>
                       </div>

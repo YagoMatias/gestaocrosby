@@ -111,6 +111,13 @@ const financeiro = [
     roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
+    name: 'Solicitação de Baixa',
+    href: '/solicitacao-baixa',
+    icon: Receipt,
+    color: 'text-indigo-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
+  {
     name: 'Extrato Bancário',
     href: '/extrato-bancario',
     icon: Bank,

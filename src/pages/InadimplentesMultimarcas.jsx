@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import FiltroEstados from '../components/filters/FiltroEstados';
 import FiltroClientes from '../components/filters/FiltroClientes';
+import FiltroRepresentantes from '../components/filters/FiltroRepresentantes';
 import useApiClient from '../hooks/useApiClient';
 import { useAuth } from '../components/AuthContext';
 import useClassificacoesInadimplentes from '../hooks/useClassificacoesInadimplentes';
+import { supabase, supabaseAdmin } from '../lib/supabase';
 import PageTitle from '../components/ui/PageTitle';
 import Notification from '../components/ui/Notification';
 import {
@@ -46,6 +48,12 @@ import {
   ClockClockwise,
   CheckCircle,
   Trash,
+  UploadSimple,
+  PaperclipHorizontal,
+  PaperPlaneRight,
+  Image,
+  X,
+  Spinner,
 } from '@phosphor-icons/react';
 
 // Registrar componentes do Chart.js
@@ -81,6 +89,7 @@ const InadimplentesMultimarcas = () => {
   const [filtroDataFinal, setFiltroDataFinal] = useState(hojeStr);
   const [filtroClientes, setFiltroClientes] = useState([]); // array de cd_cliente selecionados
   const [filtroEstados, setFiltroEstados] = useState([]); // array de siglas selecionadas
+  const [filtroRepresentantes, setFiltroRepresentantes] = useState([]); // array de representantes selecionados
 
   const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
@@ -127,6 +136,14 @@ const InadimplentesMultimarcas = () => {
 
   // Estado para valores a vencer (agrupados por cliente)
   const [valoresAVencer, setValoresAVencer] = useState({});
+
+  // Estados para modal de solicitação de baixa
+  const [modalBaixaAberto, setModalBaixaAberto] = useState(false);
+  const [faturaBaixa, setFaturaBaixa] = useState(null);
+  const [comprovanteBaixa, setComprovanteBaixa] = useState(null);
+  const [previewComprovante, setPreviewComprovante] = useState(null);
+  const [observacaoBaixa, setObservacaoBaixa] = useState('');
+  const [loadingBaixa, setLoadingBaixa] = useState(false);
 
   // Função para ordenar colunas
   const ordenarColuna = (coluna) => {
@@ -870,9 +887,18 @@ Crosby`;
       const uf = item.ds_uf?.trim() || '';
       const matchEstado =
         filtroEstados.length === 0 || filtroEstados.includes(uf);
-      return matchCliente && matchEstado;
+      const rep = clienteRepresentante[item.cd_cliente] || '';
+      const matchRepresentante =
+        filtroRepresentantes.length === 0 || filtroRepresentantes.includes(rep);
+      return matchCliente && matchEstado && matchRepresentante;
     });
-  }, [dados, filtroClientes, filtroEstados]);
+  }, [
+    dados,
+    filtroClientes,
+    filtroEstados,
+    filtroRepresentantes,
+    clienteRepresentante,
+  ]);
 
   // Lista de estados disponíveis para o select
   const estadosDisponiveis = useMemo(() => {
@@ -898,6 +924,15 @@ Crosby`;
       a.nm_cliente > b.nm_cliente ? 1 : -1,
     );
   }, [dados]);
+
+  // Lista de representantes disponíveis (únicos)
+  const representantesDisponiveis = useMemo(() => {
+    const set = new Set();
+    Object.values(clienteRepresentante).forEach((rep) => {
+      if (rep) set.add(rep);
+    });
+    return Array.from(set).sort();
+  }, [clienteRepresentante]);
 
   // (filtros de cliente/estado foram externalizados para componentes)
 
@@ -1010,6 +1045,26 @@ Crosby`;
     ordenarPor,
     direcaoOrdenacao,
   ]);
+
+  // Resumo de dívida por representante
+  const resumoPorRepresentante = useMemo(() => {
+    const mapa = {};
+    clientesAgrupados.forEach((cliente) => {
+      const rep = cliente.representante || 'SEM REPRESENTANTE';
+      if (!mapa[rep]) {
+        mapa[rep] = {
+          representante: rep,
+          qtdClientes: 0,
+          valorTotal: 0,
+          valorAVencer: 0,
+        };
+      }
+      mapa[rep].qtdClientes += 1;
+      mapa[rep].valorTotal += cliente.valor_total || 0;
+      mapa[rep].valorAVencer += cliente.valor_a_vencer || 0;
+    });
+    return Object.values(mapa).sort((a, b) => b.valorTotal - a.valorTotal);
+  }, [clientesAgrupados]);
 
   // Calcular métricas
   const metricas = useMemo(() => {
@@ -1448,6 +1503,117 @@ Crosby`;
     setFaturasAVencer([]);
   };
 
+  // === Funções de Solicitação de Baixa ===
+  const abrirModalBaixa = (fatura) => {
+    setFaturaBaixa(fatura);
+    setComprovanteBaixa(null);
+    setPreviewComprovante(null);
+    setObservacaoBaixa('');
+    setModalBaixaAberto(true);
+  };
+
+  const fecharModalBaixa = () => {
+    setModalBaixaAberto(false);
+    setFaturaBaixa(null);
+    setComprovanteBaixa(null);
+    setPreviewComprovante(null);
+    setObservacaoBaixa('');
+  };
+
+  const handleComprovanteChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setComprovanteBaixa(file);
+    if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+      const reader = new FileReader();
+      reader.onloadend = () => setPreviewComprovante(reader.result);
+      reader.readAsDataURL(file);
+    } else {
+      setPreviewComprovante(null);
+    }
+  };
+
+  const handleEnviarBaixa = async () => {
+    if (!faturaBaixa || !comprovanteBaixa) {
+      setNotification({
+        type: 'error',
+        message: 'Selecione o comprovante de pagamento.',
+      });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    setLoadingBaixa(true);
+    try {
+      // 1. Upload do comprovante no Supabase Storage
+      const fileExt = comprovanteBaixa.name.split('.').pop();
+      const fileName = `${faturaBaixa.cd_empresa}_${faturaBaixa.cd_cliente}_${faturaBaixa.nr_fat || faturaBaixa.nr_fatura}_${Date.now()}.${fileExt}`;
+      const filePath = `comprovantes/${fileName}`;
+
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from('comprovantes_baixa')
+        .upload(filePath, comprovanteBaixa, { upsert: false });
+
+      if (uploadError)
+        throw new Error(`Erro no upload: ${uploadError.message}`);
+
+      // 2. Obter URL pública
+      const { data: urlData } = supabaseAdmin.storage
+        .from('comprovantes_baixa')
+        .getPublicUrl(filePath);
+
+      const comprovanteUrl = urlData?.publicUrl;
+
+      // 3. Salvar solicitação no banco
+      const { error: insertError } = await supabaseAdmin
+        .from('solicitacoes_baixa')
+        .insert({
+          cd_empresa: faturaBaixa.cd_empresa,
+          cd_cliente: faturaBaixa.cd_cliente,
+          nm_cliente:
+            clienteSelecionado?.nm_cliente || faturaBaixa.nm_cliente || '',
+          nr_fat: faturaBaixa.nr_fat || faturaBaixa.nr_fatura,
+          nr_parcela: faturaBaixa.nr_parcela || 1,
+          vl_fatura: parseFloat(faturaBaixa.vl_fatura) || 0,
+          vl_juros: parseFloat(faturaBaixa.vl_juros) || 0,
+          dt_vencimento: faturaBaixa.dt_vencimento
+            ? faturaBaixa.dt_vencimento.split('T')[0]
+            : null,
+          dt_emissao: faturaBaixa.dt_emissao
+            ? faturaBaixa.dt_emissao.split('T')[0]
+            : null,
+          cd_portador: faturaBaixa.cd_portador || null,
+          nm_portador: faturaBaixa.nm_portador || null,
+          comprovante_url: comprovanteUrl,
+          comprovante_path: filePath,
+          status: 'pendente',
+          user_id: user?.id || null,
+          user_nome: user?.name || 'Usuário',
+          user_email: user?.email || '',
+          observacao: observacaoBaixa || null,
+        });
+
+      if (insertError)
+        throw new Error(`Erro ao salvar: ${insertError.message}`);
+
+      setNotification({
+        type: 'success',
+        message: 'Solicitação de baixa enviada com sucesso!',
+      });
+      setTimeout(() => setNotification(null), 4000);
+      fecharModalBaixa();
+    } catch (error) {
+      console.error('Erro ao enviar solicitação de baixa:', error);
+      setNotification({
+        type: 'error',
+        message: error.message || 'Erro ao enviar solicitação.',
+      });
+      setTimeout(() => setNotification(null), 5000);
+    } finally {
+      setLoadingBaixa(false);
+    }
+  };
+
   // Funções do modal de histórico
   const abrirModalHistorico = async (cdCliente) => {
     setLoadingHistorico(true);
@@ -1498,7 +1664,7 @@ Crosby`;
             Filtros para consulta de clientes inadimplentes
           </span>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3 mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3 mt-4">
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                 Data Inicial
@@ -1533,6 +1699,13 @@ Crosby`;
                 estados={estadosDisponiveis}
                 selected={filtroEstados}
                 onChange={setFiltroEstados}
+              />
+            </div>
+            <div className="col-span-1">
+              <FiltroRepresentantes
+                representantes={representantesDisponiveis}
+                selected={filtroRepresentantes}
+                onChange={setFiltroRepresentantes}
               />
             </div>
           </div>
@@ -2134,6 +2307,115 @@ Crosby`;
           </CardContent>
         </Card>
       </div>
+
+      {/* Resumo por Representante */}
+      {resumoPorRepresentante.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
+            <span className="w-1 h-4 bg-[#000638] rounded"></span>
+            Dívida por Representante
+          </h3>
+          <Card className="shadow-lg rounded-xl bg-white">
+            <CardContent className="p-4">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b-2 border-gray-300">
+                      <th className="px-4 py-3 text-left font-bold text-[#000638]">
+                        Representante
+                      </th>
+                      <th className="px-4 py-3 text-center font-bold text-[#000638]">
+                        Clientes
+                      </th>
+                      <th className="px-4 py-3 text-right font-bold text-red-700">
+                        Valor Vencido
+                      </th>
+                      <th className="px-4 py-3 text-right font-bold text-yellow-700">
+                        Valor a Vencer
+                      </th>
+                      <th className="px-4 py-3 text-right font-bold text-[#000638]">
+                        Total Geral
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resumoPorRepresentante.map((item) => (
+                      <tr
+                        key={item.representante}
+                        className="border-b hover:bg-gray-50 cursor-pointer transition-colors"
+                        onClick={() => {
+                          if (item.representante !== 'SEM REPRESENTANTE') {
+                            setFiltroRepresentantes([item.representante]);
+                          }
+                        }}
+                      >
+                        <td className="px-4 py-3 font-semibold text-[#000638]">
+                          <div className="flex items-center gap-2">
+                            <Users size={14} className="text-indigo-500" />
+                            {item.representante}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center font-bold text-blue-600">
+                          {item.qtdClientes}
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold text-red-600">
+                          {formatarMoeda(item.valorTotal)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold text-yellow-600">
+                          {formatarMoeda(item.valorAVencer)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-extrabold text-[#000638]">
+                          {formatarMoeda(item.valorTotal + item.valorAVencer)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-gray-400 bg-gray-50">
+                      <td className="px-4 py-3 font-extrabold text-[#000638]">
+                        TOTAL
+                      </td>
+                      <td className="px-4 py-3 text-center font-extrabold text-blue-700">
+                        {resumoPorRepresentante.reduce(
+                          (s, i) => s + i.qtdClientes,
+                          0,
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right font-extrabold text-red-700">
+                        {formatarMoeda(
+                          resumoPorRepresentante.reduce(
+                            (s, i) => s + i.valorTotal,
+                            0,
+                          ),
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right font-extrabold text-yellow-700">
+                        {formatarMoeda(
+                          resumoPorRepresentante.reduce(
+                            (s, i) => s + i.valorAVencer,
+                            0,
+                          ),
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right font-extrabold text-[#000638]">
+                        {formatarMoeda(
+                          resumoPorRepresentante.reduce(
+                            (s, i) => s + i.valorTotal + i.valorAVencer,
+                            0,
+                          ),
+                        )}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <div className="mt-3 text-xs text-gray-500 italic">
+                💡 Clique em um representante para filtrar a tabela
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -3025,14 +3307,16 @@ Crosby`;
                       <th className="px-4 py-3">Valor Fatura</th>
                       <th className="px-4 py-3">Juros</th>
                       <th className="px-4 py-3">Parcela</th>
+                      <th className="px-4 py-3">Portador</th>
                       <th className="px-4 py-3">Tempo Inadimplência</th>
+                      <th className="px-4 py-3 text-center">Ação</th>
                     </tr>
                   </thead>
                   <tbody>
                     {faturasSelecionadas.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={8}
+                          colSpan={10}
                           className="px-4 py-4 text-center text-gray-500"
                         >
                           Nenhuma fatura vencida encontrada
@@ -3065,10 +3349,28 @@ Crosby`;
                           <td className="px-4 py-3">
                             {fatura.nr_parcela || 'N/A'}
                           </td>
+                          <td className="px-4 py-3 text-xs">
+                            <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-medium">
+                              {fatura.nm_portador || fatura.cd_portador || '--'}
+                            </span>
+                          </td>
                           <td className="px-4 py-3">
                             <span className="bg-red-100 text-red-800 text-xs font-medium px-2 py-1 rounded">
                               {calcularTempoInadimplencia(fatura.dt_vencimento)}
                             </span>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                abrirModalBaixa(fatura);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-[#000638] hover:bg-[#fe0000] rounded-lg transition-colors"
+                              title="Enviar para solicitação de baixa"
+                            >
+                              <PaperPlaneRight size={12} weight="bold" />
+                              Baixa
+                            </button>
                           </td>
                         </tr>
                       ))
@@ -3095,14 +3397,16 @@ Crosby`;
                       <th className="px-4 py-3">Vencimento</th>
                       <th className="px-4 py-3">Valor Fatura</th>
                       <th className="px-4 py-3">Parcela</th>
+                      <th className="px-4 py-3">Portador</th>
                       <th className="px-4 py-3">Dias para Vencer</th>
+                      <th className="px-4 py-3 text-center">Ação</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loadingFaturasModal ? (
                       <tr>
                         <td
-                          colSpan={7}
+                          colSpan={9}
                           className="px-4 py-4 text-center text-gray-500"
                         >
                           <div className="flex items-center justify-center gap-2">
@@ -3117,7 +3421,7 @@ Crosby`;
                     ) : faturasAVencer.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={7}
+                          colSpan={9}
                           className="px-4 py-4 text-center text-gray-500"
                         >
                           Nenhuma fatura a vencer encontrada
@@ -3161,6 +3465,13 @@ Crosby`;
                             <td className="px-4 py-3">
                               {fatura.nr_parcela || 'N/A'}
                             </td>
+                            <td className="px-4 py-3 text-xs">
+                              <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-medium">
+                                {fatura.nm_portador ||
+                                  fatura.cd_portador ||
+                                  '--'}
+                              </span>
+                            </td>
                             <td className="px-4 py-3">
                               <span
                                 className={`text-xs font-medium px-2 py-1 rounded ${
@@ -3174,6 +3485,19 @@ Crosby`;
                                 {diasParaVencer}{' '}
                                 {diasParaVencer === 1 ? 'dia' : 'dias'}
                               </span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  abrirModalBaixa(fatura);
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-[#000638] hover:bg-[#fe0000] rounded-lg transition-colors"
+                                title="Enviar para solicitação de baixa"
+                              >
+                                <PaperPlaneRight size={12} weight="bold" />
+                                Baixa
+                              </button>
                             </td>
                           </tr>
                         );
@@ -3191,6 +3515,165 @@ Crosby`;
               >
                 Fechar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Solicitação de Baixa */}
+      {modalBaixaAberto && faturaBaixa && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-[#000638] text-white p-4 rounded-t-xl flex justify-between items-center">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <PaperPlaneRight size={20} weight="bold" />
+                Solicitação de Baixa
+              </h3>
+              <button
+                onClick={fecharModalBaixa}
+                className="text-white hover:text-red-300 transition-colors"
+              >
+                <X size={22} weight="bold" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Dados da fatura */}
+              <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Cliente:</span>
+                  <span className="font-semibold">
+                    {clienteSelecionado?.nm_cliente ||
+                      faturaBaixa.nm_cliente ||
+                      'N/A'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Fatura:</span>
+                  <span className="font-semibold">
+                    {faturaBaixa.nr_fat || faturaBaixa.nr_fatura}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Parcela:</span>
+                  <span className="font-semibold">
+                    {faturaBaixa.nr_parcela || 1}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Valor:</span>
+                  <span className="font-bold text-red-600">
+                    {formatarMoeda(faturaBaixa.vl_fatura)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Vencimento:</span>
+                  <span className="font-semibold">
+                    {formatarData(faturaBaixa.dt_vencimento)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Portador:</span>
+                  <span className="font-semibold">
+                    <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-xs">
+                      {faturaBaixa.nm_portador ||
+                        faturaBaixa.cd_portador ||
+                        '--'}
+                    </span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Upload do comprovante */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  Comprovante de Pagamento *
+                </label>
+                <div
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-[#000638] transition-colors"
+                  onClick={() =>
+                    document.getElementById('comprovante-input').click()
+                  }
+                >
+                  {previewComprovante ? (
+                    <div className="space-y-2">
+                      {comprovanteBaixa?.type?.startsWith('image/') ? (
+                        <img
+                          src={previewComprovante}
+                          alt="Preview"
+                          className="max-h-40 mx-auto rounded-lg"
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center gap-2 text-[#000638]">
+                          <FileText size={32} />
+                          <span className="font-medium">
+                            {comprovanteBaixa?.name}
+                          </span>
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-500">
+                        Clique para trocar o arquivo
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 text-gray-400">
+                      <UploadSimple size={32} className="mx-auto" />
+                      <p className="text-sm">
+                        Clique para anexar o comprovante
+                      </p>
+                      <p className="text-xs">Imagens (JPG, PNG) ou PDF</p>
+                    </div>
+                  )}
+                </div>
+                <input
+                  id="comprovante-input"
+                  type="file"
+                  accept="image/*,.pdf"
+                  className="hidden"
+                  onChange={handleComprovanteChange}
+                />
+              </div>
+
+              {/* Observação */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  Observação (opcional)
+                </label>
+                <textarea
+                  value={observacaoBaixa}
+                  onChange={(e) => setObservacaoBaixa(e.target.value)}
+                  placeholder="Ex: Pagamento via PIX em 20/02..."
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#000638] focus:border-transparent"
+                  rows={3}
+                />
+              </div>
+
+              {/* Botões */}
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={fecharModalBaixa}
+                  className="px-4 py-2 text-sm font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleEnviarBaixa}
+                  disabled={loadingBaixa || !comprovanteBaixa}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-[#000638] rounded-lg hover:bg-[#fe0000] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loadingBaixa ? (
+                    <>
+                      <Spinner size={16} className="animate-spin" />
+                      Enviando...
+                    </>
+                  ) : (
+                    <>
+                      <PaperPlaneRight size={16} weight="bold" />
+                      Enviar Solicitação
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

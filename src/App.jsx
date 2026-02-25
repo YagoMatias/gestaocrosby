@@ -97,6 +97,7 @@ const AuditoriaConciliacao = lazy(() => import('./pages/AuditoriaConciliacao'));
 const AuditoriaFaturamento = lazy(() => import('./pages/AuditoriaFaturamento'));
 const ExtratoBancario = lazy(() => import('./pages/ExtratoBancario'));
 const ConsultaCliente = lazy(() => import('./pages/ConsultaCliente'));
+const SolicitacaoBaixa = lazy(() => import('./pages/SolicitacaoBaixa'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -202,6 +203,7 @@ const AppRoutes = memo(() => {
     { path: '/auditoria-conciliacao', component: AuditoriaConciliacao },
     { path: '/auditoria-faturamento', component: AuditoriaFaturamento },
     { path: '/consulta-cliente', component: ConsultaCliente },
+    { path: '/solicitacao-baixa', component: SolicitacaoBaixa },
   ];
 
   // Componente de layout para rotas protegidas

@@ -3706,4 +3706,255 @@ router.post(
   }),
 );
 
+// ==========================================
+// BAIXA DE TÍTULOS (INVOICES PAYMENT) - Confiança
+// POST /invoices-settle
+// Efetua baixa de títulos no TOTVS via accounts-receivable/v2/invoices-payment
+// Usa invoices-payment ao invés de invoices-settle/create pois este último
+// não permite títulos vencidos (ExpiredInvoice).
+// ==========================================
+router.post(
+  '/invoices-settle',
+  asyncHandler(async (req, res) => {
+    const { items } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return errorResponse(
+        res,
+        'É necessário enviar um array de itens para baixa',
+        400,
+        'INVALID_ITEMS',
+      );
+    }
+
+    // Validar campos obrigatórios de cada item
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (
+        !item.branchCode ||
+        !item.customerCode ||
+        !item.receivableCode ||
+        !item.installmentCode ||
+        !item.paidValue
+      ) {
+        return errorResponse(
+          res,
+          `Item ${i + 1} está incompleto. Campos obrigatórios: branchCode, customerCode, receivableCode, installmentCode, paidValue`,
+          400,
+          'INVALID_ITEM_FIELDS',
+        );
+      }
+    }
+
+    // Dados bancários fixos da Confiança
+    const CONFIANCA_BANK = {
+      bankNumber: 422,
+      agencyNumber: 1610,
+      account: '005818984',
+    };
+
+    try {
+      const tokenData = await getToken();
+
+      if (!tokenData || !tokenData.access_token) {
+        return errorResponse(
+          res,
+          'Não foi possível obter token de autenticação TOTVS',
+          503,
+          'TOKEN_UNAVAILABLE',
+        );
+      }
+
+      const results = [];
+      const errors = [];
+
+      // Agrupar itens por branchCode (empresa de liquidação)
+      // O invoices-payment exige um branchCode de liquidação + settlementDate no nível raiz
+      // e aceita múltiplas faturas + múltiplos pagamentos
+      // Processamos cada item individualmente para melhor controle de erros
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const branchCode =
+          typeof item.branchCode === 'string'
+            ? parseInt(item.branchCode, 10)
+            : item.branchCode;
+        const customerCode =
+          typeof item.customerCode === 'string'
+            ? parseInt(item.customerCode, 10)
+            : item.customerCode;
+        const receivableCode =
+          typeof item.receivableCode === 'string'
+            ? parseInt(item.receivableCode, 10)
+            : item.receivableCode;
+        const installmentCode =
+          typeof item.installmentCode === 'string'
+            ? parseInt(item.installmentCode, 10)
+            : item.installmentCode;
+        const paidValue =
+          typeof item.paidValue === 'string'
+            ? parseFloat(item.paidValue)
+            : item.paidValue;
+
+        // Data de liquidação: usar a data do arquivo (dt_pagamento) se fornecida, senão hoje
+        let settlementDate;
+        if (item.settlementDate) {
+          // Aceitar formatos ISO (2026-02-15) ou BR (15/02/2026)
+          const raw = item.settlementDate;
+          if (raw.includes('/')) {
+            // Formato BR: dd/mm/yyyy
+            const [dd, mm, yyyy] = raw.split('/');
+            settlementDate = new Date(
+              `${yyyy}-${mm}-${dd}T12:00:00`,
+            ).toISOString();
+          } else {
+            // Formato ISO ou similar
+            settlementDate = new Date(raw).toISOString();
+          }
+        } else {
+          settlementDate = new Date().toISOString();
+        }
+
+        // Payload conforme InvoicesPaymentCommand do Swagger
+        const payload = {
+          branchCode,
+          settlementDate,
+          invoices: [
+            {
+              branchCode,
+              customerCode,
+              receivableCode,
+              installmentCode,
+              paidValue,
+            },
+          ],
+          payments: [
+            {
+              value: paidValue,
+              paidType: 4, // 4 = Conta corrente (CurrentAccount)
+              bank: {
+                bankNumber: CONFIANCA_BANK.bankNumber,
+                agencyNumber: CONFIANCA_BANK.agencyNumber,
+                account: CONFIANCA_BANK.account,
+              },
+            },
+          ],
+        };
+
+        try {
+          console.log(
+            `📋 [${i + 1}/${items.length}] Efetuando baixa no TOTVS (invoices-payment):`,
+            JSON.stringify(payload, null, 2),
+          );
+
+          const response = await axios.post(
+            `${TOTVS_BASE_URL}/accounts-receivable/v2/invoices-payment`,
+            payload,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                Authorization: `Bearer ${tokenData.access_token}`,
+              },
+              httpsAgent,
+              timeout: 30000,
+            },
+          );
+
+          console.log(
+            `✅ [${i + 1}/${items.length}] Baixa efetuada com sucesso - Fatura ${receivableCode}`,
+            JSON.stringify(response.data),
+          );
+          results.push({
+            index: i,
+            receivableCode,
+            installmentCode,
+            branchCode,
+            success: true,
+            data: response.data,
+          });
+        } catch (itemError) {
+          console.error(
+            `❌ [${i + 1}/${items.length}] Erro na baixa - Fatura ${receivableCode}:`,
+            {
+              status: itemError.response?.status,
+              data: JSON.stringify(itemError.response?.data, null, 2),
+              message: itemError.response?.data?.message || itemError.message,
+            },
+          );
+
+          // Se for erro de token, tentar renovar uma vez
+          if (itemError.response?.status === 401) {
+            try {
+              const newTokenData = await getToken(true);
+              const retryResponse = await axios.post(
+                `${TOTVS_BASE_URL}/accounts-receivable/v2/invoices-payment`,
+                payload,
+                {
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    Authorization: `Bearer ${newTokenData.access_token}`,
+                  },
+                  httpsAgent,
+                  timeout: 30000,
+                },
+              );
+
+              console.log(
+                `✅ [${i + 1}/${items.length}] Baixa efetuada com sucesso (retry) - Fatura ${receivableCode}`,
+              );
+              results.push({
+                index: i,
+                receivableCode,
+                installmentCode,
+                branchCode,
+                success: true,
+                data: retryResponse.data,
+              });
+              continue;
+            } catch (retryError) {
+              // Falhou mesmo com retry
+            }
+          }
+
+          errors.push({
+            index: i,
+            receivableCode,
+            installmentCode,
+            branchCode,
+            success: false,
+            error: itemError.response?.data?.message || itemError.message,
+            status: itemError.response?.status,
+            details: itemError.response?.data,
+            payloadSent: payload,
+          });
+        }
+      }
+
+      const totalProcessed = results.length + errors.length;
+      console.log(
+        `📊 Baixa finalizada: ${results.length}/${totalProcessed} com sucesso, ${errors.length} erros`,
+      );
+
+      return res
+        .status(errors.length > 0 && results.length === 0 ? 400 : 200)
+        .json({
+          success: errors.length === 0,
+          message:
+            errors.length === 0
+              ? `Todas as ${results.length} baixas foram efetuadas com sucesso`
+              : `${results.length} baixas efetuadas, ${errors.length} falharam`,
+          totalProcessed,
+          successCount: results.length,
+          errorCount: errors.length,
+          results,
+          errors,
+        });
+    } catch (error) {
+      console.error('❌ Erro geral na baixa de títulos:', error.message);
+      throw new Error(`Erro ao efetuar baixa de títulos: ${error.message}`);
+    }
+  }),
+);
+
 export default router;
