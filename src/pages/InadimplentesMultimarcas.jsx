@@ -1420,6 +1420,23 @@ Crosby`;
     ],
   };
 
+  // Mapear tipo de cobrança TOTVS
+  const getTipoCobranca = (tipo) => {
+    const mapa = {
+      0: { label: 'SIMPLES', color: 'bg-gray-100 text-gray-800' },
+      1: { label: 'DESCONTADA', color: 'bg-purple-100 text-purple-800' },
+      2: { label: 'VINCULADA', color: 'bg-cyan-100 text-cyan-800' },
+      3: { label: 'CAUCIONADA', color: 'bg-yellow-100 text-yellow-800' },
+      4: { label: 'PROTESTO', color: 'bg-red-100 text-red-800' },
+    };
+    return (
+      mapa[tipo] || {
+        label: tipo != null ? `TIPO ${tipo}` : '--',
+        color: 'bg-gray-100 text-gray-600',
+      }
+    );
+  };
+
   const formatarMoeda = (valor) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -1429,7 +1446,10 @@ Crosby`;
 
   const formatarData = (data) => {
     if (!data) return 'N/A';
-    return new Date(data).toLocaleDateString('pt-BR');
+    const [datePart] = String(data).split('T');
+    const [y, m, d] = datePart.split('-');
+    if (!y || !m || !d) return 'N/A';
+    return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
   };
 
   const calcularTempoInadimplencia = (dtVencimento) => {
@@ -3307,6 +3327,7 @@ Crosby`;
                       <th className="px-4 py-3">Valor Fatura</th>
                       <th className="px-4 py-3">Juros</th>
                       <th className="px-4 py-3">Parcela</th>
+                      <th className="px-4 py-3">Cobrança</th>
                       <th className="px-4 py-3">Portador</th>
                       <th className="px-4 py-3">Tempo Inadimplência</th>
                       <th className="px-4 py-3 text-center">Ação</th>
@@ -3316,7 +3337,7 @@ Crosby`;
                     {faturasSelecionadas.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={10}
+                          colSpan={11}
                           className="px-4 py-4 text-center text-gray-500"
                         >
                           Nenhuma fatura vencida encontrada
@@ -3348,6 +3369,18 @@ Crosby`;
                           </td>
                           <td className="px-4 py-3">
                             {fatura.nr_parcela || 'N/A'}
+                          </td>
+                          <td className="px-4 py-3 text-xs">
+                            {(() => {
+                              const tc = getTipoCobranca(fatura.tp_cobranca);
+                              return (
+                                <span
+                                  className={`${tc.color} px-1.5 py-0.5 rounded font-medium`}
+                                >
+                                  {tc.label}
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td className="px-4 py-3 text-xs">
                             <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-medium">
@@ -3397,6 +3430,7 @@ Crosby`;
                       <th className="px-4 py-3">Vencimento</th>
                       <th className="px-4 py-3">Valor Fatura</th>
                       <th className="px-4 py-3">Parcela</th>
+                      <th className="px-4 py-3">Cobrança</th>
                       <th className="px-4 py-3">Portador</th>
                       <th className="px-4 py-3">Dias para Vencer</th>
                       <th className="px-4 py-3 text-center">Ação</th>
@@ -3406,7 +3440,7 @@ Crosby`;
                     {loadingFaturasModal ? (
                       <tr>
                         <td
-                          colSpan={9}
+                          colSpan={10}
                           className="px-4 py-4 text-center text-gray-500"
                         >
                           <div className="flex items-center justify-center gap-2">
@@ -3421,7 +3455,7 @@ Crosby`;
                     ) : faturasAVencer.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={9}
+                          colSpan={10}
                           className="px-4 py-4 text-center text-gray-500"
                         >
                           Nenhuma fatura a vencer encontrada
@@ -3464,6 +3498,18 @@ Crosby`;
                             </td>
                             <td className="px-4 py-3">
                               {fatura.nr_parcela || 'N/A'}
+                            </td>
+                            <td className="px-4 py-3 text-xs">
+                              {(() => {
+                                const tc = getTipoCobranca(fatura.tp_cobranca);
+                                return (
+                                  <span
+                                    className={`${tc.color} px-1.5 py-0.5 rounded font-medium`}
+                                  >
+                                    {tc.label}
+                                  </span>
+                                );
+                              })()}
                             </td>
                             <td className="px-4 py-3 text-xs">
                               <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-medium">

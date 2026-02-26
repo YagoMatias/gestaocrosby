@@ -4,7 +4,9 @@ import FiltroClientes from '../components/filters/FiltroClientes';
 import useApiClient from '../hooks/useApiClient';
 import useClassificacoesInadimplentes from '../hooks/useClassificacoesInadimplentes';
 import { useAuth } from '../components/AuthContext';
+import { supabaseAdmin } from '../lib/supabase';
 import PageTitle from '../components/ui/PageTitle';
+import Notification from '../components/ui/Notification';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
@@ -36,6 +38,11 @@ import {
   FileArrowDown,
   ChatCircleDots,
   Trash,
+  UploadSimple,
+  PaperPlaneRight,
+  FileText,
+  X,
+  Spinner,
 } from '@phosphor-icons/react';
 
 // Registrar componentes do Chart.js
@@ -59,6 +66,7 @@ const InadimplentesFranquias = () => {
   } = useClassificacoesInadimplentes();
   const [dados, setDados] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [notification, setNotification] = useState(null);
   const [filtroDataInicial, setFiltroDataInicial] = useState('2024-04-01');
   const hojeStr = new Date().toISOString().slice(0, 10);
   const [filtroDataFinal, setFiltroDataFinal] = useState(hojeStr);
@@ -82,6 +90,14 @@ const InadimplentesFranquias = () => {
 
   // Estado para valores a vencer por cliente
   const [valoresAVencer, setValoresAVencer] = useState({});
+
+  // Estados para modal de solicitação de baixa
+  const [modalBaixaAberto, setModalBaixaAberto] = useState(false);
+  const [faturaBaixa, setFaturaBaixa] = useState(null);
+  const [comprovanteBaixa, setComprovanteBaixa] = useState(null);
+  const [previewComprovante, setPreviewComprovante] = useState(null);
+  const [observacaoBaixa, setObservacaoBaixa] = useState('');
+  const [loadingBaixa, setLoadingBaixa] = useState(false);
 
   // Estados para modal de observações
   const [modalObservacoesAberto, setModalObservacoesAberto] = useState(false);
@@ -512,6 +528,23 @@ const InadimplentesFranquias = () => {
     ],
   };
 
+  // Mapear tipo de cobrança TOTVS
+  const getTipoCobranca = (tipo) => {
+    const mapa = {
+      0: { label: 'SIMPLES', color: 'bg-gray-100 text-gray-800' },
+      1: { label: 'DESCONTADA', color: 'bg-purple-100 text-purple-800' },
+      2: { label: 'VINCULADA', color: 'bg-cyan-100 text-cyan-800' },
+      3: { label: 'CAUCIONADA', color: 'bg-yellow-100 text-yellow-800' },
+      4: { label: 'PROTESTO', color: 'bg-red-100 text-red-800' },
+    };
+    return (
+      mapa[tipo] || {
+        label: tipo != null ? `TIPO ${tipo}` : '--',
+        color: 'bg-gray-100 text-gray-600',
+      }
+    );
+  };
+
   const formatarMoeda = (valor) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -521,7 +554,10 @@ const InadimplentesFranquias = () => {
 
   const formatarData = (data) => {
     if (!data) return 'N/A';
-    return new Date(data).toLocaleDateString('pt-BR');
+    const [datePart] = String(data).split('T');
+    const [y, m, d] = datePart.split('-');
+    if (!y || !m || !d) return 'N/A';
+    return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
   };
 
   const calcularTempoInadimplencia = (dtVencimento) => {
@@ -624,6 +660,114 @@ const InadimplentesFranquias = () => {
     setClienteSelecionado(null);
     setFaturasSelecionadas([]);
     setFaturasAVencer([]);
+  };
+
+  // === Funções de Solicitação de Baixa ===
+  const abrirModalBaixa = (fatura) => {
+    setFaturaBaixa(fatura);
+    setComprovanteBaixa(null);
+    setPreviewComprovante(null);
+    setObservacaoBaixa('');
+    setModalBaixaAberto(true);
+  };
+
+  const fecharModalBaixa = () => {
+    setModalBaixaAberto(false);
+    setFaturaBaixa(null);
+    setComprovanteBaixa(null);
+    setPreviewComprovante(null);
+    setObservacaoBaixa('');
+  };
+
+  const handleComprovanteChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setComprovanteBaixa(file);
+    if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+      const reader = new FileReader();
+      reader.onloadend = () => setPreviewComprovante(reader.result);
+      reader.readAsDataURL(file);
+    } else {
+      setPreviewComprovante(null);
+    }
+  };
+
+  const handleEnviarBaixa = async () => {
+    if (!faturaBaixa || !comprovanteBaixa) {
+      setNotification({
+        type: 'error',
+        message: 'Selecione o comprovante de pagamento.',
+      });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    setLoadingBaixa(true);
+    try {
+      const fileExt = comprovanteBaixa.name.split('.').pop();
+      const fileName = `${faturaBaixa.cd_empresa}_${faturaBaixa.cd_cliente}_${faturaBaixa.nr_fat || faturaBaixa.nr_fatura}_${Date.now()}.${fileExt}`;
+      const filePath = `comprovantes/${fileName}`;
+
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from('comprovantes_baixa')
+        .upload(filePath, comprovanteBaixa, { upsert: false });
+
+      if (uploadError)
+        throw new Error(`Erro no upload: ${uploadError.message}`);
+
+      const { data: urlData } = supabaseAdmin.storage
+        .from('comprovantes_baixa')
+        .getPublicUrl(filePath);
+
+      const comprovanteUrl = urlData?.publicUrl;
+
+      const { error: insertError } = await supabaseAdmin
+        .from('solicitacoes_baixa')
+        .insert({
+          cd_empresa: faturaBaixa.cd_empresa,
+          cd_cliente: faturaBaixa.cd_cliente,
+          nm_cliente:
+            clienteSelecionado?.nm_cliente || faturaBaixa.nm_cliente || '',
+          nr_fat: faturaBaixa.nr_fat || faturaBaixa.nr_fatura,
+          nr_parcela: faturaBaixa.nr_parcela || 1,
+          vl_fatura: parseFloat(faturaBaixa.vl_fatura) || 0,
+          vl_juros: parseFloat(faturaBaixa.vl_juros) || 0,
+          dt_vencimento: faturaBaixa.dt_vencimento
+            ? faturaBaixa.dt_vencimento.split('T')[0]
+            : null,
+          dt_emissao: faturaBaixa.dt_emissao
+            ? faturaBaixa.dt_emissao.split('T')[0]
+            : null,
+          cd_portador: faturaBaixa.cd_portador || null,
+          nm_portador: faturaBaixa.nm_portador || null,
+          comprovante_url: comprovanteUrl,
+          comprovante_path: filePath,
+          status: 'pendente',
+          user_id: user?.id || null,
+          user_nome: user?.name || 'Usuário',
+          user_email: user?.email || '',
+          observacao: observacaoBaixa || null,
+        });
+
+      if (insertError)
+        throw new Error(`Erro ao salvar: ${insertError.message}`);
+
+      setNotification({
+        type: 'success',
+        message: 'Solicitação de baixa enviada com sucesso!',
+      });
+      setTimeout(() => setNotification(null), 4000);
+      fecharModalBaixa();
+    } catch (error) {
+      console.error('Erro ao enviar solicitação de baixa:', error);
+      setNotification({
+        type: 'error',
+        message: error.message || 'Erro ao enviar solicitação.',
+      });
+      setTimeout(() => setNotification(null), 5000);
+    } finally {
+      setLoadingBaixa(false);
+    }
   };
 
   // Funções para modal de observações
@@ -1369,14 +1513,17 @@ Crosby`;
                       <th className="px-4 py-3">Valor Fatura</th>
                       <th className="px-4 py-3">Juros</th>
                       <th className="px-4 py-3">Parcela</th>
+                      <th className="px-4 py-3">Cobrança</th>
+                      <th className="px-4 py-3">Portador</th>
                       <th className="px-4 py-3">Tempo Inadimplência</th>
+                      <th className="px-4 py-3 text-center">Ação</th>
                     </tr>
                   </thead>
                   <tbody>
                     {faturasSelecionadas.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={8}
+                          colSpan={11}
                           className="px-4 py-4 text-center text-gray-500"
                         >
                           Nenhuma fatura vencida
@@ -1410,10 +1557,40 @@ Crosby`;
                           <td className="px-4 py-3">
                             {fatura.nr_parcela || 'N/A'}
                           </td>
+                          <td className="px-4 py-3 text-xs">
+                            {(() => {
+                              const tc = getTipoCobranca(fatura.tp_cobranca);
+                              return (
+                                <span
+                                  className={`${tc.color} px-1.5 py-0.5 rounded font-medium`}
+                                >
+                                  {tc.label}
+                                </span>
+                              );
+                            })()}
+                          </td>
+                          <td className="px-4 py-3 text-xs">
+                            <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-medium">
+                              {fatura.nm_portador || fatura.cd_portador || '--'}
+                            </span>
+                          </td>
                           <td className="px-4 py-3">
                             <span className="bg-red-100 text-red-800 text-xs font-medium px-2 py-1 rounded">
                               {calcularTempoInadimplencia(fatura.dt_vencimento)}
                             </span>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                abrirModalBaixa(fatura);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-[#000638] hover:bg-[#fe0000] rounded-lg transition-colors"
+                              title="Enviar para solicitação de baixa"
+                            >
+                              <PaperPlaneRight size={12} weight="bold" />
+                              Baixa
+                            </button>
                           </td>
                         </tr>
                       ))
@@ -1452,14 +1629,17 @@ Crosby`;
                         <th className="px-4 py-3">Vencimento</th>
                         <th className="px-4 py-3">Valor Fatura</th>
                         <th className="px-4 py-3">Parcela</th>
+                        <th className="px-4 py-3">Cobrança</th>
+                        <th className="px-4 py-3">Portador</th>
                         <th className="px-4 py-3">Dias para Vencer</th>
+                        <th className="px-4 py-3 text-center">Ação</th>
                       </tr>
                     </thead>
                     <tbody>
                       {faturasAVencer.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={7}
+                            colSpan={10}
                             className="px-4 py-4 text-center text-gray-500"
                           >
                             Nenhuma fatura a vencer
@@ -1494,6 +1674,27 @@ Crosby`;
                               <td className="px-4 py-3">
                                 {fatura.nr_parcela || 'N/A'}
                               </td>
+                              <td className="px-4 py-3 text-xs">
+                                {(() => {
+                                  const tc = getTipoCobranca(
+                                    fatura.tp_cobranca,
+                                  );
+                                  return (
+                                    <span
+                                      className={`${tc.color} px-1.5 py-0.5 rounded font-medium`}
+                                    >
+                                      {tc.label}
+                                    </span>
+                                  );
+                                })()}
+                              </td>
+                              <td className="px-4 py-3 text-xs">
+                                <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-medium">
+                                  {fatura.nm_portador ||
+                                    fatura.cd_portador ||
+                                    '--'}
+                                </span>
+                              </td>
                               <td className="px-4 py-3">
                                 <span className="bg-orange-100 text-orange-800 text-xs font-medium px-2 py-1 rounded">
                                   {diasParaVencer === 0
@@ -1502,6 +1703,19 @@ Crosby`;
                                       ? '1 dia'
                                       : `${diasParaVencer} dias`}
                                 </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    abrirModalBaixa(fatura);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-[#000638] hover:bg-[#fe0000] rounded-lg transition-colors"
+                                  title="Enviar para solicitação de baixa"
+                                >
+                                  <PaperPlaneRight size={12} weight="bold" />
+                                  Baixa
+                                </button>
                               </td>
                             </tr>
                           );
@@ -1714,6 +1928,176 @@ Crosby`;
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal de Solicitação de Baixa */}
+      {modalBaixaAberto && faturaBaixa && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-[#000638] text-white p-4 rounded-t-xl flex justify-between items-center">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <PaperPlaneRight size={20} weight="bold" />
+                Solicitação de Baixa
+              </h3>
+              <button
+                onClick={fecharModalBaixa}
+                className="text-white hover:text-red-300 transition-colors"
+              >
+                <X size={22} weight="bold" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Dados da fatura */}
+              <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Cliente:</span>
+                  <span className="font-semibold">
+                    {clienteSelecionado?.nm_cliente ||
+                      faturaBaixa.nm_cliente ||
+                      'N/A'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Fatura:</span>
+                  <span className="font-semibold">
+                    {faturaBaixa.nr_fat || faturaBaixa.nr_fatura}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Parcela:</span>
+                  <span className="font-semibold">
+                    {faturaBaixa.nr_parcela || 1}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Valor:</span>
+                  <span className="font-bold text-red-600">
+                    {formatarMoeda(faturaBaixa.vl_fatura)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Vencimento:</span>
+                  <span className="font-semibold">
+                    {formatarData(faturaBaixa.dt_vencimento)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Portador:</span>
+                  <span className="font-semibold">
+                    <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-xs">
+                      {faturaBaixa.nm_portador ||
+                        faturaBaixa.cd_portador ||
+                        '--'}
+                    </span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Upload do comprovante */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  Comprovante de Pagamento *
+                </label>
+                <div
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-[#000638] transition-colors"
+                  onClick={() =>
+                    document
+                      .getElementById('comprovante-input-franquias')
+                      .click()
+                  }
+                >
+                  {previewComprovante ? (
+                    <div className="space-y-2">
+                      {comprovanteBaixa?.type?.startsWith('image/') ? (
+                        <img
+                          src={previewComprovante}
+                          alt="Preview"
+                          className="max-h-40 mx-auto rounded-lg"
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center gap-2 text-[#000638]">
+                          <FileText size={32} />
+                          <span className="font-medium">
+                            {comprovanteBaixa?.name}
+                          </span>
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-500">
+                        Clique para trocar o arquivo
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 text-gray-400">
+                      <UploadSimple size={32} className="mx-auto" />
+                      <p className="text-sm">
+                        Clique para anexar o comprovante
+                      </p>
+                      <p className="text-xs">Imagens (JPG, PNG) ou PDF</p>
+                    </div>
+                  )}
+                </div>
+                <input
+                  id="comprovante-input-franquias"
+                  type="file"
+                  accept="image/*,.pdf"
+                  className="hidden"
+                  onChange={handleComprovanteChange}
+                />
+              </div>
+
+              {/* Observação */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  Observação (opcional)
+                </label>
+                <textarea
+                  value={observacaoBaixa}
+                  onChange={(e) => setObservacaoBaixa(e.target.value)}
+                  placeholder="Ex: Pagamento via PIX em 20/02..."
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#000638] focus:border-transparent"
+                  rows={3}
+                />
+              </div>
+
+              {/* Botões */}
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={fecharModalBaixa}
+                  className="px-4 py-2 text-sm font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleEnviarBaixa}
+                  disabled={loadingBaixa || !comprovanteBaixa}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-[#000638] rounded-lg hover:bg-[#fe0000] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loadingBaixa ? (
+                    <>
+                      <Spinner size={16} className="animate-spin" />
+                      Enviando...
+                    </>
+                  ) : (
+                    <>
+                      <PaperPlaneRight size={16} weight="bold" />
+                      Enviar Solicitação
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notificação */}
+      {notification && (
+        <Notification
+          type={notification.type}
+          message={notification.message}
+          onClose={() => setNotification(null)}
+        />
       )}
     </div>
   );
