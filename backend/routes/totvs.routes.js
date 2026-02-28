@@ -3716,7 +3716,7 @@ router.post(
 router.post(
   '/invoices-settle',
   asyncHandler(async (req, res) => {
-    const { items } = req.body;
+    const { items, bank } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return errorResponse(
@@ -3746,12 +3746,23 @@ router.post(
       }
     }
 
-    // Dados bancários fixos da Confiança
-    const CONFIANCA_BANK = {
-      bankNumber: 422,
-      agencyNumber: 1610,
-      account: '005818984',
-    };
+    // Dados bancários: usar os enviados pelo frontend, senão fallback Confiança
+    const requestPaidType = req.body.paidType || 4; // Default: Conta corrente
+    const BANK_DATA =
+      bank && bank.bankNumber
+        ? {
+            bankNumber: bank.bankNumber,
+            agencyNumber: bank.agencyNumber,
+            account: String(bank.account),
+          }
+        : {
+            bankNumber: 422,
+            agencyNumber: 1610,
+            account: '005818984',
+          };
+
+    console.log('🏦 Banco selecionado para baixa:', BANK_DATA);
+    console.log('💳 Tipo de pagamento (paidType):', requestPaidType);
 
     try {
       const tokenData = await getToken();
@@ -3815,8 +3826,11 @@ router.post(
         }
 
         // Payload conforme InvoicesPaymentCommand do Swagger
-        const payload = {
-          branchCode,
+        // Para adiantamento (paidType 3), tenta primeiro empresa 99, se falhar tenta empresa 1
+        const settlementBranchCode = requestPaidType === 3 ? 99 : branchCode;
+
+        const buildPayload = (sBranchCode) => ({
+          branchCode: sBranchCode,
           settlementDate,
           invoices: [
             {
@@ -3830,19 +3844,25 @@ router.post(
           payments: [
             {
               value: paidValue,
-              paidType: 4, // 4 = Conta corrente (CurrentAccount)
-              bank: {
-                bankNumber: CONFIANCA_BANK.bankNumber,
-                agencyNumber: CONFIANCA_BANK.agencyNumber,
-                account: CONFIANCA_BANK.account,
-              },
+              paidType: requestPaidType,
+              ...(requestPaidType === 4
+                ? {
+                    bank: {
+                      bankNumber: BANK_DATA.bankNumber,
+                      agencyNumber: BANK_DATA.agencyNumber,
+                      account: BANK_DATA.account,
+                    },
+                  }
+                : {}),
             },
           ],
-        };
+        });
+
+        const payload = buildPayload(settlementBranchCode);
 
         try {
           console.log(
-            `📋 [${i + 1}/${items.length}] Efetuando baixa no TOTVS (invoices-payment):`,
+            `📋 [${i + 1}/${items.length}] Efetuando baixa no TOTVS (invoices-payment) - Empresa ${settlementBranchCode}:`,
             JSON.stringify(payload, null, 2),
           );
 
@@ -3861,7 +3881,7 @@ router.post(
           );
 
           console.log(
-            `✅ [${i + 1}/${items.length}] Baixa efetuada com sucesso - Fatura ${receivableCode}`,
+            `✅ [${i + 1}/${items.length}] Baixa efetuada com sucesso - Fatura ${receivableCode} (Empresa ${settlementBranchCode})`,
             JSON.stringify(response.data),
           );
           results.push({
@@ -3874,13 +3894,59 @@ router.post(
           });
         } catch (itemError) {
           console.error(
-            `❌ [${i + 1}/${items.length}] Erro na baixa - Fatura ${receivableCode}:`,
+            `❌ [${i + 1}/${items.length}] Erro na baixa - Fatura ${receivableCode} (Empresa ${settlementBranchCode}):`,
             {
               status: itemError.response?.status,
               data: JSON.stringify(itemError.response?.data, null, 2),
               message: itemError.response?.data?.message || itemError.message,
             },
           );
+
+          // Para adiantamento: se falhou na empresa 99, tentar na empresa 1
+          if (requestPaidType === 3 && settlementBranchCode === 99) {
+            try {
+              const fallbackPayload = buildPayload(1);
+              console.log(
+                `🔄 [${i + 1}/${items.length}] Tentando fallback na Empresa 1 para adiantamento...`,
+              );
+
+              const fallbackResponse = await axios.post(
+                `${TOTVS_BASE_URL}/accounts-receivable/v2/invoices-payment`,
+                fallbackPayload,
+                {
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    Authorization: `Bearer ${tokenData.access_token}`,
+                  },
+                  httpsAgent,
+                  timeout: 30000,
+                },
+              );
+
+              console.log(
+                `✅ [${i + 1}/${items.length}] Baixa efetuada com sucesso (fallback Empresa 1) - Fatura ${receivableCode}`,
+              );
+              results.push({
+                index: i,
+                receivableCode,
+                installmentCode,
+                branchCode,
+                success: true,
+                data: fallbackResponse.data,
+              });
+              continue;
+            } catch (fallbackError) {
+              console.error(
+                `❌ [${i + 1}/${items.length}] Fallback Empresa 1 também falhou - Fatura ${receivableCode}:`,
+                {
+                  status: fallbackError.response?.status,
+                  data: JSON.stringify(fallbackError.response?.data, null, 2),
+                },
+              );
+              // Segue para o tratamento de erro normal abaixo
+            }
+          }
 
           // Se for erro de token, tentar renovar uma vez
           if (itemError.response?.status === 401) {
@@ -3917,6 +3983,45 @@ router.post(
             }
           }
 
+          // Traduzir erros do TOTVS para mensagens amigáveis
+          const TOTVS_ERROR_MAP = {
+            InvoiceNotOpen: 'Fatura já baixada ou não está em aberto',
+            AcountCustomerNotFound:
+              'Cliente não possui conta de adiantamento cadastrada',
+            FieldValueGreaterThan: 'Cliente não possui saldo suficiente',
+            ValidateBalanceAdvance: 'Cliente não possui saldo de adiantamento',
+            InvoiceNotFound: 'Fatura não encontrada no TOTVS',
+            CustomerNotFound: 'Cliente não encontrado no TOTVS',
+            BranchNotFound: 'Empresa não encontrada no TOTVS',
+            InvalidSettlementDate: 'Data de liquidação inválida',
+            SettlementDateLessThanIssueDate:
+              'Data de pagamento anterior à emissão',
+            PaymentValueExceedsInvoice:
+              'Valor do pagamento excede o valor da fatura',
+            DuplicatePayment: 'Pagamento duplicado detectado',
+          };
+
+          let mensagensTraducao = [];
+          const rawData = itemError.response?.data;
+          if (rawData) {
+            let errosTotvs = [];
+            if (typeof rawData === 'string') {
+              try {
+                errosTotvs = JSON.parse(rawData);
+              } catch (e) {
+                /* ignore */
+              }
+            } else if (Array.isArray(rawData)) {
+              errosTotvs = rawData;
+            }
+            if (Array.isArray(errosTotvs)) {
+              mensagensTraducao = errosTotvs.map((e) => {
+                const traduzido = TOTVS_ERROR_MAP[e.code];
+                return traduzido || e.message || e.code || 'Erro desconhecido';
+              });
+            }
+          }
+
           errors.push({
             index: i,
             receivableCode,
@@ -3924,6 +4029,10 @@ router.post(
             branchCode,
             success: false,
             error: itemError.response?.data?.message || itemError.message,
+            errorMessages:
+              mensagensTraducao.length > 0
+                ? mensagensTraducao
+                : ['Erro ao processar baixa no TOTVS'],
             status: itemError.response?.status,
             details: itemError.response?.data,
             payloadSent: payload,

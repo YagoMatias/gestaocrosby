@@ -372,6 +372,12 @@ const multimarcas = [
     color: 'text-purple-600',
   },
   {
+    name: 'Minhas Solicit. Baixa',
+    href: '/minhas-solicitacoes-baixa',
+    icon: ClipboardText,
+    color: 'text-indigo-600',
+  },
+  {
     name: 'Portal de Títulos MTM',
     href: '/titulos-clientes',
     icon: Receipt,
@@ -419,6 +425,12 @@ const franquias = [
     href: '/inadimplentes-franquias',
     icon: ChartBar,
     color: 'text-purple-600',
+  },
+  {
+    name: 'Minhas Solicit. Baixa',
+    href: '/minhas-solicitacoes-baixa',
+    icon: ClipboardText,
+    color: 'text-indigo-600',
   },
 ];
 

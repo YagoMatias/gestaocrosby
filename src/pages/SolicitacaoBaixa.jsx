@@ -19,6 +19,11 @@ import {
   CaretUp,
   CaretDown,
   Bank,
+  MagnifyingGlassPlus,
+  MagnifyingGlassMinus,
+  ArrowsOut,
+  CalendarBlank,
+  PencilSimple,
 } from '@phosphor-icons/react';
 
 const SolicitacaoBaixa = () => {
@@ -33,10 +38,55 @@ const SolicitacaoBaixa = () => {
 
   // Modal de comprovante
   const [modalComprovante, setModalComprovante] = useState(null);
+  const [zoomImagem, setZoomImagem] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
 
   // Modal de rejeição
   const [modalRejeicao, setModalRejeicao] = useState(null);
   const [motivoRejeicao, setMotivoRejeicao] = useState('');
+
+  // Edição inline de data de pagamento
+  const [editandoData, setEditandoData] = useState(null); // id da solicitação em edição
+
+  // Modal de seleção de forma de pagamento para processamento
+  const [modalPagamentoAberto, setModalPagamentoAberto] = useState(false);
+  const [formaPagamentoProcessamento, setFormaPagamentoProcessamento] =
+    useState('');
+  const [bancoSelecionado, setBancoSelecionado] = useState(null);
+  const [dadosCartaoProcessamento, setDadosCartaoProcessamento] = useState({
+    bandeira: '',
+    autorizacao: '',
+    nsu: '',
+  });
+
+  const FORMAS_PAGAMENTO = [
+    {
+      id: 'confianca',
+      label: 'Confiança',
+      paidType: 4,
+      bank: { bankNumber: 422, agencyNumber: 1610, account: '005818984' },
+    },
+    {
+      id: 'sicredi',
+      label: 'Sicredi',
+      paidType: 4,
+      bank: { bankNumber: 748, agencyNumber: 2207, account: '367338' },
+    },
+    { id: 'adiantamento', label: 'Adiantamento (PIX TOTVS)', paidType: 3 },
+    { id: 'cartao_credito', label: 'Cartão de Crédito', paidType: 1 },
+    { id: 'cartao_debito', label: 'Cartão de Débito', paidType: 2 },
+    { id: 'credev', label: 'CREDEV', paidType: 5 },
+  ];
+
+  const FORMAS_PAGAMENTO_LABELS = {
+    confianca: 'Confiança',
+    sicredi: 'Sicredi',
+    conta_corrente: 'Conta Corrente',
+    adiantamento: 'Adiantamento (PIX)',
+    cartao_credito: 'Cartão de Créd.',
+    cartao_debito: 'Cartão de Déb.',
+    credev: 'CREDEV',
+  };
 
   const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
@@ -234,9 +284,55 @@ const SolicitacaoBaixa = () => {
       return;
     }
 
+    // Abrir modal de seleção de forma de pagamento
+    setFormaPagamentoProcessamento('');
+    setBancoSelecionado(null);
+    setDadosCartaoProcessamento({ bandeira: '', autorizacao: '', nsu: '' });
+    setModalPagamentoAberto(true);
+  };
+
+  // Confirmar processamento após selecionar forma de pagamento
+  const confirmarProcessamento = async () => {
+    if (!formaPagamentoProcessamento) {
+      setNotification({
+        type: 'error',
+        message: 'Selecione a forma de pagamento.',
+      });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    if (
+      (formaPagamentoProcessamento === 'cartao_credito' ||
+        formaPagamentoProcessamento === 'cartao_debito') &&
+      (!dadosCartaoProcessamento.bandeira ||
+        !dadosCartaoProcessamento.autorizacao ||
+        !dadosCartaoProcessamento.nsu)
+    ) {
+      setNotification({
+        type: 'error',
+        message: 'Preencha todos os dados do cartão.',
+      });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    const selecionadas = solicitacoesFiltradas.filter((s) =>
+      selectedItems.has(s.id),
+    );
+    const pendentes = selecionadas.filter(
+      (s) => s.status === 'pendente' || s.status === 'aprovada',
+    );
+
+    const formaSelecionada = FORMAS_PAGAMENTO.find(
+      (f) => f.id === formaPagamentoProcessamento,
+    );
+    const formaLabel = formaSelecionada?.label || formaPagamentoProcessamento;
+    setModalPagamentoAberto(false);
+
     if (
       !window.confirm(
-        `Processar baixa de ${pendentes.length} fatura(s) no TOTVS?\n\nValor total: ${valorTotalSelecionado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}\n\nEssa ação não pode ser desfeita.`,
+        `Processar baixa de ${pendentes.length} fatura(s) no TOTVS?\n\nForma: ${formaLabel}\nValor total: ${valorTotalSelecionado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}\n\nEssa ação não pode ser desfeita.`,
       )
     )
       return;
@@ -252,12 +348,28 @@ const SolicitacaoBaixa = () => {
         receivableCode: s.nr_fat,
         installmentCode: s.nr_parcela || 1,
         paidValue: parseFloat(s.vl_fatura) || 0,
+        settlementDate: s.dt_pagamento || null,
       }));
 
       const response = await fetch(`${TotvsURL}invoices-settle`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({
+          items,
+          paidType: formaSelecionada?.paidType || 4,
+          bank: formaSelecionada?.bank
+            ? {
+                bankNumber: formaSelecionada.bank.bankNumber,
+                agencyNumber: formaSelecionada.bank.agencyNumber,
+                account: formaSelecionada.bank.account,
+              }
+            : undefined,
+          dadosCartao:
+            formaPagamentoProcessamento === 'cartao_credito' ||
+            formaPagamentoProcessamento === 'cartao_debito'
+              ? dadosCartaoProcessamento
+              : undefined,
+        }),
       });
 
       const result = await response.json();
@@ -276,6 +388,7 @@ const SolicitacaoBaixa = () => {
                 status: 'processada',
                 processado_por: user?.id || null,
                 processado_em: new Date().toISOString(),
+                forma_pagamento: formaPagamentoProcessamento || null,
               })
               .eq('id', sol.id);
             successCount++;
@@ -296,12 +409,23 @@ const SolicitacaoBaixa = () => {
           message: `${successCount} baixa(s) processada(s) com sucesso!`,
         });
       } else {
+        // Montar mensagem detalhada com erros traduzidos por fatura
+        const detalhesErros = (result.errors || [])
+          .map((err) => {
+            const msgs =
+              err.errorMessages && err.errorMessages.length > 0
+                ? err.errorMessages.join('; ')
+                : 'Erro desconhecido';
+            return `Fatura ${err.receivableCode}: ${msgs}`;
+          })
+          .join('\n');
+
         setNotification({
           type: 'error',
-          message: `${successCount} sucesso, ${errorCount} erro(s). Verifique os detalhes.`,
+          message: `${successCount} sucesso, ${errorCount} erro(s):\n${detalhesErros}`,
         });
       }
-      setTimeout(() => setNotification(null), 5000);
+      setTimeout(() => setNotification(null), 8000);
     } catch (error) {
       console.error('Erro ao processar baixa em lote:', error);
       setNotification({ type: 'error', message: `Erro: ${error.message}` });
@@ -319,9 +443,11 @@ const SolicitacaoBaixa = () => {
 
   const formatarData = (data) => {
     if (!data) return '--';
-    const d = new Date(data);
-    if (isNaN(d.getTime())) return '--';
-    return d.toLocaleDateString('pt-BR');
+    // Evitar problema de timezone: parsear partes da string diretamente
+    const str = String(data).split('T')[0]; // pegar só "YYYY-MM-DD"
+    const [ano, mes, dia] = str.split('-');
+    if (!ano || !mes || !dia) return '--';
+    return `${dia}/${mes}/${ano}`;
   };
 
   const formatarDataHora = (data) => {
@@ -514,6 +640,12 @@ const SolicitacaoBaixa = () => {
                 <th className="px-3 py-2.5 text-center font-semibold">
                   Vencimento
                 </th>
+                <th className="px-3 py-2.5 text-center font-semibold">
+                  Dt. Pagamento
+                </th>
+                <th className="px-3 py-2.5 text-center font-semibold">
+                  Forma Pgto.
+                </th>
                 <th className="px-3 py-2.5 text-left font-semibold">
                   Portador
                 </th>
@@ -569,6 +701,113 @@ const SolicitacaoBaixa = () => {
                     </td>
                     <td className="px-3 py-2 text-center">
                       {formatarData(sol.dt_vencimento)}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {editandoData === sol.id ? (
+                        <input
+                          type="date"
+                          autoFocus
+                          defaultValue={
+                            sol.dt_pagamento
+                              ? sol.dt_pagamento.split('T')[0]
+                              : ''
+                          }
+                          max={new Date().toISOString().split('T')[0]}
+                          className="border border-[#000638] rounded px-1.5 py-0.5 text-xs w-[120px] focus:ring-2 focus:ring-[#000638] focus:outline-none"
+                          onBlur={async (e) => {
+                            const novaData = e.target.value;
+                            setEditandoData(null);
+                            if (
+                              novaData ===
+                              (sol.dt_pagamento
+                                ? sol.dt_pagamento.split('T')[0]
+                                : '')
+                            )
+                              return;
+                            try {
+                              const { error } = await supabaseAdmin
+                                .from('solicitacoes_baixa')
+                                .update({ dt_pagamento: novaData || null })
+                                .eq('id', sol.id);
+                              if (error) throw error;
+                              setSolicitacoes((prev) =>
+                                prev.map((s) =>
+                                  s.id === sol.id
+                                    ? { ...s, dt_pagamento: novaData || null }
+                                    : s,
+                                ),
+                              );
+                              setNotification({
+                                type: 'success',
+                                message: `Data de pagamento ${novaData ? 'atualizada' : 'removida'}!`,
+                              });
+                              setTimeout(() => setNotification(null), 2000);
+                            } catch (err) {
+                              console.error('Erro ao atualizar data:', err);
+                              setNotification({
+                                type: 'error',
+                                message: 'Erro ao salvar data.',
+                              });
+                              setTimeout(() => setNotification(null), 3000);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') e.target.blur();
+                            if (e.key === 'Escape') setEditandoData(null);
+                          }}
+                        />
+                      ) : (
+                        <button
+                          onClick={() => setEditandoData(sol.id)}
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold transition-colors ${
+                            sol.dt_pagamento
+                              ? 'text-green-700 hover:bg-green-50'
+                              : 'text-orange-500 bg-orange-50 hover:bg-orange-100'
+                          }`}
+                          title="Clique para editar a data de pagamento"
+                        >
+                          {sol.dt_pagamento ? (
+                            <>
+                              <CalendarBlank size={12} />
+                              {formatarData(sol.dt_pagamento)}
+                              <PencilSimple size={10} className="opacity-50" />
+                            </>
+                          ) : (
+                            <>
+                              <CalendarBlank size={12} />
+                              Definir
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {sol.forma_pagamento ? (
+                        <span
+                          className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            sol.forma_pagamento === 'confianca'
+                              ? 'bg-blue-100 text-blue-800'
+                              : sol.forma_pagamento === 'sicredi'
+                                ? 'bg-green-100 text-green-800'
+                                : sol.forma_pagamento === 'conta_corrente'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : sol.forma_pagamento === 'adiantamento'
+                                    ? 'bg-purple-100 text-purple-800'
+                                    : sol.forma_pagamento === 'cartao_credito'
+                                      ? 'bg-yellow-100 text-yellow-800'
+                                      : sol.forma_pagamento === 'cartao_debito'
+                                        ? 'bg-orange-100 text-orange-800'
+                                        : sol.forma_pagamento === 'credev'
+                                          ? 'bg-indigo-100 text-indigo-800'
+                                          : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          {FORMAS_PAGAMENTO_LABELS[sol.forma_pagamento] ||
+                            sol.forma_pagamento}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-gray-400">--</span>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-medium text-[10px]">
@@ -709,11 +948,36 @@ const SolicitacaoBaixa = () => {
                 {modalComprovante.comprovante_url?.match(
                   /\.(jpg|jpeg|png|gif|webp)/i,
                 ) ? (
-                  <img
-                    src={modalComprovante.comprovante_url}
-                    alt="Comprovante"
-                    className="max-w-full max-h-[60vh] rounded-lg shadow-lg"
-                  />
+                  <div className="space-y-3 w-full">
+                    <div
+                      className="relative cursor-pointer"
+                      onClick={() => {
+                        setZoomImagem(true);
+                        setZoomLevel(1);
+                      }}
+                    >
+                      <img
+                        src={modalComprovante.comprovante_url}
+                        alt="Comprovante"
+                        className="max-w-full max-h-[55vh] rounded-lg shadow-lg mx-auto hover:opacity-90 transition-opacity"
+                      />
+                      <div className="absolute bottom-2 right-2 bg-black bg-opacity-60 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
+                        <MagnifyingGlassPlus size={14} />
+                        Clique para ampliar
+                      </div>
+                    </div>
+                    <div className="flex justify-center">
+                      <a
+                        href={modalComprovante.comprovante_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#000638] bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      >
+                        <ArrowsOut size={14} />
+                        Abrir em nova aba
+                      </a>
+                    </div>
+                  </div>
                 ) : (
                   <div className="text-center py-8">
                     <FileText
@@ -731,6 +995,346 @@ const SolicitacaoBaixa = () => {
                     </a>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Overlay de Zoom da Imagem */}
+      {zoomImagem && modalComprovante && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-90 flex flex-col items-center justify-center z-[60]"
+          onClick={() => setZoomImagem(false)}
+        >
+          {/* Controles de zoom */}
+          <div
+            className="absolute top-4 right-4 flex items-center gap-2 z-[61]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setZoomLevel((z) => Math.max(0.5, z - 0.25))}
+              className="bg-white bg-opacity-20 hover:bg-opacity-40 text-white p-2 rounded-lg transition-colors"
+              title="Diminuir zoom"
+            >
+              <MagnifyingGlassMinus size={22} />
+            </button>
+            <span className="text-white text-sm font-bold min-w-[50px] text-center">
+              {Math.round(zoomLevel * 100)}%
+            </span>
+            <button
+              onClick={() => setZoomLevel((z) => Math.min(4, z + 0.25))}
+              className="bg-white bg-opacity-20 hover:bg-opacity-40 text-white p-2 rounded-lg transition-colors"
+              title="Aumentar zoom"
+            >
+              <MagnifyingGlassPlus size={22} />
+            </button>
+            <button
+              onClick={() => setZoomLevel(1)}
+              className="bg-white bg-opacity-20 hover:bg-opacity-40 text-white px-3 py-2 rounded-lg transition-colors text-sm font-bold"
+              title="Resetar zoom"
+            >
+              100%
+            </button>
+            <button
+              onClick={() => setZoomImagem(false)}
+              className="bg-red-600 hover:bg-red-700 text-white p-2 rounded-lg transition-colors ml-2"
+              title="Fechar"
+            >
+              <X size={22} weight="bold" />
+            </button>
+          </div>
+
+          {/* Imagem com zoom */}
+          <div
+            className="overflow-auto max-w-full max-h-full p-4 cursor-grab active:cursor-grabbing"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '100vw', maxHeight: '100vh' }}
+          >
+            <img
+              src={modalComprovante.comprovante_url}
+              alt="Comprovante ampliado"
+              className="transition-transform duration-200 ease-out"
+              style={{
+                transform: `scale(${zoomLevel})`,
+                transformOrigin: 'center center',
+                maxWidth: zoomLevel <= 1 ? '90vw' : 'none',
+                maxHeight: zoomLevel <= 1 ? '85vh' : 'none',
+              }}
+              draggable={false}
+            />
+          </div>
+
+          {/* Dica inferior */}
+          <div className="absolute bottom-4 text-white text-xs bg-black bg-opacity-50 px-3 py-1.5 rounded-lg">
+            Clique fora da imagem para fechar • Use os botões para ajustar o
+            zoom
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Seleção de Forma de Pagamento */}
+      {modalPagamentoAberto && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="bg-[#000638] text-white p-4 rounded-t-xl flex justify-between items-center">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <Bank size={20} weight="bold" />
+                Forma de Pagamento
+              </h3>
+              <button
+                onClick={() => {
+                  setModalPagamentoAberto(false);
+                  setFormaPagamentoProcessamento('');
+                  setBancoSelecionado(null);
+                  setDadosCartaoProcessamento({
+                    bandeira: '',
+                    autorizacao: '',
+                    nsu: '',
+                  });
+                }}
+                className="text-white hover:text-red-300"
+              >
+                <X size={22} weight="bold" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-600">
+                Selecione a forma de pagamento para processar a baixa no TOTVS:
+              </p>
+
+              {/* Seleção da forma de pagamento */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Forma de Pagamento *
+                </label>
+                <select
+                  value={formaPagamentoProcessamento}
+                  onChange={(e) => {
+                    setFormaPagamentoProcessamento(e.target.value);
+                    setBancoSelecionado(null);
+                    setDadosCartaoProcessamento({
+                      bandeira: '',
+                      autorizacao: '',
+                      nsu: '',
+                    });
+                  }}
+                  className="w-full border-2 rounded-lg px-3 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-[#000638] focus:border-transparent"
+                >
+                  <option value="">Selecione...</option>
+                  {FORMAS_PAGAMENTO.map((fp) => (
+                    <option key={fp.id} value={fp.id}>
+                      {fp.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Confiança / Sicredi info */}
+              {(formaPagamentoProcessamento === 'confianca' ||
+                formaPagamentoProcessamento === 'sicredi') && (
+                <div
+                  className={`${formaPagamentoProcessamento === 'confianca' ? 'bg-blue-50 border-blue-200' : 'bg-green-50 border-green-200'} border rounded-lg p-4`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Bank
+                      size={18}
+                      weight="bold"
+                      className={
+                        formaPagamentoProcessamento === 'confianca'
+                          ? 'text-blue-700'
+                          : 'text-green-700'
+                      }
+                    />
+                    <p
+                      className={`text-sm font-bold ${formaPagamentoProcessamento === 'confianca' ? 'text-blue-800' : 'text-green-800'}`}
+                    >
+                      {
+                        FORMAS_PAGAMENTO.find(
+                          (f) => f.id === formaPagamentoProcessamento,
+                        )?.label
+                      }
+                    </p>
+                  </div>
+                  <div className="text-xs space-y-0.5 text-gray-600">
+                    <p>
+                      Banco:{' '}
+                      <strong>
+                        {
+                          FORMAS_PAGAMENTO.find(
+                            (f) => f.id === formaPagamentoProcessamento,
+                          )?.bank?.bankNumber
+                        }
+                      </strong>
+                    </p>
+                    <p>
+                      Agência:{' '}
+                      <strong>
+                        {
+                          FORMAS_PAGAMENTO.find(
+                            (f) => f.id === formaPagamentoProcessamento,
+                          )?.bank?.agencyNumber
+                        }
+                      </strong>
+                    </p>
+                    <p>
+                      Conta:{' '}
+                      <strong>
+                        {
+                          FORMAS_PAGAMENTO.find(
+                            (f) => f.id === formaPagamentoProcessamento,
+                          )?.bank?.account
+                        }
+                      </strong>
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Adiantamento → PIX TOTVS */}
+              {formaPagamentoProcessamento === 'adiantamento' && (
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
+                  <p className="text-sm font-bold text-purple-800">PIX TOTVS</p>
+                  <p className="text-xs text-purple-600 mt-1">
+                    O pagamento será registrado como adiantamento via PIX no
+                    TOTVS.
+                  </p>
+                </div>
+              )}
+
+              {/* Cartão → Dados do cartão */}
+              {(formaPagamentoProcessamento === 'cartao_credito' ||
+                formaPagamentoProcessamento === 'cartao_debito') && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-3">
+                  <p className="text-xs font-bold text-yellow-800">
+                    Dados do{' '}
+                    {formaPagamentoProcessamento === 'cartao_credito'
+                      ? 'Cartão de Crédito'
+                      : 'Cartão de Débito'}
+                  </p>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-0.5">
+                      Bandeira *
+                    </label>
+                    <input
+                      type="text"
+                      value={dadosCartaoProcessamento.bandeira}
+                      onChange={(e) =>
+                        setDadosCartaoProcessamento((prev) => ({
+                          ...prev,
+                          bandeira: e.target.value,
+                        }))
+                      }
+                      placeholder="Ex: Visa, Mastercard, Elo..."
+                      className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-0.5">
+                        Nº Autorização *
+                      </label>
+                      <input
+                        type="text"
+                        value={dadosCartaoProcessamento.autorizacao}
+                        onChange={(e) =>
+                          setDadosCartaoProcessamento((prev) => ({
+                            ...prev,
+                            autorizacao: e.target.value,
+                          }))
+                        }
+                        placeholder="Nº autorização"
+                        className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-0.5">
+                        NSU *
+                      </label>
+                      <input
+                        type="text"
+                        value={dadosCartaoProcessamento.nsu}
+                        onChange={(e) =>
+                          setDadosCartaoProcessamento((prev) => ({
+                            ...prev,
+                            nsu: e.target.value,
+                          }))
+                        }
+                        placeholder="NSU"
+                        className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* CREDEV */}
+              {formaPagamentoProcessamento === 'credev' && (
+                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-center">
+                  <p className="text-sm font-bold text-indigo-800">CREDEV</p>
+                  <p className="text-xs text-indigo-600 mt-1">
+                    O pagamento será registrado como CREDEV no TOTVS.
+                  </p>
+                </div>
+              )}
+
+              {/* Resumo */}
+              {formaPagamentoProcessamento && (
+                <div className="bg-gray-50 rounded-lg p-3 text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Forma:</span>
+                    <span className="font-bold">
+                      {
+                        FORMAS_PAGAMENTO.find(
+                          (f) => f.id === formaPagamentoProcessamento,
+                        )?.label
+                      }
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Faturas:</span>
+                    <span className="font-semibold">{selectedItems.size}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Valor total:</span>
+                    <span className="font-bold text-red-600">
+                      {formatarMoeda(valorTotalSelecionado)}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    setModalPagamentoAberto(false);
+                    setFormaPagamentoProcessamento('');
+                    setBancoSelecionado(null);
+                    setDadosCartaoProcessamento({
+                      bandeira: '',
+                      autorizacao: '',
+                      nsu: '',
+                    });
+                  }}
+                  className="px-4 py-2 text-sm font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmarProcessamento}
+                  disabled={
+                    !formaPagamentoProcessamento ||
+                    ((formaPagamentoProcessamento === 'cartao_credito' ||
+                      formaPagamentoProcessamento === 'cartao_debito') &&
+                      (!dadosCartaoProcessamento.bandeira ||
+                        !dadosCartaoProcessamento.autorizacao ||
+                        !dadosCartaoProcessamento.nsu))
+                  }
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-[#000638] rounded-lg hover:bg-[#fe0000] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <CheckCircle size={16} weight="bold" />
+                  Confirmar e Processar
+                </button>
               </div>
             </div>
           </div>

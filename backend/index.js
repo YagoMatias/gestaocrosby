@@ -301,6 +301,21 @@ const server = app.listen(PORT, async () => {
 
   // Iniciar o scheduler de geração automática de token TOTVS
   totvsTokenTask = startTokenScheduler();
+
+  // Keep-alive: pingar a si mesmo a cada 14 minutos para evitar que o Render adormeça
+  if (process.env.NODE_ENV === 'production') {
+    const KEEP_ALIVE_INTERVAL = 14 * 60 * 1000; // 14 minutos
+    const keepAliveUrl = `${API_BASE_URL}/api/utils/health`;
+    setInterval(async () => {
+      try {
+        const resp = await fetch(keepAliveUrl);
+        logger.info(`💓 Keep-alive ping: ${resp.status}`);
+      } catch (err) {
+        logger.warn(`⚠️ Keep-alive falhou: ${err.message}`);
+      }
+    }, KEEP_ALIVE_INTERVAL);
+    logger.info(`💓 Keep-alive ativo: ping a cada 14min em ${keepAliveUrl}`);
+  }
 });
 
 // Handlers para encerramento gracioso

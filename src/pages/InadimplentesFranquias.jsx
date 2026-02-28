@@ -663,11 +663,31 @@ const InadimplentesFranquias = () => {
   };
 
   // === Funções de Solicitação de Baixa ===
+  const [dataPagamentoBaixa, setDataPagamentoBaixa] = useState('');
+  const [formaPagamentoBaixa, setFormaPagamentoBaixa] = useState('');
+  const [dadosCartaoBaixa, setDadosCartaoBaixa] = useState({
+    bandeira: '',
+    autorizacao: '',
+    nsu: '',
+  });
+
+  const FORMAS_PAGAMENTO = [
+    { id: 'confianca', label: 'Confiança', paidType: 4 },
+    { id: 'sicredi', label: 'Sicredi', paidType: 4 },
+    { id: 'adiantamento', label: 'Adiantamento (PIX TOTVS)', paidType: 3 },
+    { id: 'cartao_credito', label: 'Cartão de Crédito', paidType: 1 },
+    { id: 'cartao_debito', label: 'Cartão de Débito', paidType: 2 },
+    { id: 'credev', label: 'CREDEV', paidType: 5 },
+  ];
+
   const abrirModalBaixa = (fatura) => {
     setFaturaBaixa(fatura);
     setComprovanteBaixa(null);
     setPreviewComprovante(null);
     setObservacaoBaixa('');
+    setDataPagamentoBaixa('');
+    setFormaPagamentoBaixa('');
+    setDadosCartaoBaixa({ bandeira: '', autorizacao: '', nsu: '' });
     setModalBaixaAberto(true);
   };
 
@@ -677,6 +697,9 @@ const InadimplentesFranquias = () => {
     setComprovanteBaixa(null);
     setPreviewComprovante(null);
     setObservacaoBaixa('');
+    setDataPagamentoBaixa('');
+    setFormaPagamentoBaixa('');
+    setDadosCartaoBaixa({ bandeira: '', autorizacao: '', nsu: '' });
   };
 
   const handleComprovanteChange = (e) => {
@@ -697,6 +720,40 @@ const InadimplentesFranquias = () => {
       setNotification({
         type: 'error',
         message: 'Selecione o comprovante de pagamento.',
+      });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    if (!dataPagamentoBaixa) {
+      setNotification({
+        type: 'error',
+        message: 'Informe a data de pagamento.',
+      });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    if (!formaPagamentoBaixa) {
+      setNotification({
+        type: 'error',
+        message: 'Selecione a forma de pagamento.',
+      });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    if (
+      (formaPagamentoBaixa === 'cartao_credito' ||
+        formaPagamentoBaixa === 'cartao_debito') &&
+      (!dadosCartaoBaixa.bandeira ||
+        !dadosCartaoBaixa.autorizacao ||
+        !dadosCartaoBaixa.nsu)
+    ) {
+      setNotification({
+        type: 'error',
+        message:
+          'Preencha todos os dados do cartão (bandeira, autorização e NSU).',
       });
       setTimeout(() => setNotification(null), 3000);
       return;
@@ -747,6 +804,13 @@ const InadimplentesFranquias = () => {
           user_nome: user?.name || 'Usuário',
           user_email: user?.email || '',
           observacao: observacaoBaixa || null,
+          dt_pagamento: dataPagamentoBaixa || null,
+          forma_pagamento: formaPagamentoBaixa || null,
+          dados_cartao:
+            formaPagamentoBaixa === 'cartao_credito' ||
+            formaPagamentoBaixa === 'cartao_debito'
+              ? dadosCartaoBaixa
+              : null,
         });
 
       if (insertError)
@@ -1994,6 +2058,114 @@ Crosby`;
                 </div>
               </div>
 
+              {/* Data de Pagamento */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  Data de Pagamento *
+                </label>
+                <input
+                  type="date"
+                  value={dataPagamentoBaixa}
+                  onChange={(e) => setDataPagamentoBaixa(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#000638] focus:border-transparent"
+                  max={new Date().toISOString().split('T')[0]}
+                  required
+                />
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  Data que consta no comprovante de pagamento
+                </p>
+              </div>
+
+              {/* Forma de Pagamento */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  Forma de Pagamento *
+                </label>
+                <select
+                  value={formaPagamentoBaixa}
+                  onChange={(e) => {
+                    setFormaPagamentoBaixa(e.target.value);
+                    setDadosCartaoBaixa({
+                      bandeira: '',
+                      autorizacao: '',
+                      nsu: '',
+                    });
+                  }}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#000638] focus:border-transparent"
+                  required
+                >
+                  <option value="">Selecione...</option>
+                  {FORMAS_PAGAMENTO.map((fp) => (
+                    <option key={fp.id} value={fp.id}>
+                      {fp.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Dados do cartão (se cartão de crédito ou débito) */}
+              {(formaPagamentoBaixa === 'cartao_credito' ||
+                formaPagamentoBaixa === 'cartao_debito') && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 space-y-2">
+                  <p className="text-xs font-bold text-yellow-800">
+                    Dados do Cartão
+                  </p>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-0.5">
+                      Bandeira *
+                    </label>
+                    <input
+                      type="text"
+                      value={dadosCartaoBaixa.bandeira}
+                      onChange={(e) =>
+                        setDadosCartaoBaixa((prev) => ({
+                          ...prev,
+                          bandeira: e.target.value,
+                        }))
+                      }
+                      placeholder="Ex: Visa, Mastercard, Elo..."
+                      className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-0.5">
+                        Nº Autorização *
+                      </label>
+                      <input
+                        type="text"
+                        value={dadosCartaoBaixa.autorizacao}
+                        onChange={(e) =>
+                          setDadosCartaoBaixa((prev) => ({
+                            ...prev,
+                            autorizacao: e.target.value,
+                          }))
+                        }
+                        placeholder="Nº autorização"
+                        className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-0.5">
+                        NSU *
+                      </label>
+                      <input
+                        type="text"
+                        value={dadosCartaoBaixa.nsu}
+                        onChange={(e) =>
+                          setDadosCartaoBaixa((prev) => ({
+                            ...prev,
+                            nsu: e.target.value,
+                          }))
+                        }
+                        placeholder="NSU"
+                        className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Upload do comprovante */}
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">
@@ -2070,7 +2242,17 @@ Crosby`;
                 </button>
                 <button
                   onClick={handleEnviarBaixa}
-                  disabled={loadingBaixa || !comprovanteBaixa}
+                  disabled={
+                    loadingBaixa ||
+                    !comprovanteBaixa ||
+                    !dataPagamentoBaixa ||
+                    !formaPagamentoBaixa ||
+                    ((formaPagamentoBaixa === 'cartao_credito' ||
+                      formaPagamentoBaixa === 'cartao_debito') &&
+                      (!dadosCartaoBaixa.bandeira ||
+                        !dadosCartaoBaixa.autorizacao ||
+                        !dadosCartaoBaixa.nsu))
+                  }
                   className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-[#000638] rounded-lg hover:bg-[#fe0000] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loadingBaixa ? (

@@ -205,6 +205,21 @@ const AVAILABLE_PAGES = [
     name: 'Inadimplentes Franquias',
     category: 'Franquias',
   },
+  {
+    path: '/solicitacao-baixa',
+    name: 'Solicitação de Baixa',
+    category: 'Franquias',
+  },
+  {
+    path: '/minhas-solicitacoes-baixa',
+    name: 'Minhas Solicitações de Baixa',
+    category: 'Multimarcas',
+  },
+  {
+    path: '/minhas-solicitacoes-baixa',
+    name: 'Minhas Solicitações de Baixa',
+    category: 'Franquias',
+  },
 
   // Minha Franquia
   {

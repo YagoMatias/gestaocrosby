@@ -88,18 +88,42 @@ const ContasPagarFranquias = () => {
       try {
         const response = await fetch(`${TotvsURL}branches`);
         if (response.ok) {
-          const data = await response.json();
+          const result = await response.json();
+          // A API retorna { success, data: { data: [...], total }, message }
+          let empresasArray = [];
+          if (result.success && result.data) {
+            if (result.data.data && Array.isArray(result.data.data)) {
+              empresasArray = result.data.data;
+            } else if (Array.isArray(result.data)) {
+              empresasArray = result.data;
+            }
+          } else if (Array.isArray(result)) {
+            empresasArray = result;
+          }
           // Extrair códigos das filiais (cd_empresa)
-          const codigos = data
+          const codigos = empresasArray
             .map((branch) => parseInt(branch.cd_empresa))
             .filter((code) => !isNaN(code) && code > 0);
           console.log('📋 Filiais carregadas:', codigos);
-          setFiliaisCodigos(codigos);
+          if (codigos.length > 0) {
+            setFiliaisCodigos(codigos);
+          } else {
+            console.warn('⚠️ Nenhuma filial extraída, usando fallback');
+            setFiliaisCodigos([
+              1, 2, 5, 6, 11, 55, 65, 75, 85, 87, 88, 89, 90, 91, 92, 93, 94,
+              95, 96, 97, 98, 99, 100, 101, 870, 880, 890, 900, 910, 920, 930,
+              940, 950, 960, 970, 980, 990,
+            ]);
+          }
         }
       } catch (error) {
         console.error('Erro ao carregar filiais:', error);
-        // Fallback para filiais padrão
-        setFiliaisCodigos([1, 2, 6, 100, 101, 99, 990, 200, 400, 4, 850, 85]);
+        // Fallback completo com TODAS as filiais conhecidas (incluindo 11, 55, etc.)
+        setFiliaisCodigos([
+          1, 2, 5, 6, 11, 55, 65, 75, 85, 87, 88, 89, 90, 91, 92, 93, 94, 95,
+          96, 97, 98, 99, 100, 101, 870, 880, 890, 900, 910, 920, 930, 940, 950,
+          960, 970, 980, 990,
+        ]);
       }
     };
     buscarFiliais();
@@ -380,7 +404,13 @@ const ContasPagarFranquias = () => {
     try {
       // branchCodeList = SUAS EMPRESAS (filiais carregadas da API)
       const branchCodeList =
-        filiaisCodigos.length > 0 ? filiaisCodigos : [1, 2, 3, 4, 5];
+        filiaisCodigos.length > 0
+          ? filiaisCodigos
+          : [
+              1, 2, 5, 6, 11, 55, 65, 75, 85, 87, 88, 89, 90, 91, 92, 93, 94,
+              95, 96, 97, 98, 99, 100, 101, 870, 880, 890, 900, 910, 920, 930,
+              940, 950, 960, 970, 980, 990,
+            ];
 
       // customerCodeList = códigos dos CLIENTES (franquias 6000-9000) selecionados no filtro
       const customerCodeList = empresasSelecionadas
@@ -414,7 +444,6 @@ const ContasPagarFranquias = () => {
       // Filtrar por status se não for "todos"
       if (status === 'em_aberto' || status === 'vencidos') {
         filter.hasOpenInvoices = true;
-        filter.dischargeTypeList = [0]; // Título não baixado
       }
 
       const response = await fetch(
@@ -550,8 +579,9 @@ const ContasPagarFranquias = () => {
             ? new Date(item.dt_vencimento)
             : null;
 
-          // Se tem data de liquidação (baixa), é PAGO
-          if (temDataLiquidacao || item.dischargeType > 0) {
+          // Se tem data de liquidação (baixa) E valor pago, é PAGO
+          const temPagamento = item.vl_pago && item.vl_pago > 0;
+          if (temDataLiquidacao && temPagamento) {
             return status === 'pagos';
           }
 

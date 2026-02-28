@@ -73,7 +73,7 @@ const Notification = ({
         <div className="flex items-start">
           <div className="flex-shrink-0 mr-3">{getIcon()}</div>
           <div className="flex-1">
-            <p className="text-sm font-medium">{message}</p>
+            <p className="text-sm font-medium whitespace-pre-line">{message}</p>
           </div>
           <div className="flex-shrink-0 ml-3">
             <button
