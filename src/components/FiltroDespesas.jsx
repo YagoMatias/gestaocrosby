@@ -1,19 +1,34 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-const FiltroDespesas = ({ despesasSelecionadas = [], onSelectDespesas, dadosDespesa = [] }) => {
+const FiltroDespesas = ({
+  despesasSelecionadas = [],
+  onSelectDespesas,
+  dadosDespesa = [],
+}) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef(null);
 
-  const despesasFiltradas = dadosDespesa.filter(despesa =>
-    despesa.cd_despesaitem.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    despesa.ds_despesaitem.toLowerCase().includes(searchTerm.toLowerCase())
+  const despesasFiltradas = dadosDespesa.filter(
+    (despesa) =>
+      String(despesa.cd_despesaitem)
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      String(despesa.ds_despesaitem)
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()),
   );
 
   const handleToggleDespesa = (despesaObj) => {
     let novosSelecionados;
-    if (despesasSelecionadas.some(despesa => despesa.cd_despesaitem === despesaObj.cd_despesaitem)) {
-      novosSelecionados = despesasSelecionadas.filter(despesa => despesa.cd_despesaitem !== despesaObj.cd_despesaitem);
+    if (
+      despesasSelecionadas.some(
+        (despesa) => despesa.cd_despesaitem === despesaObj.cd_despesaitem,
+      )
+    ) {
+      novosSelecionados = despesasSelecionadas.filter(
+        (despesa) => despesa.cd_despesaitem !== despesaObj.cd_despesaitem,
+      );
     } else {
       novosSelecionados = [...despesasSelecionadas, despesaObj];
     }
@@ -34,7 +49,9 @@ const FiltroDespesas = ({ despesasSelecionadas = [], onSelectDespesas, dadosDesp
 
   return (
     <div className="flex flex-col relative" ref={dropdownRef}>
-      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Despesas</label>
+      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+        Despesas
+      </label>
       <button
         type="button"
         onClick={() => setShowDropdown(!showDropdown)}
@@ -46,12 +63,20 @@ const FiltroDespesas = ({ despesasSelecionadas = [], onSelectDespesas, dadosDesp
             ? 'Nenhuma despesa disponível'
             : despesasSelecionadas.length === 0
               ? 'Selecione as despesas'
-              : `${despesasSelecionadas.length} despesa(s) selecionada(s)`
-          }
+              : `${despesasSelecionadas.length} despesa(s) selecionada(s)`}
         </span>
         {dadosDespesa.length === 0 ? (
-          <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          <svg
+            className="w-4 h-4 text-gray-400"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+            />
           </svg>
         ) : (
           <svg
@@ -60,7 +85,12 @@ const FiltroDespesas = ({ despesasSelecionadas = [], onSelectDespesas, dadosDesp
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M19 9l-7 7-7-7"
+            />
           </svg>
         )}
       </button>
@@ -78,14 +108,18 @@ const FiltroDespesas = ({ despesasSelecionadas = [], onSelectDespesas, dadosDesp
           <div className="p-3 border-b border-gray-200 bg-gray-50 flex gap-2">
             <button
               type="button"
-              onClick={() => { if (onSelectDespesas) onSelectDespesas([...dadosDespesa]); }}
+              onClick={() => {
+                if (onSelectDespesas) onSelectDespesas([...dadosDespesa]);
+              }}
               className="text-xs px-2 py-1 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors"
             >
               Selecionar Todas
             </button>
             <button
               type="button"
-              onClick={() => { if (onSelectDespesas) onSelectDespesas([]); }}
+              onClick={() => {
+                if (onSelectDespesas) onSelectDespesas([]);
+              }}
               className="text-xs px-2 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
             >
               Limpar
@@ -93,12 +127,18 @@ const FiltroDespesas = ({ despesasSelecionadas = [], onSelectDespesas, dadosDesp
           </div>
           <div className="w-full max-h-48 overflow-y-auto">
             {dadosDespesa.length === 0 ? (
-              <div className="p-3 text-gray-500 text-sm text-center">Nenhuma despesa disponível</div>
+              <div className="p-3 text-gray-500 text-sm text-center">
+                Nenhuma despesa disponível
+              </div>
             ) : despesasFiltradas.length === 0 ? (
-              <div className="p-3 text-gray-500 text-sm text-center">Nenhuma despesa encontrada</div>
+              <div className="p-3 text-gray-500 text-sm text-center">
+                Nenhuma despesa encontrada
+              </div>
             ) : (
               despesasFiltradas.map((despesa) => {
-                const isSelected = despesasSelecionadas.some(desp => desp.cd_despesaitem === despesa.cd_despesaitem);
+                const isSelected = despesasSelecionadas.some(
+                  (desp) => desp.cd_despesaitem === despesa.cd_despesaitem,
+                );
                 return (
                   <div
                     key={despesa.cd_despesaitem}
@@ -110,7 +150,13 @@ const FiltroDespesas = ({ despesasSelecionadas = [], onSelectDespesas, dadosDesp
                         {despesa.cd_despesaitem} - {despesa.ds_despesaitem}
                       </span>
                     </div>
-                    <input type="checkbox" checked={isSelected} readOnly className="rounded border-gray-300 text-[#000638] focus:ring-[#000638] mr-1 w-4 h-4" onClick={(e) => e.stopPropagation()} />
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      readOnly
+                      className="rounded border-gray-300 text-[#000638] focus:ring-[#000638] mr-1 w-4 h-4"
+                      onClick={(e) => e.stopPropagation()}
+                    />
                   </div>
                 );
               })

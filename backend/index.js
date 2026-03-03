@@ -32,6 +32,7 @@ import utilsRoutes from './routes/utils.routes.js';
 import faturamentoRoutes from './routes/faturamento.routes.js';
 import widgetsRoutes from './routes/widgets.routes.js';
 import totvsRoutes from './routes/totvs.routes.js';
+import chatRoutes from './routes/chat.routes.js';
 // Carregar variáveis de ambiente
 dotenv.config();
 
@@ -127,6 +128,7 @@ app.use('/api/utils', utilsRoutes); // Utilitários e autocomplete
 app.use('/api/faturamento', faturamentoRoutes); // Faturamento das lojas
 app.use('/api/widgets', widgetsRoutes); // Widgets e dashboards (views e queries)
 app.use('/api/totvs', totvsRoutes); // Integração com API TOTVS Moda
+app.use('/api/chat', chatRoutes); // Chat IA para análise financeira
 // =============================================================================
 // ROTAS DE COMPATIBILIDADE (MANTER TEMPORARIAMENTE)
 // =============================================================================

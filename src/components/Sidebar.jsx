@@ -464,10 +464,10 @@ const dashboardFinanceiro = [
     color: 'text-purple-600',
   },
   {
-    name: 'PMR',
+    name: 'Dash Contas a Receber',
     href: '/dash-contas-a-receber',
     icon: ChartBar,
-    color: 'text-purple-600',
+    color: 'text-green-600',
   },
 ];
 const DashboardFaturamento = [

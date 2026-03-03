@@ -1,20 +1,35 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-const FiltroCentroCusto = ({ centrosCustoSelecionados = [], onSelectCentrosCusto, dadosCentroCusto = [] }) => {
+const FiltroCentroCusto = ({
+  centrosCustoSelecionados = [],
+  onSelectCentrosCusto,
+  dadosCentroCusto = [],
+}) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef(null);
 
   // Filtrar centros de custo baseado no termo de busca
-  const centrosCustoFiltrados = dadosCentroCusto.filter(centroCusto =>
-    centroCusto.cd_ccusto.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    centroCusto.ds_ccusto.toLowerCase().includes(searchTerm.toLowerCase())
+  const centrosCustoFiltrados = dadosCentroCusto.filter(
+    (centroCusto) =>
+      String(centroCusto.cd_ccusto)
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      String(centroCusto.ds_ccusto)
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()),
   );
 
   const handleToggleCentroCusto = (centroCustoObj) => {
     let novosSelecionados;
-    if (centrosCustoSelecionados.some(centro => centro.cd_ccusto === centroCustoObj.cd_ccusto)) {
-      novosSelecionados = centrosCustoSelecionados.filter(centro => centro.cd_ccusto !== centroCustoObj.cd_ccusto);
+    if (
+      centrosCustoSelecionados.some(
+        (centro) => centro.cd_ccusto === centroCustoObj.cd_ccusto,
+      )
+    ) {
+      novosSelecionados = centrosCustoSelecionados.filter(
+        (centro) => centro.cd_ccusto !== centroCustoObj.cd_ccusto,
+      );
     } else {
       novosSelecionados = [...centrosCustoSelecionados, centroCustoObj];
     }
@@ -37,8 +52,10 @@ const FiltroCentroCusto = ({ centrosCustoSelecionados = [], onSelectCentrosCusto
 
   return (
     <div className="flex flex-col relative" ref={dropdownRef}>
-      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Centro de Custo</label>
-      
+      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+        Centro de Custo
+      </label>
+
       {/* Botão do dropdown */}
       <button
         type="button"
@@ -47,25 +64,38 @@ const FiltroCentroCusto = ({ centrosCustoSelecionados = [], onSelectCentrosCusto
         className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-left flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed text-xs"
       >
         <span className="truncate">
-          {dadosCentroCusto.length === 0 
-            ? 'Nenhum centro de custo disponível' 
-            : centrosCustoSelecionados.length === 0 
-              ? 'Selecione os centros de custo' 
-              : `${centrosCustoSelecionados.length} centro(s) selecionado(s)`
-          }
+          {dadosCentroCusto.length === 0
+            ? 'Nenhum centro de custo disponível'
+            : centrosCustoSelecionados.length === 0
+              ? 'Selecione os centros de custo'
+              : `${centrosCustoSelecionados.length} centro(s) selecionado(s)`}
         </span>
         {dadosCentroCusto.length === 0 ? (
-          <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-          </svg>
-        ) : (
-          <svg 
-            className={`w-4 h-4 transition-transform ${showDropdown ? 'rotate-180' : ''}`} 
-            fill="none" 
-            stroke="currentColor" 
+          <svg
+            className="w-4 h-4 text-gray-400"
+            fill="none"
             viewBox="0 0 24 24"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+            />
+          </svg>
+        ) : (
+          <svg
+            className={`w-4 h-4 transition-transform ${showDropdown ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M19 9l-7 7-7-7"
+            />
           </svg>
         )}
       </button>
@@ -89,7 +119,8 @@ const FiltroCentroCusto = ({ centrosCustoSelecionados = [], onSelectCentrosCusto
             <button
               type="button"
               onClick={() => {
-                if (onSelectCentrosCusto) onSelectCentrosCusto([...dadosCentroCusto]);
+                if (onSelectCentrosCusto)
+                  onSelectCentrosCusto([...dadosCentroCusto]);
               }}
               className="text-xs px-2 py-1 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors"
             >
@@ -118,7 +149,9 @@ const FiltroCentroCusto = ({ centrosCustoSelecionados = [], onSelectCentrosCusto
               </div>
             ) : (
               centrosCustoFiltrados.map((centroCusto) => {
-                const isSelected = centrosCustoSelecionados.some(centro => centro.cd_ccusto === centroCusto.cd_ccusto);
+                const isSelected = centrosCustoSelecionados.some(
+                  (centro) => centro.cd_ccusto === centroCusto.cd_ccusto,
+                );
                 return (
                   <div
                     key={centroCusto.cd_ccusto}

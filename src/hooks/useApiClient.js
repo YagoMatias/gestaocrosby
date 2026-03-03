@@ -653,6 +653,20 @@ const useApiClient = () => {
      */
     invoicesSearch: (body) =>
       apiMutate('/api/totvs/invoices/search', 'POST', body),
+
+    /**
+     * Busca contas a pagar via API TOTVS (accounts-payable/v2/duplicates/search)
+     * @param {Object} body - {
+     *   dt_inicio: string, dt_fim: string, branches: number[],
+     *   modo?: 'vencimento'|'emissao'|'liquidacao',
+     *   status?: 'Todos'|'Pago'|'Vencido'|'A Vencer'|'Em Aberto',
+     *   situacao?: 'NORMAIS'|'CANCELADAS'|'TODAS',
+     *   previsao?: 'TODOS'|'PREVISAO'|'REAL'|'CONSIGNADO',
+     *   supplierCodeList?: number[], duplicateCodeList?: number[]
+     * }
+     */
+    accountsPayableSearch: (body) =>
+      apiMutate('/api/totvs/accounts-payable/search', 'POST', body),
   };
 
   const franchise = {

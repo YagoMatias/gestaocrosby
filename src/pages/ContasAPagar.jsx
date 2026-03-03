@@ -44,6 +44,7 @@ import {
   Trash,
   MagnifyingGlass,
   X,
+  ChatCircleDots,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -52,6 +53,7 @@ import {
   autorizacoesSupabase,
   STATUS_AUTORIZACAO,
 } from '../lib/autorizacoesSupabase';
+import ChatContasPagar from '../components/ChatIA/ChatContasPagar';
 
 // Função para criar Date object sem problemas de fuso horário
 const criarDataSemFusoHorario = (dataString) => {
@@ -103,7 +105,6 @@ const ContasAPagar = (props) => {
   }, [user, hasRole]);
 
   const [dados, setDados] = useState([]);
-  const [dadosFornecedor, setDadosFornecedor] = useState([]);
 
   // Estados para busca de fornecedor por nome
   const [termoBuscaFornecedor, setTermoBuscaFornecedor] = useState('');
@@ -234,8 +235,7 @@ const ContasAPagar = (props) => {
   const [dataFim, setDataFim] = useState('');
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
-  const [status, setStatus] = useState('Todos');
-  const [situacao, setSituacao] = useState('NORMAIS');
+  const [situacao, setSituacao] = useState('N');
   const [previsao, setPrevisao] = useState('TODOS');
   const [filtroAutorizacao, setFiltroAutorizacao] = useState('TODOS');
 
@@ -268,6 +268,9 @@ const ContasAPagar = (props) => {
   const [dadosAcessoRestrito, setDadosAcessoRestrito] = useState(null);
   const [showAcessoRestritoModal, setShowAcessoRestritoModal] = useState(false);
   const [carregandoAutorizacoes, setCarregandoAutorizacoes] = useState(false);
+
+  // Estado para o chat IA
+  const [chatIAAberto, setChatIAAberto] = useState(false);
 
   // Objeto vazio para compatibilidade
   const autorizacoes = {};
@@ -901,540 +904,256 @@ const ContasAPagar = (props) => {
 
     setLoading(true);
 
-    // Declarar variáveis com valores padrão para evitar ReferenceError
-    let resultFornecedor = { success: true, data: [] };
-    let resultCentroCusto = { success: true, data: [] };
-
     try {
-      console.log('🔍 Iniciando busca de contas a pagar...');
+      console.log('🔍 Iniciando busca de contas a pagar via API TOTVS...');
       console.log('📅 Período:', { inicio, fim });
       console.log('🏢 Empresas selecionadas:', empresasSelecionadas);
-
-      // Buscar dados usando a nova rota que aceita múltiplas empresas
-      const params = {
-        dt_inicio: inicio,
-        dt_fim: fim,
-      };
 
       // Adicionar códigos das empresas selecionadas como array
       const codigosEmpresas = empresasSelecionadas
         .filter((empresa) => empresa.cd_empresa)
-        .map((empresa) => empresa.cd_empresa);
+        .map((empresa) => parseInt(empresa.cd_empresa));
 
-      if (codigosEmpresas.length > 0) {
-        params.cd_empresa = codigosEmpresas;
-      }
+      // Montar payload para a API TOTVS accounts-payable/search
+      const payload = {
+        dt_inicio: inicio,
+        dt_fim: fim,
+        branches: codigosEmpresas,
+        modo: isEmissao ? 'emissao' : 'vencimento',
+        situacao: situacao || 'N',
+        previsao: previsao === 'PREVISÃO' ? 'PREVISAO' : previsao || 'TODOS',
+      };
 
-      // Adicionar filtro de status
-      if (status && status !== 'Todos') {
-        params.status = status;
-      }
-
-      // Adicionar filtro de situação
-      if (situacao && situacao !== 'TODAS') {
-        params.situacao = situacao;
-      }
-
-      // Adicionar filtro de previsão
-      if (previsao && previsao !== 'TODOS') {
-        // Converter para o formato esperado pelo backend
-        let previsaoParam = previsao;
-        if (previsao === 'PREVISÃO') previsaoParam = 'PREVISAO';
-        params.previsao = previsaoParam;
-      }
-
-      // Adicionar filtro de fornecedor (busca por nome)
+      // Adicionar filtro de fornecedor
       if (fornecedorBuscaSelecionado) {
-        params.cd_fornecedor = [fornecedorBuscaSelecionado.cd_pessoa];
-      }
-
-      // Adicionar filtro de centros de custo (múltiplos)
-      if (centrosCustoSelecionados.length > 0) {
-        params.cd_ccusto = centrosCustoSelecionados.map((c) => c.cd_ccusto);
-      }
-
-      // Adicionar filtro de despesas (múltiplas)
-      if (despesasSelecionadas.length > 0) {
-        params.cd_despesaitem = despesasSelecionadas.map(
-          (d) => d.cd_despesaitem,
-        );
+        payload.supplierCodeList = [
+          parseInt(fornecedorBuscaSelecionado.cd_pessoa),
+        ];
       }
 
       // Adicionar filtro de duplicata
       if (duplicata && duplicata.trim() !== '') {
-        params.nr_duplicata = duplicata.trim();
+        payload.duplicateCodeList = [parseInt(duplicata.trim())].filter(
+          (d) => !isNaN(d),
+        );
       }
 
-      console.log('📋 Parâmetros da requisição:', params);
+      console.log('📋 Payload da requisição TOTVS:', payload);
       console.log('🏢 Códigos das empresas:', codigosEmpresas);
 
-      // Buscar dados principais de contas a pagar
-      const result = isEmissao
-        ? await apiClient.financial.contasPagarEmissao(params)
-        : await apiClient.financial.contasPagar(params);
+      // Buscar dados via API TOTVS accounts-payable
+      const result = await apiClient.totvs.accountsPayableSearch(payload);
 
-      console.log('🔍 Resultado da API:', {
-        success: result.success,
-        dataLength: result.data?.length,
-        message: result.message,
-        metadata: result.metadata,
-        estrutura: result.metadata?.periodo
-          ? 'Nova estrutura'
-          : 'Estrutura antiga',
-        performance: result.performance,
-        queryType: result.queryType,
+      console.log('🔍 Resultado da API TOTVS:', {
+        success: result?.success !== undefined ? result.success : !!result,
+        dataLength: result?.data?.length || result?.count,
+        message: result?.message,
+        timeMs: result?.timeMs,
+        totalCount: result?.totalCount,
+        pagesSearched: result?.pagesSearched,
       });
 
-      if (result.success) {
-        // Verificar se os dados estão na estrutura correta
-        let dadosArray = [];
+      // Extrair dados da resposta
+      let dadosArray = [];
 
+      if (result && typeof result === 'object') {
         if (Array.isArray(result.data)) {
           dadosArray = result.data;
-        } else if (result.metadata && Array.isArray(result.metadata.data)) {
-          dadosArray = result.metadata.data;
         } else if (result.data && Array.isArray(result.data.data)) {
           dadosArray = result.data.data;
+        } else if (result.metadata && Array.isArray(result.metadata.data)) {
+          dadosArray = result.metadata.data;
         } else {
           console.warn('⚠️ Estrutura de dados não reconhecida:', result);
           dadosArray = [];
         }
+      }
 
-        // Verificar se todos os campos necessários estão presentes
-        if (dadosArray.length > 0) {
-          const primeiroItem = dadosArray[0];
-          console.log(
-            '🔍 Campos disponíveis no primeiro item:',
-            Object.keys(primeiroItem),
-          );
-
-          // Verificar campos obrigatórios
-          const camposObrigatorios = [
-            'cd_empresa',
-            'cd_fornecedor',
-            'nr_duplicata',
-            'dt_vencimento',
-            'vl_duplicata',
-          ];
-          const camposFaltando = camposObrigatorios.filter(
-            (campo) => !(campo in primeiroItem),
-          );
-
-          if (camposFaltando.length > 0) {
-            console.warn(
-              '⚠️ Campos faltando na resposta da API:',
-              camposFaltando,
-            );
-          }
-
-          // Verificar campos opcionais que podem estar faltando
-          const camposOpcionais = ['in_aceite', 'vl_rateio'];
-          const camposOpcionaisFaltando = camposOpcionais.filter(
-            (campo) => !(campo in primeiroItem),
-          );
-
-          if (camposOpcionaisFaltando.length > 0) {
-            console.log(
-              'ℹ️ Campos opcionais não presentes:',
-              camposOpcionaisFaltando,
-            );
-          }
-        }
-
-        console.log('✅ Dados obtidos:', {
-          total: dadosArray.length,
-          amostra: dadosArray.slice(0, 2),
-          empresas: codigosEmpresas,
-          metadata: result.metadata,
-          estrutura: result.metadata?.periodo
-            ? 'Nova estrutura'
-            : 'Estrutura antiga',
-        });
-
-        // Extrair códigos únicos de fornecedor, centro de custo e despesa dos dados principais
-        const codigosFornecedor = [
-          ...new Set(
-            dadosArray.map((item) => item.cd_fornecedor).filter(Boolean),
-          ),
-        ];
-        const codigosCentroCusto = [
-          ...new Set(dadosArray.map((item) => item.cd_ccusto).filter(Boolean)),
-        ];
-        const codigosDespesa = [
-          ...new Set(
-            dadosArray.map((item) => item.cd_despesaitem).filter(Boolean),
-          ),
-        ];
-
-        console.log('🔍 Debug - Extração de códigos:');
+      if (dadosArray.length > 0) {
+        const primeiroItem = dadosArray[0];
         console.log(
-          '   - Dados originais (primeiros 3):',
-          dadosArray.slice(0, 3).map((item) => ({
+          '🔍 Campos disponíveis no primeiro item:',
+          Object.keys(primeiroItem),
+        );
+
+        // Verificar campos obrigatórios
+        const camposObrigatorios = [
+          'cd_empresa',
+          'cd_fornecedor',
+          'nr_duplicata',
+          'dt_vencimento',
+          'vl_duplicata',
+        ];
+        const camposFaltando = camposObrigatorios.filter(
+          (campo) => !(campo in primeiroItem),
+        );
+
+        if (camposFaltando.length > 0) {
+          console.warn(
+            '⚠️ Campos faltando na resposta da API:',
+            camposFaltando,
+          );
+        }
+      }
+
+      console.log('✅ Dados obtidos:', {
+        total: dadosArray.length,
+        amostra: dadosArray.slice(0, 2),
+        empresas: codigosEmpresas,
+      });
+
+      // Todos os dados já vêm preenchidos da API TOTVS (fornecedor, despesa, ccusto código)
+      // ds_ccusto = '----' pois a API TOTVS não retorna o nome do centro de custo
+      const dadosProcessados = dadosArray.map((item) => ({
+        ...item,
+        ds_observacao: item.ds_observacao || '',
+        in_aceite: item.in_aceite || '',
+        vl_rateio: item.vl_rateio || 0,
+        tp_aceite: item.in_aceite || '',
+        ds_ccusto: item.cd_ccusto ? '----' : '',
+        nm_fornecedor: item.nm_fornecedor || '',
+        ds_despesaitem: item.ds_despesaitem || '',
+        cd_despesaitem: item.cd_despesaitem || '',
+        cd_ccusto: item.cd_ccusto || '',
+      }));
+
+      // Debug para verificar enriquecimento
+      if (dadosProcessados.length > 0) {
+        console.log('🔍 Debug - Primeiros 3 registros enriquecidos:');
+        dadosProcessados.slice(0, 3).forEach((item, index) => {
+          console.log(`📋 Registro ${index + 1}:`, {
             cd_fornecedor: item.cd_fornecedor,
+            nm_fornecedor: item.nm_fornecedor,
             cd_ccusto: item.cd_ccusto,
-            cd_despesaitem: item.cd_despesaitem,
-          })),
-        );
-
-        // Verificar se há códigos válidos antes de fazer as chamadas
-        if (codigosCentroCusto.length === 0) {
-          console.log(
-            '⚠️ Nenhum código de centro de custo encontrado, pulando chamada da API',
-          );
-        }
-        if (codigosFornecedor.length === 0) {
-          console.log(
-            '⚠️ Nenhum código de fornecedor encontrado, pulando chamada da API',
-          );
-        }
-        if (codigosDespesa.length === 0) {
-          console.log(
-            '⚠️ Nenhum código de despesa encontrado, pulando chamada da API',
-          );
-        }
-
-        // Buscar dados de fornecedor, centro de custo e despesa em lotes para evitar URLs muito longas
-        const chunkArray = (arr, size) => {
-          const chunks = [];
-          for (let i = 0; i < arr.length; i += size) {
-            chunks.push(arr.slice(i, i + size));
-          }
-          return chunks;
-        };
-
-        const LOTE_MAX = 100; // tamanho de lote para evitar URLs enormes
-
-        // Fornecedor
-        let fornecedorResponses = [];
-        if (codigosFornecedor.length > 0) {
-          const fornecedorChunks = chunkArray(codigosFornecedor, LOTE_MAX);
-          const fornecedorPromises = fornecedorChunks.map((lote) =>
-            apiClient.financial.fornecedor({ cd_fornecedor: lote }),
-          );
-          fornecedorResponses = await Promise.all(fornecedorPromises);
-        } else {
-          fornecedorResponses = [{ success: true, data: [] }];
-        }
-
-        // Centro de Custo
-        let centroCustoResponses = [];
-        if (codigosCentroCusto.length > 0) {
-          const centroCustoChunks = chunkArray(codigosCentroCusto, LOTE_MAX);
-          const centroCustoPromises = centroCustoChunks.map((lote) =>
-            apiClient.financial.centrocusto({ cd_ccusto: lote }),
-          );
-          centroCustoResponses = await Promise.all(centroCustoPromises);
-        } else {
-          centroCustoResponses = [{ success: true, data: [] }];
-        }
-
-        // Despesa
-        let despesaResponses = [];
-        if (codigosDespesa.length > 0) {
-          const despesaChunks = chunkArray(codigosDespesa, LOTE_MAX);
-          const despesaPromises = despesaChunks.map((lote) =>
-            apiClient.financial.despesa({ cd_despesaitem: lote }),
-          );
-          despesaResponses = await Promise.all(despesaPromises);
-        } else {
-          despesaResponses = [{ success: true, data: [] }];
-        }
-
-        // Unificar respostas por tipo
-        const mergeResults = (responses) => {
-          const base = { success: true, data: [] };
-          responses.forEach((resp) => {
-            if (!resp || resp.success === false) return;
-            if (Array.isArray(resp.data)) {
-              base.data = base.data.concat(resp.data);
-            } else if (resp.data && Array.isArray(resp.data.data)) {
-              base.data = base.data.concat(resp.data.data);
-            } else if (resp.metadata && Array.isArray(resp.metadata.data)) {
-              base.data = base.data.concat(resp.metadata.data);
-            }
-          });
-          return base;
-        };
-
-        resultFornecedor = mergeResults(fornecedorResponses);
-        resultCentroCusto = mergeResults(centroCustoResponses);
-        let resultDespesa = mergeResults(despesaResponses);
-
-        // Processar dados de fornecedor
-        let dadosFornecedorArray = [];
-        if (resultFornecedor.success) {
-          if (Array.isArray(resultFornecedor.data)) {
-            dadosFornecedorArray = resultFornecedor.data;
-          } else if (
-            resultFornecedor.data &&
-            Array.isArray(resultFornecedor.data.data)
-          ) {
-            dadosFornecedorArray = resultFornecedor.data.data;
-          } else if (
-            resultFornecedor.metadata &&
-            Array.isArray(resultFornecedor.metadata.data)
-          ) {
-            dadosFornecedorArray = resultFornecedor.metadata.data;
-          }
-        }
-
-        // Processar dados de centro de custo
-        let dadosCentroCustoArray = [];
-        if (resultCentroCusto.success) {
-          if (Array.isArray(resultCentroCusto.data)) {
-            dadosCentroCustoArray = resultCentroCusto.data;
-          } else if (
-            resultCentroCusto.data &&
-            Array.isArray(resultCentroCusto.data.data)
-          ) {
-            dadosCentroCustoArray = resultCentroCusto.data.data;
-          } else if (
-            resultCentroCusto.metadata &&
-            Array.isArray(resultCentroCusto.metadata.data)
-          ) {
-            dadosCentroCustoArray = resultCentroCusto.metadata.data;
-          }
-        }
-
-        // Processar dados de despesa
-        let dadosDespesaArray = [];
-        if (resultDespesa.success) {
-          if (Array.isArray(resultDespesa.data)) {
-            dadosDespesaArray = resultDespesa.data;
-          } else if (
-            resultDespesa.data &&
-            Array.isArray(resultDespesa.data.data)
-          ) {
-            dadosDespesaArray = resultDespesa.data.data;
-          } else if (
-            resultDespesa.metadata &&
-            Array.isArray(resultDespesa.metadata.data)
-          ) {
-            dadosDespesaArray = resultDespesa.metadata.data;
-          }
-        }
-
-        console.log(
-          '🔍 Estrutura completa da resposta de fornecedor:',
-          resultFornecedor,
-        );
-        console.log('🔍 Dados de fornecedor obtidos:', {
-          total: dadosFornecedorArray.length,
-          amostra: dadosFornecedorArray.slice(0, 2),
-        });
-
-        console.log(
-          '🔍 Estrutura completa da resposta de centro de custo:',
-          resultCentroCusto,
-        );
-        console.log('🔍 Dados de centro de custo obtidos:', {
-          total: dadosCentroCustoArray.length,
-          amostra: dadosCentroCustoArray.slice(0, 2),
-        });
-
-        console.log(
-          '🔍 Estrutura completa da resposta de despesa:',
-          resultDespesa,
-        );
-        console.log('🔍 Dados de despesa obtidos:', {
-          total: dadosDespesaArray.length,
-          amostra: dadosDespesaArray.slice(0, 2),
-        });
-
-        // Criar mapas para busca eficiente de fornecedor, centro de custo e despesa usando apenas os códigos
-        const fornecedorMap = new Map();
-        dadosFornecedorArray.forEach((item) => {
-          fornecedorMap.set(item.cd_fornecedor, item);
-        });
-
-        const centroCustoMap = new Map();
-        dadosCentroCustoArray.forEach((item) => {
-          centroCustoMap.set(item.cd_ccusto, item);
-        });
-
-        const despesaMap = new Map();
-        dadosDespesaArray.forEach((item) => {
-          despesaMap.set(item.cd_despesaitem, item);
-        });
-
-        console.log('🗺️ Mapas criados:', {
-          fornecedorMapSize: fornecedorMap.size,
-          centroCustoMapSize: centroCustoMap.size,
-          despesaMapSize: despesaMap.size,
-          amostraFornecedorMap: Array.from(fornecedorMap.entries()).slice(0, 2),
-          amostraCentroCustoMap: Array.from(centroCustoMap.entries()).slice(
-            0,
-            2,
-          ),
-          amostraDespesaMap: Array.from(despesaMap.entries()).slice(0, 2),
-        });
-
-        // Garantir que todos os campos necessários tenham valores padrão
-        const dadosProcessados = dadosArray.map((item) => {
-          // Buscar dados de fornecedor, centro de custo e despesa dos mapas usando apenas os códigos
-          const dadosFornecedor = fornecedorMap.get(item.cd_fornecedor);
-          const dadosCentroCusto = centroCustoMap.get(item.cd_ccusto);
-          const dadosDespesa = despesaMap.get(item.cd_despesaitem);
-
-          // Debug para os primeiros 3 itens
-          if (dadosArray.indexOf(item) < 3) {
-            console.log(
-              `🔍 Processando item ${dadosArray.indexOf(item) + 1}:`,
-              {
-                cd_fornecedor: item.cd_fornecedor,
-                cd_ccusto: item.cd_ccusto,
-                cd_despesaitem: item.cd_despesaitem,
-                encontrouFornecedor: !!dadosFornecedor,
-                encontrouCentroCusto: !!dadosCentroCusto,
-                encontrouDespesa: !!dadosDespesa,
-                dadosFornecedor: dadosFornecedor,
-                dadosCentroCusto: dadosCentroCusto,
-                dadosDespesa: dadosDespesa,
-              },
-            );
-          }
-
-          return {
-            ...item,
-            ds_observacao: item.ds_observacao || '',
-            in_aceite: item.in_aceite || '',
-            vl_rateio: item.vl_rateio || 0,
-            tp_aceite: item.in_aceite || '', // Mantém compatibilidade
-            // Usar dados das novas rotas separadas
-            ds_ccusto: dadosCentroCusto?.ds_ccusto || item.ds_ccusto || '',
-            nm_fornecedor:
-              dadosFornecedor?.nm_fornecedor || item.nm_fornecedor || '',
-            ds_despesaitem:
-              dadosDespesa?.ds_despesaitem || item.ds_despesaitem || '',
-            cd_despesaitem: item.cd_despesaitem || '',
-            cd_ccusto: dadosCentroCusto?.cd_ccusto || item.cd_ccusto || '',
-          };
-        });
-
-        // Debug para verificar dados de despesa, centro de custo e fornecedor
-        if (dadosProcessados.length > 0) {
-          console.log(
-            '🔍 Debug - Primeiros 3 registros com dados das novas rotas:',
-          );
-          dadosProcessados.slice(0, 3).forEach((item, index) => {
-            console.log(`📋 Registro ${index + 1}:`, {
-              cd_fornecedor: item.cd_fornecedor,
-              nm_fornecedor: item.nm_fornecedor,
-              cd_ccusto: item.cd_ccusto,
-              ds_ccusto: item.ds_ccusto,
-              cd_despesaitem: item.cd_despesaitem,
-              ds_despesaitem: item.ds_despesaitem,
-              temFornecedor: !!item.nm_fornecedor,
-              temCentroCusto: !!item.ds_ccusto,
-              temDespesa: !!item.ds_despesaitem,
-              fonteFornecedor: item.nm_fornecedor
-                ? 'Nova rota /fornecedor'
-                : 'Dados originais',
-              fonteCentroCusto: item.ds_ccusto
-                ? 'Nova rota /centrocusto'
-                : 'Dados originais',
-              fonteDespesa: item.ds_despesaitem
-                ? 'Nova rota /despesa'
-                : 'Dados originais',
-            });
-          });
-
-          // Verificar se há dados vazios
-          const fornecedoresVazios = dadosProcessados.filter(
-            (item) => !item.nm_fornecedor,
-          ).length;
-          const centrosCustoVazios = dadosProcessados.filter(
-            (item) => !item.ds_ccusto,
-          ).length;
-          const despesasVazias = dadosProcessados.filter(
-            (item) => !item.ds_despesaitem,
-          ).length;
-
-          console.log('📊 Estatísticas dos dados processados:', {
-            total: dadosProcessados.length,
-            fornecedoresVazios,
-            centrosCustoVazios,
-            despesasVazias,
-            percentualFornecedoresVazios:
-              ((fornecedoresVazios / dadosProcessados.length) * 100).toFixed(
-                2,
-              ) + '%',
-            percentualCentrosCustoVazios:
-              ((centrosCustoVazios / dadosProcessados.length) * 100).toFixed(
-                2,
-              ) + '%',
-            percentualDespesasVazias:
-              ((despesasVazias / dadosProcessados.length) * 100).toFixed(2) +
-              '%',
-          });
-        }
-
-        // Aplicar bloqueio de centros de custo, se configurado pelo wrapper
-        const dadosAposBloqueio =
-          blockedCostCenters && blockedCostCenters.length > 0
-            ? dadosProcessados.filter((item) => {
-                const cc = Number(
-                  typeof item.cd_ccusto === 'string'
-                    ? parseInt(item.cd_ccusto, 10)
-                    : item.cd_ccusto,
-                );
-                return !blockedCostCenters.includes(cc);
-              })
-            : dadosProcessados;
-
-        // Aplicar filtro de despesas fixas, se configurado pelo wrapper
-        const dadosFinais =
-          despesasFixas && despesasFixas.length > 0
-            ? dadosAposBloqueio.filter((item) => {
-                const cdDespesa = parseInt(item.cd_despesaitem) || 0;
-                return despesasFixas.includes(cdDespesa);
-              })
-            : dadosAposBloqueio;
-
-        console.log('🔍 DEBUG - Filtro de despesas fixas:', {
-          despesasFixas,
-          totalAntes: dadosAposBloqueio.length,
-          totalDepois: dadosFinais.length,
-          amostraDespesas: dadosFinais.slice(0, 3).map((item) => ({
+            ds_ccusto: item.ds_ccusto,
             cd_despesaitem: item.cd_despesaitem,
             ds_despesaitem: item.ds_despesaitem,
-          })),
+          });
         });
 
-        setDados(dadosFinais);
-        setDadosFornecedor(dadosFornecedorArray);
-        setDadosCentroCusto(dadosCentroCustoArray);
-        setDadosDespesa(dadosDespesaArray);
-        setDadosCarregados(true);
+        // Verificar se há dados vazios
+        const fornecedoresVazios = dadosProcessados.filter(
+          (item) => !item.nm_fornecedor,
+        ).length;
+        const centrosCustoVazios = dadosProcessados.filter(
+          (item) => !item.ds_ccusto,
+        ).length;
+        const despesasVazias = dadosProcessados.filter(
+          (item) => !item.ds_despesaitem,
+        ).length;
 
-        console.log('✅ Resumo das chamadas das novas rotas:', {
-          contasPagar: dadosProcessados.length,
-          fornecedor: dadosFornecedorArray.length,
-          centroCusto: dadosCentroCustoArray.length,
-          despesa: dadosDespesaArray.length,
-          sucessoFornecedor: resultFornecedor.success,
-          sucessoCentroCusto: resultCentroCusto.success,
-          sucessoDespesa: resultDespesa.success,
+        console.log('📊 Estatísticas dos dados processados:', {
+          total: dadosProcessados.length,
+          fornecedoresVazios,
+          centrosCustoVazios,
+          despesasVazias,
+          percentualFornecedoresVazios:
+            ((fornecedoresVazios / dadosProcessados.length) * 100).toFixed(2) +
+            '%',
+          percentualCentrosCustoVazios:
+            ((centrosCustoVazios / dadosProcessados.length) * 100).toFixed(2) +
+            '%',
+          percentualDespesasVazias:
+            ((despesasVazias / dadosProcessados.length) * 100).toFixed(2) + '%',
         });
-      } else {
-        console.warn('⚠️ Falha ao buscar dados:', result.message);
-        setDados([]);
-        setDadosCarregados(false);
       }
 
-      // Log de erros das novas rotas se houver
-      if (!resultFornecedor.success) {
-        console.warn(
-          '⚠️ Falha ao buscar dados de fornecedor:',
-          resultFornecedor.message,
+      // Aplicar filtros de centros de custo selecionados
+      let dadosComFiltroCC = dadosProcessados;
+      if (centrosCustoSelecionados.length > 0) {
+        const ccsFiltro = centrosCustoSelecionados.map((c) =>
+          String(c.cd_ccusto),
+        );
+        dadosComFiltroCC = dadosProcessados.filter((item) =>
+          ccsFiltro.includes(String(item.cd_ccusto)),
+        );
+        console.log(
+          `🔍 Filtro CC: ${dadosProcessados.length} → ${dadosComFiltroCC.length}`,
         );
       }
-      if (!resultCentroCusto.success) {
-        console.warn(
-          '⚠️ Falha ao buscar dados de centro de custo:',
-          resultCentroCusto.message,
+
+      // Aplicar filtros de despesas selecionadas
+      let dadosComFiltroDespesa = dadosComFiltroCC;
+      if (despesasSelecionadas.length > 0) {
+        const despsFiltro = despesasSelecionadas.map((d) =>
+          String(d.cd_despesaitem),
+        );
+        dadosComFiltroDespesa = dadosComFiltroCC.filter((item) =>
+          despsFiltro.includes(String(item.cd_despesaitem)),
+        );
+        console.log(
+          `🔍 Filtro Despesa: ${dadosComFiltroCC.length} → ${dadosComFiltroDespesa.length}`,
         );
       }
+
+      // Aplicar bloqueio de centros de custo, se configurado pelo wrapper
+      const dadosAposBloqueio =
+        blockedCostCenters && blockedCostCenters.length > 0
+          ? dadosComFiltroDespesa.filter((item) => {
+              const cc = Number(
+                typeof item.cd_ccusto === 'string'
+                  ? parseInt(item.cd_ccusto, 10)
+                  : item.cd_ccusto,
+              );
+              return !blockedCostCenters.includes(cc);
+            })
+          : dadosComFiltroDespesa;
+
+      // Aplicar filtro de despesas fixas, se configurado pelo wrapper
+      const dadosFinais =
+        despesasFixas && despesasFixas.length > 0
+          ? dadosAposBloqueio.filter((item) => {
+              const cdDespesa = parseInt(item.cd_despesaitem) || 0;
+              return despesasFixas.includes(cdDespesa);
+            })
+          : dadosAposBloqueio;
+
+      console.log('🔍 DEBUG - Filtros finais:', {
+        despesasFixas,
+        blockedCostCenters,
+        totalProcessados: dadosProcessados.length,
+        totalAposFiltroCC: dadosComFiltroCC.length,
+        totalAposFiltroDespesa: dadosComFiltroDespesa.length,
+        totalAposBloqueio: dadosAposBloqueio.length,
+        totalFinal: dadosFinais.length,
+      });
+
+      setDados(dadosFinais);
+      // Extrair despesas únicas dos dados para alimentar o filtro
+      const despesasUnicas = [];
+      const despesaCodigosVistos = new Set();
+      dadosFinais.forEach((item) => {
+        if (
+          item.cd_despesaitem &&
+          !despesaCodigosVistos.has(item.cd_despesaitem)
+        ) {
+          despesaCodigosVistos.add(item.cd_despesaitem);
+          despesasUnicas.push({
+            cd_despesaitem: item.cd_despesaitem,
+            ds_despesaitem: item.ds_despesaitem || '',
+          });
+        }
+      });
+      setDadosDespesa(despesasUnicas);
+      // Extrair centros de custo únicos dos dados para alimentar filtro
+      const ccUnicos = [];
+      const ccCodigosVistos = new Set();
+      dadosFinais.forEach((item) => {
+        if (item.cd_ccusto && !ccCodigosVistos.has(item.cd_ccusto)) {
+          ccCodigosVistos.add(item.cd_ccusto);
+          ccUnicos.push({
+            cd_ccusto: item.cd_ccusto,
+            ds_ccusto: item.ds_ccusto || '----',
+          });
+        }
+      });
+      setDadosCentroCusto(ccUnicos);
+      setDadosCarregados(true);
+
+      console.log('✅ Resumo final:', {
+        fonte: 'API TOTVS accounts-payable',
+        contasPagar: dadosFinais.length,
+      });
     } catch (err) {
       console.error('❌ Erro geral ao buscar dados:', err);
       setDados([]);
@@ -2407,25 +2126,6 @@ const ContasAPagar = (props) => {
             </div>
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                Status
-              </label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-              >
-                <option value="Todos">TODOS</option>
-                <option value="Em Aberto">EM ABERTO</option>
-                <option value="Pago">PAGO</option>
-                <option value="Vencido">VENCIDO</option>
-                <option value="A Vencer">A VENCER</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div>
-              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                 Situação
               </label>
               <select
@@ -2433,11 +2133,18 @@ const ContasAPagar = (props) => {
                 onChange={(e) => setSituacao(e.target.value)}
                 className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
               >
-                <option value="NORMAIS">NORMAIS</option>
-                <option value="CANCELADAS">CANCELADAS</option>
                 <option value="TODAS">TODAS</option>
+                <option value="N">NORMAL</option>
+                <option value="C">CANCELADA</option>
+                <option value="A">AGRUPADA</option>
+                <option value="D">DEVOLVIDA</option>
+                <option value="L">LIQUIDADA COMISSÃO</option>
+                <option value="Q">QUEBRADA</option>
               </select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                 Previsão
@@ -5094,6 +4801,37 @@ const ContasAPagar = (props) => {
       {console.log(
         '🔍 Renderizando componente - showAcessoRestritoModal:',
         showAcessoRestritoModal,
+      )}
+
+      {/* Botão flutuante para abrir o Chat IA */}
+      {!chatIAAberto && dadosCarregados && dados.length > 0 && (
+        <button
+          onClick={() => setChatIAAberto(true)}
+          className="fixed bottom-6 right-6 bg-[#000638] text-white p-4 rounded-full shadow-2xl hover:bg-[#fe0000] transition-all duration-300 z-50 group"
+          title="Abrir Assistente IA"
+        >
+          <ChatCircleDots size={28} weight="fill" />
+          <span className="absolute -top-10 right-0 bg-gray-900 text-white text-xs px-3 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+            Assistente IA
+          </span>
+        </button>
+      )}
+
+      {/* Chat IA */}
+      {chatIAAberto && (
+        <ChatContasPagar
+          dadosContas={dados}
+          resumo={{
+            totalContas: totalContasCards,
+            valorTotal: totalValorCards,
+            contasVencidas: totalContasVencidasCards,
+            contasPagas: totalContasPagasCards,
+            valorPago: valorContasPagasCards,
+            faltaPagar: valorFaltaPagarCards,
+          }}
+          filtrosAtivos={`Período: ${dataInicio} a ${dataFim} | Situação: ${situacao}`}
+          onClose={() => setChatIAAberto(false)}
+        />
       )}
     </div>
   );

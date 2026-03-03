@@ -107,7 +107,11 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro',
   },
   { path: '/endividamento', name: 'Endividamento', category: 'Financeiro' },
-  { path: '/dash-contas-a-receber', name: 'PMR', category: 'Financeiro' },
+  {
+    path: '/dash-contas-a-receber',
+    name: 'Dash Contas a Receber',
+    category: 'Financeiro',
+  },
 
   // Auditoria
   { path: '/conciliacao', name: 'Conciliação', category: 'Auditoria' },

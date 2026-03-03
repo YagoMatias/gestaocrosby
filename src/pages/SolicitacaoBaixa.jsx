@@ -48,6 +48,9 @@ const SolicitacaoBaixa = () => {
   // Edição inline de data de pagamento
   const [editandoData, setEditandoData] = useState(null); // id da solicitação em edição
 
+  // Edição inline de forma de pagamento
+  const [editandoFormaPgto, setEditandoFormaPgto] = useState(null);
+
   // Modal de seleção de forma de pagamento para processamento
   const [modalPagamentoAberto, setModalPagamentoAberto] = useState(false);
   const [formaPagamentoProcessamento, setFormaPagamentoProcessamento] =
@@ -235,6 +238,100 @@ const SolicitacaoBaixa = () => {
     }
   };
 
+  // Reprocessar solicitação individual (volta status para aprovada)
+  const reprocessarSolicitacao = async (sol) => {
+    if (
+      !window.confirm(
+        `Reprocessar fatura ${sol.nr_fat} do cliente ${sol.nm_cliente || sol.cd_cliente}?\n\nA solicitação voltará ao status "Aprovada" para ser processada novamente.`,
+      )
+    )
+      return;
+    try {
+      const { error } = await supabaseAdmin
+        .from('solicitacoes_baixa')
+        .update({
+          status: 'aprovada',
+          processado_por: null,
+          processado_em: null,
+          forma_pagamento: null,
+        })
+        .eq('id', sol.id);
+
+      if (error) throw error;
+      await carregarSolicitacoes();
+      setNotification({
+        type: 'success',
+        message: `Fatura ${sol.nr_fat} disponível para reprocessamento!`,
+      });
+      setTimeout(() => setNotification(null), 3000);
+    } catch (error) {
+      console.error('Erro ao reprocessar:', error);
+      setNotification({
+        type: 'error',
+        message: 'Erro ao reprocessar solicitação.',
+      });
+      setTimeout(() => setNotification(null), 3000);
+    }
+  };
+
+  // Reprocessar em lote (volta status das processadas selecionadas para aprovada)
+  const reprocessarLote = async () => {
+    const selecionadas = solicitacoesFiltradas.filter(
+      (s) => selectedItems.has(s.id) && s.status === 'processada',
+    );
+    if (selecionadas.length === 0) {
+      setNotification({
+        type: 'error',
+        message: 'Nenhuma solicitação processada selecionada.',
+      });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Reprocessar ${selecionadas.length} fatura(s)?\n\nElas voltarão ao status "Aprovada" para serem processadas novamente.`,
+      )
+    )
+      return;
+
+    setProcessingBaixa(true);
+    let successCount = 0;
+
+    try {
+      for (const sol of selecionadas) {
+        const { error } = await supabaseAdmin
+          .from('solicitacoes_baixa')
+          .update({
+            status: 'aprovada',
+            processado_por: null,
+            processado_em: null,
+            forma_pagamento: null,
+          })
+          .eq('id', sol.id);
+
+        if (!error) successCount++;
+      }
+
+      await carregarSolicitacoes();
+      setSelectedItems(new Set());
+      setNotification({
+        type: 'success',
+        message: `${successCount} fatura(s) disponíveis para reprocessamento!`,
+      });
+      setTimeout(() => setNotification(null), 4000);
+    } catch (error) {
+      console.error('Erro ao reprocessar em lote:', error);
+      setNotification({
+        type: 'error',
+        message: `Erro ao reprocessar: ${error.message}`,
+      });
+      setTimeout(() => setNotification(null), 5000);
+    } finally {
+      setProcessingBaixa(false);
+    }
+  };
+
   // Excluir solicitação
   const excluirSolicitacao = async (sol) => {
     if (!window.confirm(`Excluir solicitação da fatura ${sol.nr_fat}?`)) return;
@@ -376,12 +473,17 @@ const SolicitacaoBaixa = () => {
 
       // Atualizar status no Supabase baseado nos resultados
       if (result.results) {
+        const jaProcessados = new Set();
         for (const r of result.results) {
           const sol = pendentes.find(
             (s) =>
-              s.nr_fat === r.receivableCode && s.cd_empresa === r.branchCode,
+              !jaProcessados.has(s.id) &&
+              String(s.nr_fat) === String(r.receivableCode) &&
+              String(s.cd_empresa) === String(r.branchCode) &&
+              String(s.nr_parcela || 1) === String(r.installmentCode || 1),
           );
           if (sol) {
+            jaProcessados.add(sol.id);
             await supabaseAdmin
               .from('solicitacoes_baixa')
               .update({
@@ -576,7 +678,7 @@ const SolicitacaoBaixa = () => {
               {formatarMoeda(valorTotalSelecionado)}
             </span>
           )}
-          {selectedItems.size > 0 && (
+          {selectedItems.size > 0 && filtroStatus !== 'processada' && (
             <button
               onClick={processarBaixaLote}
               disabled={processingBaixa}
@@ -591,6 +693,25 @@ const SolicitacaoBaixa = () => {
                 <>
                   <CheckCircle size={14} weight="bold" />
                   Processar Baixa ({selectedItems.size})
+                </>
+              )}
+            </button>
+          )}
+          {selectedItems.size > 0 && filtroStatus === 'processada' && (
+            <button
+              onClick={reprocessarLote}
+              disabled={processingBaixa}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {processingBaixa ? (
+                <>
+                  <Spinner size={14} className="animate-spin" />
+                  Reprocessando...
+                </>
+              ) : (
+                <>
+                  <ArrowClockwise size={14} weight="bold" />
+                  Reprocessar ({selectedItems.size})
                 </>
               )}
             </button>
@@ -782,9 +903,70 @@ const SolicitacaoBaixa = () => {
                       )}
                     </td>
                     <td className="px-3 py-2 text-center">
-                      {sol.forma_pagamento ? (
-                        <span
-                          className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      {editandoFormaPgto === sol.id ? (
+                        <select
+                          autoFocus
+                          defaultValue={sol.forma_pagamento || ''}
+                          className="border border-[#000638] rounded px-1 py-0.5 text-[10px] font-bold w-[110px] focus:ring-2 focus:ring-[#000638] focus:outline-none"
+                          onBlur={async (e) => {
+                            const novaForma = e.target.value;
+                            setEditandoFormaPgto(null);
+                            if (novaForma === (sol.forma_pagamento || ''))
+                              return;
+                            try {
+                              const { error } = await supabaseAdmin
+                                .from('solicitacoes_baixa')
+                                .update({ forma_pagamento: novaForma || null })
+                                .eq('id', sol.id);
+                              if (error) throw error;
+                              setSolicitacoes((prev) =>
+                                prev.map((s) =>
+                                  s.id === sol.id
+                                    ? {
+                                        ...s,
+                                        forma_pagamento: novaForma || null,
+                                      }
+                                    : s,
+                                ),
+                              );
+                              setNotification({
+                                type: 'success',
+                                message: `Forma de pagamento ${novaForma ? 'atualizada' : 'removida'}!`,
+                              });
+                              setTimeout(() => setNotification(null), 2000);
+                            } catch (err) {
+                              console.error(
+                                'Erro ao atualizar forma pgto:',
+                                err,
+                              );
+                              setNotification({
+                                type: 'error',
+                                message: 'Erro ao salvar forma de pagamento.',
+                              });
+                              setTimeout(() => setNotification(null), 3000);
+                            }
+                          }}
+                          onChange={(e) => {
+                            e.target.blur();
+                          }}
+                        >
+                          <option value="">Selecione...</option>
+                          {Object.entries(FORMAS_PAGAMENTO_LABELS).map(
+                            ([key, label]) => (
+                              <option key={key} value={key}>
+                                {label}
+                              </option>
+                            ),
+                          )}
+                        </select>
+                      ) : sol.forma_pagamento ? (
+                        <button
+                          onClick={() =>
+                            sol.status === 'processada'
+                              ? setEditandoFormaPgto(sol.id)
+                              : null
+                          }
+                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${
                             sol.forma_pagamento === 'confianca'
                               ? 'bg-blue-100 text-blue-800'
                               : sol.forma_pagamento === 'sicredi'
@@ -800,11 +982,28 @@ const SolicitacaoBaixa = () => {
                                         : sol.forma_pagamento === 'credev'
                                           ? 'bg-indigo-100 text-indigo-800'
                                           : 'bg-gray-100 text-gray-800'
-                          }`}
+                          } ${sol.status === 'processada' ? 'cursor-pointer hover:opacity-80' : ''}`}
+                          title={
+                            sol.status === 'processada'
+                              ? 'Clique para alterar'
+                              : ''
+                          }
                         >
                           {FORMAS_PAGAMENTO_LABELS[sol.forma_pagamento] ||
                             sol.forma_pagamento}
-                        </span>
+                          {sol.status === 'processada' && (
+                            <PencilSimple size={9} className="opacity-50" />
+                          )}
+                        </button>
+                      ) : sol.status === 'processada' ? (
+                        <button
+                          onClick={() => setEditandoFormaPgto(sol.id)}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-500 bg-orange-50 hover:bg-orange-100 cursor-pointer transition-colors"
+                          title="Definir forma de pagamento"
+                        >
+                          <PencilSimple size={10} />
+                          Definir
+                        </button>
                       ) : (
                         <span className="text-[10px] text-gray-400">--</span>
                       )}
@@ -856,6 +1055,15 @@ const SolicitacaoBaixa = () => {
                               <XCircle size={16} weight="bold" />
                             </button>
                           </>
+                        )}
+                        {sol.status === 'processada' && (
+                          <button
+                            onClick={() => reprocessarSolicitacao(sol)}
+                            className="p-1 text-orange-500 hover:bg-orange-50 rounded transition-colors"
+                            title="Reprocessar"
+                          >
+                            <ArrowClockwise size={16} weight="bold" />
+                          </button>
                         )}
                         <button
                           onClick={() => excluirSolicitacao(sol)}

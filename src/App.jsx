@@ -61,6 +61,7 @@ const FinanceiroPorCanal = lazy(() => import('./pages/FinanceiroPorCanal'));
 const Endividamento = lazy(() => import('./pages/Endividamento'));
 const ReceitaLiquida = lazy(() => import('./pages/ReceitaLiquida'));
 const PMR = lazy(() => import('./pages/pmr'));
+const DashContasAReceber = lazy(() => import('./pages/DashContasAReceber'));
 const CMVConsolidado = lazy(() => import('./pages/CMVConsolidado'));
 const CMVMultimarcas = lazy(() => import('./pages/CMVMultimarcas'));
 const CMVRevenda = lazy(() => import('./pages/CMVRevenda'));
@@ -134,7 +135,8 @@ const AppRoutes = memo(() => {
     { path: '/widgets', component: Widgets },
     { path: '/financeiro-por-canal', component: FinanceiroPorCanal },
     { path: '/endividamento', component: Endividamento },
-    { path: '/dash-contas-a-receber', component: PMR },
+    { path: '/dash-contas-a-receber', component: DashContasAReceber },
+    { path: '/pmr', component: PMR },
     { path: '/conciliacao', component: Conciliacao },
     { path: '/saldo-bancario-totvs', component: SaldoBancarioTotvs },
     { path: '/home', component: Home },
