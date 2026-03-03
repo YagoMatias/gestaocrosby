@@ -112,6 +112,11 @@ const AVAILABLE_PAGES = [
     name: 'Dash Contas a Receber',
     category: 'Financeiro',
   },
+  {
+    path: '/dash-inadimplencia',
+    name: 'Dash Inadimplência',
+    category: 'Financeiro',
+  },
 
   // Auditoria
   { path: '/conciliacao', name: 'Conciliação', category: 'Auditoria' },

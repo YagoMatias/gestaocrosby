@@ -101,6 +101,20 @@ const financeiro = [
         color: 'text-green-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
+      {
+        name: 'Dashboard',
+        href: '/dash-contas-a-receber',
+        icon: ChartBar,
+        color: 'text-green-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Dashboard Inadimplência',
+        href: '/dash-inadimplencia',
+        icon: ChartBar,
+        color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
     ],
   },
   {
@@ -462,12 +476,6 @@ const dashboardFinanceiro = [
     href: '/endividamento',
     icon: ChartBar,
     color: 'text-purple-600',
-  },
-  {
-    name: 'Dash Contas a Receber',
-    href: '/dash-contas-a-receber',
-    icon: ChartBar,
-    color: 'text-green-600',
   },
 ];
 const DashboardFaturamento = [
