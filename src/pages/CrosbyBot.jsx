@@ -1,1573 +1,2018 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../components/AuthContext';
-import useMaintenanceMode from '../hooks/useMaintenanceMode';
-import MaintenanceModal from '../components/MaintenanceModal';
-import MaintenanceBanner from '../components/MaintenanceBanner';
 import {
   Robot,
-  Plus,
   ChatText,
-  Microphone,
   Image,
   VideoCamera,
-  FilePdf,
-  Trash,
-  TextAlignLeft,
-  TextB,
-  TextItalic,
-  TextT,
-  DotsSixVertical,
-  PencilSimple,
-  ArrowUp,
-  ArrowDown,
+  FileXls,
+  Table,
   Eye,
   X,
   PaperPlaneTilt,
-  Check,
+  Info,
+  ListBullets,
+  CloudArrowUp,
+  Plus,
+  BracketsCurly,
+  Lightning,
+  TextB,
+  TextItalic,
+  TextStrikethrough,
+  Code,
+  ChartBar,
+  Calendar,
+  CurrencyDollar,
   Checks,
-  UploadSimple,
+  EnvelopeOpen,
+  Link,
+  Phone,
+  Trash,
+  HandTap,
+  DownloadSimple,
+  Database,
+  Buildings,
   Users,
-  FileXls,
+  CaretDown,
+  CaretUp,
+  MagnifyingGlass,
+  Funnel,
+  CheckCircle,
 } from '@phosphor-icons/react';
 
-const CrosbyBot = () => {
+// --- IMPORT DO NOVO GRÁFICO ---
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
+
+const CrosbyTemplateManager = () => {
   const { user } = useAuth();
-  const [messages, setMessages] = useState([]);
-  const [selectedMessage, setSelectedMessage] = useState(null);
-  const [editContent, setEditContent] = useState('');
-  const [editFormatting, setEditFormatting] = useState({
-    bold: false,
-    italic: false,
-    uppercase: false,
-    lowercase: false,
-  });
-  const [showPreview, setShowPreview] = useState(false);
-  const [contatos, setContatos] = useState([]);
-  const [showContatosModal, setShowContatosModal] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState('');
 
-  // ⚠️ SISTEMA EM MANUTENÇÃO - Apenas admin e owner podem acessar
-  const SISTEMA_EM_MANUTENCAO = true;
-  const { showBanner, showModal, userRole } = useMaintenanceMode(
-    SISTEMA_EM_MANUTENCAO,
-  );
+  // ==========================================
+  // CONFIGURAÇÕES DE WEBHOOKS E CONSTANTES
+  // ==========================================
+  const WEBHOOK_N8N_MASTER =
+    'https://webhook.crosbytech.com.br/webhook/7b312382-5f37-45b9-bbd8-73eaa2a62346';
 
-  // Tipos de mensagem disponíveis
-  const messageTypes = [
-    { type: 'text', label: 'Texto', icon: ChatText, color: 'bg-blue-500' },
-    {
-      type: 'audio',
-      label: 'Áudio',
-      icon: Microphone,
-      color: 'bg-green-500',
-    },
-    { type: 'image', label: 'Foto', icon: Image, color: 'bg-purple-500' },
-    { type: 'video', label: 'Vídeo', icon: VideoCamera, color: 'bg-red-500' },
-    // { type: 'pdf', label: 'PDF', icon: FilePdf, color: 'bg-orange-500' },
-  ];
+  const WEBHOOK_TOTVS_CONTATOS =
+    'https://webhook.crosbytech.com.br/webhook/720c8c4f-0a8d-4641-a0a8-de70b5618582';
 
-  // Adicionar nova mensagem
-  const addMessage = (type) => {
-    const newMessage = {
-      id: Date.now(),
-      type,
-      content: type === 'text' ? [''] : null, // Array de mensagens para texto
-      file: null,
-      formatting: {
-        bold: false,
-        italic: false,
-        uppercase: false,
-        lowercase: false,
-      },
-    };
-    setMessages([...messages, newMessage]);
-    setSelectedMessage(newMessage.id);
-    setEditContent(['']); // Iniciar com array vazio
-    setEditFormatting({
-      bold: false,
-      italic: false,
-      uppercase: false,
-      lowercase: false,
-    });
-  };
+  const COTACAO_DOLAR = 5.8;
 
-  // Deletar mensagem
-  const deleteMessage = (id) => {
-    setMessages(messages.filter((msg) => msg.id !== id));
-    if (selectedMessage === id) {
-      setSelectedMessage(null);
-    }
-  };
+  // ==========================================
+  // ESTADOS GERAIS
+  // ==========================================
+  const [activeTab, setActiveTab] = useState('create');
+  const [accounts, setAccounts] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState('');
 
-  // Selecionar mensagem para edição
-  const selectMessage = (msg) => {
-    setSelectedMessage(msg.id);
-    // Se for texto, garantir que seja array
-    if (msg.type === 'text') {
-      setEditContent(
-        Array.isArray(msg.content) ? msg.content : [msg.content || ''],
-      );
-    } else {
-      setEditContent(msg.content || '');
-    }
-    setEditFormatting(msg.formatting);
-  };
+  // ==========================================
+  // ESTADOS: ABA DE CRIAÇÃO DE TEMPLATES
+  // ==========================================
+  const [templateName, setTemplateName] = useState('');
+  const [category, setCategory] = useState('MARKETING'); // ESTADO DA CATEGORIA AQUI
+  const [language, setLanguage] = useState('pt_BR');
+  const [headerType, setHeaderType] = useState('NONE');
+  const [headerFile, setHeaderFile] = useState(null);
+  const [headerPreviewUrl, setHeaderPreviewUrl] = useState(null);
+  const [bodyText, setBodyText] = useState('');
+  const [variableExamples, setVariableExamples] = useState({});
+  const [buttons, setButtons] = useState([]);
+  const [isCreating, setIsCreating] = useState(false);
+  const [creationFeedback, setCreationFeedback] = useState(null);
 
-  // Salvar edição
-  const saveEdit = () => {
-    setMessages(
-      messages.map((msg) =>
-        msg.id === selectedMessage
-          ? { ...msg, content: editContent, formatting: editFormatting }
-          : msg,
-      ),
-    );
-  };
+  // ==========================================
+  // ESTADOS: ABA DE DISPARO
+  // ==========================================
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [sendMethod, setSendMethod] = useState('CSV');
+  const [csvFile, setCsvFile] = useState(null);
 
-  // Mover mensagem para cima
-  const moveUp = (index) => {
-    if (index === 0) return;
-    const newMessages = [...messages];
-    [newMessages[index - 1], newMessages[index]] = [
-      newMessages[index],
-      newMessages[index - 1],
-    ];
-    setMessages(newMessages);
-  };
+  // ==========================================
+  // ESTADOS: INTEGRAÇÃO TOTVS
+  // ==========================================
+  const [totvsOperationsList, setTotvsOperationsList] = useState([]);
+  const [totvsOperationId, setTotvsOperationId] = useState('');
+  const [totvsStartDate, setTotvsStartDate] = useState('');
+  const [totvsEndDate, setTotvsEndDate] = useState('');
+  const [totvsCompanies, setTotvsCompanies] = useState([]);
+  const [totvsContacts, setTotvsContacts] = useState(null);
+  const [ticketMedio, setTicketMedio] = useState(0);
+  const [isFetchingTotvs, setIsFetchingTotvs] = useState(false);
 
-  // Mover mensagem para baixo
-  const moveDown = (index) => {
-    if (index === messages.length - 1) return;
-    const newMessages = [...messages];
-    [newMessages[index], newMessages[index + 1]] = [
-      newMessages[index + 1],
-      newMessages[index],
-    ];
-    setMessages(newMessages);
-  };
+  // ESTADO DO MODAL DE CONTATOS
+  const [showContactsModal, setShowContactsModal] = useState(false);
 
-  // Aplicar formatação ao texto
-  const applyFormatting = (text, formatting) => {
-    let result = text;
-    if (formatting.uppercase) result = result.toUpperCase();
-    if (formatting.lowercase) result = result.toLowerCase();
-    return result;
-  };
+  // Estados da Lista de Empresas
+  const [companiesList, setCompaniesList] = useState([]);
+  const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = useState(false);
+  const [companySearchTerm, setCompanySearchTerm] = useState('');
+  const dropdownRef = useRef(null);
 
-  // Renderizar preview do texto com formatação
-  const renderTextPreview = (msg) => {
-    const contentArray = Array.isArray(msg.content)
-      ? msg.content
-      : [msg.content || ''];
-    const validTexts = contentArray.filter((t) => t && t.trim());
+  // ==========================================
+  // ESTADOS: ABA DE RESULTADOS
+  // ==========================================
+  const [selectedResultTemplate, setSelectedResultTemplate] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
 
-    if (validTexts.length === 0) {
-      return <span className="text-gray-400 italic">Texto vazio...</span>;
-    }
+  // ==========================================
+  // EFEITOS (USE_EFFECT)
+  // ==========================================
+  useEffect(() => {
+    const fetchData = async () => {
+      const { data: accountsData } = await supabase
+        .from('whatsapp_accounts')
+        .select('*');
+      if (accountsData && accountsData.length > 0) {
+        setAccounts(accountsData);
+        setSelectedAccount(accountsData[0].waba_id);
+      }
 
-    const firstText = applyFormatting(validTexts[0], msg.formatting);
-    const className = `${msg.formatting.bold ? 'font-bold' : ''} ${
-      msg.formatting.italic ? 'italic' : ''
-    }`;
-
-    return (
-      <span className={className}>
-        {firstText}
-        {validTexts.length > 1 && (
-          <span className="ml-2 text-xs text-indigo-600 font-semibold">
-            +{validTexts.length - 1} variações
-          </span>
-        )}
-      </span>
-    );
-  };
-
-  // Obter ícone e cor do tipo
-  const getTypeInfo = (type) => {
-    return messageTypes.find((t) => t.type === type);
-  };
-
-  // Upload de arquivo
-  const handleFileUpload = (e, messageId) => {
-    const file = e.target.files[0];
-    if (file) {
-      setMessages(
-        messages.map((msg) =>
-          msg.id === messageId ? { ...msg, file, content: file.name } : msg,
-        ),
-      );
-    }
-  };
-
-  // Função para importar contatos via Excel
-  const handleImportarContatos = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    // Verificar se é um arquivo Excel
-    const validTypes = [
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'text/csv',
-    ];
-
-    if (
-      !validTypes.includes(file.type) &&
-      !file.name.match(/\.(xlsx?|csv)$/i)
-    ) {
-      alert('❌ Por favor, selecione um arquivo Excel (.xlsx, .xls) ou CSV');
-      return;
-    }
-
-    const reader = new FileReader();
-
-    reader.onload = (event) => {
-      try {
-        const data = event.target.result;
-
-        // Para arquivos CSV
-        if (file.name.endsWith('.csv')) {
-          const lines = data.split('\n');
-          const contatosImportados = [];
-
-          // Ignorar primeira linha (cabeçalho)
-          for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-
-            // Separar por vírgula ou ponto-e-vírgula
-            const columns = line.split(/[;,]/);
-
-            if (columns.length >= 2) {
-              // Remover apóstrofo inicial (') que o Excel usa para forçar texto
-              let telefone = columns[0].trim();
-              if (telefone.startsWith("'")) {
-                telefone = telefone.substring(1);
-              }
-
-              const nome = columns[1].trim();
-
-              if (telefone && nome) {
-                contatosImportados.push({
-                  id: Date.now() + i,
-                  telefone,
-                  nome,
-                });
-              }
-            }
-          }
-
-          if (contatosImportados.length > 0) {
-            setContatos((prev) => [...prev, ...contatosImportados]);
-            alert(
-              `✅ ${contatosImportados.length} contatos importados com sucesso!`,
-            );
-          } else {
-            alert('❌ Nenhum contato válido encontrado no arquivo');
-          }
-        } else {
-          // Para arquivos Excel, precisamos de uma biblioteca
-          alert(
-            '📝 Para arquivos Excel (.xlsx), use um arquivo CSV ou instale a biblioteca xlsx',
-          );
-          alert(
-            '💡 Dica: No Excel, vá em "Salvar Como" → "CSV (delimitado por vírgulas)"',
-          );
-        }
-      } catch (error) {
-        console.error('Erro ao processar arquivo:', error);
-        alert('❌ Erro ao processar arquivo. Verifique o formato.');
+      const { data: operacoesData, error: opError } = await supabase
+        .from('totvs_operacoes')
+        .select('*')
+        .order('nome');
+      if (operacoesData && operacoesData.length > 0) {
+        setTotvsOperationsList(operacoesData);
+        setTotvsOperationId(operacoesData[0].id);
+      } else if (opError) {
+        console.error('Erro ao buscar operações no Supabase:', opError);
       }
     };
+    fetchData();
+  }, []);
 
-    // Ler como texto para CSV ou como array buffer para Excel
-    if (file.name.endsWith('.csv')) {
-      reader.readAsText(file);
+  useEffect(() => {
+    if (headerFile) {
+      const url = URL.createObjectURL(headerFile);
+      setHeaderPreviewUrl(url);
+      return () => URL.revokeObjectURL(url);
     } else {
-      reader.readAsArrayBuffer(file);
+      setHeaderPreviewUrl(null);
     }
+  }, [headerFile]);
 
-    // Limpar input
-    e.target.value = '';
-  };
-
-  // Função para remover contato
-  const removerContato = (id) => {
-    setContatos(contatos.filter((c) => c.id !== id));
-  };
-
-  // Função para limpar todos os contatos
-  const limparContatos = () => {
-    if (contatos.length === 0) return;
-    if (confirm(`Deseja remover todos os ${contatos.length} contatos?`)) {
-      setContatos([]);
+  useEffect(() => {
+    if ((activeTab === 'send' || activeTab === 'results') && selectedAccount) {
+      fetchTemplates();
     }
-  };
+  }, [selectedAccount, activeTab]);
 
-  // Função para determinar a URL da API baseada no tipo de mensagem
-  const getApiUrl = (type, content, file) => {
-    if (type === 'text') {
-      // Texto com até 600 caracteres
-      if (content && content.length <= 600) {
-        return 'https://msgapi.crosbytech.com.br/message/sendText/';
-      }
-    } else if (type === 'image') {
-      // Imagem (jpeg)
-      if (file && file.type.includes('image')) {
-        return 'https://msgapi.crosbytech.com.br/message/sendMedia/';
-      }
-    } else if (type === 'audio') {
-      // Áudio (ogg)
-      if (file && (file.type.includes('audio') || file.name.endsWith('.ogg'))) {
-        return 'https://msgapi.crosbytech.com.br/message/sendWhatsAppAudio/';
-      }
-    } else if (type === 'video') {
-      // Vídeo
-      if (file && file.type.includes('video')) {
-        return 'https://msgapi.crosbytech.com.br/message/sendMedia/';
-      }
-    } else if (type === 'pdf') {
-      // PDF
-      if (file && file.type.includes('pdf')) {
-        return 'https://msgapi.crosbytech.com.br/message/sendMedia/';
-      }
-    }
-    return null;
-  };
-
-  // Função para fazer upload de mídia no Supabase Storage
-  // Baseado em endividamentoApi.js
-  const uploadMidia = async (file, messageId) => {
-    if (!file) return null;
-
-    const BUCKET_NAME = 'midias_bot';
-
+  const fetchTemplates = async () => {
+    setIsLoadingTemplates(true);
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-
-      // Gerar nome único para o arquivo (mesmo método do endividamentoApi.js)
-      const uid =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : String(Date.now());
-
-      // Determinar pasta baseado no tipo de arquivo
-      let folder = 'outros';
-      if (file.type.includes('image')) {
-        folder = 'imagens';
-      } else if (file.type.includes('video')) {
-        folder = 'videos';
-      } else if (file.type.includes('audio')) {
-        folder = 'audios';
-      } else if (file.type.includes('pdf')) {
-        folder = 'pdfs';
-      }
-
-      // Caminho completo: folder/userId/uuid_filename
-      const path = `${folder}/${user.id}/${uid}_${file.name}`;
-
-      console.log(`📤 Fazendo upload de ${file.name} para ${path}...`);
-
-      // Fazer upload para o Storage (método idêntico ao endividamentoApi.js)
-      const { error } = await supabase.storage
-        .from(BUCKET_NAME)
-        .upload(path, file, { upsert: false });
-
-      if (error) {
-        // Tratamento de erro similar ao endividamentoApi.js
-        if (
-          String(error.message || '')
-            .toLowerCase()
-            .includes('bucket') &&
-          String(error.message || '')
-            .toLowerCase()
-            .includes('not') &&
-          String(error.message || '')
-            .toLowerCase()
-            .includes('found')
-        ) {
-          throw new Error(
-            `Bucket "${BUCKET_NAME}" não encontrado. Crie o bucket no Storage do Supabase (público) ou altere o nome no código.`,
-          );
-        }
-        throw error;
-      }
-
-      // Obter URL pública do arquivo
-      const { data: urlData } = supabase.storage
-        .from(BUCKET_NAME)
-        .getPublicUrl(path);
-
-      console.log(
-        `✅ Mídia ${file.name} enviada com sucesso: ${urlData.publicUrl}`,
-      );
-      return urlData.publicUrl;
-    } catch (error) {
-      console.error('❌ Erro ao fazer upload da mídia:', error);
-      throw error;
-    }
-  };
-
-  // Função para enviar mensagens para o Supabase
-  const handleSendMessages = async () => {
-    if (!user || !user.id) {
-      alert('❌ Erro: Usuário não autenticado!');
-      return;
-    }
-
-    if (messages.length === 0) {
-      alert('❌ Adicione pelo menos uma mensagem antes de enviar!');
-      return;
-    }
-
-    if (contatos.length === 0) {
-      alert('❌ Importe pelo menos um contato antes de enviar!');
-      return;
-    }
-
-    try {
-      setIsUploading(true);
-      setUploadProgress('Preparando upload...');
-
-      // Etapa 1: Fazer upload das mídias primeiro
-      console.log('📤 Iniciando upload de mídias...');
-
-      const totalMidias = messages.filter(
-        (m) => m.file && m.type !== 'text',
-      ).length;
-      let midiaAtual = 0;
-
-      const messagesComMidia = await Promise.all(
-        messages.map(async (msg, index) => {
-          let midiaInfo = null;
-
-          // Se a mensagem tem arquivo (não é texto), fazer upload
-          if (msg.file && msg.type !== 'text') {
-            try {
-              midiaAtual++;
-              setUploadProgress(
-                `Enviando mídia ${midiaAtual} de ${totalMidias}...`,
-              );
-
-              midiaInfo = await uploadMidia(msg.file, msg.id);
-              console.log(`✅ Mídia ${index + 1} enviada:`, midiaInfo);
-            } catch (error) {
-              console.error(`❌ Erro ao enviar mídia ${index + 1}:`, error);
-              setIsUploading(false);
-              throw new Error(`Falha ao enviar mídia: ${msg.file.name}`);
-            }
-          }
-
-          return { ...msg, midiaInfo };
+      const response = await fetch(WEBHOOK_N8N_MASTER, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          acao: 'LISTAR_TEMPLATES',
+          dados: { waba_id: selectedAccount },
         }),
+      });
+      const result = await response.json();
+      const list = result.data || result.json || result;
+      if (Array.isArray(list)) setTemplates(list);
+      else setTemplates([]);
+    } catch (error) {
+      console.error('Erro ao listar templates', error);
+      setTemplates([]);
+    } finally {
+      setIsLoadingTemplates(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'send' && sendMethod === 'TOTVS') {
+      fetchCompaniesList();
+    }
+  }, [activeTab, sendMethod]);
+
+  const fetchCompaniesList = async () => {
+    if (companiesList.length > 0) return;
+    try {
+      const tokenParams = new URLSearchParams();
+      tokenParams.append('grant_type', 'password');
+      tokenParams.append('client_id', 'crosbyapiv2');
+      tokenParams.append('client_secret', '5955950459');
+      tokenParams.append('username', 'APINOVA');
+      tokenParams.append('password', '123456');
+
+      const tokenResponse = await fetch(
+        'https://apitotvsmoda.bhan.com.br/api/totvsmoda/authorization/v2/token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: tokenParams.toString(),
+        },
       );
 
-      console.log('✅ Todas as mídias foram enviadas!');
-      setUploadProgress('Salvando no banco de dados...');
+      if (!tokenResponse.ok)
+        throw new Error('Falha ao autenticar na API TOTVS Moda');
 
-      // Etapa 2: Preparar array de mensagens com URLs das mídias
-      const messagesPayload = messagesComMidia.map((msg, index) => {
-        let value = '';
+      const tokenData = await tokenResponse.json();
+      const accessToken = tokenData.access_token;
 
-        if (msg.type === 'text') {
-          // Para texto, aplicar formatação em cada variação e enviar como array
-          const contentArray = Array.isArray(msg.content)
-            ? msg.content
-            : [msg.content || ''];
-          const validTexts = contentArray.filter((t) => t && t.trim());
+      const branchesResponse = await fetch(
+        'https://www30.bhan.com.br:9443/api/totvsmoda/person/v2/branchesList',
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
 
-          // Aplicar formatação em todas as variações válidas
-          value = validTexts.map((text) =>
-            applyFormatting(text, msg.formatting),
-          );
+      if (!branchesResponse.ok)
+        throw new Error('Falha ao buscar as filiais no TOTVS');
 
-          // Se não houver textos válidos, enviar array com string vazia
-          if (value.length === 0) {
-            value = [''];
-          }
-        } else if (msg.midiaInfo) {
-          // Para mídias, usar a URL pública (agora midiaInfo já é a URL)
-          value = msg.midiaInfo;
-        } else {
-          value = 'Sem conteúdo';
-        }
+      const branchesData = await branchesResponse.json();
 
-        const apiUrl = getApiUrl(msg.type, msg.content, msg.file);
+      const rawList = branchesData.items || [];
+      const formatada = rawList
+        .map((emp) => ({
+          id: emp.code,
+          nome: emp.description,
+        }))
+        .filter((emp) => emp.id !== undefined && emp.id !== null);
 
-        return {
-          id: index + 1,
-          type: apiUrl || 'URL não definida',
-          value: value, // Agora value é array para mensagens de texto
-        };
+      formatada.sort((a, b) => parseInt(a.id, 10) - parseInt(b.id, 10));
+      setCompaniesList(formatada);
+    } catch (error) {
+      console.error('Erro ao buscar empresas direto do TOTVS:', error);
+      alert('Falha ao conectar com o TOTVS para buscar as empresas.');
+    }
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsCompanyDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // ==========================================
+  // FUNÇÕES DE UTILITÁRIOS
+  // ==========================================
+  const applyQuickDateFilter = (type) => {
+    const today = new Date();
+    let start = new Date();
+    let end = new Date();
+
+    if (type === 'ativos') {
+      start.setDate(today.getDate() - 60);
+    } else if (type === 'inativos') {
+      start.setDate(today.getDate() - 365);
+      end.setDate(today.getDate() - 61);
+    } else if (type === '6meses') {
+      start.setMonth(today.getMonth() - 6);
+    } else if (type === '1ano') {
+      start.setFullYear(today.getFullYear() - 1);
+    }
+
+    setTotvsStartDate(start.toISOString().split('T')[0]);
+    setTotvsEndDate(end.toISOString().split('T')[0]);
+  };
+
+  const renderFormattedText = (rawText) => {
+    if (!rawText) return { __html: '' };
+    let processed = rawText
+      .replace(/{{[0-9]+}}/g, (m) =>
+        variableExamples[m] ? `[${variableExamples[m]}]` : m,
+      )
+      .replace(/\*(.*?)\*/g, '<strong>$1</strong>')
+      .replace(/_(.*?)_/g, '<em>$1</em>')
+      .replace(/~(.*?)~/g, '<del>$1</del>')
+      .replace(
+        /```(.*?)```/g,
+        '<code class="bg-gray-100 px-1 rounded font-mono">$1</code>',
+      );
+    return { __html: processed.replace(/\n/g, '<br/>') };
+  };
+
+  const applyFormatting = (tag) => {
+    const input = document.getElementById('bodyTextArea');
+    if (!input) return;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const selectedText = bodyText.substring(start, end);
+    let sym =
+      tag === 'BOLD'
+        ? '*'
+        : tag === 'ITALIC'
+          ? '_'
+          : tag === 'STRIKE'
+            ? '~'
+            : '```';
+    const newText =
+      bodyText.substring(0, start) +
+      sym +
+      selectedText +
+      sym +
+      bodyText.substring(end);
+    setBodyText(newText);
+    setTimeout(() => {
+      input.focus();
+      input.setSelectionRange(start + sym.length, end + sym.length);
+    }, 0);
+  };
+
+  const handleAddVariable = () => {
+    const matches = bodyText.match(/{{[0-9]+}}/g) || [];
+    const variableString = `{{${matches.length + 1}}}`;
+    const input = document.getElementById('bodyTextArea');
+    if (input) {
+      const start = input.selectionStart;
+      setBodyText(
+        bodyText.substring(0, start) +
+          variableString +
+          bodyText.substring(start),
+      );
+    } else {
+      setBodyText((prev) => prev + variableString);
+    }
+  };
+
+  const handleAddButton = (type) => {
+    if (!type) return;
+    if (buttons.length >= 10) return alert('O limite máximo é de 10 botões.');
+    const newBtn = { type, text: '' };
+    if (type === 'URL') newBtn.url = '';
+    if (type === 'PHONE_NUMBER') newBtn.phone_number = '';
+    setButtons([...buttons, newBtn]);
+  };
+
+  const handleUpdateButton = (index, field, value) => {
+    const updated = [...buttons];
+    updated[index][field] = value;
+    setButtons(updated);
+  };
+
+  const handleRemoveButton = (index) => {
+    const updated = [...buttons];
+    updated.splice(index, 1);
+    setButtons(updated);
+  };
+
+  // ==========================================
+  // FUNÇÕES DE AÇÃO PRINCIPAIS
+  // ==========================================
+
+  // AÇÃO: CRIAR TEMPLATE NA META
+  const handleCreateTemplate = async () => {
+    if (!selectedAccount || !templateName || !bodyText)
+      return alert('Preencha os campos obrigatórios (Nome e Texto).');
+
+    for (const btn of buttons) {
+      if (!btn.text) return alert('Todos os botões precisam de um texto.');
+      if (btn.type === 'URL' && !btn.url)
+        return alert('Preencha o link do botão Site.');
+      if (btn.type === 'PHONE_NUMBER' && !btn.phone_number)
+        return alert('Preencha o número do botão de Ligação.');
+    }
+
+    setIsCreating(true);
+    setCreationFeedback(null);
+
+    try {
+      const vars = bodyText.match(/{{[0-9]+}}/g) || [];
+      const componentsArray = [
+        {
+          type: 'BODY',
+          text: bodyText,
+          example:
+            vars.length > 0
+              ? {
+                  body_text: [
+                    vars.map((v) => variableExamples[v] || 'Exemplo'),
+                  ],
+                }
+              : undefined,
+        },
+      ];
+
+      if (buttons.length > 0) {
+        componentsArray.push({
+          type: 'BUTTONS',
+          buttons: buttons.map((b) => {
+            if (b.type === 'QUICK_REPLY')
+              return { type: 'QUICK_REPLY', text: b.text };
+            if (b.type === 'URL')
+              return { type: 'URL', text: b.text, url: b.url };
+            if (b.type === 'PHONE_NUMBER')
+              return {
+                type: 'PHONE_NUMBER',
+                text: b.text,
+                phone_number: b.phone_number,
+              };
+            return b;
+          }),
+        });
+      }
+
+      // Payload dinâmico enviando a categoria selecionada e allow_category_change
+      const payload = {
+        waba_id: selectedAccount,
+        name: templateName,
+        category: category,
+        language,
+        components: componentsArray,
+        allow_category_change: true,
+        userId: user.id,
+      };
+
+      const response = await fetch(WEBHOOK_N8N_MASTER, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          acao: 'CRIAR_TEMPLATE',
+          dados: payload,
+        }),
       });
 
-      // Etapa 3: Preparar dados para inserção
-      // Criar uma linha para CADA contato (não um JSON)
-      const registrosParaInserir = contatos.map((contato) => ({
-        tp_mensagem: messagesPayload,
-        nr_contato: contato.telefone,
-        nm_nome: contato.nome, // Nome como VARCHAR
-        cd_user: user.id,
-      }));
+      const result = await response.json();
 
-      console.log('📤 Enviando registros para banco:', registrosParaInserir);
+      setCreationFeedback({
+        type: 'success',
+        message: 'Template criado com sucesso!',
+        status: result.meta_status || 'PENDING',
+      });
 
-      // Etapa 4: Inserir múltiplas linhas no Supabase (uma por contato)
-      const { data, error } = await supabase
-        .from('envio_em_massa')
-        .insert(registrosParaInserir)
-        .select();
+      setTemplateName('');
+      setBodyText('');
+      setButtons([]);
 
-      if (error) {
-        console.error('❌ Erro ao salvar no Supabase:', error);
-        setIsUploading(false);
-        setUploadProgress('');
-        alert(`❌ Erro ao enviar: ${error.message}`);
-        return;
-      }
-
-      console.log('✅ Mensagens salvas com sucesso:', data);
-      setIsUploading(false);
-      setUploadProgress('');
-      alert(
-        `✅ Fluxo enviado com sucesso para ${contatos.length} contatos! 🚀`,
-      );
-
-      // Limpar mensagens e contatos após envio bem-sucedido
-      setMessages([]);
-      setContatos([]);
-      setSelectedMessage(null);
-      setShowPreview(false);
-    } catch (error) {
-      console.error('❌ Erro ao enviar mensagens:', error);
-      setIsUploading(false);
-      setUploadProgress('');
-      alert(`❌ Erro ao enviar: ${error.message}`);
+      setTimeout(() => {
+        setCreationFeedback(null);
+        setActiveTab('send');
+      }, 4000);
+    } catch (e) {
+      setCreationFeedback({
+        type: 'error',
+        message: 'Falha ao criar o template. Verifique o console.',
+      });
+    } finally {
+      setIsCreating(false);
     }
   };
 
-  // Função para baixar o CSV de exemplo
-  const downloadExemploCSV = () => {
-    // Usando apóstrofo (') antes dos números para forçar Excel a tratar como texto
-    const csvContent =
-      "telefone;nome\n'11999887766660;João Silva\n'11988776655;Maria Santos\n'11977665544;Pedro Oliveira";
+  // AÇÃO: MANIPULAÇÃO DE CSV
+  const handleCsvUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) setCsvFile(file);
+  };
+
+  const handleDownloadCsvTemplate = () => {
+    let headers = ['telefone'];
+    let sampleRow = ['5511999999999'];
+
+    if (selectedTemplate) {
+      const comps =
+        selectedTemplate.components || selectedTemplate.json?.components || [];
+      const bodyComp = comps.find((c) => c.type === 'BODY');
+      if (bodyComp && bodyComp.text) {
+        const matches = bodyComp.text.match(/{{[0-9]+}}/g);
+        if (matches) {
+          const uniqueVars = [...new Set(matches)];
+          uniqueVars.forEach((_, i) => {
+            headers.push(`variavel_${i + 1}`);
+            sampleRow.push(`exemplo_${i + 1}`);
+          });
+        }
+      }
+    } else {
+      headers.push('variavel_1', 'variavel_2');
+      sampleRow.push('exemplo_1', 'exemplo_2');
+    }
+
+    const csvContent = `${headers.join(',')}\n${sampleRow.join(',')}`;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'exemplo_para_envio_em_massa.csv');
-    link.style.visibility = 'hidden';
-
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute(
+      'download',
+      selectedTemplate
+        ? `modelo_${selectedTemplate.name || selectedTemplate.json?.name}.csv`
+        : 'modelo_crosby.csv',
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-
-    URL.revokeObjectURL(url);
   };
 
+  // AÇÕES: FILTROS DE EMPRESAS (TOTVS)
+  const filteredCompanies = companiesList.filter((c) =>
+    `${c.id} - ${c.nome}`
+      .toLowerCase()
+      .includes(companySearchTerm.toLowerCase()),
+  );
+
+  const handleToggleCompany = (companyId) => {
+    setTotvsCompanies((prev) =>
+      prev.includes(companyId)
+        ? prev.filter((id) => id !== companyId)
+        : [...prev, companyId],
+    );
+  };
+
+  const handleSelectAllCompanies = () =>
+    setTotvsCompanies(filteredCompanies.map((c) => c.id));
+  const handleSelectFiliais = () =>
+    setTotvsCompanies(
+      filteredCompanies
+        .filter((c) => parseInt(c.id, 10) <= 5999)
+        .map((c) => c.id),
+    );
+  const handleSelectFranquias = () =>
+    setTotvsCompanies(
+      filteredCompanies
+        .filter((c) => parseInt(c.id, 10) >= 6000)
+        .map((c) => c.id),
+    );
+  const handleClearCompanies = () => setTotvsCompanies([]);
+
+  // ==========================================
+  // AÇÃO: BUSCAR CONTATOS DO TOTVS
+  // ==========================================
+  const handleFetchTotvs = async () => {
+    const operacaoSelecionada = totvsOperationsList.find(
+      (op) => op.id === totvsOperationId,
+    );
+
+    const isRevenda = operacaoSelecionada?.nome
+      ?.toLowerCase()
+      .includes('revenda');
+
+    let empresasParaEnviar = totvsCompanies;
+
+    if (isRevenda) {
+      empresasParaEnviar = companiesList
+        .filter((c) => parseInt(c.id, 10) <= 5999)
+        .map((c) => parseInt(c.id, 10));
+    } else {
+      if (totvsCompanies.length === 0) {
+        return alert('Selecione pelo menos uma empresa.');
+      }
+    }
+
+    if (!totvsStartDate || !totvsEndDate) return alert('Selecione o período.');
+
+    setIsFetchingTotvs(true);
+    setTotvsContacts(null);
+    setTicketMedio(0);
+
+    try {
+      const response = await fetch(WEBHOOK_TOTVS_CONTATOS, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operacao: operacaoSelecionada,
+          data_inicio: totvsStartDate,
+          data_fim: totvsEndDate,
+          empresas: empresasParaEnviar,
+        }),
+      });
+
+      const result = await response.json();
+
+      const list =
+        result.data || (Array.isArray(result) ? result : result.json || []);
+      const valorDoTicket = result.ticketMedio || 0;
+
+      if (list.length > 0) {
+        setTotvsContacts(list);
+        setTicketMedio(valorDoTicket);
+        alert(`${list.length} contatos carregados com sucesso!`);
+      } else {
+        alert('Nenhum contato retornado pelo TOTVS para estes filtros.');
+      }
+    } catch (e) {
+      alert('Erro ao buscar contatos no TOTVS.');
+    } finally {
+      setIsFetchingTotvs(false);
+    }
+  };
+
+  // AÇÃO: INICIAR DISPARO DE CAMPANHA
+  const handleSendCampaign = async () => {
+    if (!selectedTemplate) return alert('Selecione um modelo de mensagem.');
+
+    if (sendMethod === 'CRM26') {
+      return alert('A integração com o CRM 26 ainda não foi configurada.');
+    }
+
+    setIsSending(true);
+
+    const sendToN8n = async (rows) => {
+      const payload = {
+        waba_id: selectedAccount,
+        template_name: selectedTemplate.name || selectedTemplate.json?.name,
+        language: selectedTemplate.language || selectedTemplate.json?.language,
+        contacts_csv: rows,
+        origem: sendMethod,
+      };
+
+      try {
+        await fetch(WEBHOOK_N8N_MASTER, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            acao: 'DISPARAR_CAMPANHA',
+            dados: payload,
+          }),
+        });
+        alert('Disparo iniciado com sucesso!');
+        setCsvFile(null);
+        setTotvsContacts(null);
+        setTicketMedio(0);
+      } catch (e) {
+        alert('Erro ao iniciar disparo.');
+      } finally {
+        setIsSending(false);
+      }
+    };
+
+    if (sendMethod === 'CSV') {
+      if (!csvFile) {
+        setIsSending(false);
+        return alert('Selecione o arquivo da planilha (.csv ou .xls).');
+      }
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const rows = e.target.result.split('\n').filter((l) => l.trim());
+        await sendToN8n(rows);
+      };
+      reader.readAsText(csvFile);
+    } else {
+      if (!totvsContacts || totvsContacts.length === 0) {
+        setIsSending(false);
+        return alert('Você precisa buscar os contatos no TOTVS primeiro.');
+      }
+      await sendToN8n(totvsContacts);
+    }
+  };
+
+  // AÇÃO: BUSCAR RESULTADOS (ANALYTICS)
+  const handleFetchAnalytics = async () => {
+    if (!selectedAccount || !selectedResultTemplate || !startDate || !endDate) {
+      return alert(
+        '⚠️ Atenção: Você precisa selecionar a Conta, o Modelo, a Data Inicial e a Data Final!',
+      );
+    }
+
+    const startDt = new Date(startDate + 'T00:00:00');
+    const endDt = new Date(endDate + 'T23:59:59');
+
+    if (startDt.getTime() > endDt.getTime()) {
+      return alert(
+        '⚠️ Erro: A Data Inicial não pode ser maior que a Data Final!',
+      );
+    }
+
+    let startTs = Math.floor(startDt.getTime() / 1000);
+    let endTs = Math.floor(endDt.getTime() / 1000);
+
+    const nowTs = Math.floor(Date.now() / 1000);
+    if (endTs > nowTs) {
+      endTs = nowTs;
+    }
+
+    setIsLoadingAnalytics(true);
+    setAnalyticsData(null);
+
+    const payload = {
+      acao: 'BUSCAR_RESULTADOS',
+      dados: {
+        waba_id: selectedAccount,
+        template_name: selectedResultTemplate,
+        start: startTs,
+        end: endTs,
+      },
+    };
+
+    try {
+      const response = await fetch(WEBHOOK_N8N_MASTER, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+      setAnalyticsData(result);
+    } catch (error) {
+      console.error('Erro no fetch de resultados:', error);
+      alert('Erro ao buscar os resultados da Meta.');
+    } finally {
+      setIsLoadingAnalytics(false);
+    }
+  };
+
+  const getFilterUI = () => {
+    const selectedOp = totvsOperationsList.find(
+      (op) => op.id === totvsOperationId,
+    );
+    const opName = selectedOp?.nome?.toLowerCase() || '';
+
+    if (opName.includes('revenda')) {
+      return {
+        labelStart: 'Última Compra (Início)',
+        labelEnd: 'Última Compra (Fim)',
+        isRevenda: true,
+        quickFilters: (
+          <div className="flex gap-2">
+            <button
+              onClick={() => applyQuickDateFilter('ativos')}
+              className="px-3 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded text-[10px] font-bold hover:bg-green-100 transition-all flex items-center gap-1"
+            >
+              <Funnel size={12} /> Ativos (60d)
+            </button>
+            <button
+              onClick={() => applyQuickDateFilter('inativos')}
+              className="px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded text-[10px] font-bold hover:bg-red-100 transition-all flex items-center gap-1"
+            >
+              <Funnel size={12} /> Inativos (1 ano)
+            </button>
+          </div>
+        ),
+      };
+    }
+
+    if (opName.includes('varejo')) {
+      return {
+        labelStart: 'Data de Cadastro (Início)',
+        labelEnd: 'Data de Cadastro (Fim)',
+        isRevenda: false,
+        quickFilters: (
+          <div className="flex gap-2">
+            <button
+              onClick={() => applyQuickDateFilter('6meses')}
+              className="px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold hover:bg-blue-100 transition-all flex items-center gap-1"
+            >
+              <Funnel size={12} /> Últimos 6 meses
+            </button>
+            <button
+              onClick={() => applyQuickDateFilter('1ano')}
+              className="px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[10px] font-bold hover:bg-indigo-100 transition-all flex items-center gap-1"
+            >
+              <Funnel size={12} /> Último 1 ano
+            </button>
+          </div>
+        ),
+      };
+    }
+
+    return {
+      labelStart: 'Período (Início)',
+      labelEnd: 'Período (Fim)',
+      isRevenda: false,
+      quickFilters: null,
+    };
+  };
+
+  const dynamicUI = getFilterUI();
+
   return (
-    <div className="w-full h-full bg-gray-50">
-      <div className="max-w-7xl mx-auto p-6 h-full flex flex-col">
+    <div className="w-full min-h-screen bg-gray-50 p-6 relative">
+      <div className="max-w-6xl mx-auto">
         <PageTitle
-          title="Crosby Bot - WhatsApp"
-          subtitle="Crie fluxos de mensagens automatizadas para WhatsApp"
+          title="Crosby Manager"
+          subtitle="Central de Mensagens Oficiais"
           icon={Robot}
           iconColor="text-indigo-600"
         />
 
-        {/* Banner para Admin/Owner quando sistema está em manutenção */}
-        {showBanner && <MaintenanceBanner userRole={userRole} />}
-
-        {/* Modal de Bloqueio - SISTEMA EM MANUTENÇÃO */}
-        {showModal && (
-          <MaintenanceModal systemName="Crosby Bot" homeRoute="/home" />
-        )}
-
-        <div className="flex-1 grid grid-cols-12 gap-6 mt-6 min-h-0">
-          {/* Painel de Botões - Adicionar Mensagens */}
-          <div className="col-span-12 lg:col-span-3">
-            <div className="bg-white rounded-xl shadow-lg p-4 sticky top-4">
-              <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <Plus size={18} className="text-indigo-600" />
-                Adicionar Mensagem
-              </h3>
-              <div className="space-y-2">
-                {messageTypes.map((type) => {
-                  const Icon = type.icon;
-                  return (
-                    <button
-                      key={type.type}
-                      onClick={() => addMessage(type.type)}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 hover:scale-105 text-white shadow-md ${type.color}`}
-                    >
-                      <Icon size={20} weight="fill" />
-                      <span className="font-semibold text-sm">
-                        {type.label}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Contador de mensagens */}
-              <div className="mt-6 p-3 bg-gray-50 rounded-lg">
-                <p className="text-xs text-gray-600 text-center">
-                  <span className="font-bold text-indigo-600 text-lg">
-                    {messages.length}
-                  </span>{' '}
-                  mensagem{messages.length !== 1 ? 's' : ''} no fluxo
-                </p>
-              </div>
-
-              {/* Botão Preview */}
-              {messages.length > 0 && (
-                <button
-                  onClick={() => setShowPreview(true)}
-                  className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold text-sm shadow-md transition-all duration-200 hover:scale-105"
-                >
-                  <Eye size={20} weight="fill" />
-                  Visualizar Preview
-                </button>
-              )}
-
-              {/* Seção de Contatos */}
-              <div className="mt-6 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-indigo-200">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-xs font-bold text-gray-800 flex items-center gap-2">
-                    <Users size={16} className="text-indigo-600" />
-                    Contatos
-                    <span className="ml-1 px-2 py-0.5 bg-indigo-600 text-white rounded-full text-[10px]">
-                      {contatos.length}
-                    </span>
-                  </h4>
-                  {contatos.length > 0 && (
-                    <button
-                      onClick={limparContatos}
-                      className="text-[10px] text-red-600 hover:text-red-700 font-semibold"
-                    >
-                      Limpar Todos
-                    </button>
-                  )}
-                </div>
-
-                {/* Botão Importar */}
-                <label className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-xs shadow-md transition-all duration-200 hover:scale-105 cursor-pointer">
-                  <input
-                    type="file"
-                    accept=".csv,.xlsx,.xls"
-                    onChange={handleImportarContatos}
-                    className="hidden"
-                  />
-                  <FileXls size={18} weight="fill" />
-                  Importar CSV
-                </label>
-
-                {/* Instruções */}
-                <div className="mt-2 p-2 bg-white rounded text-[10px] text-gray-600">
-                  <p className="font-semibold text-gray-800 mb-1">
-                    📋 Formato do arquivo:
-                  </p>
-                  <p className="ml-2">
-                    • Coluna A: <strong>telefone</strong> (ex: '11999887766)
-                  </p>
-                  <p className="ml-2">
-                    • Coluna B: <strong>nome</strong> (ex: João Silva)
-                  </p>
-                  <p className="mt-1 text-orange-600 font-semibold">
-                    ⚠️ No Excel, coloque <strong>'</strong> antes do telefone!
-                  </p>
-                  <p className="mt-1 text-indigo-600">💡 Aceita arquivos CSV</p>
-                </div>
-
-                {/* Botão Download Exemplo */}
-                <button
-                  onClick={downloadExemploCSV}
-                  className="w-full mt-2 flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold text-xs shadow-md transition-all duration-200 hover:scale-105"
-                >
-                  <FileXls size={16} weight="fill" />
-                  Baixar CSV de Exemplo
-                </button>
-
-                {/* Lista de Contatos */}
-                {contatos.length > 0 && (
-                  <div className="mt-3 max-h-32 overflow-y-auto space-y-1">
-                    {contatos.slice(0, 5).map((contato) => (
-                      <div
-                        key={contato.id}
-                        className="flex items-center justify-between p-2 bg-white rounded text-[10px] group hover:bg-indigo-50 transition-colors"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-gray-800 truncate">
-                            {contato.nome}
-                          </p>
-                          <p className="text-gray-500 truncate">
-                            {contato.telefone}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => removerContato(contato.id)}
-                          className="ml-2 p-1 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <Trash size={12} />
-                        </button>
-                      </div>
-                    ))}
-                    {contatos.length > 5 && (
-                      <button
-                        onClick={() => setShowContatosModal(true)}
-                        className="w-full text-center text-[10px] text-indigo-600 hover:text-indigo-700 font-semibold py-1"
-                      >
-                        Ver todos ({contatos.length})
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+        {/* ================= TOPO DE NAVEGAÇÃO ================= */}
+        <div className="bg-white p-4 rounded-xl shadow-sm mt-6 mb-6 flex flex-col md:flex-row items-center justify-between gap-4 border border-gray-100">
+          <div className="flex items-center gap-4">
+            <label className="text-xs font-bold text-gray-400 uppercase">
+              Conta WhatsApp:
+            </label>
+            <select
+              value={selectedAccount}
+              onChange={(e) => setSelectedAccount(e.target.value)}
+              className="p-2 border border-indigo-100 bg-indigo-50 rounded-lg text-sm text-indigo-700 font-bold min-w-[200px] outline-none"
+            >
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.waba_id}>
+                  {acc.name}
+                </option>
+              ))}
+            </select>
           </div>
-
-          {/* Tree View - Lista de Mensagens */}
-          <div className="col-span-12 lg:col-span-5">
-            <div className="bg-white rounded-xl shadow-lg p-6 h-full flex flex-col">
-              <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <TextAlignLeft size={18} className="text-indigo-600" />
-                Fluxo de Mensagens
-              </h3>
-
-              {messages.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center text-gray-400">
-                    <Robot size={64} className="mx-auto mb-4 opacity-50" />
-                    <p className="text-sm">
-                      Nenhuma mensagem adicionada ainda.
-                    </p>
-                    <p className="text-xs mt-2">
-                      Clique nos botões ao lado para começar.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex-1 overflow-y-auto space-y-2">
-                  {messages.map((msg, index) => {
-                    const typeInfo = getTypeInfo(msg.type);
-                    const Icon = typeInfo.icon;
-                    const isSelected = selectedMessage === msg.id;
-
-                    return (
-                      <div
-                        key={msg.id}
-                        className={`group relative p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer ${
-                          isSelected
-                            ? 'border-indigo-500 bg-indigo-50 shadow-md'
-                            : 'border-gray-200 bg-white hover:border-indigo-300 hover:shadow'
-                        }`}
-                        onClick={() => selectMessage(msg)}
-                      >
-                        {/* Grip para drag (visual) */}
-                        <div className="absolute left-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <DotsSixVertical
-                            size={16}
-                            className="text-gray-400"
-                          />
-                        </div>
-
-                        {/* Header com tipo e ações */}
-                        <div className="flex items-center gap-3 mb-2">
-                          <div
-                            className={`w-8 h-8 rounded-full ${typeInfo.color} flex items-center justify-center`}
-                          >
-                            <Icon
-                              size={16}
-                              weight="fill"
-                              className="text-white"
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-xs font-bold text-gray-700">
-                              {typeInfo.label} #{index + 1}
-                            </p>
-                          </div>
-
-                          {/* Botões de ação */}
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                moveUp(index);
-                              }}
-                              disabled={index === 0}
-                              className="p-1 text-gray-400 hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                              title="Mover para cima"
-                            >
-                              <ArrowUp size={16} />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                moveDown(index);
-                              }}
-                              disabled={index === messages.length - 1}
-                              className="p-1 text-gray-400 hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                              title="Mover para baixo"
-                            >
-                              <ArrowDown size={16} />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteMessage(msg.id);
-                              }}
-                              className="p-1 text-gray-400 hover:text-red-600"
-                              title="Deletar"
-                            >
-                              <Trash size={16} />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Preview do conteúdo */}
-                        <div className="ml-11 text-sm text-gray-600">
-                          {msg.type === 'text' ? (
-                            <p className="truncate">{renderTextPreview(msg)}</p>
-                          ) : (
-                            <p className="text-xs italic">
-                              {msg.file
-                                ? `📎 ${msg.file.name}`
-                                : 'Nenhum arquivo anexado'}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Painel de Edição */}
-          <div className="col-span-12 lg:col-span-4">
-            <div className="bg-white rounded-xl shadow-lg p-6 h-full flex flex-col">
-              <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <PencilSimple size={18} className="text-indigo-600" />
-                Editor
-              </h3>
-
-              {!selectedMessage ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center text-gray-400">
-                    <PencilSimple
-                      size={48}
-                      className="mx-auto mb-3 opacity-50"
-                    />
-                    <p className="text-sm">
-                      Selecione uma mensagem para editar
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex-1 flex flex-col space-y-4">
-                  {messages.find((m) => m.id === selectedMessage)?.type ===
-                  'text' ? (
-                    <>
-                      {/* Editor de texto com múltiplas variações */}
-                      <div className="flex-1 flex flex-col overflow-hidden">
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-xs font-semibold text-gray-700">
-                            Variações da Mensagem (
-                            {Array.isArray(editContent)
-                              ? editContent.filter((t) => t && t.trim()).length
-                              : 0}
-                            /10)
-                          </label>
-                          {Array.isArray(editContent) &&
-                            editContent.length < 10 && (
-                              <button
-                                onClick={() => {
-                                  const newContent = [...editContent, ''];
-                                  setEditContent(newContent);
-                                  setMessages(
-                                    messages.map((msg) =>
-                                      msg.id === selectedMessage
-                                        ? { ...msg, content: newContent }
-                                        : msg,
-                                    ),
-                                  );
-                                }}
-                                className="flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold transition-colors"
-                              >
-                                <Plus size={14} weight="bold" />
-                                Adicionar Variação
-                              </button>
-                            )}
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto space-y-3 pr-2">
-                          {Array.isArray(editContent) &&
-                            editContent.map((text, index) => (
-                              <div key={index} className="relative">
-                                <div className="flex items-start gap-2 mb-1">
-                                  <span className="text-xs font-bold text-indigo-600 mt-2">
-                                    #{index + 1}
-                                  </span>
-                                  {editContent.length > 1 && (
-                                    <button
-                                      onClick={() => {
-                                        const newContent = editContent.filter(
-                                          (_, i) => i !== index,
-                                        );
-                                        setEditContent(newContent);
-                                        setMessages(
-                                          messages.map((msg) =>
-                                            msg.id === selectedMessage
-                                              ? { ...msg, content: newContent }
-                                              : msg,
-                                          ),
-                                        );
-                                      }}
-                                      className="ml-auto p-1 text-red-500 hover:bg-red-50 rounded"
-                                      title="Remover variação"
-                                    >
-                                      <Trash size={14} />
-                                    </button>
-                                  )}
-                                </div>
-                                <textarea
-                                  value={text}
-                                  onChange={(e) => {
-                                    const newContent = [...editContent];
-                                    newContent[index] = e.target.value;
-                                    setEditContent(newContent);
-                                  }}
-                                  onBlur={() => {
-                                    setMessages(
-                                      messages.map((msg) =>
-                                        msg.id === selectedMessage
-                                          ? { ...msg, content: editContent }
-                                          : msg,
-                                      ),
-                                    );
-                                  }}
-                                  placeholder={`Digite a variação ${
-                                    index + 1
-                                  } da mensagem...`}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none text-sm"
-                                  rows={3}
-                                />
-                              </div>
-                            ))}
-                        </div>
-
-                        {Array.isArray(editContent) &&
-                          editContent.length >= 10 && (
-                            <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-700">
-                              ⚠️ Limite máximo de 10 variações atingido
-                            </div>
-                          )}
-                      </div>
-
-                      {/* Botões de formatação */}
-                      <div>
-                        <label className="text-xs font-semibold text-gray-700 mb-2 block">
-                          Formatação
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            onClick={() => {
-                              const newFormatting = {
-                                ...editFormatting,
-                                bold: !editFormatting.bold,
-                              };
-                              setEditFormatting(newFormatting);
-                              setMessages(
-                                messages.map((msg) =>
-                                  msg.id === selectedMessage
-                                    ? { ...msg, formatting: newFormatting }
-                                    : msg,
-                                ),
-                              );
-                            }}
-                            className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 transition-all ${
-                              editFormatting.bold
-                                ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                                : 'border-gray-300 hover:border-gray-400'
-                            }`}
-                          >
-                            <TextB size={18} weight="bold" />
-                            <span className="text-xs font-semibold">
-                              Negrito
-                            </span>
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              const newFormatting = {
-                                ...editFormatting,
-                                italic: !editFormatting.italic,
-                              };
-                              setEditFormatting(newFormatting);
-                              setMessages(
-                                messages.map((msg) =>
-                                  msg.id === selectedMessage
-                                    ? { ...msg, formatting: newFormatting }
-                                    : msg,
-                                ),
-                              );
-                            }}
-                            className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 transition-all ${
-                              editFormatting.italic
-                                ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                                : 'border-gray-300 hover:border-gray-400'
-                            }`}
-                          >
-                            <TextItalic size={18} />
-                            <span className="text-xs font-semibold">
-                              Itálico
-                            </span>
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              const newFormatting = {
-                                ...editFormatting,
-                                uppercase: !editFormatting.uppercase,
-                                lowercase: false,
-                              };
-                              setEditFormatting(newFormatting);
-                              setMessages(
-                                messages.map((msg) =>
-                                  msg.id === selectedMessage
-                                    ? { ...msg, formatting: newFormatting }
-                                    : msg,
-                                ),
-                              );
-                            }}
-                            className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 transition-all ${
-                              editFormatting.uppercase
-                                ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                                : 'border-gray-300 hover:border-gray-400'
-                            }`}
-                          >
-                            <TextT size={18} />
-                            <span className="text-xs font-semibold">
-                              MAIÚSC.
-                            </span>
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              const newFormatting = {
-                                ...editFormatting,
-                                lowercase: !editFormatting.lowercase,
-                                uppercase: false,
-                              };
-                              setEditFormatting(newFormatting);
-                              setMessages(
-                                messages.map((msg) =>
-                                  msg.id === selectedMessage
-                                    ? { ...msg, formatting: newFormatting }
-                                    : msg,
-                                ),
-                              );
-                            }}
-                            className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 transition-all ${
-                              editFormatting.lowercase
-                                ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                                : 'border-gray-300 hover:border-gray-400'
-                            }`}
-                          >
-                            <TextT size={18} />
-                            <span className="text-xs font-semibold">
-                              minúsc.
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Preview de todas as variações */}
-                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 max-h-48 overflow-y-auto">
-                        <p className="text-xs font-semibold text-gray-600 mb-2">
-                          Preview das Variações:
-                        </p>
-                        <div className="space-y-2">
-                          {Array.isArray(editContent) &&
-                            editContent.map((text, index) => {
-                              if (!text || !text.trim()) return null;
-                              const formattedText = applyFormatting(
-                                text,
-                                editFormatting,
-                              );
-                              const className = `${
-                                editFormatting.bold ? 'font-bold' : ''
-                              } ${editFormatting.italic ? 'italic' : ''}`;
-                              return (
-                                <div key={index} className="flex gap-2">
-                                  <span className="text-xs font-bold text-indigo-600 flex-shrink-0">
-                                    #{index + 1}
-                                  </span>
-                                  <p
-                                    className={`text-sm text-gray-800 flex-1 ${className}`}
-                                  >
-                                    {formattedText}
-                                  </p>
-                                </div>
-                              );
-                            })}
-                          {Array.isArray(editContent) &&
-                            editContent.filter((t) => t && t.trim()).length ===
-                              0 && (
-                              <p className="text-sm text-gray-400 italic">
-                                Nenhuma mensagem adicionada
-                              </p>
-                            )}
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      {/* Upload de arquivo para outros tipos */}
-                      <div className="flex-1 flex flex-col">
-                        <label className="text-xs font-semibold text-gray-700 mb-2">
-                          Arquivo
-                        </label>
-                        <div className="flex-1 border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center hover:border-indigo-400 transition-colors">
-                          <input
-                            type="file"
-                            id={`file-${selectedMessage}`}
-                            className="hidden"
-                            accept={
-                              messages.find((m) => m.id === selectedMessage)
-                                ?.type === 'audio'
-                                ? 'audio/*'
-                                : messages.find((m) => m.id === selectedMessage)
-                                    ?.type === 'video'
-                                ? 'video/*'
-                                : messages.find((m) => m.id === selectedMessage)
-                                    ?.type === 'image'
-                                ? 'image/*'
-                                : '.pdf'
-                            }
-                            onChange={(e) =>
-                              handleFileUpload(e, selectedMessage)
-                            }
-                          />
-                          <label
-                            htmlFor={`file-${selectedMessage}`}
-                            className="cursor-pointer text-center"
-                          >
-                            {messages.find((m) => m.id === selectedMessage)
-                              ?.file ? (
-                              <>
-                                <div className="w-16 h-16 mx-auto mb-3 bg-indigo-100 rounded-full flex items-center justify-center">
-                                  {React.createElement(
-                                    getTypeInfo(
-                                      messages.find(
-                                        (m) => m.id === selectedMessage,
-                                      )?.type,
-                                    ).icon,
-                                    { size: 32, className: 'text-indigo-600' },
-                                  )}
-                                </div>
-                                <p className="text-sm font-semibold text-gray-700 mb-1">
-                                  {
-                                    messages.find(
-                                      (m) => m.id === selectedMessage,
-                                    )?.file.name
-                                  }
-                                </p>
-                                <p className="text-xs text-indigo-600 hover:text-indigo-700">
-                                  Clique para alterar
-                                </p>
-                              </>
-                            ) : (
-                              <>
-                                <div className="w-16 h-16 mx-auto mb-3 bg-gray-100 rounded-full flex items-center justify-center">
-                                  <Plus size={32} className="text-gray-400" />
-                                </div>
-                                <p className="text-sm font-semibold text-gray-700 mb-1">
-                                  Clique para adicionar arquivo
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {messages.find(
-                                    (m) => m.id === selectedMessage,
-                                  )?.type === 'audio'
-                                    ? 'Formatos: MP3, WAV, OGG'
-                                    : messages.find(
-                                        (m) => m.id === selectedMessage,
-                                      )?.type === 'video'
-                                    ? 'Formatos: MP4, AVI, MOV'
-                                    : messages.find(
-                                        (m) => m.id === selectedMessage,
-                                      )?.type === 'image'
-                                    ? 'Formatos: JPG, PNG, GIF'
-                                    : 'Formato: PDF'}
-                                </p>
-                              </>
-                            )}
-                          </label>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
+          <div className="flex bg-gray-100 p-1 rounded-xl">
+            <button
+              onClick={() => setActiveTab('send')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'send' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Disparar
+            </button>
+            <button
+              onClick={() => setActiveTab('create')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'create' ? 'bg-white shadow-sm text-green-600' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Criar Template
+            </button>
+            <button
+              onClick={() => setActiveTab('results')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'results' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Resultados
+            </button>
           </div>
         </div>
 
-        {/* Modal Preview WhatsApp */}
-        {showPreview && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh]">
-              {/* Header do Modal */}
-              <div className="bg-green-600 text-white p-4 rounded-t-2xl flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center">
-                    <Robot size={24} className="text-green-600" />
-                  </div>
+        {/* ================= ABA: CRIAR TEMPLATE ================= */}
+        {activeTab === 'create' && (
+          <div className="grid grid-cols-12 gap-6 animate-in fade-in duration-300">
+            {/* CONFIGURAÇÕES E BOTÕES (Esquerda) */}
+            <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
+              <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm">
+                  <Info size={18} className="text-green-600" /> Dados do Modelo
+                </h3>
+                <div className="space-y-4">
                   <div>
-                    <h3 className="font-bold text-sm">Crosby Bot</h3>
-                    <p className="text-xs opacity-90">online</p>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">
+                      Nome (ID)
+                    </label>
+                    <input
+                      type="text"
+                      value={templateName}
+                      onChange={(e) =>
+                        setTemplateName(
+                          e.target.value
+                            .toLowerCase()
+                            .replace(/[^a-z0-9_]/g, '_'),
+                        )
+                      }
+                      className="w-full mt-1 p-2 border border-gray-200 rounded-lg text-sm outline-none"
+                    />
                   </div>
-                </div>
-                <button
-                  onClick={() => setShowPreview(false)}
-                  className="p-2 hover:bg-green-700 rounded-full transition-colors"
-                >
-                  <X size={20} weight="bold" />
-                </button>
-              </div>
 
-              {/* Chat Background (típico do WhatsApp) */}
-              <div
-                className="flex-1 overflow-y-auto p-4 space-y-3"
-                style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d4d4d4' fill-opacity='0.1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-                  backgroundColor: '#e5ddd5',
-                }}
-              >
-                {messages.map((msg, index) => {
-                  const Icon = getTypeInfo(msg.type).icon;
-                  const hasFile = msg.file;
-                  const formattedText =
-                    msg.type === 'text'
-                      ? applyFormatting(msg.content || '', msg.formatting)
-                      : '';
-
-                  return (
-                    <div
-                      key={msg.id}
-                      className="flex items-end gap-2 animate-in slide-in-from-bottom-2 duration-300"
+                  {/* NOVO CAMPO: CATEGORIA META ADICIONADO AQUI */}
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">
+                      Categoria Meta
+                    </label>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className="w-full mt-1 p-2 border border-gray-200 rounded-lg text-sm bg-white outline-none cursor-pointer"
                     >
-                      {/* Bubble da mensagem */}
-                      <div className="bg-white rounded-lg shadow-md max-w-[75%] overflow-hidden">
-                        {/* Conteúdo por tipo */}
-                        {msg.type === 'text' ? (
-                          <div className="px-3 py-2">
-                            {Array.isArray(msg.content) ? (
-                              <div className="space-y-2">
-                                {msg.content
-                                  .filter((t) => t && t.trim())
-                                  .map((text, idx) => {
-                                    const formatted = applyFormatting(
-                                      text,
-                                      msg.formatting,
-                                    );
-                                    return (
-                                      <div key={idx} className="flex gap-2">
-                                        <span className="text-[10px] font-bold text-indigo-600 flex-shrink-0 mt-0.5">
-                                          #{idx + 1}
-                                        </span>
-                                        <p
-                                          className={`text-sm text-gray-800 break-words flex-1 ${
-                                            msg.formatting.bold
-                                              ? 'font-bold'
-                                              : ''
-                                          } ${
-                                            msg.formatting.italic
-                                              ? 'italic'
-                                              : ''
-                                          }`}
-                                        >
-                                          {formatted}
-                                        </p>
-                                      </div>
-                                    );
-                                  })}
-                                {msg.content.filter((t) => t && t.trim())
-                                  .length === 0 && (
-                                  <span className="text-gray-400 italic">
-                                    Mensagem vazia
-                                  </span>
-                                )}
-                                {msg.content.filter((t) => t && t.trim())
-                                  .length > 1 && (
-                                  <div className="mt-2 pt-2 border-t border-gray-200">
-                                    <p className="text-[10px] text-indigo-600 font-semibold">
-                                      🔀 Uma variação aleatória será enviada
-                                      para cada contato
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <p
-                                className={`text-sm text-gray-800 break-words ${
-                                  msg.formatting.bold ? 'font-bold' : ''
-                                } ${msg.formatting.italic ? 'italic' : ''}`}
-                              >
-                                {formattedText || (
-                                  <span className="text-gray-400 italic">
-                                    Mensagem vazia
-                                  </span>
-                                )}
-                              </p>
-                            )}
-                          </div>
-                        ) : msg.type === 'image' ? (
-                          <div className="relative">
-                            <div className="bg-gray-200 aspect-square w-48 flex items-center justify-center">
-                              {hasFile ? (
-                                <div className="text-center">
-                                  <Image
-                                    size={48}
-                                    className="text-gray-400 mx-auto mb-2"
-                                  />
-                                  <p className="text-xs text-gray-600 px-2">
-                                    {msg.file.name}
-                                  </p>
-                                </div>
-                              ) : (
-                                <Image size={64} className="text-gray-400" />
-                              )}
-                            </div>
-                            {hasFile && (
-                              <div className="px-3 py-2 bg-white">
-                                <p className="text-xs text-gray-600">
-                                  📎 {msg.file.name}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        ) : msg.type === 'video' ? (
-                          <div className="relative">
-                            <div className="bg-gray-900 aspect-video w-56 flex items-center justify-center">
-                              <div className="text-center text-white">
-                                <VideoCamera
-                                  size={48}
-                                  className="mx-auto mb-2"
-                                />
-                                {hasFile && (
-                                  <p className="text-xs px-2">
-                                    {msg.file.name}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                              <div className="w-12 h-12 bg-white bg-opacity-80 rounded-full flex items-center justify-center">
-                                <div className="w-0 h-0 border-t-[8px] border-t-transparent border-l-[14px] border-l-gray-800 border-b-[8px] border-b-transparent ml-1"></div>
-                              </div>
-                            </div>
-                          </div>
-                        ) : msg.type === 'audio' ? (
-                          <div className="px-3 py-2 flex items-center gap-3 min-w-[200px]">
-                            <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0">
-                              <Microphone
-                                size={20}
-                                className="text-white"
-                                weight="fill"
-                              />
-                            </div>
-                            <div className="flex-1">
-                              <div className="h-6 bg-gray-200 rounded-full flex items-center px-2">
-                                <div className="flex-1 h-1 bg-green-600 rounded"></div>
-                              </div>
-                              {hasFile && (
-                                <p className="text-xs text-gray-500 mt-1">
-                                  {msg.file.name}
-                                </p>
-                              )}
-                            </div>
-                            <span className="text-xs text-gray-500">0:15</span>
-                          </div>
-                        ) : msg.type === 'pdf' ? (
-                          <div className="px-3 py-3">
-                            <div className="flex items-center gap-3">
-                              <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                <FilePdf
-                                  size={24}
-                                  className="text-red-600"
-                                  weight="fill"
-                                />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-gray-800 truncate">
-                                  {hasFile ? msg.file.name : 'Documento.pdf'}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  PDF • 1 página
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
+                      <option value="MARKETING">
+                        Marketing (Promoções e Vendas)
+                      </option>
+                      <option value="UTILITY">
+                        Utilidade (Avisos e Cobranças)
+                      </option>
+                      <option value="AUTHENTICATION">
+                        Autenticação (Senhas)
+                      </option>
+                    </select>
+                  </div>
 
-                        {/* Timestamp e check (canto inferior direito) */}
-                        <div className="px-3 pb-1 flex items-center justify-end gap-1">
-                          <span className="text-[10px] text-gray-500">
-                            {new Date().toLocaleTimeString('pt-BR', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                          <Checks
-                            size={14}
-                            className="text-blue-500"
-                            weight="fill"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Indicador de sequência */}
-                      {index < messages.length - 1 && (
-                        <div className="w-0.5 h-2 bg-gray-300 rounded-full"></div>
-                      )}
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">
+                      Cabeçalho (Mídia)
+                    </label>
+                    <div className="flex gap-1 mt-1 mb-2">
+                      {['NONE', 'IMAGE', 'VIDEO', 'DOCUMENT'].map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setHeaderType(t)}
+                          className={`px-2 py-1 text-[9px] font-bold rounded border ${headerType === t ? 'bg-green-100 border-green-500 text-green-700' : 'bg-gray-50'}`}
+                        >
+                          {t}
+                        </button>
+                      ))}
                     </div>
-                  );
-                })}
-              </div>
-
-              {/* Footer com botões de ação */}
-              <div className="p-4 bg-gray-100 border-t border-gray-200 rounded-b-2xl">
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setShowPreview(false)}
-                    className="flex-1 px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-lg font-semibold text-sm transition-colors"
-                  >
-                    Continuar Editando
-                  </button>
-                  <button
-                    onClick={handleSendMessages}
-                    disabled={isUploading}
-                    className={`flex-1 px-4 py-2 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2 ${
-                      isUploading
-                        ? 'bg-gray-400 cursor-not-allowed'
-                        : 'bg-green-600 hover:bg-green-700'
-                    } text-white`}
-                  >
-                    {isUploading ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                        {uploadProgress}
-                      </>
-                    ) : (
-                      <>
-                        <PaperPlaneTilt size={18} weight="fill" />
-                        Enviar Fluxo
-                      </>
+                    {headerType !== 'NONE' && (
+                      <input
+                        type="file"
+                        onChange={(e) => setHeaderFile(e.target.files[0])}
+                        className="text-xs text-gray-500 w-full"
+                      />
                     )}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Modal de Todos os Contatos */}
-        {showContatosModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
-              {/* Header do Modal */}
-              <div className="bg-indigo-600 text-white p-4 rounded-t-2xl flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Users size={24} weight="fill" />
-                  <div>
-                    <h3 className="font-bold text-sm">Lista de Contatos</h3>
-                    <p className="text-xs opacity-90">
-                      {contatos.length} contatos importados
-                    </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowContatosModal(false)}
-                  className="p-2 hover:bg-indigo-700 rounded-full transition-colors"
-                >
-                  <X size={20} weight="bold" />
-                </button>
               </div>
 
-              {/* Lista de Contatos */}
-              <div className="flex-1 overflow-y-auto p-4">
-                <div className="space-y-2">
-                  {contatos.map((contato, index) => (
+              <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-gray-800 flex items-center gap-2 text-sm">
+                    <HandTap size={18} className="text-green-600" /> Botões
+                  </h3>
+                  <select
+                    onChange={(e) => {
+                      handleAddButton(e.target.value);
+                      e.target.value = '';
+                    }}
+                    className="p-1 border border-gray-200 rounded text-xs font-bold text-gray-600 outline-none bg-gray-50 cursor-pointer"
+                  >
+                    <option value="">+ Adicionar botão</option>
+                    <option value="QUICK_REPLY">Personalizado</option>
+                    <option value="URL">Acessar o site</option>
+                    <option value="PHONE_NUMBER">Ligar no WhatsApp</option>
+                  </select>
+                </div>
+                <div className="space-y-3">
+                  {buttons.length === 0 && (
+                    <p className="text-xs text-gray-400 text-center py-2">
+                      Nenhum botão adicionado.
+                    </p>
+                  )}
+                  {buttons.map((btn, index) => (
                     <div
-                      key={contato.id}
-                      className="flex items-center justify-between p-3 bg-gray-50 hover:bg-indigo-50 rounded-lg transition-colors group"
+                      key={index}
+                      className="p-3 border border-gray-100 bg-gray-50 rounded-lg relative"
                     >
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <span className="text-xs font-bold text-gray-400 w-8 text-center">
-                          {index + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-gray-800 text-sm truncate">
-                            {contato.nome}
-                          </p>
-                          <p className="text-gray-500 text-xs truncate">
-                            {contato.telefone}
-                          </p>
-                        </div>
-                      </div>
                       <button
-                        onClick={() => {
-                          removerContato(contato.id);
-                          if (contatos.length <= 1) {
-                            setShowContatosModal(false);
-                          }
-                        }}
-                        className="ml-2 p-2 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 rounded"
+                        onClick={() => handleRemoveButton(index)}
+                        className="absolute top-2 right-2 text-gray-400 hover:text-red-500"
                       >
                         <Trash size={16} />
                       </button>
+                      <div className="flex items-center gap-2 mb-2">
+                        {btn.type === 'QUICK_REPLY' && (
+                          <HandTap size={14} className="text-blue-500" />
+                        )}
+                        {btn.type === 'URL' && (
+                          <Link size={14} className="text-blue-500" />
+                        )}
+                        {btn.type === 'PHONE_NUMBER' && (
+                          <Phone size={14} className="text-blue-500" />
+                        )}
+                        <span className="text-[10px] font-bold text-gray-500 uppercase">
+                          {btn.type === 'QUICK_REPLY'
+                            ? 'Resposta Rápida'
+                            : btn.type === 'URL'
+                              ? 'Acessar Site'
+                              : 'Ligar'}
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Texto (Ex: Saiba mais)"
+                        value={btn.text}
+                        onChange={(e) =>
+                          handleUpdateButton(index, 'text', e.target.value)
+                        }
+                        className="w-full p-2 border border-gray-200 rounded text-xs mb-2 outline-none"
+                        maxLength={25}
+                      />
+                      {btn.type === 'URL' && (
+                        <input
+                          type="text"
+                          placeholder="URL (Ex: [https://site.com](https://site.com))"
+                          value={btn.url || ''}
+                          onChange={(e) =>
+                            handleUpdateButton(index, 'url', e.target.value)
+                          }
+                          className="w-full p-2 border border-gray-200 rounded text-xs outline-none"
+                        />
+                      )}
+                      {btn.type === 'PHONE_NUMBER' && (
+                        <input
+                          type="text"
+                          placeholder="Número (Ex: +5511999999999)"
+                          value={btn.phone_number || ''}
+                          onChange={(e) =>
+                            handleUpdateButton(
+                              index,
+                              'phone_number',
+                              e.target.value,
+                            )
+                          }
+                          className="w-full p-2 border border-gray-200 rounded text-xs outline-none"
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
+            </div>
 
-              {/* Footer */}
-              <div className="p-4 bg-gray-100 border-t border-gray-200 rounded-b-2xl">
-                <div className="flex gap-3">
+            {/* EDITOR (Meio) */}
+            <div className="col-span-12 lg:col-span-4 flex flex-col">
+              <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex-1 flex flex-col relative">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm">
+                  <ChatText size={18} className="text-green-600" /> Editor de
+                  Texto
+                </h3>
+                <div className="flex items-center gap-2 mb-2 p-1.5 bg-gray-50 rounded-t-lg border-b border-gray-100">
                   <button
-                    onClick={() => setShowContatosModal(false)}
-                    className="flex-1 px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-lg font-semibold text-sm transition-colors"
+                    onClick={() => applyFormatting('BOLD')}
+                    className="p-1 hover:bg-white rounded shadow-sm text-gray-600"
                   >
-                    Fechar
+                    <TextB size={18} weight="bold" />
                   </button>
                   <button
-                    onClick={() => {
-                      limparContatos();
-                      setShowContatosModal(false);
-                    }}
-                    className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+                    onClick={() => applyFormatting('ITALIC')}
+                    className="p-1 hover:bg-white rounded shadow-sm text-gray-600"
                   >
-                    <Trash size={18} weight="fill" />
-                    Limpar Todos
+                    <TextItalic size={18} />
                   </button>
+                  <button
+                    onClick={() => applyFormatting('STRIKE')}
+                    className="p-1 hover:bg-white rounded shadow-sm text-gray-600"
+                  >
+                    <TextStrikethrough size={18} />
+                  </button>
+                  <button
+                    onClick={() => applyFormatting('MONO')}
+                    className="p-1 hover:bg-white rounded shadow-sm text-gray-600"
+                  >
+                    <Code size={18} />
+                  </button>
+                  <button
+                    onClick={handleAddVariable}
+                    className="ml-auto px-2 py-1 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold"
+                  >
+                    Variável
+                  </button>
+                </div>
+                <textarea
+                  id="bodyTextArea"
+                  value={bodyText}
+                  onChange={(e) => setBodyText(e.target.value)}
+                  className="w-full flex-1 p-3 border border-t-0 rounded-b-lg text-sm resize-none focus:bg-white outline-none min-h-[200px]"
+                />
+                {bodyText.match(/{{[0-9]+}}/g) && (
+                  <div className="mt-4 bg-yellow-50 p-3 rounded-lg border border-yellow-200 space-y-2">
+                    <p className="text-[10px] font-bold text-yellow-700 uppercase flex items-center gap-1">
+                      <Lightning size={12} weight="fill" /> Exemplos Meta:
+                    </p>
+                    {bodyText.match(/{{[0-9]+}}/g).map((v) => (
+                      <div key={v} className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-gray-400 w-6">
+                          {v}
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="Ex: Maria"
+                          value={variableExamples[v] || ''}
+                          onChange={(e) =>
+                            setVariableExamples({
+                              ...variableExamples,
+                              [v]: e.target.value,
+                            })
+                          }
+                          className="flex-1 p-1 border border-yellow-200 rounded text-xs outline-none"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* FEEDBACK DE CRIAÇÃO (CAIXA VERDE OU VERMELHA) */}
+                {creationFeedback && (
+                  <div
+                    className={`mt-4 p-3 rounded-xl border flex items-center justify-between text-sm font-bold animate-in slide-in-from-bottom-2 ${creationFeedback.type === 'success' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <CheckCircle size={18} weight="bold" />
+                      {creationFeedback.message}
+                    </div>
+                    {creationFeedback.status && (
+                      <span className="bg-white px-2 py-1 rounded-md text-[10px] uppercase border shadow-sm tracking-wider">
+                        {creationFeedback.status}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <button
+                  onClick={handleCreateTemplate}
+                  disabled={isCreating}
+                  className="w-full mt-4 py-4 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 shadow-md transition-all flex items-center justify-center gap-2"
+                >
+                  {isCreating ? 'Enviando para a Meta...' : 'Criar Template'}
+                </button>
+              </div>
+            </div>
+
+            {/* PREVIEW (Direita) */}
+            <div className="col-span-12 lg:col-span-4 hidden lg:block">
+              <div className="bg-[#e5ddd5] p-6 rounded-xl shadow-inner border border-gray-200 h-full flex flex-col items-center">
+                <div className="w-full max-w-[300px]">
+                  <div className="bg-white p-2 rounded-lg rounded-tr-none shadow-sm mt-4 overflow-hidden relative">
+                    {headerType !== 'NONE' && (
+                      <div className="bg-gray-50 rounded-lg mb-2 min-h-[100px] flex items-center justify-center border border-gray-100">
+                        {headerType === 'IMAGE' && headerPreviewUrl ? (
+                          <img
+                            src={headerPreviewUrl}
+                            className="w-full h-32 object-cover rounded"
+                            alt="Preview"
+                          />
+                        ) : (
+                          <span className="text-[10px] text-gray-300 font-bold uppercase tracking-widest">
+                            {headerType}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    <div
+                      className="px-2 py-1 text-[13px] text-gray-800 leading-relaxed font-sans"
+                      dangerouslySetInnerHTML={renderFormattedText(bodyText)}
+                    />
+                    <span className="text-[10px] text-gray-400 float-right mt-1">
+                      12:00
+                    </span>
+                  </div>
+                  {buttons.length > 0 && (
+                    <div className="mt-1 flex flex-col gap-1">
+                      {buttons.map((btn, i) => (
+                        <div
+                          key={i}
+                          className="bg-white text-[#00a884] text-center text-[13px] font-semibold py-2.5 px-4 rounded-lg shadow-sm border border-gray-100 flex items-center justify-center gap-2 cursor-default"
+                        >
+                          {btn.type === 'URL' && <Link size={16} />}
+                          {btn.type === 'PHONE_NUMBER' && <Phone size={16} />}
+                          {btn.type === 'QUICK_REPLY' && <HandTap size={16} />}
+                          {btn.text || 'Texto do botão'}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         )}
+
+        {/* ================= ABA: DISPARAR ================= */}
+        {activeTab === 'send' && (
+          <div className="grid grid-cols-12 gap-6 animate-in fade-in duration-300">
+            {/* 1. SELEÇÃO DE TEMPLATE */}
+            <div className="col-span-12 lg:col-span-5 bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-max">
+              <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm">
+                <ListBullets size={18} className="text-indigo-600" /> 1.
+                Escolher Modelo
+              </h3>
+              <select
+                onChange={(e) =>
+                  setSelectedTemplate(
+                    templates.find(
+                      (t) => (t.name || t.json?.name) === e.target.value,
+                    ),
+                  )
+                }
+                className="w-full p-3 border border-gray-200 rounded-xl text-sm mb-4 bg-gray-50 outline-none"
+              >
+                <option value="">-- Selecione um Modelo --</option>
+                {templates.map((t, i) => (
+                  <option key={i} value={t.name || t.json?.name}>
+                    {(t.name || t.json?.name || '').toUpperCase()}
+                  </option>
+                ))}
+              </select>
+              {selectedTemplate && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mt-4">
+                  {(() => {
+                    const comps =
+                      selectedTemplate.components ||
+                      selectedTemplate.json?.components ||
+                      [];
+                    const h = comps.find((c) => c.type === 'HEADER');
+                    const b = comps.find((c) => c.type === 'BODY');
+                    const buttonsComp = comps.find((c) => c.type === 'BUTTONS');
+
+                    const url =
+                      h?.example?.header_handle?.[0] ||
+                      h?.example?.header_url?.[0];
+
+                    return (
+                      <>
+                        {h?.format === 'IMAGE' && url && (
+                          <img
+                            src={url}
+                            className="w-full h-32 object-cover border-b"
+                          />
+                        )}
+                        <div
+                          className="p-4 text-sm leading-relaxed"
+                          dangerouslySetInnerHTML={renderFormattedText(b?.text)}
+                        />
+
+                        {buttonsComp && buttonsComp.buttons?.length > 0 && (
+                          <div className="px-4 pb-4 flex flex-col gap-1.5">
+                            {buttonsComp.buttons.map((btn, i) => (
+                              <div
+                                key={i}
+                                className="bg-white text-[#00a884] text-center text-[13px] font-semibold py-2 px-4 rounded-lg shadow-sm border border-gray-100 flex items-center justify-center gap-2 cursor-default"
+                              >
+                                {btn.type === 'URL' && <Link size={16} />}
+                                {btn.type === 'PHONE_NUMBER' && (
+                                  <Phone size={16} />
+                                )}
+                                {btn.type === 'QUICK_REPLY' && (
+                                  <HandTap size={16} />
+                                )}
+                                {btn.text}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {/* 2. ORIGEM DOS CONTATOS E FILTROS */}
+            <div className="col-span-12 lg:col-span-7 bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col h-max">
+              <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm">
+                <Users size={18} className="text-indigo-600" /> 2. Origem dos
+                Contatos
+              </h3>
+
+              {/* TABS: CSV (Planilha), TOTVS ou CRM 26 */}
+              <div className="flex flex-wrap bg-gray-50 p-1 rounded-lg mb-6 w-fit border border-gray-100 gap-1">
+                <button
+                  onClick={() => setSendMethod('CSV')}
+                  className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${sendMethod === 'CSV' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+                >
+                  <Table size={16} /> Planilha (.xls/.csv)
+                </button>
+                <button
+                  onClick={() => setSendMethod('TOTVS')}
+                  className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${sendMethod === 'TOTVS' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+                >
+                  <Database size={16} /> TOTVS
+                </button>
+                <button
+                  onClick={() => setSendMethod('CRM26')}
+                  className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${sendMethod === 'CRM26' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+                >
+                  <Users size={16} /> CRM 26
+                </button>
+              </div>
+
+              {/* CONTEÚDO: CRM 26 */}
+              {sendMethod === 'CRM26' && (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 bg-gray-50 rounded-xl border border-dashed border-gray-200 min-h-[150px] animate-in fade-in duration-300">
+                  <Users
+                    size={48}
+                    className="text-indigo-200 mb-3"
+                    weight="fill"
+                  />
+                  <span className="font-bold text-gray-600 text-sm text-center">
+                    Integração com CRM 26
+                  </span>
+                  <span className="text-xs text-gray-400 mt-2 text-center max-w-xs">
+                    Em breve você poderá puxar seus leads e clientes diretamente
+                    do CRM 26.
+                  </span>
+                </div>
+              )}
+
+              {/* CONTEÚDO: CSV / PLANILHA */}
+              {sendMethod === 'CSV' && (
+                <div className="flex-1 flex flex-col animate-in fade-in duration-300">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-gray-500 font-medium">
+                      Faça o upload da sua planilha formatada.
+                    </span>
+                    <button
+                      onClick={handleDownloadCsvTemplate}
+                      className="text-[10px] font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-lg hover:bg-green-100 flex items-center gap-1 transition-all border border-green-100"
+                    >
+                      <DownloadSimple size={14} /> Baixar Modelo
+                    </button>
+                  </div>
+                  <input
+                    type="file"
+                    id="csv"
+                    className="hidden"
+                    accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+                    onChange={handleCsvUpload}
+                  />
+                  <label
+                    htmlFor="csv"
+                    className="flex-1 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center p-8 cursor-pointer hover:bg-gray-100 transition-all min-h-[150px] bg-gray-50"
+                  >
+                    <FileXls
+                      size={40}
+                      className={`mb-2 ${csvFile ? 'text-green-500' : 'text-gray-400'}`}
+                      weight={csvFile ? 'fill' : 'regular'}
+                    />
+                    <span className="font-bold text-gray-700 text-sm">
+                      {csvFile
+                        ? csvFile.name
+                        : 'Clique para selecionar a Planilha'}
+                    </span>
+                    {!csvFile && (
+                      <span className="text-xs text-gray-400 mt-1">
+                        .csv ou .xls
+                      </span>
+                    )}
+                  </label>
+                </div>
+              )}
+
+              {/* CONTEÚDO: TOTVS */}
+              {sendMethod === 'TOTVS' && (
+                <div className="flex flex-col animate-in fade-in duration-300 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <div className="flex flex-col md:flex-row items-end gap-4 mb-4">
+                    <div className="flex-1 w-full">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase mb-2 block">
+                        Operação Comercial
+                      </label>
+                      <select
+                        value={totvsOperationId}
+                        onChange={(e) => setTotvsOperationId(e.target.value)}
+                        className="w-full p-2.5 border border-gray-200 rounded-lg text-sm bg-white outline-none"
+                      >
+                        {totvsOperationsList.length === 0 && (
+                          <option value="">Carregando...</option>
+                        )}
+                        {totvsOperationsList.map((op) => (
+                          <option key={op.id} value={op.id}>
+                            {op.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {dynamicUI.quickFilters && (
+                      <div className="pb-1">{dynamicUI.quickFilters}</div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div
+                      className={
+                        dynamicUI.isRevenda ? 'md:col-span-6' : 'md:col-span-3'
+                      }
+                    >
+                      <label
+                        className="text-[10px] font-bold text-gray-400 uppercase mb-2 block truncate"
+                        title={dynamicUI.labelStart}
+                      >
+                        {dynamicUI.labelStart}
+                      </label>
+                      <input
+                        type="date"
+                        value={totvsStartDate}
+                        onChange={(e) => setTotvsStartDate(e.target.value)}
+                        className="w-full p-2 border border-gray-200 rounded-lg text-sm bg-white outline-none"
+                      />
+                    </div>
+                    <div
+                      className={
+                        dynamicUI.isRevenda ? 'md:col-span-6' : 'md:col-span-3'
+                      }
+                    >
+                      <label
+                        className="text-[10px] font-bold text-gray-400 uppercase mb-2 block truncate"
+                        title={dynamicUI.labelEnd}
+                      >
+                        {dynamicUI.labelEnd}
+                      </label>
+                      <input
+                        type="date"
+                        value={totvsEndDate}
+                        onChange={(e) => setTotvsEndDate(e.target.value)}
+                        className="w-full p-2 border border-gray-200 rounded-lg text-sm bg-white outline-none"
+                      />
+                    </div>
+
+                    {!dynamicUI.isRevenda && (
+                      <div className="md:col-span-6 relative" ref={dropdownRef}>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-2 block">
+                          Empresas (Filiais)
+                        </label>
+                        <div
+                          onClick={() =>
+                            setIsCompanyDropdownOpen(!isCompanyDropdownOpen)
+                          }
+                          className="w-full p-2.5 border border-gray-200 rounded-lg text-sm bg-white cursor-pointer flex justify-between items-center select-none"
+                        >
+                          <span className="font-medium text-gray-700 truncate">
+                            {totvsCompanies.length === 0
+                              ? 'Todas as Empresas'
+                              : `${totvsCompanies.length} selecionada(s)`}
+                          </span>
+                          {isCompanyDropdownOpen ? (
+                            <CaretUp size={16} className="text-gray-400" />
+                          ) : (
+                            <CaretDown size={16} className="text-gray-400" />
+                          )}
+                        </div>
+
+                        {isCompanyDropdownOpen && (
+                          <div className="absolute top-[100%] left-0 w-full mt-2 bg-white border border-gray-200 shadow-xl rounded-lg z-50 flex flex-col overflow-hidden">
+                            <div className="p-3 border-b border-gray-100 relative">
+                              <MagnifyingGlass
+                                size={16}
+                                className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400"
+                              />
+                              <input
+                                type="text"
+                                placeholder="Buscar empresa..."
+                                value={companySearchTerm}
+                                onChange={(e) =>
+                                  setCompanySearchTerm(e.target.value)
+                                }
+                                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded text-sm outline-none focus:border-indigo-500"
+                              />
+                            </div>
+
+                            <div className="p-3 border-b border-gray-100 flex flex-wrap gap-2">
+                              <button
+                                onClick={handleSelectAllCompanies}
+                                className="px-3 py-1.5 bg-[#001b3b] text-white text-xs font-bold rounded hover:opacity-90"
+                              >
+                                Todas
+                              </button>
+                              <button
+                                onClick={handleSelectFiliais}
+                                className="px-3 py-1.5 bg-blue-500 text-white text-xs font-bold rounded hover:opacity-90"
+                              >
+                                Filiais
+                              </button>
+                              <button
+                                onClick={handleSelectFranquias}
+                                className="px-3 py-1.5 bg-green-500 text-white text-xs font-bold rounded hover:opacity-90"
+                              >
+                                Franquias
+                              </button>
+                              <button
+                                onClick={handleClearCompanies}
+                                className="px-3 py-1.5 bg-gray-500 text-white text-xs font-bold rounded hover:opacity-90"
+                              >
+                                Limpar
+                              </button>
+                            </div>
+
+                            <div className="max-h-56 overflow-y-auto p-1">
+                              {filteredCompanies.length === 0 ? (
+                                <p className="text-center text-xs text-gray-400 py-4">
+                                  Nenhuma empresa encontrada.
+                                </p>
+                              ) : (
+                                filteredCompanies.map((comp) => (
+                                  <label
+                                    key={comp.id}
+                                    className="flex items-center justify-between p-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-0 rounded"
+                                  >
+                                    <span className="text-xs font-bold text-gray-700">
+                                      {comp.id} - {comp.nome}
+                                    </span>
+                                    <input
+                                      type="checkbox"
+                                      checked={totvsCompanies.includes(comp.id)}
+                                      onChange={() =>
+                                        handleToggleCompany(comp.id)
+                                      }
+                                      className="w-4 h-4 accent-red-600 rounded"
+                                    />
+                                  </label>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-6 flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-gray-400 font-bold uppercase">
+                        Status de Busca
+                      </span>
+                      <div className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                        <span>
+                          {totvsContacts
+                            ? `${totvsContacts.length} Contatos Carregados`
+                            : 'Aguardando ação...'}
+                        </span>
+
+                        {totvsContacts && totvsContacts.length > 0 && (
+                          <button
+                            onClick={() => setShowContactsModal(true)}
+                            className="text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-100 flex items-center gap-1 transition-all ml-2"
+                          >
+                            <Eye size={14} weight="bold" /> Ver Lista
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleFetchTotvs}
+                      disabled={isFetchingTotvs}
+                      className={`px-6 py-2 rounded-lg text-xs font-bold text-white shadow-sm transition-all ${isFetchingTotvs ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}
+                    >
+                      {isFetchingTotvs
+                        ? 'Consultando API...'
+                        : 'Buscar Contatos'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* === CARD DE PREVISÃO DE CUSTO E RESUMO === */}
+              {selectedTemplate && totvsContacts && sendMethod === 'TOTVS' && (
+                <div className="mt-4 bg-gradient-to-r from-blue-50 to-indigo-50 p-5 rounded-xl border border-indigo-100 flex flex-col md:flex-row items-center justify-between gap-4 shadow-inner">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-bold text-indigo-400 uppercase">
+                      Previsão da Campanha
+                    </span>
+                    <span className="text-xl font-black text-indigo-900">
+                      {totvsContacts.length} Clientes
+                    </span>
+                    <span className="text-[10px] font-bold text-gray-500 uppercase mt-2">
+                      Ticket Médio (Estimado)
+                    </span>
+                    <span className="text-sm font-bold text-gray-700">
+                      R${' '}
+                      {Number(ticketMedio || 0).toLocaleString('pt-BR', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col items-end text-right border-l border-indigo-200 pl-4">
+                    <span className="text-[10px] font-bold text-indigo-400 uppercase">
+                      Categoria Meta
+                    </span>
+                    <span className="text-xs font-bold text-indigo-700 mb-2">
+                      {selectedTemplate.category === 'UTILITY'
+                        ? 'Utilidade (US$ 0,01/msg)'
+                        : 'Marketing (US$ 0,06/msg)'}
+                    </span>
+                    <span className="text-[10px] font-bold text-indigo-400 uppercase">
+                      Custo Total Estimado
+                    </span>
+
+                    {(() => {
+                      const custoUSD =
+                        (selectedTemplate.category === 'UTILITY'
+                          ? 0.01
+                          : 0.06) * totvsContacts.length;
+                      const custoBRL = custoUSD * COTACAO_DOLAR;
+                      return (
+                        <>
+                          <span className="text-2xl font-black text-indigo-900">
+                            US${' '}
+                            {custoUSD.toLocaleString('en-US', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                          <span className="text-[10px] font-bold text-gray-500 bg-white px-2 py-0.5 rounded-full border border-indigo-100 shadow-sm mt-1">
+                            ~ R${' '}
+                            {custoBRL.toLocaleString('pt-BR', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={handleSendCampaign}
+                disabled={
+                  isSending ||
+                  (sendMethod !== 'CRM26' && !csvFile && !totvsContacts) ||
+                  !selectedTemplate
+                }
+                className={`w-full mt-6 py-4 rounded-xl font-bold text-white shadow-lg transition-all ${isSending || sendMethod === 'CRM26' ? 'bg-gray-300' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+              >
+                {isSending ? 'Processando Disparo...' : 'Iniciar Disparo'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ================= ABA: RESULTADOS ================= */}
+        {activeTab === 'results' && (
+          <div className="animate-in fade-in duration-300">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="flex flex-col">
+                <label className="text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-1">
+                  <ListBullets size={14} /> Modelo de Template
+                </label>
+                <select
+                  value={selectedResultTemplate}
+                  onChange={(e) => setSelectedResultTemplate(e.target.value)}
+                  className="w-full h-11 px-3 border border-gray-200 rounded-lg text-sm bg-white outline-none focus:border-blue-500"
+                >
+                  <option value="">-- Selecione o Modelo --</option>
+                  {templates.map((t, i) => (
+                    <option key={i} value={t.name || t.json?.name}>
+                      {(t.name || t.json?.name || '').toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col">
+                <label className="text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-1">
+                  <Calendar size={14} /> Data Inicial
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full h-11 px-3 border border-gray-200 rounded-lg text-sm outline-none focus:border-blue-500"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-1">
+                  <Calendar size={14} /> Data Final
+                </label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full h-11 px-3 border border-gray-200 rounded-lg text-sm outline-none focus:border-blue-500"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="text-xs font-bold uppercase mb-2 flex items-center gap-1 invisible select-none">
+                  Ação
+                </label>
+                <button
+                  onClick={handleFetchAnalytics}
+                  disabled={isLoadingAnalytics}
+                  className={`w-full h-11 rounded-lg font-bold text-white shadow-md transition-all flex items-center justify-center ${isLoadingAnalytics ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}
+                >
+                  {isLoadingAnalytics ? 'Buscando...' : 'Buscar Resultados'}
+                </button>
+              </div>
+            </div>
+
+            {analyticsData && (
+              <div className="grid grid-cols-12 gap-6 items-start">
+                <div className="col-span-12 lg:col-span-4">
+                  <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 h-full">
+                    <h3 className="text-sm font-bold text-gray-800 mb-4">
+                      Seu modelo
+                    </h3>
+                    <div className="bg-[#e5ddd5] p-4 rounded-xl flex flex-col items-center">
+                      <div className="w-full max-w-[280px]">
+                        {(() => {
+                          const resultTemplateObj = templates.find(
+                            (t) =>
+                              (t.name || t.json?.name) ===
+                              selectedResultTemplate,
+                          );
+                          if (!resultTemplateObj)
+                            return (
+                              <p className="text-xs text-center text-gray-500">
+                                Selecione um modelo.
+                              </p>
+                            );
+                          const comps =
+                            resultTemplateObj.components ||
+                            resultTemplateObj.json?.components ||
+                            [];
+                          const headerComp = comps.find(
+                            (c) => c.type === 'HEADER',
+                          );
+                          const bodyComp = comps.find((c) => c.type === 'BODY');
+                          const buttonsComp = comps.find(
+                            (c) => c.type === 'BUTTONS',
+                          );
+                          const headerUrl =
+                            headerComp?.example?.header_handle?.[0] ||
+                            headerComp?.example?.header_url?.[0];
+
+                          return (
+                            <>
+                              <div className="bg-white p-2 rounded-lg rounded-tr-none shadow-sm overflow-hidden relative">
+                                {headerComp?.format === 'IMAGE' &&
+                                  headerUrl && (
+                                    <img
+                                      src={headerUrl}
+                                      className="w-full h-32 object-cover rounded mb-2"
+                                      alt="Header"
+                                    />
+                                  )}
+                                <div
+                                  className="px-2 py-1 text-[13px] text-gray-800 leading-relaxed font-sans"
+                                  dangerouslySetInnerHTML={renderFormattedText(
+                                    bodyComp?.text,
+                                  )}
+                                />
+                                <span className="text-[10px] text-gray-400 float-right mt-1">
+                                  Agora
+                                </span>
+                              </div>
+                              {buttonsComp &&
+                                buttonsComp.buttons?.length > 0 && (
+                                  <div className="mt-1 flex flex-col gap-1">
+                                    {buttonsComp.buttons.map((btn, i) => (
+                                      <div
+                                        key={i}
+                                        className="bg-white text-[#00a884] text-center text-[13px] font-semibold py-2.5 px-4 rounded-lg shadow-sm border border-gray-100 flex items-center justify-center gap-2"
+                                      >
+                                        {btn.type === 'URL' && (
+                                          <Link size={16} />
+                                        )}
+                                        {btn.type === 'PHONE_NUMBER' && (
+                                          <Phone size={16} />
+                                        )}
+                                        {btn.type === 'QUICK_REPLY' && (
+                                          <HandTap size={16} />
+                                        )}
+                                        {btn.text}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="col-span-12 lg:col-span-8 flex flex-col gap-4">
+                  {(() => {
+                    const totalEnviadas = analyticsData.enviadas || 0;
+                    const totalUSD = analyticsData.totalUSD || 0;
+                    const totalBRL = analyticsData.totalBRL || 0;
+
+                    const cpmUSD =
+                      totalEnviadas > 0 ? totalUSD / totalEnviadas : 0;
+                    const cpmBRL =
+                      totalEnviadas > 0 ? totalBRL / totalEnviadas : 0;
+
+                    return (
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 col-span-2 lg:col-span-1 flex flex-col justify-center">
+                          <span className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-1 mb-1">
+                            Custo Total (USD){' '}
+                            <Info size={14} className="text-gray-400" />
+                          </span>
+                          <span className="text-2xl font-black text-gray-800">
+                            US${' '}
+                            {Number(totalUSD).toLocaleString('en-US', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                        </div>
+                        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 col-span-2 lg:col-span-1 flex flex-col justify-center">
+                          <span className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-1 mb-1">
+                            Valor Convertido (BRL){' '}
+                            <Info size={14} className="text-gray-400" />
+                          </span>
+                          <span className="text-2xl font-black text-green-600">
+                            R${' '}
+                            {Number(totalBRL).toLocaleString('pt-BR', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                        </div>
+
+                        <div className="bg-blue-50 p-5 rounded-xl border border-blue-100 col-span-2 lg:col-span-1 flex flex-col justify-center">
+                          <span className="text-[10px] font-bold text-blue-600 uppercase mb-1">
+                            Custo/Msg (U$)
+                          </span>
+                          <span className="text-xl font-bold text-blue-800">
+                            US${' '}
+                            {cpmUSD.toLocaleString('en-US', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                        </div>
+                        <div className="bg-emerald-50 p-5 rounded-xl border border-emerald-100 col-span-2 lg:col-span-1 flex flex-col justify-center">
+                          <span className="text-[10px] font-bold text-emerald-600 uppercase mb-1">
+                            Custo/Msg (R$)
+                          </span>
+                          <span className="text-xl font-bold text-emerald-800">
+                            R${' '}
+                            {cpmBRL.toLocaleString('pt-BR', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                        Desempenho <Info size={14} className="text-gray-400" />
+                      </h3>
+                    </div>
+
+                    <div className="grid grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
+                      <div className="border border-gray-200 p-4 rounded-lg flex flex-col items-center">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase mb-1">
+                          Enviadas
+                        </span>
+                        <span className="text-xl font-black text-gray-800">
+                          {analyticsData.enviadas || '0'}
+                        </span>
+                      </div>
+                      <div className="border border-gray-200 p-4 rounded-lg flex flex-col items-center">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase mb-1">
+                          Entregues
+                        </span>
+                        <span className="text-xl font-black text-gray-800">
+                          {analyticsData.entregues || '0'}
+                        </span>
+                      </div>
+                      <div className="border border-gray-200 p-4 rounded-lg flex flex-col items-center">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase mb-1">
+                          Lidas
+                        </span>
+                        <span className="text-xl font-black text-gray-800">
+                          {analyticsData.lidas || '0'}
+                        </span>
+                      </div>
+                      <div className="border border-gray-200 p-4 rounded-lg hidden lg:flex flex-col items-center">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase mb-1">
+                          Respostas API
+                        </span>
+                        <span className="text-xl font-black text-gray-800">
+                          {analyticsData.respostas || '0'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="w-full h-72 bg-gray-50 border border-gray-100 rounded-lg p-4">
+                      {!analyticsData.grafico ||
+                      analyticsData.grafico.length === 0 ? (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                          <ChartBar
+                            size={48}
+                            className="mb-2 text-gray-300"
+                            weight="light"
+                          />
+                          <span className="text-sm font-bold">
+                            Nenhum dado diário para exibir.
+                          </span>
+                        </div>
+                      ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={analyticsData.grafico}
+                            margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
+                          >
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              vertical={false}
+                              stroke="#e5e7eb"
+                            />
+                            <XAxis
+                              dataKey="label"
+                              tick={{ fontSize: 11, fill: '#6b7280' }}
+                              axisLine={false}
+                              tickLine={false}
+                            />
+                            <YAxis
+                              tick={{ fontSize: 11, fill: '#6b7280' }}
+                              axisLine={false}
+                              tickLine={false}
+                            />
+                            <Tooltip
+                              cursor={{ fill: '#f3f4f6' }}
+                              contentStyle={{
+                                borderRadius: '8px',
+                                border: '1px solid #e5e7eb',
+                                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                              }}
+                              labelStyle={{
+                                fontWeight: 'bold',
+                                color: '#374151',
+                                marginBottom: '5px',
+                              }}
+                            />
+                            <Legend
+                              wrapperStyle={{
+                                fontSize: 12,
+                                paddingTop: '10px',
+                              }}
+                              iconType="circle"
+                            />
+                            <Bar
+                              dataKey="enviadas"
+                              name="Enviadas"
+                              fill="#60a5fa"
+                              radius={[4, 4, 0, 0]}
+                              maxBarSize={40}
+                            />
+                            <Bar
+                              dataKey="entregues"
+                              name="Entregues"
+                              fill="#34d399"
+                              radius={[4, 4, 0, 0]}
+                              maxBarSize={40}
+                            />
+                            <Bar
+                              dataKey="lidas"
+                              name="Lidas"
+                              fill="#818cf8"
+                              radius={[4, 4, 0, 0]}
+                              maxBarSize={40}
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* ================= MODAL DE LISTA DE CONTATOS ================= */}
+      {showContactsModal && totvsContacts && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-gray-50">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                <Users size={20} className="text-indigo-600" />
+                Lista de Contatos ({totvsContacts.length})
+              </h3>
+              <button
+                onClick={() => setShowContactsModal(false)}
+                className="p-1 hover:bg-gray-200 rounded-full text-gray-500 transition-all"
+              >
+                <X size={20} weight="bold" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-4 flex-1 bg-white">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b-2 border-gray-100 text-[10px] uppercase text-gray-400">
+                    <th className="pb-3 px-2 font-bold">Cód. Cliente</th>
+                    <th className="pb-3 px-2 font-bold">Nome</th>
+                    <th className="pb-3 px-2 font-bold">CPF / CNPJ</th>
+                    <th className="pb-3 px-2 font-bold">WhatsApp</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {totvsContacts.map((c, i) => (
+                    <tr
+                      key={i}
+                      className="border-b border-gray-50 hover:bg-gray-50 text-xs text-gray-700 transition-colors"
+                    >
+                      <td className="py-3 px-2 font-mono text-gray-500">
+                        {c.cd_pessoa || c.code}
+                      </td>
+                      <td className="py-3 px-2 font-semibold text-gray-800 uppercase">
+                        {c.name || c.nome}
+                      </td>
+                      <td className="py-3 px-2">{c.cpf_cnpj || c.cpf}</td>
+                      <td className="py-3 px-2 font-medium text-green-600">
+                        {c.nr_telefone || c.phones}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+              <button
+                onClick={() => setShowContactsModal(false)}
+                className="px-6 py-2 bg-gray-800 text-white text-xs font-bold rounded-lg hover:bg-gray-700 transition-all shadow-sm"
+              >
+                Fechar Tabela
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-export default CrosbyBot;
+export default CrosbyTemplateManager;
