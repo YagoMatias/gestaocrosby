@@ -176,9 +176,13 @@ const ComprovantesConfianca = () => {
           valorB = parseFloat(valorB) || 0;
         }
         if (
-          ['processado_em', 'created_at', 'dt_pagamento'].includes(
-            ordenacao.campo,
-          )
+          [
+            'processado_em',
+            'created_at',
+            'dt_pagamento',
+            'dt_emissao',
+            'dt_vencimento',
+          ].includes(ordenacao.campo)
         ) {
           valorA = valorA || '';
           valorB = valorB || '';
@@ -241,6 +245,8 @@ const ComprovantesConfianca = () => {
         Fatura: item.nr_fat || '',
         Parcela: item.nr_parcela || '',
         'Valor Fatura': parseFloat(item.vl_fatura) || 0,
+        'Dt. Emissão': formatarData(item.dt_emissao),
+        'Dt. Vencimento': formatarData(item.dt_vencimento),
         'Forma Pagamento': 'Confiança',
         'Data Pagamento': formatarData(item.dt_pagamento),
       }));
@@ -521,6 +527,22 @@ const ComprovantesConfianca = () => {
                     </th>
                     <th
                       className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('dt_emissao')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Dt. Emissão{getSortIcon('dt_emissao')}
+                      </div>
+                    </th>
+                    <th
+                      className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('dt_vencimento')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Dt. Vencimento{getSortIcon('dt_vencimento')}
+                      </div>
+                    </th>
+                    <th
+                      className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSort('dt_pagamento')}
                     >
                       <div className="flex items-center justify-center">
@@ -551,6 +573,12 @@ const ComprovantesConfianca = () => {
                       </td>
                       <td className="text-center font-semibold text-green-600 px-2 py-2">
                         {formatarMoeda(sol.vl_fatura)}
+                      </td>
+                      <td className="text-center text-gray-900 px-2 py-2">
+                        {formatarData(sol.dt_emissao)}
+                      </td>
+                      <td className="text-center text-gray-900 px-2 py-2">
+                        {formatarData(sol.dt_vencimento)}
                       </td>
                       <td className="text-center text-gray-900 px-2 py-2">
                         {formatarData(sol.dt_pagamento)}
