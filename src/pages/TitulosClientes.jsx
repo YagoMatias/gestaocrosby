@@ -281,17 +281,41 @@ const TitulosClientes = () => {
   // Total de páginas para paginação
   const totalPages = Math.ceil(dadosProcessados.length / itensPorPagina);
 
-  // Busca de clientes por nome desabilitada - usar código do cliente diretamente
-  const buscarClientes = () => {
-    alert(
-      'Busca por nome desabilitada. Use o código do cliente para consultar.',
-    );
+  // Buscar clientes por nome/fantasia na tabela pes_pessoa do Supabase
+  const buscarClientes = async () => {
+    const nome = termoBuscaNome.trim();
+    const fantasia = termoBuscaFantasia.trim();
+    if (!nome && !fantasia) {
+      alert('Digite um nome ou nome fantasia para buscar.');
+      return;
+    }
+    setBuscandoClientes(true);
+    setClientesEncontrados([]);
+    try {
+      const params = new URLSearchParams();
+      if (nome) params.append('nome', nome);
+      if (fantasia) params.append('fantasia', fantasia);
+      const resp = await fetch(
+        `${TotvsURL}clientes/search-name?${params.toString()}`,
+      );
+      const json = await resp.json();
+      if (json.success && json.data?.clientes) {
+        setClientesEncontrados(json.data.clientes);
+        setModalBuscaAberto(true);
+      } else {
+        alert(json.message || 'Nenhum cliente encontrado');
+      }
+    } catch (err) {
+      alert(`Erro na busca: ${err.message}`);
+    } finally {
+      setBuscandoClientes(false);
+    }
   };
 
   // Função para selecionar um cliente da lista
   const selecionarCliente = (cliente) => {
     setClienteSelecionado(cliente);
-    setCdCliente(cliente.cd_pessoa);
+    setCdCliente(String(cliente.code));
     setModalBuscaAberto(false);
     console.log('✅ Cliente selecionado:', cliente);
   };
@@ -1394,38 +1418,63 @@ const TitulosClientes = () => {
             </span>
           </div>
 
-          {/* Busca por Nome/Fantasia - DESABILITADO */}
-          <div className="mb-3 opacity-50 pointer-events-none">
-            <p className="text-xs font-semibold text-gray-400 mb-2">
-              Buscar Cliente por Nome (desabilitado)
-            </p>
+          {/* Busca por Nome/Fantasia no Supabase */}
+          <div className="mb-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <div className="relative">
-                <label className="block text-xs font-semibold mb-0.5 text-gray-400">
+              <div>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                   Nome da Pessoa
                 </label>
                 <div className="relative">
                   <input
                     type="text"
                     value={termoBuscaNome}
-                    disabled
-                    placeholder="Desabilitado - use o código do cliente"
-                    className="border border-gray-200 rounded-lg px-2 py-1.5 pr-8 w-full bg-gray-100 text-gray-400 text-xs cursor-not-allowed"
+                    onChange={(e) => setTermoBuscaNome(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && buscarClientes()}
+                    placeholder="Ex: João Silva"
+                    className="border border-[#000638]/30 rounded-lg px-2 py-1.5 pr-8 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
                   />
+                  <button
+                    type="button"
+                    onClick={buscarClientes}
+                    disabled={buscandoClientes}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[#000638]/60 hover:text-[#fe0000] disabled:opacity-50 transition-colors"
+                    title="Buscar cliente por nome"
+                  >
+                    {buscandoClientes ? (
+                      <Spinner size={14} className="animate-spin" />
+                    ) : (
+                      <MagnifyingGlass size={14} weight="bold" />
+                    )}
+                  </button>
                 </div>
               </div>
-              <div className="relative">
-                <label className="block text-xs font-semibold mb-0.5 text-gray-400">
+              <div>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                   Nome Fantasia
                 </label>
                 <div className="relative">
                   <input
                     type="text"
                     value={termoBuscaFantasia}
-                    disabled
-                    placeholder="Desabilitado - use o código do cliente"
-                    className="border border-gray-200 rounded-lg px-2 py-1.5 pr-8 w-full bg-gray-100 text-gray-400 text-xs cursor-not-allowed"
+                    onChange={(e) => setTermoBuscaFantasia(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && buscarClientes()}
+                    placeholder="Ex: Loja Centro"
+                    className="border border-[#000638]/30 rounded-lg px-2 py-1.5 pr-8 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
                   />
+                  <button
+                    type="button"
+                    onClick={buscarClientes}
+                    disabled={buscandoClientes}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[#000638]/60 hover:text-[#fe0000] disabled:opacity-50 transition-colors"
+                    title="Buscar cliente por nome fantasia"
+                  >
+                    {buscandoClientes ? (
+                      <Spinner size={14} className="animate-spin" />
+                    ) : (
+                      <MagnifyingGlass size={14} weight="bold" />
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
@@ -1439,10 +1488,21 @@ const TitulosClientes = () => {
               <input
                 type="number"
                 value={cdCliente}
-                onChange={(e) => setCdCliente(e.target.value)}
-                placeholder="Digite o código ou busque por nome"
+                onChange={(e) => {
+                  setCdCliente(e.target.value);
+                  setClienteSelecionado(null);
+                }}
+                placeholder="Digite o código ou busque por nome acima"
                 className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
               />
+              {clienteSelecionado && (
+                <p className="text-xs text-green-700 mt-0.5 font-medium truncate">
+                  {clienteSelecionado.nm_pessoa}{' '}
+                  {clienteSelecionado.fantasy_name
+                    ? `(${clienteSelecionado.fantasy_name})`
+                    : ''}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
@@ -1971,38 +2031,73 @@ const TitulosClientes = () => {
 
             <div className="overflow-x-auto">
               <table className="min-w-full border border-gray-200 rounded-lg">
-                <thead className="bg-gray-50">
+                <thead className="bg-[#000638]">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase">
                       Código
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase">
+                      Tipo
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase">
                       Nome
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase">
                       Nome Fantasia
                     </th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase">
+                      CPF/CNPJ
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase">
+                      Telefone
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase">
+                      Email
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase">
                       Ação
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
                   {clientesEncontrados.map((cliente, index) => (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-900 font-medium">
-                        {cliente.cd_pessoa}
+                    <tr
+                      key={`${cliente.code}-${index}`}
+                      className="hover:bg-gray-50"
+                    >
+                      <td className="px-4 py-3 text-sm text-gray-900 font-mono font-bold">
+                        {cliente.code}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <span
+                          className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                            cliente.tipo_pessoa === 'PJ'
+                              ? 'bg-purple-100 text-purple-700'
+                              : 'bg-blue-100 text-blue-700'
+                          }`}
+                        >
+                          {cliente.tipo_pessoa || '—'}
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">
-                        {cliente.nm_pessoa}
+                        {cliente.nm_pessoa || '—'}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">
-                        {cliente.nm_fantasia || '--'}
+                        {cliente.fantasy_name || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600 font-mono">
+                        {cliente.cpf || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600">
+                        {cliente.telefone || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600">
+                        {cliente.email || '—'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <button
                           onClick={() => selecionarCliente(cliente)}
-                          className="px-4 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                          className="px-4 py-2 bg-[#000638] text-white text-xs font-medium rounded-lg hover:bg-[#fe0000] transition-colors"
                         >
                           Selecionar
                         </button>

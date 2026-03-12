@@ -1,0 +1,811 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { supabaseAdmin } from '../lib/supabase';
+import PageTitle from '../components/ui/PageTitle';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '../components/ui/cards';
+import {
+  Receipt,
+  CheckCircle,
+  Eye,
+  Spinner,
+  X,
+  Funnel,
+  CurrencyDollar,
+  FileArrowDown,
+  CaretLeft,
+  CaretRight,
+  CaretUp,
+  CaretDown,
+  CaretUpDown,
+  Image,
+  FileText,
+  MagnifyingGlassPlus,
+  MagnifyingGlassMinus,
+  MagnifyingGlass,
+  CalendarBlank,
+} from '@phosphor-icons/react';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
+
+const ComprovantesConfianca = () => {
+  const [solicitacoes, setSolicitacoes] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [dadosCarregados, setDadosCarregados] = useState(false);
+
+  // Filtros
+  const [filtroNome, setFiltroNome] = useState('');
+  const [periodo, setPeriodo] = useState({ dt_inicio: '', dt_fim: '' });
+
+  // Paginação
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const [itensPorPagina] = useState(20);
+
+  // Ordenação
+  const [ordenacao, setOrdenacao] = useState({
+    campo: 'processado_em',
+    direcao: 'desc',
+  });
+
+  // Modal comprovante
+  const [modalComprovante, setModalComprovante] = useState(null);
+  const [zoomImagem, setZoomImagem] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
+
+  const formatarMoeda = (valor) => {
+    return (parseFloat(valor) || 0).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
+  };
+
+  const formatarDataHora = (isoDate) => {
+    if (!isoDate) return '--';
+    try {
+      const d = new Date(isoDate);
+      return d.toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return '--';
+    }
+  };
+
+  const formatarData = (isoDate) => {
+    if (!isoDate) return '--';
+    try {
+      const d = new Date(isoDate);
+      return d.toLocaleDateString('pt-BR');
+    } catch {
+      return '--';
+    }
+  };
+
+  // CSS
+  useEffect(() => {
+    const styleElement = document.createElement('style');
+    styleElement.textContent = `
+      .extrato-table { border-collapse: collapse; width: 100%; }
+      .extrato-table th, .extrato-table td { padding: 6px 8px !important; border-right: 1px solid #f3f4f6; font-size: 12px; line-height: 1.4; }
+      .extrato-table th:last-child, .extrato-table td:last-child { border-right: none; }
+      .extrato-table th { background-color: #000638; color: white; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; }
+      .extrato-table tbody tr:nth-child(odd) { background-color: white; }
+      .extrato-table tbody tr:nth-child(even) { background-color: #f9fafb; }
+      .extrato-table tbody tr:hover { background-color: #f3f4f6; }
+    `;
+    document.head.appendChild(styleElement);
+    return () => document.head.removeChild(styleElement);
+  }, []);
+
+  // Inicializar período (mês atual)
+  useEffect(() => {
+    const hoje = new Date();
+    const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
+      .toISOString()
+      .split('T')[0];
+    const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0)
+      .toISOString()
+      .split('T')[0];
+    setPeriodo({ dt_inicio: primeiroDia, dt_fim: ultimoDia });
+  }, []);
+
+  // Carregar dados
+  const carregarDados = async () => {
+    setLoading(true);
+    setPaginaAtual(1);
+    try {
+      let query = supabaseAdmin
+        .from('solicitacoes_baixa')
+        .select('*')
+        .eq('status', 'processada')
+        .eq('forma_pagamento', 'confianca')
+        .order('processado_em', { ascending: false });
+
+      if (periodo.dt_inicio) {
+        query = query.gte('processado_em', `${periodo.dt_inicio}T00:00:00`);
+      }
+      if (periodo.dt_fim) {
+        query = query.lte('processado_em', `${periodo.dt_fim}T23:59:59`);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setSolicitacoes(data || []);
+      setDadosCarregados(true);
+    } catch (error) {
+      console.error('Erro ao carregar comprovantes:', error);
+      setSolicitacoes([]);
+      setDadosCarregados(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFiltrar = (e) => {
+    e.preventDefault();
+    carregarDados();
+  };
+
+  // Filtro por nome e ordenação
+  const dadosProcessados = useMemo(() => {
+    let filtrados = [...solicitacoes];
+
+    if (filtroNome.trim()) {
+      const termo = filtroNome.trim().toLowerCase();
+      filtrados = filtrados.filter(
+        (s) =>
+          (s.nm_cliente || '').toLowerCase().includes(termo) ||
+          (s.nr_fat || '').toString().includes(termo),
+      );
+    }
+
+    if (ordenacao.campo) {
+      filtrados.sort((a, b) => {
+        let valorA = a[ordenacao.campo];
+        let valorB = b[ordenacao.campo];
+        if (['vl_fatura'].includes(ordenacao.campo)) {
+          valorA = parseFloat(valorA) || 0;
+          valorB = parseFloat(valorB) || 0;
+        }
+        if (
+          ['processado_em', 'created_at', 'dt_pagamento'].includes(
+            ordenacao.campo,
+          )
+        ) {
+          valorA = valorA || '';
+          valorB = valorB || '';
+        }
+        if (typeof valorA === 'string') {
+          valorA = valorA.toLowerCase();
+          valorB = (valorB || '').toLowerCase();
+        }
+        if (valorA < valorB) return ordenacao.direcao === 'asc' ? -1 : 1;
+        if (valorA > valorB) return ordenacao.direcao === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return filtrados;
+  }, [solicitacoes, filtroNome, ordenacao]);
+
+  const dadosPaginados = useMemo(() => {
+    const startIndex = (paginaAtual - 1) * itensPorPagina;
+    return dadosProcessados.slice(startIndex, startIndex + itensPorPagina);
+  }, [dadosProcessados, paginaAtual, itensPorPagina]);
+
+  const totalPages = Math.ceil(dadosProcessados.length / itensPorPagina);
+
+  const handleSort = (campo) => {
+    setOrdenacao((prev) => ({
+      campo,
+      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc',
+    }));
+  };
+
+  const getSortIcon = (campo) => {
+    if (ordenacao.campo !== campo)
+      return <CaretUpDown size={12} className="opacity-50" />;
+    return ordenacao.direcao === 'asc' ? (
+      <CaretUp size={12} />
+    ) : (
+      <CaretDown size={12} />
+    );
+  };
+
+  // Totais
+  const totais = useMemo(() => {
+    const valorTotal = dadosProcessados.reduce(
+      (acc, item) => acc + (parseFloat(item.vl_fatura) || 0),
+      0,
+    );
+    return { valorTotal, quantidade: dadosProcessados.length };
+  }, [dadosProcessados]);
+
+  // Exportar Excel
+  const handleExportExcel = () => {
+    if (dadosProcessados.length === 0) {
+      alert('Não há dados para exportar!');
+      return;
+    }
+    try {
+      const dadosParaExportar = dadosProcessados.map((item) => ({
+        Cliente: item.nm_cliente || '',
+        'Cód. Cliente': item.cd_cliente || '',
+        Fatura: item.nr_fat || '',
+        Parcela: item.nr_parcela || '',
+        'Valor Fatura': parseFloat(item.vl_fatura) || 0,
+        'Forma Pagamento': 'Confiança',
+        'Data Pagamento': formatarData(item.dt_pagamento),
+      }));
+      const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Comprovantes Confiança');
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const data = new Blob([excelBuffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+      saveAs(data, `comprovantes-confianca-${hoje}.xlsx`);
+    } catch (error) {
+      console.error('Erro ao exportar Excel:', error);
+      alert('Erro ao exportar arquivo Excel.');
+    }
+  };
+
+  // Paginação
+  const irParaPagina = (pagina) => setPaginaAtual(pagina);
+  const paginaAnterior = () => {
+    if (paginaAtual > 1) setPaginaAtual(paginaAtual - 1);
+  };
+  const proximaPagina = () => {
+    if (paginaAtual < totalPages) setPaginaAtual(paginaAtual + 1);
+  };
+
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [solicitacoes, ordenacao, filtroNome]);
+
+  const gerarPaginas = () => {
+    const totalPaginas = Math.ceil(dadosProcessados.length / itensPorPagina);
+    const paginas = [];
+    const maxPaginasVisiveis = 5;
+    if (totalPaginas <= maxPaginasVisiveis) {
+      for (let i = 1; i <= totalPaginas; i++) paginas.push(i);
+    } else {
+      if (paginaAtual <= 3) {
+        for (let i = 1; i <= 4; i++) paginas.push(i);
+        paginas.push('...');
+        paginas.push(totalPaginas);
+      } else if (paginaAtual >= totalPaginas - 2) {
+        paginas.push(1);
+        paginas.push('...');
+        for (let i = totalPaginas - 3; i <= totalPaginas; i++) paginas.push(i);
+      } else {
+        paginas.push(1);
+        paginas.push('...');
+        for (let i = paginaAtual - 1; i <= paginaAtual + 1; i++)
+          paginas.push(i);
+        paginas.push('...');
+        paginas.push(totalPaginas);
+      }
+    }
+    return paginas;
+  };
+
+  return (
+    <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+      <PageTitle
+        title="Comprovantes - Confiança"
+        subtitle="Solicitações de baixa processadas via Confiança"
+        icon={Receipt}
+        iconColor="text-amber-600"
+      />
+
+      {/* Filtros */}
+      <div className="mb-4">
+        <form
+          onSubmit={handleFiltrar}
+          className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full max-w-7xl mx-auto border border-[#000638]/10"
+        >
+          <div className="mb-2">
+            <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
+              <Funnel size={18} weight="bold" /> Filtros
+            </span>
+            <span className="text-xs text-gray-500 mt-1">
+              Selecione o período e clique em "Buscar"
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Buscar por Nome / Fatura
+              </label>
+              <input
+                type="text"
+                value={filtroNome}
+                onChange={(e) => setFiltroNome(e.target.value)}
+                placeholder="Filtrar por nome ou nº fatura..."
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Data Início
+              </label>
+              <input
+                type="date"
+                value={periodo.dt_inicio}
+                onChange={(e) =>
+                  setPeriodo((prev) => ({ ...prev, dt_inicio: e.target.value }))
+                }
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Data Fim
+              </label>
+              <input
+                type="date"
+                value={periodo.dt_fim}
+                onChange={(e) =>
+                  setPeriodo((prev) => ({ ...prev, dt_fim: e.target.value }))
+                }
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              />
+            </div>
+            <div className="flex items-center gap-2 mt-6 sm:mt-0">
+              <button
+                type="submit"
+                className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <Spinner size={10} className="animate-spin" />
+                    <span>Carregando...</span>
+                  </>
+                ) : (
+                  <>
+                    <MagnifyingGlass size={10} />
+                    <span>Buscar</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      {/* Cards */}
+      {dadosProcessados.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-6 max-w-7xl mx-auto">
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <CurrencyDollar size={14} className="text-green-600" />
+                <CardTitle className="text-xs font-bold text-green-700">
+                  Valor Total
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-2 pb-2">
+              <div className="text-sm font-extrabold text-green-600 mb-0.5 break-words">
+                {formatarMoeda(totais.valorTotal)}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                Soma dos comprovantes
+              </CardDescription>
+            </CardContent>
+          </Card>
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={14} className="text-blue-600" />
+                <CardTitle className="text-xs font-bold text-blue-700">
+                  Quantidade
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-2 pb-2">
+              <div className="text-sm font-extrabold text-blue-600 mb-0.5 break-words">
+                {totais.quantidade}
+              </div>
+              <CardDescription className="text-xs text-gray-500">
+                Total de comprovantes
+              </CardDescription>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Tabela */}
+      <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 max-w-7xl mx-auto w-full">
+        <div className="p-3 border-b border-[#000638]/10 flex justify-between items-center">
+          <h2 className="text-sm font-bold text-[#000638] font-barlow">
+            Comprovantes - Confiança
+          </h2>
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-gray-600">
+              {dadosCarregados
+                ? `${dadosProcessados.length} registros encontrados`
+                : 'Nenhum dado carregado'}
+            </div>
+            {dadosProcessados.length > 0 && (
+              <button
+                onClick={handleExportExcel}
+                className="flex items-center gap-1 bg-green-600 text-white px-2 py-1 rounded-lg hover:bg-green-700 transition-colors font-medium text-xs"
+              >
+                <FileArrowDown size={12} /> BAIXAR EXCEL
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="p-3">
+          {loading ? (
+            <div className="flex justify-center items-center py-12">
+              <div className="flex items-center gap-3">
+                <Spinner size={18} className="animate-spin text-blue-600" />
+                <span className="text-sm text-gray-600">
+                  Carregando dados...
+                </span>
+              </div>
+            </div>
+          ) : !dadosCarregados ? (
+            <div className="flex justify-center items-center py-12">
+              <div className="text-center">
+                <div className="text-gray-500 text-sm mb-2">
+                  Clique em "Buscar" para carregar os comprovantes
+                </div>
+                <div className="text-gray-400 text-xs">
+                  Selecione o período desejado
+                </div>
+              </div>
+            </div>
+          ) : dadosProcessados.length === 0 ? (
+            <div className="flex justify-center items-center py-12">
+              <div className="text-center">
+                <div className="text-gray-500 text-sm mb-2">
+                  Nenhum comprovante encontrado
+                </div>
+                <div className="text-gray-400 text-xs">
+                  Verifique os filtros selecionados ou tente novamente
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="max-w-[350px] md:max-w-[700px] lg:max-w-[900px] xl:max-w-[1100px] 2xl:max-w-[1300px] mx-auto overflow-x-auto">
+              <table className="border-collapse rounded-lg overflow-hidden shadow-lg extrato-table">
+                <thead className="bg-[#000638] text-white text-sm uppercase tracking-wider">
+                  <tr>
+                    <th
+                      className="px-2 py-2 text-left cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('nm_cliente')}
+                    >
+                      <div className="flex items-center">
+                        Cliente{getSortIcon('nm_cliente')}
+                      </div>
+                    </th>
+                    <th
+                      className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('nr_fat')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Fatura{getSortIcon('nr_fat')}
+                      </div>
+                    </th>
+                    <th
+                      className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('nr_parcela')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Parcela{getSortIcon('nr_parcela')}
+                      </div>
+                    </th>
+                    <th
+                      className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('vl_fatura')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Valor{getSortIcon('vl_fatura')}
+                      </div>
+                    </th>
+                    <th
+                      className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('dt_pagamento')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Dt. Pagamento{getSortIcon('dt_pagamento')}
+                      </div>
+                    </th>
+                    <th className="px-2 py-2 text-center">
+                      <div className="flex items-center justify-center">
+                        Comprovante
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white">
+                  {dadosPaginados.map((sol, index) => (
+                    <tr
+                      key={sol.id || index}
+                      className="text-sm transition-colors"
+                    >
+                      <td className="text-left text-gray-900 px-2 py-2">
+                        {sol.nm_cliente || '--'}
+                      </td>
+                      <td className="text-center text-gray-900 px-2 py-2">
+                        {sol.nr_fat || '--'}
+                      </td>
+                      <td className="text-center text-gray-900 px-2 py-2">
+                        {sol.nr_parcela || '--'}
+                      </td>
+                      <td className="text-center font-semibold text-green-600 px-2 py-2">
+                        {formatarMoeda(sol.vl_fatura)}
+                      </td>
+                      <td className="text-center text-gray-900 px-2 py-2">
+                        {formatarData(sol.dt_pagamento)}
+                      </td>
+                      <td className="text-center px-2 py-2">
+                        {sol.comprovante_url ? (
+                          <button
+                            onClick={() => setModalComprovante(sol)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold text-indigo-700 bg-indigo-50 rounded hover:bg-indigo-100 transition-colors mx-auto"
+                          >
+                            <Eye size={12} /> Ver
+                          </button>
+                        ) : (
+                          '--'
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="mt-4 text-center text-sm text-gray-600">
+                Total de {dadosProcessados.length} registros
+              </div>
+
+              {/* Paginação */}
+              {dadosProcessados.length > itensPorPagina && (
+                <div className="flex flex-col sm:flex-row justify-between items-center mt-6 pt-6 border-t border-gray-200">
+                  <div className="text-sm text-gray-600 mb-4 sm:mb-0">
+                    Mostrando {(paginaAtual - 1) * itensPorPagina + 1} a{' '}
+                    {Math.min(
+                      paginaAtual * itensPorPagina,
+                      dadosProcessados.length,
+                    )}{' '}
+                    de {dadosProcessados.length} registros
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={paginaAnterior}
+                      disabled={paginaAtual === 1}
+                      className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <CaretLeft size={16} /> Anterior
+                    </button>
+                    <div className="flex items-center gap-1">
+                      {gerarPaginas().map((pagina, index) => (
+                        <button
+                          key={index}
+                          onClick={() =>
+                            typeof pagina === 'number' && irParaPagina(pagina)
+                          }
+                          disabled={typeof pagina !== 'number'}
+                          className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${pagina === paginaAtual ? 'bg-[#000638] text-white' : typeof pagina === 'number' ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50' : 'text-gray-400 cursor-default'}`}
+                        >
+                          {pagina}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={proximaPagina}
+                      disabled={paginaAtual === totalPages}
+                      className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Próximo <CaretRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Modal de Comprovante */}
+      {modalComprovante && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4"
+          style={{ zIndex: 99999 }}
+        >
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-[#000638] text-white p-4 rounded-t-xl flex justify-between items-center">
+              <h3 className="text-lg font-bold">
+                Comprovante - Fatura {modalComprovante.nr_fat}
+              </h3>
+              <button
+                onClick={() => {
+                  setModalComprovante(null);
+                  setZoomImagem(false);
+                  setZoomLevel(1);
+                }}
+                className="text-white hover:text-red-300"
+              >
+                <X size={22} weight="bold" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="bg-gray-50 rounded-lg p-3 grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-gray-500">Cliente:</span>{' '}
+                  <span className="font-semibold">
+                    {modalComprovante.nm_cliente}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Fatura:</span>{' '}
+                  <span className="font-semibold">
+                    {modalComprovante.nr_fat}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Valor:</span>{' '}
+                  <span className="font-bold text-red-600">
+                    {formatarMoeda(modalComprovante.vl_fatura)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Portador:</span>{' '}
+                  <span className="font-semibold">
+                    {modalComprovante.nm_portador ||
+                      modalComprovante.cd_portador ||
+                      '--'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Data Pagamento:</span>{' '}
+                  <span className="font-semibold">
+                    {formatarData(modalComprovante.dt_pagamento)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Processado Em:</span>{' '}
+                  <span className="font-semibold">
+                    {formatarDataHora(modalComprovante.processado_em)}
+                  </span>
+                </div>
+                {modalComprovante.processado_por && (
+                  <div className="col-span-2">
+                    <span className="text-gray-500">Processado Por:</span>{' '}
+                    <span className="font-semibold">
+                      {modalComprovante.processado_por}
+                    </span>
+                  </div>
+                )}
+                {modalComprovante.observacao && (
+                  <div className="col-span-2">
+                    <span className="text-gray-500">Observação:</span>{' '}
+                    <span className="font-medium">
+                      {modalComprovante.observacao}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-center">
+                {modalComprovante.comprovante_url?.match(
+                  /\.(jpg|jpeg|png|gif|webp)/i,
+                ) ? (
+                  <div className="space-y-3 w-full">
+                    {!zoomImagem ? (
+                      <div
+                        className="relative cursor-pointer"
+                        onClick={() => {
+                          setZoomImagem(true);
+                          setZoomLevel(1);
+                        }}
+                      >
+                        <img
+                          src={modalComprovante.comprovante_url}
+                          alt="Comprovante"
+                          className="max-w-full max-h-[55vh] rounded-lg shadow-lg mx-auto hover:opacity-90 transition-opacity"
+                        />
+                        <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white p-1 rounded">
+                          <MagnifyingGlassPlus size={16} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <div className="flex items-center justify-center gap-2 mb-2">
+                          <button
+                            onClick={() =>
+                              setZoomLevel((z) => Math.max(0.5, z - 0.25))
+                            }
+                            className="p-1 bg-gray-200 rounded hover:bg-gray-300"
+                          >
+                            <MagnifyingGlassMinus size={16} />
+                          </button>
+                          <span className="text-xs font-medium">
+                            {Math.round(zoomLevel * 100)}%
+                          </span>
+                          <button
+                            onClick={() =>
+                              setZoomLevel((z) => Math.min(3, z + 0.25))
+                            }
+                            className="p-1 bg-gray-200 rounded hover:bg-gray-300"
+                          >
+                            <MagnifyingGlassPlus size={16} />
+                          </button>
+                          <button
+                            onClick={() => setZoomImagem(false)}
+                            className="p-1 bg-red-100 text-red-600 rounded hover:bg-red-200 ml-2"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                        <div className="overflow-auto max-h-[65vh] border rounded-lg">
+                          <img
+                            src={modalComprovante.comprovante_url}
+                            alt="Comprovante"
+                            style={{
+                              transform: `scale(${zoomLevel})`,
+                              transformOrigin: 'top left',
+                            }}
+                            className="transition-transform duration-200"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : modalComprovante.comprovante_url?.match(/\.pdf/i) ? (
+                  <div className="text-center space-y-3">
+                    <FileText size={48} className="text-red-600 mx-auto" />
+                    <p className="text-sm text-gray-600">
+                      Comprovante em formato PDF
+                    </p>
+                    <a
+                      href={modalComprovante.comprovante_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors text-sm"
+                    >
+                      <FileArrowDown size={16} /> Abrir PDF
+                    </a>
+                  </div>
+                ) : modalComprovante.comprovante_url ? (
+                  <div className="text-center space-y-3">
+                    <Image size={48} className="text-gray-400 mx-auto" />
+                    <a
+                      href={modalComprovante.comprovante_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                    >
+                      <Eye size={16} /> Abrir Comprovante
+                    </a>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 text-center py-4">
+                    Comprovante não disponível.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ComprovantesConfianca;

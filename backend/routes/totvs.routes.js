@@ -8,6 +8,14 @@ import {
   errorResponse,
 } from '../utils/errorHandler.js';
 import { getToken, getTokenInfo } from '../utils/totvsTokenManager.js';
+import {
+  syncFullPesPessoa,
+  syncIncrementalPesPessoa,
+  fetchAndMapPersons,
+  mapPersonToRow,
+  upsertBatch,
+} from '../utils/syncPesPessoa.js';
+import supabase from '../config/supabase.js';
 
 // ==========================================
 // AGENTS keep-alive para reutilizar conexões TCP/TLS
@@ -951,17 +959,52 @@ router.post(
 
       // 1) invoices/search -> obter accessKey
       const invoicesEndpoint = `${TOTVS_BASE_URL}/fiscal/v2/invoices/search`;
-      const invoicesDefaults = {
-        filter: { change: {} },
-        page: 1,
-        pageSize: 100,
-        expand: 'person',
-      };
-      const invoicesBody = {
-        ...invoicesDefaults,
-        ...searchPayload,
-        filter: { ...invoicesDefaults.filter, ...(searchPayload.filter || {}) },
-      };
+
+      // Detectar se é busca por invoiceCode (vindo do accounts-receivable)
+      // Nesse caso, transactionCode não está disponível - precisamos buscar por data + filial + pessoa
+      const filterData = searchPayload.filter || {};
+      const isInvoiceCodeSearch =
+        filterData.invoiceCode && !filterData.transactionCode;
+
+      let invoicesBody;
+      if (isInvoiceCodeSearch) {
+        // Busca alternativa: usar change date range + branchCodeList + personCodeList
+        const invoiceDate = filterData.invoiceDate || '';
+        const MARGIN_DAYS = 3;
+        const startDate = new Date(invoiceDate);
+        startDate.setDate(startDate.getDate() - MARGIN_DAYS);
+        const endDate = new Date(invoiceDate);
+        endDate.setDate(endDate.getDate() + MARGIN_DAYS);
+
+        invoicesBody = {
+          filter: {
+            branchCodeList: filterData.branchCodeList || [],
+            personCodeList: filterData.personCodeList || [],
+            change: {
+              startDate: `${startDate.toISOString().slice(0, 10)}T00:00:00.000Z`,
+              endDate: `${endDate.toISOString().slice(0, 10)}T23:59:59.999Z`,
+            },
+          },
+          page: 1,
+          pageSize: 100,
+          expand: 'person',
+        };
+      } else {
+        const invoicesDefaults = {
+          filter: { change: {} },
+          page: 1,
+          pageSize: 100,
+          expand: 'person',
+        };
+        invoicesBody = {
+          ...invoicesDefaults,
+          ...searchPayload,
+          filter: {
+            ...invoicesDefaults.filter,
+            ...(searchPayload.filter || {}),
+          },
+        };
+      }
 
       const doInvoicesRequest = async (accessToken) =>
         axios.post(invoicesEndpoint, invoicesBody, {
@@ -985,7 +1028,21 @@ router.post(
         }
       }
 
-      const items = invoicesResp?.data?.items || [];
+      let items = invoicesResp?.data?.items || [];
+
+      // Se busca por invoiceCode, filtrar os resultados para achar a NF correta
+      if (isInvoiceCodeSearch && Array.isArray(items) && items.length > 0) {
+        const targetInvoiceCode = parseInt(filterData.invoiceCode);
+        const targetBranchCode = filterData.branchCodeList?.[0];
+        items = items.filter((item) => {
+          const matchCode = parseInt(item.invoiceCode) === targetInvoiceCode;
+          const matchBranch = targetBranchCode
+            ? parseInt(item.branchCode) === parseInt(targetBranchCode)
+            : true;
+          return matchCode && matchBranch;
+        });
+      }
+
       if (!Array.isArray(items) || items.length === 0) {
         return errorResponse(
           res,
@@ -4680,6 +4737,565 @@ router.post(
       }
 
       throw new Error(`Erro ao chamar API TOTVS: ${error.message}`);
+    }
+  }),
+);
+
+// ==========================================
+// SYNC PES_PESSOA - TOTVS → Supabase
+// Rotas para sincronizar pessoas (PF + PJ)
+// ==========================================
+
+// ==========================================
+// CLIENTES TOTVS v2 - Buscar + Enviar Supabase
+// Busca PF + PJ com expand de phones/emails/addresses
+// Paginação server-side (1000 por página) com cache em memória
+// ==========================================
+
+// Cache de resultado da última busca (expira em 10 min)
+let clientesCache = {
+  data: null,
+  filter: null,
+  timestamp: 0,
+  totalPF: 0,
+  totalPJ: 0,
+  duration: '',
+};
+const CLIENTES_CACHE_TTL = 10 * 60 * 1000;
+
+/**
+ * @route GET /totvs/clientes/fetch-all
+ * @desc Busca clientes (PF + PJ) do TOTVS com paginação.
+ *       1a chamada: busca tudo da API TOTVS e guarda em cache.
+ *       Chamadas seguintes (mesmos filtros): retorna do cache.
+ * @query startDate (YYYY-MM-DD) - Data início do cadastro
+ * @query endDate (YYYY-MM-DD) - Data fim do cadastro
+ * @query personCode (opcional) - Código(s) da pessoa (ex: 180 ou 180,200)
+ * @query page (opcional, default 1) - Página (1-indexed)
+ * @query pageSize (opcional, default 1000) - Itens por página
+ */
+router.get(
+  '/clientes/fetch-all',
+  asyncHandler(async (req, res) => {
+    const startTime = Date.now();
+    const { startDate, endDate, personCode } = req.query;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(
+      5000,
+      Math.max(1, parseInt(req.query.pageSize, 10) || 1000),
+    );
+
+    // Validar token
+    const tokenData = await getToken();
+    if (!tokenData?.access_token) {
+      return errorResponse(
+        res,
+        'Não foi possível obter token de autenticação TOTVS',
+        503,
+        'TOKEN_UNAVAILABLE',
+      );
+    }
+
+    // Montar filtro
+    let filter = {};
+
+    if (personCode) {
+      const codes = personCode
+        .split(',')
+        .map((c) => parseInt(c.trim(), 10))
+        .filter((c) => !isNaN(c) && c > 0);
+      if (codes.length > 0) {
+        filter.personCodeList = codes;
+        console.log(`🔍 Buscando por código(s): ${codes.join(', ')}`);
+      }
+    } else if (startDate || endDate) {
+      const sd = startDate
+        ? `${startDate}T00:00:00.000Z`
+        : '2000-01-01T00:00:00.000Z';
+      const ed = endDate
+        ? `${endDate}T23:59:59.999Z`
+        : new Date().toISOString();
+      filter.startInsertDate = sd;
+      filter.endInsertDate = ed;
+      console.log(`🔍 Filtro de data de cadastro: ${sd} → ${ed}`);
+    } else {
+      console.log('🔍 Buscando TODOS os clientes (sem filtro)...');
+    }
+
+    const filterKey = JSON.stringify(filter);
+    console.log(
+      '📤 Filtro:',
+      filterKey,
+      `| Página: ${page} | PageSize: ${pageSize}`,
+    );
+
+    try {
+      // Verificar se cache é válido (mesmo filtro e não expirou)
+      const now = Date.now();
+      let allRows;
+      let totalPF, totalPJ, fetchDuration;
+
+      if (
+        clientesCache.data &&
+        clientesCache.filter === filterKey &&
+        now - clientesCache.timestamp < CLIENTES_CACHE_TTL
+      ) {
+        console.log(`📦 Usando cache (${clientesCache.data.length} clientes)`);
+        allRows = clientesCache.data;
+        totalPF = clientesCache.totalPF;
+        totalPJ = clientesCache.totalPJ;
+        fetchDuration = clientesCache.duration;
+      } else {
+        // Buscar tudo da API TOTVS
+        const result = await fetchAndMapPersons(filter, 'FETCH');
+        allRows = result.allRows;
+        totalPF = result.pfRows.length;
+        totalPJ = result.pjRows.length;
+        fetchDuration = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
+
+        // Guardar no cache
+        clientesCache = {
+          data: allRows,
+          filter: filterKey,
+          timestamp: Date.now(),
+          totalPF,
+          totalPJ,
+          duration: fetchDuration,
+        };
+        console.log(
+          `✅ ${allRows.length} clientes buscados e cacheados em ${fetchDuration}`,
+        );
+      }
+
+      // Paginar
+      const totalItems = allRows.length;
+      const totalPages = Math.ceil(totalItems / pageSize);
+      const startIdx = (page - 1) * pageSize;
+      const endIdx = startIdx + pageSize;
+      const pageData = allRows.slice(startIdx, endIdx);
+
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
+      successResponse(
+        res,
+        {
+          clientes: pageData,
+          page,
+          pageSize,
+          totalPages,
+          totalItems,
+          totalPF,
+          totalPJ,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
+          duration: `${duration}s`,
+          fetchDuration,
+        },
+        `Página ${page}/${totalPages} — ${pageData.length} de ${totalItems} clientes`,
+      );
+    } catch (error) {
+      console.error('❌ Erro ao buscar clientes:', error.message);
+      errorResponse(
+        res,
+        `Erro ao buscar clientes do TOTVS: ${error.message}`,
+        500,
+        'FETCH_CLIENTES_ERROR',
+      );
+    }
+  }),
+);
+
+/**
+ * @route GET /totvs/clientes/fetch-batch
+ * @desc Busca PF + PJ por faixa de códigos (ex: 1-500, 501-1000).
+ *       Usado para carga incremental em lotes.
+ * @query startCode (default 1) - Código inicial
+ * @query endCode (default 500) - Código final
+ */
+router.get(
+  '/clientes/fetch-batch',
+  asyncHandler(async (req, res) => {
+    const startCode = Math.max(1, parseInt(req.query.startCode, 10) || 1);
+    const endCode = Math.max(
+      startCode,
+      parseInt(req.query.endCode, 10) || startCode + 499,
+    );
+
+    if (endCode - startCode + 1 > 1000) {
+      return errorResponse(
+        res,
+        'Máximo de 1000 códigos por lote',
+        400,
+        'BATCH_TOO_LARGE',
+      );
+    }
+
+    const tokenData = await getToken();
+    if (!tokenData?.access_token) {
+      return errorResponse(
+        res,
+        'Não foi possível obter token TOTVS',
+        503,
+        'TOKEN_UNAVAILABLE',
+      );
+    }
+
+    const codes = Array.from(
+      { length: endCode - startCode + 1 },
+      (_, i) => startCode + i,
+    );
+    const filter = { personCodeList: codes };
+    const startTime = Date.now();
+
+    console.log(
+      `📦 Buscando lote códigos ${startCode}-${endCode} (${codes.length} códigos)...`,
+    );
+
+    try {
+      const { pfRows, pjRows, allRows } = await fetchAndMapPersons(
+        filter,
+        `BATCH-${startCode}-${endCode}`,
+      );
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
+      console.log(
+        `✅ Lote ${startCode}-${endCode}: ${allRows.length} clientes (PF:${pfRows.length} PJ:${pjRows.length}) em ${duration}s`,
+      );
+
+      successResponse(
+        res,
+        {
+          clientes: allRows,
+          totalPF: pfRows.length,
+          totalPJ: pjRows.length,
+          total: allRows.length,
+          startCode,
+          endCode,
+          duration: `${duration}s`,
+        },
+        `Lote ${startCode}-${endCode}: ${allRows.length} clientes`,
+      );
+    } catch (error) {
+      console.error(`❌ Erro no lote ${startCode}-${endCode}:`, error.message);
+      errorResponse(
+        res,
+        `Erro ao buscar lote: ${error.message}`,
+        500,
+        'FETCH_BATCH_ERROR',
+      );
+    }
+  }),
+);
+
+/**
+ * @route GET /totvs/clientes/search-name
+ * @desc Busca clientes na tabela pes_pessoa do Supabase por nome ou nome fantasia.
+ *       Retorna código, nome, nome fantasia, CPF/CNPJ, tipo, empresa, telefone, email.
+ * @query nome - Termo para buscar no campo nm_pessoa (ILIKE)
+ * @query fantasia - Termo para buscar no campo fantasy_name (ILIKE)
+ */
+router.get(
+  '/clientes/search-name',
+  asyncHandler(async (req, res) => {
+    const { nome, fantasia } = req.query;
+
+    if (!nome && !fantasia) {
+      return errorResponse(
+        res,
+        'Informe pelo menos um dos campos: nome ou fantasia',
+        400,
+        'MISSING_SEARCH_TERM',
+      );
+    }
+
+    try {
+      let query = supabase
+        .from('pes_pessoa')
+        .select(
+          'code, cd_empresacad, nm_pessoa, fantasy_name, cpf, tipo_pessoa, telefone, email, is_customer, customer_status, person_status',
+        )
+        .order('nm_pessoa', { ascending: true })
+        .limit(50);
+
+      if (nome && fantasia) {
+        query = query.or(
+          `nm_pessoa.ilike.%${nome}%,fantasy_name.ilike.%${fantasia}%`,
+        );
+      } else if (nome) {
+        query = query.ilike('nm_pessoa', `%${nome}%`);
+      } else {
+        query = query.ilike('fantasy_name', `%${fantasia}%`);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('❌ Erro ao buscar clientes por nome:', error.message);
+        return errorResponse(
+          res,
+          `Erro na busca: ${error.message}`,
+          500,
+          'SUPABASE_SEARCH_ERROR',
+        );
+      }
+
+      // Deduplicar por code (pode ter mesmo cliente em várias empresas)
+      const uniqueMap = new Map();
+      for (const row of data || []) {
+        const existing = uniqueMap.get(row.code);
+        if (!existing) {
+          uniqueMap.set(row.code, row);
+        }
+      }
+      const clientes = Array.from(uniqueMap.values());
+
+      console.log(
+        `🔍 Busca por nome: "${nome || ''}" / fantasia: "${fantasia || ''}" → ${clientes.length} resultados`,
+      );
+
+      successResponse(
+        res,
+        { clientes, total: clientes.length },
+        `${clientes.length} clientes encontrados`,
+      );
+    } catch (error) {
+      console.error('❌ Erro ao buscar clientes por nome:', error.message);
+      errorResponse(
+        res,
+        `Erro ao buscar: ${error.message}`,
+        500,
+        'SEARCH_NAME_ERROR',
+      );
+    }
+  }),
+);
+
+/**
+ * @route POST /totvs/clientes/save-supabase
+ * @desc Recebe array de clientes e faz upsert no Supabase (tabela pes_pessoa)
+ * @body { clientes: Array }
+ */
+router.post(
+  '/clientes/save-supabase',
+  asyncHandler(async (req, res) => {
+    const { clientes } = req.body;
+
+    if (!Array.isArray(clientes) || clientes.length === 0) {
+      return errorResponse(
+        res,
+        'O campo clientes é obrigatório e deve ser um array não-vazio',
+        400,
+        'MISSING_CLIENTES',
+      );
+    }
+
+    const startTime = Date.now();
+    console.log(`💾 Salvando ${clientes.length} clientes no Supabase...`);
+
+    try {
+      const result = await upsertBatch(clientes);
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
+      console.log(
+        `✅ Upsert concluído: ${result.inserted} inseridos, ${result.errors} erros em ${duration}s`,
+      );
+
+      successResponse(
+        res,
+        {
+          inserted: result.inserted,
+          errors: result.errors,
+          total: clientes.length,
+          duration: `${duration}s`,
+        },
+        `${result.inserted} clientes salvos no Supabase`,
+      );
+    } catch (error) {
+      console.error('❌ Erro ao salvar no Supabase:', error.message);
+      errorResponse(
+        res,
+        `Erro ao salvar clientes no Supabase: ${error.message}`,
+        500,
+        'SAVE_SUPABASE_ERROR',
+      );
+    }
+  }),
+);
+
+/**
+ * @route POST /totvs/sync/pes-pessoa/full
+ * @desc Carga COMPLETA de todas as pessoas (PF + PJ) do TOTVS para o Supabase.
+ *       Use apenas uma vez para popular a tabela pes_pessoa.
+ *       ATENÇÃO: Pode demorar vários minutos dependendo do volume de dados.
+ * @access Public
+ */
+router.post(
+  '/sync/pes-pessoa/full',
+  asyncHandler(async (req, res) => {
+    console.log('🚀 Iniciando SYNC FULL pes_pessoa (manual via API)');
+
+    const result = await syncFullPesPessoa();
+
+    if (result.success) {
+      successResponse(
+        res,
+        result,
+        'Sincronização completa concluída com sucesso',
+      );
+    } else {
+      errorResponse(
+        res,
+        `Erro na sincronização: ${result.error}`,
+        500,
+        'SYNC_FULL_ERROR',
+      );
+    }
+  }),
+);
+
+/**
+ * @route POST /totvs/sync/pes-pessoa/incremental
+ * @desc Sincronização INCREMENTAL: busca apenas pessoas alteradas/criadas nas últimas 24h
+ *       e faz upsert no Supabase. É o que roda automaticamente todo dia às 03:00.
+ * @access Public
+ */
+router.post(
+  '/sync/pes-pessoa/incremental',
+  asyncHandler(async (req, res) => {
+    console.log('🔄 Iniciando SYNC INCREMENTAL pes_pessoa (manual via API)');
+
+    const result = await syncIncrementalPesPessoa();
+
+    if (result.success) {
+      successResponse(res, result, 'Sincronização incremental concluída');
+    } else {
+      errorResponse(
+        res,
+        `Erro na sincronização incremental: ${result.error}`,
+        500,
+        'SYNC_INCREMENTAL_ERROR',
+      );
+    }
+  }),
+);
+
+/**
+ * @route POST /totvs/person-statistics
+ * @desc Busca estatísticas de um cliente na API TOTVS Moda
+ * @access Public
+ * @body { personCode: number }
+ */
+router.post(
+  '/person-statistics',
+  asyncHandler(async (req, res) => {
+    const { personCode, branchCode } = req.body;
+
+    if (personCode === undefined || personCode === null || personCode === '') {
+      return errorResponse(
+        res,
+        'O campo personCode é obrigatório',
+        400,
+        'MISSING_PERSON_CODE',
+      );
+    }
+
+    const personCodeNum =
+      typeof personCode === 'string' ? parseInt(personCode, 10) : personCode;
+
+    if (isNaN(personCodeNum) || personCodeNum < 0) {
+      return errorResponse(
+        res,
+        'O campo personCode deve ser um número inteiro válido',
+        400,
+        'INVALID_PERSON_CODE',
+      );
+    }
+
+    // BranchCode: usar o informado ou default 1
+    const branchCodeNum = branchCode ? parseInt(branchCode, 10) : 1;
+
+    try {
+      const tokenData = await getToken();
+
+      if (!tokenData || !tokenData.access_token) {
+        return errorResponse(
+          res,
+          'Não foi possível obter token de autenticação TOTVS',
+          503,
+          'TOKEN_UNAVAILABLE',
+        );
+      }
+
+      const endpoint = `${TOTVS_BASE_URL}/person/v2/person-statistics`;
+
+      // Buscar filiais válidas do TOTVS
+      const branchesUrl = `${TOTVS_BASE_URL}/person/v2/branchesList?BranchCodePool=1&Page=1&PageSize=1000`;
+      const branchesResp = await axios.get(branchesUrl, {
+        headers: {
+          Authorization: `Bearer ${tokenData.access_token}`,
+          Accept: 'application/json',
+        },
+        httpsAgent,
+        timeout: 30000,
+      });
+      const branchCodes = (branchesResp.data?.items || [])
+        .map((b) => b.code)
+        .filter((c) => c >= 1 && c <= 990);
+
+      const doRequest = async (accessToken) =>
+        axios.get(endpoint, {
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          params: { CustomerCode: personCodeNum, BranchCode: branchCodes },
+          paramsSerializer: (params) => {
+            const parts = [];
+            for (const [key, value] of Object.entries(params)) {
+              if (Array.isArray(value)) {
+                value.forEach((v) => parts.push(`${key}=${v}`));
+              } else {
+                parts.push(`${key}=${value}`);
+              }
+            }
+            return parts.join('&');
+          },
+          httpsAgent,
+          timeout: 30000,
+        });
+
+      let response;
+      try {
+        response = await doRequest(tokenData.access_token);
+      } catch (error) {
+        if (error.response?.status === 401) {
+          const newTokenData = await getToken(true);
+          response = await doRequest(newTokenData.access_token);
+        } else {
+          throw error;
+        }
+      }
+
+      successResponse(
+        res,
+        response.data,
+        'Estatísticas do cliente obtidas com sucesso',
+      );
+    } catch (error) {
+      console.error('❌ Erro ao consultar person-statistics:', {
+        message: error.message,
+        status: error.response?.status,
+        responseData: error.response?.data,
+      });
+
+      errorResponse(
+        res,
+        error.response?.data?.message ||
+          `Erro ao consultar estatísticas do cliente: ${error.message}`,
+        error.response?.status || 500,
+        'PERSON_STATISTICS_ERROR',
+      );
     }
   }),
 );

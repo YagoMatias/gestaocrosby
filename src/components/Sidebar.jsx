@@ -478,6 +478,33 @@ const dashboardFinanceiro = [
     color: 'text-purple-600',
   },
 ];
+const confianca = [
+  {
+    name: 'Fatura',
+    href: '/faturas-clientes-confianca',
+    icon: Receipt,
+    color: 'text-amber-600',
+  },
+  {
+    name: 'Notas Fiscais',
+    href: '/nf-clientes-confianca',
+    icon: Article,
+    color: 'text-amber-600',
+  },
+  {
+    name: 'Comprovantes',
+    href: '/comprovantes-confianca',
+    icon: CheckCircle,
+    color: 'text-amber-600',
+  },
+  {
+    name: 'Clientes',
+    href: '/clientes-confianca',
+    icon: Users,
+    color: 'text-amber-600',
+  },
+];
+
 const DashboardFaturamento = [
   {
     name: 'Dashboard Faturamento',
@@ -498,6 +525,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const [revendaOpen, setRevendaOpen] = useState(false);
   const [franquiasOpen, setFranquiasOpen] = useState(false);
   const [acaoCartoesOpen, setAcaoCartoesOpen] = useState(false);
+  const [confiancaOpen, setConfiancaOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [producaoOpen, setProducaoOpen] = useState(false);
   const { user } = useAuth();
@@ -513,6 +541,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setRevendaOpen(false);
       setFranquiasOpen(false);
       setAcaoCartoesOpen(false);
+      setConfiancaOpen(false);
       setAdminOpen(false);
       if (!next) setDashboardFinanceiroOpen(false);
       return;
@@ -527,6 +556,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setRevendaOpen(false);
       setFranquiasOpen(false);
       setAcaoCartoesOpen(false);
+      setConfiancaOpen(false);
       setAdminOpen(false);
       return;
     }
@@ -540,6 +570,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setRevendaOpen(false);
       setFranquiasOpen(false);
       setAcaoCartoesOpen(false);
+      setConfiancaOpen(false);
       setAdminOpen(false);
       return;
     }
@@ -553,6 +584,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setRevendaOpen(false);
       setFranquiasOpen(false);
       setAcaoCartoesOpen(false);
+      setConfiancaOpen(false);
       setAdminOpen(false);
       return;
     }
@@ -566,6 +598,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setMultimarcasOpen(false);
       setFranquiasOpen(false);
       setAcaoCartoesOpen(false);
+      setConfiancaOpen(false);
       setAdminOpen(false);
       return;
     }
@@ -579,6 +612,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setMultimarcasOpen(false);
       setRevendaOpen(false);
       setAcaoCartoesOpen(false);
+      setConfiancaOpen(false);
       setAdminOpen(false);
       return;
     }
@@ -592,6 +626,21 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setMultimarcasOpen(false);
       setRevendaOpen(false);
       setFranquiasOpen(false);
+      setConfiancaOpen(false);
+      setAdminOpen(false);
+      return;
+    }
+    if (section === 'confianca') {
+      const next = !confiancaOpen;
+      setConfiancaOpen(next);
+      setFinanceiroOpen(false);
+      setDashboardFinanceiroOpen(false);
+      setFaturamentoOpen(false);
+      setVarejoOpen(false);
+      setMultimarcasOpen(false);
+      setRevendaOpen(false);
+      setFranquiasOpen(false);
+      setAcaoCartoesOpen(false);
       setAdminOpen(false);
       return;
     }
@@ -606,6 +655,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setRevendaOpen(false);
       setFranquiasOpen(false);
       setAcaoCartoesOpen(false);
+      setConfiancaOpen(false);
       return;
     }
     if (section === 'producao') {
@@ -619,6 +669,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setRevendaOpen(false);
       setFranquiasOpen(false);
       setAcaoCartoesOpen(false);
+      setConfiancaOpen(false);
       setAdminOpen(false);
       return;
     }
@@ -984,6 +1035,16 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             onToggle={() => handleSectionToggle('acaoCartoes')}
             icon={CreditCard}
             color="text-blue-600"
+          />
+
+          {/* Seção Confiança */}
+          <MenuSection
+            title="Confiança"
+            items={confianca}
+            isOpen={confiancaOpen}
+            onToggle={() => handleSectionToggle('confianca')}
+            icon={Bank}
+            color="text-amber-600"
           />
 
           {/* Minha Franquia (pasta) */}

@@ -258,6 +258,28 @@ const AVAILABLE_PAGES = [
     category: 'Minha Franquia',
   },
 
+  // Confiança
+  {
+    path: '/faturas-clientes-confianca',
+    name: 'Faturas Clientes',
+    category: 'Confiança',
+  },
+  {
+    path: '/nf-clientes-confianca',
+    name: 'Notas Fiscais Clientes',
+    category: 'Confiança',
+  },
+  {
+    path: '/comprovantes-confianca',
+    name: 'Comprovantes',
+    category: 'Confiança',
+  },
+  {
+    path: '/clientes-confianca',
+    name: 'Clientes (Perfil)',
+    category: 'Confiança',
+  },
+
   // Outros
   { path: '/clientes', name: 'Clientes', category: 'Outros' },
   { path: '/cohort-analysis', name: 'Análise de Cohort', category: 'Outros' },

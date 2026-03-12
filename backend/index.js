@@ -7,17 +7,15 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 
 // Importar configurações
-import pool, { testConnection, closePool } from './config/database.js';
 import { logger } from './utils/errorHandler.js';
-import {
-  startMaterializedViewsScheduler,
-  stopMaterializedViewsScheduler,
-  refreshAllMaterializedViews,
-} from './utils/refreshMaterializedViews.js';
 import {
   startTokenScheduler,
   stopTokenScheduler,
 } from './utils/totvsTokenManager.js';
+import {
+  startPesPessoaScheduler,
+  stopPesPessoaScheduler,
+} from './utils/syncPesPessoa.js';
 
 // Importar middlewares
 import { errorHandler } from './utils/errorHandler.js';
@@ -228,7 +226,6 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 4000;
 
 // Variáveis para armazenar os schedulers
-let materializedViewsTask = null;
 let totvsTokenTask = null;
 
 // Graceful shutdown
@@ -244,17 +241,12 @@ const gracefulShutdown = (signal) => {
     stopTokenScheduler(totvsTokenTask);
   }
 
-  server.close(async () => {
-    logger.info('Servidor HTTP fechado.');
+  // Parar scheduler de sync pes_pessoa
+  stopPesPessoaScheduler();
 
-    try {
-      await closePool();
-      logger.info('Pool de conexões do banco fechado.');
-      process.exit(0);
-    } catch (error) {
-      logger.error('Erro ao fechar pool de conexões:', error);
-      process.exit(1);
-    }
+  server.close(() => {
+    logger.info('Servidor HTTP fechado.');
+    process.exit(0);
   });
 };
 
@@ -283,26 +275,11 @@ const server = app.listen(PORT, async () => {
   server.headersTimeout = 0; // Sem timeout para headers
   logger.info('♾️  Timeouts do servidor removidos - requisições ilimitadas');
 
-  // Testar conexão com banco de dados na inicialização
-  const dbConnected = await testConnection();
-  if (dbConnected) {
-    logger.info('🗄️  Banco de dados conectado com sucesso - SEM TIMEOUTS');
-
-    // Iniciar o scheduler de atualização das views materializadas
-    // materializedViewsTask = startMaterializedViewsScheduler();
-
-    // Executar a primeira atualização imediatamente (opcional)
-    // Comentado por padrão - descomente se quiser atualizar na inicialização
-    // setTimeout(async () => {
-    //   logger.info('🔄 Executando primeira atualização das views materializadas...');
-    //   await refreshAllMaterializedViews();
-    // }, 5000);
-  } else {
-    logger.error('❌ Falha na conexão com banco de dados');
-  }
-
   // Iniciar o scheduler de geração automática de token TOTVS
   totvsTokenTask = startTokenScheduler();
+
+  // Iniciar scheduler de sync pes_pessoa (diário às 03:00)
+  startPesPessoaScheduler();
 
   // Keep-alive: pingar a si mesmo a cada 14 minutos para evitar que o Render adormeça
   if (process.env.NODE_ENV === 'production') {

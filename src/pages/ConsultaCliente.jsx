@@ -39,6 +39,15 @@ const ConsultaCliente = () => {
   const [cliente, setCliente] = useState(null);
   const [clientesList, setClientesList] = useState([]); // Lista para busca por nome
   const [dadosCarregados, setDadosCarregados] = useState(false);
+
+  // Busca rápida por nome no Supabase (pes_pessoa)
+  const [buscaNome, setBuscaNome] = useState('');
+  const [buscaFantasia, setBuscaFantasia] = useState('');
+  const [buscandoSupabase, setBuscandoSupabase] = useState(false);
+  const [resultadosSupabase, setResultadosSupabase] = useState([]);
+  const [modalSupabaseAberto, setModalSupabaseAberto] = useState(false);
+  const [clienteSupabaseSelecionado, setClienteSupabaseSelecionado] =
+    useState(null);
   const [expandedSections, setExpandedSections] = useState({
     info: true,
     addresses: true,
@@ -134,6 +143,42 @@ const ConsultaCliente = () => {
       document.head.removeChild(styleElement);
     };
   }, []);
+
+  // Buscar cliente pelo nome/fantasia na tabela pes_pessoa do Supabase
+  const buscarClienteSupabase = async () => {
+    const nome = buscaNome.trim();
+    const fantasia = buscaFantasia.trim();
+    if (!nome && !fantasia) return;
+    setBuscandoSupabase(true);
+    setResultadosSupabase([]);
+    try {
+      const params = new URLSearchParams();
+      if (nome) params.append('nome', nome);
+      if (fantasia) params.append('fantasia', fantasia);
+      const resp = await fetch(
+        `${TotvsURL}clientes/search-name?${params.toString()}`,
+      );
+      const json = await resp.json();
+      if (json.success && json.data?.clientes?.length > 0) {
+        setResultadosSupabase(json.data.clientes);
+        setModalSupabaseAberto(true);
+      } else {
+        setError('Nenhum cliente encontrado com esse nome');
+      }
+    } catch (err) {
+      setError(`Erro na busca: ${err.message}`);
+    } finally {
+      setBuscandoSupabase(false);
+    }
+  };
+
+  const selecionarClienteSupabase = (cli) => {
+    setClienteSupabaseSelecionado(cli);
+    setPersonCode(String(cli.code));
+    setSearchType('code');
+    setPersonType(cli.tipo_pessoa === 'PF' ? 'pf' : 'pj');
+    setModalSupabaseAberto(false);
+  };
 
   const toggleSection = (section) => {
     setExpandedSections((prev) => ({
@@ -377,6 +422,83 @@ const ConsultaCliente = () => {
             </span>
           </div>
 
+          {/* Busca rápida por nome no Supabase */}
+          <div className="mb-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                  Nome da Pessoa
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={buscaNome}
+                    onChange={(e) => setBuscaNome(e.target.value)}
+                    onKeyDown={(e) =>
+                      e.key === 'Enter' &&
+                      (e.preventDefault(), buscarClienteSupabase())
+                    }
+                    placeholder="Ex: João Silva"
+                    className="border border-[#000638]/30 rounded-lg px-2 py-1.5 pr-8 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={buscarClienteSupabase}
+                    disabled={buscandoSupabase}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[#000638]/60 hover:text-[#fe0000] disabled:opacity-50 transition-colors"
+                    title="Buscar cliente por nome"
+                  >
+                    {buscandoSupabase ? (
+                      <Spinner size={14} className="animate-spin" />
+                    ) : (
+                      <MagnifyingGlass size={14} weight="bold" />
+                    )}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                  Nome Fantasia
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={buscaFantasia}
+                    onChange={(e) => setBuscaFantasia(e.target.value)}
+                    onKeyDown={(e) =>
+                      e.key === 'Enter' &&
+                      (e.preventDefault(), buscarClienteSupabase())
+                    }
+                    placeholder="Ex: Loja Centro"
+                    className="border border-[#000638]/30 rounded-lg px-2 py-1.5 pr-8 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={buscarClienteSupabase}
+                    disabled={buscandoSupabase}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[#000638]/60 hover:text-[#fe0000] disabled:opacity-50 transition-colors"
+                    title="Buscar cliente por nome fantasia"
+                  >
+                    {buscandoSupabase ? (
+                      <Spinner size={14} className="animate-spin" />
+                    ) : (
+                      <MagnifyingGlass size={14} weight="bold" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+            {clienteSupabaseSelecionado && (
+              <p className="text-xs text-green-700 mt-1 font-medium">
+                Cliente selecionado: {clienteSupabaseSelecionado.code} —{' '}
+                {clienteSupabaseSelecionado.nm_pessoa}
+                {clienteSupabaseSelecionado.fantasy_name
+                  ? ` (${clienteSupabaseSelecionado.fantasy_name})`
+                  : ''}
+              </p>
+            )}
+          </div>
+
           {/* Radio buttons para tipo de pessoa */}
           <div className="flex items-center gap-4 mb-3 p-2 bg-[#f8f9fb] rounded-lg">
             <span className="text-xs font-semibold text-[#000638]">Tipo:</span>
@@ -513,6 +635,82 @@ const ConsultaCliente = () => {
           )}
         </form>
       </div>
+
+      {/* Modal de resultados Supabase (busca rápida por nome) */}
+      {modalSupabaseAberto && resultadosSupabase.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl border border-[#000638]/15 w-[95vw] max-w-5xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#000638]/10 bg-[#f8f9fb]">
+              <h3 className="text-sm font-bold text-[#000638] flex items-center gap-2">
+                <MagnifyingGlass size={16} weight="bold" />
+                Clientes Encontrados no Supabase
+                <span className="ml-2 px-2 py-0.5 bg-[#000638] text-white text-xs rounded-full">
+                  {resultadosSupabase.length}
+                </span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setModalSupabaseAberto(false)}
+                className="text-gray-400 hover:text-[#fe0000] text-lg font-bold px-2"
+                title="Fechar"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="overflow-auto flex-1 p-2">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-[#000638] text-white">
+                    <th className="px-2 py-1.5 text-left rounded-tl-lg">
+                      Código
+                    </th>
+                    <th className="px-2 py-1.5 text-left">Tipo</th>
+                    <th className="px-2 py-1.5 text-left">Nome</th>
+                    <th className="px-2 py-1.5 text-left">Nome Fantasia</th>
+                    <th className="px-2 py-1.5 text-left">CPF/CNPJ</th>
+                    <th className="px-2 py-1.5 text-left">Telefone</th>
+                    <th className="px-2 py-1.5 text-left">Email</th>
+                    <th className="px-2 py-1.5 text-center rounded-tr-lg">
+                      Ação
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {resultadosSupabase.map((cli, idx) => (
+                    <tr
+                      key={cli.code + '-' + idx}
+                      className="border-b border-gray-100 hover:bg-blue-50/60 transition-colors"
+                    >
+                      <td className="px-2 py-1.5 font-mono font-bold text-[#000638]">
+                        {cli.code}
+                      </td>
+                      <td className="px-2 py-1.5">{cli.tipo_pessoa || '—'}</td>
+                      <td className="px-2 py-1.5 font-medium">
+                        {cli.nm_pessoa || '—'}
+                      </td>
+                      <td className="px-2 py-1.5">{cli.fantasy_name || '—'}</td>
+                      <td className="px-2 py-1.5 font-mono">
+                        {cli.cpf || '—'}
+                      </td>
+                      <td className="px-2 py-1.5">{cli.telefone || '—'}</td>
+                      <td className="px-2 py-1.5">{cli.email || '—'}</td>
+                      <td className="px-2 py-1.5 text-center">
+                        <button
+                          type="button"
+                          onClick={() => selecionarClienteSupabase(cli)}
+                          className="bg-[#000638] hover:bg-[#fe0000] text-white text-xs px-3 py-1 rounded-lg font-semibold transition-colors"
+                        >
+                          Selecionar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Lista de Clientes Encontrados (busca por nome) */}
       {clientesList.length > 0 && !cliente && (

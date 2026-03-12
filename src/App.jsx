@@ -99,10 +99,21 @@ const AuditoriaConciliacao = lazy(() => import('./pages/AuditoriaConciliacao'));
 const AuditoriaFaturamento = lazy(() => import('./pages/AuditoriaFaturamento'));
 const ExtratoBancario = lazy(() => import('./pages/ExtratoBancario'));
 const ConsultaCliente = lazy(() => import('./pages/ConsultaCliente'));
+const ClientesTotvs = lazy(() => import('./pages/ClientesTotvs'));
 const SolicitacaoBaixa = lazy(() => import('./pages/SolicitacaoBaixa'));
 const MinhasSolicitacoesBaixa = lazy(
   () => import('./pages/MinhasSolicitacoesBaixa'),
 );
+const FaturasClientesConfianca = lazy(
+  () => import('./pages/FaturasClientesConfianca'),
+);
+const NotasFiscaisClientesConfianca = lazy(
+  () => import('./pages/NotasFiscaisClientesConfianca'),
+);
+const ComprovantesConfianca = lazy(
+  () => import('./pages/ComprovantesConfianca'),
+);
+const ClientesConfianca = lazy(() => import('./pages/ClientesConfianca'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -210,11 +221,22 @@ const AppRoutes = memo(() => {
     { path: '/auditoria-conciliacao', component: AuditoriaConciliacao },
     { path: '/auditoria-faturamento', component: AuditoriaFaturamento },
     { path: '/consulta-cliente', component: ConsultaCliente },
+    { path: '/clientes-totvs', component: ClientesTotvs },
     { path: '/solicitacao-baixa', component: SolicitacaoBaixa },
     {
       path: '/minhas-solicitacoes-baixa',
       component: MinhasSolicitacoesBaixa,
     },
+    {
+      path: '/faturas-clientes-confianca',
+      component: FaturasClientesConfianca,
+    },
+    {
+      path: '/nf-clientes-confianca',
+      component: NotasFiscaisClientesConfianca,
+    },
+    { path: '/comprovantes-confianca', component: ComprovantesConfianca },
+    { path: '/clientes-confianca', component: ClientesConfianca },
   ];
 
   // Componente de layout para rotas protegidas
