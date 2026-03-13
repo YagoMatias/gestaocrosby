@@ -667,6 +667,9 @@ const useApiClient = () => {
      */
     accountsPayableSearch: (body) =>
       apiMutate('/api/totvs/accounts-payable/search', 'POST', body),
+
+    franchiseClients: (params) =>
+      apiCall('/api/totvs/franchise-clients', params),
   };
 
   const franchise = {
