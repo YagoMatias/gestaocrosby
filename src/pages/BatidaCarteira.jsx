@@ -1189,119 +1189,6 @@ const BatidaCarteira = () => {
     return mapa;
   }, [dadosImportados, verificarExcecao, bancoImportado]);
 
-  // Lista de registros com baixa "PGTO DE TITULO EFETUADO P/CEDENTE" ou "TITULO DEBITADO EM OPERACAO" (somente CONFIANCA)
-  const listaPgtoCedente = useMemo(() => {
-    if (bancoImportado !== 'CONFIANCA') return [];
-    return dadosImportados.filter((item) => {
-      const baixa = (item.descricao_baixa || '').toUpperCase();
-      return (
-        baixa.includes('PGTO DE TITULO EFETUADO P/CEDENTE') ||
-        baixa.includes('TITULO DEBITADO EM OPERACAO')
-      );
-    });
-  }, [dadosImportados, bancoImportado]);
-
-  // Totais para o card PGTO Cedente
-  const totaisPgtoCedente = useMemo(() => {
-    const qtd = listaPgtoCedente.length;
-    const valor = listaPgtoCedente.reduce(
-      (acc, item) => acc + parseFloat(item.vl_original || 0),
-      0,
-    );
-    const batidosQtd = listaPgtoCedente.filter((item) => {
-      const chave = criarChaveComparacao(
-        item.nr_cpfcnpj,
-        item.vl_original,
-        item.dt_vencimento,
-      );
-      return chavesSistema.has(chave);
-    }).length;
-    const naoBatidosQtd = qtd - batidosQtd;
-    return { qtd, valor, batidosQtd, naoBatidosQtd };
-  }, [listaPgtoCedente, chavesSistema]);
-
-  // Lista de faturas PAGAS - batidas que possuem valor pago em ambas tabelas (sistema e arquivo)
-  const listaPagos = useMemo(() => {
-    return listaBatidosSistema.filter((itemSistema) => {
-      // Verificar se o sistema tem valor pago
-      const vlPagoSistema = parseFloat(itemSistema.vl_pago || 0);
-      if (vlPagoSistema <= 0) return false;
-
-      // Buscar o item correspondente no arquivo importado
-      const valorComTaxa = parseFloat(itemSistema.vl_fatura || 0) + 0.98;
-      const chave = criarChaveComparacao(
-        itemSistema.nr_cpfcnpj,
-        valorComTaxa,
-        itemSistema.dt_vencimento,
-      );
-      const itemArquivo = mapaImportadosPorChave.get(chave);
-
-      // Verificar se o arquivo também tem valor pago
-      if (!itemArquivo) return false;
-      const vlPagoArquivo = parseFloat(itemArquivo.vl_pago || 0);
-      return vlPagoArquivo > 0;
-    });
-  }, [listaBatidosSistema, mapaImportadosPorChave]);
-
-  // Totais para o card PAGOS
-  const totaisPagos = useMemo(() => {
-    const qtd = listaPagos.length;
-    const valorSistema = listaPagos.reduce(
-      (acc, item) => acc + parseFloat(item.vl_pago || 0),
-      0,
-    );
-    const valorArquivo = listaPagos.reduce((acc, itemSistema) => {
-      const valorComTaxa = parseFloat(itemSistema.vl_fatura || 0) + 0.98;
-      const chave = criarChaveComparacao(
-        itemSistema.nr_cpfcnpj,
-        valorComTaxa,
-        itemSistema.dt_vencimento,
-      );
-      const itemArquivo = mapaImportadosPorChave.get(chave);
-      return acc + parseFloat(itemArquivo?.vl_pago || 0);
-    }, 0);
-    return { qtd, valorSistema, valorArquivo };
-  }, [listaPagos, mapaImportadosPorChave]);
-
-  // Lista de faturas pagas SOMENTE no Sistema (batidas, mas sem pagamento no arquivo)
-  const listaPagosSoSistema = useMemo(() => {
-    return listaBatidosSistema.filter((itemSistema) => {
-      const vlPagoSistema = parseFloat(itemSistema.vl_pago || 0);
-      if (vlPagoSistema <= 0) return false;
-
-      const valorComTaxa = parseFloat(itemSistema.vl_fatura || 0) + 0.98;
-      const chave = criarChaveComparacao(
-        itemSistema.nr_cpfcnpj,
-        valorComTaxa,
-        itemSistema.dt_vencimento,
-      );
-      const itemArquivo = mapaImportadosPorChave.get(chave);
-
-      if (!itemArquivo) return false;
-      const vlPagoArquivo = parseFloat(itemArquivo.vl_pago || 0);
-      return vlPagoArquivo <= 0; // Pago no sistema, mas NÃO no arquivo
-    });
-  }, [listaBatidosSistema, mapaImportadosPorChave]);
-
-  // Lista de faturas pagas SOMENTE no Arquivo (batidas, mas sem pagamento no sistema)
-  const listaPagosSoArquivo = useMemo(() => {
-    return listaBatidosSistema.filter((itemSistema) => {
-      const vlPagoSistema = parseFloat(itemSistema.vl_pago || 0);
-
-      const valorComTaxa = parseFloat(itemSistema.vl_fatura || 0) + 0.98;
-      const chave = criarChaveComparacao(
-        itemSistema.nr_cpfcnpj,
-        valorComTaxa,
-        itemSistema.dt_vencimento,
-      );
-      const itemArquivo = mapaImportadosPorChave.get(chave);
-
-      if (!itemArquivo) return false;
-      const vlPagoArquivo = parseFloat(itemArquivo.vl_pago || 0);
-      return vlPagoSistema <= 0 && vlPagoArquivo > 0; // NÃO pago no sistema, mas pago no arquivo
-    });
-  }, [listaBatidosSistema, mapaImportadosPorChave]);
-
   // Função para buscar item do arquivo correspondente ao item do sistema
   const buscarItemImportadoCorrespondente = useCallback(
     (itemSistema) => {
@@ -1364,6 +1251,95 @@ const BatidaCarteira = () => {
       mapaImportadosPorDataValor,
     ],
   );
+
+  // Lista de registros com baixa "PGTO DE TITULO EFETUADO P/CEDENTE" ou "TITULO DEBITADO EM OPERACAO" (somente CONFIANCA)
+  const listaPgtoCedente = useMemo(() => {
+    if (bancoImportado !== 'CONFIANCA') return [];
+    return dadosImportados.filter((item) => {
+      const baixa = (item.descricao_baixa || '').toUpperCase();
+      return (
+        baixa.includes('PGTO DE TITULO EFETUADO P/CEDENTE') ||
+        baixa.includes('TITULO DEBITADO EM OPERACAO')
+      );
+    });
+  }, [dadosImportados, bancoImportado]);
+
+  // Totais para o card PGTO Cedente
+  const totaisPgtoCedente = useMemo(() => {
+    const qtd = listaPgtoCedente.length;
+    const valor = listaPgtoCedente.reduce(
+      (acc, item) => acc + parseFloat(item.vl_original || 0),
+      0,
+    );
+    const batidosQtd = listaPgtoCedente.filter((item) => {
+      const chave = criarChaveComparacao(
+        item.nr_cpfcnpj,
+        item.vl_original,
+        item.dt_vencimento,
+      );
+      return chavesSistema.has(chave);
+    }).length;
+    const naoBatidosQtd = qtd - batidosQtd;
+    return { qtd, valor, batidosQtd, naoBatidosQtd };
+  }, [listaPgtoCedente, chavesSistema]);
+
+  // Lista de faturas PAGAS - batidas que possuem valor pago em ambas tabelas (sistema e arquivo)
+  const listaPagos = useMemo(() => {
+    return listaBatidosSistema.filter((itemSistema) => {
+      // Verificar se o sistema tem valor pago
+      const vlPagoSistema = parseFloat(itemSistema.vl_pago || 0);
+      if (vlPagoSistema <= 0) return false;
+
+      // Buscar o item correspondente no arquivo importado
+      const itemArquivo = buscarItemImportadoCorrespondente(itemSistema);
+
+      // Verificar se o arquivo também tem valor pago
+      if (!itemArquivo) return false;
+      const vlPagoArquivo = parseFloat(itemArquivo.vl_pago || 0);
+      return vlPagoArquivo > 0;
+    });
+  }, [listaBatidosSistema, buscarItemImportadoCorrespondente]);
+
+  // Totais para o card PAGOS
+  const totaisPagos = useMemo(() => {
+    const qtd = listaPagos.length;
+    const valorSistema = listaPagos.reduce(
+      (acc, item) => acc + parseFloat(item.vl_pago || 0),
+      0,
+    );
+    const valorArquivo = listaPagos.reduce((acc, itemSistema) => {
+      const itemArquivo = buscarItemImportadoCorrespondente(itemSistema);
+      return acc + parseFloat(itemArquivo?.vl_pago || 0);
+    }, 0);
+    return { qtd, valorSistema, valorArquivo };
+  }, [listaPagos, buscarItemImportadoCorrespondente]);
+
+  // Lista de faturas pagas SOMENTE no Sistema (batidas, mas sem pagamento no arquivo)
+  const listaPagosSoSistema = useMemo(() => {
+    return listaBatidosSistema.filter((itemSistema) => {
+      const vlPagoSistema = parseFloat(itemSistema.vl_pago || 0);
+      if (vlPagoSistema <= 0) return false;
+
+      const itemArquivo = buscarItemImportadoCorrespondente(itemSistema);
+
+      if (!itemArquivo) return false;
+      const vlPagoArquivo = parseFloat(itemArquivo.vl_pago || 0);
+      return vlPagoArquivo <= 0; // Pago no sistema, mas NÃO no arquivo
+    });
+  }, [listaBatidosSistema, buscarItemImportadoCorrespondente]);
+
+  // Lista de faturas pagas SOMENTE no Arquivo (batidas, mas sem pagamento no sistema)
+  const listaPagosSoArquivo = useMemo(() => {
+    return listaBatidosSistema.filter((itemSistema) => {
+      const vlPagoSistema = parseFloat(itemSistema.vl_pago || 0);
+
+      const itemArquivo = buscarItemImportadoCorrespondente(itemSistema);
+
+      if (!itemArquivo) return false;
+      const vlPagoArquivo = parseFloat(itemArquivo.vl_pago || 0);
+      return vlPagoSistema <= 0 && vlPagoArquivo > 0; // NÃO pago no sistema, mas pago no arquivo
+    });
+  }, [listaBatidosSistema, buscarItemImportadoCorrespondente]);
 
   // Função para exportar dados para Excel
   const exportarParaExcel = useCallback(() => {
@@ -2406,7 +2382,7 @@ const BatidaCarteira = () => {
           )}
 
           {/* Card PAGOS - Faturas batidas com valor pago em ambas tabelas */}
-          {listaPagos.length > 0 && (
+          {(listaPagos.length > 0 || listaPagosSoSistema.length > 0 || listaPagosSoArquivo.length > 0) && (
             <button
               onClick={() => setModalDetalheAberto('pagos')}
               className="text-left w-full"
@@ -2416,32 +2392,26 @@ const BatidaCarteira = () => {
                   <div className="flex items-center gap-2">
                     <Coins size={16} className="text-blue-600" weight="fill" />
                     <CardTitle className="text-xs font-bold text-blue-700">
-                      PAGOS
+                      TÍTULOS PAGOS
                     </CardTitle>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0 px-3 pb-3">
-                  <div className="text-lg font-extrabold text-blue-600 mb-0.5">
-                    {totaisPagos.qtd} registros
+                  <div className="text-lg font-extrabold text-blue-600 mb-1">
+                    {listaPagos.length + listaPagosSoSistema.length + listaPagosSoArquivo.length} registros
                   </div>
-                  <div className="text-xs text-gray-600">
-                    <div className="font-bold">
-                      Sistema:{' '}
-                      <span className="text-blue-700">
-                        {totaisPagos.valorSistema.toLocaleString('pt-BR', {
-                          style: 'currency',
-                          currency: 'BRL',
-                        })}
-                      </span>
+                  <div className="text-[10px] space-y-0.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-green-700 font-bold">Em Ambos:</span>
+                      <span className="text-green-700 font-extrabold">{listaPagos.length}</span>
                     </div>
-                    <div className="font-bold">
-                      Arquivo:{' '}
-                      <span className="text-blue-700">
-                        {totaisPagos.valorArquivo.toLocaleString('pt-BR', {
-                          style: 'currency',
-                          currency: 'BRL',
-                        })}
-                      </span>
+                    <div className="flex justify-between items-center">
+                      <span className="text-amber-700 font-bold">Só no TOTVS:</span>
+                      <span className="text-amber-700 font-extrabold">{listaPagosSoSistema.length}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-rose-700 font-bold">Só no Arquivo:</span>
+                      <span className="text-rose-700 font-extrabold">{listaPagosSoArquivo.length}</span>
                     </div>
                   </div>
                 </CardContent>
