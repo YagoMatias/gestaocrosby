@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { supabase } from '../lib/supabase';
 import PageTitle from '../components/ui/PageTitle';
@@ -24,6 +25,7 @@ import {
   Trash,
   DownloadSimple,
   X,
+  FolderOpen,
   Storefront,
   Star,
   TrendUp,
@@ -36,6 +38,18 @@ import {
 
 const BUCKET_NAME = 'clientes-confianca';
 const SUPABASE_URL = 'https://dorztqiunewggydvkjnf.supabase.co';
+
+const CATEGORIAS_DOCUMENTOS = [
+  { key: 'cartao_cnpj', label: 'Cartão CNPJ' },
+  { key: 'google_maps', label: 'Google Maps da Loja' },
+  { key: 'comprovante_qsa', label: 'Comprovante QSA' },
+  { key: 'rg_cpf_socios', label: 'RG e CPF dos Sócios' },
+  { key: 'comprovante_endereco', label: 'Comprov. Endereço Empresa' },
+  { key: 'score_cnpj', label: 'Score SPC/Serasa CNPJ' },
+  { key: 'score_socios', label: 'Score SPC/Serasa Sócios' },
+  { key: 'doc_retirada_rastreio', label: 'Doc. Retirada / Rastreio / Taxista' },
+  { key: 'declaracao_fiador', label: 'Declaração Resp. e Fiador' },
+];
 
 const ClientesConfianca = () => {
   const { user } = useAuth();
@@ -65,6 +79,9 @@ const ClientesConfianca = () => {
   const [documentos, setDocumentos] = useState([]);
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const docInputRef = useRef(null);
+  const [abaDocAtiva, setAbaDocAtiva] = useState(CATEGORIAS_DOCUMENTOS[0].key);
+
+  const location = useLocation();
 
   const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
@@ -219,6 +236,51 @@ const ClientesConfianca = () => {
     }
   };
 
+  // Auto-buscar cliente quando vindo de outra página com params na URL
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const code = params.get('code');
+    const nome = params.get('nome');
+    if (code) {
+      const clienteAuto = {
+        code: parseInt(code),
+        nm_pessoa: nome || '',
+        fantasy_name: '',
+      };
+      setClienteSelecionado(clienteAuto);
+      setTermoBusca(nome || `Cliente ${code}`);
+      setShowDropdownCliente(false);
+      // Buscar estatísticas automaticamente
+      (async () => {
+        setLoading(true);
+        setErro('');
+        setDados(null);
+        try {
+          const personCode = parseInt(code);
+          const resp = await fetch(`${TotvsURL}person-statistics`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ personCode }),
+          });
+          const json = await resp.json();
+          if (json.success) {
+            setDados(json.data);
+            await carregarPerfil(personCode);
+            await carregarDadosPessoa(personCode);
+            await carregarDocumentos(personCode);
+          } else {
+            setErro(json.message || 'Erro ao buscar estatísticas');
+          }
+        } catch (error) {
+          console.error('Erro ao buscar estatísticas:', error);
+          setErro('Erro ao conectar com o servidor');
+        } finally {
+          setLoading(false);
+        }
+      })();
+    }
+  }, []);
+
   // Upload da foto
   const handleUploadFoto = async (e) => {
     const file = e.target.files?.[0];
@@ -310,7 +372,7 @@ const ClientesConfianca = () => {
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/[^a-zA-Z0-9._-]/g, '_');
-      const path = `documentos/${personCode}/${uid}_${safeName}`;
+      const path = `documentos/${personCode}/${abaDocAtiva}/${uid}_${safeName}`;
 
       const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
@@ -323,6 +385,7 @@ const ClientesConfianca = () => {
         file_path: path,
         tipo: file.type,
         uploaded_by: user?.id || null,
+        categoria: abaDocAtiva,
       });
 
       await carregarDocumentos(personCode);
@@ -967,81 +1030,168 @@ const ClientesConfianca = () => {
             </div>
           </div>
 
-          {/* Documentos */}
+          {/* Documentos por Categoria */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="bg-gradient-to-r from-violet-50 to-purple-50 px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+            <div className="bg-gradient-to-r from-violet-50 to-purple-50 px-5 py-3 border-b border-gray-200">
               <h3 className="text-sm font-bold text-purple-800 flex items-center gap-2">
-                <FileText size={16} className="text-purple-600" /> Documentos
-                Anexados
+                <FolderOpen size={16} className="text-purple-600" /> Documentos
+                do Cliente
               </h3>
-              <button
-                onClick={() => docInputRef.current?.click()}
-                disabled={uploadingDoc}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
-              >
-                {uploadingDoc ? (
-                  <Spinner size={12} className="animate-spin" />
-                ) : (
-                  <FileArrowUp size={14} weight="bold" />
-                )}
-                Anexar Documento
-              </button>
-              <input
-                ref={docInputRef}
-                type="file"
-                onChange={handleUploadDocumento}
-                className="hidden"
-              />
             </div>
-            <div className="p-5">
-              {documentos.length === 0 ? (
-                <div className="text-center py-8 text-gray-400">
-                  <FileText size={40} className="mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">Nenhum documento anexado</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {documentos.map((doc) => (
-                    <div
-                      key={doc.id}
-                      className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 hover:bg-gray-100 transition-colors"
+
+            {/* Abas de categorias */}
+            <div className="border-b border-gray-200 overflow-x-auto">
+              <div className="flex min-w-max">
+                {CATEGORIAS_DOCUMENTOS.map((cat) => {
+                  const docsCategoria = documentos.filter(
+                    (d) => d.categoria === cat.key,
+                  );
+                  const temDocs = docsCategoria.length > 0;
+                  return (
+                    <button
+                      key={cat.key}
+                      onClick={() => setAbaDocAtiva(cat.key)}
+                      className={`relative flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-medium whitespace-nowrap border-b-2 transition-colors ${
+                        abaDocAtiva === cat.key
+                          ? 'border-purple-600 text-purple-700 bg-purple-50/50'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                      }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <FileText
-                          size={20}
-                          className="text-purple-500 flex-shrink-0"
-                        />
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {doc.nome_arquivo}
-                          </p>
-                          <p className="text-[10px] text-gray-400">
-                            {formatDateBR(doc.created_at)}
-                          </p>
+                      {cat.label}
+                      {temDocs && (
+                        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold bg-green-100 text-green-700">
+                          {docsCategoria.length}
+                        </span>
+                      )}
+                      {!temDocs && (
+                        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold bg-red-100 text-red-500">
+                          0
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Conteúdo da aba ativa */}
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-gray-500">
+                  {
+                    CATEGORIAS_DOCUMENTOS.find((c) => c.key === abaDocAtiva)
+                      ?.label
+                  }
+                </p>
+                <button
+                  onClick={() => docInputRef.current?.click()}
+                  disabled={uploadingDoc}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+                >
+                  {uploadingDoc ? (
+                    <Spinner size={12} className="animate-spin" />
+                  ) : (
+                    <FileArrowUp size={14} weight="bold" />
+                  )}
+                  Anexar Arquivo
+                </button>
+                <input
+                  ref={docInputRef}
+                  type="file"
+                  onChange={handleUploadDocumento}
+                  className="hidden"
+                />
+              </div>
+
+              {(() => {
+                const docsAtivos = documentos.filter(
+                  (d) => d.categoria === abaDocAtiva,
+                );
+                if (docsAtivos.length === 0) {
+                  return (
+                    <div className="text-center py-6 text-gray-400">
+                      <FileText size={32} className="mx-auto mb-2 opacity-30" />
+                      <p className="text-xs">
+                        Nenhum arquivo anexado nesta categoria
+                      </p>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="space-y-2">
+                    {docsAtivos.map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 hover:bg-gray-100 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <FileText
+                            size={20}
+                            className="text-purple-500 flex-shrink-0"
+                          />
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {doc.nome_arquivo}
+                            </p>
+                            <p className="text-[10px] text-gray-400">
+                              {formatDateBR(doc.created_at)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => downloadDocumento(doc)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Download"
+                          >
+                            <DownloadSimple size={16} weight="bold" />
+                          </button>
+                          {podeRemoverDocumento(doc) && (
+                            <button
+                              onClick={() => removerDocumento(doc)}
+                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Remover"
+                            >
+                              <Trash size={16} weight="bold" />
+                            </button>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => downloadDocumento(doc)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Download"
-                        >
-                          <DownloadSimple size={16} weight="bold" />
-                        </button>
-                        {podeRemoverDocumento(doc) && (
-                          <button
-                            onClick={() => removerDocumento(doc)}
-                            className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Remover"
-                          >
-                            <Trash size={16} weight="bold" />
-                          </button>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* Resumo geral */}
+              <div className="mt-4 pt-3 border-t border-gray-200">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-2">
+                  Resumo de documentos
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {CATEGORIAS_DOCUMENTOS.map((cat) => {
+                    const count = documentos.filter(
+                      (d) => d.categoria === cat.key,
+                    ).length;
+                    return (
+                      <span
+                        key={cat.key}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-medium ${
+                          count > 0
+                            ? 'bg-green-50 text-green-700 border border-green-200'
+                            : 'bg-red-50 text-red-500 border border-red-200'
+                        }`}
+                      >
+                        {count > 0 ? (
+                          <CheckCircle size={10} weight="fill" />
+                        ) : (
+                          <X size={10} />
                         )}
-                      </div>
-                    </div>
-                  ))}
+                        {cat.label}
+                      </span>
+                    );
+                  })}
                 </div>
-              )}
+              </div>
             </div>
           </div>
         </div>

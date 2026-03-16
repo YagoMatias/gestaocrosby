@@ -44,6 +44,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
+    storageKey: 'sb-dorztqiunewggydvkjnf-auth-local',
   },
   db: { schema: 'public' },
 });
@@ -55,6 +56,7 @@ export const supabaseSession = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     detectSessionInUrl: true,
     storage: sessionStorageAdapter,
+    storageKey: 'sb-dorztqiunewggydvkjnf-auth-session',
   },
   db: { schema: 'public' },
 });

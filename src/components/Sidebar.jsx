@@ -397,6 +397,12 @@ const multimarcas = [
     icon: Receipt,
     color: 'text-blue-600',
   },
+  {
+    name: 'Clientes MTM',
+    href: '/clientes-mtm',
+    icon: Users,
+    color: 'text-purple-600',
+  },
 ];
 
 const revenda = [
@@ -501,6 +507,12 @@ const confianca = [
     name: 'Clientes',
     href: '/clientes-confianca',
     icon: Users,
+    color: 'text-amber-600',
+  },
+  {
+    name: 'Licitação de Títulos',
+    href: '/licitacao-titulos',
+    icon: Wallet,
     color: 'text-amber-600',
   },
 ];
@@ -1084,6 +1096,12 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
                   href: '/notas-fiscais',
                   icon: Article,
                   color: 'text-blue-600',
+                },
+                {
+                  name: 'Ranking de Produtos',
+                  href: '/ranking-produtos',
+                  icon: Trophy,
+                  color: 'text-amber-600',
                 },
               ],
             }}

@@ -670,6 +670,13 @@ const useApiClient = () => {
 
     franchiseClients: (params) =>
       apiCall('/api/totvs/franchise-clients', params),
+
+    /**
+     * Busca ranking de produtos mais vendidos
+     * @param {Object} body - { branchs: number[], datemin: string, datemax: string }
+     */
+    bestSellingProducts: (body) =>
+      apiMutate('/api/totvs/best-selling-products', 'POST', body),
   };
 
   const franchise = {

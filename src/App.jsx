@@ -114,6 +114,9 @@ const ComprovantesConfianca = lazy(
   () => import('./pages/ComprovantesConfianca'),
 );
 const ClientesConfianca = lazy(() => import('./pages/ClientesConfianca'));
+const LicitacaoTitulos = lazy(() => import('./pages/LicitacaoTitulos'));
+const RankingProdutos = lazy(() => import('./pages/RankingProdutos'));
+const ClientesMTM = lazy(() => import('./pages/ClientesMTM'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -237,6 +240,9 @@ const AppRoutes = memo(() => {
     },
     { path: '/comprovantes-confianca', component: ComprovantesConfianca },
     { path: '/clientes-confianca', component: ClientesConfianca },
+    { path: '/licitacao-titulos', component: LicitacaoTitulos },
+    { path: '/ranking-produtos', component: RankingProdutos },
+    { path: '/clientes-mtm', component: ClientesMTM },
   ];
 
   // Componente de layout para rotas protegidas

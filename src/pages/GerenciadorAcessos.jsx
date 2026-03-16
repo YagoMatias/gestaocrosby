@@ -242,6 +242,11 @@ const AVAILABLE_PAGES = [
     category: 'Multimarcas',
   },
   {
+    path: '/clientes-mtm',
+    name: 'Clientes MTM',
+    category: 'Multimarcas',
+  },
+  {
     path: '/solicitacao-credito',
     name: 'Solicitação de Crédito',
     category: 'Minha Franquia',
@@ -277,6 +282,11 @@ const AVAILABLE_PAGES = [
   {
     path: '/clientes-confianca',
     name: 'Clientes (Perfil)',
+    category: 'Confiança',
+  },
+  {
+    path: '/licitacao-titulos',
+    name: 'Licitação de Títulos',
     category: 'Confiança',
   },
 

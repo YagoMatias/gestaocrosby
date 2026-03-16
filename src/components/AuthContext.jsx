@@ -239,10 +239,27 @@ export const AuthProvider = ({ children }) => {
 
       const client = rememberMe ? supabase : supabaseSession;
 
-      const { data: authData, error } = await client.auth.signInWithPassword({
-        email,
-        password,
-      });
+      let authData, error;
+      try {
+        const result = await client.auth.signInWithPassword({
+          email,
+          password,
+        });
+        authData = result.data;
+        error = result.error;
+      } catch (fetchError) {
+        // "Failed to fetch" - limpar sessão antiga e tentar novamente
+        console.warn('⚠️ Falha de rede no login, limpando sessão e tentando novamente...');
+        await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+        await supabaseSession.auth.signOut({ scope: 'local' }).catch(() => {});
+        // Segunda tentativa após limpar
+        const retryResult = await client.auth.signInWithPassword({
+          email,
+          password,
+        });
+        authData = retryResult.data;
+        error = retryResult.error;
+      }
 
       if (error) {
         console.error('❌ Erro no login:', error);
@@ -344,9 +361,29 @@ export const AuthProvider = ({ children }) => {
     const checkSession = async () => {
       try {
         console.log('🔄 Verificando sessão inicial...');
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+
+        let session;
+        try {
+          const { data, error: sessionError } = await supabase.auth.getSession();
+          if (sessionError) {
+            console.warn('⚠️ Erro ao recuperar sessão, limpando dados antigos:', sessionError.message);
+            // Limpar sessão corrompida/expirada para permitir novo login
+            await supabase.auth.signOut({ scope: 'local' });
+            await supabaseSession.auth.signOut({ scope: 'local' });
+            setLoading(false);
+            isInitialLoad.current = false;
+            return;
+          }
+          session = data?.session;
+        } catch (fetchError) {
+          console.warn('⚠️ Falha de rede ao verificar sessão, limpando dados locais:', fetchError.message);
+          // "Failed to fetch" - limpar dados locais para permitir login fresco
+          await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+          await supabaseSession.auth.signOut({ scope: 'local' }).catch(() => {});
+          setLoading(false);
+          isInitialLoad.current = false;
+          return;
+        }
 
         if (session?.user) {
           console.log('✅ Sessão encontrada:', session.user.email);
@@ -387,6 +424,11 @@ export const AuthProvider = ({ children }) => {
         }
       } catch (error) {
         console.error('❌ Erro ao verificar sessão:', error);
+        // Em caso de erro, limpar sessão para não travar o login
+        try {
+          await supabase.auth.signOut({ scope: 'local' });
+          await supabaseSession.auth.signOut({ scope: 'local' });
+        } catch (_) {}
       } finally {
         setLoading(false);
         // Marcar que o carregamento inicial foi concluído
