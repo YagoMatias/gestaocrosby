@@ -46,12 +46,8 @@ const ContasPagarFranquias = () => {
   // Estados para ordenação
   const [ordenacao, setOrdenacao] = useState({ campo: null, direcao: 'asc' });
 
-  // Estados para modal de observações
+  // Estados para modal de detalhes
   const [obsModalAberto, setObsModalAberto] = useState(false);
-  const [obsFatura, setObsFatura] = useState([]);
-  const [obsLoading, setObsLoading] = useState(false);
-  const [obsMovimentacao, setObsMovimentacao] = useState([]);
-  const [obsMovLoading, setObsMovLoading] = useState(false);
   const [boletoBase64, setBoletoBase64] = useState('');
   const [boletoLoading, setBoletoLoading] = useState(false);
   const [boletoError, setBoletoError] = useState('');
@@ -65,6 +61,11 @@ const ContasPagarFranquias = () => {
   // Estados para DANFE
   const [danfeLoading, setDanfeLoading] = useState(false);
   const [danfeError, setDanfeError] = useState('');
+
+  // Estados para busca de NFs (quando invoice[] não existe)
+  const [notasFiscaisBuscadas, setNotasFiscaisBuscadas] = useState([]);
+  const [notasFiscaisLoading, setNotasFiscaisLoading] = useState(false);
+  const [notasFiscaisError, setNotasFiscaisError] = useState('');
 
   // Estados para seleção em massa de boletos
   const [titulosSelecionados, setTitulosSelecionados] = useState(new Set());
@@ -993,137 +994,198 @@ const ContasPagarFranquias = () => {
     }
   };
 
-  // Função para abrir modal de observações
-  const abrirObsFatura = async (fatura) => {
+  // Buscar NFs do cliente na data da fatura (busca progressiva: mesmo dia, ±1, ±2, ±3)
+  const buscarNotasFiscaisFatura = async (fatura) => {
+    setNotasFiscaisLoading(true);
+    setNotasFiscaisError('');
+    setNotasFiscaisBuscadas([]);
     try {
-      setObsLoading(true);
-      setObsMovLoading(true);
-      setObsModalAberto(true);
-      setFaturaSelecionada(fatura);
-      setBoletoBase64('');
-      setBoletoError('');
-      setObsMovimentacao([]);
-
-      const cd_cliente = fatura.cd_cliente || '';
-      const nr_fat = fatura.nr_fat || '';
-
-      console.log(
-        `🔍 Buscando observações - cd_cliente: ${cd_cliente}, nr_fat: ${nr_fat}`,
-      );
-
-      // Buscar transações da fatura usando a nova rota otimizada
-      buscarTransacoesFaturaOtimizada(fatura);
-
-      // Buscar observações da fatura
-      const response = await apiClient.financial.obsFati({
-        cd_cliente,
-        nr_fat,
-      });
-
-      let rows = [];
-      if (response && response.success && Array.isArray(response.data)) {
-        rows = response.data;
-      } else if (Array.isArray(response)) {
-        rows = response;
+      const cd_cliente = parseInt(fatura.cd_cliente) || 0;
+      const dtEmissao = fatura.dt_emissao
+        ? fatura.dt_emissao.split('T')[0]
+        : '';
+      if (!dtEmissao || !cd_cliente) {
+        setNotasFiscaisError('Dados da fatura incompletos para buscar NFs');
+        return;
       }
 
-      // Filtrar observações indesejadas
-      const textosFiltrar = [
-        'BOLETO CANCELADO: BANCO REJEITOU A FATURA',
-        'BOLETO CANCELADO: GERADO PARA O BANCO ERRADO',
-      ];
+      const branchCodes = filiaisCodigos.filter((c) => c >= 1 && c <= 99);
 
-      const rowsFiltradas = rows.filter((obs) => {
-        const textoObs = (obs.ds_observacao || '').trim().toUpperCase();
-        return !textosFiltrar.some((filtro) =>
-          textoObs.includes(filtro.toUpperCase()),
-        );
-      });
+      const buscarComMargem = async (margem) => {
+        const startDate = new Date(dtEmissao);
+        startDate.setDate(startDate.getDate() - margem);
+        const endDate = new Date(dtEmissao);
+        endDate.setDate(endDate.getDate() + margem);
 
-      console.log(
-        `✅ ${rowsFiltradas.length} observações da fatura encontradas (${
-          rows.length - rowsFiltradas.length
-        } filtradas)`,
-      );
-      setObsFatura(rowsFiltradas);
-      setObsLoading(false);
+        const payload = {
+          filter: {
+            branchCodeList: branchCodes,
+            personCodeList: [cd_cliente],
+            eletronicInvoiceStatusList: ['Authorized'],
+            startIssueDate: `${startDate.toISOString().slice(0, 10)}T00:00:00`,
+            endIssueDate: `${endDate.toISOString().slice(0, 10)}T23:59:59`,
+          },
+          page: 1,
+          pageSize: 100,
+          expand: 'person',
+        };
 
-      // Buscar observações de movimentação - NOVO FLUXO
-      try {
-        const cd_empresa = fatura.cd_empresa || '';
-        const dt_emissao = fatura.dt_emissao
-          ? fatura.dt_emissao.split('T')[0]
-          : '';
-
-        console.log('📝 Passo 1: Buscando nr_ctapes do cliente:', {
-          cd_pessoa: cd_cliente,
-          cd_empresa,
+        const response = await fetch(`${TotvsURL}invoices-search`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
         });
 
-        // PASSO 1: Buscar nr_ctapes do cliente usando a rota conta-cliente
-        const contaResult = await apiClient.financial.contaCliente({
-          cd_pessoa: cd_cliente,
-          cd_empresa,
-        });
+        if (!response.ok) throw new Error('Erro ao buscar notas fiscais');
 
-        console.log('📝 Resultado conta-cliente:', contaResult);
+        const data = await response.json();
+        return data.data?.items || data.items || [];
+      };
 
-        // Verificar se encontrou a conta
-        let nr_ctapes = null;
-        if (contaResult.success && contaResult.data) {
-          const contas = Array.isArray(contaResult.data)
-            ? contaResult.data
-            : contaResult.data?.data || [];
-
-          if (contas.length > 0) {
-            nr_ctapes = contas[0].nr_ctapes;
-            console.log('✅ nr_ctapes encontrado:', nr_ctapes);
-          }
-        }
-
-        if (!nr_ctapes) {
-          console.warn('⚠️ nr_ctapes não encontrado para o cliente');
-          setObsMovimentacao([]);
-          setObsMovLoading(false);
+      // Busca progressiva: mesmo dia → ±1 → ±2 → ±3
+      for (const margem of [0, 1, 2, 3]) {
+        const items = await buscarComMargem(margem);
+        if (items.length > 0) {
+          setNotasFiscaisBuscadas(items);
           return;
         }
+      }
 
-        // PASSO 2: Buscar observações de movimentação usando nr_ctapes e dt_emissao
-        console.log('📝 Passo 2: Buscando observações de movimentação:', {
-          nr_ctapes,
-          dt_movim: dt_emissao,
-        });
+      setNotasFiscaisBuscadas([]);
+    } catch (error) {
+      console.error('Erro ao buscar NFs da fatura:', error);
+      setNotasFiscaisError(error.message || 'Erro ao buscar notas fiscais');
+    } finally {
+      setNotasFiscaisLoading(false);
+    }
+  };
 
-        const obsMovResult = await apiClient.financial.obsMovFatura({
-          nr_ctapes,
-          dt_movim: dt_emissao,
-        });
+  // Gerar DANFE a partir de invoice
+  const gerarDanfeInvoice = async (invoice) => {
+    try {
+      setDanfeLoading(true);
+      setDanfeError('');
 
-        console.log('📝 Resultado obs-mov-fatura:', obsMovResult);
+      const cd_pessoa = parseInt(faturaSelecionada?.cd_cliente) || 0;
+      const dataInvoice = invoice.invoiceDate
+        ? invoice.invoiceDate.split('T')[0]
+        : '';
+      if (!dataInvoice) throw new Error('Data da nota fiscal não disponível');
 
-        if (obsMovResult.success && obsMovResult.data) {
-          const obsMov = Array.isArray(obsMovResult.data)
-            ? obsMovResult.data
-            : obsMovResult.data?.data || [];
-          console.log(
-            '✅ Observações de movimentação recebidas:',
-            obsMov.length,
-          );
-          setObsMovimentacao(obsMov);
-        } else {
-          console.warn('⚠️ Nenhuma observação de movimentação encontrada');
-          setObsMovimentacao([]);
-        }
-      } catch (error) {
-        console.error('❌ Erro ao buscar observações de movimentação:', error);
-        setObsMovimentacao([]);
-      } finally {
-        setObsMovLoading(false);
+      const payload = {
+        filter: {
+          branchCodeList: [parseInt(invoice.branchCode)],
+          personCodeList: [cd_pessoa],
+          invoiceCode: parseInt(invoice.invoiceCode),
+          invoiceDate: dataInvoice,
+        },
+      };
+
+      const response = await fetch(`${TotvsURL}danfe-from-invoice`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao gerar DANFE');
+      }
+
+      const data = await response.json();
+      let base64 = '';
+      if (data.success && data.data)
+        base64 = data.data.danfePdfBase64 || data.data.base64 || '';
+      else if (data.danfePdfBase64) base64 = data.danfePdfBase64;
+
+      if (base64) {
+        abrirPDFDanfe(base64, invoice.invoiceCode);
+      } else {
+        throw new Error('DANFE não retornada pela API');
       }
     } catch (error) {
-      console.error('❌ Erro ao buscar observações:', error);
-      setObsFatura([]);
-      setObsLoading(false);
+      console.error('Erro ao gerar DANFE:', error);
+      setDanfeError(error.message || 'Erro ao gerar DANFE');
+      alert(`Erro ao gerar DANFE: ${error.message}`);
+    } finally {
+      setDanfeLoading(false);
+    }
+  };
+
+  // Gerar DANFE a partir de NF buscada (tem transactionCode direto)
+  const gerarDanfeNFBuscada = async (nf) => {
+    try {
+      setDanfeLoading(true);
+      setDanfeError('');
+
+      const dataTransacao = nf.transactionDate
+        ? nf.transactionDate.split('T')[0]
+        : nf.invoiceDate
+          ? nf.invoiceDate.split('T')[0]
+          : '';
+      if (!dataTransacao) throw new Error('Data da NF não disponível');
+
+      const payload = {
+        filter: {
+          branchCodeList: [nf.branchCode],
+          personCodeList: [nf.personCode],
+          transactionBranchCode: nf.transactionBranchCode || nf.branchCode,
+          transactionCode: nf.transactionCode,
+          transactionDate: dataTransacao,
+        },
+      };
+
+      const response = await fetch(`${TotvsURL}danfe-from-invoice`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao gerar DANFE');
+      }
+
+      const data = await response.json();
+      let base64 = '';
+      if (data.success && data.data)
+        base64 = data.data.danfePdfBase64 || data.data.base64 || '';
+      else if (data.danfePdfBase64) base64 = data.danfePdfBase64;
+
+      if (base64) {
+        abrirPDFDanfe(base64, nf.invoiceCode || nf.transactionCode);
+      } else {
+        throw new Error('DANFE não retornada pela API');
+      }
+    } catch (error) {
+      console.error('Erro ao gerar DANFE:', error);
+      setDanfeError(error.message || 'Erro ao gerar DANFE');
+      alert(`Erro ao gerar DANFE: ${error.message}`);
+    } finally {
+      setDanfeLoading(false);
+    }
+  };
+
+  // Função para abrir modal de detalhes
+  const abrirObsFatura = (fatura) => {
+    setObsModalAberto(true);
+    setFaturaSelecionada(fatura);
+    setBoletoBase64('');
+    setBoletoError('');
+    setNotasFiscaisBuscadas([]);
+    setNotasFiscaisError('');
+
+    // Buscar transações da fatura usando a nova rota otimizada
+    buscarTransacoesFaturaOtimizada(fatura);
+
+    // Se não tem invoice[] direto, buscar NFs (exceto empresa 101 que é crédito)
+    const temInvoice =
+      fatura.invoice &&
+      Array.isArray(fatura.invoice) &&
+      fatura.invoice.length > 0;
+    const isEmpresa101 = parseInt(fatura.cd_empresa) === 101;
+    if (!temInvoice && !isEmpresa101) {
+      buscarNotasFiscaisFatura(fatura);
     }
   };
 
@@ -2153,38 +2215,34 @@ const ContasPagarFranquias = () => {
               </div>
             )}
 
-            {/* Seção de Transações Relacionadas */}
+            {/* Seção de Notas Fiscais Relacionadas */}
             <div className="border border-gray-200 rounded-lg p-4 mb-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <Receipt size={20} className="text-purple-600" />
-                Transações Relacionadas
+                <Receipt size={20} className="text-purple-600" /> Notas Fiscais
+                Relacionadas
               </h3>
-
               <div className="min-h-[150px]">
-                {transacoesLoading ? (
-                  <div className="flex items-center justify-center py-6">
-                    <LoadingSpinner size="sm" text="Carregando transações..." />
+                {parseInt(faturaSelecionada?.cd_empresa) === 101 ? (
+                  <div className="text-sm text-gray-500 text-center py-8">
+                    Nenhuma nota fiscal encontrada para esta fatura.
                   </div>
-                ) : transacoesError ? (
-                  <div className="bg-red-50 border border-red-200 rounded p-4">
-                    <p className="text-sm text-red-600">{transacoesError}</p>
-                  </div>
-                ) : transacoesFatura.length > 0 ? (
+                ) : faturaSelecionada?.invoice &&
+                  faturaSelecionada.invoice.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="min-w-full border border-gray-200 rounded-lg">
                       <thead className="bg-gray-50">
                         <tr>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
-                            Empresa
+                            Filial
                           </th>
                           <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">
-                            Nº Transação
+                            Nº NF
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">
+                            Sequência
                           </th>
                           <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">
                             Data
-                          </th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase">
-                            Valor
                           </th>
                           <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">
                             Ações
@@ -2192,125 +2250,146 @@ const ContasPagarFranquias = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200 bg-white">
-                        {transacoesFatura
-                          .filter((transacao) => transacao.cd_empresa < 100)
-                          .map((transacao, index) => (
-                            <tr key={index} className="hover:bg-gray-50">
-                              <td className="px-4 py-3 text-sm text-gray-900">
-                                {transacao.cd_empresa || '--'}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-center font-bold text-[#000638]">
-                                {transacao.nr_transacao || '--'}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-center text-gray-900">
-                                {formatDateBR(transacao.dt_transacao)}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-right font-semibold text-green-600">
-                                {formatCurrency(transacao.vl_transacao)}
-                              </td>
-                              <td className="px-4 py-3 text-center">
-                                <button
-                                  onClick={() => gerarDanfeTransacao(transacao)}
-                                  disabled={danfeLoading}
-                                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors mx-auto"
-                                  title="Gerar DANFE desta transação"
-                                >
-                                  <FileArrowDown size={18} weight="bold" />
-                                  {danfeLoading ? 'Gerando...' : 'Gerar NF'}
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                        {faturaSelecionada.invoice.map((inv, index) => (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm text-gray-900">
+                              {inv.branchCode || '--'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-center font-bold text-[#000638]">
+                              {inv.invoiceCode || '--'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-center text-gray-900">
+                              {inv.invoiceSequence || '--'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-center text-gray-900">
+                              {formatDateBR(inv.invoiceDate)}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <button
+                                onClick={() => gerarDanfeInvoice(inv)}
+                                disabled={danfeLoading}
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors mx-auto"
+                              >
+                                <FileArrowDown size={18} weight="bold" />{' '}
+                                {danfeLoading ? 'Gerando...' : 'Gerar DANFE'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : notasFiscaisLoading ? (
+                  <div className="flex items-center justify-center py-6">
+                    <div className="flex items-center gap-3">
+                      <Spinner
+                        size={18}
+                        className="animate-spin text-purple-600"
+                      />
+                      <span className="text-sm text-gray-600">
+                        Buscando notas fiscais do cliente...
+                      </span>
+                    </div>
+                  </div>
+                ) : notasFiscaisError ? (
+                  <div className="bg-red-50 border border-red-200 rounded p-4">
+                    <p className="text-sm text-red-600">{notasFiscaisError}</p>
+                  </div>
+                ) : notasFiscaisBuscadas.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <div className="mb-2 text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                      NFs encontradas por busca na data de emissão (±3 dias)
+                    </div>
+                    <table className="min-w-full border border-gray-200 rounded-lg">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
+                            Filial
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">
+                            Nº NF
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">
+                            Data
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">
+                            Ações
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 bg-white">
+                        {notasFiscaisBuscadas.map((nf, index) => (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm text-gray-900">
+                              {nf.branchCode || '--'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-center font-bold text-[#000638]">
+                              {nf.invoiceCode || '--'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-center text-gray-900">
+                              {formatDateBR(
+                                nf.invoiceDate || nf.transactionDate,
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <button
+                                onClick={() => gerarDanfeNFBuscada(nf)}
+                                disabled={danfeLoading}
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors mx-auto"
+                              >
+                                <FileArrowDown size={18} weight="bold" />{' '}
+                                {danfeLoading ? 'Gerando...' : 'Gerar DANFE'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
                 ) : (
                   <div className="text-sm text-gray-500 text-center py-8">
-                    Nenhuma transação encontrada para esta fatura.
+                    Nenhuma nota fiscal encontrada para esta fatura.
                   </div>
                 )}
               </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Seção 1: Observações */}
-              <div className="border border-gray-200 rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Receipt size={20} className="text-blue-600" />
-                  Observações
-                </h3>
-
-                <div className="min-h-[200px] space-y-4">
-                  {/* Observações da Fatura */}
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-700 mb-2">
-                      Observações da Fatura
-                    </h4>
-                    {obsLoading ? (
-                      <div className="flex items-center justify-center py-4">
-                        <LoadingSpinner size="sm" text="Carregando..." />
+              {/* Observação automática para empresa 101 */}
+              {parseInt(faturaSelecionada?.cd_empresa) === 101 && (
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <Receipt size={20} className="text-blue-600" />
+                    Observações
+                  </h3>
+                  {(() => {
+                    const valorFatura =
+                      parseFloat(faturaSelecionada?.vl_fatura) || 0;
+                    if (valorFatura === 45) {
+                      return (
+                        <div className="bg-blue-50 border border-blue-300 rounded-lg p-4">
+                          <p className="text-sm font-bold text-blue-800">
+                            CHIP
+                          </p>
+                        </div>
+                      );
+                    } else if (valorFatura >= 1 && valorFatura <= 400) {
+                      return (
+                        <div className="bg-purple-50 border border-purple-300 rounded-lg p-4">
+                          <p className="text-sm font-bold text-purple-800">
+                            Fundo de Propaganda
+                          </p>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="text-sm text-gray-500 text-center py-4">
+                        Nenhuma observação para esta fatura.
                       </div>
-                    ) : obsFatura && obsFatura.length > 0 ? (
-                      <ul className="list-disc pl-5 space-y-1">
-                        {obsFatura.map((o, idx) => (
-                          <li key={idx} className="text-sm text-gray-700">
-                            {formatarObservacao(o.ds_observacao)}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="text-xs text-gray-500 italic py-2">
-                        Nenhuma observação da fatura.
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Observações de Movimentação */}
-                  <div className="border-t border-gray-200 pt-4">
-                    <h4 className="text-sm font-semibold text-gray-700 mb-2">
-                      Observações da Movimentação
-                    </h4>
-                    {obsMovLoading ? (
-                      <div className="flex items-center justify-center py-4">
-                        <LoadingSpinner size="sm" text="Carregando..." />
-                      </div>
-                    ) : obsMovimentacao && obsMovimentacao.length > 0 ? (
-                      <div className="space-y-2">
-                        {obsMovimentacao.map((obs, index) => (
-                          <div
-                            key={index}
-                            className="bg-blue-50 rounded-lg p-3 border border-blue-200"
-                          >
-                            <p className="text-sm text-gray-800 mb-1">
-                              {formatarObservacao(obs.ds_obs)}
-                            </p>
-                            <div className="flex items-center gap-3 text-xs text-gray-500">
-                              <span>
-                                Cadastro: {formatDateBR(obs.dt_cadastro)}
-                              </span>
-                              <span>Movim: {formatDateBR(obs.dt_movim)}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-gray-500 italic py-2">
-                        Nenhuma observação de movimentação.
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Mensagem quando não há nenhuma observação */}
-                  {!obsLoading &&
-                    !obsMovLoading &&
-                    obsFatura.length === 0 &&
-                    obsMovimentacao.length === 0 && (
-                      <div className="text-sm text-gray-500 text-center py-8">
-                        Nenhuma observação encontrada para esta fatura.
-                      </div>
-                    )}
+                    );
+                  })()}
                 </div>
-              </div>
+              )}
 
               {/* Seção 2: Boleto Bancário - Oculta seção inteira apenas para franquias quando pago */}
               {(() => {
