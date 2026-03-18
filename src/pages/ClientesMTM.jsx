@@ -490,7 +490,7 @@ const ClientesMTM = () => {
                       <button
                         onClick={() => abrirPerfilCliente(cliente)}
                         className="text-blue-600 hover:text-blue-800 hover:underline font-medium text-left text-sm"
-                        title="Ver perfil do cliente"
+                        title="Ver perfil dos clientes"
                       >
                         {cliente.name || '--'}
                       </button>
