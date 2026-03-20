@@ -40,6 +40,7 @@ import {
   Handshake,
   MagnifyingGlass,
   Wallet,
+  Clock,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -113,6 +114,13 @@ const financeiro = [
         href: '/dash-inadimplencia',
         icon: ChartBar,
         color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Dashboard PMR',
+        href: '/pmr',
+        icon: Clock,
+        color: 'text-cyan-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
     ],
@@ -441,6 +449,12 @@ const franquias = [
   },
   { name: 'CREDEV', href: '/credev', icon: Buildings, color: 'text-blue-600' },
   {
+    name: 'Crédito Franquia',
+    href: '/credito-franquia',
+    icon: Wallet,
+    color: 'text-emerald-600',
+  },
+  {
     name: 'Inadimplentes Franquias',
     href: '/inadimplentes-franquias',
     icon: ChartBar,
@@ -540,6 +554,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const [confiancaOpen, setConfiancaOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [producaoOpen, setProducaoOpen] = useState(false);
+  const [clientesOpen, setClientesOpen] = useState(false);
   const { user } = useAuth();
 
   // Garante que ao abrir uma seção, as demais sejam fechadas
@@ -555,6 +570,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setAcaoCartoesOpen(false);
       setConfiancaOpen(false);
       setAdminOpen(false);
+      setClientesOpen(false);
       if (!next) setDashboardFinanceiroOpen(false);
       return;
     }
@@ -570,6 +586,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setAcaoCartoesOpen(false);
       setConfiancaOpen(false);
       setAdminOpen(false);
+      setClientesOpen(false);
       return;
     }
     if (section === 'varejo') {
@@ -584,6 +601,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setAcaoCartoesOpen(false);
       setConfiancaOpen(false);
       setAdminOpen(false);
+      setClientesOpen(false);
       return;
     }
     if (section === 'multimarcas') {
@@ -598,6 +616,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setAcaoCartoesOpen(false);
       setConfiancaOpen(false);
       setAdminOpen(false);
+      setClientesOpen(false);
       return;
     }
     if (section === 'revenda') {
@@ -612,6 +631,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setAcaoCartoesOpen(false);
       setConfiancaOpen(false);
       setAdminOpen(false);
+      setClientesOpen(false);
       return;
     }
     if (section === 'franquias') {
@@ -626,6 +646,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setAcaoCartoesOpen(false);
       setConfiancaOpen(false);
       setAdminOpen(false);
+      setClientesOpen(false);
       return;
     }
     if (section === 'acaoCartoes') {
@@ -640,6 +661,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setFranquiasOpen(false);
       setConfiancaOpen(false);
       setAdminOpen(false);
+      setClientesOpen(false);
       return;
     }
     if (section === 'confianca') {
@@ -654,6 +676,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setFranquiasOpen(false);
       setAcaoCartoesOpen(false);
       setAdminOpen(false);
+      setClientesOpen(false);
       return;
     }
     if (section === 'admin') {
@@ -668,6 +691,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setFranquiasOpen(false);
       setAcaoCartoesOpen(false);
       setConfiancaOpen(false);
+      setClientesOpen(false);
       return;
     }
     if (section === 'producao') {
@@ -683,6 +707,23 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       setAcaoCartoesOpen(false);
       setConfiancaOpen(false);
       setAdminOpen(false);
+      setClientesOpen(false);
+      return;
+    }
+    if (section === 'clientes') {
+      const next = !clientesOpen;
+      setClientesOpen(next);
+      setFinanceiroOpen(false);
+      setDashboardFinanceiroOpen(false);
+      setFaturamentoOpen(false);
+      setVarejoOpen(false);
+      setMultimarcasOpen(false);
+      setRevendaOpen(false);
+      setFranquiasOpen(false);
+      setAcaoCartoesOpen(false);
+      setConfiancaOpen(false);
+      setAdminOpen(false);
+      setProducaoOpen(false);
       return;
     }
   };
@@ -1131,15 +1172,33 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             isActive={false}
           />
 
-          {/* Consulta Cliente */}
-          <MenuItem
-            item={{
-              name: 'Consulta Cliente',
-              href: '/consulta-cliente',
-              icon: IdentificationCard,
-              color: 'text-blue-600',
-            }}
-            isActive={location.pathname === '/consulta-cliente'}
+          {/* Seção Clientes */}
+          <MenuSection
+            title="Clientes"
+            items={[
+              {
+                name: 'Consulta Cliente',
+                href: '/consulta-cliente',
+                icon: IdentificationCard,
+                color: 'text-blue-600',
+              },
+              {
+                name: 'Clientes TOTVS',
+                href: '/clientes-totvs',
+                icon: Users,
+                color: 'text-indigo-600',
+              },
+              {
+                name: 'Créditos Clientes',
+                href: '/creditos-clientes',
+                icon: Wallet,
+                color: 'text-emerald-600',
+              },
+            ]}
+            isOpen={clientesOpen}
+            onToggle={() => handleSectionToggle('clientes')}
+            icon={IdentificationCard}
+            color="text-blue-600"
           />
 
           {/* Auditoria de Transações */}

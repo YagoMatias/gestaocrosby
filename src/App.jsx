@@ -46,6 +46,8 @@ const AuditoriaCMV = lazy(() => import('./pages/AuditoriaCMV'));
 const AuditoriaConta = lazy(() => import('./pages/AuditoriaConta'));
 const ComprasFranquias = lazy(() => import('./pages/ComprasFranquias'));
 const Credev = lazy(() => import('./pages/Credev'));
+const CreditoFranquia = lazy(() => import('./pages/CreditoFranquia'));
+const CreditosClientes = lazy(() => import('./pages/CreditosClientes'));
 const CredevRevenda = lazy(() => import('./pages/CredevRevenda'));
 const CredevVarejo = lazy(() => import('./pages/CredevVarejo'));
 const CredevMultimarcas = lazy(() => import('./pages/CredevMultimarcas'));
@@ -60,7 +62,7 @@ const AuthTest = lazy(() => import('./components/AuthTest'));
 const FinanceiroPorCanal = lazy(() => import('./pages/FinanceiroPorCanal'));
 const Endividamento = lazy(() => import('./pages/Endividamento'));
 const ReceitaLiquida = lazy(() => import('./pages/ReceitaLiquida'));
-const PMR = lazy(() => import('./pages/pmr'));
+const PMR = lazy(() => import('./pages/DashboardPMR'));
 const DashContasAReceber = lazy(() => import('./pages/DashContasAReceber'));
 const DashInadimplencia = lazy(() => import('./pages/DashInadimplencia'));
 const CMVConsolidado = lazy(() => import('./pages/CMVConsolidado'));
@@ -197,6 +199,7 @@ const AppRoutes = memo(() => {
     { path: '/dre', component: DRE },
     { path: '/compras-franquias', component: ComprasFranquias },
     { path: '/credev', component: Credev },
+    { path: '/credito-franquia', component: CreditoFranquia },
     { path: '/credev-revenda', component: CredevRevenda },
     { path: '/credev-varejo', component: CredevVarejo },
     { path: '/credev-multimarcas', component: CredevMultimarcas },
@@ -225,6 +228,7 @@ const AppRoutes = memo(() => {
     { path: '/auditoria-faturamento', component: AuditoriaFaturamento },
     { path: '/consulta-cliente', component: ConsultaCliente },
     { path: '/clientes-totvs', component: ClientesTotvs },
+    { path: '/creditos-clientes', component: CreditosClientes },
     { path: '/solicitacao-baixa', component: SolicitacaoBaixa },
     {
       path: '/minhas-solicitacoes-baixa',
