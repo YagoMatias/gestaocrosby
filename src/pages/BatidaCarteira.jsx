@@ -661,6 +661,15 @@ const BatidaCarteira = () => {
     return sistNorm.includes(arqNorm) || arqNorm.includes(sistNorm);
   };
 
+  // Criar chave de comparação para BB (por fatura + parcela)
+  // O Banco do Brasil fornece "Nro beneficiário" no formato "fatura/parcela"
+  // que mapeia diretamente para nr_fat/nr_parcela do sistema TOTVS
+  const criarChaveFaturaParcela = (fatura, parcela) => {
+    const fat = String(fatura || '').replace(/^0+/, '') || '0';
+    const par = String(parcela || '').replace(/^0+/, '') || '1';
+    return `BB_FAT|${fat}|${par}`;
+  };
+
   // Lista de exceções específicas para títulos EFIGENIA MARIA NOGUE
   // Esses títulos têm datas diferentes no sistema (05/12) e arquivo (30/12)
   // mas devem ser considerados como batidos
@@ -708,6 +717,15 @@ const BatidaCarteira = () => {
           item.nm_cliente,
         );
         set.add(chaveSantander);
+      }
+
+      // Para BB: adicionar chave por fatura + parcela
+      if (bancoImportado === 'BB') {
+        const chaveBB = criarChaveFaturaParcela(
+          item.nr_fatura,
+          item.nr_parcela,
+        );
+        set.add(chaveBB);
       }
     });
     return set;
@@ -770,6 +788,12 @@ const BatidaCarteira = () => {
         );
         set.add(chaveSantander);
       }
+
+      // Para BB: adicionar chave por fatura + parcela
+      if (bancoImportado === 'BB') {
+        const chaveBB = criarChaveFaturaParcela(item.nr_fat, item.nr_parcela);
+        set.add(chaveBB);
+      }
     });
     return set;
   }, [dados, bancoImportado]);
@@ -786,6 +810,12 @@ const BatidaCarteira = () => {
 
       // Verificar batida normal
       if (chavesImportados.has(chave)) return true;
+
+      // Para BB: verificar por fatura + parcela (identificador único)
+      if (bancoImportado === 'BB') {
+        const chaveBB = criarChaveFaturaParcela(item.nr_fat, item.nr_parcela);
+        if (chavesImportados.has(chaveBB)) return true;
+      }
 
       // Para SANTANDER: verificar por valor + vencimento + nome (contém) - OTIMIZADO
       if (bancoImportado === 'SANTANDER') {
@@ -904,6 +934,15 @@ const BatidaCarteira = () => {
 
       // Verificar batida normal
       if (chavesSistema.has(chave)) return true;
+
+      // Para BB: verificar por fatura + parcela (identificador único)
+      if (bancoImportado === 'BB') {
+        const chaveBB = criarChaveFaturaParcela(
+          item.nr_fatura,
+          item.nr_parcela,
+        );
+        if (chavesSistema.has(chaveBB)) return true;
+      }
 
       // Para SANTANDER/SICREDI: verificar por valor + vencimento + nome (OTIMIZADO)
       if (bancoImportado === 'SANTANDER' || bancoImportado === 'SICREDI') {
@@ -1179,6 +1218,15 @@ const BatidaCarteira = () => {
         mapa.set(chaveSantander, item);
       }
 
+      // Para BB: adicionar também pela chave fatura|parcela
+      if (bancoImportado === 'BB') {
+        const chaveBB = criarChaveFaturaParcela(
+          item.nr_fatura,
+          item.nr_parcela,
+        );
+        mapa.set(chaveBB, item);
+      }
+
       // Para exceções EFIGENIA, adicionar também pela chave CPF|Valor (sem data)
       const dataExcecao = verificarExcecao(item.nr_cpfcnpj, item.vl_original);
       if (dataExcecao) {
@@ -1202,6 +1250,16 @@ const BatidaCarteira = () => {
       // Busca normal
       let resultado = mapaImportadosPorChave.get(chave);
       if (resultado) return resultado;
+
+      // Para BB: buscar por fatura + parcela
+      if (bancoImportado === 'BB') {
+        const chaveBB = criarChaveFaturaParcela(
+          itemSistema.nr_fat,
+          itemSistema.nr_parcela,
+        );
+        resultado = mapaImportadosPorChave.get(chaveBB);
+        if (resultado) return resultado;
+      }
 
       // Para SANTANDER/SICREDI: buscar por valor + vencimento + nome (OTIMIZADO)
       if (bancoImportado === 'SANTANDER' || bancoImportado === 'SICREDI') {
@@ -2382,7 +2440,9 @@ const BatidaCarteira = () => {
           )}
 
           {/* Card PAGOS - Faturas batidas com valor pago em ambas tabelas */}
-          {(listaPagos.length > 0 || listaPagosSoSistema.length > 0 || listaPagosSoArquivo.length > 0) && (
+          {(listaPagos.length > 0 ||
+            listaPagosSoSistema.length > 0 ||
+            listaPagosSoArquivo.length > 0) && (
             <button
               onClick={() => setModalDetalheAberto('pagos')}
               className="text-left w-full"
@@ -2398,20 +2458,35 @@ const BatidaCarteira = () => {
                 </CardHeader>
                 <CardContent className="pt-0 px-3 pb-3">
                   <div className="text-lg font-extrabold text-blue-600 mb-1">
-                    {listaPagos.length + listaPagosSoSistema.length + listaPagosSoArquivo.length} registros
+                    {listaPagos.length +
+                      listaPagosSoSistema.length +
+                      listaPagosSoArquivo.length}{' '}
+                    registros
                   </div>
                   <div className="text-[10px] space-y-0.5">
                     <div className="flex justify-between items-center">
-                      <span className="text-green-700 font-bold">Em Ambos:</span>
-                      <span className="text-green-700 font-extrabold">{listaPagos.length}</span>
+                      <span className="text-green-700 font-bold">
+                        Em Ambos:
+                      </span>
+                      <span className="text-green-700 font-extrabold">
+                        {listaPagos.length}
+                      </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-amber-700 font-bold">Só no TOTVS:</span>
-                      <span className="text-amber-700 font-extrabold">{listaPagosSoSistema.length}</span>
+                      <span className="text-amber-700 font-bold">
+                        Só no TOTVS:
+                      </span>
+                      <span className="text-amber-700 font-extrabold">
+                        {listaPagosSoSistema.length}
+                      </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-rose-700 font-bold">Só no Arquivo:</span>
-                      <span className="text-rose-700 font-extrabold">{listaPagosSoArquivo.length}</span>
+                      <span className="text-rose-700 font-bold">
+                        Só no Arquivo:
+                      </span>
+                      <span className="text-rose-700 font-extrabold">
+                        {listaPagosSoArquivo.length}
+                      </span>
                     </div>
                   </div>
                 </CardContent>

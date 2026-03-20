@@ -40,7 +40,8 @@
     "pdf-parse": "^2.4.5",
     "pdf2json": "^4.0.0",
     "pdfjs-dist": "^3.11.174",
-    "pg": "^8.11.3"
+    "pg": "^8.11.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "eslint": "^8.55.0",
