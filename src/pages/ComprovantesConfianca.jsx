@@ -28,11 +28,13 @@ import {
   MagnifyingGlassMinus,
   MagnifyingGlass,
   CalendarBlank,
+  UploadSimple,
+  Trash,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
-const ComprovantesConfianca = () => {
+const ComprovantesAntecipacao = () => {
   const [solicitacoes, setSolicitacoes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
@@ -55,6 +57,11 @@ const ComprovantesConfianca = () => {
   const [modalComprovante, setModalComprovante] = useState(null);
   const [zoomImagem, setZoomImagem] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
+
+  // Batida Antecipação
+  const [dadosBatida, setDadosBatida] = useState([]);
+  const [batidaCarregada, setBatidaCarregada] = useState(false);
+  const [loadingBatida, setLoadingBatida] = useState(false);
 
   const formatarMoeda = (valor) => {
     return (parseFloat(valor) || 0).toLocaleString('pt-BR', {
@@ -239,26 +246,40 @@ const ComprovantesConfianca = () => {
       return;
     }
     try {
-      const dadosParaExportar = dadosProcessados.map((item) => ({
-        Cliente: item.nm_cliente || '',
-        'Cód. Cliente': item.cd_cliente || '',
-        Fatura: item.nr_fat || '',
-        Parcela: item.nr_parcela || '',
-        'Valor Fatura': parseFloat(item.vl_fatura) || 0,
-        'Dt. Emissão': formatarData(item.dt_emissao),
-        'Dt. Vencimento': formatarData(item.dt_vencimento),
-        'Forma Pagamento': 'Confiança',
-        'Data Pagamento': formatarData(item.dt_pagamento),
-      }));
+      const dadosParaExportar = dadosProcessados.map((item) => {
+        const obj = {
+          Cliente: item.nm_cliente || '',
+          'Cód. Cliente': item.cd_cliente || '',
+          Fatura: item.nr_fat || '',
+          Parcela: item.nr_parcela || '',
+          'Valor Fatura': parseFloat(item.vl_fatura) || 0,
+          'Dt. Emissão': formatarData(item.dt_emissao),
+          'Dt. Vencimento': formatarData(item.dt_vencimento),
+          'Forma Pagamento': 'Antecipação',
+          'Data Pagamento': formatarData(item.dt_pagamento),
+        };
+        if (batidaCarregada) {
+          const tipo = mapaBatida[item.id];
+          obj['Batida'] =
+            tipo === 'EM_ABERTO'
+              ? 'EM ABERTO'
+              : tipo === 'RECOMPRA'
+                ? 'RECOMPRA'
+                : tipo === 'ENCONTRADO'
+                  ? 'ENCONTRADO'
+                  : '';
+        }
+        return obj;
+      });
       const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Comprovantes Confiança');
+      XLSX.utils.book_append_sheet(wb, ws, 'Comprovantes Antecipação');
       const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       const data = new Blob([excelBuffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
       const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
-      saveAs(data, `comprovantes-confianca-${hoje}.xlsx`);
+      saveAs(data, `comprovantes-antecipacao-${hoje}.xlsx`);
     } catch (error) {
       console.error('Erro ao exportar Excel:', error);
       alert('Erro ao exportar arquivo Excel.');
@@ -305,11 +326,200 @@ const ComprovantesConfianca = () => {
     return paginas;
   };
 
+  // ==================== BATIDA ANTECIPAÇÃO ====================
+
+  const normalizarNomeCliente = (nome) => {
+    if (!nome) return '';
+    return String(nome)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[0-9]/g, '')
+      .replace(/[^A-Z\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  const normalizarValor = (valor) => {
+    return (parseFloat(valor) || 0).toFixed(2);
+  };
+
+  const parseDateNoTZ = (isoDate) => {
+    if (!isoDate) return null;
+    try {
+      const [datePart] = String(isoDate).split('T');
+      const [y, m, d] = datePart.split('-').map((n) => parseInt(n, 10));
+      if (!y || !m || !d) return null;
+      return new Date(y, m - 1, d);
+    } catch {
+      return null;
+    }
+  };
+
+  const normalizarData = (data) => {
+    if (!data) return '';
+    const d = parseDateNoTZ(data);
+    if (!d) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const parseDataBR = (dataBR) => {
+    if (!dataBR) return null;
+    const parts = dataBR.split('/');
+    if (parts.length !== 3) return null;
+    const [dia, mes, ano] = parts;
+    return `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
+  };
+
+  const parseValorBR = (valorStr) => {
+    if (!valorStr) return 0;
+    const valorLimpo = valorStr.replace(/\./g, '').replace(',', '.');
+    const valor = parseFloat(valorLimpo);
+    return isNaN(valor) ? 0 : valor;
+  };
+
+  const parseCSVConfianca = (csvContent) => {
+    const lines = csvContent.split('\n');
+    if (lines.length < 2) return [];
+
+    const header = lines[0]
+      .split(';')
+      .map((col) => col.trim().replace(/"/g, ''));
+    const columnIndex = {};
+    header.forEach((col, idx) => {
+      columnIndex[col] = idx;
+    });
+
+    const getValue = (values, colName) => {
+      const idx = columnIndex[colName];
+      return idx !== undefined ? values[idx] : null;
+    };
+
+    // Detectar tipo
+    const isAberto =
+      header.includes('DIAS_ATRA') || header.includes('caVALO_ATUA');
+
+    const registros = [];
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const values = line.split(';').map((val) => val.trim().replace(/"/g, ''));
+
+      const numeDoct = getValue(values, 'NUME_DOCT') || '';
+      const [nrFatura, nrParcela] = numeDoct.split('/');
+      const sacaId = getValue(values, 'SACA_ID');
+      let cpfCnpj = sacaId ? sacaId.replace(/\D/g, '') : '';
+
+      const situacao = (getValue(values, 'SITUACAO') || '').toUpperCase();
+      const tipoCart = (getValue(values, 'TIPO_CART') || '').toUpperCase();
+
+      // Classificar: EM_ABERTO ou RECOMPRA
+      let classificacao = 'ENCONTRADO';
+      if (tipoCart.includes('RECOMPRA')) {
+        classificacao = 'RECOMPRA';
+      } else if (isAberto || ['COBRANCA', 'A ENVIAR'].includes(situacao)) {
+        classificacao = 'EM_ABERTO';
+      } else if (situacao === 'BAIXADO') {
+        classificacao = 'RECOMPRA';
+      }
+
+      registros.push({
+        nome: (getValue(values, 'NOME') || '').trim(),
+        nomeNormalizado: normalizarNomeCliente(getValue(values, 'NOME')),
+        vl_original: parseValorBR(getValue(values, 'VALO_TITU_ORIG')),
+        dt_vencimento: parseDataBR(getValue(values, 'DATA_TITU')),
+        nr_fatura: nrFatura || numeDoct,
+        nr_parcela: nrParcela || '001',
+        cpfCnpj,
+        situacao,
+        tipoCart,
+        classificacao,
+      });
+    }
+    return registros;
+  };
+
+  const handleUploadBatida = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLoadingBatida(true);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target.result;
+        const registros = parseCSVConfianca(content);
+        setDadosBatida(registros);
+        setBatidaCarregada(true);
+      } catch (err) {
+        console.error('Erro ao processar CSV:', err);
+        alert('Erro ao processar o arquivo CSV. Verifique o formato.');
+      } finally {
+        setLoadingBatida(false);
+      }
+    };
+    reader.readAsText(file, 'utf-8');
+    e.target.value = '';
+  };
+
+  const limparBatida = () => {
+    setDadosBatida([]);
+    setBatidaCarregada(false);
+  };
+
+  // Mapa de matching: para cada solicitação, verifica se existe na planilha
+  const mapaBatida = useMemo(() => {
+    if (!batidaCarregada || dadosBatida.length === 0) return {};
+
+    // Criar mapa de chaves da planilha CSV
+    const chavesPlanilha = new Map();
+    dadosBatida.forEach((item) => {
+      const chave = `${item.nomeNormalizado}|${normalizarValor(item.vl_original)}|${normalizarData(item.dt_vencimento)}`;
+      chavesPlanilha.set(chave, item);
+    });
+
+    // Para cada solicitação, verificar match
+    const mapa = {};
+    solicitacoes.forEach((sol) => {
+      const valorComTaxa = (parseFloat(sol.vl_fatura) || 0) + 0.98;
+      const nomeNorm = normalizarNomeCliente(sol.nm_cliente);
+      const valorNorm = normalizarValor(valorComTaxa);
+      const dataNorm = normalizarData(sol.dt_vencimento);
+      const chave = `${nomeNorm}|${valorNorm}|${dataNorm}`;
+
+      const match = chavesPlanilha.get(chave);
+      if (match) {
+        mapa[sol.id] = match.classificacao;
+      }
+    });
+
+    return mapa;
+  }, [batidaCarregada, dadosBatida, solicitacoes]);
+
+  // Contadores da batida
+  const contadoresBatida = useMemo(() => {
+    const vals = Object.values(mapaBatida);
+    return {
+      emAberto: vals.filter((v) => v === 'EM_ABERTO').length,
+      recompra: vals.filter((v) => v === 'RECOMPRA').length,
+      encontrados: vals.filter((v) => v === 'ENCONTRADO').length,
+      total: vals.length,
+    };
+  }, [mapaBatida]);
+
+  const getRowBatidaStyle = (solId) => {
+    const tipo = mapaBatida[solId];
+    if (tipo === 'EM_ABERTO') return { backgroundColor: '#FEF9C3' }; // amarelo
+    if (tipo === 'RECOMPRA') return { backgroundColor: '#BBF7D0' }; // verde
+    if (tipo === 'ENCONTRADO') return { backgroundColor: '#DBEAFE' }; // azul claro
+    return {};
+  };
+
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
       <PageTitle
-        title="Comprovantes - Confiança"
-        subtitle="Solicitações de baixa processadas via Confiança"
+        title="Comprovantes - Antecipação"
+        subtitle="Solicitações de baixa processadas via Antecipação"
         icon={Receipt}
         iconColor="text-amber-600"
       />
@@ -391,6 +601,81 @@ const ComprovantesConfianca = () => {
         </form>
       </div>
 
+      {/* Batida Antecipação - Upload */}
+      <div className="mb-4">
+        <div className="bg-white p-3 rounded-lg shadow-md w-full max-w-7xl mx-auto border border-[#000638]/10">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
+              <UploadSimple size={18} weight="bold" /> Batida Antecipação
+            </span>
+            {batidaCarregada && (
+              <button
+                onClick={limparBatida}
+                className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 font-medium"
+              >
+                <Trash size={12} /> Limpar Batida
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 mb-2">
+            Importe o CSV da Antecipação (BATIDACONFIANCA) para comparar com os
+            comprovantes. Títulos encontrados serão destacados na tabela.
+          </p>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1.5 rounded-lg hover:bg-[#fe0000] transition-colors cursor-pointer text-xs font-bold shadow-md tracking-wide uppercase">
+              <UploadSimple size={12} />
+              {loadingBatida ? 'Processando...' : 'Importar CSV'}
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleUploadBatida}
+                className="hidden"
+                disabled={loadingBatida}
+              />
+            </label>
+            {batidaCarregada && (
+              <span className="text-xs text-gray-600">
+                {dadosBatida.length} registros importados da planilha
+              </span>
+            )}
+          </div>
+
+          {/* Legenda e contadores */}
+          {batidaCarregada && (
+            <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-gray-200 pt-3">
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="w-4 h-4 rounded"
+                  style={{
+                    backgroundColor: '#FEF9C3',
+                    border: '1px solid #EAB308',
+                  }}
+                />
+                <span className="text-xs font-medium text-gray-700">
+                  EM ABERTO ({contadoresBatida.emAberto})
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="w-4 h-4 rounded"
+                  style={{
+                    backgroundColor: '#BBF7D0',
+                    border: '1px solid #22C55E',
+                  }}
+                />
+                <span className="text-xs font-medium text-gray-700">
+                  RECOMPRA ({contadoresBatida.recompra})
+                </span>
+              </div>
+              <div className="text-xs font-bold text-[#000638] ml-auto">
+                Total encontrados: {contadoresBatida.total} de{' '}
+                {dadosProcessados.length}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Cards */}
       {dadosProcessados.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-6 max-w-7xl mx-auto">
@@ -437,7 +722,7 @@ const ComprovantesConfianca = () => {
       <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 max-w-7xl mx-auto w-full">
         <div className="p-3 border-b border-[#000638]/10 flex justify-between items-center">
           <h2 className="text-sm font-bold text-[#000638] font-barlow">
-            Comprovantes - Confiança
+            Comprovantes - Antecipação
           </h2>
           <div className="flex items-center gap-2">
             <div className="text-xs text-gray-600">
@@ -554,6 +839,13 @@ const ComprovantesConfianca = () => {
                         Comprovante
                       </div>
                     </th>
+                    {batidaCarregada && (
+                      <th className="px-2 py-2 text-center">
+                        <div className="flex items-center justify-center">
+                          Batida
+                        </div>
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="bg-white">
@@ -561,6 +853,7 @@ const ComprovantesConfianca = () => {
                     <tr
                       key={sol.id || index}
                       className="text-sm transition-colors"
+                      style={getRowBatidaStyle(sol.id)}
                     >
                       <td className="text-left text-gray-900 px-2 py-2">
                         {sol.nm_cliente || '--'}
@@ -595,6 +888,28 @@ const ComprovantesConfianca = () => {
                           '--'
                         )}
                       </td>
+                      {batidaCarregada && (
+                        <td className="text-center px-2 py-2">
+                          {mapaBatida[sol.id] === 'EM_ABERTO' && (
+                            <span className="inline-block px-2 py-0.5 text-[10px] font-bold rounded-full bg-yellow-200 text-yellow-800 border border-yellow-400">
+                              EM ABERTO
+                            </span>
+                          )}
+                          {mapaBatida[sol.id] === 'RECOMPRA' && (
+                            <span className="inline-block px-2 py-0.5 text-[10px] font-bold rounded-full bg-green-200 text-green-800 border border-green-400">
+                              RECOMPRA
+                            </span>
+                          )}
+                          {mapaBatida[sol.id] === 'ENCONTRADO' && (
+                            <span className="inline-block px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-200 text-blue-800 border border-blue-400">
+                              ENCONTRADO
+                            </span>
+                          )}
+                          {!mapaBatida[sol.id] && (
+                            <span className="text-[10px] text-gray-400">—</span>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -836,4 +1151,4 @@ const ComprovantesConfianca = () => {
   );
 };
 
-export default ComprovantesConfianca;
+export default ComprovantesAntecipacao;

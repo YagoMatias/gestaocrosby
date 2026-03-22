@@ -51,7 +51,7 @@ const CATEGORIAS_DOCUMENTOS = [
   { key: 'declaracao_fiador', label: 'Declaração Resp. e Fiador' },
 ];
 
-const ClientesConfianca = () => {
+const ClientesAntecipacao = () => {
   const { user } = useAuth();
   const [termoBusca, setTermoBusca] = useState('');
   const [buscandoCliente, setBuscandoCliente] = useState(false);
@@ -479,7 +479,7 @@ const ClientesConfianca = () => {
   return (
     <div className="flex flex-col items-center space-y-6">
       <PageTitle
-        title="Clientes - Confiança"
+        title="Clientes - Antecipação"
         subtitle="Perfil e análise de clientes"
       />
 
@@ -1200,4 +1200,4 @@ const ClientesConfianca = () => {
   );
 };
 
-export default ClientesConfianca;
+export default ClientesAntecipacao;

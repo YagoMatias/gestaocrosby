@@ -28,7 +28,7 @@ import {
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
-const NotasFiscaisClientesConfianca = () => {
+const NotasFiscaisClientesAntecipacao = () => {
   const apiClient = useApiClient();
   const [dados, setDados] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -397,13 +397,13 @@ const NotasFiscaisClientesConfianca = () => {
       }));
       const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Notas Fiscais Confiança');
+      XLSX.utils.book_append_sheet(wb, ws, 'Notas Fiscais Antecipação');
       const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       const data = new Blob([excelBuffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
       const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
-      saveAs(data, `notas-fiscais-confianca-${hoje}.xlsx`);
+      saveAs(data, `notas-fiscais-antecipacao-${hoje}.xlsx`);
     } catch (error) {
       console.error('Erro ao exportar Excel:', error);
       alert('Erro ao exportar arquivo Excel.');
@@ -469,8 +469,8 @@ const NotasFiscaisClientesConfianca = () => {
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
       <PageTitle
-        title="Notas Fiscais - Confiança"
-        subtitle="Consulte notas fiscais de clientes Confiança"
+        title="Notas Fiscais - Antecipação"
+        subtitle="Consulte notas fiscais de clientes Antecipação"
         icon={Article}
         iconColor="text-amber-600"
       />
@@ -684,7 +684,7 @@ const NotasFiscaisClientesConfianca = () => {
       <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 max-w-7xl mx-auto w-full">
         <div className="p-3 border-b border-[#000638]/10 flex justify-between items-center">
           <h2 className="text-sm font-bold text-[#000638] font-barlow">
-            Notas Fiscais - Confiança
+            Notas Fiscais - Antecipação
           </h2>
           <div className="flex items-center gap-2">
             <div className="text-xs text-gray-600">
@@ -1017,4 +1017,4 @@ const NotasFiscaisClientesConfianca = () => {
   );
 };
 
-export default NotasFiscaisClientesConfianca;
+export default NotasFiscaisClientesAntecipacao;

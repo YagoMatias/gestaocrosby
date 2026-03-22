@@ -30,7 +30,7 @@ import {
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
-const FaturasClientesConfianca = () => {
+const FaturasClientesAntecipacao = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [dados, setDados] = useState([]);
@@ -698,13 +698,13 @@ const FaturasClientesConfianca = () => {
       }));
       const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Faturas Confiança');
+      XLSX.utils.book_append_sheet(wb, ws, 'Faturas Antecipação');
       const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       const data = new Blob([excelBuffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
       const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
-      saveAs(data, `faturas-confianca-${hoje}.xlsx`);
+      saveAs(data, `faturas-antecipacao-${hoje}.xlsx`);
     } catch (error) {
       console.error('Erro ao exportar Excel:', error);
       alert('Erro ao exportar arquivo Excel.');
@@ -775,8 +775,8 @@ const FaturasClientesConfianca = () => {
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
       <PageTitle
-        title="Faturas - Confiança"
-        subtitle="Consulta de faturas de clientes Confiança"
+        title="Faturas - Antecipação"
+        subtitle="Consulta de faturas de clientes Antecipação"
         icon={Receipt}
         iconColor="text-amber-600"
       />
@@ -983,7 +983,7 @@ const FaturasClientesConfianca = () => {
       <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 max-w-7xl mx-auto w-full">
         <div className="p-3 border-b border-[#000638]/10 flex justify-between items-center">
           <h2 className="text-sm font-bold text-[#000638] font-barlow">
-            Faturas - Confiança
+            Faturas - Antecipação
           </h2>
           <div className="flex items-center gap-2">
             <div className="text-xs text-gray-600">
@@ -1277,7 +1277,7 @@ const FaturasClientesConfianca = () => {
                     <button
                       onClick={() => {
                         setObsModalAberto(false);
-                        navigate('/nf-clientes-confianca');
+                        navigate('/nf-clientes-antecipacao');
                       }}
                       className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
                     >
@@ -1448,4 +1448,4 @@ const FaturasClientesConfianca = () => {
   );
 };
 
-export default FaturasClientesConfianca;
+export default FaturasClientesAntecipacao;

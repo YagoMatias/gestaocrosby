@@ -501,25 +501,25 @@ const dashboardFinanceiro = [
 const confianca = [
   {
     name: 'Fatura',
-    href: '/faturas-clientes-confianca',
+    href: '/faturas-clientes-antecipacao',
     icon: Receipt,
     color: 'text-amber-600',
   },
   {
     name: 'Notas Fiscais',
-    href: '/nf-clientes-confianca',
+    href: '/nf-clientes-antecipacao',
     icon: Article,
     color: 'text-amber-600',
   },
   {
     name: 'Comprovantes',
-    href: '/comprovantes-confianca',
+    href: '/comprovantes-antecipacao',
     icon: CheckCircle,
     color: 'text-amber-600',
   },
   {
     name: 'Clientes',
-    href: '/clientes-confianca',
+    href: '/clientes-antecipacao',
     icon: Users,
     color: 'text-amber-600',
   },
@@ -1090,9 +1090,9 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             color="text-blue-600"
           />
 
-          {/* Seção Confiança */}
+          {/* Seção Antecipações */}
           <MenuSection
-            title="Confiança"
+            title="Antecipações"
             items={confianca}
             isOpen={confiancaOpen}
             onToggle={() => handleSectionToggle('confianca')}

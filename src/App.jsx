@@ -106,16 +106,16 @@ const SolicitacaoBaixa = lazy(() => import('./pages/SolicitacaoBaixa'));
 const MinhasSolicitacoesBaixa = lazy(
   () => import('./pages/MinhasSolicitacoesBaixa'),
 );
-const FaturasClientesConfianca = lazy(
+const FaturasClientesAntecipacao = lazy(
   () => import('./pages/FaturasClientesConfianca'),
 );
-const NotasFiscaisClientesConfianca = lazy(
+const NotasFiscaisClientesAntecipacao = lazy(
   () => import('./pages/NotasFiscaisClientesConfianca'),
 );
-const ComprovantesConfianca = lazy(
+const ComprovantesAntecipacao = lazy(
   () => import('./pages/ComprovantesConfianca'),
 );
-const ClientesConfianca = lazy(() => import('./pages/ClientesConfianca'));
+const ClientesAntecipacao = lazy(() => import('./pages/ClientesConfianca'));
 const LicitacaoTitulos = lazy(() => import('./pages/LicitacaoTitulos'));
 const RankingProdutos = lazy(() => import('./pages/RankingProdutos'));
 const ClientesMTM = lazy(() => import('./pages/ClientesMTM'));
@@ -235,15 +235,15 @@ const AppRoutes = memo(() => {
       component: MinhasSolicitacoesBaixa,
     },
     {
-      path: '/faturas-clientes-confianca',
-      component: FaturasClientesConfianca,
+      path: '/faturas-clientes-antecipacao',
+      component: FaturasClientesAntecipacao,
     },
     {
-      path: '/nf-clientes-confianca',
-      component: NotasFiscaisClientesConfianca,
+      path: '/nf-clientes-antecipacao',
+      component: NotasFiscaisClientesAntecipacao,
     },
-    { path: '/comprovantes-confianca', component: ComprovantesConfianca },
-    { path: '/clientes-confianca', component: ClientesConfianca },
+    { path: '/comprovantes-antecipacao', component: ComprovantesAntecipacao },
+    { path: '/clientes-antecipacao', component: ClientesAntecipacao },
     { path: '/licitacao-titulos', component: LicitacaoTitulos },
     { path: '/ranking-produtos', component: RankingProdutos },
     { path: '/clientes-mtm', component: ClientesMTM },
