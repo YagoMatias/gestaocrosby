@@ -100,16 +100,13 @@ export const AuthProvider = ({ children }) => {
       const { data, error } = await getUserCompanies(userId);
 
       if (error) {
-        console.error('❌ Erro ao carregar empresas vinculadas:', error);
         return []; // Array vazio = nenhuma empresa
       }
 
       // Retornar array de códigos de empresas
       const companies = data || [];
-      console.log('✅ Empresas vinculadas carregadas:', companies);
       return companies;
     } catch (error) {
-      console.error('❌ Erro crítico ao carregar empresas vinculadas:', error);
       return [];
     }
   };
@@ -119,7 +116,6 @@ export const AuthProvider = ({ children }) => {
     try {
       // Owner tem acesso a todas as páginas (não precisa carregar do banco)
       if (userRole === 'owner') {
-        console.log('👑 Owner detectado - acesso total concedido');
         return '*'; // '*' significa acesso a todas as páginas
       }
 
@@ -129,13 +125,11 @@ export const AuthProvider = ({ children }) => {
       const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
 
       if (!forceReload && cached && now - cached.timestamp < CACHE_DURATION) {
-        console.log('💾 Usando permissões do cache:', cached.permissions);
         return cached.permissions;
       }
 
       // Evitar múltiplas chamadas simultâneas para o mesmo usuário
       if (loadingPermissions.current.has(userId)) {
-        console.log('⏳ Já existe um carregamento em andamento, aguardando...');
         // Aguardar até 12 segundos checando o cache a cada 500ms
         const maxWaitTime = 12000; // 12 segundos
         const checkInterval = 500; // 500ms
@@ -145,10 +139,6 @@ export const AuthProvider = ({ children }) => {
           await new Promise((resolve) => setTimeout(resolve, checkInterval));
           const cachedAfterWait = permissionsCache.current[userId];
           if (cachedAfterWait) {
-            console.log(
-              '💾 Usando permissões após aguardar:',
-              cachedAfterWait.permissions,
-            );
             return cachedAfterWait.permissions;
           }
           // Se o carregamento já terminou mas não há cache, sair do loop
@@ -158,7 +148,6 @@ export const AuthProvider = ({ children }) => {
         }
 
         // Se chegou aqui, timeout ou erro no carregamento original
-        console.warn('⏱️ Timeout ao aguardar carregamento em andamento');
         return [];
       }
 
@@ -166,19 +155,15 @@ export const AuthProvider = ({ children }) => {
       loadingPermissions.current.add(userId);
 
       // Para outros usuários, buscar permissões do banco
-      console.log('📋 Carregando permissões do banco para:', userId);
 
       // Adicionar timeout de 15 segundos para evitar travamentos
       const timeoutPromise = new Promise((resolve) =>
         setTimeout(() => {
-          console.warn('⏱️ TIMEOUT: Permissões demoraram mais de 15s');
           loadingPermissions.current.delete(userId);
           // Se temos cache antigo, usar ele mesmo expirado
           if (cached) {
-            console.log('💾 Usando cache expirado como fallback');
             resolve({ data: cached.permissions, error: null });
           } else {
-            console.warn('⚠️ Sem cache disponível, retornando array vazio');
             resolve({ data: [], error: new Error('Timeout') });
           }
         }, 15000),
@@ -194,13 +179,10 @@ export const AuthProvider = ({ children }) => {
         loadingPermissions.current.delete(userId);
 
         if (error) {
-          console.error('❌ Erro ao carregar permissões:', error);
           // Se temos cache antigo, usar ele
           if (cached) {
-            console.log('💾 Usando cache antigo devido a erro');
             return cached.permissions;
           }
-          console.log('⚠️ Usuário continuará sem permissões customizadas');
           return [];
         }
 
@@ -211,22 +193,17 @@ export const AuthProvider = ({ children }) => {
           timestamp: now,
         };
 
-        console.log('✅ Permissões carregadas e cacheadas:', permissions);
         return permissions;
       } catch (err) {
-        console.error('❌ Erro ao aguardar permissões:', err);
         loadingPermissions.current.delete(userId);
         // Se temos cache antigo, usar ele
         if (cached) {
-          console.log('💾 Usando cache antigo devido a erro');
           return cached.permissions;
         }
         return [];
       }
     } catch (error) {
-      console.error('❌ Erro crítico ao carregar permissões:', error);
       loadingPermissions.current.delete(userId);
-      console.log('⚠️ Usuário continuará sem permissões customizadas');
       return [];
     }
   };
@@ -234,7 +211,6 @@ export const AuthProvider = ({ children }) => {
   // Função de login
   const login = async (email, password, rememberMe = true) => {
     try {
-      console.log('🔐 Tentando login com:', email);
       setLoading(true);
 
       const client = rememberMe ? supabase : supabaseSession;
@@ -249,7 +225,6 @@ export const AuthProvider = ({ children }) => {
         error = result.error;
       } catch (fetchError) {
         // "Failed to fetch" - limpar sessão antiga e tentar novamente
-        console.warn('⚠️ Falha de rede no login, limpando sessão e tentando novamente...');
         await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
         await supabaseSession.auth.signOut({ scope: 'local' }).catch(() => {});
         // Segunda tentativa após limpar
@@ -262,27 +237,21 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (error) {
-        console.error('❌ Erro no login:', error);
         throw error;
       }
 
-      console.log('✅ Login bem-sucedido:', authData.user.email);
-
       // Obter role do metadata do usuário
       const userRole = authData.user.user_metadata?.role || 'guest';
-      console.log('👤 Role do usuário:', userRole);
 
       // Verificar se o role é válido
       const validRole = ROLES.includes(userRole) ? userRole : 'guest';
       const roleConfig = ROLE_CONFIG[validRole];
 
       // Carregar permissões do banco
-      console.log('🔄 Iniciando carregamento de permissões...');
       const allowedPages = await loadUserPermissions(
         authData.user.id,
         validRole,
       );
-      console.log('✅ Permissões carregadas, configurando usuário...');
 
       // Carregar empresas vinculadas (APENAS para franquias)
       const allowedCompanies = await loadUserCompanies(
@@ -306,15 +275,11 @@ export const AuthProvider = ({ children }) => {
         },
       };
 
-      console.log('✅ Dados do usuário configurados:', userData);
-      console.log('🎯 Setando usuário e finalizando login...');
       updateUser(userData);
       setLoading(false);
 
-      console.log('✅ Login finalizado com sucesso!');
       return { success: true, user: userData };
     } catch (error) {
-      console.error('❌ Erro no login:', error);
       setLoading(false);
       throw error;
     }
@@ -332,7 +297,7 @@ export const AuthProvider = ({ children }) => {
       // Resetar flag de carregamento inicial
       isInitialLoad.current = true;
     } catch (error) {
-      console.error('Erro no logout:', error);
+      // erro silencioso
     }
   };
 
@@ -341,7 +306,6 @@ export const AuthProvider = ({ children }) => {
     if (!user) return;
 
     try {
-      console.log('🔄 Recarregando permissões (forçando reload)...');
       const allowedPages = await loadUserPermissions(user.id, user.role, true); // forceReload = true
 
       const updatedUser = {
@@ -349,10 +313,8 @@ export const AuthProvider = ({ children }) => {
         allowedPages,
       };
       updateUser(updatedUser);
-
-      console.log('✅ Permissões atualizadas');
     } catch (error) {
-      console.error('❌ Erro ao recarregar permissões:', error);
+      // erro silencioso
     }
   };
 
@@ -360,13 +322,11 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const checkSession = async () => {
       try {
-        console.log('🔄 Verificando sessão inicial...');
-
         let session;
         try {
-          const { data, error: sessionError } = await supabase.auth.getSession();
+          const { data, error: sessionError } =
+            await supabase.auth.getSession();
           if (sessionError) {
-            console.warn('⚠️ Erro ao recuperar sessão, limpando dados antigos:', sessionError.message);
             // Limpar sessão corrompida/expirada para permitir novo login
             await supabase.auth.signOut({ scope: 'local' });
             await supabaseSession.auth.signOut({ scope: 'local' });
@@ -376,17 +336,17 @@ export const AuthProvider = ({ children }) => {
           }
           session = data?.session;
         } catch (fetchError) {
-          console.warn('⚠️ Falha de rede ao verificar sessão, limpando dados locais:', fetchError.message);
           // "Failed to fetch" - limpar dados locais para permitir login fresco
           await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
-          await supabaseSession.auth.signOut({ scope: 'local' }).catch(() => {});
+          await supabaseSession.auth
+            .signOut({ scope: 'local' })
+            .catch(() => {});
           setLoading(false);
           isInitialLoad.current = false;
           return;
         }
 
         if (session?.user) {
-          console.log('✅ Sessão encontrada:', session.user.email);
           const userRole = session.user.user_metadata?.role || 'guest';
 
           // Verificar se o role é válido
@@ -420,10 +380,9 @@ export const AuthProvider = ({ children }) => {
             },
           });
         } else {
-          console.log('❌ Nenhuma sessão encontrada');
+          // Nenhuma sessão encontrada
         }
       } catch (error) {
-        console.error('❌ Erro ao verificar sessão:', error);
         // Em caso de erro, limpar sessão para não travar o login
         try {
           await supabase.auth.signOut({ scope: 'local' });
@@ -434,7 +393,6 @@ export const AuthProvider = ({ children }) => {
         // Marcar que o carregamento inicial foi concluído
         setTimeout(() => {
           isInitialLoad.current = false;
-          console.log('✅ Carregamento inicial concluído');
         }, 500);
       }
     };
@@ -445,25 +403,20 @@ export const AuthProvider = ({ children }) => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('🔄 Evento de autenticação:', event);
-
       // Ignorar eventos durante carregamento inicial (checkSession cuida disso)
       if (
         isInitialLoad.current &&
         (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')
       ) {
-        console.log('⏭️ Ignorando evento durante carregamento inicial');
         return;
       }
 
       if (event === 'SIGNED_IN' && session?.user) {
         // Evitar recarregar se já temos o mesmo usuário logado (evita loops)
         if (userRef.current && userRef.current.id === session.user.id) {
-          console.log('ℹ️ Usuário já está logado, usando cache de permissões');
           return;
         }
 
-        console.log('✅ Usuário fez login:', session.user.email);
         const userRole = session.user.user_metadata?.role || 'guest';
 
         // Verificar se o role é válido
@@ -498,7 +451,6 @@ export const AuthProvider = ({ children }) => {
         });
         setLoading(false);
       } else if (event === 'SIGNED_OUT') {
-        console.log('🚪 Usuário fez logout');
         updateUser(null);
         // Limpar cache de permissões ao fazer logout
         permissionsCache.current = {};
@@ -512,23 +464,17 @@ export const AuthProvider = ({ children }) => {
     const {
       data: { subscription: subscriptionSession },
     } = supabaseSession.auth.onAuthStateChange(async (event, session) => {
-      console.log('🔄 Evento de autenticação (session):', event);
-
       // Ignorar eventos durante carregamento inicial (checkSession cuida disso)
       if (
         isInitialLoad.current &&
         (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')
       ) {
-        console.log(
-          '⏭️ Ignorando evento (session) durante carregamento inicial',
-        );
         return;
       }
 
       if (event === 'SIGNED_IN' && session?.user) {
         // Evitar recarregar se já temos o mesmo usuário logado
         if (userRef.current && userRef.current.id === session.user.id) {
-          console.log('ℹ️ Usuário já está logado (session), usando cache');
           return;
         }
 

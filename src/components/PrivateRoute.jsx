@@ -7,17 +7,8 @@ const PrivateRoute = ({ children }) => {
   const location = useLocation();
   const currentPath = location.pathname;
 
-  console.log('🛡️ PrivateRoute - Status:', {
-    loading,
-    hasUser: !!user,
-    userRole: user?.role,
-    currentPath,
-    allowedPages: user?.allowedPages,
-  });
-
   // Se ainda está carregando, mostra loading
   if (loading) {
-    console.log('⏳ PrivateRoute - Mostrando loading...');
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -30,18 +21,12 @@ const PrivateRoute = ({ children }) => {
 
   // Se não há usuário, redireciona para login
   if (!user) {
-    console.log(
-      '🚫 PrivateRoute - Usuário não autenticado, redirecionando para login',
-    );
     return <Navigate to="/" replace />;
   }
 
   // Verificar se usuário franquias tem empresas vinculadas
   if (user.role === 'franquias') {
     if (!user.allowedCompanies || user.allowedCompanies.length === 0) {
-      console.log(
-        '🚫 PrivateRoute - Usuário franquias sem empresas vinculadas',
-      );
       return (
         <div className="flex items-center justify-center min-h-screen bg-gray-50">
           <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-md">
@@ -63,26 +48,19 @@ const PrivateRoute = ({ children }) => {
   const hasPermission = () => {
     // Owner tem acesso total
     if (user.allowedPages === '*') {
-      console.log('👑 Owner - Acesso total permitido');
       return true;
     }
 
     // Verificar se a página atual está nas permissões do usuário
     if (!user.allowedPages || !Array.isArray(user.allowedPages)) {
-      console.log('⚠️ Usuário sem permissões definidas');
       return false;
     }
 
-    const hasAccess = user.allowedPages.includes(currentPath);
-    console.log(`🔍 Verificando acesso à ${currentPath}:`, hasAccess);
-
-    return hasAccess;
+    return user.allowedPages.includes(currentPath);
   };
 
   // Se não tem permissão, redireciona para /home ou /
   if (!hasPermission()) {
-    console.log('🚫 PrivateRoute - Usuário sem permissão para esta página');
-
     // Redirecionar para /home se tiver permissão, senão para login
     if (
       user.allowedPages &&
@@ -95,7 +73,6 @@ const PrivateRoute = ({ children }) => {
     return <Navigate to="/" replace />;
   }
 
-  console.log('✅ PrivateRoute - Acesso permitido, renderizando componente');
   return children;
 };
 

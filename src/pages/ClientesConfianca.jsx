@@ -138,7 +138,7 @@ const ClientesAntecipacao = () => {
         setClientesEncontrados(json.data.clientes);
       }
     } catch (error) {
-      console.error('Erro ao buscar clientes:', error);
+      // erro silencioso
     } finally {
       setBuscandoCliente(false);
     }
@@ -229,7 +229,6 @@ const ClientesAntecipacao = () => {
         setErro(json.message || 'Erro ao buscar estatísticas');
       }
     } catch (error) {
-      console.error('Erro ao buscar estatísticas:', error);
       setErro('Erro ao conectar com o servidor');
     } finally {
       setLoading(false);
@@ -272,7 +271,6 @@ const ClientesAntecipacao = () => {
             setErro(json.message || 'Erro ao buscar estatísticas');
           }
         } catch (error) {
-          console.error('Erro ao buscar estatísticas:', error);
           setErro('Erro ao conectar com o servidor');
         } finally {
           setLoading(false);
@@ -321,7 +319,6 @@ const ClientesAntecipacao = () => {
 
       await carregarPerfil(personCode);
     } catch (err) {
-      console.error('Erro ao fazer upload da foto:', err);
       alert(
         'Erro ao enviar foto. Verifique se o bucket "clientes-confianca" existe no Supabase.',
       );
@@ -355,7 +352,7 @@ const ClientesAntecipacao = () => {
       setEditandoInstagram(false);
       await carregarPerfil(personCode);
     } catch (err) {
-      console.error('Erro ao salvar Instagram:', err);
+      // erro silencioso
     }
   };
 
@@ -390,7 +387,6 @@ const ClientesAntecipacao = () => {
 
       await carregarDocumentos(personCode);
     } catch (err) {
-      console.error('Erro ao fazer upload do documento:', err);
       alert('Erro ao enviar documento.');
     } finally {
       setUploadingDoc(false);
@@ -415,7 +411,7 @@ const ClientesAntecipacao = () => {
         .eq('id', doc.id);
       await carregarDocumentos(parseInt(clienteSelecionado.code));
     } catch (err) {
-      console.error('Erro ao remover documento:', err);
+      // erro silencioso
     }
   };
 
@@ -433,7 +429,7 @@ const ClientesAntecipacao = () => {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('Erro ao baixar documento:', err);
+      // erro silencioso
     }
   };
 

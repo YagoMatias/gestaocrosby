@@ -96,7 +96,7 @@ const FaturasClientesAntecipacao = () => {
           }
         }
       } catch (error) {
-        console.error('Erro ao carregar filiais:', error);
+        // erro silencioso
       }
     };
     buscarFiliais();
@@ -124,7 +124,7 @@ const FaturasClientesAntecipacao = () => {
         setClientesEncontrados(json.data.clientes);
       }
     } catch (error) {
-      console.error('Erro ao buscar clientes:', error);
+      // erro silencioso
     } finally {
       setBuscandoCliente(false);
     }
@@ -357,7 +357,6 @@ const FaturasClientesAntecipacao = () => {
       setDados(todosOsDados);
       setDadosCarregados(true);
     } catch (err) {
-      console.error('Erro ao buscar dados:', err);
       alert(`Erro ao buscar dados: ${err.message}`);
       setDados([]);
       setDadosCarregados(false);
@@ -415,7 +414,6 @@ const FaturasClientesAntecipacao = () => {
         throw new Error('DANFE não retornada pela API');
       }
     } catch (error) {
-      console.error('Erro ao gerar DANFE:', error);
       setDanfeError(error.message || 'Erro ao gerar DANFE');
       alert(`Erro ao gerar DANFE: ${error.message}`);
     } finally {
@@ -445,7 +443,6 @@ const FaturasClientesAntecipacao = () => {
         window.URL.revokeObjectURL(url);
       }
     } catch (error) {
-      console.error('Erro ao abrir DANFE:', error);
       alert('Erro ao abrir a DANFE.');
     }
   };
@@ -509,7 +506,6 @@ const FaturasClientesAntecipacao = () => {
 
       setNotasFiscaisBuscadas([]);
     } catch (error) {
-      console.error('Erro ao buscar NFs da fatura:', error);
       setNotasFiscaisError(error.message || 'Erro ao buscar notas fiscais');
     } finally {
       setNotasFiscaisLoading(false);
@@ -562,7 +558,6 @@ const FaturasClientesAntecipacao = () => {
         throw new Error('DANFE não retornada pela API');
       }
     } catch (error) {
-      console.error('Erro ao gerar DANFE:', error);
       setDanfeError(error.message || 'Erro ao gerar DANFE');
       alert(`Erro ao gerar DANFE: ${error.message}`);
     } finally {
@@ -638,7 +633,6 @@ const FaturasClientesAntecipacao = () => {
         throw new Error('Formato de resposta inválido');
       }
     } catch (error) {
-      console.error('Erro ao buscar boleto:', error);
       setBoletoError(error.message || 'Erro ao buscar boleto');
     } finally {
       setBoletoLoading(false);
@@ -667,7 +661,6 @@ const FaturasClientesAntecipacao = () => {
         window.URL.revokeObjectURL(url);
       }
     } catch (error) {
-      console.error('Erro ao abrir PDF:', error);
       alert('Erro ao abrir o boleto.');
     }
   };
@@ -706,7 +699,6 @@ const FaturasClientesAntecipacao = () => {
       const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
       saveAs(data, `faturas-antecipacao-${hoje}.xlsx`);
     } catch (error) {
-      console.error('Erro ao exportar Excel:', error);
       alert('Erro ao exportar arquivo Excel.');
     }
   };

@@ -148,7 +148,6 @@ const ComprovantesAntecipacao = () => {
       setSolicitacoes(data || []);
       setDadosCarregados(true);
     } catch (error) {
-      console.error('Erro ao carregar comprovantes:', error);
       setSolicitacoes([]);
       setDadosCarregados(true);
     } finally {
@@ -281,7 +280,6 @@ const ComprovantesAntecipacao = () => {
       const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
       saveAs(data, `comprovantes-antecipacao-${hoje}.xlsx`);
     } catch (error) {
-      console.error('Erro ao exportar Excel:', error);
       alert('Erro ao exportar arquivo Excel.');
     }
   };
@@ -452,7 +450,6 @@ const ComprovantesAntecipacao = () => {
         setDadosBatida(registros);
         setBatidaCarregada(true);
       } catch (err) {
-        console.error('Erro ao processar CSV:', err);
         alert('Erro ao processar o arquivo CSV. Verifique o formato.');
       } finally {
         setLoadingBatida(false);

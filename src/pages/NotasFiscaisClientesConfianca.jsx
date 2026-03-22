@@ -79,7 +79,6 @@ const NotasFiscaisClientesAntecipacao = () => {
           setFiliaisCodigos(codigos);
         }
       } catch (error) {
-        console.error('Erro ao carregar filiais:', error);
         setFiliaisCodigos([1, 2, 6, 100, 101, 99, 990, 200, 400, 4, 850, 85]);
       }
     };
@@ -106,7 +105,7 @@ const NotasFiscaisClientesAntecipacao = () => {
         setClientesEncontrados(json.data.clientes);
       }
     } catch (error) {
-      console.error('Erro ao buscar clientes:', error);
+      // erro silencioso
     } finally {
       setBuscandoCliente(false);
     }
@@ -268,7 +267,6 @@ const NotasFiscaisClientesAntecipacao = () => {
         setDadosCarregados(true);
       }
     } catch (err) {
-      console.error('Erro ao buscar dados:', err);
       setDados([]);
       setDadosCarregados(false);
     } finally {
@@ -337,7 +335,6 @@ const NotasFiscaisClientesAntecipacao = () => {
         throw new Error('DANFE não retornada pela API');
       }
     } catch (error) {
-      console.error('Erro ao gerar DANFE:', error);
       setDanfeError(error.message || 'Erro ao gerar DANFE');
     } finally {
       setDanfeLoading(false);
@@ -366,7 +363,6 @@ const NotasFiscaisClientesAntecipacao = () => {
         window.URL.revokeObjectURL(url);
       }
     } catch (error) {
-      console.error('Erro ao abrir DANFE:', error);
       alert('Erro ao abrir a DANFE.');
     }
   };
@@ -405,7 +401,6 @@ const NotasFiscaisClientesAntecipacao = () => {
       const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
       saveAs(data, `notas-fiscais-antecipacao-${hoje}.xlsx`);
     } catch (error) {
-      console.error('Erro ao exportar Excel:', error);
       alert('Erro ao exportar arquivo Excel.');
     }
   };
