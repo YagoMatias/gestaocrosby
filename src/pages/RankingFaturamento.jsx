@@ -102,7 +102,7 @@ const RankingFaturamento = () => {
           setBranchGroupMap(groupMap);
         }
       } catch (err) {
-        console.error('Erro ao carregar nomes das empresas:', err);
+        // silently fail
       }
     };
     fetchBranches();
@@ -149,7 +149,6 @@ const RankingFaturamento = () => {
         setError(result.message || 'Erro ao buscar invoices.');
       }
     } catch (err) {
-      console.error('Erro ao buscar invoices:', err);
       setError(err.message || 'Erro desconhecido.');
     } finally {
       setLoading(false);
@@ -367,7 +366,7 @@ const RankingFaturamento = () => {
   // RENDER
   // ==========================================
   return (
-    <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
+    <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2 sm:px-4 font-barlow">
       {/* Page Title */}
       <PageTitle
         title="Ranking de Faturamento"
@@ -377,56 +376,58 @@ const RankingFaturamento = () => {
       />
 
       {/* Filtros */}
-      <div className="flex flex-col bg-white p-3 rounded-lg shadow-md w-full mx-auto border border-[#000638]/10 mb-4">
-        <span className="text-lg font-bold text-[#000638] flex items-center gap-1 mb-1">
-          <Funnel size={18} weight="bold" />
+      <div className="flex flex-col bg-white p-3 sm:p-4 rounded-xl shadow-md w-full mx-auto border border-[#000638]/10 mb-4">
+        <span className="text-sm sm:text-base font-bold text-[#000638] flex items-center gap-1.5 mb-0.5 font-barlow">
+          <Funnel size={16} weight="bold" />
           Filtros
         </span>
-        <span className="text-xs text-gray-500 mb-3">
+        <span className="text-xs text-gray-500 mb-3 font-barlow">
           Selecione o período para gerar o ranking
         </span>
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
           <div>
-            <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+            <label className="block text-xs font-semibold mb-0.5 text-[#000638] font-barlow">
               Data Início
             </label>
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              className="border border-[#000638]/30 rounded-lg px-2.5 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs font-barlow"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+            <label className="block text-xs font-semibold mb-0.5 text-[#000638] font-barlow">
               Data Fim
             </label>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              className="border border-[#000638]/30 rounded-lg px-2.5 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs font-barlow"
             />
           </div>
-          <button
-            onClick={handleSearch}
-            disabled={loading}
-            className="flex items-center gap-2 bg-[#000638] text-white px-4 py-1.5 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-bold shadow-md tracking-wide uppercase h-7"
-          >
-            {loading ? (
-              <Spinner size={14} className="animate-spin" />
-            ) : (
-              <MagnifyingGlass size={14} weight="bold" />
-            )}
-            {loading ? 'Buscando...' : 'Buscar'}
-          </button>
+          <div className="flex items-end">
+            <button
+              onClick={handleSearch}
+              disabled={loading}
+              className="flex items-center justify-center gap-2 bg-[#000638] text-white px-4 py-2 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-bold shadow-md tracking-wide uppercase w-full sm:w-auto font-barlow"
+            >
+              {loading ? (
+                <Spinner size={14} className="animate-spin" />
+              ) : (
+                <MagnifyingGlass size={14} weight="bold" />
+              )}
+              {loading ? 'Buscando...' : 'Buscar'}
+            </button>
+          </div>
         </div>
 
         {/* Filtro Franquia / Filial */}
         {grouped.length > 0 && (
-          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
-            <span className="text-xs font-semibold text-[#000638] mr-1">
-              <Buildings size={14} weight="bold" className="inline mr-1" />
+          <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+            <span className="text-xs font-semibold text-[#000638] mr-1 flex items-center gap-1 font-barlow">
+              <Buildings size={14} weight="bold" />
               Tipo:
             </span>
             {[
@@ -437,7 +438,7 @@ const RankingFaturamento = () => {
               <button
                 key={opt.key}
                 onClick={() => setFilterType(opt.key)}
-                className={`px-3 py-1 rounded-full text-xs font-bold transition-all duration-150 ${
+                className={`px-3 py-1 rounded-full text-xs font-bold transition-all duration-150 font-barlow ${
                   filterType === opt.key
                     ? 'bg-[#000638] text-white shadow-md'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -452,119 +453,115 @@ const RankingFaturamento = () => {
 
       {/* Erro */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-sm text-red-700">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 text-xs sm:text-sm text-red-700 font-barlow">
           {error}
         </div>
       )}
 
       {/* Loading */}
       {loading && (
-        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-          <Spinner size={40} className="animate-spin mb-3" />
-          <p className="text-sm font-medium">Carregando dados das lojas...</p>
-          <p className="text-xs text-gray-300 mt-1">
+        <div className="flex flex-col items-center justify-center py-16 sm:py-20 text-gray-400">
+          <Spinner size={36} className="animate-spin mb-3" />
+          <p className="text-sm font-medium font-barlow">
+            Carregando dados das lojas...
+          </p>
+          <p className="text-xs text-gray-300 mt-1 font-barlow">
             Isso pode levar alguns segundos
           </p>
         </div>
       )}
 
-      {/* ==========================================
-          DASHBOARD: Cards de Resumo + Top 1
-          ========================================== */}
+      {/* DASHBOARD */}
       {!loading && filteredGrouped.length > 0 && (
         <>
           {/* Cards de Resumo */}
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
-            {/* Card: Faturamento Total */}
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-              <CardHeader className="pb-1 pt-3 px-3">
-                <div className="flex items-center gap-2">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 rounded-xl bg-white">
+              <CardHeader className="pb-1 pt-2.5 px-2.5 sm:px-3">
+                <div className="flex items-center gap-1.5">
                   <CurrencyDollar
-                    size={16}
+                    size={14}
                     weight="bold"
                     className="text-green-600"
                   />
-                  <CardTitle className="text-xs font-bold text-green-700">
+                  <CardTitle className="text-[10px] sm:text-xs font-bold text-green-700 font-barlow">
                     Faturamento Total
                   </CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-3 pb-3">
-                <div className="text-base font-extrabold text-green-600 break-words">
+              <CardContent className="pt-0 px-2.5 sm:px-3 pb-2.5">
+                <div className="text-sm sm:text-base font-extrabold text-green-600 break-words font-barlow">
                   R$ {formatBRL(grandTotal.totalValue)}
                 </div>
-                <CardDescription className="text-xs text-gray-500">
-                  Resultado (Saída - Entrada)
+                <CardDescription className="text-[10px] sm:text-xs text-gray-500 font-barlow hidden sm:block">
+                  Saída - Entrada
                 </CardDescription>
               </CardContent>
             </Card>
 
-            {/* Card: Ticket Médio Geral */}
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-              <CardHeader className="pb-1 pt-3 px-3">
-                <div className="flex items-center gap-2">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 rounded-xl bg-white">
+              <CardHeader className="pb-1 pt-2.5 px-2.5 sm:px-3">
+                <div className="flex items-center gap-1.5">
                   <ShoppingCart
-                    size={16}
+                    size={14}
                     weight="bold"
                     className="text-blue-600"
                   />
-                  <CardTitle className="text-xs font-bold text-blue-700">
+                  <CardTitle className="text-[10px] sm:text-xs font-bold text-blue-700 font-barlow">
                     Ticket Médio
                   </CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-3 pb-3">
-                <div className="text-base font-extrabold text-blue-600 break-words">
+              <CardContent className="pt-0 px-2.5 sm:px-3 pb-2.5">
+                <div className="text-sm sm:text-base font-extrabold text-blue-600 break-words font-barlow">
                   R$ {formatBRL(grandTotal.ticketMedio)}
                 </div>
-                <CardDescription className="text-xs text-gray-500">
-                  Valor médio das vendas
+                <CardDescription className="text-[10px] sm:text-xs text-gray-500 font-barlow hidden sm:block">
+                  Valor médio por venda
                 </CardDescription>
               </CardContent>
             </Card>
 
-            {/* Card: PA Geral */}
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-              <CardHeader className="pb-1 pt-3 px-3">
-                <div className="flex items-center gap-2">
-                  <Tote size={16} weight="bold" className="text-purple-600" />
-                  <CardTitle className="text-xs font-bold text-purple-700">
-                    PA (Peças/Atendimento)
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 rounded-xl bg-white">
+              <CardHeader className="pb-1 pt-2.5 px-2.5 sm:px-3">
+                <div className="flex items-center gap-1.5">
+                  <Tote size={14} weight="bold" className="text-purple-600" />
+                  <CardTitle className="text-[10px] sm:text-xs font-bold text-purple-700 font-barlow">
+                    PA
                   </CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-3 pb-3">
-                <div className="text-base font-extrabold text-purple-600 break-words">
+              <CardContent className="pt-0 px-2.5 sm:px-3 pb-2.5">
+                <div className="text-sm sm:text-base font-extrabold text-purple-600 break-words font-barlow">
                   {grandTotal.pa.toFixed(2)}
                 </div>
-                <CardDescription className="text-xs text-gray-500">
-                  Média geral de peças por venda
+                <CardDescription className="text-[10px] sm:text-xs text-gray-500 font-barlow hidden sm:block">
+                  Peças por atendimento
                 </CardDescription>
               </CardContent>
             </Card>
 
-            {/* Card: Lojas */}
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-              <CardHeader className="pb-1 pt-3 px-3">
-                <div className="flex items-center gap-2">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 rounded-xl bg-white">
+              <CardHeader className="pb-1 pt-2.5 px-2.5 sm:px-3">
+                <div className="flex items-center gap-1.5">
                   <Buildings
-                    size={16}
+                    size={14}
                     weight="bold"
                     className="text-[#000638]"
                   />
-                  <CardTitle className="text-xs font-bold text-[#000638]">
+                  <CardTitle className="text-[10px] sm:text-xs font-bold text-[#000638] font-barlow">
                     Lojas
                   </CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-3 pb-3">
-                <div className="text-base font-extrabold text-[#000638] break-words">
+              <CardContent className="pt-0 px-2.5 sm:px-3 pb-2.5">
+                <div className="text-sm sm:text-base font-extrabold text-[#000638] break-words font-barlow">
                   {filteredGrouped.length}
                 </div>
-                <CardDescription className="text-xs text-gray-500">
-                  {grandTotal.saidaCount} vendas |{' '}
+                <CardDescription className="text-[10px] sm:text-xs text-gray-500 font-barlow hidden sm:block">
+                  {grandTotal.saidaCount} vendas
                   {meta?.queryTime
-                    ? `${(meta.queryTime / 1000).toFixed(1)}s`
+                    ? ` | ${(meta.queryTime / 1000).toFixed(1)}s`
                     : ''}
                   {meta?.fromCache ? ' (cache)' : ''}
                 </CardDescription>
@@ -574,71 +571,75 @@ const RankingFaturamento = () => {
 
           {/* TOP 1 — Destaque */}
           {top1 && (
-            <div className="relative mb-4 bg-gradient-to-r from-yellow-50 via-amber-50 to-yellow-50 border-2 border-yellow-300 rounded-xl shadow-lg p-4 overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 opacity-5 pointer-events-none">
+            <div className="relative mb-4 bg-gradient-to-r from-yellow-50 via-amber-50 to-yellow-50 border-2 border-yellow-300 rounded-xl shadow-lg p-3 sm:p-4 overflow-hidden">
+              <div className="absolute top-0 right-0 w-24 sm:w-32 h-24 sm:h-32 opacity-5 pointer-events-none">
                 <Trophy size={128} weight="fill" />
               </div>
-              <div className="flex items-center gap-4">
-                <div className="flex-shrink-0 w-14 h-14 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center shadow-md">
-                  <Trophy size={28} weight="fill" className="text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-xs font-bold uppercase tracking-wider text-yellow-700 bg-yellow-200 px-2 py-0.5 rounded-full">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="flex-shrink-0 w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center shadow-md">
+                    <Trophy
+                      size={20}
+                      weight="fill"
+                      className="text-white sm:hidden"
+                    />
+                    <Trophy
+                      size={28}
+                      weight="fill"
+                      className="text-white hidden sm:block"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-yellow-700 bg-yellow-200 px-2 py-0.5 rounded-full font-barlow">
                       TOP 1
                     </span>
-                  </div>
-                  <h3 className="text-lg font-bold text-[#000638] truncate">
-                    {top1.branchName}
-                  </h3>
-                  <div className="flex flex-wrap items-center gap-4 mt-1 text-xs text-gray-600">
-                    <span>
-                      Ticket Médio:{' '}
-                      <strong className="text-blue-700">
-                        R$ {formatBRL(top1.ticketMedio)}
-                      </strong>
-                    </span>
-                    <span>
-                      PA:{' '}
-                      <strong className="text-purple-700">
-                        {top1.pa.toFixed(2)}
-                      </strong>
-                    </span>
-                    <span>
-                      Vendas:{' '}
-                      <strong className="text-gray-700">
-                        {top1.saidaCount}
-                      </strong>
-                    </span>
+                    <h3 className="text-sm sm:text-lg font-bold text-[#000638] truncate mt-0.5 font-barlow">
+                      {top1.branchName}
+                    </h3>
                   </div>
                 </div>
-                <div className="flex-shrink-0 text-right">
-                  <p className="text-2xl font-extrabold text-green-700">
-                    R$ {formatBRL(top1.totalValue)}
-                  </p>
-                  <p className="text-xs text-gray-500">Faturamento líquido</p>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:ml-auto">
+                  <div className="text-xs text-gray-600 font-barlow">
+                    TM:{' '}
+                    <strong className="text-blue-700">
+                      R$ {formatBRL(top1.ticketMedio)}
+                    </strong>
+                  </div>
+                  <div className="text-xs text-gray-600 font-barlow">
+                    PA:{' '}
+                    <strong className="text-purple-700">
+                      {top1.pa.toFixed(2)}
+                    </strong>
+                  </div>
+                  <div className="text-xs text-gray-600 font-barlow">
+                    Vendas:{' '}
+                    <strong className="text-gray-700">{top1.saidaCount}</strong>
+                  </div>
+                  <div className="sm:ml-2">
+                    <p className="text-lg sm:text-2xl font-extrabold text-green-700 font-barlow">
+                      R$ {formatBRL(top1.totalValue)}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ==========================================
-              RANKING: Lista de lojas
-              ========================================== */}
-          <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 w-full overflow-hidden">
+          {/* RANKING */}
+          <div className="bg-white rounded-xl shadow-md border border-[#000638]/10 w-full overflow-hidden">
             {/* Header */}
-            <div className="px-4 py-3 border-b border-[#000638]/10 flex items-center gap-2">
-              <ChartBar size={18} weight="bold" className="text-[#000638]" />
-              <h2 className="text-sm font-bold text-[#000638]">
+            <div className="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-[#000638]/10 flex items-center gap-2">
+              <ChartBar size={16} weight="bold" className="text-[#000638]" />
+              <h2 className="text-xs sm:text-sm font-bold text-[#000638] font-barlow">
                 Ranking por Loja
               </h2>
-              <span className="ml-auto text-xs text-gray-400">
+              <span className="ml-auto text-[10px] sm:text-xs text-gray-400 font-barlow hidden sm:inline">
                 Clique para ver detalhes
               </span>
             </div>
 
-            {/* Table header */}
-            <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-[#000638] text-white text-xs font-bold uppercase tracking-wider">
+            {/* Desktop table header */}
+            <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-2 bg-[#000638] text-white text-[10px] font-bold uppercase tracking-wider font-barlow">
               <div className="col-span-1 text-center">#</div>
               <div className="col-span-4">Loja</div>
               <div className="col-span-2 text-right">Faturamento</div>
@@ -649,7 +650,6 @@ const RankingFaturamento = () => {
 
             {/* Rows */}
             {filteredGrouped.map((group, index) => {
-              // Verificar se franquia tem acesso a esta loja
               const isFranchiseUser =
                 user?.role === 'franquias' && user?.allowedCompanies;
               const canViewDetails =
@@ -670,60 +670,88 @@ const RankingFaturamento = () => {
                       ? 'Você só pode ver detalhes da sua própria loja'
                       : 'Clique para ver detalhes'
                   }
-                  className={`w-full grid grid-cols-12 gap-2 px-4 py-3 items-center text-sm transition-all duration-150 border-b border-gray-100 last:border-b-0 ${
-                    index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'
-                  } ${canViewDetails ? 'hover:bg-blue-50 cursor-pointer' : 'cursor-default opacity-70'}`}
+                  className={`w-full text-left transition-all duration-150 border-b border-gray-100 last:border-b-0 ${
+                    index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+                  } ${canViewDetails ? 'hover:bg-blue-50/60 cursor-pointer' : 'cursor-default opacity-70'}`}
                 >
-                  {/* # Posição */}
-                  <div className="col-span-1 text-center">
-                    {getPositionBadge(index)}
-                  </div>
-
-                  {/* Loja */}
-                  <div className="col-span-4 text-left truncate">
-                    <span
-                      className={`font-semibold ${index < 3 ? 'text-[#000638]' : 'text-gray-700'}`}
-                    >
-                      {group.branchName}
-                    </span>
-                  </div>
-
-                  {/* Faturamento */}
-                  <div className="col-span-2 text-right">
-                    <span
-                      className={`font-bold font-mono ${
-                        group.totalValue >= 0
-                          ? 'text-green-700'
-                          : 'text-red-600'
-                      }`}
-                    >
-                      R$ {formatBRL(group.totalValue)}
-                    </span>
-                  </div>
-
-                  {/* Ticket Médio */}
-                  <div className="col-span-2 text-right">
-                    <span className="text-blue-700 font-mono font-medium">
-                      R$ {formatBRL(group.ticketMedio)}
-                    </span>
-                  </div>
-
-                  {/* PA */}
-                  <div className="col-span-1 text-right">
-                    <span className="text-purple-700 font-mono font-medium">
-                      {group.pa.toFixed(1)}
-                    </span>
-                  </div>
-
-                  {/* Vendas */}
-                  <div className="col-span-2 text-right flex items-center justify-end gap-1">
-                    <span className="text-gray-600 font-mono">
-                      {group.saidaCount}
-                    </span>
+                  {/* Mobile card layout */}
+                  <div className="md:hidden p-3 flex items-start gap-2.5">
+                    <div className="flex-shrink-0 mt-0.5">
+                      {getPositionBadge(index)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className={`text-xs font-semibold truncate font-barlow ${index < 3 ? 'text-[#000638]' : 'text-gray-700'}`}
+                      >
+                        {group.branchName}
+                      </p>
+                      <p
+                        className={`text-sm font-bold font-mono mt-0.5 ${group.totalValue >= 0 ? 'text-green-700' : 'text-red-600'}`}
+                      >
+                        R$ {formatBRL(group.totalValue)}
+                      </p>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[10px] text-gray-500 font-barlow">
+                        <span>
+                          TM:{' '}
+                          <strong className="text-blue-700">
+                            R$ {formatBRL(group.ticketMedio)}
+                          </strong>
+                        </span>
+                        <span>
+                          PA:{' '}
+                          <strong className="text-purple-700">
+                            {group.pa.toFixed(1)}
+                          </strong>
+                        </span>
+                        <span>
+                          Vendas:{' '}
+                          <strong className="text-gray-700">
+                            {group.saidaCount}
+                          </strong>
+                        </span>
+                      </div>
+                    </div>
                     <CaretDown
-                      size={12}
-                      className="text-gray-300 group-hover:text-blue-500 transition-colors"
+                      size={14}
+                      className="text-gray-300 flex-shrink-0 mt-1"
                     />
+                  </div>
+
+                  {/* Desktop row layout */}
+                  <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-2.5 items-center text-sm">
+                    <div className="col-span-1 text-center">
+                      {getPositionBadge(index)}
+                    </div>
+                    <div className="col-span-4 text-left truncate">
+                      <span
+                        className={`font-semibold font-barlow ${index < 3 ? 'text-[#000638]' : 'text-gray-700'}`}
+                      >
+                        {group.branchName}
+                      </span>
+                    </div>
+                    <div className="col-span-2 text-right">
+                      <span
+                        className={`font-bold font-mono text-xs ${group.totalValue >= 0 ? 'text-green-700' : 'text-red-600'}`}
+                      >
+                        R$ {formatBRL(group.totalValue)}
+                      </span>
+                    </div>
+                    <div className="col-span-2 text-right">
+                      <span className="text-blue-700 font-mono font-medium text-xs">
+                        R$ {formatBRL(group.ticketMedio)}
+                      </span>
+                    </div>
+                    <div className="col-span-1 text-right">
+                      <span className="text-purple-700 font-mono font-medium text-xs">
+                        {group.pa.toFixed(1)}
+                      </span>
+                    </div>
+                    <div className="col-span-2 text-right flex items-center justify-end gap-1">
+                      <span className="text-gray-600 font-mono text-xs">
+                        {group.saidaCount}
+                      </span>
+                      <CaretDown size={12} className="text-gray-300" />
+                    </div>
                   </div>
                 </button>
               );
@@ -734,73 +762,84 @@ const RankingFaturamento = () => {
 
       {/* Empty state */}
       {!loading && invoices.length === 0 && !error && (
-        <div className="text-center py-20 text-gray-400">
+        <div className="text-center py-16 sm:py-20 text-gray-400">
           <Trophy
-            size={56}
+            size={48}
             weight="light"
             className="mx-auto mb-3 opacity-30"
           />
-          <p className="text-sm font-medium">
+          <p className="text-xs sm:text-sm font-medium font-barlow">
             Selecione o período e clique em Buscar para gerar o ranking.
           </p>
         </div>
       )}
 
-      {/* ==========================================
-          MODAL: Detalhes da Loja
-          ========================================== */}
+      {/* MODAL */}
       {modalGroup && (
         <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4"
           onClick={() => setModalGroup(null)}
         >
           <div
-            className="bg-white rounded-xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col animate-fade-in"
+            className="bg-white rounded-t-xl sm:rounded-xl shadow-2xl w-full sm:max-w-7xl max-h-[92vh] sm:max-h-[90vh] flex flex-col animate-fade-in-scale"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[#000638]/10 bg-gray-50 rounded-t-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-[#000638]/10 bg-gray-50 rounded-t-xl gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-[#000638] flex items-center justify-center">
-                  <Buildings size={20} className="text-white" />
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#000638] flex items-center justify-center flex-shrink-0">
+                  <Buildings size={16} className="text-white sm:hidden" />
+                  <Buildings size={20} className="text-white hidden sm:block" />
                 </div>
-                <div>
-                  <h2 className="text-lg font-bold text-[#000638]">
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-sm sm:text-lg font-bold text-[#000638] truncate font-barlow">
                     {modalGroup.branchName}
                   </h2>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-[10px] sm:text-xs text-gray-500 font-barlow">
                     {modalGroup.items.length} nota(s) fiscal(is)
                   </p>
                 </div>
+                <button
+                  onClick={() => setModalGroup(null)}
+                  className="sm:hidden p-1.5 hover:bg-gray-200 rounded-full transition-colors"
+                >
+                  <X size={18} className="text-gray-500" />
+                </button>
               </div>
 
-              {/* Mini cards no header do modal */}
-              <div className="flex items-center gap-4">
-                <div className="text-center px-3">
-                  <p className="text-xs text-gray-500">Faturamento</p>
+              {/* Mini cards */}
+              <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto">
+                <div className="text-center px-2 sm:px-3 flex-shrink-0">
+                  <p className="text-[10px] sm:text-xs text-gray-500 font-barlow">
+                    Faturamento
+                  </p>
                   <p
-                    className={`text-base font-bold font-mono ${modalGroup.totalValue >= 0 ? 'text-green-700' : 'text-red-600'}`}
+                    className={`text-xs sm:text-base font-bold font-mono ${modalGroup.totalValue >= 0 ? 'text-green-700' : 'text-red-600'}`}
                   >
                     R$ {formatBRL(modalGroup.totalValue)}
                   </p>
                 </div>
-                <div className="w-px h-8 bg-gray-200" />
-                <div className="text-center px-3">
-                  <p className="text-xs text-gray-500">Ticket Médio</p>
-                  <p className="text-base font-bold font-mono text-blue-700">
+                <div className="w-px h-6 sm:h-8 bg-gray-200 flex-shrink-0" />
+                <div className="text-center px-2 sm:px-3 flex-shrink-0">
+                  <p className="text-[10px] sm:text-xs text-gray-500 font-barlow">
+                    Ticket Médio
+                  </p>
+                  <p className="text-xs sm:text-base font-bold font-mono text-blue-700">
                     R$ {formatBRL(modalGroup.ticketMedio)}
                   </p>
                 </div>
-                <div className="w-px h-8 bg-gray-200" />
-                <div className="text-center px-3">
-                  <p className="text-xs text-gray-500">PA</p>
-                  <p className="text-base font-bold font-mono text-purple-700">
+                <div className="w-px h-6 sm:h-8 bg-gray-200 flex-shrink-0" />
+                <div className="text-center px-2 sm:px-3 flex-shrink-0">
+                  <p className="text-[10px] sm:text-xs text-gray-500 font-barlow">
+                    PA
+                  </p>
+                  <p className="text-xs sm:text-base font-bold font-mono text-purple-700">
                     {modalGroup.pa.toFixed(2)}
                   </p>
                 </div>
                 <button
                   onClick={() => setModalGroup(null)}
-                  className="ml-2 p-2 hover:bg-gray-200 rounded-full transition-colors"
+                  className="hidden sm:block ml-2 p-2 hover:bg-gray-200 rounded-full transition-colors flex-shrink-0"
                 >
                   <X size={20} className="text-gray-500" />
                 </button>
@@ -808,15 +847,15 @@ const RankingFaturamento = () => {
             </div>
 
             {/* Modal Body - Tabela */}
-            <div className="overflow-auto flex-1">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0">
+            <div className="overflow-auto flex-1 -webkit-overflow-scrolling-touch">
+              <table className="w-full text-xs sm:text-sm min-w-[700px]">
+                <thead className="sticky top-0 z-10">
                   <tr className="bg-[#000638] text-white">
                     {columns.map((col) => (
                       <th
                         key={col.key}
                         onClick={() => handleSort(col.key)}
-                        className={`px-3 py-2.5 text-left font-medium text-xs cursor-pointer hover:bg-[#000638]/80 whitespace-nowrap select-none uppercase tracking-wider ${
+                        className={`px-2 sm:px-3 py-2 sm:py-2.5 text-left font-medium text-[10px] sm:text-xs cursor-pointer hover:bg-[#000638]/80 whitespace-nowrap select-none uppercase tracking-wider font-barlow ${
                           col.numeric ? 'text-right' : ''
                         }`}
                       >
@@ -839,7 +878,7 @@ const RankingFaturamento = () => {
                       {columns.map((col) => (
                         <td
                           key={col.key}
-                          className={`px-3 py-2 whitespace-nowrap ${
+                          className={`px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap font-barlow ${
                             col.numeric ? 'text-right font-mono' : ''
                           }`}
                         >
@@ -849,12 +888,11 @@ const RankingFaturamento = () => {
                     </tr>
                   ))}
                 </tbody>
-                {/* Footer summary */}
                 <tfoot>
-                  <tr className="bg-green-50 border-t-2 border-green-200 font-semibold text-xs">
+                  <tr className="bg-green-50 border-t-2 border-green-200 font-semibold text-[10px] sm:text-xs">
                     <td
                       colSpan={9}
-                      className="px-3 py-3 text-right text-[#000638]"
+                      className="px-2 sm:px-3 py-2.5 sm:py-3 text-right text-[#000638] font-barlow"
                     >
                       Resultado: R$ {formatBRL(modalGroup.totalValue)} | TM: R${' '}
                       {formatBRL(modalGroup.ticketMedio)} | PA:{' '}

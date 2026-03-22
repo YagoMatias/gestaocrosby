@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import FiltroLoja from '../components/FiltroLoja';
 import FiltroVendedor from '../components/FiltroVendedor';
 import { Target, TrendUp, Calendar } from '@phosphor-icons/react';
 import useApiClient from '../hooks/useApiClient';
+import { API_BASE_URL } from '../config/constants';
 import useMetas from '../hooks/useMetas';
 import useMetasSemanais from '../hooks/useMetasSemanais';
 import { useAuth } from '../components/AuthContext';
@@ -56,6 +57,120 @@ const MetasVarejo = () => {
   // Estados para filtro de mês (igual ao DRE)
   const [filtroMensal, setFiltroMensal] = useState('SET'); // Mês atual por padrão
   const [filtroAno, setFiltroAno] = useState(new Date().getFullYear());
+
+  // Ref para cache dos dados de branches (TOTVS)
+  const branchDataRef = useRef({ nameMap: {}, groupMap: {} });
+
+  // Códigos de operação e status usados na API TOTVS (mesmos do RankingFaturamento)
+  const INVOICE_STATUS_LIST = ['Normal', 'Issued'];
+  const INVOICE_OPERATION_CODES = [
+    1, 2, 55, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 9017, 9400,
+    9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405, 1205, 1101,
+    9065, 9064, 9063, 9062, 9061, 9420, 9026,
+  ];
+
+  // Buscar branches (empresas) da API TOTVS no mount
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/totvs/branches`);
+        if (response.ok) {
+          const result = await response.json();
+          let empresas =
+            result.success && result.data
+              ? result.data.data || result.data
+              : [];
+          if (!Array.isArray(empresas)) empresas = [];
+          const nameMap = {};
+          const groupMap = {};
+          empresas.forEach((emp) => {
+            const code = parseInt(emp.cd_empresa);
+            const nome =
+              emp.nm_grupoempresa ||
+              emp.fantasyName ||
+              emp.description ||
+              `Empresa ${code}`;
+            nameMap[code] = nome;
+            groupMap[code] = nome;
+          });
+          branchDataRef.current = { nameMap, groupMap };
+        }
+      } catch {
+        // silently fail — fallback para nomes genéricos
+      }
+    };
+    fetchBranches();
+  }, []);
+
+  // Helper: buscar invoices da API TOTVS e agrupar por loja (grupo empresa)
+  const buscarInvoicesAgrupadasPorLoja = async (startDate, endDate) => {
+    const result = await apiClient.totvs.invoicesSearch({
+      startDate,
+      endDate,
+      invoiceStatusList: INVOICE_STATUS_LIST,
+      operationCodeList: INVOICE_OPERATION_CODES,
+    });
+
+    if (!result.success) {
+      throw new Error(result.message || 'Erro ao buscar invoices TOTVS');
+    }
+
+    const items = (result.data?.items || []).filter((inv) => {
+      if (!inv.invoiceDate) return false;
+      const d = inv.invoiceDate.slice(0, 10);
+      return d >= startDate && d <= endDate;
+    });
+
+    const { nameMap, groupMap } = branchDataRef.current;
+    const map = {};
+
+    items.forEach((inv) => {
+      const code = inv.branchCode ?? 0;
+      const grupoKey = groupMap[code] || nameMap[code] || `Empresa ${code}`;
+
+      if (!map[grupoKey]) {
+        map[grupoKey] = {
+          cd_grupoempresa: code,
+          pessoa_empresa: code,
+          nome_fantasia: grupoKey,
+          nm_loja: grupoKey,
+          pa_saida: 0,
+          pa_entrada: 0,
+          transacoes_saida: 0,
+          transacoes_entrada: 0,
+          _saidaValue: 0,
+          _entradaValue: 0,
+        };
+      }
+
+      const val = Number(inv.totalValue ?? 0);
+      const qty = Number(inv.quantity ?? 0);
+      const isEntrada =
+        String(inv.operationType || '').toLowerCase() === 'input';
+
+      if (isEntrada) {
+        map[grupoKey]._entradaValue += val;
+        map[grupoKey].pa_entrada += qty;
+        map[grupoKey].transacoes_entrada += 1;
+      } else {
+        map[grupoKey]._saidaValue += val;
+        map[grupoKey].pa_saida += qty;
+        map[grupoKey].transacoes_saida += 1;
+      }
+    });
+
+    return Object.values(map).map((g) => ({
+      cd_grupoempresa: g.cd_grupoempresa,
+      pessoa_empresa: g.pessoa_empresa,
+      nome_fantasia: g.nome_fantasia,
+      nm_loja: g.nm_loja,
+      faturamento: g._saidaValue - g._entradaValue,
+      pa_saida: g.pa_saida,
+      pa_entrada: g.pa_entrada,
+      transacoes_saida: g.transacoes_saida,
+      transacoes_entrada: g.transacoes_entrada,
+    }));
+  };
 
   // Função para obter dias do mês (igual ao DRE)
   const obterDiasDoMes = (mesNumero, anoNumero) => {
@@ -194,98 +309,26 @@ const MetasVarejo = () => {
 
     for (const semana of periodosSemanas) {
       try {
-        console.log(
-          `🔍 Carregando dados para semana ${semana.numero}: ${semana.inicio} a ${semana.fim}`,
-        );
-
-        // Carregar dados de lojas para esta semana
-        const resultLojas = await apiClient.company.faturamentoLojas({
-          dt_inicio: semana.inicio,
-          dt_fim: semana.fim,
-          cd_grupoempresa_ini: 1,
-          cd_grupoempresa_fim: 9999,
-        });
-
-        console.log(`📡 Resposta da API lojas para semana ${semana.numero}:`, {
-          success: resultLojas?.success,
-          dataLength: resultLojas?.data?.length || 0,
-          error: resultLojas?.error,
-          fullResponse: resultLojas,
-        });
-
-        // Log mais visível para debug
-        if (resultLojas?.data?.length === 0) {
-          console.warn(`⚠️ ATENÇÃO: Semana ${semana.numero} retornou 0 lojas!`);
-        } else {
-          console.log(
-            `✅ Semana ${semana.numero}: ${
-              resultLojas?.data?.length || 0
-            } lojas encontradas`,
+        // Carregar dados de lojas para esta semana via TOTVS invoicesSearch
+        let dadosLojasSemana = [];
+        try {
+          dadosLojasSemana = await buscarInvoicesAgrupadasPorLoja(
+            semana.inicio,
+            semana.fim,
           );
+        } catch {
+          dadosLojasSemana = [];
         }
-
-        // Carregar dados de vendedores para esta semana
-        const resultVendedores = await apiClient.sales.rankingVendedores({
-          inicio: semana.inicio,
-          fim: semana.fim,
-        });
-
-        console.log(
-          `📡 Resposta da API vendedores para semana ${semana.numero}:`,
-          {
-            success: resultVendedores?.success,
-            dataLength: resultVendedores?.data?.length || 0,
-            error: resultVendedores?.error,
-          },
-        );
-
-        // Salvar dados da semana de forma robusta
-        // Processar dados de lojas (mesma estrutura da função buscarDadosLojas)
-        const dadosLojas = resultLojas?.success
-          ? resultLojas.data?.data || resultLojas.data || []
-          : [];
-
-        // Processar dados de vendedores (mesma estrutura da função buscarDadosVendedores)
-        const dadosVendedores = resultVendedores?.success
-          ? resultVendedores.data?.data || resultVendedores.data || []
-          : [];
 
         dadosPorSemana[semana.numero] = {
-          lojas: dadosLojas,
-          vendedores: dadosVendedores,
+          lojas: dadosLojasSemana,
+          vendedores: [],
           periodo: semana,
-          timestamp: new Date().toISOString(), // Para debug
+          timestamp: new Date().toISOString(),
         };
-
-        // Log detalhado dos dados salvos
-        console.log(`💾 Dados salvos para semana ${semana.numero}:`, {
-          lojasSalvas: dadosPorSemana[semana.numero].lojas.length,
-          vendedoresSalvos: dadosPorSemana[semana.numero].vendedores.length,
-          periodo: semana,
-          primeiraLoja:
-            dadosPorSemana[semana.numero].lojas[0] || 'Nenhuma loja',
-        });
-
-        console.log(`✅ Dados carregados para semana ${semana.numero}:`, {
-          lojas: dadosPorSemana[semana.numero].lojas.length,
-          vendedores: dadosPorSemana[semana.numero].vendedores.length,
-          periodo: semana,
-        });
-
-        // Log de amostra dos dados para debug
-        if (dadosPorSemana[semana.numero].lojas.length > 0) {
-          console.log(
-            `📊 Amostra de lojas da semana ${semana.numero}:`,
-            dadosPorSemana[semana.numero].lojas.slice(0, 3).map((loja) => ({
-              nome:
-                loja.nome_fantasia || loja.nm_loja || loja.nome || loja.loja,
-              faturamento: loja.faturamento,
-            })),
-          );
-        }
       } catch (error) {
         console.error(
-          `❌ Erro ao carregar dados da semana ${semana.numero}:`,
+          `Erro ao carregar dados da semana ${semana.numero}:`,
           error,
         );
         dadosPorSemana[semana.numero] = {
@@ -295,17 +338,6 @@ const MetasVarejo = () => {
         };
       }
     }
-
-    // Log final com resumo de todas as semanas
-    console.log(`📊 RESUMO FINAL - Dados por semana carregados:`, {
-      totalSemanas: Object.keys(dadosPorSemana).length,
-      semanas: Object.keys(dadosPorSemana).map((numero) => ({
-        semana: numero,
-        lojas: dadosPorSemana[numero].lojas.length,
-        vendedores: dadosPorSemana[numero].vendedores.length,
-        periodo: dadosPorSemana[numero].periodo,
-      })),
-    });
 
     return dadosPorSemana;
   };
@@ -1977,8 +2009,8 @@ const MetasVarejo = () => {
               item.percentual >= 100
                 ? [34, 139, 34]
                 : item.percentual >= 80
-                ? [255, 140, 0]
-                : [220, 20, 60];
+                  ? [255, 140, 0]
+                  : [220, 20, 60];
             doc.setTextColor(...corPercentual);
             doc.setFont(undefined, 'bold');
             doc.text(`${item.percentual}%`, colPercentual, yPosition);
@@ -2756,66 +2788,34 @@ const MetasVarejo = () => {
       const mesTeste = dataTeste.getMonth() + 1;
       const anoTeste = dataTeste.getFullYear();
 
-      // Primeiro dia do mês
       const primeiroDia = `${anoTeste}-${mesTeste
         .toString()
         .padStart(2, '0')}-01`;
-      // Último dia do mês
       const ultimoDia = new Date(anoTeste, mesTeste, 0)
         .toISOString()
         .split('T')[0];
 
       try {
-        console.log(
-          `🔍 Testando mês ${mesTeste}/${anoTeste} para encontrar dados...`,
+        const dadosLojas = await buscarInvoicesAgrupadasPorLoja(
+          primeiroDia,
+          ultimoDia,
         );
-
-        // Testar se há dados de lojas
-        const paramsLojas = {
-          dt_inicio: primeiroDia,
-          dt_fim: ultimoDia,
-          cd_grupoempresa_ini: 1,
-          cd_grupoempresa_fim: 9999,
-        };
-
-        const resultLojas = await apiClient.company.faturamentoLojas(
-          paramsLojas,
-        );
-
-        console.log(`🔍 Estrutura dos dados para ${mesTeste}/${anoTeste}:`, {
-          success: resultLojas.success,
-          hasData: !!resultLojas.data,
-          hasDataData: !!resultLojas.data?.data,
-          dataDataLength: resultLojas.data?.data?.length,
-          dataKeys: resultLojas.data ? Object.keys(resultLojas.data) : [],
-          fullStructure: resultLojas.data,
-        });
-
-        // Verificar se há dados de lojas (com fallback para diferentes estruturas)
-        const dadosLojas = resultLojas.data?.data || resultLojas.data || [];
         const temDados = Array.isArray(dadosLojas) && dadosLojas.length > 0;
 
-        if (resultLojas.success && temDados) {
-          console.log(
-            `✅ Encontrado dados para ${mesTeste}/${anoTeste} - ${dadosLojas.length} lojas`,
-          );
+        if (temDados) {
           return {
             mes: mesTeste,
             ano: anoTeste,
             primeiroDia,
             ultimoDia,
-            dadosLojas: dadosLojas,
+            dadosLojas,
           };
         }
-      } catch (error) {
-        console.log(
-          `❌ Erro ao testar ${mesTeste}/${anoTeste}:`,
-          error.message,
-        );
+      } catch {
+        // prosseguir para o próximo mês
       }
     }
 
-    console.log('⚠️ Nenhum mês com dados encontrado nos últimos 6 meses');
     return null;
   };
 
@@ -2899,314 +2899,103 @@ const MetasVarejo = () => {
     if (!inicio || !fim) return;
 
     try {
-      const params = {
-        dt_inicio: inicio,
-        dt_fim: fim,
-        cd_grupoempresa_ini: 1,
-        cd_grupoempresa_fim: 9999,
-      };
+      const dadosArray = await buscarInvoicesAgrupadasPorLoja(inicio, fim);
 
-      console.log('🔍 Buscando dados de lojas para:', { inicio, fim, params });
-      const result = await apiClient.company.faturamentoLojas(params);
-      console.log('🔍 Resultado da API:', {
-        success: result.success,
-        dataLength: result.data?.data?.length || result.data?.length || 0,
-      });
+      // Se não há dados para o período selecionado, buscar do último mês com dados
+      if (dadosArray.length === 0) {
+        const ultimoMesComDados = await encontrarUltimoMesComDados();
 
-      if (result.success) {
-        // Verifica se há estrutura aninhada (data.data)
-        const dadosArray = result.data?.data || result.data || [];
-        console.log('🔍 Dados de lojas recebidos:', dadosArray.slice(0, 2));
-        console.log('🔍 Total de lojas encontradas:', dadosArray.length);
-        console.log('🔍 Exemplo de item completo:', dadosArray[0]);
+        if (ultimoMesComDados) {
+          // Usar os nomes das lojas do último mês, mas com faturamento 0
+          const lojasComFaturamentoZero = ultimoMesComDados.dadosLojas
+            .reverse()
+            .map((loja, index) => ({
+              ...loja,
+              rank: index + 1,
+              faturamento: 0,
+              ticket_medio: 0,
+              pa: 0,
+              pa_saida: 0,
+              pa_entrada: 0,
+              transacoes_saida: 0,
+              nome_fantasia: loja.nome_fantasia,
+              nm_loja: loja.nm_loja || loja.nome_fantasia,
+              isDadosReferencia: true,
+              mesReferencia: ultimoMesComDados.mes,
+              anoReferencia: ultimoMesComDados.ano,
+            }));
 
-        // Se não há dados para o período selecionado, buscar do último mês com dados
-        if (dadosArray.length === 0) {
-          console.log(
-            '⚠️ Nenhuma loja encontrada para o período selecionado. Buscando último mês com dados...',
+          setDadosLojas(lojasComFaturamentoZero);
+
+          const lojasUnicas = ultimoMesComDados.dadosLojas.reduce(
+            (acc, item) => {
+              const nomeFantasia = item.nome_fantasia;
+              if (
+                nomeFantasia &&
+                !acc.find((loja) => loja.nome_fantasia === nomeFantasia)
+              ) {
+                acc.push({
+                  cd_loja: item.cd_grupoempresa || item.pessoa_empresa,
+                  nome_fantasia: nomeFantasia,
+                  nm_loja: nomeFantasia,
+                });
+              }
+              return acc;
+            },
+            [],
           );
-          const ultimoMesComDados = await encontrarUltimoMesComDados();
-
-          if (ultimoMesComDados) {
-            console.log(
-              `📋 Usando dados de referência de ${ultimoMesComDados.mes}/${ultimoMesComDados.ano}`,
-            );
-
-            // Usar os nomes das lojas do último mês, mas com faturamento 0
-            // Inverter a ordem para começar da posição 1
-            const lojasComFaturamentoZero = ultimoMesComDados.dadosLojas
-              .reverse() // Inverter a ordem
-              .map((loja, index) => ({
-                ...loja,
-                rank: index + 1,
-                faturamento: 0, // Faturamento zero para o período atual
-                ticket_medio: 0, // Ticket médio zero para o período atual
-                pa: 0, // PA (Performance de Aplicação) zero para o período atual
-                pa_saida: 0, // PA saída zero para o período atual
-                pa_entrada: 0, // PA entrada zero para o período atual
-                transacoes_saida: 0, // Transações saída zero para o período atual
-                nome_fantasia: loja.nome_fantasia,
-                nm_loja: loja.nm_loja || loja.nome_fantasia,
-                // Marcar como dados de referência
-                isDadosReferencia: true,
-                mesReferencia: ultimoMesComDados.mes,
-                anoReferencia: ultimoMesComDados.ano,
-              }));
-
-            setDadosLojas(lojasComFaturamentoZero);
-
-            // Extrair lojas únicas para o filtro (baseado nos dados de referência)
-            const lojasUnicas = ultimoMesComDados.dadosLojas.reduce(
-              (acc, item) => {
-                const nomeFantasia = item.nome_fantasia;
-                if (
-                  nomeFantasia &&
-                  !acc.find((loja) => loja.nome_fantasia === nomeFantasia)
-                ) {
-                  acc.push({
-                    cd_loja: item.cd_grupoempresa || item.pessoa_empresa,
-                    nome_fantasia: nomeFantasia,
-                    nm_loja: nomeFantasia,
-                  });
-                }
-                return acc;
-              },
-              [],
-            );
-            setDadosLoja(lojasUnicas);
-
-            console.log('🔍 Lojas para filtro atualizadas:', {
-              totalLojas: lojasUnicas.length,
-              primeiraLoja: lojasUnicas[0],
-            });
-
-            // Notificação removida - usuário final não precisa saber sobre dados de referência
-            return;
-          } else {
-            console.log('❌ Não foi possível encontrar dados de referência');
-            setDadosLojas([]);
-            setNotification({
-              type: 'warning',
-              title: 'Sem Dados',
-              message:
-                'Nenhuma loja encontrada para o período selecionado e não há dados de referência disponíveis.',
-            });
-            return;
-          }
+          setDadosLoja(lojasUnicas);
+          return;
+        } else {
+          setDadosLojas([]);
+          setNotification({
+            type: 'warning',
+            title: 'Sem Dados',
+            message:
+              'Nenhuma loja encontrada para o período selecionado e não há dados de referência disponíveis.',
+          });
+          return;
         }
-
-        const ordenado = [...dadosArray].sort(
-          (a, b) =>
-            parseFloat(b.faturamento || 0) - parseFloat(a.faturamento || 0),
-        );
-        const comRank = ordenado.map((item, index) => ({
-          ...item,
-          rank: index + 1,
-          faturamento: parseFloat(item.faturamento || 0),
-          isDadosReferencia: false, // Dados reais do período
-        }));
-
-        setDadosLojas(comRank);
-
-        // Extrair lojas únicas para o filtro
-        const lojasUnicas = dadosArray.reduce((acc, item) => {
-          const nomeFantasia = item.nome_fantasia;
-          if (
-            nomeFantasia &&
-            !acc.find((loja) => loja.nome_fantasia === nomeFantasia)
-          ) {
-            acc.push({
-              cd_loja: item.cd_grupoempresa || item.pessoa_empresa,
-              nome_fantasia: nomeFantasia,
-              nm_loja: nomeFantasia,
-            });
-          }
-          return acc;
-        }, []);
-
-        setDadosLoja(lojasUnicas);
-      } else {
-        throw new Error(result.message || 'Erro ao buscar dados de lojas');
       }
+
+      const ordenado = [...dadosArray].sort(
+        (a, b) =>
+          parseFloat(b.faturamento || 0) - parseFloat(a.faturamento || 0),
+      );
+      const comRank = ordenado.map((item, index) => ({
+        ...item,
+        rank: index + 1,
+        faturamento: parseFloat(item.faturamento || 0),
+        isDadosReferencia: false,
+      }));
+
+      setDadosLojas(comRank);
+
+      const lojasUnicas = dadosArray.reduce((acc, item) => {
+        const nomeFantasia = item.nome_fantasia;
+        if (
+          nomeFantasia &&
+          !acc.find((loja) => loja.nome_fantasia === nomeFantasia)
+        ) {
+          acc.push({
+            cd_loja: item.cd_grupoempresa || item.pessoa_empresa,
+            nome_fantasia: nomeFantasia,
+            nm_loja: nomeFantasia,
+          });
+        }
+        return acc;
+      }, []);
+
+      setDadosLoja(lojasUnicas);
     } catch (error) {
       console.error('Erro ao buscar dados de lojas:', error);
     }
   };
 
-  const buscarDadosVendedores = async (inicio, fim) => {
-    if (!inicio || !fim) return;
-
-    try {
-      const params = {
-        inicio: inicio,
-        fim: fim,
-      };
-
-      console.log('🔍 Buscando dados de vendedores para:', {
-        inicio,
-        fim,
-        params,
-      });
-      const result = await apiClient.sales.rankingVendedores(params);
-      console.log('🔍 Resultado da API vendedores:', {
-        success: result.success,
-        dataLength: result.data?.data?.length || result.data?.length || 0,
-      });
-
-      if (result.success) {
-        // Verifica se há estrutura aninhada (data.data)
-        const dadosArray = result.data?.data || result.data || [];
-        console.log(
-          '🔍 Dados de vendedores recebidos:',
-          dadosArray.slice(0, 2),
-        );
-        console.log('🔍 Total de vendedores encontrados:', dadosArray.length);
-
-        // Se não há dados para o período selecionado, buscar do último mês com dados
-        if (dadosArray.length === 0) {
-          console.log(
-            '⚠️ Nenhum vendedor encontrado para o período selecionado. Buscando último mês com dados...',
-          );
-          const ultimoMesComDados = await encontrarUltimoMesComDados();
-
-          if (ultimoMesComDados) {
-            console.log(
-              `📋 Usando dados de referência de vendedores de ${ultimoMesComDados.mes}/${ultimoMesComDados.ano}`,
-            );
-
-            // Buscar dados de vendedores do último mês com dados
-            const paramsVendedores = {
-              inicio: ultimoMesComDados.primeiroDia,
-              fim: ultimoMesComDados.ultimoDia,
-            };
-
-            const resultVendedores = await apiClient.sales.rankingVendedores(
-              paramsVendedores,
-            );
-
-            console.log('🔍 Estrutura dos dados de vendedores:', {
-              success: resultVendedores.success,
-              hasData: !!resultVendedores.data,
-              hasDataData: !!resultVendedores.data?.data,
-              dataDataLength: resultVendedores.data?.data?.length,
-              dataLength: resultVendedores.data?.length,
-              dataKeys: resultVendedores.data
-                ? Object.keys(resultVendedores.data)
-                : [],
-            });
-
-            // Verificar se há dados de vendedores (com fallback para diferentes estruturas)
-            const dadosVendedoresReferencia =
-              resultVendedores.data?.data || resultVendedores.data || [];
-            const temDadosVendedores =
-              Array.isArray(dadosVendedoresReferencia) &&
-              dadosVendedoresReferencia.length > 0;
-
-            if (resultVendedores.success && temDadosVendedores) {
-              // Usar os nomes dos vendedores do último mês, mas com faturamento 0
-              // Inverter a ordem para começar da posição 1
-              const vendedoresComFaturamentoZero = dadosVendedoresReferencia
-                .reverse() // Inverter a ordem
-                .map((vendedor, index) => ({
-                  ...vendedor,
-                  rank: index + 1,
-                  faturamento: 0, // Faturamento zero para o período atual
-                  ticket_medio: 0, // Ticket médio zero para o período atual
-                  pa: 0, // PA (Performance de Aplicação) zero para o período atual
-                  pa_saida: 0, // PA saída zero para o período atual
-                  pa_entrada: 0, // PA entrada zero para o período atual
-                  transacoes_saida: 0, // Transações saída zero para o período atual
-                  nome_vendedor: vendedor.nome_vendedor,
-                  // Marcar como dados de referência
-                  isDadosReferencia: true,
-                  mesReferencia: ultimoMesComDados.mes,
-                  anoReferencia: ultimoMesComDados.ano,
-                }));
-
-              console.log('🔍 Vendedores processados:', {
-                totalVendedores: vendedoresComFaturamentoZero.length,
-                primeiroVendedor: vendedoresComFaturamentoZero[0],
-                isDadosReferencia:
-                  vendedoresComFaturamentoZero[0]?.isDadosReferencia,
-              });
-
-              setDadosVendedores(vendedoresComFaturamentoZero);
-
-              // Montar lista de vendedores para o filtro
-              const listaVendedores = dadosVendedoresReferencia.reduce(
-                (acc, item) => {
-                  const nome =
-                    item.nome_vendedor ||
-                    item.vendedor ||
-                    item.nm_vendedor ||
-                    item.nome;
-                  if (nome && !acc.find((v) => v.nome_vendedor === nome)) {
-                    acc.push({
-                      id: item.cd_vendedor || item.id,
-                      nome_vendedor: nome,
-                    });
-                  }
-                  return acc;
-                },
-                [],
-              );
-              setDadosVendedor(listaVendedores);
-
-              console.log('🔍 Vendedores para filtro atualizados:', {
-                totalVendedores: listaVendedores.length,
-                primeiroVendedor: listaVendedores[0],
-              });
-
-              // Notificação removida - usuário final não precisa saber sobre dados de referência
-              return;
-            }
-          }
-
-          console.log(
-            '❌ Não foi possível encontrar dados de vendedores de referência',
-          );
-          setDadosVendedores([]);
-          setDadosVendedor([]);
-          setNotification({
-            type: 'warning',
-            title: 'Sem Dados',
-            message:
-              'Nenhum vendedor encontrado para o período selecionado e não há dados de referência disponíveis.',
-          });
-          return;
-        }
-
-        const ordenado = [...dadosArray].sort(
-          (a, b) =>
-            parseFloat(b.faturamento || 0) - parseFloat(a.faturamento || 0),
-        );
-        const comRank = ordenado.map((item, index) => ({
-          ...item,
-          rank: index + 1,
-          faturamento: parseFloat(item.faturamento || 0),
-          isDadosReferencia: false, // Dados reais do período
-        }));
-
-        setDadosVendedores(comRank);
-        // montar lista de vendedores para o filtro
-        const listaVendedores = (dadosArray || []).reduce((acc, item) => {
-          const nome =
-            item.nome_vendedor ||
-            item.vendedor ||
-            item.nm_vendedor ||
-            item.nome;
-          if (nome && !acc.find((v) => v.nome_vendedor === nome)) {
-            acc.push({ id: item.cd_vendedor || item.id, nome_vendedor: nome });
-          }
-          return acc;
-        }, []);
-        setDadosVendedor(listaVendedores);
-      } else {
-        throw new Error(result.message || 'Erro ao buscar dados de vendedores');
-      }
-    } catch (error) {
-      console.error('Erro ao buscar dados de vendedores:', error);
-    }
+  // TODO: Rota de ranking de vendedores será reimplementada futuramente
+  const buscarDadosVendedores = async () => {
+    setDadosVendedores([]);
+    setDadosVendedor([]);
   };
 
   const handleOrdenacao = (campo) => {
@@ -4435,8 +4224,8 @@ const MetasVarejo = () => {
                       {isResettingMetas
                         ? 'Excluindo...'
                         : resetCountdown > 0
-                        ? `Confirmar (${resetCountdown}s)`
-                        : 'SIM, EXCLUIR METAS'}
+                          ? `Confirmar (${resetCountdown}s)`
+                          : 'SIM, EXCLUIR METAS'}
                     </button>
                   </div>
                 </div>
@@ -4572,10 +4361,10 @@ const MetasVarejo = () => {
                                     log.campo === 'bronze'
                                       ? 'bg-amber-100 text-amber-700'
                                       : log.campo === 'prata'
-                                      ? 'bg-gray-100 text-gray-700'
-                                      : log.campo === 'ouro'
-                                      ? 'bg-yellow-100 text-yellow-700'
-                                      : 'bg-blue-100 text-blue-700'
+                                        ? 'bg-gray-100 text-gray-700'
+                                        : log.campo === 'ouro'
+                                          ? 'bg-yellow-100 text-yellow-700'
+                                          : 'bg-blue-100 text-blue-700'
                                   }`}
                                 >
                                   {log.campo.charAt(0).toUpperCase() +
@@ -4910,8 +4699,8 @@ const MetasVarejo = () => {
                                             percentualAtingido >= 100
                                               ? 'text-green-600'
                                               : percentualAtingido >= 80
-                                              ? 'text-blue-600'
-                                              : 'text-orange-600'
+                                                ? 'text-blue-600'
+                                                : 'text-orange-600'
                                           }`}
                                         >
                                           {percentualAtingido}%
@@ -5986,12 +5775,12 @@ const MetasVarejo = () => {
                                         loja.metaAtual === 'Diamante'
                                           ? 'bg-blue-100 text-blue-800'
                                           : loja.metaAtual === 'Ouro'
-                                          ? 'bg-yellow-100 text-yellow-800'
-                                          : loja.metaAtual === 'Prata'
-                                          ? 'bg-gray-100 text-gray-800'
-                                          : loja.metaAtual === 'Bronze'
-                                          ? 'bg-amber-100 text-amber-800'
-                                          : 'bg-gray-100 text-gray-800'
+                                            ? 'bg-yellow-100 text-yellow-800'
+                                            : loja.metaAtual === 'Prata'
+                                              ? 'bg-gray-100 text-gray-800'
+                                              : loja.metaAtual === 'Bronze'
+                                                ? 'bg-amber-100 text-amber-800'
+                                                : 'bg-gray-100 text-gray-800'
                                       }`}
                                         >
                                           {loja.metaAtual}
@@ -6017,12 +5806,13 @@ const MetasVarejo = () => {
                                                 loja.metaAtual === 'Diamante'
                                                   ? 'bg-blue-600'
                                                   : loja.metaAtual === 'Ouro'
-                                                  ? 'bg-yellow-500'
-                                                  : loja.metaAtual === 'Prata'
-                                                  ? 'bg-gray-500'
-                                                  : loja.metaAtual === 'Bronze'
-                                                  ? 'bg-amber-500'
-                                                  : 'bg-blue-600'
+                                                    ? 'bg-yellow-500'
+                                                    : loja.metaAtual === 'Prata'
+                                                      ? 'bg-gray-500'
+                                                      : loja.metaAtual ===
+                                                          'Bronze'
+                                                        ? 'bg-amber-500'
+                                                        : 'bg-blue-600'
                                               }`}
                                               style={{
                                                 width: `${loja.percentualAtingido}%`,
@@ -6322,12 +6112,12 @@ const MetasVarejo = () => {
                                         vendedor.metaAtual === 'Diamante'
                                           ? 'bg-blue-100 text-blue-800'
                                           : vendedor.metaAtual === 'Ouro'
-                                          ? 'bg-yellow-100 text-yellow-800'
-                                          : vendedor.metaAtual === 'Prata'
-                                          ? 'bg-gray-100 text-gray-800'
-                                          : vendedor.metaAtual === 'Bronze'
-                                          ? 'bg-amber-100 text-amber-800'
-                                          : 'bg-gray-100 text-gray-800'
+                                            ? 'bg-yellow-100 text-yellow-800'
+                                            : vendedor.metaAtual === 'Prata'
+                                              ? 'bg-gray-100 text-gray-800'
+                                              : vendedor.metaAtual === 'Bronze'
+                                                ? 'bg-amber-100 text-amber-800'
+                                                : 'bg-gray-100 text-gray-800'
                                       }`}
                                         >
                                           {vendedor.metaAtual}
@@ -6356,15 +6146,15 @@ const MetasVarejo = () => {
                                                 'Diamante'
                                                   ? 'bg-blue-600'
                                                   : vendedor.metaAtual ===
-                                                    'Ouro'
-                                                  ? 'bg-yellow-500'
-                                                  : vendedor.metaAtual ===
-                                                    'Prata'
-                                                  ? 'bg-gray-500'
-                                                  : vendedor.metaAtual ===
-                                                    'Bronze'
-                                                  ? 'bg-amber-500'
-                                                  : 'bg-blue-600'
+                                                      'Ouro'
+                                                    ? 'bg-yellow-500'
+                                                    : vendedor.metaAtual ===
+                                                        'Prata'
+                                                      ? 'bg-gray-500'
+                                                      : vendedor.metaAtual ===
+                                                          'Bronze'
+                                                        ? 'bg-amber-500'
+                                                        : 'bg-blue-600'
                                               }`}
                                               style={{
                                                 width: `${vendedor.percentualAtingido}%`,
