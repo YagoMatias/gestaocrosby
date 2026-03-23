@@ -25,6 +25,10 @@ import {
   CurrencyDollar,
   CalendarBlank,
   TrendDown,
+  ArrowUp,
+  ArrowDown,
+  WhatsappLogo,
+  Clock,
 } from '@phosphor-icons/react';
 import {
   Chart as ChartJS,
@@ -109,6 +113,7 @@ const DashInadimplencia = memo(() => {
   const [loadingTimeline, setLoadingTimeline] = useState(false);
   const [portadorExpandido, setPortadorExpandido] = useState(false);
   const [portadorSelecionado, setPortadorSelecionado] = useState(null);
+  const [modalVencidosRecentes, setModalVencidosRecentes] = useState(false);
 
   // ======================== TIMELINE SUPABASE ========================
   const carregarTimeline = useCallback(async () => {
@@ -116,7 +121,9 @@ const DashInadimplencia = memo(() => {
     try {
       const { data, error } = await supabase
         .from('inadimplencia_timeline')
-        .select('data, valor_total, qtd_titulos, qtd_clientes')
+        .select(
+          'data, valor_total, qtd_titulos, qtd_clientes, valor_multimarcas, valor_franquias, qtd_titulos_multimarcas, qtd_titulos_franquias, qtd_clientes_multimarcas, qtd_clientes_franquias',
+        )
         .order('data', { ascending: true });
       if (error) throw error;
       setTimeline(data || []);
@@ -128,7 +135,7 @@ const DashInadimplencia = memo(() => {
   }, []);
 
   const salvarTimelineHoje = useCallback(
-    async (valorTotal, qtdTitulos, qtdClientes) => {
+    async (valorTotal, qtdTitulos, qtdClientes, extras = {}) => {
       try {
         const hoje = new Date().toISOString().split('T')[0];
         const { error } = await supabase.from('inadimplencia_timeline').upsert(
@@ -137,6 +144,12 @@ const DashInadimplencia = memo(() => {
             valor_total: valorTotal,
             qtd_titulos: qtdTitulos,
             qtd_clientes: qtdClientes,
+            valor_multimarcas: extras.valorMultimarcas || 0,
+            valor_franquias: extras.valorFranquias || 0,
+            qtd_titulos_multimarcas: extras.qtdTitulosMultimarcas || 0,
+            qtd_titulos_franquias: extras.qtdTitulosFranquias || 0,
+            qtd_clientes_multimarcas: extras.qtdClientesMultimarcas || 0,
+            qtd_clientes_franquias: extras.qtdClientesFranquias || 0,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'data' },
@@ -279,6 +292,7 @@ const DashInadimplencia = memo(() => {
             canalInfo.fantasyName ||
             item.nm_fantasia ||
             '',
+          nr_telefone: pessoa.phone || '',
           ds_uf: pessoa.uf || item.ds_uf || '',
           canal: canalInfo.canal || '',
         };
@@ -289,6 +303,23 @@ const DashInadimplencia = memo(() => {
 
       // Salvar timeline do dia
       if (dadosEnriquecidos.length > 0) {
+        const calcCanal = (canal) => {
+          const itens = dadosEnriquecidos.filter((i) => i.canal === canal);
+          const valor = itens.reduce(
+            (a, i) =>
+              a +
+              ((parseFloat(i.vl_fatura) || 0) - (parseFloat(i.vl_pago) || 0)),
+            0,
+          );
+          const titulos = itens.filter(
+            (i) =>
+              (parseFloat(i.vl_fatura) || 0) - (parseFloat(i.vl_pago) || 0) > 0,
+          ).length;
+          const clientes = new Set(itens.map((i) => i.cd_cliente)).size;
+          return { valor, titulos, clientes };
+        };
+        const mtm = calcCanal('MTM');
+        const frq = calcCanal('FRQ');
         const totalInadimplencia = dadosEnriquecidos.reduce(
           (acc, item) =>
             acc +
@@ -302,6 +333,14 @@ const DashInadimplencia = memo(() => {
           totalInadimplencia,
           dadosEnriquecidos.length,
           qtdClientes,
+          {
+            valorMultimarcas: mtm.valor,
+            valorFranquias: frq.valor,
+            qtdTitulosMultimarcas: mtm.titulos,
+            qtdTitulosFranquias: frq.titulos,
+            qtdClientesMultimarcas: mtm.clientes,
+            qtdClientesFranquias: frq.clientes,
+          },
         );
       }
     } catch (err) {
@@ -333,6 +372,7 @@ const DashInadimplencia = memo(() => {
         carteiraSimples: { qtd: 0, valor: 0 },
         carteiraDescontada: { qtd: 0, valor: 0 },
         porFaixa: {},
+        vencidosRecentes: { qtd: 0, valor: 0 },
       };
     }
 
@@ -344,6 +384,7 @@ const DashInadimplencia = memo(() => {
     const portadorMap = {};
     let carteiraSimples = { qtd: 0, valor: 0 };
     let carteiraDescontada = { qtd: 0, valor: 0 };
+    let vencidosRecentes = { qtd: 0, valor: 0 };
     const faixaMap = {
       '1-15 dias': 0,
       '16-30 dias': 0,
@@ -362,6 +403,16 @@ const DashInadimplencia = memo(() => {
       if (saldo <= 0) return;
 
       totalInadimplencia += saldo;
+
+      // Faturas vencidas nos últimos 3 dias
+      const dv = parseDateNoTZ(item.dt_vencimento);
+      if (dv) {
+        const diff = Math.floor((hoje - dv) / (1000 * 60 * 60 * 24));
+        if (diff >= 0 && diff <= 3) {
+          vencidosRecentes.qtd += 1;
+          vencidosRecentes.valor += saldo;
+        }
+      }
 
       // Por cliente
       const cd = String(item.cd_cliente);
@@ -396,7 +447,6 @@ const DashInadimplencia = memo(() => {
       }
 
       // Faixa de dias
-      const dv = parseDateNoTZ(item.dt_vencimento);
       if (dv) {
         const diff = Math.floor((hoje - dv) / (1000 * 60 * 60 * 24));
         if (diff <= 15) faixaMap['1-15 dias'] += saldo;
@@ -433,8 +483,81 @@ const DashInadimplencia = memo(() => {
       carteiraSimples,
       carteiraDescontada,
       porFaixa: faixaMap,
+      vencidosRecentes,
     };
   }, [dados]);
+
+  // Faturas vencidas nos últimos 3 dias agrupadas por cliente (para modal)
+  const vencidosRecentesLista = useMemo(() => {
+    if (!dados.length) return [];
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const agrupado = {};
+    dados.forEach((item) => {
+      const vlFatura = parseFloat(item.vl_fatura) || 0;
+      const vlPago = parseFloat(item.vl_pago) || 0;
+      const saldo = vlFatura - vlPago;
+      if (saldo <= 0) return;
+      const dv = parseDateNoTZ(item.dt_vencimento);
+      if (!dv) return;
+      const diff = Math.floor((hoje - dv) / (1000 * 60 * 60 * 24));
+      if (diff < 0 || diff > 3) return;
+      const cd = String(item.cd_cliente);
+      if (!agrupado[cd]) {
+        agrupado[cd] = {
+          cd_cliente: cd,
+          nm_cliente: item.nm_fantasia || item.nm_cliente || `Cliente ${cd}`,
+          nr_telefone: item.nr_telefone || '',
+          valor_total: 0,
+          faturas: [],
+        };
+      }
+      agrupado[cd].valor_total += saldo;
+      agrupado[cd].faturas.push(item);
+    });
+    return Object.values(agrupado).sort(
+      (a, b) => b.valor_total - a.valor_total,
+    );
+  }, [dados]);
+
+  // Variação diária (comparar com dia anterior na timeline)
+  const variacaoDiaria = useMemo(() => {
+    if (timeline.length < 2) return { titulos: null, clientes: null };
+    const ultimo = timeline[timeline.length - 1];
+    const penultimo = timeline[timeline.length - 2];
+    return {
+      titulos: (ultimo.qtd_titulos || 0) - (penultimo.qtd_titulos || 0),
+      clientes: (ultimo.qtd_clientes || 0) - (penultimo.qtd_clientes || 0),
+    };
+  }, [timeline]);
+
+  // Handler WhatsApp
+  const abrirWhatsApp = useCallback((cliente) => {
+    const telefone = cliente.nr_telefone || '';
+    if (!telefone) {
+      alert('Telefone não encontrado para este cliente');
+      return;
+    }
+    const telefoneClean = telefone.replace(/\D/g, '');
+    if (!telefoneClean) {
+      alert('Telefone não encontrado para este cliente');
+      return;
+    }
+    const listaFaturas = (cliente.faturas || [])
+      .map((fatura) => {
+        const numeroFatura = fatura.nr_fatura || 'N/A';
+        const vencimento = parseDateNoTZ(fatura.dt_vencimento);
+        const vencStr = vencimento
+          ? vencimento.toLocaleDateString('pt-BR')
+          : 'N/A';
+        const valor = formatCurrency(parseFloat(fatura.vl_fatura) || 0);
+        return `*Fatura:* ${numeroFatura}\n*Vencimento:* ${vencStr}\n*Valor:* ${valor}`;
+      })
+      .join('\n\n');
+    const mensagem = `Olá, tudo bem? *${cliente.nm_cliente}*\nSomos da área de Recuperação de Créditos da Crosby.\nConsta em nosso sistema a existência de pendências financeiras em aberto em seu cadastro.\nEntramos em contato para alinhar e verificar a melhor forma de regularização.\n\nSegue a lista dos títulos em aberto:\n\n${listaFaturas}\n\n*Observação:* Caso os pagamentos já tenham sido realizados, pedimos gentilmente que desconsidere esta mensagem e se possível nos envie o comprovante para atualização em nosso sistema.\n\nAtenciosamente,\nCrosby`;
+    const url = `https://wa.me/55${telefoneClean}?text=${encodeURIComponent(mensagem)}`;
+    window.open(url, '_blank');
+  }, []);
 
   // Títulos detalhados do portador selecionado
   const titulosPortadorSelecionado = useMemo(() => {
@@ -564,6 +687,53 @@ const DashInadimplencia = memo(() => {
     };
   }, [timeline]);
 
+  const chartTimelineCanal = useMemo(() => {
+    if (!timeline.length) return null;
+    // Filtrar apenas entradas com dados de canal (valor_multimarcas ou valor_franquias > 0)
+    const canalData = timeline.filter(
+      (t) =>
+        (parseFloat(t.valor_multimarcas) || 0) > 0 ||
+        (parseFloat(t.valor_franquias) || 0) > 0,
+    );
+    if (!canalData.length) return null;
+    return {
+      labels: canalData.map((t) => {
+        const d = parseDateNoTZ(t.data);
+        return d
+          ? d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+          : t.data;
+      }),
+      datasets: [
+        {
+          label: 'Multimarcas',
+          data: canalData.map((t) => parseFloat(t.valor_multimarcas) || 0),
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#3b82f6',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointHoverRadius: 7,
+        },
+        {
+          label: 'Franquias',
+          data: canalData.map((t) => parseFloat(t.valor_franquias) || 0),
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#10b981',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointHoverRadius: 7,
+        },
+      ],
+    };
+  }, [timeline]);
+
   // Opções de gráficos
   const barOptions = (title) => ({
     responsive: true,
@@ -673,6 +843,42 @@ const DashInadimplencia = memo(() => {
       tooltip: {
         callbacks: {
           label: (ctx) => formatCurrency(ctx.raw),
+        },
+      },
+    },
+    scales: {
+      x: {
+        ticks: { font: { size: 10 } },
+        grid: { display: false },
+      },
+      y: {
+        ticks: { font: { size: 10 }, callback: (v) => formatCurrency(v) },
+        grid: { color: 'rgba(0,0,0,0.05)' },
+      },
+    },
+  };
+
+  const lineOptionsCanalOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top',
+        labels: { font: { size: 11 }, boxWidth: 14, padding: 12 },
+      },
+      datalabels: {
+        display: true,
+        color: (ctx) => (ctx.datasetIndex === 0 ? '#3b82f6' : '#10b981'),
+        font: { weight: 'bold', size: 9 },
+        formatter: (v) => formatCurrency(v),
+        anchor: 'end',
+        align: 'top',
+        offset: 4,
+      },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.raw)}`,
         },
       },
     },
@@ -812,7 +1018,7 @@ const DashInadimplencia = memo(() => {
       {!loading && dadosCarregados && (
         <>
           {/* ---- CARDS PRINCIPAIS ---- */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
             <Card className="shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all rounded-xl bg-white border-l-4 border-red-500">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
@@ -845,6 +1051,20 @@ const DashInadimplencia = memo(() => {
                 <div className="text-lg font-extrabold text-blue-600">
                   {metricas.qtdTitulos.toLocaleString('pt-BR')}
                 </div>
+                {variacaoDiaria.titulos !== null && (
+                  <div
+                    className={`flex items-center gap-1 text-xs font-semibold ${variacaoDiaria.titulos > 0 ? 'text-red-500' : variacaoDiaria.titulos < 0 ? 'text-green-500' : 'text-gray-400'}`}
+                  >
+                    {variacaoDiaria.titulos > 0 ? (
+                      <ArrowUp size={12} weight="bold" />
+                    ) : variacaoDiaria.titulos < 0 ? (
+                      <ArrowDown size={12} weight="bold" />
+                    ) : null}
+                    {variacaoDiaria.titulos !== 0
+                      ? `${variacaoDiaria.titulos > 0 ? '+' : ''}${variacaoDiaria.titulos} vs dia anterior`
+                      : 'Sem variação'}
+                  </div>
+                )}
                 <CardDescription className="text-xs text-gray-500">
                   Títulos com saldo devedor
                 </CardDescription>
@@ -864,6 +1084,20 @@ const DashInadimplencia = memo(() => {
                 <div className="text-lg font-extrabold text-orange-600">
                   {metricas.qtdClientes.toLocaleString('pt-BR')}
                 </div>
+                {variacaoDiaria.clientes !== null && (
+                  <div
+                    className={`flex items-center gap-1 text-xs font-semibold ${variacaoDiaria.clientes > 0 ? 'text-red-500' : variacaoDiaria.clientes < 0 ? 'text-green-500' : 'text-gray-400'}`}
+                  >
+                    {variacaoDiaria.clientes > 0 ? (
+                      <ArrowUp size={12} weight="bold" />
+                    ) : variacaoDiaria.clientes < 0 ? (
+                      <ArrowDown size={12} weight="bold" />
+                    ) : null}
+                    {variacaoDiaria.clientes !== 0
+                      ? `${variacaoDiaria.clientes > 0 ? '+' : ''}${variacaoDiaria.clientes} vs dia anterior`
+                      : 'Sem variação'}
+                  </div>
+                )}
                 <CardDescription className="text-xs text-gray-500">
                   Clientes únicos
                 </CardDescription>
@@ -885,6 +1119,32 @@ const DashInadimplencia = memo(() => {
                 </div>
                 <CardDescription className="text-xs text-gray-500">
                   Média por cliente
+                </CardDescription>
+              </CardContent>
+            </Card>
+
+            <Card
+              className="shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all rounded-xl bg-white border-l-4 border-amber-500 cursor-pointer"
+              onClick={() => setModalVencidosRecentes(true)}
+            >
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <Clock size={16} className="text-amber-600" />
+                  <CardTitle className="text-xs font-bold text-amber-700">
+                    Vencidos Recentes (3 dias)
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-3 pb-3">
+                <div className="text-lg font-extrabold text-amber-600">
+                  {metricas.vencidosRecentes.qtd.toLocaleString('pt-BR')}{' '}
+                  títulos
+                </div>
+                <div className="text-sm font-bold text-amber-500">
+                  {formatCurrency(metricas.vencidosRecentes.valor)}
+                </div>
+                <CardDescription className="text-xs text-gray-500">
+                  Clique para ver detalhes
                 </CardDescription>
               </CardContent>
             </Card>
@@ -912,6 +1172,37 @@ const DashInadimplencia = memo(() => {
                 ) : (
                   <div className="text-center text-gray-400 py-12 text-sm">
                     Sem dados de timeline
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* ---- INADIMPLÊNCIA POR CANAL ---- */}
+          <div className="grid grid-cols-1 gap-3 mb-6">
+            <Card className="shadow-lg rounded-xl bg-white">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <ChartLineUp size={16} className="text-blue-600" />
+                  <CardTitle className="text-sm font-bold text-[#000638]">
+                    Inadimplência por Canal
+                  </CardTitle>
+                  {loadingTimeline && (
+                    <Spinner size={14} className="animate-spin text-gray-400" />
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-3 pb-3">
+                {chartTimelineCanal ? (
+                  <div style={{ height: 300 }}>
+                    <Line
+                      data={chartTimelineCanal}
+                      options={lineOptionsCanalOptions}
+                    />
+                  </div>
+                ) : (
+                  <div className="text-center text-gray-400 py-12 text-sm">
+                    Sem dados por canal
                   </div>
                 )}
               </CardContent>
@@ -1548,6 +1839,138 @@ const DashInadimplencia = memo(() => {
                       )}
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ---- MODAL FATURAS VENCIDAS RECENTES (3 DIAS) ---- */}
+          {modalVencidosRecentes && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <Clock size={20} className="text-amber-600" />
+                    <h2 className="text-lg font-bold text-[#000638]">
+                      Faturas Vencidas nos Últimos 3 Dias
+                    </h2>
+                    <span className="text-sm text-gray-500 ml-2">
+                      {vencidosRecentesLista.length} cliente(s) —{' '}
+                      {metricas.vencidosRecentes.qtd} título(s) —{' '}
+                      {formatCurrency(metricas.vencidosRecentes.valor)}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setModalVencidosRecentes(false)}
+                    className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-red-600 transition-colors"
+                    title="Fechar"
+                  >
+                    <X size={20} weight="bold" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-auto p-4">
+                  {vencidosRecentesLista.length > 0 ? (
+                    <div className="space-y-3">
+                      {vencidosRecentesLista.map((cliente) => (
+                        <div
+                          key={cliente.cd_cliente}
+                          className="border border-gray-200 rounded-xl p-4 hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-center justify-between mb-3">
+                            <div>
+                              <div className="font-bold text-sm text-[#000638]">
+                                {cliente.cd_cliente} - {cliente.nm_cliente}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {cliente.faturas.length} fatura(s) — Total:{' '}
+                                {formatCurrency(cliente.valor_total)}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => abrirWhatsApp(cliente)}
+                              className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg transition-colors text-xs font-bold shadow-md"
+                              title="Enviar WhatsApp"
+                            >
+                              <WhatsappLogo size={16} weight="fill" />
+                              WhatsApp
+                            </button>
+                          </div>
+                          <table className="w-full text-xs">
+                            <thead className="bg-gray-100">
+                              <tr>
+                                <th className="text-left px-2 py-1.5 font-semibold text-gray-700">
+                                  Fatura
+                                </th>
+                                <th className="text-center px-2 py-1.5 font-semibold text-gray-700">
+                                  Vencimento
+                                </th>
+                                <th className="text-center px-2 py-1.5 font-semibold text-gray-700">
+                                  Dias
+                                </th>
+                                <th className="text-right px-2 py-1.5 font-semibold text-gray-700">
+                                  Valor
+                                </th>
+                                <th className="text-right px-2 py-1.5 font-semibold text-gray-700">
+                                  Pago
+                                </th>
+                                <th className="text-right px-2 py-1.5 font-semibold text-gray-700">
+                                  Saldo
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {cliente.faturas.map((f, i) => {
+                                const vlFat = parseFloat(f.vl_fatura) || 0;
+                                const vlPg = parseFloat(f.vl_pago) || 0;
+                                const saldo = vlFat - vlPg;
+                                const dv = parseDateNoTZ(f.dt_vencimento);
+                                const hoje = new Date();
+                                hoje.setHours(0, 0, 0, 0);
+                                const dias = dv
+                                  ? Math.floor(
+                                      (hoje - dv) / (1000 * 60 * 60 * 24),
+                                    )
+                                  : 0;
+                                return (
+                                  <tr
+                                    key={i}
+                                    className="border-b border-gray-100"
+                                  >
+                                    <td className="px-2 py-1.5 text-gray-800">
+                                      {f.nr_fatura}
+                                    </td>
+                                    <td className="text-center px-2 py-1.5 text-gray-600">
+                                      {dv
+                                        ? dv.toLocaleDateString('pt-BR')
+                                        : '-'}
+                                    </td>
+                                    <td className="text-center px-2 py-1.5">
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+                                        {dias}d
+                                      </span>
+                                    </td>
+                                    <td className="text-right px-2 py-1.5 text-gray-800">
+                                      {formatCurrency(vlFat)}
+                                    </td>
+                                    <td className="text-right px-2 py-1.5 text-green-600">
+                                      {formatCurrency(vlPg)}
+                                    </td>
+                                    <td className="text-right px-2 py-1.5 font-semibold text-red-600">
+                                      {formatCurrency(saldo)}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center text-gray-400 py-12">
+                      Nenhuma fatura vencida nos últimos 3 dias
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
