@@ -335,6 +335,18 @@ const confianca = [
     icon: Wallet,
     color: 'text-amber-600',
   },
+  {
+    name: 'Solicitações de Remessa',
+    href: '/solicitacoes-remessa',
+    icon: Wallet,
+    color: 'text-amber-600',
+  },
+  {
+    name: 'Minhas Remessas',
+    href: '/minhas-remessas',
+    icon: Wallet,
+    color: 'text-amber-600',
+  },
 ];
 
 const clientesItems = [

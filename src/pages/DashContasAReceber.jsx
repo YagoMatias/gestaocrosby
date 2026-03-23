@@ -1386,6 +1386,137 @@ const DashContasAReceber = memo(() => {
     }
   };
 
+  // ======================== EXPORTAR EXCEL FORMA PAGAMENTO POR DIA ========================
+  const exportarExcelFormaPagamentoPorDia = () => {
+    try {
+      const wb = XLSX.utils.book_new();
+      const rows = [];
+      const merges = [];
+      let r = 0;
+
+      const periodoTxt =
+        dataInicio && dataFim
+          ? `Período: ${new Date(dataInicio + 'T00:00:00').toLocaleDateString('pt-BR')} a ${new Date(dataFim + 'T00:00:00').toLocaleDateString('pt-BR')}`
+          : '';
+      const filtroTxt =
+        filtroStatusFormaPag !== 'TODOS' ? ` (${filtroStatusFormaPag})` : '';
+      rows.push(['Forma de Pagamento por Dia' + filtroTxt]);
+      merges.push({ s: { r, c: 0 }, e: { r, c: 3 } });
+      r++;
+      if (periodoTxt) {
+        rows.push([periodoTxt]);
+        merges.push({ s: { r, c: 0 }, e: { r, c: 3 } });
+        r++;
+      }
+      rows.push([]);
+      r++;
+
+      // Agrupar dados por dia e forma de pagamento
+      const porDia = {};
+      dados.forEach((item) => {
+        const statusItem = getStatus(item);
+        if (filtroStatusFormaPag === 'PAGOS' && statusItem !== 'Pago') return;
+        if (filtroStatusFormaPag === 'EM ABERTO' && statusItem === 'Pago')
+          return;
+        const vlFatura = parseFloat(item.vl_fatura) || 0;
+        const vlPago = parseFloat(item.vl_pago) || 0;
+        const valorConsiderar =
+          filtroStatusFormaPag === 'PAGOS'
+            ? vlPago
+            : filtroStatusFormaPag === 'EM ABERTO'
+              ? vlFatura - vlPago
+              : vlFatura;
+        if (valorConsiderar <= 0) return;
+
+        const dtPgto = parseDateNoTZ(item.dt_liq);
+        if (!dtPgto) return;
+        const diaKey = dtPgto.toISOString().split('T')[0];
+        const diaLabel = dtPgto.toLocaleDateString('pt-BR');
+        const forma = getFormaPagamentoLabel(item);
+
+        if (!porDia[diaKey])
+          porDia[diaKey] = {
+            label: diaLabel,
+            formas: {},
+            total: 0,
+            sortDate: dtPgto,
+          };
+        if (!porDia[diaKey].formas[forma])
+          porDia[diaKey].formas[forma] = { valor: 0, qtd: 0 };
+        porDia[diaKey].formas[forma].valor += valorConsiderar;
+        porDia[diaKey].formas[forma].qtd += 1;
+        porDia[diaKey].total += valorConsiderar;
+      });
+
+      // Ordenar dias cronologicamente
+      const diasOrdenados = Object.entries(porDia).sort(
+        (a, b) => a[1].sortDate - b[1].sortDate,
+      );
+
+      let totalGeral = 0;
+      diasOrdenados.forEach(([, info]) => {
+        rows.push([`DIA ${info.label}`, '', '', formatCurrency(info.total)]);
+        merges.push({ s: { r, c: 0 }, e: { r, c: 2 } });
+        r++;
+        rows.push(['Forma de Pagamento', 'Quantidade', 'Valor', '% do Dia']);
+        r++;
+
+        const formasOrdenadas = Object.entries(info.formas)
+          .map(([nome, d]) => ({ nome, ...d }))
+          .sort((a, b) => b.valor - a.valor);
+
+        formasOrdenadas.forEach((f) => {
+          rows.push([
+            f.nome,
+            f.qtd,
+            f.valor,
+            info.total > 0
+              ? ((f.valor / info.total) * 100).toFixed(2) + '%'
+              : '0%',
+          ]);
+          r++;
+        });
+
+        const totalDiaQtd = formasOrdenadas.reduce((a, f) => a + f.qtd, 0);
+        rows.push(['TOTAL DO DIA', totalDiaQtd, info.total, '100%']);
+        r++;
+        rows.push([]);
+        r++;
+        totalGeral += info.total;
+      });
+
+      rows.push(['TOTAL GERAL', '', totalGeral, '']);
+      merges.push({ s: { r, c: 0 }, e: { r, c: 1 } });
+      r++;
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [{ wch: 35 }, { wch: 14 }, { wch: 20 }, { wch: 14 }];
+      ws['!merges'] = merges;
+
+      for (let i = 0; i < rows.length; i++) {
+        const cellRef = XLSX.utils.encode_cell({ r: i, c: 2 });
+        if (ws[cellRef] && typeof ws[cellRef].v === 'number') {
+          ws[cellRef].z = '#,##0.00';
+        }
+      }
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Forma Pgto por Dia');
+
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([excelBuffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const filtroLabel =
+        filtroStatusFormaPag !== 'TODOS' ? `_${filtroStatusFormaPag}` : '';
+      saveAs(
+        blob,
+        `FormaPagamento_PorDia${filtroLabel}_${new Date().toISOString().split('T')[0]}.xlsx`,
+      );
+    } catch (error) {
+      console.error('Erro ao exportar Excel por dia:', error);
+    }
+  };
+
   // ======================== RENDER ========================
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
@@ -1765,7 +1896,9 @@ const DashContasAReceber = memo(() => {
                       onClick={() => {
                         setFormaPagSelecionada(null);
                         setGrupoEmpresaSelecionado(null);
-                        setFiltroStatusFormaPag('TODOS');
+                        setFiltroStatusFormaPag(
+                          tipoBuscaData === 'pagamento' ? 'PAGOS' : 'TODOS',
+                        );
                         setModalFormaPagamento(true);
                       }}
                       className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-md"
@@ -2323,19 +2456,23 @@ const DashContasAReceber = memo(() => {
                       {['TODOS', 'PAGOS', 'EM ABERTO'].map((st) => (
                         <button
                           key={st}
+                          disabled={tipoBuscaData === 'pagamento'}
                           onClick={() => {
+                            if (tipoBuscaData === 'pagamento') return;
                             setFiltroStatusFormaPag(st);
                             setFormaPagSelecionada(null);
                             setGrupoEmpresaSelecionado(null);
                           }}
                           className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
-                            filtroStatusFormaPag === st
-                              ? st === 'PAGOS'
-                                ? 'bg-green-600 text-white shadow-md'
-                                : st === 'EM ABERTO'
-                                  ? 'bg-blue-600 text-white shadow-md'
-                                  : 'bg-[#000638] text-white shadow-md'
-                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            tipoBuscaData === 'pagamento' && st !== 'PAGOS'
+                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                              : filtroStatusFormaPag === st
+                                ? st === 'PAGOS'
+                                  ? 'bg-green-600 text-white shadow-md'
+                                  : st === 'EM ABERTO'
+                                    ? 'bg-blue-600 text-white shadow-md'
+                                    : 'bg-[#000638] text-white shadow-md'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                           }`}
                         >
                           {st}
@@ -2435,6 +2572,14 @@ const DashContasAReceber = memo(() => {
                         >
                           <FileArrowDown size={16} />
                           Excel
+                        </button>
+                        <button
+                          onClick={exportarExcelFormaPagamentoPorDia}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 transition-colors text-xs font-bold shadow-md"
+                          title="Exportar Excel separado por dia"
+                        >
+                          <Calendar size={16} />
+                          Excel por Dia
                         </button>
                         <button
                           onClick={gerarPDFFormaPagamento}

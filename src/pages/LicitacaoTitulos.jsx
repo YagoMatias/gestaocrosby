@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../components/AuthContext';
+import { supabase } from '../lib/supabase';
 import ClientePerfilModal from '../components/ClientePerfilModal';
 import {
   Card,
@@ -24,6 +25,11 @@ import {
   X,
   ArrowRight,
   Gavel,
+  CheckSquare,
+  Square,
+  PaperPlaneTilt,
+  CheckCircle,
+  UserCircle,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -60,6 +66,12 @@ const LicitacaoTitulos = () => {
   const [notasFiscaisBuscadas, setNotasFiscaisBuscadas] = useState([]);
   const [notasFiscaisLoading, setNotasFiscaisLoading] = useState(false);
   const [notasFiscaisError, setNotasFiscaisError] = useState('');
+
+  // Seleção de títulos para remessa
+  const [titulosSelecionados, setTitulosSelecionados] = useState(new Set());
+  const [remessaLoading, setRemessaLoading] = useState(false);
+  const [titulosJaRemessados, setTitulosJaRemessados] = useState({});
+  // { titulo_key: { user_nome, nr_remessa } }
 
   const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
@@ -616,11 +628,177 @@ const LicitacaoTitulos = () => {
     setPerfilModalAberto(true);
   };
 
+  // Gerar chave \u00fanica para o t\u00edtulo
+  const gerarTituloKey = (item) =>
+    `${item.cd_empresa}_${item.cd_cliente}_${item.nr_fat}_${item.nr_parcela || 1}`;
+
+  // Buscar t\u00edtulos j\u00e1 remessados ao carregar dados
+  const buscarTitulosRemessados = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('solicitacoes_remessa_titulos')
+        .select('titulo_key, remessa_id');
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        setTitulosJaRemessados({});
+        return;
+      }
+      // Buscar info das remessas
+      const remessaIds = [...new Set(data.map((t) => t.remessa_id))];
+      const { data: remessas } = await supabase
+        .from('solicitacoes_remessa')
+        .select('id, nr_remessa, user_nome, status')
+        .in('id', remessaIds);
+      const remessaMap = {};
+      (remessas || []).forEach((r) => {
+        remessaMap[r.id] = r;
+      });
+      const mapa = {};
+      data.forEach((t) => {
+        const rem = remessaMap[t.remessa_id];
+        // Títulos de remessas REPROVADAS ficam disponíveis para re-seleção
+        if (rem?.status === 'REPROVADA') return;
+        mapa[t.titulo_key] = {
+          user_nome: rem?.user_nome || '--',
+          nr_remessa: rem?.nr_remessa || '--',
+          status: rem?.status || 'EM ANALISE',
+        };
+      });
+      setTitulosJaRemessados(mapa);
+    } catch (err) {
+      console.error('Erro ao buscar t\u00edtulos remessados:', err);
+    }
+  };
+
+  // Buscar t\u00edtulos remessados quando dados carregarem
+  useEffect(() => {
+    if (dados.length > 0) {
+      buscarTitulosRemessados();
+    }
+  }, [dados]);
+
+  // Toggle sele\u00e7\u00e3o de t\u00edtulo
+  const toggleSelecionarTitulo = (item) => {
+    const key = gerarTituloKey(item);
+    if (titulosJaRemessados[key]) return; // j\u00e1 remessado
+    setTitulosSelecionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  // Selecionar/desselecionar todos
+  const toggleSelecionarTodos = () => {
+    const titulosDisponiveis = dadosProcessados.filter(
+      (item) => !titulosJaRemessados[gerarTituloKey(item)],
+    );
+    if (titulosSelecionados.size === titulosDisponiveis.length) {
+      setTitulosSelecionados(new Set());
+    } else {
+      setTitulosSelecionados(
+        new Set(titulosDisponiveis.map((item) => gerarTituloKey(item))),
+      );
+    }
+  };
+
+  // Solicitar remessa
+  const solicitarRemessa = async () => {
+    if (titulosSelecionados.size === 0) {
+      alert('Selecione pelo menos um t\u00edtulo para solicitar remessa.');
+      return;
+    }
+    if (
+      !window.confirm(
+        `Confirma a solicita\u00e7\u00e3o de remessa com ${titulosSelecionados.size} t\u00edtulo(s)?`,
+      )
+    ) {
+      return;
+    }
+    setRemessaLoading(true);
+    try {
+      const titulosSelecionadosList = dadosProcessados.filter((item) =>
+        titulosSelecionados.has(gerarTituloKey(item)),
+      );
+      const vlTotal = titulosSelecionadosList.reduce(
+        (acc, item) => acc + (parseFloat(item.vl_fatura) || 0),
+        0,
+      );
+
+      // Criar remessa
+      const { data: remessa, error: errRemessa } = await supabase
+        .from('solicitacoes_remessa')
+        .insert({
+          user_id: user?.id,
+          user_nome: user?.name || user?.email || 'Usu\u00e1rio',
+          user_email: user?.email,
+          vl_total: vlTotal,
+          qt_titulos: titulosSelecionadosList.length,
+        })
+        .select()
+        .single();
+
+      if (errRemessa) throw errRemessa;
+
+      // Inserir t\u00edtulos
+      const titulos = titulosSelecionadosList.map((item) => ({
+        remessa_id: remessa.id,
+        cd_empresa: parseInt(item.cd_empresa) || null,
+        cd_cliente: parseInt(item.cd_cliente) || null,
+        nm_cliente: item.nm_cliente || '',
+        nr_cpfcnpj: item.nr_cpfcnpj || '',
+        nr_fat: parseInt(item.nr_fat) || null,
+        nr_parcela: parseInt(item.nr_parcela) || 1,
+        cd_portador: parseInt(item.cd_portador) || null,
+        nm_portador: item.nm_portador || '',
+        vl_fatura: parseFloat(item.vl_fatura) || 0,
+        dt_emissao: item.dt_emissao ? item.dt_emissao.split('T')[0] : null,
+        dt_vencimento: item.dt_vencimento
+          ? item.dt_vencimento.split('T')[0]
+          : null,
+        titulo_key: gerarTituloKey(item),
+      }));
+
+      const { error: errTitulos } = await supabase
+        .from('solicitacoes_remessa_titulos')
+        .insert(titulos);
+
+      if (errTitulos) throw errTitulos;
+
+      alert(`Remessa #${remessa.nr_remessa} criada com sucesso!`);
+      setTitulosSelecionados(new Set());
+      buscarTitulosRemessados();
+    } catch (err) {
+      console.error('Erro ao solicitar remessa:', err);
+      if (err.message?.includes('duplicate') || err.code === '23505') {
+        alert(
+          'Erro: Um ou mais t\u00edtulos j\u00e1 foram inclu\u00eddos em outra remessa.',
+        );
+        buscarTitulosRemessados();
+      } else {
+        alert(`Erro ao solicitar remessa: ${err.message}`);
+      }
+    } finally {
+      setRemessaLoading(false);
+    }
+  };
+
+  // Valor total selecionado
+  const valorTotalSelecionado = useMemo(() => {
+    return dadosProcessados
+      .filter((item) => titulosSelecionados.has(gerarTituloKey(item)))
+      .reduce((acc, item) => acc + (parseFloat(item.vl_fatura) || 0), 0);
+  }, [dadosProcessados, titulosSelecionados]);
+
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
       <PageTitle
         title="Licitação de Títulos"
-        subtitle="Títulos a pagar com portador 748 (SICREDI), 1020 ou 1098 — vencimento de 5 a 90 dias"
+        subtitle="Titulos para operação de antecipação financeira"
         icon={Gavel}
         iconColor="text-amber-600"
       />
@@ -746,6 +924,25 @@ const LicitacaoTitulos = () => {
                 <FileArrowDown size={12} /> BAIXAR EXCEL
               </button>
             )}
+            {titulosSelecionados.size > 0 && (
+              <button
+                onClick={solicitarRemessa}
+                disabled={remessaLoading}
+                className="flex items-center gap-1 bg-amber-600 text-white px-3 py-1 rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold text-xs animate-pulse"
+              >
+                {remessaLoading ? (
+                  <>
+                    <Spinner size={12} className="animate-spin" />
+                    <span>Enviando...</span>
+                  </>
+                ) : (
+                  <>
+                    <PaperPlaneTilt size={12} weight="bold" />
+                    <span>SOLICITAR REMESSA ({titulosSelecionados.size})</span>
+                  </>
+                )}
+              </button>
+            )}
             {dadosCarregados && (
               <button
                 onClick={buscarDados}
@@ -799,6 +996,27 @@ const LicitacaoTitulos = () => {
               <table className="border-collapse rounded-lg overflow-hidden shadow-lg extrato-table">
                 <thead className="bg-[#000638] text-white text-sm uppercase tracking-wider">
                   <tr>
+                    <th className="px-2 py-2 text-center w-10">
+                      <button
+                        onClick={toggleSelecionarTodos}
+                        className="flex items-center justify-center mx-auto hover:opacity-80 transition-opacity"
+                        title="Selecionar/Desselecionar todos"
+                      >
+                        {titulosSelecionados.size > 0 &&
+                        titulosSelecionados.size ===
+                          dadosProcessados.filter(
+                            (i) => !titulosJaRemessados[gerarTituloKey(i)],
+                          ).length ? (
+                          <CheckSquare
+                            size={16}
+                            weight="fill"
+                            className="text-amber-400"
+                          />
+                        ) : (
+                          <Square size={16} className="text-white/70" />
+                        )}
+                      </button>
+                    </th>
                     <th
                       className="px-2 py-2 text-left cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSort('nm_cliente')}
@@ -844,50 +1062,163 @@ const LicitacaoTitulos = () => {
                         Detalhar
                       </div>
                     </th>
+                    <th className="px-2 py-2 text-center">
+                      <div className="flex items-center justify-center">
+                        Remessa
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white">
-                  {dadosPaginados.map((item, index) => (
-                    <tr key={index} className="text-sm transition-colors">
-                      <td className="text-left px-2 py-2">
-                        <button
-                          onClick={() => abrirPerfilCliente(item)}
-                          className="text-blue-600 hover:text-blue-800 hover:underline font-medium text-left"
-                          title="Ver perfil do cliente"
-                        >
-                          {item.nm_cliente || '--'}
-                        </button>
-                      </td>
-                      <td className="text-center text-gray-900 px-2 py-2">
-                        {item.nr_cpfcnpj || '--'}
-                      </td>
-                      <td className="text-center text-gray-900 px-2 py-2">
-                        {formatDateBR(item.dt_emissao)}
-                      </td>
-                      <td className="text-center text-gray-900 px-2 py-2">
-                        {formatDateBR(item.dt_vencimento)}
-                      </td>
-                      <td className="text-center font-semibold text-green-600 px-2 py-2">
-                        {(parseFloat(item.vl_fatura) || 0).toLocaleString(
-                          'pt-BR',
-                          { style: 'currency', currency: 'BRL' },
-                        )}
-                      </td>
-                      <td className="text-center px-2 py-2">
-                        <button
-                          onClick={() => abrirObsFatura(item)}
-                          className="flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs mx-auto font-medium"
-                        >
-                          <Eye size={14} weight="bold" /> Detalhar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {dadosPaginados.map((item, index) => {
+                    const tituloKey = gerarTituloKey(item);
+                    const jaRemessado = titulosJaRemessados[tituloKey];
+                    const estaSelecionado = titulosSelecionados.has(tituloKey);
+                    return (
+                      <tr
+                        key={index}
+                        className={`text-sm transition-colors ${
+                          jaRemessado
+                            ? 'bg-amber-50 opacity-70'
+                            : estaSelecionado
+                              ? 'bg-blue-50 border-l-4 border-blue-500'
+                              : ''
+                        }`}
+                      >
+                        <td className="text-center px-2 py-2">
+                          {jaRemessado ? (
+                            <CheckCircle
+                              size={18}
+                              weight="fill"
+                              className="text-amber-500 mx-auto"
+                              title={`Remessa #${jaRemessado.nr_remessa} - ${jaRemessado.user_nome}`}
+                            />
+                          ) : (
+                            <button
+                              onClick={() => toggleSelecionarTitulo(item)}
+                              className="flex items-center justify-center mx-auto hover:opacity-80 transition-opacity"
+                            >
+                              {estaSelecionado ? (
+                                <CheckSquare
+                                  size={18}
+                                  weight="fill"
+                                  className="text-blue-600"
+                                />
+                              ) : (
+                                <Square size={18} className="text-gray-400" />
+                              )}
+                            </button>
+                          )}
+                        </td>
+                        <td className="text-left px-2 py-2">
+                          <button
+                            onClick={() => abrirPerfilCliente(item)}
+                            className="text-blue-600 hover:text-blue-800 hover:underline font-medium text-left"
+                            title="Ver perfil do cliente"
+                          >
+                            {item.nm_cliente || '--'}
+                          </button>
+                        </td>
+                        <td className="text-center text-gray-900 px-2 py-2">
+                          {item.nr_cpfcnpj || '--'}
+                        </td>
+                        <td className="text-center text-gray-900 px-2 py-2">
+                          {formatDateBR(item.dt_emissao)}
+                        </td>
+                        <td className="text-center text-gray-900 px-2 py-2">
+                          {formatDateBR(item.dt_vencimento)}
+                        </td>
+                        <td className="text-center font-semibold text-green-600 px-2 py-2">
+                          {(parseFloat(item.vl_fatura) || 0).toLocaleString(
+                            'pt-BR',
+                            { style: 'currency', currency: 'BRL' },
+                          )}
+                        </td>
+                        <td className="text-center px-2 py-2">
+                          <button
+                            onClick={() => abrirObsFatura(item)}
+                            className="flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs mx-auto font-medium"
+                          >
+                            <Eye size={14} weight="bold" /> Detalhar
+                          </button>
+                        </td>
+                        <td className="text-center px-2 py-2">
+                          {jaRemessado ? (
+                            <div className="flex flex-col items-center">
+                              <span className="text-xs font-bold text-amber-700">
+                                #{jaRemessado.nr_remessa}
+                              </span>
+                              <span className="text-[10px] text-amber-600 flex items-center gap-0.5">
+                                <UserCircle size={10} />
+                                {jaRemessado.user_nome}
+                              </span>
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full mt-0.5 ${
+                                  jaRemessado.status === 'APROVADA'
+                                    ? 'bg-green-100 text-green-700'
+                                    : jaRemessado.status === 'REPROVADA'
+                                      ? 'bg-red-100 text-red-700'
+                                      : 'bg-yellow-100 text-yellow-700'
+                                }`}
+                              >
+                                {jaRemessado.status}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400">--</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
               <div className="mt-4 text-center text-sm text-gray-600">
                 Total de {dadosProcessados.length} registros
               </div>
+
+              {/* Barra de seleção */}
+              {titulosSelecionados.size > 0 && (
+                <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <CheckSquare
+                      size={18}
+                      weight="fill"
+                      className="text-blue-600"
+                    />
+                    <span className="text-sm font-semibold text-blue-800">
+                      {titulosSelecionados.size} título(s) selecionado(s)
+                    </span>
+                    <span className="text-sm font-bold text-blue-600">
+                      Total:{' '}
+                      {valorTotalSelecionado.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setTitulosSelecionados(new Set())}
+                      className="text-xs text-gray-500 hover:text-gray-700 underline"
+                    >
+                      Limpar seleção
+                    </button>
+                    <button
+                      onClick={solicitarRemessa}
+                      disabled={remessaLoading}
+                      className="flex items-center gap-1 bg-amber-600 text-white px-4 py-1.5 rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold text-xs"
+                    >
+                      {remessaLoading ? (
+                        <Spinner size={12} className="animate-spin" />
+                      ) : (
+                        <PaperPlaneTilt size={14} weight="bold" />
+                      )}
+                      SOLICITAR REMESSA
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Paginação */}
               {dadosProcessados.length > itensPorPagina && (

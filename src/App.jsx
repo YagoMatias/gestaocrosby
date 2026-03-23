@@ -89,6 +89,8 @@ const ComprovantesAntecipacao = lazy(
 );
 const ClientesAntecipacao = lazy(() => import('./pages/ClientesConfianca'));
 const LicitacaoTitulos = lazy(() => import('./pages/LicitacaoTitulos'));
+const SolicitacoesRemessa = lazy(() => import('./pages/SolicitacoesRemessa'));
+const MinhasRemessas = lazy(() => import('./pages/MinhasRemessas'));
 const ClientesMTM = lazy(() => import('./pages/ClientesMTM'));
 
 // Componente de fallback para loading
@@ -168,6 +170,8 @@ const protectedRoutes = [
   { path: '/comprovantes-antecipacao', component: ComprovantesAntecipacao },
   { path: '/clientes-antecipacao', component: ClientesAntecipacao },
   { path: '/licitacao-titulos', component: LicitacaoTitulos },
+  { path: '/solicitacoes-remessa', component: SolicitacoesRemessa },
+  { path: '/minhas-remessas', component: MinhasRemessas },
   { path: '/clientes-mtm', component: ClientesMTM },
 ];
 
