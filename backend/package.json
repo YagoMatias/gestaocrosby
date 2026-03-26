@@ -10,6 +10,7 @@
   },
   "scripts": {
     "start": "node index.js",
+    "postinstall": "npx puppeteer browsers install chrome",
     "dev": "NODE_ENV=development nodemon index.js",
     "test": "NODE_ENV=test jest",
     "lint": "eslint . --ext .js",
@@ -37,10 +38,15 @@
     "morgan": "^1.10.0",
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",
+    "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
     "pdf2json": "^4.0.0",
     "pdfjs-dist": "^3.11.174",
     "pg": "^8.11.3",
+    "puppeteer": "^24.40.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.34.6",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

@@ -73,14 +73,16 @@ const ComprovantesAntecipacao = () => {
   const formatarDataHora = (isoDate) => {
     if (!isoDate) return '--';
     try {
-      const d = new Date(isoDate);
-      return d.toLocaleString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      const str = String(isoDate);
+      const [datePart, timePart] = str.split('T');
+      const [y, m, d] = datePart.split('-');
+      if (!y || !m || !d) return '--';
+      const data = `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+      if (timePart) {
+        const [h, min] = timePart.split(':');
+        return `${data}, ${h}:${min}`;
+      }
+      return data;
     } catch {
       return '--';
     }
@@ -89,8 +91,10 @@ const ComprovantesAntecipacao = () => {
   const formatarData = (isoDate) => {
     if (!isoDate) return '--';
     try {
-      const d = new Date(isoDate);
-      return d.toLocaleDateString('pt-BR');
+      const [datePart] = String(isoDate).split('T');
+      const [y, m, d] = datePart.split('-');
+      if (!y || !m || !d) return '--';
+      return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
     } catch {
       return '--';
     }

@@ -83,15 +83,8 @@ const financeiro = [
     roles: ['owner', 'admin', 'manager', 'user'],
     children: [
       {
-        name: 'Vencimento',
+        name: 'Consulta',
         href: '/contas-a-receber',
-        icon: Calendar,
-        color: 'text-green-600',
-        roles: ['owner', 'admin', 'manager', 'user'],
-      },
-      {
-        name: 'Emissão',
-        href: '/contas-a-receber-emissao',
         icon: Calendar,
         color: 'text-green-600',
         roles: ['owner', 'admin', 'manager', 'user'],
@@ -436,6 +429,33 @@ const minhaFranquiaItem = {
   ],
 };
 
+const recuperacaoCredito = [
+  {
+    name: 'Recuperação de Crédito',
+    href: '/recuperacao-credito',
+    icon: Handshake,
+    color: 'text-red-600',
+  },
+  {
+    name: 'Dashboard Inadimplência',
+    href: '/dash-inadimplencia',
+    icon: ChartBar,
+    color: 'text-red-600',
+  },
+  {
+    name: 'Inadimplência Multimarcas',
+    href: '/inadimplentes-multimarcas',
+    icon: Buildings,
+    color: 'text-purple-600',
+  },
+  {
+    name: 'Inadimplência Franquias',
+    href: '/inadimplentes-franquias',
+    icon: Users,
+    color: 'text-amber-600',
+  },
+];
+
 const getRoleLabel = (role) => {
   const roleConfig = {
     admin: 'Administrador',
@@ -763,6 +783,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           onToggle={() => handleSectionToggle('franquias')}
           icon={Users}
           color="text-amber-600"
+        />
+
+        {/* Seção Recuperação de Crédito */}
+        <MenuSection
+          {...menuProps}
+          title="Recuperação de Crédito"
+          items={recuperacaoCredito}
+          isOpen={openSection === 'recuperacaoCredito'}
+          onToggle={() => handleSectionToggle('recuperacaoCredito')}
+          icon={ChartBar}
+          color="text-red-600"
         />
 
         {/* Seção Antecipações */}

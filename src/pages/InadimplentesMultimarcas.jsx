@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+} from 'react';
 import FiltroEstados from '../components/filters/FiltroEstados';
 import FiltroClientes from '../components/filters/FiltroClientes';
 import FiltroRepresentantes from '../components/filters/FiltroRepresentantes';
@@ -25,8 +31,12 @@ import {
   Tooltip,
   Legend,
   ArcElement,
+  PointElement,
+  LineElement,
+  Filler,
 } from 'chart.js';
-import { Bar, Pie } from 'react-chartjs-2';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
+import { Bar, Pie, Line } from 'react-chartjs-2';
 import {
   ChartBar,
   CalendarBlank,
@@ -44,6 +54,10 @@ import {
   FileText,
   Gavel,
   TrendUp,
+  ArrowUp,
+  ArrowDown,
+  ChartLineUp,
+  ListBullets,
   Smiley,
   ClockClockwise,
   CheckCircle,
@@ -65,6 +79,10 @@ ChartJS.register(
   Tooltip,
   Legend,
   ArcElement,
+  PointElement,
+  LineElement,
+  Filler,
+  ChartDataLabels,
 );
 
 const InadimplentesMultimarcas = () => {
@@ -144,6 +162,117 @@ const InadimplentesMultimarcas = () => {
   const [previewComprovante, setPreviewComprovante] = useState(null);
   const [observacaoBaixa, setObservacaoBaixa] = useState('');
   const [loadingBaixa, setLoadingBaixa] = useState(false);
+
+  // Estado para alternar entre LISTA e DASHBOARD
+  const [viewMode, setViewMode] = useState('lista');
+
+  // Estados para timeline (evolução)
+  const [timeline, setTimeline] = useState([]);
+  const [timelineRep, setTimelineRep] = useState([]);
+  const [loadingTimeline, setLoadingTimeline] = useState(false);
+
+  // Helper para parsear datas sem fuso
+  const parseDateNoTZ = (isoDate) => {
+    if (!isoDate) return null;
+    try {
+      const str = String(isoDate).substring(0, 10);
+      const [y, m, d] = str.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    } catch {
+      return null;
+    }
+  };
+
+  const formatCurrency = (value) =>
+    (value || 0).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
+
+  // ======================== TIMELINE SUPABASE ========================
+  const carregarTimeline = useCallback(async () => {
+    setLoadingTimeline(true);
+    try {
+      const [resPrincipal, resRep] = await Promise.all([
+        supabase
+          .from('inadimplencia_mtm_timeline')
+          .select(
+            'data, valor_total, qtd_clientes, qtd_titulos, valor_atrasados, valor_inadimplentes',
+          )
+          .order('data', { ascending: true }),
+        supabase
+          .from('inadimplencia_mtm_representantes_timeline')
+          .select('data, representante, valor_total, qtd_clientes')
+          .order('data', { ascending: true }),
+      ]);
+      if (resPrincipal.error) throw resPrincipal.error;
+      if (resRep.error) throw resRep.error;
+      setTimeline(resPrincipal.data || []);
+      setTimelineRep(resRep.data || []);
+    } catch (err) {
+      console.error('Erro ao carregar timeline MTM:', err);
+    } finally {
+      setLoadingTimeline(false);
+    }
+  }, []);
+
+  const salvarTimelineHoje = useCallback(
+    async (
+      valorTotal,
+      qtdClientes,
+      qtdTitulos,
+      representantes = [],
+      valorAtrasados = 0,
+      valorInadimplentes = 0,
+    ) => {
+      try {
+        const hoje = new Date().toISOString().split('T')[0];
+
+        // Salvar snapshot principal
+        const { error: errPrincipal } = await supabase
+          .from('inadimplencia_mtm_timeline')
+          .upsert(
+            {
+              data: hoje,
+              valor_total: valorTotal,
+              qtd_clientes: qtdClientes,
+              qtd_titulos: qtdTitulos,
+              valor_atrasados: valorAtrasados,
+              valor_inadimplentes: valorInadimplentes,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'data' },
+          );
+        if (errPrincipal) throw errPrincipal;
+
+        // Salvar snapshot por representante
+        if (representantes.length > 0) {
+          const registros = representantes.map((rep) => ({
+            data: hoje,
+            representante: rep.representante,
+            valor_total: rep.valorTotal,
+            qtd_clientes: rep.qtdClientes,
+            updated_at: new Date().toISOString(),
+          }));
+          const { error: errRep } = await supabase
+            .from('inadimplencia_mtm_representantes_timeline')
+            .upsert(registros, { onConflict: 'data,representante' });
+          if (errRep) throw errRep;
+        }
+
+        console.log('✅ Timeline MTM salva para', hoje);
+        await carregarTimeline();
+      } catch (err) {
+        console.error('Erro ao salvar timeline MTM:', err);
+      }
+    },
+    [carregarTimeline],
+  );
+
+  // Carregar timeline ao montar
+  useEffect(() => {
+    carregarTimeline();
+  }, [carregarTimeline]);
 
   // Função para ordenar colunas
   const ordenarColuna = (coluna) => {
@@ -1066,6 +1195,450 @@ Crosby`;
     return Object.values(mapa).sort((a, b) => b.valorTotal - a.valorTotal);
   }, [clientesAgrupados]);
 
+  // Auto-salvar timeline quando dados carregam (apenas se há dados e não há filtros aplicados)
+  useEffect(() => {
+    if (
+      clientesAgrupados.length > 0 &&
+      filtroClientes.length === 0 &&
+      filtroEstados.length === 0 &&
+      filtroRepresentantes.length === 0 &&
+      resumoPorRepresentante.length > 0
+    ) {
+      const valorTotal = clientesAgrupados.reduce(
+        (acc, c) => acc + c.valor_total,
+        0,
+      );
+      const qtdClientes = clientesAgrupados.length;
+      const qtdTitulos = clientesAgrupados.reduce(
+        (acc, c) => acc + (c.faturas?.length || 0),
+        0,
+      );
+      const atrasados = clientesAgrupados.filter(
+        (c) => c.situacao === 'ATRASADO',
+      );
+      const inadimplentes = clientesAgrupados.filter(
+        (c) => c.situacao === 'INADIMPLENTE',
+      );
+      const valorAtrasados = atrasados.reduce(
+        (acc, c) => acc + c.valor_total,
+        0,
+      );
+      const valorInadimplentes = inadimplentes.reduce(
+        (acc, c) => acc + c.valor_total,
+        0,
+      );
+      salvarTimelineHoje(
+        valorTotal,
+        qtdClientes,
+        qtdTitulos,
+        resumoPorRepresentante,
+        valorAtrasados,
+        valorInadimplentes,
+      );
+    }
+  }, [
+    clientesAgrupados,
+    resumoPorRepresentante,
+    filtroClientes,
+    filtroEstados,
+    filtroRepresentantes,
+    salvarTimelineHoje,
+  ]);
+
+  // ======================== CHART DATA MEMOS ========================
+
+  // Gráfico: Evolução do Valor Total da Inadimplência
+  const chartTimelineValor = useMemo(() => {
+    if (!timeline.length) return null;
+    return {
+      labels: timeline.map((t) => {
+        const d = parseDateNoTZ(t.data);
+        return d
+          ? d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+          : t.data;
+      }),
+      datasets: [
+        {
+          label: 'Valor Total Inadimplência',
+          data: timeline.map((t) => parseFloat(t.valor_total) || 0),
+          borderColor: '#fe0000',
+          backgroundColor: 'rgba(254, 0, 0, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#fe0000',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointHoverRadius: 7,
+        },
+      ],
+    };
+  }, [timeline]);
+
+  // Gráfico: Evolução da Quantidade de Clientes
+  const chartTimelineClientes = useMemo(() => {
+    if (!timeline.length) return null;
+    return {
+      labels: timeline.map((t) => {
+        const d = parseDateNoTZ(t.data);
+        return d
+          ? d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+          : t.data;
+      }),
+      datasets: [
+        {
+          label: 'Qtd Clientes Inadimplentes',
+          data: timeline.map((t) => parseInt(t.qtd_clientes) || 0),
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#3b82f6',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointHoverRadius: 7,
+        },
+      ],
+    };
+  }, [timeline]);
+
+  // Gráfico: Evolução Atrasados vs Inadimplentes
+  const chartTimelineAtrasadosInadimplentes = useMemo(() => {
+    if (!timeline.length) return null;
+    // Filtrar apenas entradas que têm dados de atrasados/inadimplentes
+    const dados = timeline.filter(
+      (t) =>
+        (parseFloat(t.valor_atrasados) || 0) > 0 ||
+        (parseFloat(t.valor_inadimplentes) || 0) > 0,
+    );
+    if (!dados.length) return null;
+    return {
+      labels: dados.map((t) => {
+        const d = parseDateNoTZ(t.data);
+        return d
+          ? d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+          : t.data;
+      }),
+      datasets: [
+        {
+          label: 'Atrasados (≤ 60 dias)',
+          data: dados.map((t) => parseFloat(t.valor_atrasados) || 0),
+          borderColor: '#f59e0b',
+          backgroundColor: 'rgba(245, 158, 11, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#f59e0b',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointHoverRadius: 7,
+        },
+        {
+          label: 'Inadimplentes (> 60 dias)',
+          data: dados.map((t) => parseFloat(t.valor_inadimplentes) || 0),
+          borderColor: '#fe0000',
+          backgroundColor: 'rgba(254, 0, 0, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#fe0000',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointHoverRadius: 7,
+        },
+      ],
+    };
+  }, [timeline]);
+
+  // Gráfico: Evolução por Representante (top 5 por último valor)
+  const CORES_REPRESENTANTES = [
+    '#000638',
+    '#fe0000',
+    '#3b82f6',
+    '#10b981',
+    '#f59e0b',
+    '#8b5cf6',
+    '#ec4899',
+    '#06b6d4',
+    '#84cc16',
+    '#f97316',
+    '#6366f1',
+    '#14b8a6',
+  ];
+
+  const chartTimelineRepresentantes = useMemo(() => {
+    if (!timelineRep.length) return null;
+
+    // Pegar datas únicas ordenadas
+    const datasUnicas = [...new Set(timelineRep.map((t) => t.data))].sort();
+    const labels = datasUnicas.map((d) => {
+      const dt = parseDateNoTZ(d);
+      return dt
+        ? dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+        : d;
+    });
+
+    // Pegar nomes únicos de representantes e ordenar pelo valor na última data
+    const ultimaData = datasUnicas[datasUnicas.length - 1];
+    const dadosUltimaData = timelineRep.filter((t) => t.data === ultimaData);
+    const repsOrdenados = dadosUltimaData
+      .sort(
+        (a, b) =>
+          (parseFloat(b.valor_total) || 0) - (parseFloat(a.valor_total) || 0),
+      )
+      .map((t) => t.representante);
+
+    // Montar datasets
+    const datasets = repsOrdenados.map((rep, idx) => {
+      const cor = CORES_REPRESENTANTES[idx % CORES_REPRESENTANTES.length];
+      return {
+        label: rep,
+        data: datasUnicas.map((data) => {
+          const entry = timelineRep.find(
+            (t) => t.data === data && t.representante === rep,
+          );
+          return entry ? parseFloat(entry.valor_total) || 0 : 0;
+        }),
+        borderColor: cor,
+        backgroundColor: cor + '1A',
+        fill: false,
+        tension: 0.3,
+        pointRadius: 3,
+        pointBackgroundColor: cor,
+        pointBorderColor: '#fff',
+        pointBorderWidth: 1,
+        pointHoverRadius: 6,
+      };
+    });
+
+    return { labels, datasets };
+  }, [timelineRep]);
+
+  // Chart: Evolução qtd clientes por representante
+  const chartTimelineRepClientes = useMemo(() => {
+    if (!timelineRep.length) return null;
+
+    const datasUnicas = [...new Set(timelineRep.map((t) => t.data))].sort();
+    const labels = datasUnicas.map((d) => {
+      const dt = parseDateNoTZ(d);
+      return dt
+        ? dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+        : d;
+    });
+
+    const ultimaData = datasUnicas[datasUnicas.length - 1];
+    const dadosUltimaData = timelineRep.filter((t) => t.data === ultimaData);
+    const repsOrdenados = dadosUltimaData
+      .sort(
+        (a, b) =>
+          (parseInt(b.qtd_clientes) || 0) - (parseInt(a.qtd_clientes) || 0),
+      )
+      .map((t) => t.representante);
+
+    const datasets = repsOrdenados.map((rep, idx) => {
+      const cor = CORES_REPRESENTANTES[idx % CORES_REPRESENTANTES.length];
+      return {
+        label: rep,
+        data: datasUnicas.map((data) => {
+          const entry = timelineRep.find(
+            (t) => t.data === data && t.representante === rep,
+          );
+          return entry ? parseInt(entry.qtd_clientes) || 0 : 0;
+        }),
+        borderColor: cor,
+        backgroundColor: cor + '1A',
+        fill: false,
+        tension: 0.3,
+        pointRadius: 3,
+        pointBackgroundColor: cor,
+        pointBorderColor: '#fff',
+        pointBorderWidth: 1,
+        pointHoverRadius: 6,
+      };
+    });
+
+    return { labels, datasets };
+  }, [timelineRep]);
+
+  // Opções dos gráficos de linha
+  const lineOptionsValor = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      datalabels: {
+        display: true,
+        color: '#000638',
+        font: { weight: 'bold', size: 9 },
+        formatter: (v) => formatCurrency(v),
+        anchor: 'end',
+        align: 'top',
+        offset: 4,
+      },
+      tooltip: {
+        callbacks: { label: (ctx) => formatCurrency(ctx.raw) },
+      },
+    },
+    scales: {
+      x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+      y: {
+        ticks: { font: { size: 10 }, callback: (v) => formatCurrency(v) },
+        grid: { color: 'rgba(0,0,0,0.05)' },
+      },
+    },
+  };
+
+  const lineOptionsClientes = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      datalabels: {
+        display: true,
+        color: '#000638',
+        font: { weight: 'bold', size: 10 },
+        formatter: (v) => v,
+        anchor: 'end',
+        align: 'top',
+        offset: 4,
+      },
+      tooltip: {
+        callbacks: { label: (ctx) => `${ctx.raw} clientes` },
+      },
+    },
+    scales: {
+      x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+      y: {
+        ticks: { font: { size: 10 }, stepSize: 1 },
+        grid: { color: 'rgba(0,0,0,0.05)' },
+      },
+    },
+  };
+
+  const lineOptionsRepresentantes = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top',
+        labels: { font: { size: 10 }, boxWidth: 12, padding: 8 },
+      },
+      datalabels: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.raw)}`,
+        },
+      },
+    },
+    scales: {
+      x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+      y: {
+        ticks: { font: { size: 10 }, callback: (v) => formatCurrency(v) },
+        grid: { color: 'rgba(0,0,0,0.05)' },
+      },
+    },
+  };
+
+  const lineOptionsRepClientes = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top',
+        labels: { font: { size: 10 }, boxWidth: 12, padding: 8 },
+      },
+      datalabels: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => `${ctx.dataset.label}: ${ctx.raw} clientes`,
+        },
+      },
+    },
+    scales: {
+      x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+      y: {
+        ticks: { font: { size: 10 }, stepSize: 1 },
+        grid: { color: 'rgba(0,0,0,0.05)' },
+      },
+    },
+  };
+
+  const lineOptionsAtrasadosInadimplentes = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top',
+        labels: { font: { size: 11 }, boxWidth: 14, padding: 12 },
+      },
+      datalabels: {
+        display: true,
+        color: (ctx) => (ctx.datasetIndex === 0 ? '#f59e0b' : '#fe0000'),
+        font: { weight: 'bold', size: 9 },
+        formatter: (v) => formatCurrency(v),
+        anchor: 'end',
+        align: 'top',
+        offset: 4,
+      },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.raw)}`,
+        },
+      },
+    },
+    scales: {
+      x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+      y: {
+        ticks: { font: { size: 10 }, callback: (v) => formatCurrency(v) },
+        grid: { color: 'rgba(0,0,0,0.05)' },
+      },
+    },
+  };
+
+  // Calcular variações percentuais em relação ao primeiro dia da timeline
+  const variacoes = useMemo(() => {
+    const calcVar = (primeiro, ultimo) => {
+      if (!primeiro || primeiro === 0) return null;
+      return ((ultimo - primeiro) / Math.abs(primeiro)) * 100;
+    };
+
+    if (timeline.length < 2) {
+      return {
+        valor: null,
+        clientes: null,
+        atrasados: null,
+        inadimplentes: null,
+      };
+    }
+
+    const primeiro = timeline[0];
+    const ultimo = timeline[timeline.length - 1];
+
+    return {
+      valor: calcVar(
+        parseFloat(primeiro.valor_total) || 0,
+        parseFloat(ultimo.valor_total) || 0,
+      ),
+      clientes: calcVar(
+        parseInt(primeiro.qtd_clientes) || 0,
+        parseInt(ultimo.qtd_clientes) || 0,
+      ),
+      atrasados: calcVar(
+        parseFloat(primeiro.valor_atrasados) || 0,
+        parseFloat(ultimo.valor_atrasados) || 0,
+      ),
+      inadimplentes: calcVar(
+        parseFloat(primeiro.valor_inadimplentes) || 0,
+        parseFloat(ultimo.valor_inadimplentes) || 0,
+      ),
+      primeiraData: primeiro.data,
+    };
+  }, [timeline]);
+
   // Calcular métricas
   const metricas = useMemo(() => {
     const totalClientes = clientesAgrupados.length;
@@ -1815,1160 +2388,1489 @@ Crosby`;
         </form>
       </div>
 
-      {/* Cards de Resumo */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <Users size={18} className="text-blue-600" />
-              <CardTitle className="text-sm font-bold text-blue-700">
-                Total de Clientes
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 px-4 pb-4">
-            <div className="text-base font-extrabold text-blue-600 mb-0.5">
-              {metricas.totalClientes}
-            </div>
-            <CardDescription className="text-xs text-gray-500">
-              Clientes inadimplentes
-            </CardDescription>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <CurrencyDollar size={18} className="text-green-600" />
-              <CardTitle className="text-sm font-bold text-green-700">
-                Valor Total
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 px-4 pb-4">
-            <div className="text-base font-extrabold text-green-600 mb-0.5">
-              {formatarMoeda(metricas.valorTotal)}
-            </div>
-            <CardDescription className="text-xs text-gray-500">
-              Valor em aberto
-            </CardDescription>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <Handshake size={18} className="text-purple-600" />
-              <CardTitle className="text-sm font-bold text-purple-700">
-                Valor Total - Acordos
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 px-4 pb-4">
-            <div className="text-base font-extrabold text-purple-600 mb-0.5">
-              {formatarMoeda(
-                metricas.valorTotal -
-                  (matrizSituacaoStatus.atrasadosAcordo.valor +
-                    matrizSituacaoStatus.atrasadosAcordoAndamento.valor +
-                    matrizSituacaoStatus.inadimplentesAcordo.valor +
-                    matrizSituacaoStatus.inadimplentesAcordoAndamento.valor),
-              )}
-            </div>
-            <CardDescription className="text-xs text-gray-500">
-              Valor em aberto - Acordos - Acordos em Andamento
-            </CardDescription>
-          </CardContent>
-        </Card>
-
-        {/* Juros e Valor Corrigido removidos por solicitação */}
+      {/* Toggle LISTA / DASHBOARD */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setViewMode('lista')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition-colors shadow-md ${
+            viewMode === 'lista'
+              ? 'bg-[#000638] text-white'
+              : 'bg-white text-[#000638] border border-[#000638]/30 hover:bg-gray-50'
+          }`}
+        >
+          <ListBullets size={16} weight="bold" />
+          Lista
+        </button>
+        <button
+          onClick={() => setViewMode('dashboard')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition-colors shadow-md ${
+            viewMode === 'dashboard'
+              ? 'bg-[#000638] text-white'
+              : 'bg-white text-[#000638] border border-[#000638]/30 hover:bg-gray-50'
+          }`}
+        >
+          <ChartLineUp size={16} weight="bold" />
+          Dashboard
+        </button>
       </div>
 
-      {/* Sessão Situação */}
-      <div className="mb-6">
-        <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
-          <span className="w-1 h-4 bg-[#000638] rounded"></span>
-          Por Situação
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={abrirModalAtrasados}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Clock size={18} className="text-yellow-600" />
-                <CardTitle className="text-sm font-bold text-yellow-700">
-                  Atrasados
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-yellow-600 mb-0.5">
-                {metricas.qtdAtrasados} cliente
-                {metricas.qtdAtrasados !== 1 ? 's' : ''}
-              </div>
-              <div className="text-sm font-semibold text-gray-700 mb-1">
-                {formatarMoeda(metricas.valorAtrasados)}
-              </div>
-              <CardDescription className="text-xs text-gray-500">
-                Até 31 dias de atraso
-              </CardDescription>
-            </CardContent>
-          </Card>
-
-          <Card
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={abrirModalInadimplentes}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Warning size={18} className="text-red-600" />
-                <CardTitle className="text-sm font-bold text-red-700">
-                  Inadimplentes
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-red-600 mb-0.5">
-                {metricas.qtdInadimplentes} cliente
-                {metricas.qtdInadimplentes !== 1 ? 's' : ''}
-              </div>
-              <div className="text-sm font-semibold text-gray-700 mb-1">
-                {formatarMoeda(metricas.valorInadimplentes)}
-              </div>
-              <CardDescription className="text-xs text-gray-500">
-                Acima de 31 dias de atraso
-              </CardDescription>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* Sessão Feeling */}
-      <div className="mb-6">
-        <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
-          <span className="w-1 h-4 bg-[#000638] rounded"></span>
-          Por Feeling
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={abrirModalFeelingAtraso}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <ChatCircleDots size={18} className="text-orange-600" />
-                <CardTitle className="text-sm font-bold text-orange-700">
-                  Atraso
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-orange-600 mb-0.5">
-                {metricas.qtdFeelingAtraso} cliente
-                {metricas.qtdFeelingAtraso !== 1 ? 's' : ''}
-              </div>
-              <div className="text-sm font-semibold text-gray-700 mb-1">
-                {formatarMoeda(metricas.valorFeelingAtraso)}
-              </div>
-              <CardDescription className="text-xs text-gray-500">
-                Clientes marcados com atraso
-              </CardDescription>
-            </CardContent>
-          </Card>
-
-          <Card
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={abrirModalFeelingPossivelPagamento}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <TrendUp size={18} className="text-green-600" />
-                <CardTitle className="text-sm font-bold text-green-700">
-                  Possível Pagamento
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-green-600 mb-0.5">
-                {metricas.qtdFeelingPossivelPagamento} cliente
-                {metricas.qtdFeelingPossivelPagamento !== 1 ? 's' : ''}
-              </div>
-              <div className="text-sm font-semibold text-gray-700 mb-1">
-                {formatarMoeda(metricas.valorFeelingPossivelPagamento)}
-              </div>
-              <CardDescription className="text-xs text-gray-500">
-                Clientes com possibilidade de pagamento
-              </CardDescription>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* Sessão Status */}
-      <div className="mb-6">
-        <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
-          <span className="w-1 h-4 bg-[#000638] rounded"></span>
-          Por Status
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={abrirModalStatusAcordo}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Handshake size={18} className="text-blue-600" />
-                <CardTitle className="text-sm font-bold text-blue-700">
-                  Acordo
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-blue-600 mb-0.5">
-                {metricas.qtdAcordo}
-              </div>
-              <CardDescription className="text-xs text-gray-500">
-                {metricas.qtdAcordo !== 1 ? 'Clientes' : 'Cliente'} -{' '}
-                {formatarMoeda(metricas.valorAcordo)}
-              </CardDescription>
-            </CardContent>
-          </Card>
-
-          <Card
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={abrirModalStatusAcordoAndamento}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <FileText size={18} className="text-cyan-600" />
-                <CardTitle className="text-sm font-bold text-cyan-700">
-                  Acordo em Andamento
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-cyan-600 mb-0.5">
-                {metricas.qtdAcordoAndamento}
-              </div>
-              <CardDescription className="text-xs text-gray-500">
-                {metricas.qtdAcordoAndamento !== 1 ? 'Clientes' : 'Cliente'} -{' '}
-                {formatarMoeda(metricas.valorAcordoAndamento)}
-              </CardDescription>
-            </CardContent>
-          </Card>
-
-          <Card
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={abrirModalStatusCobranca}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <CurrencyDollar size={18} className="text-purple-600" />
-                <CardTitle className="text-sm font-bold text-purple-700">
-                  Cobrança
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-purple-600 mb-0.5">
-                {metricas.qtdCobranca}
-              </div>
-              <CardDescription className="text-xs text-gray-500">
-                {metricas.qtdCobranca !== 1 ? 'Clientes' : 'Cliente'} -{' '}
-                {formatarMoeda(metricas.valorCobranca)}
-              </CardDescription>
-            </CardContent>
-          </Card>
-
-          <Card
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={abrirModalStatusProtestado}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Gavel size={18} className="text-red-600" />
-                <CardTitle className="text-sm font-bold text-red-700">
-                  Protestado
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-red-600 mb-0.5">
-                {metricas.qtdProtestado}
-              </div>
-              <CardDescription className="text-xs text-gray-500">
-                {metricas.qtdProtestado !== 1 ? 'Clientes' : 'Cliente'} -{' '}
-                {formatarMoeda(metricas.valorProtestado)}
-              </CardDescription>
-            </CardContent>
-          </Card>
-
-          {/* Novos cards de status */}
-          <Card
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={abrirModalStatusPagoPendente}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <CheckCircle size={18} className="text-green-600" />
-                <CardTitle className="text-sm font-bold text-green-700">
-                  Pago Pendente de Baixa
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-green-600 mb-0.5">
-                {metricas.qtdPagoPendente}
-              </div>
-              <CardDescription className="text-xs text-gray-500">
-                {metricas.qtdPagoPendente !== 1 ? 'Clientes' : 'Cliente'} -{' '}
-                {formatarMoeda(metricas.valorPagoPendente)}
-              </CardDescription>
-            </CardContent>
-          </Card>
-
-          <Card
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={abrirModalStatusLojaFechada}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Warning size={18} className="text-orange-600" />
-                <CardTitle className="text-sm font-bold text-orange-700">
-                  Loja Fechada (Tentando Acordo)
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-orange-600 mb-0.5">
-                {metricas.qtdLojaFechada}
-              </div>
-              <CardDescription className="text-xs text-gray-500">
-                {metricas.qtdLojaFechada !== 1 ? 'Clientes' : 'Cliente'} -{' '}
-                {formatarMoeda(metricas.valorLojaFechada)}
-              </CardDescription>
-            </CardContent>
-          </Card>
-
-          <Card
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={abrirModalStatusAcordoConcluido}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Smiley size={18} className="text-emerald-600" />
-                <CardTitle className="text-sm font-bold text-emerald-700">
-                  Acordo Concluído
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-emerald-600 mb-0.5">
-                {metricas.qtdAcordoConcluido}
-              </div>
-              <CardDescription className="text-xs text-gray-500">
-                {metricas.qtdAcordoConcluido !== 1 ? 'Clientes' : 'Cliente'} -{' '}
-                {formatarMoeda(metricas.valorAcordoConcluido)}
-              </CardDescription>
-            </CardContent>
-          </Card>
-
-          <Card
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={abrirModalStatusNotificacaoJuridica}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <FileText size={18} className="text-yellow-600" />
-                <CardTitle className="text-sm font-bold text-yellow-700">
-                  Notificação Jurídica
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-yellow-600 mb-0.5">
-                {metricas.qtdNotificacaoJuridica}
-              </div>
-              <CardDescription className="text-xs text-gray-500">
-                {metricas.qtdNotificacaoJuridica !== 1 ? 'Clientes' : 'Cliente'}{' '}
-                - {formatarMoeda(metricas.valorNotificacaoJuridica)}
-              </CardDescription>
-            </CardContent>
-          </Card>
-
-          <Card
-            className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-            onClick={abrirModalStatusAcaoJudicial}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Gavel size={18} className="text-red-700" />
-                <CardTitle className="text-sm font-bold text-red-800">
-                  Em Ação Judicial
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4">
-              <div className="text-base font-extrabold text-red-700 mb-0.5">
-                {metricas.qtdAcaoJudicial}
-              </div>
-              <CardDescription className="text-xs text-gray-500">
-                {metricas.qtdAcaoJudicial !== 1 ? 'Clientes' : 'Cliente'} -{' '}
-                {formatarMoeda(metricas.valorAcaoJudicial)}
-              </CardDescription>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* Matriz: Situação x Status */}
-      <div className="mb-6">
-        <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
-          <span className="w-1 h-4 bg-[#000638] rounded"></span>
-          Cruzamento: Situação x Status
-        </h3>
-        <Card className="shadow-lg rounded-xl bg-white">
-          <CardContent className="p-4">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b-2 border-gray-300">
-                    <th className="px-4 py-3 text-left font-bold text-[#000638]">
-                      Situação / Status
-                    </th>
-                    <th className="px-4 py-3 text-center font-bold text-blue-700">
-                      Acordo
-                    </th>
-                    <th className="px-4 py-3 text-center font-bold text-cyan-700">
-                      Acordo em Andamento
-                    </th>
-                    <th className="px-4 py-3 text-center font-bold text-[#000638] bg-gray-100">
-                      Total
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Linha ATRASADOS */}
-                  <tr className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-3 font-bold text-yellow-700 bg-yellow-50">
-                      <div className="flex items-center gap-2">
-                        <Clock size={16} />
-                        ATRASADOS
-                      </div>
-                    </td>
-                    <td
-                      className="px-4 py-3 text-center cursor-pointer hover:bg-blue-50 transition-colors"
-                      onClick={() =>
-                        abrirModalMatriz(
-                          'Atrasados - Acordo',
-                          matrizSituacaoStatus.atrasadosAcordo.clientes,
-                        )
-                      }
-                    >
-                      <div className="font-bold text-blue-600">
-                        {matrizSituacaoStatus.atrasadosAcordo.qtd}
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        {formatarMoeda(
-                          matrizSituacaoStatus.atrasadosAcordo.valor,
-                        )}
-                      </div>
-                    </td>
-                    <td
-                      className="px-4 py-3 text-center cursor-pointer hover:bg-cyan-50 transition-colors"
-                      onClick={() =>
-                        abrirModalMatriz(
-                          'Atrasados - Acordo em Andamento',
-                          matrizSituacaoStatus.atrasadosAcordoAndamento
-                            .clientes,
-                        )
-                      }
-                    >
-                      <div className="font-bold text-cyan-600">
-                        {matrizSituacaoStatus.atrasadosAcordoAndamento.qtd}
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        {formatarMoeda(
-                          matrizSituacaoStatus.atrasadosAcordoAndamento.valor,
-                        )}
-                      </div>
-                    </td>
-
-                    <td className="px-4 py-3 text-center font-bold bg-yellow-50 border-l-2 border-yellow-300">
-                      <div className="text-base text-blue-700">
-                        {metricas.qtdAtrasados -
-                          (matrizSituacaoStatus.atrasadosAcordo.qtd +
-                            matrizSituacaoStatus.atrasadosAcordoAndamento.qtd)}
-                      </div>
-                      <div className="text-sm font-semibold text-gray-700 mt-1">
-                        {formatarMoeda(
-                          metricas.valorAtrasados -
-                            (matrizSituacaoStatus.atrasadosAcordo.valor +
-                              matrizSituacaoStatus.atrasadosAcordoAndamento
-                                .valor),
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1 italic">
-                        Total - Acordos
-                      </div>
-                    </td>
-                  </tr>
-
-                  {/* Linha INADIMPLENTES */}
-                  <tr className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-bold text-red-700 bg-red-50">
-                      <div className="flex items-center gap-2">
-                        <Warning size={16} />
-                        INADIMPLENTES
-                      </div>
-                    </td>
-                    <td
-                      className="px-4 py-3 text-center cursor-pointer hover:bg-blue-50 transition-colors"
-                      onClick={() =>
-                        abrirModalMatriz(
-                          'Inadimplentes - Acordo',
-                          matrizSituacaoStatus.inadimplentesAcordo.clientes,
-                        )
-                      }
-                    >
-                      <div className="font-bold text-blue-600">
-                        {matrizSituacaoStatus.inadimplentesAcordo.qtd}
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        {formatarMoeda(
-                          matrizSituacaoStatus.inadimplentesAcordo.valor,
-                        )}
-                      </div>
-                    </td>
-                    <td
-                      className="px-4 py-3 text-center cursor-pointer hover:bg-cyan-50 transition-colors"
-                      onClick={() =>
-                        abrirModalMatriz(
-                          'Inadimplentes - Acordo em Andamento',
-                          matrizSituacaoStatus.inadimplentesAcordoAndamento
-                            .clientes,
-                        )
-                      }
-                    >
-                      <div className="font-bold text-cyan-600">
-                        {matrizSituacaoStatus.inadimplentesAcordoAndamento.qtd}
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        {formatarMoeda(
-                          matrizSituacaoStatus.inadimplentesAcordoAndamento
-                            .valor,
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-center font-bold bg-red-50 border-l-2 border-red-300">
-                      <div className="text-base text-red-700">
-                        {metricas.qtdInadimplentes -
-                          (matrizSituacaoStatus.inadimplentesAcordo.qtd +
-                            matrizSituacaoStatus.inadimplentesAcordoAndamento
-                              .qtd)}
-                      </div>
-                      <div className="text-sm font-semibold text-gray-700 mt-1">
-                        {formatarMoeda(
-                          metricas.valorInadimplentes -
-                            (matrizSituacaoStatus.inadimplentesAcordo.valor +
-                              matrizSituacaoStatus.inadimplentesAcordoAndamento
-                                .valor),
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1 italic">
-                        Total - Acordos
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+      {/* ======================== VIEW: DASHBOARD ======================== */}
+      {viewMode === 'dashboard' && (
+        <div className="space-y-6">
+          {loadingTimeline ? (
+            <div className="flex items-center justify-center py-12">
+              <CircleNotch size={32} className="animate-spin text-[#000638]" />
+              <span className="ml-2 text-sm text-gray-500">
+                Carregando evolução...
+              </span>
             </div>
-            <div className="mt-3 text-xs text-gray-500 italic">
-              💡 Clique em qualquer célula para ver a lista detalhada de
-              clientes
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Resumo por Representante */}
-      {resumoPorRepresentante.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
-            <span className="w-1 h-4 bg-[#000638] rounded"></span>
-            Dívida por Representante
-          </h3>
-          <Card className="shadow-lg rounded-xl bg-white">
-            <CardContent className="p-4">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b-2 border-gray-300">
-                      <th className="px-4 py-3 text-left font-bold text-[#000638]">
-                        Representante
-                      </th>
-                      <th className="px-4 py-3 text-center font-bold text-[#000638]">
-                        Clientes
-                      </th>
-                      <th className="px-4 py-3 text-right font-bold text-red-700">
-                        Valor Vencido
-                      </th>
-                      <th className="px-4 py-3 text-right font-bold text-yellow-700">
-                        Valor a Vencer
-                      </th>
-                      <th className="px-4 py-3 text-right font-bold text-[#000638]">
-                        Total Geral
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {resumoPorRepresentante.map((item) => (
-                      <tr
-                        key={item.representante}
-                        className="border-b hover:bg-gray-50 cursor-pointer transition-colors"
-                        onClick={() => {
-                          if (item.representante !== 'SEM REPRESENTANTE') {
-                            setFiltroRepresentantes([item.representante]);
-                          }
-                        }}
+          ) : (
+            <>
+              {/* Gráfico: Evolução do Valor Total */}
+              <Card className="shadow-lg rounded-xl bg-white">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <ChartLineUp size={18} className="text-red-600" />
+                    <CardTitle className="text-sm font-bold text-[#000638]">
+                      Evolução do Valor Total da Inadimplência MTM
+                    </CardTitle>
+                    {variacoes.valor !== null && (
+                      <span
+                        className={`ml-auto flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${variacoes.valor > 0 ? 'bg-red-100 text-red-700' : variacoes.valor < 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}
                       >
-                        <td className="px-4 py-3 font-semibold text-[#000638]">
-                          <div className="flex items-center gap-2">
-                            <Users size={14} className="text-indigo-500" />
-                            {item.representante}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-center font-bold text-blue-600">
-                          {item.qtdClientes}
-                        </td>
-                        <td className="px-4 py-3 text-right font-bold text-red-600">
-                          {formatarMoeda(item.valorTotal)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-bold text-yellow-600">
-                          {formatarMoeda(item.valorAVencer)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-extrabold text-[#000638]">
-                          {formatarMoeda(item.valorTotal + item.valorAVencer)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 border-gray-400 bg-gray-50">
-                      <td className="px-4 py-3 font-extrabold text-[#000638]">
-                        TOTAL
-                      </td>
-                      <td className="px-4 py-3 text-center font-extrabold text-blue-700">
-                        {resumoPorRepresentante.reduce(
-                          (s, i) => s + i.qtdClientes,
-                          0,
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right font-extrabold text-red-700">
-                        {formatarMoeda(
-                          resumoPorRepresentante.reduce(
-                            (s, i) => s + i.valorTotal,
-                            0,
-                          ),
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right font-extrabold text-yellow-700">
-                        {formatarMoeda(
-                          resumoPorRepresentante.reduce(
-                            (s, i) => s + i.valorAVencer,
-                            0,
-                          ),
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right font-extrabold text-[#000638]">
-                        {formatarMoeda(
-                          resumoPorRepresentante.reduce(
-                            (s, i) => s + i.valorTotal + i.valorAVencer,
-                            0,
-                          ),
-                        )}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-              <div className="mt-3 text-xs text-gray-500 italic">
-                💡 Clique em um representante para filtrar a tabela
-              </div>
-            </CardContent>
-          </Card>
+                        {variacoes.valor > 0 ? (
+                          <ArrowUp size={14} weight="bold" />
+                        ) : variacoes.valor < 0 ? (
+                          <ArrowDown size={14} weight="bold" />
+                        ) : null}
+                        {variacoes.valor > 0 ? '+' : ''}
+                        {variacoes.valor.toFixed(1)}%
+                      </span>
+                    )}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    Acompanhe se o valor total está subindo ou caindo ao longo
+                    dos dias{' '}
+                    {variacoes.primeiraData
+                      ? `(ref. ${variacoes.primeiraData})`
+                      : ''}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div style={{ height: 350 }}>
+                    {chartTimelineValor ? (
+                      <Line
+                        data={chartTimelineValor}
+                        options={lineOptionsValor}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                        Sem dados de evolução ainda. Os snapshots são salvos
+                        automaticamente.
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Gráfico: Evolução da Quantidade de Clientes */}
+              <Card className="shadow-lg rounded-xl bg-white">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Users size={18} className="text-blue-600" />
+                    <CardTitle className="text-sm font-bold text-[#000638]">
+                      Evolução da Quantidade de Clientes Inadimplentes
+                    </CardTitle>
+                    {variacoes.clientes !== null && (
+                      <span
+                        className={`ml-auto flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${variacoes.clientes > 0 ? 'bg-red-100 text-red-700' : variacoes.clientes < 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}
+                      >
+                        {variacoes.clientes > 0 ? (
+                          <ArrowUp size={14} weight="bold" />
+                        ) : variacoes.clientes < 0 ? (
+                          <ArrowDown size={14} weight="bold" />
+                        ) : null}
+                        {variacoes.clientes > 0 ? '+' : ''}
+                        {variacoes.clientes.toFixed(1)}%
+                      </span>
+                    )}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    Acompanhe se a quantidade de clientes está subindo ou caindo{' '}
+                    {variacoes.primeiraData
+                      ? `(ref. ${variacoes.primeiraData})`
+                      : ''}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div style={{ height: 350 }}>
+                    {chartTimelineClientes ? (
+                      <Line
+                        data={chartTimelineClientes}
+                        options={lineOptionsClientes}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                        Sem dados de evolução ainda.
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Gráfico: Evolução por Representante - Valor */}
+              <Card className="shadow-lg rounded-xl bg-white">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <TrendUp size={18} className="text-purple-600" />
+                    <CardTitle className="text-sm font-bold text-[#000638]">
+                      Evolução da Inadimplência por Representante (Valor)
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    Valor inadimplente de cada representante ao longo do tempo
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div style={{ height: 400 }}>
+                    {chartTimelineRepresentantes ? (
+                      <Line
+                        data={chartTimelineRepresentantes}
+                        options={lineOptionsRepresentantes}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                        Sem dados de evolução por representante ainda.
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Gráfico: Evolução Atrasados vs Inadimplentes */}
+              <Card className="shadow-lg rounded-xl bg-white">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Warning size={18} className="text-yellow-600" />
+                    <CardTitle className="text-sm font-bold text-[#000638]">
+                      Evolução Atrasados vs Inadimplentes
+                    </CardTitle>
+                    <div className="ml-auto flex items-center gap-2">
+                      {variacoes.atrasados !== null && (
+                        <span
+                          className={`flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${variacoes.atrasados > 0 ? 'bg-orange-100 text-orange-700' : variacoes.atrasados < 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}
+                        >
+                          {variacoes.atrasados > 0 ? (
+                            <ArrowUp size={14} weight="bold" />
+                          ) : variacoes.atrasados < 0 ? (
+                            <ArrowDown size={14} weight="bold" />
+                          ) : null}
+                          Atr. {variacoes.atrasados > 0 ? '+' : ''}
+                          {variacoes.atrasados.toFixed(1)}%
+                        </span>
+                      )}
+                      {variacoes.inadimplentes !== null && (
+                        <span
+                          className={`flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${variacoes.inadimplentes > 0 ? 'bg-red-100 text-red-700' : variacoes.inadimplentes < 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}
+                        >
+                          {variacoes.inadimplentes > 0 ? (
+                            <ArrowUp size={14} weight="bold" />
+                          ) : variacoes.inadimplentes < 0 ? (
+                            <ArrowDown size={14} weight="bold" />
+                          ) : null}
+                          Inad. {variacoes.inadimplentes > 0 ? '+' : ''}
+                          {variacoes.inadimplentes.toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    Atrasados (≤ 60 dias) vs Inadimplentes ({'>'} 60 dias) —
+                    acompanhe a gravidade da carteira{' '}
+                    {variacoes.primeiraData
+                      ? `(ref. ${variacoes.primeiraData})`
+                      : ''}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div style={{ height: 350 }}>
+                    {chartTimelineAtrasadosInadimplentes ? (
+                      <Line
+                        data={chartTimelineAtrasadosInadimplentes}
+                        options={lineOptionsAtrasadosInadimplentes}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                        Sem dados de evolução atrasados/inadimplentes ainda. Os
+                        dados começarão a ser coletados a partir de hoje.
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Gráfico: Evolução por Representante - Quantidade de Clientes */}
+              <Card className="shadow-lg rounded-xl bg-white">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Users size={18} className="text-green-600" />
+                    <CardTitle className="text-sm font-bold text-[#000638]">
+                      Evolução Clientes por Representante
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    Quantidade de clientes inadimplentes de cada representante
+                    ao longo do tempo
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div style={{ height: 400 }}>
+                    {chartTimelineRepClientes ? (
+                      <Line
+                        data={chartTimelineRepClientes}
+                        options={lineOptionsRepClientes}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                        Sem dados de evolução por representante ainda.
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
         </div>
       )}
 
-      {/* Gráficos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <ChartBar size={18} className="text-blue-600" />
-              <CardTitle className="text-sm font-bold text-blue-700">
-                TOP CLIENTES INADIMPLENTES
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 px-4 pb-4">
-            <CardDescription className="text-xs text-gray-500 mb-3">
-              Visão geral dos dados de inadimplência
-            </CardDescription>
-            <div className="h-64">
-              <Bar
-                data={graficoPrincipalData}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                      callbacks: {
-                        label: function (context) {
-                          const idx = context.dataIndex;
-                          const cliente = topClientes[idx];
-                          const valor = context.dataset.data[idx] || 0;
-                          const valorFmt = new Intl.NumberFormat('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL',
-                          }).format(valor);
-                          const dias = cliente?.diasAtrasoMax ?? 0;
-                          return `${valorFmt} — ${dias} dias em atraso`;
-                        },
-                      },
-                    },
-                  },
-                  scales: { y: { beginAtZero: true } },
-                }}
-              />
-            </div>
-          </CardContent>
-        </Card>
+      {/* ======================== VIEW: LISTA (conteúdo original) ======================== */}
+      {viewMode === 'lista' && (
+        <>
+          {/* Cards de Resumo */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <Users size={18} className="text-blue-600" />
+                  <CardTitle className="text-sm font-bold text-blue-700">
+                    Total de Clientes
+                  </CardTitle>
+                  {variacoes.clientes !== null && (
+                    <span
+                      className={`ml-auto flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${variacoes.clientes > 0 ? 'bg-red-100 text-red-700' : variacoes.clientes < 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}
+                    >
+                      {variacoes.clientes > 0 ? (
+                        <ArrowUp size={14} weight="bold" />
+                      ) : variacoes.clientes < 0 ? (
+                        <ArrowDown size={14} weight="bold" />
+                      ) : null}
+                      {variacoes.clientes > 0 ? '+' : ''}
+                      {variacoes.clientes.toFixed(1)}%
+                    </span>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-base font-extrabold text-blue-600 mb-0.5">
+                  {metricas.totalClientes}
+                </div>
+                <CardDescription className="text-xs text-gray-500">
+                  Clientes inadimplentes{' '}
+                  {variacoes.primeiraData
+                    ? `(ref. ${variacoes.primeiraData})`
+                    : ''}
+                </CardDescription>
+              </CardContent>
+            </Card>
 
-        <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <MapPin size={18} className="text-green-600" />
-              <CardTitle className="text-sm font-bold text-green-700">
-                Clientes por Estado
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 px-4 pb-4">
-            <CardDescription className="text-xs text-gray-500 mb-3">
-              Distribuição de inadimplentes por estado
-            </CardDescription>
-            <div className="h-64">
-              <Bar
-                data={graficoEstadoData}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: {
-                    legend: {
-                      display: false,
-                    },
-                  },
-                  scales: {
-                    y: {
-                      beginAtZero: true,
-                    },
-                  },
-                }}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <CurrencyDollar size={18} className="text-green-600" />
+                  <CardTitle className="text-sm font-bold text-green-700">
+                    Valor Total
+                  </CardTitle>
+                  {variacoes.valor !== null && (
+                    <span
+                      className={`ml-auto flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${variacoes.valor > 0 ? 'bg-red-100 text-red-700' : variacoes.valor < 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}
+                    >
+                      {variacoes.valor > 0 ? (
+                        <ArrowUp size={14} weight="bold" />
+                      ) : variacoes.valor < 0 ? (
+                        <ArrowDown size={14} weight="bold" />
+                      ) : null}
+                      {variacoes.valor > 0 ? '+' : ''}
+                      {variacoes.valor.toFixed(1)}%
+                    </span>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-base font-extrabold text-green-600 mb-0.5">
+                  {formatarMoeda(metricas.valorTotal)}
+                </div>
+                <CardDescription className="text-xs text-gray-500">
+                  Valor em aberto{' '}
+                  {variacoes.primeiraData
+                    ? `(ref. ${variacoes.primeiraData})`
+                    : ''}
+                </CardDescription>
+              </CardContent>
+            </Card>
 
-      {/* Tabela */}
-      <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Receipt size={18} className="text-[#000638]" />
-              <CardTitle className="text-sm font-bold text-[#000638]">
-                Lista de Clientes Inadimplentes
-              </CardTitle>
-            </div>
-            <button
-              onClick={() => abrirModalHistorico(null)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#000638] text-white text-xs font-medium rounded hover:bg-[#fe0000] transition-colors"
-              title="Ver histórico completo de alterações"
-            >
-              <ClockClockwise size={16} weight="bold" />
-              Log
-            </button>
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <Handshake size={18} className="text-purple-600" />
+                  <CardTitle className="text-sm font-bold text-purple-700">
+                    Valor Total - Acordos
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-base font-extrabold text-purple-600 mb-0.5">
+                  {formatarMoeda(
+                    metricas.valorTotal -
+                      (matrizSituacaoStatus.atrasadosAcordo.valor +
+                        matrizSituacaoStatus.atrasadosAcordoAndamento.valor +
+                        matrizSituacaoStatus.inadimplentesAcordo.valor +
+                        matrizSituacaoStatus.inadimplentesAcordoAndamento
+                          .valor),
+                  )}
+                </div>
+                <CardDescription className="text-xs text-gray-500">
+                  Valor em aberto - Acordos - Acordos em Andamento
+                </CardDescription>
+              </CardContent>
+            </Card>
+
+            {/* Juros e Valor Corrigido removidos por solicitação */}
           </div>
-        </CardHeader>
-        <CardContent className="pt-0 px-4 pb-4">
-          <CardDescription className="text-xs text-gray-500 mb-4">
-            Detalhes completos dos clientes em situação de inadimplência
-          </CardDescription>
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <LoadingSpinner size="md" text="Carregando dados..." />
+
+          {/* Sessão Situação */}
+          <div className="mb-6">
+            <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
+              <span className="w-1 h-4 bg-[#000638] rounded"></span>
+              Por Situação
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card
+                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+                onClick={abrirModalAtrasados}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Clock size={18} className="text-yellow-600" />
+                    <CardTitle className="text-sm font-bold text-yellow-700">
+                      Atrasados
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-base font-extrabold text-yellow-600 mb-0.5">
+                    {metricas.qtdAtrasados} cliente
+                    {metricas.qtdAtrasados !== 1 ? 's' : ''}
+                  </div>
+                  <div className="text-sm font-semibold text-gray-700 mb-1">
+                    {formatarMoeda(metricas.valorAtrasados)}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    Até 31 dias de atraso
+                  </CardDescription>
+                </CardContent>
+              </Card>
+
+              <Card
+                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+                onClick={abrirModalInadimplentes}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Warning size={18} className="text-red-600" />
+                    <CardTitle className="text-sm font-bold text-red-700">
+                      Inadimplentes
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-base font-extrabold text-red-600 mb-0.5">
+                    {metricas.qtdInadimplentes} cliente
+                    {metricas.qtdInadimplentes !== 1 ? 's' : ''}
+                  </div>
+                  <div className="text-sm font-semibold text-gray-700 mb-1">
+                    {formatarMoeda(metricas.valorInadimplentes)}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    Acima de 31 dias de atraso
+                  </CardDescription>
+                </CardContent>
+              </Card>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
-                <thead className="text-xs text-gray-700 uppercase bg-gray-50">
-                  <tr>
-                    <th
-                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => ordenarColuna('cd_cliente')}
-                      title="Clique para ordenar"
-                    >
-                      <div className="flex items-center gap-1">
-                        Código Cliente
-                        {ordenarPor === 'cd_cliente' && (
-                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
-                        )}
-                      </div>
-                    </th>
-                    <th
-                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => ordenarColuna('nm_cliente')}
-                      title="Clique para ordenar"
-                    >
-                      <div className="flex items-center gap-1">
-                        Nome Cliente
-                        {ordenarPor === 'nm_cliente' && (
-                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
-                        )}
-                      </div>
-                    </th>
-                    <th
-                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => ordenarColuna('ds_uf')}
-                      title="Clique para ordenar"
-                    >
-                      <div className="flex items-center gap-1">
-                        Estado
-                        {ordenarPor === 'ds_uf' && (
-                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
-                        )}
-                      </div>
-                    </th>
-                    <th
-                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => ordenarColuna('valor_total')}
-                      title="Clique para ordenar"
-                    >
-                      <div className="flex items-center gap-1">
-                        Valor Vencido
-                        {ordenarPor === 'valor_total' && (
-                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
-                        )}
-                      </div>
-                    </th>
-                    <th
-                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => ordenarColuna('valor_a_vencer')}
-                      title="Clique para ordenar"
-                    >
-                      <div className="flex items-center gap-1">
-                        A Vencer
-                        {ordenarPor === 'valor_a_vencer' && (
-                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
-                        )}
-                      </div>
-                    </th>
-                    <th
-                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => ordenarColuna('situacao')}
-                      title="Clique para ordenar"
-                    >
-                      <div className="flex items-center gap-1">
-                        Situação
-                        {ordenarPor === 'situacao' && (
-                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
-                        )}
-                      </div>
-                    </th>
-                    <th
-                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => ordenarColuna('feeling')}
-                      title="Clique para ordenar"
-                    >
-                      <div className="flex items-center gap-1">
-                        Feeling
-                        {ordenarPor === 'feeling' && (
-                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
-                        )}
-                      </div>
-                    </th>
-                    <th
-                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => ordenarColuna('status')}
-                      title="Clique para ordenar"
-                    >
-                      <div className="flex items-center gap-1">
-                        Status
-                        {ordenarPor === 'status' && (
-                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
-                        )}
-                      </div>
-                    </th>
-                    <th
-                      className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => ordenarColuna('representante')}
-                      title="Clique para ordenar"
-                    >
-                      <div className="flex items-center gap-1">
-                        Representante
-                        {ordenarPor === 'representante' && (
-                          <span>{direcaoOrdenacao === 'asc' ? '↑' : '↓'}</span>
-                        )}
-                      </div>
-                    </th>
-                    <th className="px-4 py-3">Observações</th>
-                    <th className="px-4 py-3">Contato</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {clientesAgrupados.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={11}
-                        className="px-4 py-8 text-center text-gray-500"
-                      >
-                        Nenhum cliente inadimplente encontrado
-                      </td>
-                    </tr>
-                  ) : (
-                    clientesAgrupados.map((cliente, index) => (
-                      <tr
-                        key={index}
-                        className="bg-white border-b hover:bg-blue-50 cursor-pointer transition-colors"
-                        onClick={() => abrirModal(cliente)}
-                      >
-                        <td className="px-4 py-3 font-medium text-gray-900">
-                          {cliente.cd_cliente || 'N/A'}
-                        </td>
-                        <td className="px-4 py-3 font-medium text-gray-900">
-                          {cliente.nm_cliente || 'N/A'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded">
-                            {cliente.ds_uf?.trim() || 'N/A'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 font-medium text-red-600">
-                          {formatarMoeda(cliente.valor_total)}
-                        </td>
-                        <td className="px-4 py-3 font-medium text-orange-600">
-                          {formatarMoeda(cliente.valor_a_vencer)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`text-xs font-semibold px-2 py-1 rounded ${
-                              cliente.situacao === 'INADIMPLENTE'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                            }`}
-                          >
-                            {cliente.situacao}
-                          </span>
+          </div>
+
+          {/* Sessão Feeling */}
+          <div className="mb-6">
+            <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
+              <span className="w-1 h-4 bg-[#000638] rounded"></span>
+              Por Feeling
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card
+                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+                onClick={abrirModalFeelingAtraso}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <ChatCircleDots size={18} className="text-orange-600" />
+                    <CardTitle className="text-sm font-bold text-orange-700">
+                      Atraso
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-base font-extrabold text-orange-600 mb-0.5">
+                    {metricas.qtdFeelingAtraso} cliente
+                    {metricas.qtdFeelingAtraso !== 1 ? 's' : ''}
+                  </div>
+                  <div className="text-sm font-semibold text-gray-700 mb-1">
+                    {formatarMoeda(metricas.valorFeelingAtraso)}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    Clientes marcados com atraso
+                  </CardDescription>
+                </CardContent>
+              </Card>
+
+              <Card
+                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+                onClick={abrirModalFeelingPossivelPagamento}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <TrendUp size={18} className="text-green-600" />
+                    <CardTitle className="text-sm font-bold text-green-700">
+                      Possível Pagamento
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-base font-extrabold text-green-600 mb-0.5">
+                    {metricas.qtdFeelingPossivelPagamento} cliente
+                    {metricas.qtdFeelingPossivelPagamento !== 1 ? 's' : ''}
+                  </div>
+                  <div className="text-sm font-semibold text-gray-700 mb-1">
+                    {formatarMoeda(metricas.valorFeelingPossivelPagamento)}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    Clientes com possibilidade de pagamento
+                  </CardDescription>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          {/* Sessão Status */}
+          <div className="mb-6">
+            <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
+              <span className="w-1 h-4 bg-[#000638] rounded"></span>
+              Por Status
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card
+                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+                onClick={abrirModalStatusAcordo}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Handshake size={18} className="text-blue-600" />
+                    <CardTitle className="text-sm font-bold text-blue-700">
+                      Acordo
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-base font-extrabold text-blue-600 mb-0.5">
+                    {metricas.qtdAcordo}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    {metricas.qtdAcordo !== 1 ? 'Clientes' : 'Cliente'} -{' '}
+                    {formatarMoeda(metricas.valorAcordo)}
+                  </CardDescription>
+                </CardContent>
+              </Card>
+
+              <Card
+                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+                onClick={abrirModalStatusAcordoAndamento}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <FileText size={18} className="text-cyan-600" />
+                    <CardTitle className="text-sm font-bold text-cyan-700">
+                      Acordo em Andamento
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-base font-extrabold text-cyan-600 mb-0.5">
+                    {metricas.qtdAcordoAndamento}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    {metricas.qtdAcordoAndamento !== 1 ? 'Clientes' : 'Cliente'}{' '}
+                    - {formatarMoeda(metricas.valorAcordoAndamento)}
+                  </CardDescription>
+                </CardContent>
+              </Card>
+
+              <Card
+                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+                onClick={abrirModalStatusCobranca}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <CurrencyDollar size={18} className="text-purple-600" />
+                    <CardTitle className="text-sm font-bold text-purple-700">
+                      Cobrança
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-base font-extrabold text-purple-600 mb-0.5">
+                    {metricas.qtdCobranca}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    {metricas.qtdCobranca !== 1 ? 'Clientes' : 'Cliente'} -{' '}
+                    {formatarMoeda(metricas.valorCobranca)}
+                  </CardDescription>
+                </CardContent>
+              </Card>
+
+              <Card
+                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+                onClick={abrirModalStatusProtestado}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Gavel size={18} className="text-red-600" />
+                    <CardTitle className="text-sm font-bold text-red-700">
+                      Protestado
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-base font-extrabold text-red-600 mb-0.5">
+                    {metricas.qtdProtestado}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    {metricas.qtdProtestado !== 1 ? 'Clientes' : 'Cliente'} -{' '}
+                    {formatarMoeda(metricas.valorProtestado)}
+                  </CardDescription>
+                </CardContent>
+              </Card>
+
+              {/* Novos cards de status */}
+              <Card
+                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+                onClick={abrirModalStatusPagoPendente}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle size={18} className="text-green-600" />
+                    <CardTitle className="text-sm font-bold text-green-700">
+                      Pago Pendente de Baixa
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-base font-extrabold text-green-600 mb-0.5">
+                    {metricas.qtdPagoPendente}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    {metricas.qtdPagoPendente !== 1 ? 'Clientes' : 'Cliente'} -{' '}
+                    {formatarMoeda(metricas.valorPagoPendente)}
+                  </CardDescription>
+                </CardContent>
+              </Card>
+
+              <Card
+                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+                onClick={abrirModalStatusLojaFechada}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Warning size={18} className="text-orange-600" />
+                    <CardTitle className="text-sm font-bold text-orange-700">
+                      Loja Fechada (Tentando Acordo)
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-base font-extrabold text-orange-600 mb-0.5">
+                    {metricas.qtdLojaFechada}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    {metricas.qtdLojaFechada !== 1 ? 'Clientes' : 'Cliente'} -{' '}
+                    {formatarMoeda(metricas.valorLojaFechada)}
+                  </CardDescription>
+                </CardContent>
+              </Card>
+
+              <Card
+                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+                onClick={abrirModalStatusAcordoConcluido}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Smiley size={18} className="text-emerald-600" />
+                    <CardTitle className="text-sm font-bold text-emerald-700">
+                      Acordo Concluído
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-base font-extrabold text-emerald-600 mb-0.5">
+                    {metricas.qtdAcordoConcluido}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    {metricas.qtdAcordoConcluido !== 1 ? 'Clientes' : 'Cliente'}{' '}
+                    - {formatarMoeda(metricas.valorAcordoConcluido)}
+                  </CardDescription>
+                </CardContent>
+              </Card>
+
+              <Card
+                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+                onClick={abrirModalStatusNotificacaoJuridica}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <FileText size={18} className="text-yellow-600" />
+                    <CardTitle className="text-sm font-bold text-yellow-700">
+                      Notificação Jurídica
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-base font-extrabold text-yellow-600 mb-0.5">
+                    {metricas.qtdNotificacaoJuridica}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    {metricas.qtdNotificacaoJuridica !== 1
+                      ? 'Clientes'
+                      : 'Cliente'}{' '}
+                    - {formatarMoeda(metricas.valorNotificacaoJuridica)}
+                  </CardDescription>
+                </CardContent>
+              </Card>
+
+              <Card
+                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
+                onClick={abrirModalStatusAcaoJudicial}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Gavel size={18} className="text-red-700" />
+                    <CardTitle className="text-sm font-bold text-red-800">
+                      Em Ação Judicial
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div className="text-base font-extrabold text-red-700 mb-0.5">
+                    {metricas.qtdAcaoJudicial}
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    {metricas.qtdAcaoJudicial !== 1 ? 'Clientes' : 'Cliente'} -{' '}
+                    {formatarMoeda(metricas.valorAcaoJudicial)}
+                  </CardDescription>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          {/* Matriz: Situação x Status */}
+          <div className="mb-6">
+            <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
+              <span className="w-1 h-4 bg-[#000638] rounded"></span>
+              Cruzamento: Situação x Status
+            </h3>
+            <Card className="shadow-lg rounded-xl bg-white">
+              <CardContent className="p-4">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b-2 border-gray-300">
+                        <th className="px-4 py-3 text-left font-bold text-[#000638]">
+                          Situação / Status
+                        </th>
+                        <th className="px-4 py-3 text-center font-bold text-blue-700">
+                          Acordo
+                        </th>
+                        <th className="px-4 py-3 text-center font-bold text-cyan-700">
+                          Acordo em Andamento
+                        </th>
+                        <th className="px-4 py-3 text-center font-bold text-[#000638] bg-gray-100">
+                          Total
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Linha ATRASADOS */}
+                      <tr className="border-b hover:bg-gray-50">
+                        <td className="px-4 py-3 font-bold text-yellow-700 bg-yellow-50">
+                          <div className="flex items-center gap-2">
+                            <Clock size={16} />
+                            ATRASADOS
+                          </div>
                         </td>
                         <td
-                          className="px-4 py-3"
-                          onClick={(e) => e.stopPropagation()}
+                          className="px-4 py-3 text-center cursor-pointer hover:bg-blue-50 transition-colors"
+                          onClick={() =>
+                            abrirModalMatriz(
+                              'Atrasados - Acordo',
+                              matrizSituacaoStatus.atrasadosAcordo.clientes,
+                            )
+                          }
                         >
-                          {editandoFeeling === cliente.cd_cliente ? (
-                            <div className="flex items-center gap-2">
-                              <select
-                                value={tempFeeling}
-                                onChange={(e) => setTempFeeling(e.target.value)}
-                                className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <option value="">Selecione...</option>
-                                <option value="POSSÍVEL PAGAMENTO">
-                                  POSSÍVEL PAGAMENTO
-                                </option>
-                                <option value="ATRASO">ATRASO</option>
-                              </select>
-                              <button
-                                onClick={(e) =>
-                                  salvarFeeling(cliente.cd_cliente, e)
-                                }
-                                className="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1 rounded transition-colors"
-                              >
-                                Salvar
-                              </button>
-                              <button
-                                onClick={cancelarEdicaoFeeling}
-                                className="bg-gray-400 hover:bg-gray-500 text-white text-xs px-2 py-1 rounded transition-colors"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          ) : (
-                            <span
-                              onClick={(e) =>
-                                iniciarEdicaoFeeling(cliente.cd_cliente, e)
-                              }
-                              className={`text-xs font-semibold px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity ${getFeelingBadgeClass(
-                                cliente.feeling,
-                              )}`}
-                            >
-                              {cliente.feeling || '---'}
-                            </span>
-                          )}
+                          <div className="font-bold text-blue-600">
+                            {matrizSituacaoStatus.atrasadosAcordo.qtd}
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            {formatarMoeda(
+                              matrizSituacaoStatus.atrasadosAcordo.valor,
+                            )}
+                          </div>
                         </td>
                         <td
-                          className="px-4 py-3"
-                          onClick={(e) => e.stopPropagation()}
+                          className="px-4 py-3 text-center cursor-pointer hover:bg-cyan-50 transition-colors"
+                          onClick={() =>
+                            abrirModalMatriz(
+                              'Atrasados - Acordo em Andamento',
+                              matrizSituacaoStatus.atrasadosAcordoAndamento
+                                .clientes,
+                            )
+                          }
                         >
-                          {editandoStatus === cliente.cd_cliente ? (
-                            <div className="flex items-center gap-2">
-                              <select
-                                value={tempStatus}
-                                onChange={(e) => setTempStatus(e.target.value)}
-                                className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <option value="">Selecione...</option>
-                                <option value="ACORDO">ACORDO</option>
-                                <option value="ACORDO EM ANDAMENTO">
-                                  ACORDO EM ANDAMENTO
-                                </option>
-                                <option value="COBRANÇA">COBRANÇA</option>
-                                <option value="PROTESTADO">PROTESTADO</option>
-                                <option value="PAGO PENDENTE DE BAIXA">
-                                  PAGO PENDENTE DE BAIXA
-                                </option>
-                                <option value="LOJA FECHADA (Tentando ACORDO)">
-                                  LOJA FECHADA (Tentando ACORDO)
-                                </option>
-                                <option value="ACORDO CONCLUÍDO">
-                                  ACORDO CONCLUÍDO
-                                </option>
-                                <option value="NOTIFICAÇÃO JURÍDICA">
-                                  NOTIFICAÇÃO JURÍDICA
-                                </option>
-                                <option value="EM AÇÃO JUDICIAL">
-                                  EM AÇÃO JUDICIAL
-                                </option>
-                              </select>
-                              <button
-                                onClick={(e) =>
-                                  salvarStatus(cliente.cd_cliente, e)
-                                }
-                                className="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1 rounded transition-colors"
-                              >
-                                Salvar
-                              </button>
-                              <button
-                                onClick={cancelarEdicaoStatus}
-                                className="bg-gray-400 hover:bg-gray-500 text-white text-xs px-2 py-1 rounded transition-colors"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          ) : (
-                            <span
-                              onClick={(e) =>
-                                iniciarEdicaoStatus(cliente.cd_cliente, e)
-                              }
-                              className={`text-xs font-semibold px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity ${getStatusBadgeClass(
-                                cliente.status,
-                              )}`}
-                            >
-                              {cliente.status || '---'}
-                            </span>
-                          )}
+                          <div className="font-bold text-cyan-600">
+                            {matrizSituacaoStatus.atrasadosAcordoAndamento.qtd}
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            {formatarMoeda(
+                              matrizSituacaoStatus.atrasadosAcordoAndamento
+                                .valor,
+                            )}
+                          </div>
                         </td>
-                        {/* Coluna Representante */}
-                        <td
-                          className="px-4 py-3"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {editandoRepresentante === cliente.cd_cliente ? (
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="text"
-                                value={tempRepresentante}
-                                onChange={(e) =>
-                                  setTempRepresentante(e.target.value)
-                                }
-                                className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white w-32"
-                                placeholder="Nome do representante"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                              <button
-                                onClick={(e) =>
-                                  salvarRepresentante(cliente.cd_cliente, e)
-                                }
-                                className="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1 rounded transition-colors"
-                              >
-                                Salvar
-                              </button>
-                              <button
-                                onClick={cancelarEdicaoRepresentante}
-                                className="bg-gray-400 hover:bg-gray-500 text-white text-xs px-2 py-1 rounded transition-colors"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          ) : (
-                            <span
-                              onClick={(e) =>
-                                iniciarEdicaoRepresentante(
-                                  cliente.cd_cliente,
-                                  e,
-                                )
-                              }
-                              className="text-xs font-semibold px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity bg-purple-100 text-purple-800"
-                            >
-                              {cliente.representante || '---'}
-                            </span>
-                          )}
-                        </td>
-                        {/* Coluna Observações */}
-                        <td
-                          className="px-4 py-3"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            onClick={(e) => abrirModalObservacoes(cliente, e)}
-                            className="bg-[#000638] hover:bg-[#fe0000] text-white text-xs font-medium px-3 py-1 rounded transition-colors"
-                          >
-                            OBS
-                          </button>
-                        </td>
-                        {/* Coluna Contato */}
-                        <td
-                          className="px-4 py-3"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            onClick={(e) => abrirWhatsApp(cliente, e)}
-                            className="bg-green-500 hover:bg-green-600 text-white text-xs font-medium px-3 py-1 rounded transition-colors flex items-center gap-1"
-                            title="Abrir WhatsApp"
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              fill="currentColor"
-                              className="w-4 h-4"
-                            >
-                              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
-                            </svg>
-                          </button>
+
+                        <td className="px-4 py-3 text-center font-bold bg-yellow-50 border-l-2 border-yellow-300">
+                          <div className="text-base text-blue-700">
+                            {metricas.qtdAtrasados -
+                              (matrizSituacaoStatus.atrasadosAcordo.qtd +
+                                matrizSituacaoStatus.atrasadosAcordoAndamento
+                                  .qtd)}
+                          </div>
+                          <div className="text-sm font-semibold text-gray-700 mt-1">
+                            {formatarMoeda(
+                              metricas.valorAtrasados -
+                                (matrizSituacaoStatus.atrasadosAcordo.valor +
+                                  matrizSituacaoStatus.atrasadosAcordoAndamento
+                                    .valor),
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1 italic">
+                            Total - Acordos
+                          </div>
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+
+                      {/* Linha INADIMPLENTES */}
+                      <tr className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-bold text-red-700 bg-red-50">
+                          <div className="flex items-center gap-2">
+                            <Warning size={16} />
+                            INADIMPLENTES
+                          </div>
+                        </td>
+                        <td
+                          className="px-4 py-3 text-center cursor-pointer hover:bg-blue-50 transition-colors"
+                          onClick={() =>
+                            abrirModalMatriz(
+                              'Inadimplentes - Acordo',
+                              matrizSituacaoStatus.inadimplentesAcordo.clientes,
+                            )
+                          }
+                        >
+                          <div className="font-bold text-blue-600">
+                            {matrizSituacaoStatus.inadimplentesAcordo.qtd}
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            {formatarMoeda(
+                              matrizSituacaoStatus.inadimplentesAcordo.valor,
+                            )}
+                          </div>
+                        </td>
+                        <td
+                          className="px-4 py-3 text-center cursor-pointer hover:bg-cyan-50 transition-colors"
+                          onClick={() =>
+                            abrirModalMatriz(
+                              'Inadimplentes - Acordo em Andamento',
+                              matrizSituacaoStatus.inadimplentesAcordoAndamento
+                                .clientes,
+                            )
+                          }
+                        >
+                          <div className="font-bold text-cyan-600">
+                            {
+                              matrizSituacaoStatus.inadimplentesAcordoAndamento
+                                .qtd
+                            }
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            {formatarMoeda(
+                              matrizSituacaoStatus.inadimplentesAcordoAndamento
+                                .valor,
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center font-bold bg-red-50 border-l-2 border-red-300">
+                          <div className="text-base text-red-700">
+                            {metricas.qtdInadimplentes -
+                              (matrizSituacaoStatus.inadimplentesAcordo.qtd +
+                                matrizSituacaoStatus
+                                  .inadimplentesAcordoAndamento.qtd)}
+                          </div>
+                          <div className="text-sm font-semibold text-gray-700 mt-1">
+                            {formatarMoeda(
+                              metricas.valorInadimplentes -
+                                (matrizSituacaoStatus.inadimplentesAcordo
+                                  .valor +
+                                  matrizSituacaoStatus
+                                    .inadimplentesAcordoAndamento.valor),
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1 italic">
+                            Total - Acordos
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-3 text-xs text-gray-500 italic">
+                  💡 Clique em qualquer célula para ver a lista detalhada de
+                  clientes
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Resumo por Representante */}
+          {resumoPorRepresentante.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
+                <span className="w-1 h-4 bg-[#000638] rounded"></span>
+                Dívida por Representante
+              </h3>
+              <Card className="shadow-lg rounded-xl bg-white">
+                <CardContent className="p-4">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b-2 border-gray-300">
+                          <th className="px-4 py-3 text-left font-bold text-[#000638]">
+                            Representante
+                          </th>
+                          <th className="px-4 py-3 text-center font-bold text-[#000638]">
+                            Clientes
+                          </th>
+                          <th className="px-4 py-3 text-right font-bold text-red-700">
+                            Valor Vencido
+                          </th>
+                          <th className="px-4 py-3 text-right font-bold text-yellow-700">
+                            Valor a Vencer
+                          </th>
+                          <th className="px-4 py-3 text-right font-bold text-[#000638]">
+                            Total Geral
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resumoPorRepresentante.map((item) => (
+                          <tr
+                            key={item.representante}
+                            className="border-b hover:bg-gray-50 cursor-pointer transition-colors"
+                            onClick={() => {
+                              if (item.representante !== 'SEM REPRESENTANTE') {
+                                setFiltroRepresentantes([item.representante]);
+                              }
+                            }}
+                          >
+                            <td className="px-4 py-3 font-semibold text-[#000638]">
+                              <div className="flex items-center gap-2">
+                                <Users size={14} className="text-indigo-500" />
+                                {item.representante}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-center font-bold text-blue-600">
+                              {item.qtdClientes}
+                            </td>
+                            <td className="px-4 py-3 text-right font-bold text-red-600">
+                              {formatarMoeda(item.valorTotal)}
+                            </td>
+                            <td className="px-4 py-3 text-right font-bold text-yellow-600">
+                              {formatarMoeda(item.valorAVencer)}
+                            </td>
+                            <td className="px-4 py-3 text-right font-extrabold text-[#000638]">
+                              {formatarMoeda(
+                                item.valorTotal + item.valorAVencer,
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-gray-400 bg-gray-50">
+                          <td className="px-4 py-3 font-extrabold text-[#000638]">
+                            TOTAL
+                          </td>
+                          <td className="px-4 py-3 text-center font-extrabold text-blue-700">
+                            {resumoPorRepresentante.reduce(
+                              (s, i) => s + i.qtdClientes,
+                              0,
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right font-extrabold text-red-700">
+                            {formatarMoeda(
+                              resumoPorRepresentante.reduce(
+                                (s, i) => s + i.valorTotal,
+                                0,
+                              ),
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right font-extrabold text-yellow-700">
+                            {formatarMoeda(
+                              resumoPorRepresentante.reduce(
+                                (s, i) => s + i.valorAVencer,
+                                0,
+                              ),
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right font-extrabold text-[#000638]">
+                            {formatarMoeda(
+                              resumoPorRepresentante.reduce(
+                                (s, i) => s + i.valorTotal + i.valorAVencer,
+                                0,
+                              ),
+                            )}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                  <div className="mt-3 text-xs text-gray-500 italic">
+                    💡 Clique em um representante para filtrar a tabela
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
-        </CardContent>
-      </Card>
+
+          {/* Gráficos */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <ChartBar size={18} className="text-blue-600" />
+                  <CardTitle className="text-sm font-bold text-blue-700">
+                    TOP CLIENTES INADIMPLENTES
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <CardDescription className="text-xs text-gray-500 mb-3">
+                  Visão geral dos dados de inadimplência
+                </CardDescription>
+                <div className="h-64">
+                  <Bar
+                    data={graficoPrincipalData}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                          callbacks: {
+                            label: function (context) {
+                              const idx = context.dataIndex;
+                              const cliente = topClientes[idx];
+                              const valor = context.dataset.data[idx] || 0;
+                              const valorFmt = new Intl.NumberFormat('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              }).format(valor);
+                              const dias = cliente?.diasAtrasoMax ?? 0;
+                              return `${valorFmt} — ${dias} dias em atraso`;
+                            },
+                          },
+                        },
+                      },
+                      scales: { y: { beginAtZero: true } },
+                    }}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <MapPin size={18} className="text-green-600" />
+                  <CardTitle className="text-sm font-bold text-green-700">
+                    Clientes por Estado
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <CardDescription className="text-xs text-gray-500 mb-3">
+                  Distribuição de inadimplentes por estado
+                </CardDescription>
+                <div className="h-64">
+                  <Bar
+                    data={graficoEstadoData}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: {
+                          display: false,
+                        },
+                      },
+                      scales: {
+                        y: {
+                          beginAtZero: true,
+                        },
+                      },
+                    }}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Tabela */}
+          <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Receipt size={18} className="text-[#000638]" />
+                  <CardTitle className="text-sm font-bold text-[#000638]">
+                    Lista de Clientes Inadimplentes
+                  </CardTitle>
+                </div>
+                <button
+                  onClick={() => abrirModalHistorico(null)}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#000638] text-white text-xs font-medium rounded hover:bg-[#fe0000] transition-colors"
+                  title="Ver histórico completo de alterações"
+                >
+                  <ClockClockwise size={16} weight="bold" />
+                  Log
+                </button>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-4">
+              <CardDescription className="text-xs text-gray-500 mb-4">
+                Detalhes completos dos clientes em situação de inadimplência
+              </CardDescription>
+              {loading ? (
+                <div className="flex items-center justify-center py-8">
+                  <LoadingSpinner size="md" text="Carregando dados..." />
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+                      <tr>
+                        <th
+                          className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                          onClick={() => ordenarColuna('cd_cliente')}
+                          title="Clique para ordenar"
+                        >
+                          <div className="flex items-center gap-1">
+                            Código Cliente
+                            {ordenarPor === 'cd_cliente' && (
+                              <span>
+                                {direcaoOrdenacao === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                          onClick={() => ordenarColuna('nm_cliente')}
+                          title="Clique para ordenar"
+                        >
+                          <div className="flex items-center gap-1">
+                            Nome Cliente
+                            {ordenarPor === 'nm_cliente' && (
+                              <span>
+                                {direcaoOrdenacao === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                          onClick={() => ordenarColuna('ds_uf')}
+                          title="Clique para ordenar"
+                        >
+                          <div className="flex items-center gap-1">
+                            Estado
+                            {ordenarPor === 'ds_uf' && (
+                              <span>
+                                {direcaoOrdenacao === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                          onClick={() => ordenarColuna('valor_total')}
+                          title="Clique para ordenar"
+                        >
+                          <div className="flex items-center gap-1">
+                            Valor Vencido
+                            {ordenarPor === 'valor_total' && (
+                              <span>
+                                {direcaoOrdenacao === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                          onClick={() => ordenarColuna('valor_a_vencer')}
+                          title="Clique para ordenar"
+                        >
+                          <div className="flex items-center gap-1">
+                            A Vencer
+                            {ordenarPor === 'valor_a_vencer' && (
+                              <span>
+                                {direcaoOrdenacao === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                          onClick={() => ordenarColuna('situacao')}
+                          title="Clique para ordenar"
+                        >
+                          <div className="flex items-center gap-1">
+                            Situação
+                            {ordenarPor === 'situacao' && (
+                              <span>
+                                {direcaoOrdenacao === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                          onClick={() => ordenarColuna('feeling')}
+                          title="Clique para ordenar"
+                        >
+                          <div className="flex items-center gap-1">
+                            Feeling
+                            {ordenarPor === 'feeling' && (
+                              <span>
+                                {direcaoOrdenacao === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                          onClick={() => ordenarColuna('status')}
+                          title="Clique para ordenar"
+                        >
+                          <div className="flex items-center gap-1">
+                            Status
+                            {ordenarPor === 'status' && (
+                              <span>
+                                {direcaoOrdenacao === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                          onClick={() => ordenarColuna('representante')}
+                          title="Clique para ordenar"
+                        >
+                          <div className="flex items-center gap-1">
+                            Representante
+                            {ordenarPor === 'representante' && (
+                              <span>
+                                {direcaoOrdenacao === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                          </div>
+                        </th>
+                        <th className="px-4 py-3">Observações</th>
+                        <th className="px-4 py-3">Contato</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clientesAgrupados.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={11}
+                            className="px-4 py-8 text-center text-gray-500"
+                          >
+                            Nenhum cliente inadimplente encontrado
+                          </td>
+                        </tr>
+                      ) : (
+                        clientesAgrupados.map((cliente, index) => (
+                          <tr
+                            key={index}
+                            className="bg-white border-b hover:bg-blue-50 cursor-pointer transition-colors"
+                            onClick={() => abrirModal(cliente)}
+                          >
+                            <td className="px-4 py-3 font-medium text-gray-900">
+                              {cliente.cd_cliente || 'N/A'}
+                            </td>
+                            <td className="px-4 py-3 font-medium text-gray-900">
+                              {cliente.nm_cliente || 'N/A'}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded">
+                                {cliente.ds_uf?.trim() || 'N/A'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 font-medium text-red-600">
+                              {formatarMoeda(cliente.valor_total)}
+                            </td>
+                            <td className="px-4 py-3 font-medium text-orange-600">
+                              {formatarMoeda(cliente.valor_a_vencer)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={`text-xs font-semibold px-2 py-1 rounded ${
+                                  cliente.situacao === 'INADIMPLENTE'
+                                    ? 'bg-red-100 text-red-800'
+                                    : 'bg-yellow-100 text-yellow-800'
+                                }`}
+                              >
+                                {cliente.situacao}
+                              </span>
+                            </td>
+                            <td
+                              className="px-4 py-3"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {editandoFeeling === cliente.cd_cliente ? (
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    value={tempFeeling}
+                                    onChange={(e) =>
+                                      setTempFeeling(e.target.value)
+                                    }
+                                    className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <option value="">Selecione...</option>
+                                    <option value="POSSÍVEL PAGAMENTO">
+                                      POSSÍVEL PAGAMENTO
+                                    </option>
+                                    <option value="ATRASO">ATRASO</option>
+                                  </select>
+                                  <button
+                                    onClick={(e) =>
+                                      salvarFeeling(cliente.cd_cliente, e)
+                                    }
+                                    className="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1 rounded transition-colors"
+                                  >
+                                    Salvar
+                                  </button>
+                                  <button
+                                    onClick={cancelarEdicaoFeeling}
+                                    className="bg-gray-400 hover:bg-gray-500 text-white text-xs px-2 py-1 rounded transition-colors"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : (
+                                <span
+                                  onClick={(e) =>
+                                    iniciarEdicaoFeeling(cliente.cd_cliente, e)
+                                  }
+                                  className={`text-xs font-semibold px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity ${getFeelingBadgeClass(
+                                    cliente.feeling,
+                                  )}`}
+                                >
+                                  {cliente.feeling || '---'}
+                                </span>
+                              )}
+                            </td>
+                            <td
+                              className="px-4 py-3"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {editandoStatus === cliente.cd_cliente ? (
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    value={tempStatus}
+                                    onChange={(e) =>
+                                      setTempStatus(e.target.value)
+                                    }
+                                    className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <option value="">Selecione...</option>
+                                    <option value="ACORDO">ACORDO</option>
+                                    <option value="ACORDO EM ANDAMENTO">
+                                      ACORDO EM ANDAMENTO
+                                    </option>
+                                    <option value="COBRANÇA">COBRANÇA</option>
+                                    <option value="PROTESTADO">
+                                      PROTESTADO
+                                    </option>
+                                    <option value="PAGO PENDENTE DE BAIXA">
+                                      PAGO PENDENTE DE BAIXA
+                                    </option>
+                                    <option value="LOJA FECHADA (Tentando ACORDO)">
+                                      LOJA FECHADA (Tentando ACORDO)
+                                    </option>
+                                    <option value="ACORDO CONCLUÍDO">
+                                      ACORDO CONCLUÍDO
+                                    </option>
+                                    <option value="NOTIFICAÇÃO JURÍDICA">
+                                      NOTIFICAÇÃO JURÍDICA
+                                    </option>
+                                    <option value="EM AÇÃO JUDICIAL">
+                                      EM AÇÃO JUDICIAL
+                                    </option>
+                                  </select>
+                                  <button
+                                    onClick={(e) =>
+                                      salvarStatus(cliente.cd_cliente, e)
+                                    }
+                                    className="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1 rounded transition-colors"
+                                  >
+                                    Salvar
+                                  </button>
+                                  <button
+                                    onClick={cancelarEdicaoStatus}
+                                    className="bg-gray-400 hover:bg-gray-500 text-white text-xs px-2 py-1 rounded transition-colors"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : (
+                                <span
+                                  onClick={(e) =>
+                                    iniciarEdicaoStatus(cliente.cd_cliente, e)
+                                  }
+                                  className={`text-xs font-semibold px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity ${getStatusBadgeClass(
+                                    cliente.status,
+                                  )}`}
+                                >
+                                  {cliente.status || '---'}
+                                </span>
+                              )}
+                            </td>
+                            {/* Coluna Representante */}
+                            <td
+                              className="px-4 py-3"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {editandoRepresentante === cliente.cd_cliente ? (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="text"
+                                    value={tempRepresentante}
+                                    onChange={(e) =>
+                                      setTempRepresentante(e.target.value)
+                                    }
+                                    className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white w-32"
+                                    placeholder="Nome do representante"
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                  <button
+                                    onClick={(e) =>
+                                      salvarRepresentante(cliente.cd_cliente, e)
+                                    }
+                                    className="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1 rounded transition-colors"
+                                  >
+                                    Salvar
+                                  </button>
+                                  <button
+                                    onClick={cancelarEdicaoRepresentante}
+                                    className="bg-gray-400 hover:bg-gray-500 text-white text-xs px-2 py-1 rounded transition-colors"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : (
+                                <span
+                                  onClick={(e) =>
+                                    iniciarEdicaoRepresentante(
+                                      cliente.cd_cliente,
+                                      e,
+                                    )
+                                  }
+                                  className="text-xs font-semibold px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity bg-purple-100 text-purple-800"
+                                >
+                                  {cliente.representante || '---'}
+                                </span>
+                              )}
+                            </td>
+                            {/* Coluna Observações */}
+                            <td
+                              className="px-4 py-3"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                onClick={(e) =>
+                                  abrirModalObservacoes(cliente, e)
+                                }
+                                className="bg-[#000638] hover:bg-[#fe0000] text-white text-xs font-medium px-3 py-1 rounded transition-colors"
+                              >
+                                OBS
+                              </button>
+                            </td>
+                            {/* Coluna Contato */}
+                            <td
+                              className="px-4 py-3"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                onClick={(e) => abrirWhatsApp(cliente, e)}
+                                className="bg-green-500 hover:bg-green-600 text-white text-xs font-medium px-3 py-1 rounded transition-colors flex items-center gap-1"
+                                title="Abrir WhatsApp"
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 24 24"
+                                  fill="currentColor"
+                                  className="w-4 h-4"
+                                >
+                                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+                                </svg>
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {/* Modal de Lista de Clientes Filtrados */}
       {modalListaAberto && (

@@ -33,7 +33,7 @@ import {
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
-const ContasAReceber = ({ modo = 'vencimento' }) => {
+const ContasAReceber = () => {
   const [dados, setDados] = useState([]);
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
@@ -43,6 +43,9 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
   const [situacao, setSituacao] = useState('NORMAIS');
   const [duplicata, setDuplicata] = useState('');
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
+
+  // Estado para tipo de busca por data (vencimento, emissao, pagamento)
+  const [tipoBuscaData, setTipoBuscaData] = useState('vencimento');
 
   // Estados para paginação
   const [paginaAtual, setPaginaAtual] = useState(1);
@@ -65,7 +68,38 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
   const [clientesSelecionados, setClientesSelecionados] = useState([]);
   const [formasPagamentoSelecionadas, setFormasPagamentoSelecionadas] =
     useState([]);
-  const [dadosFormasPagamento, setDadosFormasPagamento] = useState([]);
+  const [dadosFormasPagamento, setDadosFormasPagamento] = useState([
+    { codigo: '1', descricao: 'Fatura' },
+    { codigo: '2', descricao: 'Cheque' },
+    { codigo: '3', descricao: 'Dinheiro' },
+    { codigo: '4', descricao: 'Cartão crédito' },
+    { codigo: '5', descricao: 'Cartão débito' },
+    { codigo: '6', descricao: 'Nota débito' },
+    { codigo: '7', descricao: 'TEF' },
+    { codigo: '8', descricao: 'Cheque TEF' },
+    { codigo: '9', descricao: 'Troco' },
+    { codigo: '10', descricao: 'Adiantamento (saída cx.)' },
+    { codigo: '11', descricao: 'Desconto financeiro' },
+    { codigo: '12', descricao: 'DOFNI' },
+    { codigo: '13', descricao: 'Vale' },
+    { codigo: '14', descricao: 'Nota promissória' },
+    { codigo: '15', descricao: 'Cheque garantido' },
+    { codigo: '16', descricao: 'TED/DOC' },
+    { codigo: '17', descricao: 'Pré-Autorização TEF' },
+    { codigo: '18', descricao: 'Cheque presente' },
+    { codigo: '19', descricao: 'TEF/TECBAN - BANRISUL' },
+    { codigo: '20', descricao: 'CREDEV' },
+    { codigo: '21', descricao: 'Cartão próprio' },
+    { codigo: '22', descricao: 'TEF/HYPERCARD' },
+    { codigo: '23', descricao: 'Bônus desconto' },
+    { codigo: '25', descricao: 'Voucher' },
+    { codigo: '26', descricao: 'PIX' },
+    { codigo: '27', descricao: 'PicPay' },
+    { codigo: '28', descricao: 'Ame' },
+    { codigo: '29', descricao: 'Mercado Pago' },
+    { codigo: '30', descricao: 'Marketplace' },
+    { codigo: '31', descricao: 'Outro documento' },
+  ]);
 
   // Estado para informações de pessoas
   const [infoPessoas, setInfoPessoas] = useState({});
@@ -289,9 +323,13 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
   // Função para aplicar filtro mensal e por dia
   const aplicarFiltroMensal = (dados, filtro, diaFiltro = null) => {
     return dados.filter((item) => {
-      // Base do filtro mensal conforme modo selecionado
+      // Base do filtro mensal conforme tipo de data selecionado
       const campoDataBase =
-        modo === 'emissao' ? item.dt_emissao : item.dt_vencimento;
+        tipoBuscaData === 'emissao'
+          ? item.dt_emissao
+          : tipoBuscaData === 'pagamento'
+            ? item.dt_liq
+            : item.dt_vencimento;
       if (!campoDataBase) return false;
 
       const data = parseDateNoTZ(campoDataBase);
@@ -574,7 +612,7 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
       const params = new URLSearchParams();
       params.append('dt_inicio', inicio);
       params.append('dt_fim', fim);
-      params.append('modo', modo);
+      params.append('modo', tipoBuscaData);
 
       // Filtro de status
       if (status && status !== 'Todos') {
@@ -1003,13 +1041,27 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 mb-3">
-            <div className="lg:col-span-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 mb-3">
+            <div>
               <FiltroEmpresa
                 empresasSelecionadas={empresasSelecionadas}
                 onSelectEmpresas={handleSelectEmpresas}
                 apenasEmpresa101={true}
               />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Tipo de Data
+              </label>
+              <select
+                value={tipoBuscaData}
+                onChange={(e) => setTipoBuscaData(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              >
+                <option value="vencimento">Vencimento</option>
+                <option value="emissao">Emissão</option>
+                <option value="pagamento">Pagamento</option>
+              </select>
             </div>
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
@@ -1048,6 +1100,13 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
                 <option value="Vencido">VENCIDO</option>
                 <option value="A Vencer">A VENCER</option>
               </select>
+            </div>
+            <div>
+              <FiltroFormaPagamento
+                formasPagamentoSelecionadas={formasPagamentoSelecionadas}
+                onSelectFormasPagamento={handleSelectFormasPagamento}
+                dadosFormasPagamento={dadosFormasPagamento}
+              />
             </div>
           </div>
 
@@ -1182,13 +1241,6 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
                 </button>
               </div>
             </div>
-            <div className="lg:col-span-1">
-              <FiltroFormaPagamento
-                formasPagamentoSelecionadas={formasPagamentoSelecionadas}
-                onSelectFormasPagamento={handleSelectFormasPagamento}
-                dadosFormasPagamento={dadosFormasPagamento}
-              />
-            </div>
             <div className="flex items-end">
               <button
                 type="submit"
@@ -1217,7 +1269,13 @@ const ContasAReceber = ({ modo = 'vencimento' }) => {
         <div className="flex items-center gap-2 mb-2">
           <Calendar size={14} className="text-[#000638]" />
           <h3 className="font-bold text-xs text-[#000638] font-barlow">
-            Filtro por Período (Data Vencimento)
+            Filtro por Período (
+            {tipoBuscaData === 'emissao'
+              ? 'Data Emissão'
+              : tipoBuscaData === 'pagamento'
+                ? 'Data Pagamento'
+                : 'Data Vencimento'}
+            )
           </h3>
         </div>
 

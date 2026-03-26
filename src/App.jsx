@@ -18,9 +18,6 @@ const BIExterno = lazy(() => import('./pages/BIExterno'));
 const ContasAPagar = lazy(() => import('./pages/ContasAPagar'));
 const ContasAPagarEmissao = lazy(() => import('./pages/ContasAPagarEmissao'));
 const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
-const ContasAReceberEmissao = lazy(
-  () => import('./pages/ContasAReceberEmissao'),
-);
 const BatidaCarteira = lazy(() => import('./pages/BatidaCarteira'));
 const ContasPagarFranquias = lazy(() => import('./pages/ContasPagarFranquias'));
 const TitulosClientes = lazy(() => import('./pages/TitulosClientes'));
@@ -64,6 +61,7 @@ const InadimplentesRevenda = lazy(() => import('./pages/InadimplentesRevenda'));
 const InadimplentesFranquias = lazy(
   () => import('./pages/InadimplentesFranquias'),
 );
+const RecuperacaoCredito = lazy(() => import('./pages/RecuperacaoCredito'));
 const CMVVarejo = lazy(() => import('./pages/CMVVarejo'));
 const DRE = lazy(() => import('./pages/DRE'));
 const GerenciadorDashboards = lazy(
@@ -92,6 +90,7 @@ const LicitacaoTitulos = lazy(() => import('./pages/LicitacaoTitulos'));
 const SolicitacoesRemessa = lazy(() => import('./pages/SolicitacoesRemessa'));
 const MinhasRemessas = lazy(() => import('./pages/MinhasRemessas'));
 const ClientesMTM = lazy(() => import('./pages/ClientesMTM'));
+const DownloadNotificacao = lazy(() => import('./pages/DownloadNotificacao'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -116,7 +115,6 @@ const protectedRoutes = [
   { path: '/contas-a-pagar', component: ContasAPagar },
   { path: '/contas-a-pagar-emissao', component: ContasAPagarEmissao },
   { path: '/contas-a-receber', component: ContasAReceber },
-  { path: '/contas-a-receber-emissao', component: ContasAReceberEmissao },
   { path: '/batida-carteira', component: BatidaCarteira },
   { path: '/contas-pagar-franquias', component: ContasPagarFranquias },
   { path: '/titulos-clientes', component: TitulosClientes },
@@ -144,6 +142,7 @@ const protectedRoutes = [
   { path: '/inadimplentes-multimarcas', component: InadimplentesMultimarcas },
   { path: '/inadimplentes-revenda', component: InadimplentesRevenda },
   { path: '/inadimplentes-franquias', component: InadimplentesFranquias },
+  { path: '/recuperacao-credito', component: RecuperacaoCredito },
   { path: '/dashboard-varejo', component: DashboardVarejo },
   { path: '/dashboard-multimarcas', component: DashboardMultimarcas },
   { path: '/dashboard-franquias', component: DashboardFranquias },
@@ -216,6 +215,14 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<LoginForm />} />
+        <Route
+          path="/notificacao"
+          element={
+            <Suspense fallback={<PageLoadingFallback />}>
+              <DownloadNotificacao />
+            </Suspense>
+          }
+        />
         <Route element={<ProtectedLayout />}>
           {protectedRoutes.map(({ path, component: Component }) => (
             <Route key={path} path={path} element={<Component />} />

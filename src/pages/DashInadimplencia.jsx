@@ -82,6 +82,11 @@ const parseDateNoTZ = (isoDate) => {
   }
 };
 
+// Título é considerado PAGO se tiver data de liquidação OU valor pago
+const isTituloPago = (item) => {
+  return !!item.dt_liq || (parseFloat(item.vl_pago) || 0) > 0;
+};
+
 const CORES = [
   '#000638',
   '#fe0000',
@@ -304,7 +309,9 @@ const DashInadimplencia = memo(() => {
       // Salvar timeline do dia
       if (dadosEnriquecidos.length > 0) {
         const calcCanal = (canal) => {
-          const itens = dadosEnriquecidos.filter((i) => i.canal === canal);
+          const itens = dadosEnriquecidos.filter(
+            (i) => i.canal === canal && !isTituloPago(i),
+          );
           const valor = itens.reduce(
             (a, i) =>
               a +
@@ -320,13 +327,15 @@ const DashInadimplencia = memo(() => {
         };
         const mtm = calcCanal('MTM');
         const frq = calcCanal('FRQ');
-        const totalInadimplencia = dadosEnriquecidos.reduce(
-          (acc, item) =>
-            acc +
-            ((parseFloat(item.vl_fatura) || 0) -
-              (parseFloat(item.vl_pago) || 0)),
-          0,
-        );
+        const totalInadimplencia = dadosEnriquecidos
+          .filter((i) => !isTituloPago(i))
+          .reduce(
+            (acc, item) =>
+              acc +
+              ((parseFloat(item.vl_fatura) || 0) -
+                (parseFloat(item.vl_pago) || 0)),
+            0,
+          );
         const qtdClientes = new Set(dadosEnriquecidos.map((i) => i.cd_cliente))
           .size;
         await salvarTimelineHoje(
@@ -397,6 +406,7 @@ const DashInadimplencia = memo(() => {
     };
 
     dados.forEach((item) => {
+      if (isTituloPago(item)) return;
       const vlFatura = parseFloat(item.vl_fatura) || 0;
       const vlPago = parseFloat(item.vl_pago) || 0;
       const saldo = vlFatura - vlPago;
@@ -474,6 +484,7 @@ const DashInadimplencia = memo(() => {
       totalInadimplencia,
       qtdTitulos: dados.filter(
         (i) =>
+          !isTituloPago(i) &&
           (parseFloat(i.vl_fatura) || 0) - (parseFloat(i.vl_pago) || 0) > 0,
       ).length,
       qtdClientes,
@@ -494,6 +505,7 @@ const DashInadimplencia = memo(() => {
     hoje.setHours(0, 0, 0, 0);
     const agrupado = {};
     dados.forEach((item) => {
+      if (isTituloPago(item)) return;
       const vlFatura = parseFloat(item.vl_fatura) || 0;
       const vlPago = parseFloat(item.vl_pago) || 0;
       const saldo = vlFatura - vlPago;
@@ -567,6 +579,7 @@ const DashInadimplencia = memo(() => {
         const portadorNome =
           item.nm_portador || `Portador ${item.cd_portador || 'N/I'}`;
         if (portadorNome !== portadorSelecionado) return false;
+        if (isTituloPago(item)) return false;
         const saldo =
           (parseFloat(item.vl_fatura) || 0) - (parseFloat(item.vl_pago) || 0);
         return saldo > 0;
@@ -901,6 +914,7 @@ const DashInadimplencia = memo(() => {
     const dadosExport = dados
       .filter(
         (i) =>
+          !isTituloPago(i) &&
           (parseFloat(i.vl_fatura) || 0) - (parseFloat(i.vl_pago) || 0) > 0,
       )
       .map((t) => {

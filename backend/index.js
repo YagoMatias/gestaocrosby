@@ -31,10 +31,18 @@ import faturamentoRoutes from './routes/faturamento.routes.js';
 import widgetsRoutes from './routes/widgets.routes.js';
 import totvsRoutes from './routes/totvs.routes.js';
 import chatRoutes from './routes/chat.routes.js';
+import whatsappRoutes from './routes/whatsapp.routes.js';
+import {
+  initializeWhatsApp,
+  client as whatsappClient,
+} from './config/whatsapp.js';
 // Carregar variáveis de ambiente
 dotenv.config();
 
 const app = express();
+
+// Trust proxy (Render usa proxy reverso)
+app.set('trust proxy', 1);
 
 // =============================================================================
 // CONFIGURAÇÕES DE SEGURANÇA E MIDDLEWARE
@@ -127,6 +135,7 @@ app.use('/api/faturamento', faturamentoRoutes); // Faturamento das lojas
 app.use('/api/widgets', widgetsRoutes); // Widgets e dashboards (views e queries)
 app.use('/api/totvs', totvsRoutes); // Integração com API TOTVS Moda
 app.use('/api/chat', chatRoutes); // Chat IA para análise financeira
+app.use('/api/whatsapp', whatsappRoutes); // WhatsApp direto via wwebjs
 // =============================================================================
 // ROTAS DE COMPATIBILIDADE (MANTER TEMPORARIAMENTE)
 // =============================================================================
@@ -142,6 +151,36 @@ app.get('/faturamento', (req, res) => {
 
 app.get('/empresas', (req, res) => {
   res.redirect(308, '/api/company/empresas');
+});
+
+// =============================================================================
+// PROXY PARA DOCUMENTOS DO SUPABASE STORAGE
+// =============================================================================
+
+app.get('/docs/:filename', async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    // Validar que o filename é seguro (só letras, números, underline, hífen, ponto)
+    if (!/^[a-zA-Z0-9_\-\.]+$/.test(filename)) {
+      return res.status(400).json({ error: 'Nome de arquivo inválido' });
+    }
+    const supabaseUrl = `https://dorztqiunewggydvkjnf.supabase.co/storage/v1/object/public/clientes-confianca/notificacoes/${filename}`;
+    const response = await fetch(supabaseUrl);
+    if (!response.ok) {
+      return res
+        .status(response.status)
+        .json({ error: 'Arquivo não encontrado' });
+    }
+    res.setHeader(
+      'Content-Type',
+      response.headers.get('content-type') || 'application/octet-stream',
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    res.send(buffer);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao buscar arquivo' });
+  }
 });
 
 // =============================================================================
@@ -244,6 +283,13 @@ const gracefulShutdown = (signal) => {
   // Parar scheduler de sync pes_pessoa
   stopPesPessoaScheduler();
 
+  // Destruir client WhatsApp
+  try {
+    whatsappClient.destroy();
+  } catch (e) {
+    // ignora se já destruído
+  }
+
   server.close(() => {
     logger.info('Servidor HTTP fechado.');
     process.exit(0);
@@ -280,6 +326,10 @@ const server = app.listen(PORT, async () => {
 
   // Iniciar scheduler de sync pes_pessoa (diário às 03:00)
   startPesPessoaScheduler();
+
+  // Inicializar WhatsApp client
+  initializeWhatsApp();
+  logger.info(`📱 WhatsApp QR: ${API_BASE_URL}/api/whatsapp/qr`);
 
   // Keep-alive: pingar a si mesmo a cada 14 minutos para evitar que o Render adormeça
   if (process.env.NODE_ENV === 'production') {
