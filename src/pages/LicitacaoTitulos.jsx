@@ -160,7 +160,7 @@ const LicitacaoTitulos = () => {
           }
           const codigos = empresasArray
             .map((branch) => parseInt(branch.cd_empresa))
-            .filter((code) => !isNaN(code) && code > 0 && code < 5999);
+            .filter((code) => !isNaN(code) && code >= 1 && code <= 990);
           setFiliaisCodigos(codigos);
         }
       } catch (error) {
@@ -188,9 +188,10 @@ const LicitacaoTitulos = () => {
         dt_fim: dataFim,
         modo: 'vencimento',
         status: 'Em Aberto',
+        situacao: '1',
         tp_documento: '1',
         cd_portador: PORTADORES_LICITACAO.join(','),
-        branches: filiaisCodigos.join(','),
+        branches: filiaisCodigos.filter((c) => c >= 1 && c <= 990).join(','),
       });
 
       const response = await fetch(
@@ -205,21 +206,35 @@ const LicitacaoTitulos = () => {
       const result = await response.json();
       let todosOsDados = result.data?.items || [];
 
-      // Filtrar: remover qualquer fatura paga (com dt_liq ou vl_pago)
+      // Filtrar: remover títulos cancelados, com data de liquidação, data de pagamento ou valor pago
       todosOsDados = todosOsDados.filter((item) => {
-        // Verificar data de liquidação - considerar nulo, vazio e datas inválidas como "não tem"
+        // Apenas títulos com situação Normal
+        const situacao = item.tp_situacao;
+        const isNormal =
+          situacao === 'NORMAL' ||
+          situacao === 'N' ||
+          situacao === 1 ||
+          situacao === 0;
+        if (!isNormal) return false;
+        // Verificar data de liquidação
         const dtLiq = item.dt_liq ? String(item.dt_liq).trim() : '';
         const temLiquidacao =
           dtLiq !== '' &&
           !dtLiq.startsWith('1900') &&
           !dtLiq.startsWith('0001');
+        // Verificar data de pagamento
+        const dtPag = item.dt_pagamento ? String(item.dt_pagamento).trim() : '';
+        const temDtPagamento =
+          dtPag !== '' &&
+          !dtPag.startsWith('1900') &&
+          !dtPag.startsWith('0001');
         // Verificar valor pago
         const vlPago = parseFloat(item.vl_pago) || 0;
         const temPagamento = vlPago > 0;
         // Verificar tipo de baixa (dischargeType > 0 = baixada)
         const tpBaixa = parseInt(item.tp_baixa) || 0;
         const temBaixa = tpBaixa > 0;
-        return !temLiquidacao && !temPagamento && !temBaixa;
+        return !temLiquidacao && !temDtPagamento && !temPagamento && !temBaixa;
       });
 
       // Buscar nomes dos clientes via batch-lookup
@@ -257,6 +272,29 @@ const LicitacaoTitulos = () => {
           console.error('Erro ao buscar nomes dos clientes:', err);
         }
       }
+
+      // Remover clientes específicos (internos/excluídos da licitação)
+      const CLIENTES_EXCLUIDOS = [
+        'RICARDO RANGEL',
+        'FABIO FERREIRA',
+        'FELIPE FERREIRA',
+        'ALLYSON AIRES SALVIANO PESSOA',
+        'IGOR HENRIQUE DE SOUZA',
+        'FELIPE CAMILO CASTRO DE MEDEIROS',
+        'KLEILTON JOSE SOBREIRA QUEIROZ',
+        'CROSBY SHOPPING RECIFE',
+        'ANTIGA IMPERATRIZ',
+        'CROSBY SHOPPING CIDADE JARDIM',
+      ];
+      todosOsDados = todosOsDados.filter((item) => {
+        const nome = (item.nm_cliente || '').toUpperCase();
+        return !CLIENTES_EXCLUIDOS.some((excl) => nome.includes(excl));
+      });
+
+      // Remover títulos da empresa 101
+      todosOsDados = todosOsDados.filter(
+        (item) => parseInt(item.cd_empresa) !== 101,
+      );
 
       setDados(todosOsDados);
       setDadosCarregados(true);
@@ -364,11 +402,14 @@ const LicitacaoTitulos = () => {
         return;
       }
 
-      const branchCodes = fatura.cd_empresa
-        ? [parseInt(fatura.cd_empresa)].filter(
-            (c) => !isNaN(c) && c >= 1 && c <= 99,
-          )
-        : [1, 2, 5, 6, 11, 55, 65, 75, 85];
+      // branchCodeList aceita apenas códigos entre 1 e 99
+      const cdEmpresa = parseInt(fatura.cd_empresa);
+      const branchCodes =
+        !isNaN(cdEmpresa) && cdEmpresa >= 1 && cdEmpresa <= 99
+          ? [cdEmpresa]
+          : filiaisCodigos.length > 0
+            ? filiaisCodigos.filter((c) => c >= 1 && c <= 99)
+            : [1, 2, 5, 6, 11, 55, 65, 75, 85];
 
       const buscarComMargem = async (margem) => {
         const startDate = new Date(dtEmissao);
@@ -1035,6 +1076,14 @@ const LicitacaoTitulos = () => {
                     </th>
                     <th
                       className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('cd_empresa')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Empresa{getSortIcon('cd_empresa')}
+                      </div>
+                    </th>
+                    <th
+                      className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSort('dt_emissao')}
                     >
                       <div className="flex items-center justify-center">
@@ -1060,6 +1109,14 @@ const LicitacaoTitulos = () => {
                     <th className="px-2 py-2 text-center">
                       <div className="flex items-center justify-center">
                         Detalhar
+                      </div>
+                    </th>
+                    <th
+                      className="px-2 py-2 text-center cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('tp_situacao')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Situação{getSortIcon('tp_situacao')}
                       </div>
                     </th>
                     <th className="px-2 py-2 text-center">
@@ -1123,6 +1180,9 @@ const LicitacaoTitulos = () => {
                           {item.nr_cpfcnpj || '--'}
                         </td>
                         <td className="text-center text-gray-900 px-2 py-2">
+                          {item.cd_empresa || '--'}
+                        </td>
+                        <td className="text-center text-gray-900 px-2 py-2">
                           {formatDateBR(item.dt_emissao)}
                         </td>
                         <td className="text-center text-gray-900 px-2 py-2">
@@ -1141,6 +1201,33 @@ const LicitacaoTitulos = () => {
                           >
                             <Eye size={14} weight="bold" /> Detalhar
                           </button>
+                        </td>
+                        <td className="text-center px-2 py-2">
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              item.tp_situacao === 'NORMAL' ||
+                              item.tp_situacao === 'N' ||
+                              item.tp_situacao === 1 ||
+                              item.tp_situacao === 0
+                                ? 'bg-green-100 text-green-700'
+                                : item.tp_situacao === 'CANCELADA' ||
+                                    item.tp_situacao === 'C' ||
+                                    item.tp_situacao === 3
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            {item.tp_situacao === 'NORMAL' ||
+                            item.tp_situacao === 'N' ||
+                            item.tp_situacao === 1 ||
+                            item.tp_situacao === 0
+                              ? 'NORMAL'
+                              : item.tp_situacao === 'CANCELADA' ||
+                                  item.tp_situacao === 'C' ||
+                                  item.tp_situacao === 3
+                                ? 'CANCELADA'
+                                : item.tp_situacao || '--'}
+                          </span>
                         </td>
                         <td className="text-center px-2 py-2">
                           {jaRemessado ? (

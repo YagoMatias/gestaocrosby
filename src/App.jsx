@@ -91,6 +91,7 @@ const SolicitacoesRemessa = lazy(() => import('./pages/SolicitacoesRemessa'));
 const MinhasRemessas = lazy(() => import('./pages/MinhasRemessas'));
 const ClientesMTM = lazy(() => import('./pages/ClientesMTM'));
 const DownloadNotificacao = lazy(() => import('./pages/DownloadNotificacao'));
+const ApiClaude = lazy(() => import('./pages/ApiClaude'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -172,6 +173,7 @@ const protectedRoutes = [
   { path: '/solicitacoes-remessa', component: SolicitacoesRemessa },
   { path: '/minhas-remessas', component: MinhasRemessas },
   { path: '/clientes-mtm', component: ClientesMTM },
+  { path: '/api-claude', component: ApiClaude },
 ];
 
 // Layout compartilhado - estável, preserva estado das páginas ao interagir com sidebar

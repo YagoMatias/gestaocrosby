@@ -388,6 +388,12 @@ const adminItems = [
     icon: Megaphone,
     color: 'text-orange-600',
   },
+  {
+    name: 'API Claude',
+    href: '/api-claude',
+    icon: Article,
+    color: 'text-indigo-600',
+  },
 ];
 
 const minhaFranquiaItem = {

@@ -1,5 +1,15 @@
 import { useCallback } from 'react';
-import { API_BASE_URL } from '../config/constants';
+import { API_BASE_URL, API_KEY } from '../config/constants';
+
+// Headers padrão com autenticação API Key
+const defaultHeaders = {
+  'x-api-key': API_KEY,
+};
+
+const jsonHeaders = {
+  'Content-Type': 'application/json',
+  'x-api-key': API_KEY,
+};
 
 /**
  * Hook personalizado para fazer chamadas à API
@@ -23,9 +33,7 @@ const useApiClient = () => {
 
         const options = {
           method,
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: jsonHeaders,
         };
 
         if (body && (method === 'POST' || method === 'PUT')) {
@@ -82,7 +90,9 @@ const useApiClient = () => {
 
       console.log('🌐 API Call:', url.toString());
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), {
+        headers: defaultHeaders,
+      });
 
       if (!response.ok) {
         let errorBody = null;
@@ -283,7 +293,9 @@ const useApiClient = () => {
         }
       }
     });
-    const response = await fetch(url.toString());
+    const response = await fetch(url.toString(), {
+      headers: defaultHeaders,
+    });
     if (!response.ok) throw new Error('Erro ao buscar transações da operação');
     return await response.json();
   }, []);
@@ -301,7 +313,9 @@ const useApiClient = () => {
         }
       }
     });
-    const response = await fetch(url.toString());
+    const response = await fetch(url.toString(), {
+      headers: defaultHeaders,
+    });
     if (!response.ok) throw new Error('Erro ao buscar itens da transação');
     return await response.json();
   }, []);
@@ -568,7 +582,9 @@ const useApiClient = () => {
           }
         }
       });
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), {
+        headers: defaultHeaders,
+      });
       if (!response.ok) {
         let errorBody = null;
         try {
@@ -602,7 +618,9 @@ const useApiClient = () => {
 
       console.log('🌐 API Call auditoriaTransacoes:', url.toString());
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), {
+        headers: defaultHeaders,
+      });
       if (!response.ok) {
         let errorBody = null;
         try {
