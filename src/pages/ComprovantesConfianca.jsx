@@ -33,6 +33,8 @@ import {
   Trash,
   Check,
   Warning,
+  Paperclip,
+  DownloadSimple,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -47,6 +49,7 @@ const ComprovantesAntecipacao = () => {
   const [removendo, setRemovendo] = useState(null);
   const [marcandoBaixa, setMarcandoBaixa] = useState(null);
   const [confirmarRemocao, setConfirmarRemocao] = useState(null);
+  const [uploadingAnexo, setUploadingAnexo] = useState(null);
 
   // Filtros
   const [filtroNome, setFiltroNome] = useState('');
@@ -543,6 +546,118 @@ const ComprovantesAntecipacao = () => {
     }
   };
 
+  // ==================== UPLOAD ANEXO ====================
+  const BUCKET_ANEXOS = 'anexos_baixa';
+  const TIPOS_PERMITIDOS = [
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/msword',
+  ];
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+  const handleUploadAnexo = async (e, sol) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!TIPOS_PERMITIDOS.includes(file.type)) {
+      alert('Tipo de arquivo não permitido. Use imagem, PDF ou DOCX.');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      alert('Arquivo muito grande. Máximo 10MB.');
+      e.target.value = '';
+      return;
+    }
+
+    setUploadingAnexo(sol.id);
+    try {
+      // Remover anexo anterior se existir
+      if (sol.anexo_path) {
+        await supabaseAdmin.storage
+          .from(BUCKET_ANEXOS)
+          .remove([sol.anexo_path]);
+      }
+
+      const uid = crypto.randomUUID?.() || String(Date.now());
+      const ext = file.name.split('.').pop();
+      const safeName = file.name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `anexos/${sol.id}/${uid}_${safeName}`;
+
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from(BUCKET_ANEXOS)
+        .upload(path, file, { upsert: true });
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabaseAdmin.storage
+        .from(BUCKET_ANEXOS)
+        .getPublicUrl(path);
+
+      const { error: updateError } = await supabaseAdmin
+        .from('solicitacoes_baixa')
+        .update({
+          anexo_url: urlData.publicUrl,
+          anexo_path: path,
+          anexo_nome: file.name,
+        })
+        .eq('id', sol.id);
+      if (updateError) throw updateError;
+
+      setSolicitacoes((prev) =>
+        prev.map((s) =>
+          s.id === sol.id
+            ? {
+                ...s,
+                anexo_url: urlData.publicUrl,
+                anexo_path: path,
+                anexo_nome: file.name,
+              }
+            : s,
+        ),
+      );
+    } catch (err) {
+      alert('Erro ao enviar anexo. Tente novamente.');
+    } finally {
+      setUploadingAnexo(null);
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoverAnexo = async (sol) => {
+    if (!confirm('Remover este anexo?')) return;
+    setUploadingAnexo(sol.id);
+    try {
+      if (sol.anexo_path) {
+        await supabaseAdmin.storage
+          .from(BUCKET_ANEXOS)
+          .remove([sol.anexo_path]);
+      }
+      const { error } = await supabaseAdmin
+        .from('solicitacoes_baixa')
+        .update({ anexo_url: null, anexo_path: null, anexo_nome: null })
+        .eq('id', sol.id);
+      if (error) throw error;
+      setSolicitacoes((prev) =>
+        prev.map((s) =>
+          s.id === sol.id
+            ? { ...s, anexo_url: null, anexo_path: null, anexo_nome: null }
+            : s,
+        ),
+      );
+    } catch (err) {
+      alert('Erro ao remover anexo.');
+    } finally {
+      setUploadingAnexo(null);
+    }
+  };
+
   // ==================== MARCAR BAIXA ====================
   const handleMarcarBaixa = async (sol) => {
     const novaBaixa = !sol.baixa_confirmada;
@@ -908,6 +1023,11 @@ const ComprovantesAntecipacao = () => {
                     </th>
                     <th className="px-2 py-2 text-center">
                       <div className="flex items-center justify-center">
+                        Anexo
+                      </div>
+                    </th>
+                    <th className="px-2 py-2 text-center">
+                      <div className="flex items-center justify-center">
                         Baixa
                       </div>
                     </th>
@@ -965,6 +1085,47 @@ const ComprovantesAntecipacao = () => {
                           </button>
                         ) : (
                           '--'
+                        )}
+                      </td>
+                      <td className="text-center px-2 py-2">
+                        {uploadingAnexo === sol.id ? (
+                          <Spinner
+                            size={12}
+                            className="animate-spin text-blue-600 mx-auto"
+                          />
+                        ) : sol.anexo_url ? (
+                          <div className="inline-flex items-center gap-1">
+                            <a
+                              href={sol.anexo_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-0.5 px-1.5 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 rounded hover:bg-blue-100 transition-colors"
+                              title={sol.anexo_nome || 'Anexo'}
+                            >
+                              <DownloadSimple size={10} />
+                              <span className="max-w-[60px] truncate">
+                                {sol.anexo_nome || 'Anexo'}
+                              </span>
+                            </a>
+                            <button
+                              onClick={() => handleRemoverAnexo(sol)}
+                              className="p-0.5 text-red-500 hover:text-red-700 transition-colors"
+                              title="Remover anexo"
+                            >
+                              <X size={10} />
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold text-gray-500 bg-gray-50 rounded hover:bg-gray-100 transition-colors cursor-pointer mx-auto border border-dashed border-gray-300">
+                            <Paperclip size={12} />
+                            <span className="text-[10px]">Anexar</span>
+                            <input
+                              type="file"
+                              accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx"
+                              onChange={(e) => handleUploadAnexo(e, sol)}
+                              className="hidden"
+                            />
+                          </label>
                         )}
                       </td>
                       <td className="text-center px-2 py-2">
