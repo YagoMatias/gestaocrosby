@@ -4,7 +4,9 @@ import App from './App';
 import './index.css';
 import { AuthProvider } from './components/AuthContext';
 import ErrorBoundary from './components/ui/ErrorBoundary';
-import { API_KEY } from './config/constants';
+
+// API Key vem da variável de ambiente (VITE_ prefix para Vite injetar no build)
+const API_KEY = import.meta.env.VITE_API_KEY || '';
 
 // Interceptor global: adiciona x-api-key em toda request para a API
 const originalFetch = window.fetch;

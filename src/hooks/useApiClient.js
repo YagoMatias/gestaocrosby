@@ -1,5 +1,8 @@
 import { useCallback } from 'react';
-import { API_BASE_URL, API_KEY } from '../config/constants';
+import { API_BASE_URL } from '../config/constants';
+
+// API Key vem da variável de ambiente do Vite
+const API_KEY = import.meta.env.VITE_API_KEY || '';
 
 // Headers padrão com autenticação API Key
 const defaultHeaders = {

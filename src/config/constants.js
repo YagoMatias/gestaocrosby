@@ -6,9 +6,6 @@
 // URLs da API
 export const API_BASE_URL = 'https://apigestaocrosby-bw2v.onrender.com';
 
-// Chave de autenticação da API
-export const API_KEY = 'crby-2026-g3st40-pr0d-s3cur3-k3y-X9f2Lm7Q';
-
 // Endpoints específicos - Nova estrutura de API
 export const API_ENDPOINTS = {
   // Financial
