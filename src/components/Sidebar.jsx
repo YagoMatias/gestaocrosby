@@ -476,6 +476,14 @@ const MenuItem = memo(
     const IconComponent = item.icon;
     const paddingLeft = level === 0 ? 'pl-3' : 'pl-6';
 
+    // Se tem filhos, só mostra se pelo menos um filho for acessível
+    if (item.children && Array.isArray(item.children)) {
+      const hasAnyVisibleChild = item.children.some(
+        (child) => child.href === '#' || hasAccessToPage(child.href),
+      );
+      if (!hasAnyVisibleChild) return null;
+    }
+
     const canSee = item.href === '#' || hasAccessToPage(item.href);
     if (!canSee) return null;
 

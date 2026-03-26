@@ -24,18 +24,13 @@ import {
   Info,
 } from '@phosphor-icons/react';
 
-// Lista de todas as páginas do sistema (extraída de App.jsx)
+// Lista de todas as páginas do sistema (sincronizada com App.jsx e Sidebar)
 const AVAILABLE_PAGES = [
-  // Páginas principais
+  // Principal
   { path: '/home', name: 'Home', category: 'Principal' },
   { path: '/crosby-bot', name: 'Crosby Bot', category: 'Principal' },
   { path: '/dashboard', name: 'BI Externo (Dashboard)', category: 'Principal' },
   { path: '/bi-externo', name: 'BI Externo', category: 'Principal' },
-  {
-    path: '/dashboard-faturamento',
-    name: 'Dashboard Faturamento',
-    category: 'Principal',
-  },
   { path: '/user-panel', name: 'Painel do Usuário', category: 'Principal' },
 
   // Financeiro
@@ -51,11 +46,6 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro',
   },
   {
-    path: '/contas-a-receber-emissao',
-    name: 'Contas a Receber (Emissão)',
-    category: 'Financeiro',
-  },
-  {
     path: '/analise-credito',
     name: 'Análise de Crédito',
     category: 'Financeiro',
@@ -65,48 +55,12 @@ const AVAILABLE_PAGES = [
     name: 'Análise de Renegociações',
     category: 'Financeiro',
   },
-  { path: '/fluxo-caixa', name: 'Fluxo de Caixa', category: 'Financeiro' },
-  {
-    path: '/despesas-por-setor',
-    name: 'Despesas por Setor',
-    category: 'Financeiro',
-  },
-  { path: '/saldo-bancario', name: 'Saldo Bancário', category: 'Financeiro' },
-  { path: '/importacao-ret', name: 'Importação .RET', category: 'Financeiro' },
-  { path: '/ajuste-retorno', name: 'Ajuste de .RET', category: 'Financeiro' },
-  {
-    path: '/extrato-financeiro',
-    name: 'Extrato Financeiro',
-    category: 'Financeiro',
-  },
-  {
-    path: '/saldo-bancario-totvs',
-    name: 'Saldo Bancário TOTVS',
-    category: 'Financeiro',
-  },
-  {
-    path: '/extrato-bancario',
-    name: 'Extrato Bancário',
-    category: 'Financeiro',
-  },
   {
     path: '/batida-carteira',
     name: 'Batida de Carteira',
     category: 'Financeiro',
   },
   { path: '/dre', name: 'DRE', category: 'Financeiro' },
-  { path: '/receita-liquida', name: 'Receita Líquida', category: 'Financeiro' },
-  {
-    path: '/manifestacao-nf',
-    name: 'Manifestação de NF',
-    category: 'Financeiro',
-  },
-  {
-    path: '/financeiro-por-canal',
-    name: 'Financeiro por Canal',
-    category: 'Financeiro',
-  },
-  { path: '/endividamento', name: 'Endividamento', category: 'Financeiro' },
   {
     path: '/dash-contas-a-receber',
     name: 'Dash Contas a Receber',
@@ -117,24 +71,16 @@ const AVAILABLE_PAGES = [
     name: 'Dash Inadimplência',
     category: 'Financeiro',
   },
-
-  // Auditoria
-  { path: '/conciliacao', name: 'Conciliação', category: 'Auditoria' },
-  { path: '/auditoria-cmv', name: 'Auditoria CMV', category: 'Auditoria' },
+  { path: '/pmr', name: 'PMR', category: 'Financeiro' },
   {
-    path: '/auditoria-transacoes',
-    name: 'Auditoria de Transações',
-    category: 'Auditoria',
+    path: '/solicitacao-baixa',
+    name: 'Solicitação de Baixa',
+    category: 'Financeiro',
   },
   {
-    path: '/auditoria-faturamento',
-    name: 'Auditoria de Faturamento',
-    category: 'Auditoria',
-  },
-  {
-    path: '/auditoria-antecipacoes',
-    name: 'Auditoria de Antecipações',
-    category: 'Auditoria',
+    path: '/extratos-bancos',
+    name: 'Extratos Bancos',
+    category: 'Financeiro',
   },
 
   // CMV
@@ -148,24 +94,6 @@ const AVAILABLE_PAGES = [
   { path: '/dashboard-varejo', name: 'Dashboard Varejo', category: 'Varejo' },
   { path: '/metas-varejo', name: 'Metas Varejo', category: 'Varejo' },
   { path: '/credev-varejo', name: 'CREDEV Varejo', category: 'Varejo' },
-  { path: '/analise-cashback', name: 'Análise Cashback', category: 'Varejo' },
-
-  // Ação Cartões
-  {
-    path: '/check-in-card',
-    name: 'Check-in Card',
-    category: 'Ação Cartões',
-  },
-  {
-    path: '/meus-cartoes',
-    name: 'Meus Cartões',
-    category: 'Ação Cartões',
-  },
-  {
-    path: '/acao-cartoes',
-    name: 'Dashboard',
-    category: 'Ação Cartões',
-  },
 
   // Multimarcas
   {
@@ -181,6 +109,21 @@ const AVAILABLE_PAGES = [
   {
     path: '/inadimplentes-multimarcas',
     name: 'Inadimplentes Multimarcas',
+    category: 'Multimarcas',
+  },
+  {
+    path: '/minhas-solicitacoes-baixa',
+    name: 'Minhas Solicitações de Baixa',
+    category: 'Multimarcas',
+  },
+  {
+    path: '/titulos-clientes',
+    name: 'Portal de Títulos MTM',
+    category: 'Multimarcas',
+  },
+  {
+    path: '/clientes-mtm',
+    name: 'Clientes MTM',
     category: 'Multimarcas',
   },
 
@@ -210,19 +153,14 @@ const AVAILABLE_PAGES = [
   },
   { path: '/credev', name: 'CREDEV', category: 'Franquias' },
   {
+    path: '/credito-franquia',
+    name: 'Crédito Franquia',
+    category: 'Franquias',
+  },
+  {
     path: '/inadimplentes-franquias',
     name: 'Inadimplentes Franquias',
     category: 'Franquias',
-  },
-  {
-    path: '/solicitacao-baixa',
-    name: 'Solicitação de Baixa',
-    category: 'Franquias',
-  },
-  {
-    path: '/minhas-solicitacoes-baixa',
-    name: 'Minhas Solicitações de Baixa',
-    category: 'Multimarcas',
   },
   {
     path: '/minhas-solicitacoes-baixa',
@@ -230,21 +168,18 @@ const AVAILABLE_PAGES = [
     category: 'Franquias',
   },
 
+  // Recuperação de Crédito
+  {
+    path: '/recuperacao-credito',
+    name: 'Recuperação de Crédito',
+    category: 'Recuperação de Crédito',
+  },
+
   // Minha Franquia
   {
     path: '/contas-pagar-franquias',
     name: 'Contas a Pagar Franquias',
     category: 'Minha Franquia',
-  },
-  {
-    path: '/titulos-clientes',
-    name: 'Portal de Títulos MTM',
-    category: 'Multimarcas',
-  },
-  {
-    path: '/clientes-mtm',
-    name: 'Clientes MTM',
-    category: 'Multimarcas',
   },
   {
     path: '/solicitacao-credito',
@@ -263,69 +198,61 @@ const AVAILABLE_PAGES = [
     category: 'Minha Franquia',
   },
 
-  // Confiança
+  // Antecipações
   {
-    path: '/faturas-clientes-confianca',
+    path: '/faturas-clientes-antecipacao',
     name: 'Faturas Clientes',
-    category: 'Confiança',
+    category: 'Antecipações',
   },
   {
-    path: '/nf-clientes-confianca',
+    path: '/nf-clientes-antecipacao',
     name: 'Notas Fiscais Clientes',
-    category: 'Confiança',
+    category: 'Antecipações',
   },
   {
-    path: '/comprovantes-confianca',
+    path: '/comprovantes-antecipacao',
     name: 'Comprovantes',
-    category: 'Confiança',
+    category: 'Antecipações',
   },
   {
-    path: '/clientes-confianca',
+    path: '/clientes-antecipacao',
     name: 'Clientes (Perfil)',
-    category: 'Confiança',
+    category: 'Antecipações',
   },
   {
     path: '/licitacao-titulos',
     name: 'Licitação de Títulos',
-    category: 'Confiança',
+    category: 'Antecipações',
+  },
+  {
+    path: '/solicitacoes-remessa',
+    name: 'Solicitações de Remessa',
+    category: 'Antecipações',
+  },
+  {
+    path: '/minhas-remessas',
+    name: 'Minhas Remessas',
+    category: 'Antecipações',
+  },
+
+  // Clientes
+  { path: '/consulta-cliente', name: 'Consulta Cliente', category: 'Clientes' },
+  { path: '/clientes-totvs', name: 'Clientes TOTVS', category: 'Clientes' },
+  {
+    path: '/creditos-clientes',
+    name: 'Créditos Clientes',
+    category: 'Clientes',
   },
 
   // Outros
-  { path: '/clientes', name: 'Clientes', category: 'Outros' },
-  { path: '/cohort-analysis', name: 'Análise de Cohort', category: 'Outros' },
   { path: '/widgets', name: 'Meus Widgets', category: 'Outros' },
   {
     path: '/ranking-faturamento',
     name: 'Ranking Faturamento',
     category: 'Outros',
   },
-  {
-    path: 'https://vigia.crosbytech.com.br/',
-    name: 'Vigia',
-    category: 'Outros',
-  },
-  {
-    path: 'https://franquia.crosbytech.com.br/whatsapp/instances',
-    name: 'Vigia Franquias',
-    category: 'Outros',
-  },
-  {
-    path: 'https://app.powerbi.com/view?r=eyJrIjoiYjdkYzkxNjctOTcwYy00MWExLTkzMmItYzRlMjVmYWZjO[…]DUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9&pageName=bfc07965b7fd71caeaba',
-    name: 'Cronograma',
-    category: 'Outros',
-  },
-  {
-    path: 'https://app.powerbi.com/view?r=eyJrIjoiM2YwNjQzYmMtMjMxMy00Zjk0LTk3ZWUtMWY5Nzc4ZjU5ZGQwIiwidCI6IjRhZWQyODQ0LWFkZTktNDUzMC1hN2U4LWJmNzM3MjhmMTM4NSJ9',
-    name: 'Estoque',
-    category: 'Outros',
-  },
-  {
-    path: 'https://open.spotify.com/playlist/0luIH9EeXQsM1EVLEe10Co?si=PVAUen1xTNq_65EcEFuHSw&pi=rle4YjINSti0l&nd=1&dlsi=514142e8d84b44b8',
-    name: 'Playlist Loja',
-    category: 'Outros',
-  },
 
-  // Admin (apenas para referência, owners sempre têm acesso)
+  // Administração
   { path: '/painel-admin', name: 'Painel Admin', category: 'Administração' },
   {
     path: '/gerenciador-dashboards',
@@ -340,18 +267,8 @@ const AVAILABLE_PAGES = [
   {
     path: '/gerenciador-avisos',
     name: 'Gerenciador de Avisos',
-    category: 'Avisos',
+    category: 'Administração',
   },
-
-  // Avisos
-  {
-    path: '/visualizar-avisos',
-    name: 'Visualizar Avisos',
-    category: 'Avisos',
-  },
-
-  // Produção
-  { path: '/producao', name: 'Contas a Pagar', category: 'Produção' },
 ];
 
 const GerenciadorAcessos = () => {

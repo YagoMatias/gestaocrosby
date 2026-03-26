@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabaseAdmin } from '../lib/supabase';
+import { useAuth } from '../components/AuthContext';
 import PageTitle from '../components/ui/PageTitle';
 import {
   Card,
@@ -30,14 +31,22 @@ import {
   CalendarBlank,
   UploadSimple,
   Trash,
+  Check,
+  Warning,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
 const ComprovantesAntecipacao = () => {
+  const { user, hasRole } = useAuth();
+  const isAdmin = hasRole(['owner', 'admin']);
+
   const [solicitacoes, setSolicitacoes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
+  const [removendo, setRemovendo] = useState(null);
+  const [marcandoBaixa, setMarcandoBaixa] = useState(null);
+  const [confirmarRemocao, setConfirmarRemocao] = useState(null);
 
   // Filtros
   const [filtroNome, setFiltroNome] = useState('');
@@ -516,6 +525,63 @@ const ComprovantesAntecipacao = () => {
     return {};
   };
 
+  // ==================== REMOVER TÍTULO (ADMIN) ====================
+  const handleRemover = async (solId) => {
+    setRemovendo(solId);
+    try {
+      const { error } = await supabaseAdmin
+        .from('solicitacoes_baixa')
+        .delete()
+        .eq('id', solId);
+      if (error) throw error;
+      setSolicitacoes((prev) => prev.filter((s) => s.id !== solId));
+    } catch (err) {
+      alert('Erro ao remover título.');
+    } finally {
+      setRemovendo(null);
+      setConfirmarRemocao(null);
+    }
+  };
+
+  // ==================== MARCAR BAIXA ====================
+  const handleMarcarBaixa = async (sol) => {
+    const novaBaixa = !sol.baixa_confirmada;
+    setMarcandoBaixa(sol.id);
+    try {
+      const { error } = await supabaseAdmin
+        .from('solicitacoes_baixa')
+        .update({
+          baixa_confirmada: novaBaixa,
+          baixa_confirmada_em: novaBaixa ? new Date().toISOString() : null,
+          baixa_confirmada_por: novaBaixa
+            ? user?.name || user?.email || 'Usuário'
+            : null,
+        })
+        .eq('id', sol.id);
+      if (error) throw error;
+      setSolicitacoes((prev) =>
+        prev.map((s) =>
+          s.id === sol.id
+            ? {
+                ...s,
+                baixa_confirmada: novaBaixa,
+                baixa_confirmada_em: novaBaixa
+                  ? new Date().toISOString()
+                  : null,
+                baixa_confirmada_por: novaBaixa
+                  ? user?.name || user?.email || 'Usuário'
+                  : null,
+              }
+            : s,
+        ),
+      );
+    } catch (err) {
+      alert('Erro ao marcar baixa.');
+    } finally {
+      setMarcandoBaixa(null);
+    }
+  };
+
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
       <PageTitle
@@ -840,10 +906,22 @@ const ComprovantesAntecipacao = () => {
                         Comprovante
                       </div>
                     </th>
+                    <th className="px-2 py-2 text-center">
+                      <div className="flex items-center justify-center">
+                        Baixa
+                      </div>
+                    </th>
                     {batidaCarregada && (
                       <th className="px-2 py-2 text-center">
                         <div className="flex items-center justify-center">
                           Batida
+                        </div>
+                      </th>
+                    )}
+                    {isAdmin && (
+                      <th className="px-2 py-2 text-center">
+                        <div className="flex items-center justify-center">
+                          Ações
                         </div>
                       </th>
                     )}
@@ -889,6 +967,34 @@ const ComprovantesAntecipacao = () => {
                           '--'
                         )}
                       </td>
+                      <td className="text-center px-2 py-2">
+                        <button
+                          onClick={() => handleMarcarBaixa(sol)}
+                          disabled={marcandoBaixa === sol.id}
+                          className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-bold rounded transition-colors mx-auto ${
+                            sol.baixa_confirmada
+                              ? 'text-green-700 bg-green-100 hover:bg-green-200 border border-green-300'
+                              : 'text-gray-500 bg-gray-100 hover:bg-gray-200 border border-gray-300'
+                          }`}
+                          title={
+                            sol.baixa_confirmada
+                              ? `Baixa confirmada por ${sol.baixa_confirmada_por || '?'} em ${formatarDataHora(sol.baixa_confirmada_em)}`
+                              : 'Marcar como baixa confirmada'
+                          }
+                        >
+                          {marcandoBaixa === sol.id ? (
+                            <Spinner size={12} className="animate-spin" />
+                          ) : sol.baixa_confirmada ? (
+                            <>
+                              <Check size={12} weight="bold" /> Baixa
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle size={12} /> Dar Baixa
+                            </>
+                          )}
+                        </button>
+                      </td>
                       {batidaCarregada && (
                         <td className="text-center px-2 py-2">
                           {mapaBatida[sol.id] === 'EM_ABERTO' && (
@@ -908,6 +1014,39 @@ const ComprovantesAntecipacao = () => {
                           )}
                           {!mapaBatida[sol.id] && (
                             <span className="text-[10px] text-gray-400">—</span>
+                          )}
+                        </td>
+                      )}
+                      {isAdmin && (
+                        <td className="text-center px-2 py-2">
+                          {confirmarRemocao === sol.id ? (
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                onClick={() => handleRemover(sol.id)}
+                                disabled={removendo === sol.id}
+                                className="inline-flex items-center gap-0.5 px-1.5 py-1 text-[10px] font-bold text-white bg-red-600 rounded hover:bg-red-700 transition-colors"
+                              >
+                                {removendo === sol.id ? (
+                                  <Spinner size={10} className="animate-spin" />
+                                ) : (
+                                  <>Confirmar</>
+                                )}
+                              </button>
+                              <button
+                                onClick={() => setConfirmarRemocao(null)}
+                                className="inline-flex items-center px-1.5 py-1 text-[10px] font-bold text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors"
+                              >
+                                <X size={10} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmarRemocao(sol.id)}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold text-red-600 bg-red-50 rounded hover:bg-red-100 transition-colors mx-auto"
+                              title="Remover título"
+                            >
+                              <Trash size={12} />
+                            </button>
                           )}
                         </td>
                       )}
