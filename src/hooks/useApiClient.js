@@ -698,6 +698,20 @@ const useApiClient = () => {
      */
     bestSellingProducts: (body) =>
       apiMutate('/api/totvs/best-selling-products', 'POST', body),
+
+    /**
+     * Consulta saldos de produtos
+     * @param {Object} body - { filter, option: { balances: [{ branchCode, stockCodeList }] }, page, pageSize }
+     */
+    productBalances: (body) =>
+      apiMutate('/api/totvs/product-balances', 'POST', body),
+
+    /**
+     * Busca produtos com expand (barCodes, classifications, etc.)
+     * @param {Object} body - { filter, option: { branchInfoCode }, page, pageSize, expand }
+     */
+    productSearch: (body) =>
+      apiMutate('/api/totvs/product-search', 'POST', body),
   };
 
   const franchise = {

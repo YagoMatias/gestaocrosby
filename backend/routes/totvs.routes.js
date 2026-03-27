@@ -1848,6 +1848,197 @@ router.post(
 );
 
 /**
+ * @route POST /totvs/legal-entity/search-by-phone
+ * @desc Busca pessoa jurídica por número de telefone na API TOTVS
+ *       A API TOTVS PJ não suporta filtro direto por telefone,
+ *       então esta rota percorre as páginas e filtra localmente.
+ * @access Public
+ * @body {
+ *   phoneNumber: string (obrigatório) - Número de telefone (apenas números, mín. 8 dígitos)
+ *   maxPages: number (opcional) - Máximo de páginas a percorrer (default: 30)
+ * }
+ */
+router.post(
+  '/legal-entity/search-by-phone',
+  asyncHandler(async (req, res) => {
+    const { phoneNumber, maxPages = 30 } = req.body;
+
+    if (!phoneNumber || phoneNumber.trim().length < 8) {
+      return errorResponse(
+        res,
+        'O campo phoneNumber é obrigatório e deve ter pelo menos 8 dígitos',
+        400,
+        'MISSING_PHONE_NUMBER',
+      );
+    }
+
+    // Remover caracteres não numéricos
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+
+    if (cleanPhone.length < 8) {
+      return errorResponse(
+        res,
+        'O número de telefone deve ter pelo menos 8 dígitos numéricos',
+        400,
+        'INVALID_PHONE_NUMBER',
+      );
+    }
+
+    try {
+      const tokenData = await getToken();
+
+      if (!tokenData || !tokenData.access_token) {
+        return errorResponse(
+          res,
+          'Não foi possível obter token de autenticação TOTVS',
+          503,
+          'TOKEN_UNAVAILABLE',
+        );
+      }
+
+      const endpoint = `${TOTVS_BASE_URL}/person/v2/legal-entities/search`;
+
+      console.log('🔍 Buscando pessoa jurídica por telefone na API TOTVS:', {
+        endpoint,
+        phoneNumber: cleanPhone,
+        maxPages,
+      });
+
+      const doRequest = async (accessToken, page) => {
+        const payload = {
+          filter: {
+            isCustomer: true,
+          },
+          expand:
+            'phones,emails,addresses,contacts,classifications,observations',
+          page: page,
+          pageSize: 500,
+          order: 'personCode',
+        };
+
+        return axios.post(endpoint, payload, {
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          timeout: 60000,
+        });
+      };
+
+      let allMatches = [];
+      let currentPage = 1;
+      let hasMore = true;
+      let token = tokenData.access_token;
+      let totalFetched = 0;
+
+      while (hasMore && currentPage <= maxPages) {
+        let response;
+        try {
+          response = await doRequest(token, currentPage);
+        } catch (error) {
+          if (error.response?.status === 401) {
+            console.log('🔄 Token inválido. Renovando token...');
+            const newTokenData = await getToken(true);
+            token = newTokenData.access_token;
+            response = await doRequest(token, currentPage);
+          } else {
+            throw error;
+          }
+        }
+
+        const pageItems = response.data?.items || [];
+        totalFetched += pageItems.length;
+        hasMore = response.data?.hasNext || false;
+
+        // Filtrar por telefone localmente
+        const matches = pageItems.filter((item) => {
+          if (!item.phones || !Array.isArray(item.phones)) return false;
+          return item.phones.some((phone) => {
+            const num = (phone.number || '').replace(/\D/g, '');
+            return num.includes(cleanPhone) || cleanPhone.includes(num);
+          });
+        });
+
+        if (matches.length > 0) {
+          allMatches = allMatches.concat(matches);
+        }
+
+        console.log(
+          `📄 PJ Página ${currentPage}: ${pageItems.length} itens, ${matches.length} match(es) (total matches: ${allMatches.length})`,
+        );
+
+        currentPage++;
+      }
+
+      console.log(
+        `✅ Busca PJ por telefone concluída: ${allMatches.length} de ${totalFetched} em ${currentPage - 1} páginas`,
+      );
+
+      successResponse(
+        res,
+        {
+          items: allMatches,
+          totalFiltered: allMatches.length,
+          totalFetched: totalFetched,
+          pagesSearched: currentPage - 1,
+          hasMore: hasMore,
+        },
+        `${allMatches.length} pessoa(s) jurídica(s) encontrada(s) com o telefone informado`,
+      );
+    } catch (error) {
+      console.error(
+        '❌ Erro ao buscar pessoa jurídica por telefone na API TOTVS:',
+        {
+          message: error.message,
+          code: error.code,
+          response: error.response?.data,
+          status: error.response?.status,
+        },
+      );
+
+      if (error.response) {
+        let errorMessage =
+          'Erro ao buscar pessoa jurídica por telefone na API TOTVS';
+
+        if (error.response.data) {
+          if (typeof error.response.data === 'string') {
+            errorMessage = error.response.data || errorMessage;
+          } else if (typeof error.response.data === 'object') {
+            errorMessage =
+              error.response.data?.message ||
+              error.response.data?.error ||
+              error.response.data?.error_description ||
+              error.response.data?.title ||
+              errorMessage;
+          }
+        }
+
+        return res.status(error.response.status || 400).json({
+          success: false,
+          message: errorMessage,
+          error: 'TOTVS_API_ERROR',
+          timestamp: new Date().toISOString(),
+          details: error.response.data || null,
+          status: error.response.status,
+        });
+      } else if (error.request) {
+        const errorMessage =
+          error.code === 'ENOTFOUND'
+            ? 'URL da API TOTVS não encontrada.'
+            : error.code === 'ECONNREFUSED'
+              ? 'Conexão recusada pela API TOTVS.'
+              : `Não foi possível conectar à API TOTVS (${error.code || 'Erro desconhecido'})`;
+
+        return errorResponse(res, errorMessage, 503, 'TOTVS_CONNECTION_ERROR');
+      }
+
+      throw new Error(`Erro ao chamar API TOTVS: ${error.message}`);
+    }
+  }),
+);
+
+/**
  * @route POST /totvs/individual/search
  * @desc Busca dados de pessoa física (PF) na API TOTVS Moda
  * @access Public
@@ -2121,6 +2312,154 @@ router.post(
 
       if (error.response) {
         let errorMessage = 'Erro ao buscar pessoas físicas na API TOTVS';
+
+        if (error.response.data) {
+          if (typeof error.response.data === 'string') {
+            errorMessage = error.response.data || errorMessage;
+          } else if (typeof error.response.data === 'object') {
+            errorMessage =
+              error.response.data?.message ||
+              error.response.data?.error ||
+              error.response.data?.error_description ||
+              error.response.data?.title ||
+              errorMessage;
+          }
+        }
+
+        return res.status(error.response.status || 400).json({
+          success: false,
+          message: errorMessage,
+          error: 'TOTVS_API_ERROR',
+          timestamp: new Date().toISOString(),
+          details: error.response.data || null,
+          status: error.response.status,
+        });
+      } else if (error.request) {
+        const errorMessage =
+          error.code === 'ENOTFOUND'
+            ? 'URL da API TOTVS não encontrada.'
+            : error.code === 'ECONNREFUSED'
+              ? 'Conexão recusada pela API TOTVS.'
+              : `Não foi possível conectar à API TOTVS (${error.code || 'Erro desconhecido'})`;
+
+        return errorResponse(res, errorMessage, 503, 'TOTVS_CONNECTION_ERROR');
+      }
+
+      throw new Error(`Erro ao chamar API TOTVS: ${error.message}`);
+    }
+  }),
+);
+
+/**
+ * @route POST /totvs/individual/search-by-phone
+ * @desc Busca pessoa física por número de telefone na API TOTVS
+ * @access Public
+ * @body {
+ *   phoneNumber: string (obrigatório) - Número de telefone (apenas números, mín. 8 dígitos)
+ * }
+ */
+router.post(
+  '/individual/search-by-phone',
+  asyncHandler(async (req, res) => {
+    const { phoneNumber } = req.body;
+
+    if (!phoneNumber || phoneNumber.trim().length < 8) {
+      return errorResponse(
+        res,
+        'O campo phoneNumber é obrigatório e deve ter pelo menos 8 dígitos',
+        400,
+        'MISSING_PHONE_NUMBER',
+      );
+    }
+
+    // Remover caracteres não numéricos
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+
+    if (cleanPhone.length < 8) {
+      return errorResponse(
+        res,
+        'O número de telefone deve ter pelo menos 8 dígitos numéricos',
+        400,
+        'INVALID_PHONE_NUMBER',
+      );
+    }
+
+    try {
+      const tokenData = await getToken();
+
+      if (!tokenData || !tokenData.access_token) {
+        return errorResponse(
+          res,
+          'Não foi possível obter token de autenticação TOTVS',
+          503,
+          'TOKEN_UNAVAILABLE',
+        );
+      }
+
+      const payload = {
+        filter: {
+          phoneNumber: cleanPhone,
+          isCustomer: true,
+        },
+        expand: 'phones,emails,addresses,classifications,observations',
+        page: 1,
+        pageSize: 500,
+      };
+
+      const endpoint = `${TOTVS_BASE_URL}/person/v2/individuals/search`;
+
+      console.log('🔍 Buscando pessoa física por telefone na API TOTVS:', {
+        endpoint,
+        phoneNumber: cleanPhone,
+      });
+
+      const doRequest = async (accessToken) =>
+        axios.post(endpoint, payload, {
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          timeout: 30000,
+        });
+
+      let response;
+      try {
+        response = await doRequest(tokenData.access_token);
+      } catch (error) {
+        if (error.response?.status === 401) {
+          console.log('🔄 Token inválido. Renovando token...');
+          const newTokenData = await getToken(true);
+          response = await doRequest(newTokenData.access_token);
+        } else {
+          throw error;
+        }
+      }
+
+      const items = response.data?.items || [];
+      console.log(
+        `✅ Busca por telefone concluída: ${items.length} pessoa(s) encontrada(s)`,
+      );
+
+      successResponse(
+        res,
+        response.data,
+        `${items.length} pessoa(s) encontrada(s) com o telefone informado`,
+      );
+    } catch (error) {
+      console.error(
+        '❌ Erro ao buscar pessoa física por telefone na API TOTVS:',
+        {
+          message: error.message,
+          code: error.code,
+          response: error.response?.data,
+          status: error.response?.status,
+        },
+      );
+
+      if (error.response) {
+        let errorMessage =
+          'Erro ao buscar pessoa física por telefone na API TOTVS';
 
         if (error.response.data) {
           if (typeof error.response.data === 'string') {
@@ -6342,6 +6681,283 @@ router.post(
             'Erro ao buscar ranking de produtos na API TOTVS',
           error.response.status || 500,
           'TOTVS_API_ERROR',
+        );
+      }
+
+      if (error.request) {
+        return errorResponse(
+          res,
+          'Não foi possível conectar à API TOTVS',
+          503,
+          'TOTVS_CONNECTION_ERROR',
+        );
+      }
+
+      throw error;
+    }
+  }),
+);
+
+// =============================================================================
+// SALDO DE PRODUTO (ESTOQUE) - /api/totvsmoda/product/v2/balances/search
+// =============================================================================
+
+/**
+ * @route POST /totvs/product-balances
+ * @desc Busca saldos de produtos na API TOTVS (estoque)
+ * @access Protegido via API Key
+ * @body {
+ *   filter: {
+ *     productCodeList?: number[],
+ *     referenceCodeList?: string[],
+ *     productName?: string,
+ *     groupCodeList?: string[],
+ *     barCodeList?: string[],
+ *     branchInfo?: { branchCode: number, isActive?: boolean },
+ *     classifications?: [{ type: number, codeList: string[] }],
+ *     hasStock?: boolean,
+ *     branchStockCode?: number,
+ *     stockCode?: number
+ *   },
+ *   option: {
+ *     balances: [{
+ *       branchCode: number (obrigatório),
+ *       stockCodeList: number[] (obrigatório),
+ *       isSalesOrder?: boolean,
+ *       isTransaction?: boolean,
+ *       isPurchaseOrder?: boolean,
+ *       isProductionOrder?: boolean,
+ *       isProductionPlanning?: boolean
+ *     }]
+ *   },
+ *   page?: number,
+ *   pageSize?: number,
+ *   order?: string,
+ *   expand?: string
+ * }
+ */
+router.post(
+  '/product-balances',
+  asyncHandler(async (req, res) => {
+    try {
+      const tokenData = await getToken();
+      if (!tokenData || !tokenData.access_token) {
+        return errorResponse(
+          res,
+          'Não foi possível obter token de autenticação TOTVS',
+          503,
+          'TOKEN_ERROR',
+        );
+      }
+
+      const { filter, option, page, pageSize, order, expand } = req.body;
+
+      if (
+        !filter ||
+        !option ||
+        !option.balances ||
+        !Array.isArray(option.balances)
+      ) {
+        return errorResponse(
+          res,
+          'Campos obrigatórios: filter, option.balances (array com branchCode e stockCodeList)',
+          400,
+          'MISSING_PARAMS',
+        );
+      }
+
+      // Validar cada item de balance
+      for (const balance of option.balances) {
+        if (
+          !balance.branchCode ||
+          !balance.stockCodeList ||
+          !Array.isArray(balance.stockCodeList)
+        ) {
+          return errorResponse(
+            res,
+            'Cada item em option.balances deve ter branchCode (number) e stockCodeList (number[])',
+            400,
+            'INVALID_BALANCE_OPTION',
+          );
+        }
+      }
+
+      const body = {
+        filter: filter || {},
+        option,
+        page: page || 1,
+        pageSize: Math.min(pageSize || 100, 1000),
+      };
+
+      if (order) body.order = order;
+      if (expand) body.expand = expand;
+
+      const url = `${TOTVS_BASE_URL}/product/v2/balances/search`;
+      console.log('📦 Buscando saldos de produtos TOTVS:', url);
+      console.log('📦 Body:', JSON.stringify(body, null, 2));
+
+      const response = await axios.post(url, body, {
+        headers: {
+          Authorization: `Bearer ${tokenData.access_token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        timeout: 120000,
+        httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+      });
+
+      const data = response.data;
+
+      console.log(
+        `✅ Saldos encontrados: ${data.items?.length || 0} itens (total: ${data.totalItems || 0})`,
+      );
+
+      return successResponse(
+        res,
+        {
+          data: data.items || [],
+          total: data.totalItems || 0,
+          count: data.count || 0,
+          totalPages: data.totalPages || 0,
+          hasNext: data.hasNext || false,
+          page: body.page,
+          pageSize: body.pageSize,
+        },
+        `${data.items?.length || 0} saldos de produtos encontrados`,
+      );
+    } catch (error) {
+      console.error('❌ Erro ao buscar saldos de produtos TOTVS:', {
+        message: error.message,
+        status: error.response?.status,
+        data: JSON.stringify(error.response?.data, null, 2),
+      });
+
+      if (error.response) {
+        const totvsMsg =
+          error.response.data?.message ||
+          error.response.data?.errors?.[0]?.message ||
+          error.response.data?.error ||
+          (typeof error.response.data === 'string'
+            ? error.response.data
+            : null) ||
+          'Erro ao buscar saldos na API TOTVS';
+        return errorResponse(
+          res,
+          totvsMsg,
+          error.response.status || 500,
+          'TOTVS_API_ERROR',
+          { totvs: error.response.data },
+        );
+      }
+
+      if (error.request) {
+        return errorResponse(
+          res,
+          'Não foi possível conectar à API TOTVS',
+          503,
+          'TOTVS_CONNECTION_ERROR',
+        );
+      }
+
+      throw error;
+    }
+  }),
+);
+
+/**
+ * POST /product-search
+ * Busca produtos via API TOTVS com suporte a expand (barCodes, classifications, etc.)
+ */
+router.post(
+  '/product-search',
+  asyncHandler(async (req, res) => {
+    try {
+      const tokenData = await getToken();
+      if (!tokenData || !tokenData.access_token) {
+        return errorResponse(
+          res,
+          'Não foi possível obter token de autenticação TOTVS',
+          503,
+          'TOKEN_ERROR',
+        );
+      }
+
+      const { filter, option, page, pageSize, order, expand } = req.body;
+
+      if (!filter || !option || option.branchInfoCode == null) {
+        return errorResponse(
+          res,
+          'Campos obrigatórios: filter, option.branchInfoCode',
+          400,
+          'MISSING_PARAMS',
+        );
+      }
+
+      const body = {
+        filter: filter || {},
+        option,
+        page: page || 1,
+        pageSize: Math.min(pageSize || 200, 1000),
+      };
+
+      if (order) body.order = order;
+      if (expand) body.expand = expand;
+
+      const url = `${TOTVS_BASE_URL}/product/v2/products/search`;
+      console.log('🔍 Buscando produtos TOTVS:', url);
+      console.log('🔍 Body:', JSON.stringify(body, null, 2));
+
+      const response = await axios.post(url, body, {
+        headers: {
+          Authorization: `Bearer ${tokenData.access_token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        timeout: 120000,
+        httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+      });
+
+      const data = response.data;
+
+      console.log(
+        `✅ Produtos encontrados: ${data.items?.length || 0} itens (total: ${data.totalItems || 0})`,
+      );
+
+      return successResponse(
+        res,
+        {
+          data: data.items || [],
+          total: data.totalItems || 0,
+          count: data.count || 0,
+          totalPages: data.totalPages || 0,
+          hasNext: data.hasNext || false,
+          page: body.page,
+          pageSize: body.pageSize,
+        },
+        `${data.items?.length || 0} produtos encontrados`,
+      );
+    } catch (error) {
+      console.error('❌ Erro ao buscar produtos TOTVS:', {
+        message: error.message,
+        status: error.response?.status,
+        data: JSON.stringify(error.response?.data, null, 2),
+      });
+
+      if (error.response) {
+        const totvsMsg =
+          error.response.data?.message ||
+          error.response.data?.errors?.[0]?.message ||
+          error.response.data?.error ||
+          (typeof error.response.data === 'string'
+            ? error.response.data
+            : null) ||
+          'Erro ao buscar produtos na API TOTVS';
+        return errorResponse(
+          res,
+          totvsMsg,
+          error.response.status || 500,
+          'TOTVS_API_ERROR',
+          { totvs: error.response.data },
         );
       }
 

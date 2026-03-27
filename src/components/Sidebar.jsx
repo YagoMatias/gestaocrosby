@@ -35,6 +35,7 @@ import {
   Handshake,
   Wallet,
   Clock,
+  Package,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -179,6 +180,15 @@ const faturamento = [
     href: '/cmv-varejo',
     icon: FileText,
     color: 'text-indigo-600',
+  },
+];
+
+const estoqueItems = [
+  {
+    name: 'Consulta de Estoque',
+    href: '/estoque',
+    icon: Package,
+    color: 'text-teal-600',
   },
 ];
 
@@ -753,6 +763,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           onToggle={() => handleSectionToggle('faturamento')}
           icon={ChartLineUp}
           color="text-blue-600"
+        />
+
+        {/* Seção Estoque */}
+        <MenuSection
+          {...menuProps}
+          title="Estoque"
+          items={estoqueItems}
+          isOpen={openSection === 'estoque'}
+          onToggle={() => handleSectionToggle('estoque')}
+          icon={Package}
+          color="text-teal-600"
         />
 
         {/* Seção Varejo */}

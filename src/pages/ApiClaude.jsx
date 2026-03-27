@@ -127,6 +127,57 @@ const ROUTE_CATEGORIES = [
 .then(data => console.log(data));`,
       },
       {
+        name: 'Buscar Pessoa Jurídica (PJ) por Telefone',
+        method: 'POST',
+        path: '/api/totvs/legal-entity/search-by-phone',
+        description:
+          'Busca pessoa jurídica pelo número de telefone. Como a API TOTVS PJ não suporta filtro direto por telefone, esta rota percorre as páginas de clientes PJ e filtra localmente pelo número informado. Pode ser mais lenta que a busca PF por telefone.',
+        params: {
+          body: {
+            phoneNumber: {
+              type: 'string',
+              required: true,
+              description:
+                'Número de telefone (apenas números, mín. 8 dígitos). Ex: "85999991234"',
+            },
+            maxPages: {
+              type: 'number',
+              required: false,
+              description: 'Máximo de páginas a percorrer (default: 30)',
+            },
+          },
+        },
+        response: `{
+  "success": true,
+  "data": {
+    "items": [{
+      "code": 180,
+      "name": "EMPRESA EXEMPLO LTDA",
+      "fantasyName": "EXEMPLO",
+      "cnpj": "12345678000190",
+      "isCustomer": true,
+      "customerStatus": "Normal",
+      "phones": [{ "typeCode": 1, "number": "85999991234", "isDefault": true }],
+      "emails": [...],
+      "addresses": [...],
+      "contacts": [...],
+      "classifications": [...]
+    }],
+    "totalFiltered": 1,
+    "totalFetched": 5000,
+    "pagesSearched": 10,
+    "hasMore": false
+  }
+}`,
+        example: `fetch('${API_BASE_URL}/api/totvs/legal-entity/search-by-phone', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ phoneNumber: "85999991234", maxPages: 20 })
+})
+.then(res => res.json())
+.then(data => console.log(data));`,
+      },
+      {
         name: 'Buscar Pessoa Física (PF) por Código',
         method: 'POST',
         path: '/api/totvs/individual/search',
@@ -207,6 +258,50 @@ const ROUTE_CATEGORIES = [
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ name: "FULANO", maxPages: 10 })
+})
+.then(res => res.json())
+.then(data => console.log(data));`,
+      },
+      {
+        name: 'Buscar Pessoa Física (PF) por Telefone',
+        method: 'POST',
+        path: '/api/totvs/individual/search-by-phone',
+        description:
+          'Busca pessoa física pelo número de telefone na API TOTVS. Envia apenas números (sem parênteses, traços ou espaços), mínimo 8 dígitos.',
+        params: {
+          body: {
+            phoneNumber: {
+              type: 'string',
+              required: true,
+              description:
+                'Número de telefone (apenas números, mín. 8 dígitos). Ex: "85999991234"',
+            },
+          },
+        },
+        response: `{
+  "success": true,
+  "data": {
+    "items": [{
+      "code": 500,
+      "name": "FULANO DE TAL",
+      "cpf": "12345678900",
+      "birthDate": "1990-05-20",
+      "isCustomer": true,
+      "customerStatus": "Normal",
+      "phones": [{ "typeCode": 1, "number": "85999991234", "isDefault": true }],
+      "emails": [{ "email": "fulano@email.com" }],
+      "addresses": [...],
+      "classifications": [...],
+      "observations": [...]
+    }],
+    "hasNext": false,
+    "totalItems": 1
+  }
+}`,
+        example: `fetch('${API_BASE_URL}/api/totvs/individual/search-by-phone', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ phoneNumber: "85999991234" })
 })
 .then(res => res.json())
 .then(data => console.log(data));`,
@@ -1099,6 +1194,209 @@ fetch('${API_BASE_URL}/api/totvs/clientes/fetch-all?startDate=2024-01-01&endDate
     password: 'senha'
   })
 }).then(res => res.json()).then(data => console.log(data));`,
+      },
+    ],
+  },
+  {
+    id: 'estoque',
+    name: 'Estoque (Produtos)',
+    description:
+      'Consultas de saldo de estoque e busca de produtos na API TOTVS (Product v2)',
+    icon: '📦',
+    routes: [
+      {
+        name: 'Consultar Saldo de Estoque',
+        method: 'POST',
+        path: '/api/totvs/product-balances',
+        description:
+          'Busca saldos de produtos (estoque) na API TOTVS. Permite filtrar por código de produto, referência, nome, grupo, código de barras, classificação e se possui estoque. Requer obrigatoriamente filter e option.balances com branchCode e stockCodeList.',
+        params: {
+          body: {
+            filter: {
+              type: 'object',
+              required: true,
+              description: `Filtros de produto. Campos disponíveis:
+  - productCodeList: number[] — Códigos de produto
+  - referenceCodeList: string[] — Códigos de referência
+  - productName: string — Nome do produto
+  - groupCodeList: string[] — Códigos de grupo
+  - barCodeList: string[] — Códigos de barra
+  - branchInfo: { branchCode: number, isActive?: boolean }
+  - classifications: [{ type: number, codeList: string[] }]
+  - hasStock: boolean — true = com estoque (requer branchStockCode e stockCode)
+  - branchStockCode: number — Código da empresa para filtro de estoque
+  - stockCode: number — Código do estoque (ex: 1)`,
+            },
+            option: {
+              type: 'object',
+              required: true,
+              description: `Opções obrigatórias:
+  - balances: [{ branchCode: number, stockCodeList: number[], isSalesOrder?: boolean, isTransaction?: boolean, isPurchaseOrder?: boolean }]`,
+            },
+            page: {
+              type: 'number',
+              required: false,
+              description: 'Número da página (default: 1)',
+            },
+            pageSize: {
+              type: 'number',
+              required: false,
+              description: 'Itens por página (default: 100, máx: 1000)',
+            },
+            order: {
+              type: 'string',
+              required: false,
+              description: 'Ordenação. Ex: "productCode", "-stock"',
+            },
+            expand: {
+              type: 'string',
+              required: false,
+              description: 'Dados adicionais separados por vírgula',
+            },
+          },
+        },
+        response: `{
+  "success": true,
+  "data": {
+    "data": [
+      {
+        "productCode": 12345,
+        "productName": "CAMISETA POLO M",
+        "referenceCode": "REF001",
+        "branchCode": 1,
+        "stockCode": 1,
+        "stock": 150.00,
+        "salesOrder": 10.00,
+        "purchaseOrder": 0.00,
+        "transaction": 5.00,
+        "available": 135.00,
+        "colorCode": "001",
+        "colorDescription": "BRANCO",
+        "sizeCode": "M",
+        "groupCode": "10",
+        "groupDescription": "CAMISETAS"
+      }
+    ],
+    "total": 500,
+    "count": 100,
+    "totalPages": 5,
+    "hasNext": true,
+    "page": 1,
+    "pageSize": 100
+  }
+}`,
+        example: `// Exemplo: buscar estoque da empresa 1, estoque 1, com saldo > 0
+fetch('${API_BASE_URL}/api/totvs/product-balances', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    filter: {
+      hasStock: true,
+      branchStockCode: 1,
+      stockCode: 1,
+      classifications: [{ type: 17, codeList: ["10", "20"] }]
+    },
+    option: {
+      balances: [{
+        branchCode: 1,
+        stockCodeList: [1],
+        isSalesOrder: true,
+        isTransaction: true,
+        isPurchaseOrder: true
+      }]
+    },
+    page: 1,
+    pageSize: 100
+  })
+})
+.then(res => res.json())
+.then(data => console.log(data));`,
+      },
+      {
+        name: 'Buscar Produtos (com Códigos de Barras)',
+        method: 'POST',
+        path: '/api/totvs/product-search',
+        description:
+          'Busca produtos na API TOTVS com suporte a expand. Permite trazer códigos de barras (expand="barCodes"), classificações e outros dados expandidos. Requer filter e option.branchInfoCode.',
+        params: {
+          body: {
+            filter: {
+              type: 'object',
+              required: true,
+              description: `Filtros de produto. Mesmos campos do product-balances:
+  - productCodeList, referenceCodeList, productName, groupCodeList, barCodeList, classifications, etc.`,
+            },
+            option: {
+              type: 'object',
+              required: true,
+              description:
+                'Deve conter branchInfoCode: number (código da empresa)',
+            },
+            expand: {
+              type: 'string',
+              required: false,
+              description:
+                'Dados expandidos: "barCodes", "classifications", "additionalFields", etc. Separar por vírgula.',
+            },
+            page: {
+              type: 'number',
+              required: false,
+              description: 'Número da página (default: 1)',
+            },
+            pageSize: {
+              type: 'number',
+              required: false,
+              description: 'Itens por página (default: 200, máx: 1000)',
+            },
+            order: {
+              type: 'string',
+              required: false,
+              description: 'Ordenação. Ex: "productCode"',
+            },
+          },
+        },
+        response: `{
+  "success": true,
+  "data": {
+    "data": [
+      {
+        "code": 12345,
+        "name": "CAMISETA POLO M",
+        "referenceCode": "REF001",
+        "groupCode": "10",
+        "groupDescription": "CAMISETAS",
+        "barCodes": [
+          { "code": "7891234567890", "quantity": 1, "isMainCode": true },
+          { "code": "RFID0001ABC", "quantity": 1, "isMainCode": false }
+        ]
+      }
+    ],
+    "total": 300,
+    "count": 200,
+    "totalPages": 2,
+    "hasNext": true,
+    "page": 1,
+    "pageSize": 200
+  }
+}`,
+        example: `// Exemplo: buscar produtos com códigos de barras da empresa 1
+fetch('${API_BASE_URL}/api/totvs/product-search', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    filter: {
+      classifications: [{ type: 17, codeList: ["10"] }]
+    },
+    option: {
+      branchInfoCode: 1
+    },
+    expand: "barCodes",
+    page: 1,
+    pageSize: 200
+  })
+})
+.then(res => res.json())
+.then(data => console.log(data));`,
       },
     ],
   },
