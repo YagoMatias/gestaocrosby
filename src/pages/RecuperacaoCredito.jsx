@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import jsPDF from 'jspdf';
+import * as XLSX from 'xlsx';
 import { supabaseAdmin } from '../lib/supabase';
 import PageTitle from '../components/ui/PageTitle';
 import Notification from '../components/ui/Notification';
@@ -27,9 +28,103 @@ import {
   FileText,
   CircleNotch,
   Scales,
+  Paperclip,
+  Phone,
+  Envelope,
+  MapPin,
+  DownloadSimple,
+  Trash,
 } from '@phosphor-icons/react';
 
 const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
+const BUCKET_NAME = 'clientes-confianca';
+
+const CLIENTES_BLOQUEADOS = [
+  'IAGO REGIS',
+  'JU STORE',
+  'DULCIDALVA',
+  'JOSELIO ELIAS ALVES',
+  'ADAUREA',
+  'MAURICIO',
+  'ROSIEDJ',
+  'TREND',
+  'MAROS VINICIUS',
+  'MARCOS VINICIUS',
+  'FILIPE MEDEIROS',
+  'GISELE PATRICIA',
+  'LEVE MAIS',
+  'MENDOCA DEMINITO',
+  'MENDONCA DEMINITO',
+  'CASCIA MATOS',
+  'FABIO JUNIOR',
+  'RAYENE TAVARES',
+  'SABRINA TELES',
+  'I AM DANTAS',
+  'I A M DANTAS',
+  'I M A DANTAS',
+  'I M DANTAS',
+  'JOSIMAR',
+  'FELIPE MEDEIROS',
+  'ROSILENE MARIA',
+  'MARIA DAS DORES',
+  'G A P DA SILVA',
+  'MARIA DE FATIMA',
+  'I M DE A DANTAS',
+];
+
+const isClienteBloqueado = (nome) => {
+  const nomeUpper = (nome || '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return CLIENTES_BLOQUEADOS.some((bloq) => {
+    const bloqNorm = bloq.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return nomeUpper.includes(bloqNorm);
+  });
+};
+
+const STATUS_OPTIONS = [
+  {
+    value: 'PROTESTO',
+    label: 'Protesto',
+    color: 'bg-red-100 text-red-700 border-red-200',
+  },
+  {
+    value: 'NEJ',
+    label: 'NEJ',
+    color: 'bg-amber-100 text-amber-700 border-amber-200',
+  },
+  {
+    value: 'EM_NEGOCIACAO',
+    label: 'Em Negociação',
+    color: 'bg-blue-100 text-blue-700 border-blue-200',
+  },
+  {
+    value: 'NJ',
+    label: 'NJ',
+    color: 'bg-purple-100 text-purple-700 border-purple-200',
+  },
+  {
+    value: 'PAGO',
+    label: 'Pago',
+    color: 'bg-green-100 text-green-700 border-green-200',
+  },
+  {
+    value: 'BLOQUEADO',
+    label: 'Bloqueado',
+    color: 'bg-yellow-100 text-yellow-700 border-yellow-300',
+  },
+];
+
+const getStatusStyle = (status) => {
+  const found = STATUS_OPTIONS.find((s) => s.value === status);
+  return found ? found.color : 'bg-gray-100 text-gray-600 border-gray-200';
+};
+
+const getStatusLabel = (status) => {
+  const found = STATUS_OPTIONS.find((s) => s.value === status);
+  return found ? found.label : '—';
+};
 
 const formatarMoeda = (valor) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
@@ -75,6 +170,15 @@ const RecuperacaoCredito = () => {
   const [nfResultados, setNfResultados] = useState({});
   const [notificacaoModal, setNotificacaoModal] = useState(null);
   const [gerandoNotificacao, setGerandoNotificacao] = useState(false);
+  const [statusClientes, setStatusClientes] = useState({});
+  const [filtroStatus, setFiltroStatus] = useState('TODOS');
+  const [anexosClientes, setAnexosClientes] = useState({});
+  const [detalhesCliente, setDetalhesCliente] = useState(null);
+  const [dadosPessoa, setDadosPessoa] = useState(null);
+  const [estatisticas, setEstatisticas] = useState(null);
+  const [loadingDetalhes, setLoadingDetalhes] = useState(false);
+  const [uploadingAnexo, setUploadingAnexo] = useState(false);
+  const [abaDetalhe, setAbaDetalhe] = useState('info');
 
   const hojeStr = new Date().toISOString().slice(0, 10);
 
@@ -280,7 +384,232 @@ const RecuperacaoCredito = () => {
 
   useEffect(() => {
     fetchDados();
+    carregarStatusClientes();
+    carregarAnexosClientes();
   }, []);
+
+  // ══════════════════════════════════════════════
+  // FUNÇÕES DE STATUS
+  // ══════════════════════════════════════════════
+  const carregarStatusClientes = async () => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('recuperacao_credito_status')
+        .select('*');
+      if (error) throw error;
+      const map = {};
+      (data || []).forEach((item) => {
+        map[item.cd_cliente] = item.status;
+      });
+      setStatusClientes(map);
+    } catch (err) {
+      console.warn('Erro ao carregar status:', err.message);
+    }
+  };
+
+  const atualizarStatus = async (cd_cliente, novoStatus, nm_cliente) => {
+    try {
+      const { error } = await supabaseAdmin
+        .from('recuperacao_credito_status')
+        .upsert(
+          {
+            cd_cliente,
+            nm_cliente: nm_cliente || '',
+            status: novoStatus,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'cd_cliente' },
+        );
+      if (error) throw error;
+      setStatusClientes((prev) => ({ ...prev, [cd_cliente]: novoStatus }));
+    } catch (err) {
+      setNotification({
+        type: 'error',
+        message: `Erro ao atualizar status: ${err.message}`,
+      });
+      setTimeout(() => setNotification(null), 3000);
+    }
+  };
+
+  // ══════════════════════════════════════════════
+  // FUNÇÕES DE ANEXOS
+  // ══════════════════════════════════════════════
+  const carregarAnexosClientes = async () => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('recuperacao_credito_anexos')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      const map = {};
+      (data || []).forEach((item) => {
+        if (!map[item.cd_cliente]) map[item.cd_cliente] = [];
+        map[item.cd_cliente].push(item);
+      });
+      setAnexosClientes(map);
+    } catch (err) {
+      console.warn('Erro ao carregar anexos:', err.message);
+    }
+  };
+
+  const handleUploadAnexo = async (cd_cliente, file) => {
+    if (!file) return;
+    setUploadingAnexo(true);
+    try {
+      const uid = crypto.randomUUID().slice(0, 8);
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `recuperacao-credito/${cd_cliente}/${uid}_${safeName}`;
+
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from(BUCKET_NAME)
+        .upload(storagePath, file, { upsert: false });
+      if (uploadError) throw uploadError;
+
+      const { error: dbError } = await supabaseAdmin
+        .from('recuperacao_credito_anexos')
+        .insert({
+          cd_cliente,
+          nome_arquivo: file.name,
+          file_path: storagePath,
+          tipo: file.type || 'application/octet-stream',
+        });
+      if (dbError) throw dbError;
+
+      await carregarAnexosClientes();
+      setNotification({
+        type: 'success',
+        message: 'Arquivo anexado com sucesso!',
+      });
+      setTimeout(() => setNotification(null), 3000);
+    } catch (err) {
+      setNotification({
+        type: 'error',
+        message: `Erro ao anexar arquivo: ${err.message}`,
+      });
+      setTimeout(() => setNotification(null), 4000);
+    } finally {
+      setUploadingAnexo(false);
+    }
+  };
+
+  const downloadAnexo = async (anexo) => {
+    try {
+      const { data, error } = await supabaseAdmin.storage
+        .from(BUCKET_NAME)
+        .download(anexo.file_path);
+      if (error) throw error;
+      const url = URL.createObjectURL(data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = anexo.nome_arquivo;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setNotification({
+        type: 'error',
+        message: `Erro ao baixar arquivo: ${err.message}`,
+      });
+      setTimeout(() => setNotification(null), 3000);
+    }
+  };
+
+  const removerAnexo = async (anexo) => {
+    if (!window.confirm(`Remover o arquivo "${anexo.nome_arquivo}"?`)) return;
+    try {
+      const { error: storageError } = await supabaseAdmin.storage
+        .from(BUCKET_NAME)
+        .remove([anexo.file_path]);
+      if (storageError) throw storageError;
+
+      const { error: dbError } = await supabaseAdmin
+        .from('recuperacao_credito_anexos')
+        .delete()
+        .eq('id', anexo.id);
+      if (dbError) throw dbError;
+
+      await carregarAnexosClientes();
+      setNotification({
+        type: 'success',
+        message: 'Arquivo removido com sucesso!',
+      });
+      setTimeout(() => setNotification(null), 3000);
+    } catch (err) {
+      setNotification({
+        type: 'error',
+        message: `Erro ao remover arquivo: ${err.message}`,
+      });
+      setTimeout(() => setNotification(null), 3000);
+    }
+  };
+
+  // ══════════════════════════════════════════════
+  // DETALHES DO CLIENTE (estilo ClientesConfianca)
+  // ══════════════════════════════════════════════
+  const buscarDetalhesCliente = async (cliente) => {
+    setDetalhesCliente(cliente);
+    setAbaDetalhe('info');
+    setDadosPessoa(null);
+    setEstatisticas(null);
+    setLoadingDetalhes(true);
+    try {
+      const personCode = parseInt(cliente.cd_cliente);
+
+      // Buscar dados da pessoa (pes_pessoa)
+      const { data: pessoaData } = await supabaseAdmin
+        .from('pes_pessoa')
+        .select(
+          'code, nm_pessoa, fantasy_name, cpf, telefone, email, phones, emails, addresses, uf',
+        )
+        .eq('code', personCode)
+        .single();
+      if (pessoaData) setDadosPessoa(pessoaData);
+
+      // Buscar estatísticas via API TOTVS
+      try {
+        const respStats = await fetch(`${TotvsURL}person-statistics`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ personCode }),
+        });
+        if (respStats.ok) {
+          const statsResult = await respStats.json();
+          if (statsResult.success) setEstatisticas(statsResult.data);
+        }
+      } catch (err) {
+        console.warn('Erro ao buscar estatísticas:', err.message);
+      }
+    } catch (err) {
+      console.warn('Erro ao buscar dados do cliente:', err.message);
+    } finally {
+      setLoadingDetalhes(false);
+    }
+  };
+
+  const getEndereco = (pessoa) => {
+    if (!pessoa?.addresses) return '';
+    try {
+      const addrs =
+        typeof pessoa.addresses === 'string'
+          ? JSON.parse(pessoa.addresses)
+          : pessoa.addresses;
+      if (!Array.isArray(addrs) || addrs.length === 0) return '';
+      const addr = addrs.find((a) => a.isDefault) || addrs[0];
+      const parts = [
+        addr.street,
+        addr.number ? `nº ${addr.number}` : '',
+        addr.complement,
+        addr.neighborhood,
+        addr.city,
+        addr.state,
+        addr.zipCode ? `CEP: ${addr.zipCode}` : '',
+      ].filter(Boolean);
+      return parts.join(', ');
+    } catch {
+      return '';
+    }
+  };
 
   // Filtrar por busca textual
   const clientesFiltrados = useMemo(() => {
@@ -311,6 +640,16 @@ const RecuperacaoCredito = () => {
             (f.nm_portador || '').toUpperCase().includes('SICREDI'),
         ),
       );
+    }
+
+    // Filtro por status
+    if (filtroStatus !== 'TODOS') {
+      resultado = resultado.filter((c) => {
+        const statusEfetivo = isClienteBloqueado(c.nm_cliente)
+          ? 'BLOQUEADO'
+          : statusClientes[c.cd_cliente] || '';
+        return statusEfetivo === filtroStatus;
+      });
     }
 
     // Ordenação
@@ -349,6 +688,8 @@ const RecuperacaoCredito = () => {
     direcaoOrdenacao,
     filtroOrigem,
     filtroSicredi,
+    filtroStatus,
+    statusClientes,
   ]);
 
   // Métricas
@@ -948,6 +1289,150 @@ const RecuperacaoCredito = () => {
     }
   };
 
+  const exportarPDF = () => {
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'a4',
+    });
+    const pageW = doc.internal.pageSize.getWidth();
+    const mL = 10;
+    let y = 15;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('Recuperação de Crédito', pageW / 2, y, { align: 'center' });
+    y += 5;
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text(
+      `Gerado em ${new Date().toLocaleDateString('pt-BR')} — ${clientesFiltrados.length} clientes — Total: ${formatarMoeda(metricas.valorTotal)}`,
+      pageW / 2,
+      y,
+      { align: 'center' },
+    );
+    y += 8;
+
+    const cols = [
+      { header: 'Cliente', width: 65 },
+      { header: 'Nome Fantasia', width: 50 },
+      { header: 'CNPJ/CPF', width: 38 },
+      { header: 'Origem', width: 25 },
+      { header: 'Valor Inadimplente', width: 35 },
+      { header: 'Dias Atraso', width: 22 },
+      { header: 'Status', width: 28 },
+    ];
+
+    // Header
+    doc.setFillColor(0, 6, 56);
+    doc.rect(
+      mL,
+      y,
+      cols.reduce((s, c) => s + c.width, 0),
+      7,
+      'F',
+    );
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    let xH = mL;
+    cols.forEach((col) => {
+      doc.text(col.header, xH + 2, y + 5);
+      xH += col.width;
+    });
+    y += 7;
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+
+    clientesFiltrados.forEach((c, i) => {
+      if (y > doc.internal.pageSize.getHeight() - 15) {
+        doc.addPage();
+        y = 15;
+      }
+      if (i % 2 === 0) {
+        doc.setFillColor(245, 245, 245);
+        doc.rect(
+          mL,
+          y,
+          cols.reduce((s, col) => s + col.width, 0),
+          6,
+          'F',
+        );
+      }
+      const statusEfetivo = isClienteBloqueado(c.nm_cliente)
+        ? 'BLOQUEADO'
+        : statusClientes[c.cd_cliente] || '';
+      const statusLabel =
+        getStatusLabel(statusEfetivo) ||
+        (statusEfetivo === 'BLOQUEADO' ? 'Bloqueado' : '—');
+      const row = [
+        c.nm_cliente || '',
+        c.nm_fantasia || '—',
+        formatarCNPJ(c.nr_cpfcnpj),
+        c.origem || '—',
+        formatarMoeda(c.valor_total),
+        `${c.diasAtrasoMax} dias`,
+        statusLabel,
+      ];
+      let x = mL;
+      row.forEach((val, idx) => {
+        const txt = doc.splitTextToSize(String(val), cols[idx].width - 3);
+        doc.text(txt[0] || '', x + 2, y + 4);
+        x += cols[idx].width;
+      });
+      y += 6;
+    });
+
+    doc.save(
+      `recuperacao-credito-${new Date().toISOString().slice(0, 10)}.pdf`,
+    );
+  };
+
+  const exportarExcel = () => {
+    const dados = clientesFiltrados.map((c) => {
+      const statusEfetivo = isClienteBloqueado(c.nm_cliente)
+        ? 'BLOQUEADO'
+        : statusClientes[c.cd_cliente] || '';
+      const statusLabel =
+        getStatusLabel(statusEfetivo) ||
+        (statusEfetivo === 'BLOQUEADO' ? 'Bloqueado' : '—');
+      return {
+        Código: c.cd_cliente,
+        Cliente: c.nm_cliente || '',
+        'Nome Fantasia': c.nm_fantasia || '—',
+        'CNPJ/CPF': formatarCNPJ(c.nr_cpfcnpj),
+        UF: c.ds_uf || '—',
+        Origem: c.origem || '—',
+        'Valor Inadimplente': c.valor_total || 0,
+        'Dias Atraso': c.diasAtrasoMax || 0,
+        Status: statusLabel,
+        Telefone: c.nr_telefone || '—',
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(dados);
+    // Ajustar larguras das colunas
+    ws['!cols'] = [
+      { wch: 10 },
+      { wch: 40 },
+      { wch: 30 },
+      { wch: 20 },
+      { wch: 5 },
+      { wch: 15 },
+      { wch: 18 },
+      { wch: 12 },
+      { wch: 15 },
+      { wch: 18 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Recuperação de Crédito');
+    XLSX.writeFile(
+      wb,
+      `recuperacao-credito-${new Date().toISOString().slice(0, 10)}.xlsx`,
+    );
+  };
+
   const abrirWhatsApp = (cliente) => {
     const telefone = cliente.nr_telefone || '';
     if (!telefone) {
@@ -1123,21 +1608,49 @@ Crosby`;
                   : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
               }`}
             >
-              <span
-                className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-extrabold ${
-                  filtroSicredi
-                    ? 'bg-white text-red-600'
-                    : 'bg-red-600 text-white'
-                }`}
-              >
-                P
-              </span>
-              Sicredi
+              SICREDI
             </button>
+
+            {/* Filtro Status */}
+            <select
+              value={filtroStatus}
+              onChange={(e) => setFiltroStatus(e.target.value)}
+              className="px-3 py-1.5 text-xs font-bold rounded-lg border border-gray-300 bg-white text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="TODOS">Todos os Status</option>
+              <option value="">Sem Status</option>
+              {STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+
             <span className="text-sm text-gray-500">
               {clientesFiltrados.length} cliente
               {clientesFiltrados.length !== 1 ? 's' : ''}
             </span>
+
+            <div className="flex items-center gap-1.5 ml-auto">
+              <button
+                onClick={exportarPDF}
+                disabled={clientesFiltrados.length === 0}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border border-red-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title="Baixar PDF"
+              >
+                <DownloadSimple size={14} />
+                PDF
+              </button>
+              <button
+                onClick={exportarExcel}
+                disabled={clientesFiltrados.length === 0}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border border-green-300 bg-white text-green-600 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title="Baixar Excel"
+              >
+                <DownloadSimple size={14} />
+                Excel
+              </button>
+            </div>
           </div>
 
           {/* Tabela */}
@@ -1173,6 +1686,8 @@ Crosby`;
                       >
                         Dias Atraso <SortIcon coluna="diasAtrasoMax" />
                       </th>
+                      <th className="px-4 py-3 text-center">Status</th>
+                      <th className="px-4 py-3 text-center">Anexos</th>
                       <th className="px-4 py-3 text-center">WhatsApp</th>
                     </tr>
                   </thead>
@@ -1180,7 +1695,7 @@ Crosby`;
                     {clientesFiltrados.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={7}
+                          colSpan={9}
                           className="px-4 py-12 text-center text-gray-400"
                         >
                           {clientes.length === 0
@@ -1189,89 +1704,168 @@ Crosby`;
                         </td>
                       </tr>
                     ) : (
-                      clientesFiltrados.map((cliente, index) => (
-                        <tr
-                          key={cliente.cd_cliente}
-                          onClick={() => setClienteSelecionado(cliente)}
-                          className={`hover:bg-blue-50 transition-colors cursor-pointer ${
-                            index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
-                          }`}
-                        >
-                          <td className="px-4 py-3">
-                            <div className="font-semibold text-gray-900 text-xs flex items-center gap-1.5">
-                              {cliente.nm_cliente}
-                              {(cliente.faturas || []).some(
-                                (f) =>
-                                  String(f.cd_portador) === '748' ||
-                                  (f.nm_portador || '')
-                                    .toUpperCase()
-                                    .includes('SICREDI'),
-                              ) && (
-                                <span
-                                  className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-600 text-white text-[10px] font-extrabold flex-shrink-0"
-                                  title="Possui títulos na SICREDI (protestados)"
+                      clientesFiltrados.map((cliente, index) => {
+                        const isChumbado = isClienteBloqueado(
+                          cliente.nm_cliente,
+                        );
+                        return (
+                          <tr
+                            key={cliente.cd_cliente}
+                            className={`transition-colors ${
+                              isChumbado
+                                ? 'bg-yellow-100 border-l-4 border-l-yellow-400'
+                                : index % 2 === 0
+                                  ? 'bg-white hover:bg-blue-50'
+                                  : 'bg-gray-50/50 hover:bg-blue-50'
+                            }`}
+                          >
+                            <td className="px-4 py-3">
+                              <div className="font-semibold text-gray-900 text-xs flex items-center gap-1.5">
+                                <button
+                                  onClick={() => buscarDetalhesCliente(cliente)}
+                                  className="text-left hover:text-blue-600 hover:underline transition-colors"
                                 >
-                                  P
+                                  {cliente.nm_cliente}
+                                </button>
+                                {(cliente.faturas || []).some(
+                                  (f) =>
+                                    String(f.cd_portador) === '748' ||
+                                    (f.nm_portador || '')
+                                      .toUpperCase()
+                                      .includes('SICREDI'),
+                                ) && (
+                                  <span
+                                    className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-red-600 text-white flex-shrink-0"
+                                    title="Possui títulos na SICREDI"
+                                  >
+                                    SICREDI
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-gray-400">
+                                Cód: {cliente.cd_cliente}{' '}
+                                {cliente.ds_uf ? `• ${cliente.ds_uf}` : ''}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-gray-700">
+                              {cliente.nm_fantasia || '—'}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-gray-700 font-mono">
+                              {formatarCNPJ(cliente.nr_cpfcnpj)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                                  cliente.origem === 'MULTIMARCAS'
+                                    ? 'bg-purple-100 text-purple-700'
+                                    : cliente.origem === 'FRANQUIA'
+                                      ? 'bg-amber-100 text-amber-700'
+                                      : 'bg-blue-100 text-blue-700'
+                                }`}
+                              >
+                                {cliente.origem}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right font-bold text-red-600 text-xs">
+                              {formatarMoeda(cliente.valor_total)}
+                            </td>
+                            <td className="px-4 py-3 text-center whitespace-nowrap">
+                              <span
+                                className={`text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                                  cliente.diasAtrasoMax > 120
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-orange-100 text-orange-700'
+                                }`}
+                              >
+                                {cliente.diasAtrasoMax} dias
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              {isChumbado ? (
+                                <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-yellow-100 text-yellow-700 border border-yellow-300">
+                                  BLOQUEADO
                                 </span>
+                              ) : (
+                                <select
+                                  value={
+                                    statusClientes[cliente.cd_cliente] || ''
+                                  }
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    atualizarStatus(
+                                      cliente.cd_cliente,
+                                      e.target.value,
+                                      cliente.nm_cliente,
+                                    );
+                                  }}
+                                  className={`text-[10px] font-bold px-2 py-1 rounded-lg border cursor-pointer transition-colors ${getStatusStyle(statusClientes[cliente.cd_cliente])}`}
+                                >
+                                  <option value="">Selecionar...</option>
+                                  {STATUS_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
+                                </select>
                               )}
-                            </div>
-                            <div className="text-xs text-gray-400">
-                              Cód: {cliente.cd_cliente}{' '}
-                              {cliente.ds_uf ? `• ${cliente.ds_uf}` : ''}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-gray-700">
-                            {cliente.nm_fantasia || '—'}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-gray-700 font-mono">
-                            {formatarCNPJ(cliente.nr_cpfcnpj)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                                cliente.origem === 'MULTIMARCAS'
-                                  ? 'bg-purple-100 text-purple-700'
-                                  : cliente.origem === 'FRANQUIA'
-                                    ? 'bg-amber-100 text-amber-700'
-                                    : 'bg-blue-100 text-blue-700'
-                              }`}
-                            >
-                              {cliente.origem}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right font-bold text-red-600 text-xs">
-                            {formatarMoeda(cliente.valor_total)}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <span
-                              className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                                cliente.diasAtrasoMax > 120
-                                  ? 'bg-red-100 text-red-700'
-                                  : 'bg-orange-100 text-orange-700'
-                              }`}
-                            >
-                              {cliente.diasAtrasoMax} dias
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                abrirWhatsApp(cliente);
-                              }}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition-colors"
-                              title={
-                                cliente.nr_telefone
-                                  ? `Enviar WhatsApp: ${cliente.nr_telefone}`
-                                  : 'Telefone não encontrado'
-                              }
-                            >
-                              <WhatsappLogo size={16} weight="fill" />
-                              Enviar
-                            </button>
-                          </td>
-                        </tr>
-                      ))
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <label
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-bold rounded cursor-pointer transition-colors"
+                                  title="Anexar arquivo"
+                                >
+                                  <Paperclip size={12} />
+                                  <input
+                                    type="file"
+                                    className="hidden"
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => {
+                                      e.stopPropagation();
+                                      handleUploadAnexo(
+                                        cliente.cd_cliente,
+                                        e.target.files[0],
+                                      );
+                                      e.target.value = '';
+                                    }}
+                                  />
+                                </label>
+                                {(anexosClientes[cliente.cd_cliente] || [])
+                                  .length > 0 && (
+                                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[9px] font-extrabold">
+                                    {anexosClientes[cliente.cd_cliente].length}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!isChumbado) abrirWhatsApp(cliente);
+                                }}
+                                disabled={isChumbado}
+                                className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                                  isChumbado
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    : 'bg-green-500 hover:bg-green-600 text-white'
+                                }`}
+                                title={
+                                  isChumbado
+                                    ? 'Ação indisponível para empresa própria'
+                                    : cliente.nr_telefone
+                                      ? `Enviar WhatsApp: ${cliente.nr_telefone}`
+                                      : 'Telefone não encontrado'
+                                }
+                              >
+                                <WhatsappLogo size={16} weight="fill" />
+                                Enviar
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -1281,157 +1875,541 @@ Crosby`;
         </>
       )}
 
-      {/* Modal de Faturas do Cliente */}
-      {clienteSelecionado && (
+      {/* Modal de Detalhes do Cliente */}
+      {detalhesCliente && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onClick={() => setClienteSelecionado(null)}
+          onClick={() => setDetalhesCliente(null)}
         >
           <div
-            className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col mx-4"
+            className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col mx-4"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <div>
-                <h2 className="text-lg font-bold text-[#000638] flex items-center gap-2">
-                  <Receipt size={20} className="text-red-600" />
-                  Faturas — {clienteSelecionado.nm_cliente}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-[#000638] to-[#001466] rounded-t-xl">
+              <div className="text-white">
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  {detalhesCliente.nm_cliente}
+                  {(detalhesCliente.faturas || []).some(
+                    (f) =>
+                      String(f.cd_portador) === '748' ||
+                      (f.nm_portador || '').toUpperCase().includes('SICREDI'),
+                  ) && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-red-600 text-white">
+                      SICREDI
+                    </span>
+                  )}
                 </h2>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {clienteSelecionado.nm_fantasia
-                    ? `${clienteSelecionado.nm_fantasia} • `
+                <p className="text-xs text-blue-200 mt-0.5">
+                  {detalhesCliente.nm_fantasia
+                    ? `${detalhesCliente.nm_fantasia} • `
                     : ''}
-                  CNPJ: {formatarCNPJ(clienteSelecionado.nr_cpfcnpj)} • Valor
-                  Total:{' '}
-                  <span className="font-bold text-red-600">
-                    {formatarMoeda(clienteSelecionado.valor_total)}
+                  Cód: {detalhesCliente.cd_cliente} • CNPJ:{' '}
+                  {formatarCNPJ(detalhesCliente.nr_cpfcnpj)} • Valor Total:{' '}
+                  <span className="font-bold text-red-300">
+                    {formatarMoeda(detalhesCliente.valor_total)}
                   </span>
                 </p>
               </div>
-              <button
-                onClick={() => setClienteSelecionado(null)}
-                className="p-1 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <X size={20} className="text-gray-500" />
-              </button>
+              <div className="flex items-center gap-2">
+                <select
+                  value={statusClientes[detalhesCliente.cd_cliente] || ''}
+                  onChange={(e) =>
+                    atualizarStatus(
+                      detalhesCliente.cd_cliente,
+                      e.target.value,
+                      detalhesCliente.nm_cliente,
+                    )
+                  }
+                  className={`text-xs font-bold px-3 py-1.5 rounded-lg border cursor-pointer ${getStatusStyle(statusClientes[detalhesCliente.cd_cliente])}`}
+                >
+                  <option value="">Status...</option>
+                  {STATUS_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setDetalhesCliente(null)}
+                  className="p-1 rounded-lg hover:bg-white/20 transition-colors"
+                >
+                  <X size={20} className="text-white" />
+                </button>
+              </div>
             </div>
 
-            {/* Tabela de faturas */}
+            {/* Abas */}
+            <div className="flex border-b border-gray-200">
+              {[
+                {
+                  key: 'info',
+                  label: 'Informações',
+                  icon: <Users size={14} />,
+                },
+                {
+                  key: 'faturas',
+                  label: `Faturas (${detalhesCliente.faturas?.length || 0})`,
+                  icon: <Receipt size={14} />,
+                },
+                {
+                  key: 'anexos',
+                  label: `Anexos (${(anexosClientes[detalhesCliente.cd_cliente] || []).length})`,
+                  icon: <Paperclip size={14} />,
+                },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setAbaDetalhe(tab.key)}
+                  className={`flex items-center gap-1.5 px-5 py-3 text-xs font-bold transition-colors border-b-2 ${
+                    abaDetalhe === tab.key
+                      ? 'border-[#000638] text-[#000638]'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Conteúdo da aba */}
             <div className="overflow-auto flex-1 px-6 py-4">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-100 sticky top-0">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-bold text-gray-600">
-                      Fatura
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-bold text-gray-600">
-                      Emissão
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-bold text-gray-600">
-                      Vencimento
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-bold text-gray-600">
-                      Portador
-                    </th>
-                    <th className="px-4 py-2 text-right text-xs font-bold text-gray-600">
-                      Valor
-                    </th>
-                    <th className="px-4 py-2 text-center text-xs font-bold text-gray-600">
-                      NF
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {(clienteSelecionado.faturas || [])
-                    .sort((a, b) => {
-                      const da = a.dt_vencimento || '';
-                      const db = b.dt_vencimento || '';
-                      return da < db ? -1 : da > db ? 1 : 0;
-                    })
-                    .map((fatura, i) => (
-                      <tr
-                        key={i}
-                        className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}
-                      >
-                        <td className="px-4 py-2 text-xs font-medium text-gray-900">
-                          {fatura.nr_fat || fatura.nr_fatura || 'N/A'}
-                          {fatura.nr_parcela ? ` / ${fatura.nr_parcela}` : ''}
-                        </td>
-                        <td className="px-4 py-2 text-xs text-gray-700">
-                          {formatarData(fatura.dt_emissao)}
-                        </td>
-                        <td className="px-4 py-2 text-xs text-gray-700">
-                          {formatarData(fatura.dt_vencimento)}
-                        </td>
-                        <td className="px-4 py-2 text-xs text-gray-700">
-                          {fatura.nm_portador || fatura.cd_portador || '—'}
-                        </td>
-                        <td className="px-4 py-2 text-xs text-right font-bold text-red-600">
-                          {formatarMoeda(fatura.vl_fatura)}
-                        </td>
-                        <td className="px-4 py-2 text-center">
-                          <button
-                            onClick={() => buscarNFsFatura(fatura)}
-                            disabled={
-                              nfBuscando !== null || danfeLoading !== null
-                            }
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-[10px] font-bold rounded transition-colors"
-                            title="Gerar Nota Fiscal (DANFE)"
-                          >
-                            {nfBuscando ===
-                            `${fatura.cd_cliente}_${fatura.nr_fat || fatura.nr_fatura}_${fatura.nr_parcela || ''}` ? (
-                              <CircleNotch size={12} className="animate-spin" />
-                            ) : (
-                              <FileText size={12} />
+              {loadingDetalhes ? (
+                <div className="flex items-center justify-center py-12">
+                  <CircleNotch
+                    size={32}
+                    className="animate-spin text-blue-600"
+                  />
+                  <span className="ml-3 text-sm text-gray-500">
+                    Carregando dados do cliente...
+                  </span>
+                </div>
+              ) : abaDetalhe === 'info' ? (
+                <div className="space-y-6">
+                  {/* Informações de Contato */}
+                  <div>
+                    <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
+                      <Users size={16} />
+                      Informações de Contato
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                        <FileText
+                          size={18}
+                          className="text-gray-500 mt-0.5 flex-shrink-0"
+                        />
+                        <div>
+                          <p className="text-[10px] font-bold text-gray-500 uppercase">
+                            CNPJ/CPF
+                          </p>
+                          <p className="text-sm text-gray-900 font-mono">
+                            {formatarCNPJ(
+                              dadosPessoa?.cpf || detalhesCliente.nr_cpfcnpj,
                             )}
-                            NF
-                          </button>
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                        <Phone
+                          size={18}
+                          className="text-gray-500 mt-0.5 flex-shrink-0"
+                        />
+                        <div>
+                          <p className="text-[10px] font-bold text-gray-500 uppercase">
+                            Telefone
+                          </p>
+                          <p className="text-sm text-gray-900">
+                            {dadosPessoa?.telefone ||
+                              detalhesCliente.nr_telefone ||
+                              '—'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                        <Envelope
+                          size={18}
+                          className="text-gray-500 mt-0.5 flex-shrink-0"
+                        />
+                        <div>
+                          <p className="text-[10px] font-bold text-gray-500 uppercase">
+                            E-mail
+                          </p>
+                          <p className="text-sm text-gray-900">
+                            {dadosPessoa?.email || '—'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                        <MapPin
+                          size={18}
+                          className="text-gray-500 mt-0.5 flex-shrink-0"
+                        />
+                        <div>
+                          <p className="text-[10px] font-bold text-gray-500 uppercase">
+                            UF
+                          </p>
+                          <p className="text-sm text-gray-900">
+                            {dadosPessoa?.uf || detalhesCliente.ds_uf || '—'}
+                          </p>
+                        </div>
+                      </div>
+                      {getEndereco(dadosPessoa) && (
+                        <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg md:col-span-2">
+                          <MapPin
+                            size={18}
+                            className="text-gray-500 mt-0.5 flex-shrink-0"
+                          />
+                          <div>
+                            <p className="text-[10px] font-bold text-gray-500 uppercase">
+                              Endereço
+                            </p>
+                            <p className="text-sm text-gray-900">
+                              {getEndereco(dadosPessoa)}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Resumo Financeiro */}
+                  <div>
+                    <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
+                      <CurrencyDollar size={16} />
+                      Resumo Financeiro
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="p-3 bg-red-50 rounded-lg text-center">
+                        <p className="text-[10px] font-bold text-red-500 uppercase">
+                          Valor Inadimplente
+                        </p>
+                        <p className="text-lg font-extrabold text-red-600">
+                          {formatarMoeda(detalhesCliente.valor_total)}
+                        </p>
+                      </div>
+                      <div className="p-3 bg-orange-50 rounded-lg text-center">
+                        <p className="text-[10px] font-bold text-orange-500 uppercase">
+                          Maior Atraso
+                        </p>
+                        <p className="text-lg font-extrabold text-orange-600">
+                          {detalhesCliente.diasAtrasoMax} dias
+                        </p>
+                      </div>
+                      <div className="p-3 bg-blue-50 rounded-lg text-center">
+                        <p className="text-[10px] font-bold text-blue-500 uppercase">
+                          Qtd. Faturas
+                        </p>
+                        <p className="text-lg font-extrabold text-blue-600">
+                          {detalhesCliente.faturas?.length || 0}
+                        </p>
+                      </div>
+                      <div className="p-3 bg-purple-50 rounded-lg text-center">
+                        <p className="text-[10px] font-bold text-purple-500 uppercase">
+                          Origem
+                        </p>
+                        <p className="text-sm font-extrabold text-purple-600">
+                          {detalhesCliente.origem}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Estatísticas TOTVS */}
+                  {estatisticas && (
+                    <div>
+                      <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
+                        <Scales size={16} />
+                        Estatísticas do Cliente
+                      </h3>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {estatisticas.purchaseQuantity != null && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              COMPRAS REALIZADAS
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {estatisticas.purchaseQuantity}
+                            </p>
+                          </div>
+                        )}
+                        {estatisticas.totalPurchaseValue != null && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              TOTAL COMPRADO
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {formatarMoeda(estatisticas.totalPurchaseValue)}
+                            </p>
+                          </div>
+                        )}
+                        {estatisticas.averageDelay != null && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              ATRASO MÉDIO
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {estatisticas.averageDelay} dias
+                            </p>
+                          </div>
+                        )}
+                        {estatisticas.maximumDelay != null && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              ATRASO MÁXIMO
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {estatisticas.maximumDelay} dias
+                            </p>
+                          </div>
+                        )}
+                        {estatisticas.totalInstallmentsOpen != null && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              PARCELAS EM ABERTO
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {estatisticas.totalInstallmentsOpen}
+                            </p>
+                          </div>
+                        )}
+                        {estatisticas.highestDebt != null && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              MAIOR DÉBITO
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {formatarMoeda(estatisticas.highestDebt)}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : abaDetalhe === 'faturas' ? (
+                <div>
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-100 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-bold text-gray-600">
+                          Fatura
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-bold text-gray-600">
+                          Emissão
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-bold text-gray-600">
+                          Vencimento
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-bold text-gray-600">
+                          Portador
+                        </th>
+                        <th className="px-4 py-2 text-right text-xs font-bold text-gray-600">
+                          Valor
+                        </th>
+                        <th className="px-4 py-2 text-center text-xs font-bold text-gray-600">
+                          NF
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {(detalhesCliente.faturas || [])
+                        .sort((a, b) => {
+                          const da = a.dt_vencimento || '';
+                          const db = b.dt_vencimento || '';
+                          return da < db ? -1 : da > db ? 1 : 0;
+                        })
+                        .map((fatura, i) => (
+                          <tr
+                            key={i}
+                            className={
+                              i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+                            }
+                          >
+                            <td className="px-4 py-2 text-xs font-medium text-gray-900">
+                              {fatura.nr_fat || fatura.nr_fatura || 'N/A'}
+                              {fatura.nr_parcela
+                                ? ` / ${fatura.nr_parcela}`
+                                : ''}
+                            </td>
+                            <td className="px-4 py-2 text-xs text-gray-700">
+                              {formatarData(fatura.dt_emissao)}
+                            </td>
+                            <td className="px-4 py-2 text-xs text-gray-700">
+                              {formatarData(fatura.dt_vencimento)}
+                            </td>
+                            <td className="px-4 py-2 text-xs text-gray-700">
+                              {fatura.nm_portador || fatura.cd_portador || '—'}
+                            </td>
+                            <td className="px-4 py-2 text-xs text-right font-bold text-red-600">
+                              {formatarMoeda(fatura.vl_fatura)}
+                            </td>
+                            <td className="px-4 py-2 text-center">
+                              <button
+                                onClick={() => buscarNFsFatura(fatura)}
+                                disabled={
+                                  nfBuscando !== null || danfeLoading !== null
+                                }
+                                className="inline-flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-[10px] font-bold rounded transition-colors"
+                                title="Gerar Nota Fiscal (DANFE)"
+                              >
+                                {nfBuscando ===
+                                `${fatura.cd_cliente}_${fatura.nr_fat || fatura.nr_fatura}_${fatura.nr_parcela || ''}` ? (
+                                  <CircleNotch
+                                    size={12}
+                                    className="animate-spin"
+                                  />
+                                ) : (
+                                  <FileText size={12} />
+                                )}
+                                NF
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                    <tfoot className="border-t-2 border-gray-300">
+                      <tr>
+                        <td
+                          colSpan={5}
+                          className="px-4 py-2 text-xs font-bold text-gray-700 text-right"
+                        >
+                          Total ({detalhesCliente.faturas?.length || 0} faturas)
+                        </td>
+                        <td className="px-4 py-2 text-xs text-right font-extrabold text-red-700">
+                          {formatarMoeda(detalhesCliente.valor_total)}
                         </td>
                       </tr>
-                    ))}
-                </tbody>
-                <tfoot className="border-t-2 border-gray-300">
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="px-4 py-2 text-xs font-bold text-gray-700 text-right"
-                    >
-                      Total ({clienteSelecionado.faturas?.length || 0} faturas)
-                    </td>
-                    <td className="px-4 py-2 text-xs text-right font-extrabold text-red-700">
-                      {formatarMoeda(clienteSelecionado.valor_total)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
+                    </tfoot>
+                  </table>
+                </div>
+              ) : (
+                /* Aba Anexos */
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-gray-700">
+                      Arquivos anexados
+                    </h3>
+                    <label className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#000638] hover:bg-[#001466] text-white text-xs font-bold rounded-lg cursor-pointer transition-colors">
+                      <Paperclip size={14} />
+                      Anexar Arquivo
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => {
+                          handleUploadAnexo(
+                            detalhesCliente.cd_cliente,
+                            e.target.files[0],
+                          );
+                          e.target.value = '';
+                        }}
+                        disabled={uploadingAnexo}
+                      />
+                    </label>
+                  </div>
+
+                  {uploadingAnexo && (
+                    <div className="flex items-center gap-2 text-sm text-blue-600">
+                      <CircleNotch size={16} className="animate-spin" />
+                      Enviando arquivo...
+                    </div>
+                  )}
+
+                  {(anexosClientes[detalhesCliente.cd_cliente] || []).length ===
+                  0 ? (
+                    <p className="text-sm text-gray-400 text-center py-8">
+                      Nenhum arquivo anexado a este cliente.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(anexosClientes[detalhesCliente.cd_cliente] || []).map(
+                        (anexo) => (
+                          <div
+                            key={anexo.id}
+                            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                          >
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <FileText
+                                size={18}
+                                className="text-blue-600 flex-shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <p className="text-xs font-medium text-gray-900 truncate">
+                                  {anexo.nome_arquivo}
+                                </p>
+                                <p className="text-[10px] text-gray-500">
+                                  {new Date(
+                                    anexo.created_at,
+                                  ).toLocaleDateString('pt-BR')}{' '}
+                                  às{' '}
+                                  {new Date(
+                                    anexo.created_at,
+                                  ).toLocaleTimeString('pt-BR', {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => downloadAnexo(anexo)}
+                                className="p-1.5 rounded hover:bg-blue-100 text-blue-600 transition-colors"
+                                title="Baixar"
+                              >
+                                <DownloadSimple size={14} />
+                              </button>
+                              <button
+                                onClick={() => removerAnexo(anexo)}
+                                className="p-1.5 rounded hover:bg-red-100 text-red-600 transition-colors"
+                                title="Remover"
+                              >
+                                <Trash size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Footer */}
             <div className="flex items-center justify-between px-6 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl">
               <span className="text-xs text-gray-500">
-                {clienteSelecionado.faturas?.length || 0} faturas • Maior
-                atraso: {clienteSelecionado.diasAtrasoMax} dias
+                {detalhesCliente.faturas?.length || 0} faturas • Maior atraso:{' '}
+                {detalhesCliente.diasAtrasoMax} dias
+                {isClienteBloqueado(detalhesCliente.nm_cliente) && (
+                  <span className="ml-2 text-yellow-600 font-bold">
+                    • BLOQUEADO
+                  </span>
+                )}
               </span>
               <div className="flex gap-2">
+                {!isClienteBloqueado(detalhesCliente.nm_cliente) && (
+                  <>
+                    <button
+                      onClick={() => {
+                        abrirNotificacaoModal(detalhesCliente);
+                      }}
+                      className="inline-flex items-center gap-1 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition-colors"
+                    >
+                      <Scales size={16} weight="fill" />
+                      Notificação Extrajudicial
+                    </button>
+                    <button
+                      onClick={() => abrirWhatsApp(detalhesCliente)}
+                      className="inline-flex items-center gap-1 px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition-colors"
+                    >
+                      <WhatsappLogo size={16} weight="fill" />
+                      WhatsApp
+                    </button>
+                  </>
+                )}
                 <button
-                  onClick={() => {
-                    abrirNotificacaoModal(clienteSelecionado);
-                  }}
-                  className="inline-flex items-center gap-1 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition-colors"
-                >
-                  <Scales size={16} weight="fill" />
-                  Notificação Extrajudicial
-                </button>
-                <button
-                  onClick={() => abrirWhatsApp(clienteSelecionado)}
-                  className="inline-flex items-center gap-1 px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition-colors"
-                >
-                  <WhatsappLogo size={16} weight="fill" />
-                  WhatsApp
-                </button>
-                <button
-                  onClick={() => setClienteSelecionado(null)}
+                  onClick={() => setDetalhesCliente(null)}
                   className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-bold rounded-lg transition-colors"
                 >
                   Fechar

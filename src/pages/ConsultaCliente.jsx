@@ -32,7 +32,8 @@ import {
 const ConsultaCliente = () => {
   const [personCode, setPersonCode] = useState('');
   const [fantasyName, setFantasyName] = useState('');
-  const [searchType, setSearchType] = useState('code'); // 'code' ou 'name'
+  const [phoneSearch, setPhoneSearch] = useState('');
+  const [searchType, setSearchType] = useState('code'); // 'code', 'name' ou 'phone'
   const [personType, setPersonType] = useState('pj'); // 'pj' ou 'pf'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -203,6 +204,14 @@ const ConsultaCliente = () => {
       return;
     }
 
+    if (searchType === 'phone') {
+      const cleanPhone = phoneSearch.replace(/\D/g, '');
+      if (cleanPhone.length < 8) {
+        setError('Digite pelo menos 8 dígitos do telefone');
+        return;
+      }
+    }
+
     try {
       setLoading(true);
       setError('');
@@ -242,6 +251,41 @@ const ConsultaCliente = () => {
           setDadosCarregados(true);
         } else {
           setError('Cliente não encontrado');
+          setDadosCarregados(false);
+        }
+      } else if (searchType === 'phone') {
+        // Busca por telefone
+        const cleanPhone = phoneSearch.replace(/\D/g, '');
+        const endpoint =
+          personType === 'pj'
+            ? `${TotvsURL}legal-entity/search-by-phone`
+            : `${TotvsURL}individual/search-by-phone`;
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ phoneNumber: cleanPhone }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Erro ao buscar por telefone');
+        }
+
+        const data = await response.json();
+        console.log('✅ Clientes encontrados por telefone:', data);
+
+        const items = data.data?.items || data.items || [];
+        if (items.length === 1) {
+          setCliente(items[0]);
+          setDadosCarregados(true);
+        } else if (items.length > 1) {
+          setClientesList(items);
+          setDadosCarregados(true);
+        } else {
+          setError('Nenhum cliente encontrado com esse telefone');
           setDadosCarregados(false);
         }
       } else {
@@ -574,6 +618,23 @@ const ConsultaCliente = () => {
             >
               Por Nome {personType === 'pj' ? 'Fantasia' : ''}
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchType('phone');
+                setClientesList([]);
+                setCliente(null);
+                setDadosCarregados(false);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 ${
+                searchType === 'phone'
+                  ? 'bg-[#000638] text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              <Phone size={12} weight="bold" />
+              Por Telefone
+            </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-3">
@@ -589,6 +650,22 @@ const ConsultaCliente = () => {
                   placeholder="Ex: 12345"
                   className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
                 />
+              </div>
+            ) : searchType === 'phone' ? (
+              <div>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                  Telefone
+                </label>
+                <input
+                  type="text"
+                  value={phoneSearch}
+                  onChange={(e) => setPhoneSearch(e.target.value)}
+                  placeholder="Ex: 85999991234"
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                />
+                <span className="text-[10px] text-gray-400 mt-0.5 block">
+                  Apenas números, mín. 8 dígitos
+                </span>
               </div>
             ) : (
               <div>

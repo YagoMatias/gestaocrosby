@@ -131,7 +131,7 @@ const ROUTE_CATEGORIES = [
         method: 'POST',
         path: '/api/totvs/legal-entity/search-by-phone',
         description:
-          'Busca pessoa jurídica pelo número de telefone. Como a API TOTVS PJ não suporta filtro direto por telefone, esta rota percorre as páginas de clientes PJ e filtra localmente pelo número informado. Pode ser mais lenta que a busca PF por telefone.',
+          'Busca pessoa jurídica pelo número de telefone. Como a API TOTVS PJ não suporta filtro direto por telefone, esta rota percorre as páginas de clientes PJ e filtra localmente pelo número informado. Apenas telefones com no mínimo 8 dígitos numéricos são considerados na comparação (registros com telefone vazio ou inválido são ignorados). Pode ser mais lenta que a busca PF por telefone.',
         params: {
           body: {
             phoneNumber: {
