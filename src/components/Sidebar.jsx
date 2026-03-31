@@ -192,6 +192,15 @@ const estoqueItems = [
   },
 ];
 
+const painelVendasItems = [
+  {
+    name: 'Painel de Vendas',
+    href: '/painel-vendas',
+    icon: ShoppingCart,
+    color: 'text-blue-600',
+  },
+];
+
 const varejo = [
   {
     name: 'Dashboard Varejo',
@@ -762,6 +771,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           isOpen={openSection === 'faturamento'}
           onToggle={() => handleSectionToggle('faturamento')}
           icon={ChartLineUp}
+          color="text-blue-600"
+        />
+
+        {/* Seção Painel de Vendas */}
+        <MenuSection
+          {...menuProps}
+          title="Painel de Vendas"
+          items={painelVendasItems}
+          isOpen={openSection === 'painelVendas'}
+          onToggle={() => handleSectionToggle('painelVendas')}
+          icon={ShoppingCart}
           color="text-blue-600"
         />
 

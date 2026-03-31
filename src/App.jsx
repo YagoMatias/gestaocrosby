@@ -93,6 +93,7 @@ const ClientesMTM = lazy(() => import('./pages/ClientesMTM'));
 const DownloadNotificacao = lazy(() => import('./pages/DownloadNotificacao'));
 const ApiClaude = lazy(() => import('./pages/ApiClaude'));
 const Estoque = lazy(() => import('./pages/Estoque'));
+const PainelVendas = lazy(() => import('./pages/PainelVendas'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -176,6 +177,7 @@ const protectedRoutes = [
   { path: '/clientes-mtm', component: ClientesMTM },
   { path: '/api-claude', component: ApiClaude },
   { path: '/estoque', component: Estoque },
+  { path: '/painel-vendas', component: PainelVendas },
 ];
 
 // Layout compartilhado - estável, preserva estado das páginas ao interagir com sidebar

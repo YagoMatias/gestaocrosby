@@ -712,6 +712,42 @@ const useApiClient = () => {
      */
     productSearch: (body) =>
       apiMutate('/api/totvs/product-search', 'POST', body),
+
+    // --- Painel de Vendas (SalePanel) ---
+    salePanelTotals: (body) =>
+      apiMutate('/api/totvs/sale-panel/totals', 'POST', body),
+    salePanelHours: (body) =>
+      apiMutate('/api/totvs/sale-panel/hours', 'POST', body),
+    salePanelWeekdays: (body) =>
+      apiMutate('/api/totvs/sale-panel/weekdays', 'POST', body),
+    salePanelSellers: (body) =>
+      apiMutate('/api/totvs/sale-panel/sellers', 'POST', body),
+    salePanelSellersList: (body) =>
+      apiMutate('/api/totvs/sale-panel/sellers-list', 'POST', body),
+    salePanelTotalsSeller: (body) =>
+      apiMutate('/api/totvs/sale-panel/totals-seller', 'POST', body),
+    salePanelTotalsBranch: (body) =>
+      apiMutate('/api/totvs/sale-panel/totals-branch', 'POST', body),
+    salePanelDocumentTypes: (body) =>
+      apiMutate('/api/totvs/sale-panel/document-types', 'POST', body),
+    salePanelProductClassifications: (body) =>
+      apiMutate('/api/totvs/sale-panel/product-classifications', 'POST', body),
+    salePanelBranchRanking: (body) =>
+      apiMutate('/api/totvs/sale-panel/branch-ranking', 'POST', body),
+    bestSellingProducts: (body) =>
+      apiMutate('/api/totvs/best-selling-products', 'POST', body),
+
+    // --- Painel do Vendedor (SellerPanel) ---
+    sellerPanelTotals: (body) =>
+      apiMutate('/api/totvs/seller-panel/totals', 'POST', body),
+    sellerPanelSalesVsReturns: (body) =>
+      apiMutate('/api/totvs/seller-panel/sales-vs-returns', 'POST', body),
+    sellerPanelWeekdays: (body) =>
+      apiMutate('/api/totvs/seller-panel/weekdays', 'POST', body),
+    sellerPanelSalesTarget: (body) =>
+      apiMutate('/api/totvs/seller-panel/sales-target', 'POST', body),
+    sellerPanelTopCustomers: (body) =>
+      apiMutate('/api/totvs/seller-panel/top-customers', 'POST', body),
   };
 
   const franchise = {
