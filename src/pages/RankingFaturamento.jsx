@@ -27,6 +27,21 @@ import {
 // ==========================================
 // HELPERS
 // ==========================================
+const MONTH_LABELS = [
+  'JAN',
+  'FEV',
+  'MAR',
+  'ABR',
+  'MAI',
+  'JUN',
+  'JUL',
+  'AGO',
+  'SET',
+  'OUT',
+  'NOV',
+  'DEZ',
+];
+
 const formatBRL = (value) =>
   typeof value === 'number'
     ? value.toLocaleString('pt-BR', {
@@ -61,6 +76,7 @@ const RankingFaturamento = () => {
   const [invoices, setInvoices] = useState([]);
   const [meta, setMeta] = useState(null);
   const [filterType, setFilterType] = useState('todas'); // 'todas' | 'franquia' | 'filial'
+  const [selectedMonth, setSelectedMonth] = useState('all'); // 'all' | 'YYYY-MM'
 
   // Modal
   const [modalGroup, setModalGroup] = useState(null);
@@ -122,6 +138,7 @@ const RankingFaturamento = () => {
     setInvoices([]);
     setMeta(null);
     setModalGroup(null);
+    setSelectedMonth('all');
 
     try {
       const result = await apiClient.totvs.invoicesSearch({
@@ -131,7 +148,7 @@ const RankingFaturamento = () => {
         operationCodeList: [
           1, 2, 55, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 9017,
           9400, 9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405,
-          1205, 1101, 9065, 9064, 9063, 9062, 9061, 9420, 9026,
+          1205, 1101, 9065, 9064, 9063, 9062, 9061, 9420, 9026, 9067,
         ],
       });
 
@@ -168,6 +185,24 @@ const RankingFaturamento = () => {
   }, [invoices, startDate, endDate]);
 
   // ==========================================
+  // FILTRO: Meses disponíveis no período
+  // ==========================================
+  const availableMonths = useMemo(() => {
+    const months = new Set();
+    filteredInvoices.forEach((inv) => {
+      if (inv.invoiceDate) months.add(inv.invoiceDate.slice(0, 7));
+    });
+    return [...months].sort();
+  }, [filteredInvoices]);
+
+  const monthFilteredInvoices = useMemo(() => {
+    if (selectedMonth === 'all') return filteredInvoices;
+    return filteredInvoices.filter(
+      (inv) => inv.invoiceDate && inv.invoiceDate.slice(0, 7) === selectedMonth,
+    );
+  }, [filteredInvoices, selectedMonth]);
+
+  // ==========================================
   // AGRUPAMENTO: Por GRUPO EMPRESA
   // ==========================================
   const { grouped, grandTotal } = useMemo(() => {
@@ -182,7 +217,7 @@ const RankingFaturamento = () => {
       count: 0,
     };
 
-    filteredInvoices.forEach((inv) => {
+    monthFilteredInvoices.forEach((inv) => {
       const code = inv.branchCode ?? 0;
       const grupoKey =
         branchGroupMap[code] || branchNames[code] || `Empresa ${code}`;
@@ -251,7 +286,7 @@ const RankingFaturamento = () => {
     let groups = Object.values(map).sort((a, b) => b.totalValue - a.totalValue);
 
     return { grouped: groups, grandTotal: total };
-  }, [filteredInvoices, branchNames, branchGroupMap]);
+  }, [monthFilteredInvoices, branchNames, branchGroupMap]);
 
   // ==========================================
   // FILTRO: Franquia / Filial
@@ -264,13 +299,40 @@ const RankingFaturamento = () => {
       );
     }
     if (filterType === 'filial') {
+      const EXCLUIR_FILIAL = new Set([98, 980]);
       return grouped.filter((g) => {
         const name = g.branchName.toUpperCase();
-        return name.includes('CROSBY') && !name.includes('FRANQUIA');
+        if (!name.includes('CROSBY') || name.includes('FRANQUIA')) return false;
+        // Exclui grupos cujos branch codes sejam apenas 98 ou 980
+        const codes = [...(g.branchCodes || [])];
+        return !codes.every((c) => EXCLUIR_FILIAL.has(Number(c)));
       });
     }
     return grouped;
   }, [grouped, filterType]);
+
+  // ==========================================
+  // TOTAIS: Calculados a partir do filtro de tipo
+  // ==========================================
+  const filteredTotal = useMemo(() => {
+    let saidaValue = 0,
+      entradaValue = 0,
+      saidaCount = 0,
+      saidaQuantity = 0,
+      entradaQuantity = 0;
+    filteredGrouped.forEach((g) => {
+      saidaValue += g.saidaValue;
+      entradaValue += g.entradaValue;
+      saidaCount += g.saidaCount;
+      saidaQuantity += g.saidaQuantity;
+      entradaQuantity += g.entradaQuantity;
+    });
+    const totalValue = saidaValue - entradaValue;
+    const ticketMedio = saidaCount > 0 ? totalValue / saidaCount : 0;
+    const pa =
+      saidaCount > 0 ? (saidaQuantity - entradaQuantity) / saidaCount : 0;
+    return { totalValue, ticketMedio, pa, saidaCount };
+  }, [filteredGrouped]);
 
   // ==========================================
   // MODAL: Itens ordenados
@@ -449,6 +511,42 @@ const RankingFaturamento = () => {
             ))}
           </div>
         )}
+
+        {/* Filtro por Mês */}
+        {availableMonths.length > 1 && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-3 border-t border-gray-100">
+            <span className="text-xs font-semibold text-[#000638] mr-1 flex items-center gap-1 font-barlow">
+              Período:
+            </span>
+            <button
+              onClick={() => setSelectedMonth('all')}
+              className={`px-3 py-1 rounded-full text-xs font-bold transition-all duration-150 font-barlow ${
+                selectedMonth === 'all'
+                  ? 'bg-[#000638] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              ANO
+            </button>
+            {availableMonths.map((ym) => {
+              const [year, monthNum] = ym.split('-');
+              const label = MONTH_LABELS[parseInt(monthNum, 10) - 1];
+              return (
+                <button
+                  key={ym}
+                  onClick={() => setSelectedMonth(ym)}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all duration-150 font-barlow ${
+                    selectedMonth === ym
+                      ? 'bg-[#fe0000] text-white shadow-md'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {label} <span className="opacity-70 font-normal">{year}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Erro */}
@@ -491,7 +589,7 @@ const RankingFaturamento = () => {
               </CardHeader>
               <CardContent className="pt-0 px-2.5 sm:px-3 pb-2.5">
                 <div className="text-sm sm:text-base font-extrabold text-green-600 break-words font-barlow">
-                  R$ {formatBRL(grandTotal.totalValue)}
+                  R$ {formatBRL(filteredTotal.totalValue)}
                 </div>
                 <CardDescription className="text-[10px] sm:text-xs text-gray-500 font-barlow hidden sm:block">
                   Saída - Entrada
@@ -514,7 +612,7 @@ const RankingFaturamento = () => {
               </CardHeader>
               <CardContent className="pt-0 px-2.5 sm:px-3 pb-2.5">
                 <div className="text-sm sm:text-base font-extrabold text-blue-600 break-words font-barlow">
-                  R$ {formatBRL(grandTotal.ticketMedio)}
+                  R$ {formatBRL(filteredTotal.ticketMedio)}
                 </div>
                 <CardDescription className="text-[10px] sm:text-xs text-gray-500 font-barlow hidden sm:block">
                   Valor médio por venda
@@ -533,7 +631,7 @@ const RankingFaturamento = () => {
               </CardHeader>
               <CardContent className="pt-0 px-2.5 sm:px-3 pb-2.5">
                 <div className="text-sm sm:text-base font-extrabold text-purple-600 break-words font-barlow">
-                  {grandTotal.pa.toFixed(2)}
+                  {filteredTotal.pa.toFixed(2)}
                 </div>
                 <CardDescription className="text-[10px] sm:text-xs text-gray-500 font-barlow hidden sm:block">
                   Peças por atendimento
@@ -559,7 +657,7 @@ const RankingFaturamento = () => {
                   {filteredGrouped.length}
                 </div>
                 <CardDescription className="text-[10px] sm:text-xs text-gray-500 font-barlow hidden sm:block">
-                  {grandTotal.saidaCount} vendas
+                  {filteredTotal.saidaCount} vendas
                   {meta?.queryTime
                     ? ` | ${(meta.queryTime / 1000).toFixed(1)}s`
                     : ''}
