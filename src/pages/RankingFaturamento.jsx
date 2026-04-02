@@ -14,9 +14,7 @@ import {
   MagnifyingGlass,
   ChartBar,
   CaretDown,
-  CaretUp,
   Buildings,
-  X,
   CurrencyDollar,
   Trophy,
   ShoppingCart,
@@ -27,21 +25,6 @@ import {
 // ==========================================
 // HELPERS
 // ==========================================
-const MONTH_LABELS = [
-  'JAN',
-  'FEV',
-  'MAR',
-  'ABR',
-  'MAI',
-  'JUN',
-  'JUL',
-  'AGO',
-  'SET',
-  'OUT',
-  'NOV',
-  'DEZ',
-];
-
 const formatBRL = (value) =>
   typeof value === 'number'
     ? value.toLocaleString('pt-BR', {
@@ -49,18 +32,6 @@ const formatBRL = (value) =>
         maximumFractionDigits: 2,
       })
     : '-';
-
-const formatDateBR = (isoDate) => {
-  if (!isoDate) return '--';
-  try {
-    const [datePart] = String(isoDate).split('T');
-    const [y, m, d] = datePart.split('-').map((n) => parseInt(n, 10));
-    if (!y || !m || !d) return '--';
-    return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
-  } catch {
-    return '--';
-  }
-};
 
 // ==========================================
 // COMPONENTE PRINCIPAL
@@ -73,14 +44,9 @@ const RankingFaturamento = () => {
   const [endDate, setEndDate] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [invoices, setInvoices] = useState([]);
+  const [branchTotals, setBranchTotals] = useState([]);
   const [meta, setMeta] = useState(null);
   const [filterType, setFilterType] = useState('todas'); // 'todas' | 'franquia' | 'filial'
-  const [selectedMonth, setSelectedMonth] = useState('all'); // 'all' | 'YYYY-MM'
-
-  // Modal
-  const [modalGroup, setModalGroup] = useState(null);
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
   // Mapas de empresas
   const [branchNames, setBranchNames] = useState({});
@@ -125,7 +91,7 @@ const RankingFaturamento = () => {
   }, []);
 
   // ==========================================
-  // FETCH: Buscar invoices
+  // FETCH: Buscar totais por filial (endpoint analítico)
   // ==========================================
   const handleSearch = async () => {
     if (!startDate || !endDate) {
@@ -135,35 +101,25 @@ const RankingFaturamento = () => {
 
     setLoading(true);
     setError('');
-    setInvoices([]);
+    setBranchTotals([]);
     setMeta(null);
-    setModalGroup(null);
-    setSelectedMonth('all');
 
     try {
-      const result = await apiClient.totvs.invoicesSearch({
-        startDate,
-        endDate,
-        invoiceStatusList: ['Normal', 'Issued'],
-        operationCodeList: [
-          1, 2, 55, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 9017,
-          9400, 9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405,
-          1205, 1101, 9065, 9064, 9063, 9062, 9061, 9420, 9026, 9067,
-        ],
+      const result = await apiClient.totvs.salePanelRankingFaturamento({
+        datemin: startDate,
+        datemax: endDate,
       });
 
-      if (result.success) {
-        const data = result.data;
-        setInvoices(data?.items || []);
-        setMeta({
-          count: data?.count,
-          totalPages: data?.totalPages,
-          totalItems: data?.totalItems,
-          queryTime: data?.queryTime,
-          fromCache: data?.fromCache,
-        });
-      } else {
-        setError(result.message || 'Erro ao buscar invoices.');
+      const raw = result?.data ?? result;
+      const items = Array.isArray(raw)
+        ? raw
+        : raw?.dataRow || raw?.items || raw?.data || [];
+
+      setBranchTotals(items);
+      setMeta({ total: raw?.total, totalLastYear: raw?.totalLastYear });
+
+      if (items.length === 0) {
+        setError('Nenhum dado encontrado para o período informado.');
       }
     } catch (err) {
       setError(err.message || 'Erro desconhecido.');
@@ -173,120 +129,103 @@ const RankingFaturamento = () => {
   };
 
   // ==========================================
-  // FILTRO: invoiceDate dentro do range exato
-  // ==========================================
-  const filteredInvoices = useMemo(() => {
-    if (!startDate || !endDate || invoices.length === 0) return invoices;
-    return invoices.filter((inv) => {
-      if (!inv.invoiceDate) return false;
-      const d = inv.invoiceDate.slice(0, 10);
-      return d >= startDate && d <= endDate;
-    });
-  }, [invoices, startDate, endDate]);
-
-  // ==========================================
-  // FILTRO: Meses disponíveis no período
-  // ==========================================
-  const availableMonths = useMemo(() => {
-    const months = new Set();
-    filteredInvoices.forEach((inv) => {
-      if (inv.invoiceDate) months.add(inv.invoiceDate.slice(0, 7));
-    });
-    return [...months].sort();
-  }, [filteredInvoices]);
-
-  const monthFilteredInvoices = useMemo(() => {
-    if (selectedMonth === 'all') return filteredInvoices;
-    return filteredInvoices.filter(
-      (inv) => inv.invoiceDate && inv.invoiceDate.slice(0, 7) === selectedMonth,
-    );
-  }, [filteredInvoices, selectedMonth]);
-
-  // ==========================================
-  // AGRUPAMENTO: Por GRUPO EMPRESA
+  // AGRUPAMENTO: Mapear totais por filial
   // ==========================================
   const { grouped, grandTotal } = useMemo(() => {
-    const map = {};
-    let total = {
-      totalValue: 0,
-      saidaValue: 0,
-      entradaValue: 0,
-      saidaCount: 0,
-      saidaQuantity: 0,
-      entradaQuantity: 0,
-      count: 0,
-    };
+    if (branchTotals.length === 0) {
+      return {
+        grouped: [],
+        grandTotal: { totalValue: 0, ticketMedio: 0, pa: 0, saidaCount: 0 },
+      };
+    }
 
-    monthFilteredInvoices.forEach((inv) => {
-      const code = inv.branchCode ?? 0;
-      const grupoKey =
-        branchGroupMap[code] || branchNames[code] || `Empresa ${code}`;
+    // Agrupar filiais com o mesmo nome antes de mapear
+    const mergedMap = {};
+    branchTotals.forEach((item) => {
+      const code = item.branch_code ?? item.branch ?? item.branchCode ?? 0;
+      const name =
+        item.branch_name ||
+        item.branchName ||
+        branchGroupMap[code] ||
+        branchNames[code] ||
+        `Empresa ${code}`;
+      const key = name.trim().toUpperCase();
 
-      if (!map[grupoKey]) {
-        map[grupoKey] = {
-          grupoKey,
-          branchName: grupoKey,
-          branchCodes: new Set(),
-          items: [],
-          totalValue: 0,
-          saidaValue: 0,
-          entradaValue: 0,
-          saidaCount: 0,
-          saidaQuantity: 0,
-          entradaQuantity: 0,
+      if (!mergedMap[key]) {
+        mergedMap[key] = {
+          name,
+          codes: new Set(),
+          invoice_value: 0,
+          invoice_qty: 0,
+          itens_qty: 0,
         };
       }
-
-      map[grupoKey].branchCodes.add(code);
-
-      const val = Number(inv.totalValue ?? 0);
-      const qty = Number(inv.quantity ?? 0);
-      const isEntrada =
-        String(inv.operationType || '').toLowerCase() === 'input';
-
-      map[grupoKey].items.push(inv);
-
-      if (isEntrada) {
-        map[grupoKey].entradaValue += val;
-        map[grupoKey].entradaQuantity += qty;
-        total.entradaValue += val;
-        total.entradaQuantity += qty;
-      } else {
-        map[grupoKey].saidaValue += val;
-        map[grupoKey].saidaCount += 1;
-        map[grupoKey].saidaQuantity += qty;
-        total.saidaValue += val;
-        total.saidaCount += 1;
-        total.saidaQuantity += qty;
-      }
-
-      total.count += 1;
+      mergedMap[key].codes.add(String(code));
+      mergedMap[key].invoice_value += Number(
+        item.invoice_value ?? item.netValue ?? 0,
+      );
+      mergedMap[key].invoice_qty += Number(
+        item.invoice_qty ?? item.quantity ?? 0,
+      );
+      mergedMap[key].itens_qty += Number(
+        item.itens_qty ?? item.quantityPiece ?? 0,
+      );
     });
 
-    Object.values(map).forEach((g) => {
-      g.totalValue = g.saidaValue - g.entradaValue;
-      g.branchCodesArr = [...g.branchCodes].sort((a, b) => a - b);
-      // Ticket Médio = faturamento (saída - entrada) / vendas (saída)
-      g.ticketMedio = g.saidaCount > 0 ? g.totalValue / g.saidaCount : 0;
-      // PA = (peças saída - peças entrada) / vendas (saída)
-      g.pa =
-        g.saidaCount > 0
-          ? (g.saidaQuantity - g.entradaQuantity) / g.saidaCount
-          : 0;
-    });
+    const groups = Object.values(mergedMap)
+      .map((m) => {
+        const totalValue = m.invoice_value;
+        const saidaCount = m.invoice_qty;
+        const saidaQuantity = m.itens_qty;
+        const ticketMedio = saidaCount > 0 ? totalValue / saidaCount : 0;
+        const pa = saidaCount > 0 ? saidaQuantity / saidaCount : 0;
+        const firstCode = [...m.codes][0];
 
-    total.totalValue = total.saidaValue - total.entradaValue;
-    total.ticketMedio =
-      total.saidaCount > 0 ? total.totalValue / total.saidaCount : 0;
-    total.pa =
-      total.saidaCount > 0
-        ? (total.saidaQuantity - total.entradaQuantity) / total.saidaCount
+        return {
+          grupoKey: firstCode,
+          branchCode: firstCode,
+          branchCodes: m.codes,
+          branchName: m.name,
+          totalValue,
+          saidaValue: totalValue,
+          entradaValue: 0,
+          saidaCount,
+          saidaQuantity,
+          entradaQuantity: 0,
+          ticketMedio,
+          pa,
+        };
+      })
+      .sort((a, b) => b.totalValue - a.totalValue);
+
+    const grandTotal = groups.reduce(
+      (acc, g) => {
+        acc.totalValue += g.totalValue;
+        acc.saidaValue += g.saidaValue;
+        acc.entradaValue += g.entradaValue;
+        acc.saidaCount += g.saidaCount;
+        acc.saidaQuantity += g.saidaQuantity;
+        return acc;
+      },
+      {
+        totalValue: 0,
+        saidaValue: 0,
+        entradaValue: 0,
+        saidaCount: 0,
+        saidaQuantity: 0,
+      },
+    );
+    grandTotal.ticketMedio =
+      grandTotal.saidaCount > 0
+        ? grandTotal.totalValue / grandTotal.saidaCount
+        : 0;
+    grandTotal.pa =
+      grandTotal.saidaCount > 0
+        ? grandTotal.saidaQuantity / grandTotal.saidaCount
         : 0;
 
-    let groups = Object.values(map).sort((a, b) => b.totalValue - a.totalValue);
-
-    return { grouped: groups, grandTotal: total };
-  }, [monthFilteredInvoices, branchNames, branchGroupMap]);
+    return { grouped: groups, grandTotal };
+  }, [branchTotals, branchNames, branchGroupMap]);
 
   // ==========================================
   // FILTRO: Franquia / Filial
@@ -303,7 +242,6 @@ const RankingFaturamento = () => {
       return grouped.filter((g) => {
         const name = g.branchName.toUpperCase();
         if (!name.includes('CROSBY') || name.includes('FRANQUIA')) return false;
-        // Exclui grupos cujos branch codes sejam apenas 98 ou 980
         const codes = [...(g.branchCodes || [])];
         return !codes.every((c) => EXCLUIR_FILIAL.has(Number(c)));
       });
@@ -318,102 +256,22 @@ const RankingFaturamento = () => {
     let saidaValue = 0,
       entradaValue = 0,
       saidaCount = 0,
-      saidaQuantity = 0,
-      entradaQuantity = 0;
+      saidaQuantity = 0;
     filteredGrouped.forEach((g) => {
       saidaValue += g.saidaValue;
       entradaValue += g.entradaValue;
       saidaCount += g.saidaCount;
       saidaQuantity += g.saidaQuantity;
-      entradaQuantity += g.entradaQuantity;
     });
     const totalValue = saidaValue - entradaValue;
     const ticketMedio = saidaCount > 0 ? totalValue / saidaCount : 0;
-    const pa =
-      saidaCount > 0 ? (saidaQuantity - entradaQuantity) / saidaCount : 0;
+    const pa = saidaCount > 0 ? saidaQuantity / saidaCount : 0;
     return { totalValue, ticketMedio, pa, saidaCount };
   }, [filteredGrouped]);
 
   // ==========================================
-  // MODAL: Itens ordenados
+  // HELPERS UI
   // ==========================================
-  const modalItems = useMemo(() => {
-    if (!modalGroup) return [];
-    const items = [...modalGroup.items];
-    if (sortConfig.key) {
-      items.sort((a, b) => {
-        const aVal = a[sortConfig.key];
-        const bVal = b[sortConfig.key];
-        if (aVal == null && bVal == null) return 0;
-        if (aVal == null) return 1;
-        if (bVal == null) return -1;
-        if (typeof aVal === 'number' && typeof bVal === 'number')
-          return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
-        const strA = String(aVal).toLowerCase();
-        const strB = String(bVal).toLowerCase();
-        if (strA < strB) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (strA > strB) return sortConfig.direction === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
-    return items;
-  }, [modalGroup, sortConfig]);
-
-  const handleSort = (key) => {
-    setSortConfig((prev) => ({
-      key,
-      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
-    }));
-  };
-
-  const openModal = (group) => {
-    // Franquias só podem ver detalhes da própria loja
-    if (user?.role === 'franquias' && user?.allowedCompanies) {
-      const allowed = user.allowedCompanies.map((c) => Number(c));
-      const groupCodes = [...(group.branchCodes || [])];
-      const hasAccess = groupCodes.some((code) =>
-        allowed.includes(Number(code)),
-      );
-      if (!hasAccess) return; // Bloqueia abertura do modal
-    }
-    setSortConfig({ key: null, direction: 'asc' });
-    setModalGroup(group);
-  };
-
-  const SortIcon = ({ columnKey }) => {
-    if (sortConfig.key !== columnKey)
-      return <CaretDown size={12} className="opacity-30" />;
-    return sortConfig.direction === 'asc' ? (
-      <CaretUp size={12} className="text-blue-400" />
-    ) : (
-      <CaretDown size={12} className="text-blue-400" />
-    );
-  };
-
-  const columns = [
-    { key: 'invoiceCode', label: 'Nº NF' },
-    { key: 'serialCode', label: 'Série' },
-    { key: 'invoiceDate', label: 'Data Emissão' },
-    { key: 'personCode', label: 'Cód. Pessoa' },
-    { key: 'personName', label: 'Nome Pessoa' },
-    { key: 'operationType', label: 'Tipo' },
-    { key: 'operatioCode', label: 'Cód. Op.' },
-    { key: 'operatioName', label: 'Operação' },
-    { key: 'invoiceStatus', label: 'Status' },
-    { key: 'totalValue', label: 'Valor Total', numeric: true },
-    { key: 'productValue', label: 'Valor Produto', numeric: true },
-    { key: 'quantity', label: 'Qtd', numeric: true },
-    { key: 'discountPercentage', label: '% Desc', numeric: true },
-    { key: 'paymentConditionName', label: 'Cond. Pagamento' },
-  ];
-
-  const formatCell = (value, col) => {
-    if (value == null || value === '') return '-';
-    if (col.numeric && typeof value === 'number') return formatBRL(value);
-    if (col.key === 'invoiceDate' && typeof value === 'string')
-      return formatDateBR(value);
-    return String(value);
-  };
 
   // Ícone de posição: bolinha azul com número branco
   const getPositionBadge = (position) => (
@@ -509,42 +367,6 @@ const RankingFaturamento = () => {
                 {opt.label}
               </button>
             ))}
-          </div>
-        )}
-
-        {/* Filtro por Mês */}
-        {availableMonths.length > 1 && (
-          <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-3 border-t border-gray-100">
-            <span className="text-xs font-semibold text-[#000638] mr-1 flex items-center gap-1 font-barlow">
-              Período:
-            </span>
-            <button
-              onClick={() => setSelectedMonth('all')}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-all duration-150 font-barlow ${
-                selectedMonth === 'all'
-                  ? 'bg-[#000638] text-white shadow-md'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              ANO
-            </button>
-            {availableMonths.map((ym) => {
-              const [year, monthNum] = ym.split('-');
-              const label = MONTH_LABELS[parseInt(monthNum, 10) - 1];
-              return (
-                <button
-                  key={ym}
-                  onClick={() => setSelectedMonth(ym)}
-                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all duration-150 font-barlow ${
-                    selectedMonth === ym
-                      ? 'bg-[#fe0000] text-white shadow-md'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  {label} <span className="opacity-70 font-normal">{year}</span>
-                </button>
-              );
-            })}
           </div>
         )}
       </div>
@@ -747,119 +569,95 @@ const RankingFaturamento = () => {
             </div>
 
             {/* Rows */}
-            {filteredGrouped.map((group, index) => {
-              const isFranchiseUser =
-                user?.role === 'franquias' && user?.allowedCompanies;
-              const canViewDetails =
-                !isFranchiseUser ||
-                [...(group.branchCodes || [])].some((code) =>
-                  user.allowedCompanies
-                    .map((c) => Number(c))
-                    .includes(Number(code)),
-                );
-
-              return (
-                <button
-                  key={group.grupoKey}
-                  onClick={() => openModal(group)}
-                  disabled={!canViewDetails}
-                  title={
-                    !canViewDetails
-                      ? 'Você só pode ver detalhes da sua própria loja'
-                      : 'Clique para ver detalhes'
-                  }
-                  className={`w-full text-left transition-all duration-150 border-b border-gray-100 last:border-b-0 ${
-                    index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
-                  } ${canViewDetails ? 'hover:bg-blue-50/60 cursor-pointer' : 'cursor-default opacity-70'}`}
-                >
-                  {/* Mobile card layout */}
-                  <div className="md:hidden p-3 flex items-start gap-2.5">
-                    <div className="flex-shrink-0 mt-0.5">
-                      {getPositionBadge(index)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p
-                        className={`text-xs font-semibold truncate font-barlow ${index < 3 ? 'text-[#000638]' : 'text-gray-700'}`}
-                      >
-                        {group.branchName}
-                      </p>
-                      <p
-                        className={`text-sm font-bold font-mono mt-0.5 ${group.totalValue >= 0 ? 'text-green-700' : 'text-red-600'}`}
-                      >
-                        R$ {formatBRL(group.totalValue)}
-                      </p>
-                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[10px] text-gray-500 font-barlow">
-                        <span>
-                          TM:{' '}
-                          <strong className="text-blue-700">
-                            R$ {formatBRL(group.ticketMedio)}
-                          </strong>
-                        </span>
-                        <span>
-                          PA:{' '}
-                          <strong className="text-purple-700">
-                            {group.pa.toFixed(1)}
-                          </strong>
-                        </span>
-                        <span>
-                          Vendas:{' '}
-                          <strong className="text-gray-700">
-                            {group.saidaCount}
-                          </strong>
-                        </span>
-                      </div>
-                    </div>
-                    <CaretDown
-                      size={14}
-                      className="text-gray-300 flex-shrink-0 mt-1"
-                    />
+            {filteredGrouped.map((group, index) => (
+              <div
+                key={group.grupoKey}
+                className={`w-full transition-all duration-150 border-b border-gray-100 last:border-b-0 ${
+                  index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+                }`}
+              >
+                {/* Mobile card layout */}
+                <div className="md:hidden p-3 flex items-start gap-2.5">
+                  <div className="flex-shrink-0 mt-0.5">
+                    {getPositionBadge(index)}
                   </div>
-
-                  {/* Desktop row layout */}
-                  <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-2.5 items-center text-sm">
-                    <div className="col-span-1 text-center">
-                      {getPositionBadge(index)}
-                    </div>
-                    <div className="col-span-4 text-left truncate">
-                      <span
-                        className={`font-semibold font-barlow ${index < 3 ? 'text-[#000638]' : 'text-gray-700'}`}
-                      >
-                        {group.branchName}
+                  <div className="flex-1 min-w-0">
+                    <p
+                      className={`text-xs font-semibold truncate font-barlow ${index < 3 ? 'text-[#000638]' : 'text-gray-700'}`}
+                    >
+                      {group.branchName}
+                    </p>
+                    <p
+                      className={`text-sm font-bold font-mono mt-0.5 ${group.totalValue >= 0 ? 'text-green-700' : 'text-red-600'}`}
+                    >
+                      R$ {formatBRL(group.totalValue)}
+                    </p>
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[10px] text-gray-500 font-barlow">
+                      <span>
+                        TM:{' '}
+                        <strong className="text-blue-700">
+                          R$ {formatBRL(group.ticketMedio)}
+                        </strong>
                       </span>
-                    </div>
-                    <div className="col-span-2 text-right">
-                      <span
-                        className={`font-bold font-mono text-xs ${group.totalValue >= 0 ? 'text-green-700' : 'text-red-600'}`}
-                      >
-                        R$ {formatBRL(group.totalValue)}
+                      <span>
+                        PA:{' '}
+                        <strong className="text-purple-700">
+                          {group.pa.toFixed(1)}
+                        </strong>
                       </span>
-                    </div>
-                    <div className="col-span-2 text-right">
-                      <span className="text-blue-700 font-mono font-medium text-xs">
-                        R$ {formatBRL(group.ticketMedio)}
+                      <span>
+                        Vendas:{' '}
+                        <strong className="text-gray-700">
+                          {group.saidaCount}
+                        </strong>
                       </span>
-                    </div>
-                    <div className="col-span-1 text-right">
-                      <span className="text-purple-700 font-mono font-medium text-xs">
-                        {group.pa.toFixed(1)}
-                      </span>
-                    </div>
-                    <div className="col-span-2 text-right flex items-center justify-end gap-1">
-                      <span className="text-gray-600 font-mono text-xs">
-                        {group.saidaCount}
-                      </span>
-                      <CaretDown size={12} className="text-gray-300" />
                     </div>
                   </div>
-                </button>
-              );
-            })}
+                </div>
+
+                {/* Desktop row layout */}
+                <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-2.5 items-center text-sm">
+                  <div className="col-span-1 text-center">
+                    {getPositionBadge(index)}
+                  </div>
+                  <div className="col-span-4 text-left truncate">
+                    <span
+                      className={`font-semibold font-barlow ${index < 3 ? 'text-[#000638]' : 'text-gray-700'}`}
+                    >
+                      {group.branchName}
+                    </span>
+                  </div>
+                  <div className="col-span-2 text-right">
+                    <span
+                      className={`font-bold font-mono text-xs ${group.totalValue >= 0 ? 'text-green-700' : 'text-red-600'}`}
+                    >
+                      R$ {formatBRL(group.totalValue)}
+                    </span>
+                  </div>
+                  <div className="col-span-2 text-right">
+                    <span className="text-blue-700 font-mono font-medium text-xs">
+                      R$ {formatBRL(group.ticketMedio)}
+                    </span>
+                  </div>
+                  <div className="col-span-1 text-right">
+                    <span className="text-purple-700 font-mono font-medium text-xs">
+                      {group.pa.toFixed(1)}
+                    </span>
+                  </div>
+                  <div className="col-span-2 text-right">
+                    <span className="text-gray-600 font-mono text-xs">
+                      {group.saidaCount}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </>
       )}
 
       {/* Empty state */}
-      {!loading && invoices.length === 0 && !error && (
+      {!loading && branchTotals.length === 0 && !error && (
         <div className="text-center py-16 sm:py-20 text-gray-400">
           <Trophy
             size={48}
@@ -869,139 +667,6 @@ const RankingFaturamento = () => {
           <p className="text-xs sm:text-sm font-medium font-barlow">
             Selecione o período e clique em Buscar para gerar o ranking.
           </p>
-        </div>
-      )}
-
-      {/* MODAL */}
-      {modalGroup && (
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4"
-          onClick={() => setModalGroup(null)}
-        >
-          <div
-            className="bg-white rounded-t-xl sm:rounded-xl shadow-2xl w-full sm:max-w-7xl max-h-[92vh] sm:max-h-[90vh] flex flex-col animate-fade-in-scale"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-[#000638]/10 bg-gray-50 rounded-t-xl gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#000638] flex items-center justify-center flex-shrink-0">
-                  <Buildings size={16} className="text-white sm:hidden" />
-                  <Buildings size={20} className="text-white hidden sm:block" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-sm sm:text-lg font-bold text-[#000638] truncate font-barlow">
-                    {modalGroup.branchName}
-                  </h2>
-                  <p className="text-[10px] sm:text-xs text-gray-500 font-barlow">
-                    {modalGroup.items.length} nota(s) fiscal(is)
-                  </p>
-                </div>
-                <button
-                  onClick={() => setModalGroup(null)}
-                  className="sm:hidden p-1.5 hover:bg-gray-200 rounded-full transition-colors"
-                >
-                  <X size={18} className="text-gray-500" />
-                </button>
-              </div>
-
-              {/* Mini cards */}
-              <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto">
-                <div className="text-center px-2 sm:px-3 flex-shrink-0">
-                  <p className="text-[10px] sm:text-xs text-gray-500 font-barlow">
-                    Faturamento
-                  </p>
-                  <p
-                    className={`text-xs sm:text-base font-bold font-mono ${modalGroup.totalValue >= 0 ? 'text-green-700' : 'text-red-600'}`}
-                  >
-                    R$ {formatBRL(modalGroup.totalValue)}
-                  </p>
-                </div>
-                <div className="w-px h-6 sm:h-8 bg-gray-200 flex-shrink-0" />
-                <div className="text-center px-2 sm:px-3 flex-shrink-0">
-                  <p className="text-[10px] sm:text-xs text-gray-500 font-barlow">
-                    Ticket Médio
-                  </p>
-                  <p className="text-xs sm:text-base font-bold font-mono text-blue-700">
-                    R$ {formatBRL(modalGroup.ticketMedio)}
-                  </p>
-                </div>
-                <div className="w-px h-6 sm:h-8 bg-gray-200 flex-shrink-0" />
-                <div className="text-center px-2 sm:px-3 flex-shrink-0">
-                  <p className="text-[10px] sm:text-xs text-gray-500 font-barlow">
-                    PA
-                  </p>
-                  <p className="text-xs sm:text-base font-bold font-mono text-purple-700">
-                    {modalGroup.pa.toFixed(2)}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setModalGroup(null)}
-                  className="hidden sm:block ml-2 p-2 hover:bg-gray-200 rounded-full transition-colors flex-shrink-0"
-                >
-                  <X size={20} className="text-gray-500" />
-                </button>
-              </div>
-            </div>
-
-            {/* Modal Body - Tabela */}
-            <div className="overflow-auto flex-1 -webkit-overflow-scrolling-touch">
-              <table className="w-full text-xs sm:text-sm min-w-[700px]">
-                <thead className="sticky top-0 z-10">
-                  <tr className="bg-[#000638] text-white">
-                    {columns.map((col) => (
-                      <th
-                        key={col.key}
-                        onClick={() => handleSort(col.key)}
-                        className={`px-2 sm:px-3 py-2 sm:py-2.5 text-left font-medium text-[10px] sm:text-xs cursor-pointer hover:bg-[#000638]/80 whitespace-nowrap select-none uppercase tracking-wider font-barlow ${
-                          col.numeric ? 'text-right' : ''
-                        }`}
-                      >
-                        <span className="flex items-center gap-1">
-                          {col.label}
-                          <SortIcon columnKey={col.key} />
-                        </span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {modalItems.map((inv, idx) => (
-                    <tr
-                      key={idx}
-                      className={`border-b last:border-b-0 hover:bg-blue-50/40 transition-colors ${
-                        idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
-                      }`}
-                    >
-                      {columns.map((col) => (
-                        <td
-                          key={col.key}
-                          className={`px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap font-barlow ${
-                            col.numeric ? 'text-right font-mono' : ''
-                          }`}
-                        >
-                          {formatCell(inv[col.key], col)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-green-50 border-t-2 border-green-200 font-semibold text-[10px] sm:text-xs">
-                    <td
-                      colSpan={9}
-                      className="px-2 sm:px-3 py-2.5 sm:py-3 text-right text-[#000638] font-barlow"
-                    >
-                      Resultado: R$ {formatBRL(modalGroup.totalValue)} | TM: R${' '}
-                      {formatBRL(modalGroup.ticketMedio)} | PA:{' '}
-                      {modalGroup.pa.toFixed(2)}
-                    </td>
-                    <td colSpan={5} />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
         </div>
       )}
     </div>
