@@ -8,6 +8,8 @@ import {
   ChartBar,
   Tag,
   ArrowCounterClockwise,
+  X,
+  Storefront,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import FiltroEmpresa from '../components/FiltroEmpresa';
@@ -23,20 +25,36 @@ import useApiClient from '../hooks/useApiClient';
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatBRL = (v) =>
   typeof v === 'number'
-    ? v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    ? v.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
     : v !== undefined && v !== null
-    ? String(v)
-    : '—';
+      ? String(v)
+      : '—';
 
 const formatInt = (v) =>
-  typeof v === 'number' ? v.toLocaleString('pt-BR') : v !== undefined && v !== null ? String(v) : '—';
+  typeof v === 'number'
+    ? v.toLocaleString('pt-BR')
+    : v !== undefined && v !== null
+      ? String(v)
+      : '—';
 
 const isMonetary = (key) =>
-  /value|amount|total|gross|net|discount|ticket|receita|faturamento|preco|price/i.test(key);
+  /value|amount|total|gross|net|discount|ticket|receita|faturamento|preco|price/i.test(
+    key,
+  );
 
-const isQuantity = (key) => /quantity|qty|count|amount/i.test(key) && !isMonetary(key);
+const isQuantity = (key) =>
+  /quantity|qty|count|amount/i.test(key) && !isMonetary(key);
 
-function MetricCard({ title, value, icon: Icon, color = 'text-blue-600', bg = 'bg-blue-50' }) {
+function MetricCard({
+  title,
+  value,
+  icon: Icon,
+  color = 'text-blue-600',
+  bg = 'bg-blue-50',
+}) {
   return (
     <Card className="flex-1 min-w-[160px]">
       <CardContent className="p-4 flex items-center gap-3">
@@ -61,7 +79,9 @@ function RawDataCard({ data }) {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm text-[#000638]">Detalhes retornados pela API</CardTitle>
+        <CardTitle className="text-sm text-[#000638]">
+          Detalhes retornados pela API
+        </CardTitle>
       </CardHeader>
       <CardContent className="p-4 pt-0">
         <dl className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2">
@@ -71,7 +91,9 @@ function RawDataCard({ data }) {
                 {key.replace(/([A-Z])/g, ' $1').trim()}
               </dt>
               <dd className="text-sm font-semibold text-[#000638]">
-                {isMonetary(key) ? `R$ ${formatBRL(Number(val))}` : formatInt(Number.isFinite(Number(val)) ? Number(val) : val)}
+                {isMonetary(key)
+                  ? `R$ ${formatBRL(Number(val))}`
+                  : formatInt(Number.isFinite(Number(val)) ? Number(val) : val)}
               </dd>
             </div>
           ))}
@@ -91,6 +113,8 @@ export default function PainelVendas() {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
   const [totals, setTotals] = useState(null);
+  const [sellers, setSellers] = useState(null);
+  const [modalSellers, setModalSellers] = useState(null);
 
   // pré-preencher datas (mês atual)
   useEffect(() => {
@@ -108,24 +132,43 @@ export default function PainelVendas() {
     setLoading(true);
     setErro('');
     setTotals(null);
+    setSellers(null);
     try {
       const filtroempresa =
         empresasSelecionadas.length > 0
           ? empresasSelecionadas.map((e) => parseInt(e.cd_empresa))
           : [];
 
-      const result = await apiClient.totvs.salePanelTotals({
+      const body = {
         filtroempresa,
         datemin: `${dataInicio}T00:00:00.000Z`,
         datemax: `${dataFim}T23:59:59.999Z`,
-      });
+      };
 
-      if (result && (result.success !== false)) {
-        // apiMutate devolve o resultado bruto; data pode estar em result.data ou result diretamente
-        const payload = result.data ?? result;
+      const [totalsResult, sellersResult] = await Promise.all([
+        apiClient.totvs.salePanelTotals(body),
+        apiClient.totvs.salePanelSellers(body),
+      ]);
+
+      if (totalsResult && totalsResult.success !== false) {
+        const payload = totalsResult.data ?? totalsResult;
         setTotals(payload);
-      } else {
-        setErro(result?.message || 'Erro ao buscar dados.');
+      }
+
+      if (sellersResult && sellersResult.success !== false) {
+        const payload = sellersResult.data ?? sellersResult;
+        setSellers(payload);
+      }
+
+      if (
+        (!totalsResult || totalsResult.success === false) &&
+        (!sellersResult || sellersResult.success === false)
+      ) {
+        setErro(
+          totalsResult?.message ||
+            sellersResult?.message ||
+            'Erro ao buscar dados.',
+        );
       }
     } catch (err) {
       setErro(err.message || 'Erro ao conectar com a API.');
@@ -136,6 +179,8 @@ export default function PainelVendas() {
 
   const handleLimpar = () => {
     setTotals(null);
+    setSellers(null);
+    setModalSellers(null);
     setErro('');
   };
 
@@ -252,7 +297,7 @@ export default function PainelVendas() {
           </div>
 
           {/* Limpar */}
-          {totals && (
+          {(totals || sellers) && (
             <div>
               <button
                 onClick={handleLimpar}
@@ -282,7 +327,7 @@ export default function PainelVendas() {
       )}
 
       {/* Estado inicial */}
-      {!loading && !totals && !erro && (
+      {!loading && !totals && !sellers && !erro && (
         <div className="flex justify-center items-center py-16 text-gray-400 text-sm">
           Selecione o período e clique em "Buscar" para ver o faturamento total.
         </div>
@@ -332,12 +377,15 @@ export default function PainelVendas() {
                         className="border-b last:border-0 hover:bg-gray-50 transition-colors"
                       >
                         {Object.entries(row).map(([k, v]) => (
-                          <td key={k} className="px-3 py-2 text-gray-700 whitespace-nowrap">
+                          <td
+                            key={k}
+                            className="px-3 py-2 text-gray-700 whitespace-nowrap"
+                          >
                             {isMonetary(k) && typeof v === 'number'
                               ? `R$ ${formatBRL(v)}`
                               : v !== null && v !== undefined
-                              ? String(v)
-                              : '—'}
+                                ? String(v)
+                                : '—'}
                           </td>
                         ))}
                       </tr>
@@ -351,14 +399,220 @@ export default function PainelVendas() {
           {/* Se não houver nada reconhecível */}
           {cards.length === 0 &&
             !(Array.isArray(totals) && totals.length > 0) &&
-            Object.entries(totals).filter(([, v]) => v !== null && typeof v !== 'object').length === 0 && (
+            Object.entries(totals).filter(
+              ([, v]) => v !== null && typeof v !== 'object',
+            ).length === 0 && (
               <Card>
                 <CardContent className="p-4 text-sm text-gray-500">
-                  <pre className="overflow-x-auto text-xs">{JSON.stringify(totals, null, 2)}</pre>
+                  <pre className="overflow-x-auto text-xs">
+                    {JSON.stringify(totals, null, 2)}
+                  </pre>
                 </CardContent>
               </Card>
             )}
         </>
+      )}
+
+      {/* Cards resumo de vendedores */}
+      {!loading &&
+        sellers &&
+        Array.isArray(sellers.branches) &&
+        sellers.branches.length > 0 &&
+        (() => {
+          const VAREJO_CODES = new Set([
+            5, 55, 65, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 500, 550,
+            650, 870, 880, 890, 891, 910, 920, 930, 940, 950, 960, 970, 980,
+          ]);
+          const varejoBranches = sellers.branches.filter((b) =>
+            VAREJO_CODES.has(b.branch_code),
+          );
+
+          // Vendedora fixa no VAREJO: 59 - KHRISTIANNA - JOAO PESSOA - INT
+          const FIXED_VAREJO_SELLER = {
+            seller_code: 59,
+            seller_name: 'KHRISTIANNA - JOAO PESSOA - INT',
+            seller_sale_qty: 0,
+            seller_sale_value: 0,
+          };
+          // Procurar dados reais dessa vendedora em todas as branches
+          for (const b of sellers.branches) {
+            const found = b.dataRow?.find((s) => s.seller_code === 59);
+            if (found) {
+              FIXED_VAREJO_SELLER.seller_sale_qty += found.seller_sale_qty || 0;
+              FIXED_VAREJO_SELLER.seller_sale_value +=
+                found.seller_sale_value || 0;
+            }
+          }
+          // Adicionar como branch virtual se tiver vendas, ou mesmo assim mostrar
+          const hasFixedSeller = varejoBranches.some((b) =>
+            b.dataRow?.some((s) => s.seller_code === 59),
+          );
+          if (!hasFixedSeller) {
+            varejoBranches.push({
+              branch_code: 2,
+              branch_name: 'JOÃO PESSOA - ',
+              dataRow: [FIXED_VAREJO_SELLER],
+              invoiceQuantity: FIXED_VAREJO_SELLER.seller_sale_qty,
+              invoiceValue: FIXED_VAREJO_SELLER.seller_sale_value,
+              itemQuantity: 0,
+            });
+          }
+
+          const outrasBranches = sellers.branches.filter(
+            (b) => !VAREJO_CODES.has(b.branch_code),
+          );
+
+          const totalVarejoValue = varejoBranches.reduce(
+            (sum, b) => sum + (b.invoiceValue || 0),
+            0,
+          );
+          const totalVarejoQty = varejoBranches.reduce(
+            (sum, b) => sum + (b.invoiceQuantity || 0),
+            0,
+          );
+
+          return (
+            <div className="flex flex-wrap gap-3">
+              {varejoBranches.length > 0 && (
+                <Card
+                  className="flex-1 min-w-[200px] cursor-pointer hover:ring-2 hover:ring-[#000638]/30 transition-all"
+                  onClick={() =>
+                    setModalSellers({
+                      title: 'Varejo',
+                      branches: varejoBranches,
+                    })
+                  }
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="p-2 rounded-full bg-emerald-50 shrink-0">
+                      <Storefront size={20} className="text-emerald-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500 font-medium">
+                        Varejo
+                      </p>
+                      <p className="text-base font-bold text-[#000638]">
+                        R$ {formatBRL(totalVarejoValue)}
+                      </p>
+                      <p className="text-[10px] text-gray-400">
+                        {formatInt(totalVarejoQty)} vendas &bull;{' '}
+                        {varejoBranches.length} empresa(s)
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {outrasBranches.map((branch) => (
+                <Card
+                  key={branch.branch_code}
+                  className="flex-1 min-w-[200px] cursor-pointer hover:ring-2 hover:ring-[#000638]/30 transition-all"
+                  onClick={() =>
+                    setModalSellers({
+                      title: `${branch.branch_name} (${branch.branch_code})`,
+                      branches: [branch],
+                    })
+                  }
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="p-2 rounded-full bg-blue-50 shrink-0">
+                      <Storefront size={20} className="text-blue-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500 font-medium truncate">
+                        {branch.branch_name} ({branch.branch_code})
+                      </p>
+                      <p className="text-base font-bold text-[#000638]">
+                        R$ {formatBRL(branch.invoiceValue)}
+                      </p>
+                      <p className="text-[10px] text-gray-400">
+                        {formatInt(branch.invoiceQuantity)} vendas
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          );
+        })()}
+
+      {/* Modal de detalhes dos vendedores */}
+      {modalSellers && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setModalSellers(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col m-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b">
+              <h2 className="text-sm font-bold text-[#000638] uppercase tracking-wide">
+                {modalSellers.title}
+              </h2>
+              <button
+                onClick={() => setModalSellers(null)}
+                className="p-1 rounded hover:bg-gray-100 transition-colors"
+              >
+                <X size={18} className="text-gray-500" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-5 space-y-4">
+              {modalSellers.branches.map((branch) => (
+                <div key={branch.branch_code}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold text-[#000638]">
+                      {branch.branch_name} ({branch.branch_code})
+                    </span>
+                    <span className="text-[10px] text-gray-400">
+                      {branch.dataRow.length} vendedor(es) &bull; R${' '}
+                      {formatBRL(branch.invoiceValue)}
+                    </span>
+                  </div>
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead>
+                      <tr className="bg-[#000638]/5">
+                        <th className="px-3 py-1.5 font-semibold text-[#000638] border-b">
+                          Código
+                        </th>
+                        <th className="px-3 py-1.5 font-semibold text-[#000638] border-b">
+                          Vendedor
+                        </th>
+                        <th className="px-3 py-1.5 font-semibold text-[#000638] border-b text-right">
+                          Qtd. Vendas
+                        </th>
+                        <th className="px-3 py-1.5 font-semibold text-[#000638] border-b text-right">
+                          Valor Vendas
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {branch.dataRow.map((s, i) => (
+                        <tr
+                          key={i}
+                          className="border-b last:border-0 hover:bg-gray-50 transition-colors"
+                        >
+                          <td className="px-3 py-1.5 text-gray-700">
+                            {s.seller_code}
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-700">
+                            {s.seller_name || '—'}
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-700 text-right">
+                            {formatInt(s.seller_sale_qty)}
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-700 text-right">
+                            R$ {formatBRL(s.seller_sale_value)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

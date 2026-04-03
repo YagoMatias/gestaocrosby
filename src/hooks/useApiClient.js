@@ -722,6 +722,9 @@ const useApiClient = () => {
 
     salePanelRankingFaturamento: (body) =>
       apiMutate('/api/totvs/sale-panel/ranking-faturamento', 'POST', body),
+
+    salePanelSellers: (body) =>
+      apiMutate('/api/totvs/sale-panel/sellers', 'POST', body),
   };
 
   const franchise = {

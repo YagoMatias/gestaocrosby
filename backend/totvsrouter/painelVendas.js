@@ -11,6 +11,7 @@ import {
   httpAgent,
   TOTVS_BASE_URL,
   getBranchCodes,
+  getBranchesWithNames,
 } from './totvsHelper.js';
 
 const router = express.Router();
@@ -260,6 +261,125 @@ router.post(
       res,
       mergedData,
       'Ranking de faturamento por filial obtido com sucesso',
+    );
+  }),
+);
+
+// =============================================================================
+// VENDEDORES DO PAINEL DE VENDAS (por filial)
+// POST /api/totvs/sale-panel/sellers
+// Body: { filtroempresa?: number[], datemin, datemax }
+// Retorna: { branches: [{ branch_code, branch_name, dataRow, invoiceQuantity, invoiceValue, itemQuantity }] }
+// =============================================================================
+router.post(
+  '/sale-panel/sellers',
+  asyncHandler(async (req, res) => {
+    const { filtroempresa, datemin, datemax } = req.body;
+
+    if (!datemin || !datemax) {
+      return errorResponse(
+        res,
+        'Os campos datemin e datemax são obrigatórios',
+        400,
+        'MISSING_DATES',
+      );
+    }
+
+    const tokenData = await getToken();
+    if (!tokenData?.access_token) {
+      return errorResponse(
+        res,
+        'Não foi possível obter token de autenticação TOTVS',
+        503,
+        'TOKEN_UNAVAILABLE',
+      );
+    }
+
+    let token = tokenData.access_token;
+
+    // Resolver filiais com nomes
+    const allBranches = await getBranchesWithNames(token);
+    let branches;
+    if (Array.isArray(filtroempresa) && filtroempresa.length > 0) {
+      const filterSet = new Set(
+        filtroempresa.map((b) => parseInt(b)).filter((b) => !isNaN(b) && b > 0),
+      );
+      branches = allBranches.filter((b) => filterSet.has(b.code));
+    } else {
+      branches = allBranches;
+    }
+
+    const endpoint = `${TOTVS_BASE_URL}/sale-panel/v2/sellers/search`;
+
+    console.log(
+      `👤 [PainelVendas/Sellers] ${endpoint} — ${branches.length} filiais`,
+    );
+
+    const doRequest = async (accessToken, branchCode) =>
+      axios.post(
+        endpoint,
+        { branchs: [branchCode], datemin, datemax },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          httpsAgent,
+          httpAgent,
+          timeout: 60000,
+        },
+      );
+
+    // Chamar por filial em lotes de 5 para não sobrecarregar
+    const BATCH_SIZE = 5;
+    const results = [];
+    for (let i = 0; i < branches.length; i += BATCH_SIZE) {
+      const batch = branches.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(async (branch) => {
+          try {
+            let response;
+            try {
+              response = await doRequest(token, branch.code);
+            } catch (error) {
+              if (error.response?.status === 401) {
+                const newTokenData = await getToken(true);
+                token = newTokenData.access_token;
+                response = await doRequest(token, branch.code);
+              } else {
+                throw error;
+              }
+            }
+            const data = response.data;
+            if (data.dataRow && data.dataRow.length > 0) {
+              return {
+                branch_code: branch.code,
+                branch_name: branch.name,
+                dataRow: data.dataRow,
+                invoiceQuantity: data.invoiceQuantity || 0,
+                invoiceValue: data.invoiceValue || 0,
+                itemQuantity: data.itemQuantity || 0,
+              };
+            }
+            return null;
+          } catch (err) {
+            console.log(
+              `⚠️ [Sellers] Erro filial ${branch.code}: ${err.message}`,
+            );
+            return null;
+          }
+        }),
+      );
+      results.push(...batchResults);
+    }
+
+    const branchesData = results.filter(Boolean);
+
+    return successResponse(
+      res,
+      { branches: branchesData },
+      'Vendedores por filial obtidos com sucesso',
     );
   }),
 );

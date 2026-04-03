@@ -221,8 +221,11 @@ const FiltroEmpresa = ({
               type="button"
               onClick={() => {
                 if (onSelectEmpresas) {
+                  const FRANQUIA_CODES = ['98', '980'];
                   const filiais = todasEmpresas.filter(
-                    (emp) => parseInt(emp.cd_empresa) < 5999,
+                    (emp) =>
+                      parseInt(emp.cd_empresa) < 5999 &&
+                      !FRANQUIA_CODES.includes(emp.cd_empresa),
                   );
                   onSelectEmpresas([...filiais]);
                 }
@@ -235,8 +238,11 @@ const FiltroEmpresa = ({
               type="button"
               onClick={() => {
                 if (onSelectEmpresas) {
+                  const FRANQUIA_CODES = ['98', '980'];
                   const franquias = todasEmpresas.filter(
-                    (emp) => parseInt(emp.cd_empresa) > 6000,
+                    (emp) =>
+                      parseInt(emp.cd_empresa) > 6000 ||
+                      FRANQUIA_CODES.includes(emp.cd_empresa),
                   );
                   onSelectEmpresas([...franquias]);
                 }
