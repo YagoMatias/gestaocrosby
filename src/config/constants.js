@@ -4,7 +4,9 @@
  */
 
 // URLs da API
-export const API_BASE_URL = 'https://apigestaocrosby-bw2v.onrender.com';
+export const API_BASE_URL = import.meta.env.DEV
+  ? window.location.origin
+  : 'https://apigestaocrosby-bw2v.onrender.com';
 
 // Endpoints específicos - Nova estrutura de API
 export const API_ENDPOINTS = {

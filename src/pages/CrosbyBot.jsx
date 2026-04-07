@@ -42,6 +42,8 @@ import {
   CheckCircle,
 } from '@phosphor-icons/react';
 
+import WhatsAppReports from '../components/whatsapp-official/WhatsAppReports';
+
 // --- IMPORT DO NOVO GRÁFICO ---
 import {
   BarChart,
@@ -58,13 +60,9 @@ const CrosbyTemplateManager = () => {
   const { user } = useAuth();
 
   // ==========================================
-  // CONFIGURAÇÕES DE WEBHOOKS E CONSTANTES
+  // CONFIGURAÇÕES 
   // ==========================================
-  const WEBHOOK_N8N_MASTER =
-    'https://webhook.crosbytech.com.br/webhook/7b312382-5f37-45b9-bbd8-73eaa2a62346';
-
-  const WEBHOOK_TOTVS_CONTATOS =
-    'https://webhook.crosbytech.com.br/webhook/720c8c4f-0a8d-4641-a0a8-de70b5618582';
+  const API_BASE = import.meta.env.VITE_API_URL || '';
 
   const COTACAO_DOLAR = 5.8;
 
@@ -168,24 +166,21 @@ const CrosbyTemplateManager = () => {
   }, [headerFile]);
 
   useEffect(() => {
-    if ((activeTab === 'send' || activeTab === 'results') && selectedAccount) {
+    if ((activeTab === 'send' || activeTab === 'results') && selectedAccount && accounts.length > 0) {
       fetchTemplates();
     }
-  }, [selectedAccount, activeTab]);
+  }, [selectedAccount, activeTab, accounts]);
 
   const fetchTemplates = async () => {
     setIsLoadingTemplates(true);
     try {
-      const response = await fetch(WEBHOOK_N8N_MASTER, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          acao: 'LISTAR_TEMPLATES',
-          dados: { waba_id: selectedAccount },
-        }),
-      });
+      // Buscar account id interno pelo waba_id
+      const account = accounts.find((a) => a.waba_id === selectedAccount);
+      if (!account) { setTemplates([]); return; }
+
+      const response = await fetch(`${API_BASE}/api/meta/templates/${account.id}`);
       const result = await response.json();
-      const list = result.data || result.json || result;
+      const list = result.data || result;
       if (Array.isArray(list)) setTemplates(list);
       else setTemplates([]);
     } catch (error) {
@@ -205,57 +200,18 @@ const CrosbyTemplateManager = () => {
   const fetchCompaniesList = async () => {
     if (companiesList.length > 0) return;
     try {
-      const tokenParams = new URLSearchParams();
-      tokenParams.append('grant_type', 'password');
-      tokenParams.append('client_id', 'crosbyapiv2');
-      tokenParams.append('client_secret', '5955950459');
-      tokenParams.append('username', 'APINOVA');
-      tokenParams.append('password', '123456');
+      const response = await fetch(`${API_BASE}/api/meta/totvs-branches`);
+      const result = await response.json();
+      const list = result.data || result;
 
-      const tokenResponse = await fetch(
-        'https://apitotvsmoda.bhan.com.br/api/totvsmoda/authorization/v2/token',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: tokenParams.toString(),
-        },
-      );
-
-      if (!tokenResponse.ok)
-        throw new Error('Falha ao autenticar na API TOTVS Moda');
-
-      const tokenData = await tokenResponse.json();
-      const accessToken = tokenData.access_token;
-
-      const branchesResponse = await fetch(
-        'https://www30.bhan.com.br:9443/api/totvsmoda/person/v2/branchesList',
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-        },
-      );
-
-      if (!branchesResponse.ok)
-        throw new Error('Falha ao buscar as filiais no TOTVS');
-
-      const branchesData = await branchesResponse.json();
-
-      const rawList = branchesData.items || [];
-      const formatada = rawList
-        .map((emp) => ({
-          id: emp.code,
-          nome: emp.description,
-        }))
-        .filter((emp) => emp.id !== undefined && emp.id !== null);
-
-      formatada.sort((a, b) => parseInt(a.id, 10) - parseInt(b.id, 10));
-      setCompaniesList(formatada);
+      if (Array.isArray(list)) {
+        setCompaniesList(list);
+      } else {
+        throw new Error('Formato inesperado');
+      }
     } catch (error) {
-      console.error('Erro ao buscar empresas direto do TOTVS:', error);
-      alert('Falha ao conectar com o TOTVS para buscar as empresas.');
+      console.error('Erro ao buscar empresas:', error);
+      alert('Falha ao buscar as empresas.');
     }
   };
 
@@ -429,23 +385,21 @@ const CrosbyTemplateManager = () => {
       }
 
       // Payload dinâmico enviando a categoria selecionada e allow_category_change
+      const account = accounts.find((a) => a.waba_id === selectedAccount);
+      if (!account) return alert('Conta não encontrada.');
+
       const payload = {
-        waba_id: selectedAccount,
         name: templateName,
         category: category,
         language,
         components: componentsArray,
         allow_category_change: true,
-        userId: user.id,
       };
 
-      const response = await fetch(WEBHOOK_N8N_MASTER, {
+      const response = await fetch(`${API_BASE}/api/meta/templates/${account.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          acao: 'CRIAR_TEMPLATE',
-          dados: payload,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const result = await response.json();
@@ -580,7 +534,7 @@ const CrosbyTemplateManager = () => {
     setTicketMedio(0);
 
     try {
-      const response = await fetch(WEBHOOK_TOTVS_CONTATOS, {
+      const response = await fetch(`${API_BASE}/api/meta/totvs-contacts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -593,9 +547,8 @@ const CrosbyTemplateManager = () => {
 
       const result = await response.json();
 
-      const list =
-        result.data || (Array.isArray(result) ? result : result.json || []);
-      const valorDoTicket = result.ticketMedio || 0;
+      const list = result.data?.data || result.data || [];
+      const valorDoTicket = result.data?.ticketMedio || result.ticketMedio || 0;
 
       if (list.length > 0) {
         setTotvsContacts(list);
@@ -621,7 +574,7 @@ const CrosbyTemplateManager = () => {
 
     setIsSending(true);
 
-    const sendToN8n = async (rows) => {
+    const sendCampaign = async (rows) => {
       const payload = {
         waba_id: selectedAccount,
         template_name: selectedTemplate.name || selectedTemplate.json?.name,
@@ -631,20 +584,23 @@ const CrosbyTemplateManager = () => {
       };
 
       try {
-        await fetch(WEBHOOK_N8N_MASTER, {
+        const response = await fetch(`${API_BASE}/api/meta/campaign-dispatch`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            acao: 'DISPARAR_CAMPANHA',
-            dados: payload,
-          }),
+          body: JSON.stringify(payload),
         });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.message || 'Erro ao disparar campanha');
+        }
+
         alert('Disparo iniciado com sucesso!');
         setCsvFile(null);
         setTotvsContacts(null);
         setTicketMedio(0);
       } catch (e) {
-        alert('Erro ao iniciar disparo.');
+        alert('Erro ao iniciar disparo: ' + e.message);
       } finally {
         setIsSending(false);
       }
@@ -658,7 +614,7 @@ const CrosbyTemplateManager = () => {
       const reader = new FileReader();
       reader.onload = async (e) => {
         const rows = e.target.result.split('\n').filter((l) => l.trim());
-        await sendToN8n(rows);
+        await sendCampaign(rows);
       };
       reader.readAsText(csvFile);
     } else {
@@ -666,7 +622,7 @@ const CrosbyTemplateManager = () => {
         setIsSending(false);
         return alert('Você precisa buscar os contatos no TOTVS primeiro.');
       }
-      await sendToN8n(totvsContacts);
+      await sendCampaign(totvsContacts);
     }
   };
 
@@ -699,17 +655,14 @@ const CrosbyTemplateManager = () => {
     setAnalyticsData(null);
 
     const payload = {
-      acao: 'BUSCAR_RESULTADOS',
-      dados: {
-        waba_id: selectedAccount,
-        template_name: selectedResultTemplate,
-        start: startTs,
-        end: endTs,
-      },
+      waba_id: selectedAccount,
+      template_name: selectedResultTemplate,
+      start: startTs,
+      end: endTs,
     };
 
     try {
-      const response = await fetch(WEBHOOK_N8N_MASTER, {
+      const response = await fetch(`${API_BASE}/api/meta/template-results`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -835,6 +788,12 @@ const CrosbyTemplateManager = () => {
               className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'results' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
             >
               Resultados
+            </button>
+            <button
+              onClick={() => setActiveTab('relatorios')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'relatorios' ? 'bg-white shadow-sm text-purple-600' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Relatórios
             </button>
           </div>
         </div>
@@ -2009,6 +1968,16 @@ const CrosbyTemplateManager = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ================= ABA: RELATÓRIOS ================= */}
+      {activeTab === 'relatorios' && (
+        <div className="animate-in fade-in duration-300">
+          <WhatsAppReports
+            accounts={accounts}
+            activeAccount={accounts.find(a => a.waba_id === selectedAccount)}
+          />
         </div>
       )}
     </div>

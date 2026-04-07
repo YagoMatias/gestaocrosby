@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from './AuthContext';
+import { API_BASE_URL } from '../config/constants';
 
 const FiltroEmpresa = ({
   empresasSelecionadas = [],
@@ -22,7 +23,7 @@ const FiltroEmpresa = ({
         console.log('🔍 Buscando empresas da API TOTVS...');
 
         const response = await fetch(
-          'https://apigestaocrosby-bw2v.onrender.com/api/totvs/branches',
+          `${API_BASE_URL}/api/totvs/branches`,
         );
 
         if (!response.ok) {

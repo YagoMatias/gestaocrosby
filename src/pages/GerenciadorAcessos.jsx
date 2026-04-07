@@ -147,6 +147,11 @@ const AVAILABLE_PAGES = [
     category: 'Franquias',
   },
   {
+    path: '/voucher-usage',
+    name: 'Vouchers',
+    category: 'Franquias',
+  },
+  {
     path: '/compras-franquias',
     name: 'Compras Franquias',
     category: 'Franquias',

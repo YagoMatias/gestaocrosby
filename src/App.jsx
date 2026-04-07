@@ -94,6 +94,9 @@ const DownloadNotificacao = lazy(() => import('./pages/DownloadNotificacao'));
 const ApiClaude = lazy(() => import('./pages/ApiClaude'));
 const Estoque = lazy(() => import('./pages/Estoque'));
 const PainelVendas = lazy(() => import('./pages/PainelVendas'));
+const VoucherUsage = lazy(() => import('./pages/VoucherUsage'));
+const CatalogoAdmin = lazy(() => import('./pages/CatalogoAdmin'));
+const CrosbyManage = lazy(() => import('./pages/CrosbyManage'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -178,6 +181,9 @@ const protectedRoutes = [
   { path: '/api-claude', component: ApiClaude },
   { path: '/estoque', component: Estoque },
   { path: '/painel-vendas', component: PainelVendas },
+  { path: '/voucher-usage', component: VoucherUsage },
+  { path: '/catalogo-admin', component: CatalogoAdmin },
+  { path: '/crosby-manage', component: CrosbyManage },
 ];
 
 // Layout compartilhado - estável, preserva estado das páginas ao interagir com sidebar

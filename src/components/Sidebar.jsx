@@ -36,6 +36,8 @@ import {
   Wallet,
   Clock,
   Package,
+  Ticket,
+  WhatsappLogo,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -199,6 +201,12 @@ const painelVendasItems = [
     icon: ShoppingCart,
     color: 'text-blue-600',
   },
+  {
+    name: 'Catálogo Virtual',
+    href: '/catalogo-admin',
+    icon: Storefront,
+    color: 'text-indigo-600',
+  },
 ];
 
 const varejo = [
@@ -288,6 +296,12 @@ const franquias = [
     href: '/dashboard-franquias',
     icon: ChartLineUp,
     color: 'text-indigo-600',
+  },
+  {
+    name: 'Vouchers',
+    href: '/voucher-usage',
+    icon: Ticket,
+    color: 'text-purple-600',
   },
   {
     name: 'Compras Franquias',
@@ -412,6 +426,12 @@ const adminItems = [
     href: '/api-claude',
     icon: Article,
     color: 'text-indigo-600',
+  },
+  {
+    name: 'Crosby Manage',
+    href: '/crosby-manage',
+    icon: WhatsappLogo,
+    color: 'text-emerald-600',
   },
 ];
 
