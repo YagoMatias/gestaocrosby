@@ -423,9 +423,31 @@ export default function PainelVendas() {
             5, 55, 65, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 500, 550,
             650, 870, 880, 890, 891, 910, 920, 930, 940, 950, 960, 970, 980,
           ]);
-          const varejoBranches = sellers.branches.filter((b) =>
-            VAREJO_CODES.has(b.branch_code),
-          );
+          const EXCLUDED_SELLERS = new Set([
+            59, 40, 20, 161, 241, 25, 165, 15, 779,
+          ]);
+
+          const varejoBranches = sellers.branches
+            .filter((b) => VAREJO_CODES.has(b.branch_code))
+            .map((b) => {
+              const filteredRows =
+                b.dataRow?.filter(
+                  (s) => !EXCLUDED_SELLERS.has(s.seller_code),
+                ) || [];
+              return {
+                ...b,
+                dataRow: filteredRows,
+                invoiceValue: filteredRows.reduce(
+                  (sum, s) => sum + (s.seller_sale_value || 0),
+                  0,
+                ),
+                invoiceQuantity: filteredRows.reduce(
+                  (sum, s) => sum + (s.seller_sale_qty || 0),
+                  0,
+                ),
+              };
+            })
+            .filter((b) => b.dataRow.length > 0);
 
           // Vendedora fixa no VAREJO: 59 - KHRISTIANNA - JOAO PESSOA - INT
           const FIXED_VAREJO_SELLER = {
@@ -458,9 +480,27 @@ export default function PainelVendas() {
             });
           }
 
-          const outrasBranches = sellers.branches.filter(
-            (b) => !VAREJO_CODES.has(b.branch_code),
-          );
+          const outrasBranches = sellers.branches
+            .filter((b) => !VAREJO_CODES.has(b.branch_code))
+            .map((b) => {
+              const filteredRows =
+                b.dataRow?.filter(
+                  (s) => !EXCLUDED_SELLERS.has(s.seller_code),
+                ) || [];
+              return {
+                ...b,
+                dataRow: filteredRows,
+                invoiceValue: filteredRows.reduce(
+                  (sum, s) => sum + (s.seller_sale_value || 0),
+                  0,
+                ),
+                invoiceQuantity: filteredRows.reduce(
+                  (sum, s) => sum + (s.seller_sale_qty || 0),
+                  0,
+                ),
+              };
+            })
+            .filter((b) => b.dataRow.length > 0);
 
           const totalVarejoValue = varejoBranches.reduce(
             (sum, b) => sum + (b.invoiceValue || 0),
@@ -470,6 +510,86 @@ export default function PainelVendas() {
             (sum, b) => sum + (b.invoiceQuantity || 0),
             0,
           );
+
+          // Vendedor fixo FRANQUIA: 40 - JHEMYSON
+          const franquiaSeller = {
+            seller_code: 40,
+            seller_name: 'JHEMYSON',
+            seller_sale_qty: 0,
+            seller_sale_value: 0,
+          };
+          for (const b of sellers.branches) {
+            const found = b.dataRow?.find((s) => s.seller_code === 40);
+            if (found) {
+              franquiaSeller.seller_sale_qty += found.seller_sale_qty || 0;
+              franquiaSeller.seller_sale_value += found.seller_sale_value || 0;
+            }
+          }
+          const franquiaBranch = {
+            branch_code: 0,
+            branch_name: 'FRANQUIA',
+            dataRow: [franquiaSeller],
+            invoiceQuantity: franquiaSeller.seller_sale_qty,
+            invoiceValue: franquiaSeller.seller_sale_value,
+            itemQuantity: 0,
+          };
+
+          // Vendedor fixo B2 BUSINESS: 20 - MARCIO SILVERIO
+          const b2Seller = {
+            seller_code: 20,
+            seller_name: 'MARCIO SILVERIO',
+            seller_sale_qty: 0,
+            seller_sale_value: 0,
+          };
+          for (const b of sellers.branches) {
+            const found = b.dataRow?.find((s) => s.seller_code === 20);
+            if (found) {
+              b2Seller.seller_sale_qty += found.seller_sale_qty || 0;
+              b2Seller.seller_sale_value += found.seller_sale_value || 0;
+            }
+          }
+          const b2Branch = {
+            branch_code: 0,
+            branch_name: 'B2 BUSINESS',
+            dataRow: [b2Seller],
+            invoiceQuantity: b2Seller.seller_sale_qty,
+            invoiceValue: b2Seller.seller_sale_value,
+            itemQuantity: 0,
+          };
+
+          // Vendedores fixos REVENDA
+          const REVENDA_CODES = [161, 241, 25, 165, 15, 779];
+          const revendaSellers = REVENDA_CODES.map((code) => {
+            const s = {
+              seller_code: code,
+              seller_name: '',
+              seller_sale_qty: 0,
+              seller_sale_value: 0,
+            };
+            for (const b of sellers.branches) {
+              const found = b.dataRow?.find((r) => r.seller_code === code);
+              if (found) {
+                if (!s.seller_name) s.seller_name = found.seller_name;
+                s.seller_sale_qty += found.seller_sale_qty || 0;
+                s.seller_sale_value += found.seller_sale_value || 0;
+              }
+            }
+            return s;
+          }).filter((s) => s.seller_sale_qty > 0);
+          const revendaBranch = {
+            branch_code: 0,
+            branch_name: 'REVENDA',
+            dataRow: revendaSellers,
+            invoiceQuantity: revendaSellers.reduce(
+              (sum, s) => sum + s.seller_sale_qty,
+              0,
+            ),
+            invoiceValue: revendaSellers.reduce(
+              (sum, s) => sum + s.seller_sale_value,
+              0,
+            ),
+            itemQuantity: 0,
+          };
 
           return (
             <div className="flex flex-wrap gap-3">
@@ -532,6 +652,93 @@ export default function PainelVendas() {
                   </CardContent>
                 </Card>
               ))}
+
+              {franquiaSeller.seller_sale_qty > 0 && (
+                <Card
+                  className="flex-1 min-w-[200px] cursor-pointer hover:ring-2 hover:ring-[#000638]/30 transition-all"
+                  onClick={() =>
+                    setModalSellers({
+                      title: 'Franquia',
+                      branches: [franquiaBranch],
+                    })
+                  }
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="p-2 rounded-full bg-orange-50 shrink-0">
+                      <Storefront size={20} className="text-orange-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500 font-medium">
+                        Franquia
+                      </p>
+                      <p className="text-base font-bold text-[#000638]">
+                        R$ {formatBRL(franquiaSeller.seller_sale_value)}
+                      </p>
+                      <p className="text-[10px] text-gray-400">
+                        {formatInt(franquiaSeller.seller_sale_qty)} vendas
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {b2Seller.seller_sale_qty > 0 && (
+                <Card
+                  className="flex-1 min-w-[200px] cursor-pointer hover:ring-2 hover:ring-[#000638]/30 transition-all"
+                  onClick={() =>
+                    setModalSellers({
+                      title: 'B2 Business',
+                      branches: [b2Branch],
+                    })
+                  }
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="p-2 rounded-full bg-purple-50 shrink-0">
+                      <Storefront size={20} className="text-purple-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500 font-medium">
+                        B2 Business
+                      </p>
+                      <p className="text-base font-bold text-[#000638]">
+                        R$ {formatBRL(b2Seller.seller_sale_value)}
+                      </p>
+                      <p className="text-[10px] text-gray-400">
+                        {formatInt(b2Seller.seller_sale_qty)} vendas
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {revendaSellers.length > 0 && (
+                <Card
+                  className="flex-1 min-w-[200px] cursor-pointer hover:ring-2 hover:ring-[#000638]/30 transition-all"
+                  onClick={() =>
+                    setModalSellers({
+                      title: 'Revenda',
+                      branches: [revendaBranch],
+                    })
+                  }
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="p-2 rounded-full bg-cyan-50 shrink-0">
+                      <Storefront size={20} className="text-cyan-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500 font-medium">
+                        Revenda
+                      </p>
+                      <p className="text-base font-bold text-[#000638]">
+                        R$ {formatBRL(revendaBranch.invoiceValue)}
+                      </p>
+                      <p className="text-[10px] text-gray-400">
+                        {formatInt(revendaBranch.invoiceQuantity)} vendas
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           );
         })()}

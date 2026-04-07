@@ -311,25 +311,42 @@ router.post(
 
     const endpoint = `${TOTVS_BASE_URL}/sale-panel/v2/sellers/search`;
 
+    // Mesmas filiais e operações especiais usadas no ranking-faturamento
+    const SPECIAL_BRANCH_CODES = new Set([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 31, 41, 45, 50, 55,
+      65, 75, 85, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101,
+      105, 106, 107, 108, 109, 111, 200, 300, 311, 351, 400, 411, 450, 500, 550,
+      551, 600, 650, 700, 750, 800, 850, 870, 880, 890, 891, 900, 910, 920, 930,
+      940, 950, 960, 970, 980, 990,
+    ]);
+    const SPECIAL_OPERATIONS = [
+      1, 2, 55, 510, 511, 1511, 521, 1521, 522, 960, 9001, 9009, 9027, 9017,
+      9400, 9401, 9402, 9403, 9404, 9005, 545, 546, 555, 548, 1210, 9405, 1205,
+      1101, 9065, 9064, 9063, 9062, 9061, 9420, 9026, 9067, 7234, 7236, 7240,
+      7241, 7242, 7234, 7235, 7236, 7237, 7240, 7254, 7259, 7255, 7243, 7245,
+      7244,
+    ];
+
     console.log(
       `👤 [PainelVendas/Sellers] ${endpoint} — ${branches.length} filiais`,
     );
 
-    const doRequest = async (accessToken, branchCode) =>
-      axios.post(
-        endpoint,
-        { branchs: [branchCode], datemin, datemax },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-          httpsAgent,
-          httpAgent,
-          timeout: 60000,
+    const doRequest = async (accessToken, branchCode) => {
+      const body = { branchs: [branchCode], datemin, datemax };
+      if (SPECIAL_BRANCH_CODES.has(branchCode)) {
+        body.operations = SPECIAL_OPERATIONS;
+      }
+      return axios.post(endpoint, body, {
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${accessToken}`,
         },
-      );
+        httpsAgent,
+        httpAgent,
+        timeout: 60000,
+      });
+    };
 
     // Chamar por filial em lotes de 5 para não sobrecarregar
     const BATCH_SIZE = 5;
