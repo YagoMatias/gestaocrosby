@@ -298,12 +298,6 @@ const franquias = [
     color: 'text-indigo-600',
   },
   {
-    name: 'Vouchers',
-    href: '/voucher-usage',
-    icon: Ticket,
-    color: 'text-purple-600',
-  },
-  {
     name: 'Compras Franquias',
     href: '/compras-franquias',
     icon: ShoppingCart,
@@ -446,6 +440,12 @@ const minhaFranquiaItem = {
       href: '/contas-pagar-franquias',
       icon: Receipt,
       color: 'text-red-600',
+    },
+    {
+      name: 'Vouchers',
+      href: '/voucher-usage',
+      icon: Ticket,
+      color: 'text-purple-600',
     },
     {
       name: 'Extrato de Crédito',
