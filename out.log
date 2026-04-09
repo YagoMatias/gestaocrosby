@@ -1,0 +1,88 @@
+{"level":"INFO","message":"Chrome via puppeteer.executablePath(): C:\\Users\\teccr\\.cache\\puppeteer\\chrome\\win64-146.0.7680.153\\chrome-win64\\chrome.exe","data":{},"timestamp":"2026-04-08T22:01:10.110Z"}
+✅ Server running on port 4001
+🌍 Environment: development
+🔵 [1775691246140-z65ijw6g6] GET /branches - Iniciado
+{"level":"INFO","message":"🔐 Gerando novo token TOTVS...","data":{},"timestamp":"2026-04-08T23:34:06.154Z"}
+{"level":"INFO","message":"✅ Token TOTVS gerado com sucesso","data":{},"timestamp":"2026-04-08T23:34:06.792Z"}
+{"level":"INFO","message":"   Token expira em: 09/04/2026, 02:34:06","data":{},"timestamp":"2026-04-08T23:34:06.909Z"}
+🏢 Buscando empresas TOTVS: https://www30.bhan.com.br:9443/api/totvsmoda/person/v2/branchesList?BranchCodePool=1&Page=1&PageSize=1000
+✅ Total de empresas encontradas: 286
+::1 - - [08/Apr/2026:23:34:08 +0000] "GET /api/totvs/branches HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775691444197-9w4wtxwsb] GET /vouchers/search - Iniciado
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-08T23:37:24.240Z"}
+::1 - - [08/Apr/2026:23:37:45 +0000] "GET /api/totvs/vouchers/search?startDateInitial=2026-03-01&startDateFinal=2026-04-30&enrich=true&page=1&pageSize=50&branchCode=6000 HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775691465121-aha2vga2k] POST /vouchers/customers/phones - Iniciado
+🔍 Buscando 19 telefones faltantes no TOTVS...
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-08T23:37:47.064Z"}
+📞 Telefones encontrados: 50 de 50 clientes
+::1 - - [08/Apr/2026:23:37:47 +0000] "POST /api/totvs/vouchers/customers/phones HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775693060515-kuug92hp8] GET /branches - Iniciado
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-09T00:04:20.646Z"}
+🏢 Buscando empresas TOTVS: https://www30.bhan.com.br:9443/api/totvsmoda/person/v2/branchesList?BranchCodePool=1&Page=1&PageSize=1000
+✅ Total de empresas encontradas: 286
+::1 - - [09/Apr/2026:00:04:23 +0000] "GET /api/totvs/branches HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775693063924-542ggbs22] GET /branches - Iniciado
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-09T00:04:23.925Z"}
+🏢 Buscando empresas TOTVS: https://www30.bhan.com.br:9443/api/totvsmoda/person/v2/branchesList?BranchCodePool=1&Page=1&PageSize=1000
+✅ Total de empresas encontradas: 286
+::1 - - [09/Apr/2026:00:04:27 +0000] "GET /api/totvs/branches HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775693077745-y6eayiz23] GET /vouchers/search - Iniciado
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-09T00:04:37.749Z"}
+::1 - - [09/Apr/2026:00:05:11 +0000] "GET /api/totvs/vouchers/search?startDateInitial=2026-03-01&startDateFinal=2026-04-30&enrich=true&page=1&pageSize=50&branchCode=2 HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775693111579-kpbpbdwvm] POST /vouchers/customers/phones - Iniciado
+🔍 Buscando 1 telefones faltantes no TOTVS...
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-09T00:05:12.706Z"}
+📞 Telefones encontrados: 47 de 47 clientes
+::1 - - [09/Apr/2026:00:05:12 +0000] "POST /api/totvs/vouchers/customers/phones HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775693126824-fve9n0qnu] GET /vouchers/search - Iniciado
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-09T00:05:26.826Z"}
+🔍 Enriquecendo 15 vouchers encerrados com dados fiscais...
+📊 Buscando invoices filial 2: 15 clientes, período 2026-03-12 a 2026-03-31
+✅ 30 invoices encontradas para filial 2
+::1 - - [09/Apr/2026:00:05:32 +0000] "GET /api/totvs/vouchers/search?startDateInitial=2026-03-01&startDateFinal=2026-04-30&enrich=true&page=1&pageSize=50&status=Closed&branchCode=2 HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775693132301-mq30guogx] POST /vouchers/customers/phones - Iniciado
+🔍 Buscando 2 telefones faltantes no TOTVS...
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-09T00:05:33.081Z"}
+📞 Telefones encontrados: 15 de 15 clientes
+::1 - - [09/Apr/2026:00:05:33 +0000] "POST /api/totvs/vouchers/customers/phones HTTP/1.1" 200 441 "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775693560030-i80arorss] GET /branches - Iniciado
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-09T00:12:40.049Z"}
+🏢 Buscando empresas TOTVS: https://www30.bhan.com.br:9443/api/totvsmoda/person/v2/branchesList?BranchCodePool=1&Page=1&PageSize=1000
+✅ Total de empresas encontradas: 286
+::1 - - [09/Apr/2026:00:12:43 +0000] "GET /api/totvs/branches HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775693563869-j858gkowf] GET /branches - Iniciado
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-09T00:12:43.871Z"}
+🏢 Buscando empresas TOTVS: https://www30.bhan.com.br:9443/api/totvsmoda/person/v2/branchesList?BranchCodePool=1&Page=1&PageSize=1000
+✅ Total de empresas encontradas: 286
+::1 - - [09/Apr/2026:00:12:46 +0000] "GET /api/totvs/branches HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+::1 - - [09/Apr/2026:01:09:35 +0000] "GET / HTTP/1.1" 404 139 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775720465559-nezh5iazo] GET /branches - Iniciado
+{"level":"INFO","message":"⏰ Token TOTVS expirado ou próximo do vencimento. Gerando novo...","data":{},"timestamp":"2026-04-09T07:41:05.594Z"}
+{"level":"INFO","message":"🔐 Gerando novo token TOTVS...","data":{},"timestamp":"2026-04-09T07:41:05.596Z"}
+{"level":"INFO","message":"✅ Token TOTVS gerado com sucesso","data":{},"timestamp":"2026-04-09T07:41:06.936Z"}
+{"level":"INFO","message":"   Token expira em: 09/04/2026, 10:41:06","data":{},"timestamp":"2026-04-09T07:41:06.993Z"}
+🏢 Buscando empresas TOTVS: https://www30.bhan.com.br:9443/api/totvsmoda/person/v2/branchesList?BranchCodePool=1&Page=1&PageSize=1000
+✅ Total de empresas encontradas: 286
+::1 - - [09/Apr/2026:07:41:08 +0000] "GET /api/totvs/branches HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775726175736-7f2h7bbfz] GET /branches - Iniciado
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-09T09:16:15.760Z"}
+🏢 Buscando empresas TOTVS: https://www30.bhan.com.br:9443/api/totvsmoda/person/v2/branchesList?BranchCodePool=1&Page=1&PageSize=1000
+✅ Total de empresas encontradas: 286
+::1 - - [09/Apr/2026:09:16:18 +0000] "GET /api/totvs/branches HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775729901862-d9sn60dnx] GET /branches - Iniciado
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-09T10:18:21.881Z"}
+🏢 Buscando empresas TOTVS: https://www30.bhan.com.br:9443/api/totvsmoda/person/v2/branchesList?BranchCodePool=1&Page=1&PageSize=1000
+::1 - - [09/Apr/2026:11:23:23 +0000] "GET /api/totvs/branches HTTP/1.1" 503 172 "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775735333327-s72pho9jf] GET /branches - Iniciado
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-09T11:48:53.343Z"}
+🏢 Buscando empresas TOTVS: https://www30.bhan.com.br:9443/api/totvsmoda/person/v2/branchesList?BranchCodePool=1&Page=1&PageSize=1000
+✅ Total de empresas encontradas: 286
+::1 - - [09/Apr/2026:11:48:55 +0000] "GET /api/totvs/branches HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775735346598-130t5jd96] GET /vouchers/search - Iniciado
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-09T11:49:06.600Z"}
+::1 - - [09/Apr/2026:11:49:22 +0000] "GET /api/totvs/vouchers/search?startDateInitial=2026-03-01&startDateFinal=2026-04-30&enrich=true&page=1&pageSize=50&status=InProgress&branchCode=6000 HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+🔵 [1775735362847-qbehxp96g] POST /vouchers/customers/phones - Iniciado
+🔍 Buscando 19 telefones faltantes no TOTVS...
+{"level":"INFO","message":"🔑 Usando token TOTVS existente (ainda válido)","data":{},"timestamp":"2026-04-09T11:49:29.388Z"}
+📞 Telefones encontrados: 50 de 50 clientes
+::1 - - [09/Apr/2026:11:49:30 +0000] "POST /api/totvs/vouchers/customers/phones HTTP/1.1" 200 - "http://localhost:3000/voucher-usage" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"

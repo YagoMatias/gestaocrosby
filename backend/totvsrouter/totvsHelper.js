@@ -27,7 +27,7 @@ export const TOTVS_AUTH_ENDPOINT =
 export const API_BASE_URL =
   process.env.API_BASE_URL ||
   process.env.RENDER_EXTERNAL_URL ||
-  'http://localhost:4000';
+  'http://localhost:4001';
 
 // Cache de branchCodes em memória (recarrega a cada 30 min)
 let cachedBranchCodes = null;

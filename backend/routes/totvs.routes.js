@@ -44,7 +44,7 @@ const router = express.Router();
 const API_BASE_URL =
   process.env.API_BASE_URL ||
   process.env.RENDER_EXTERNAL_URL ||
-  'http://localhost:4000';
+  'http://localhost:4001';
 
 /**
  * @route GET /totvs/token
