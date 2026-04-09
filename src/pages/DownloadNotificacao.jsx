@@ -5,8 +5,9 @@ import {
   CheckCircle,
   CircleNotch,
 } from '@phosphor-icons/react';
+import { supabase } from '../lib/supabase';
 
-const API_URL = 'https://apigestaocrosby-bw2v.onrender.com';
+const BUCKET_NAME = 'clientes-confianca';
 
 const DownloadNotificacao = () => {
   const [baixando, setBaixando] = useState(false);
@@ -21,19 +22,21 @@ const DownloadNotificacao = () => {
     setBaixando(true);
     setErro(null);
     try {
-      const res = await fetch(
-        `${API_URL}/docs/${encodeURIComponent(doc)}.docx`,
-      );
-      if (!res.ok) throw new Error('Arquivo não encontrado');
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const storagePath = `notificacoes/${doc}.pdf`;
+      const { data, error } = await supabase.storage
+        .from(BUCKET_NAME)
+        .createSignedUrl(storagePath, 300);
+
+      if (error || !data?.signedUrl) {
+        throw new Error('Arquivo não encontrado');
+      }
+
       const a = document.createElement('a');
-      a.href = url;
-      a.download = `${doc}.docx`;
+      a.href = data.signedUrl;
+      a.download = `${doc}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
       setSucesso(true);
     } catch (e) {
       setErro(
@@ -74,7 +77,7 @@ const DownloadNotificacao = () => {
         </div>
 
         <div className="bg-gray-50 rounded-lg p-4 mb-6">
-          <p className="text-gray-600 text-sm break-all">{doc}.docx</p>
+          <p className="text-gray-600 text-sm break-all">{doc}.pdf</p>
         </div>
 
         {erro && (

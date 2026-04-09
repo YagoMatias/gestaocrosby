@@ -2,15 +2,13 @@
 # Script de inicialização para Render (com Chrome para wwebjs)
 set -e
 
-# Definir diretório de cache do Puppeteer (mesmo que .puppeteerrc.cjs)
-export PUPPETEER_CACHE_DIR="$(pwd)/.cache/puppeteer"
+# Garantir que PUPPETEER_CACHE_DIR esteja definido (consistente com .puppeteerrc.cjs)
+export PUPPETEER_CACHE_DIR="${PUPPETEER_CACHE_DIR:-$(pwd)/.cache/puppeteer}"
+
 echo "=== Puppeteer Setup ==="
 echo "Cache dir: $PUPPETEER_CACHE_DIR"
 echo "Node: $(node -v)"
 echo "NPM: $(npm -v)"
-
-# Garantir que o diretório de cache existe
-mkdir -p "$PUPPETEER_CACHE_DIR"
 
 # Instalar Chrome via Puppeteer (baixa a versão exata que o Puppeteer espera)
 echo "Instalando Chrome para Puppeteer..."

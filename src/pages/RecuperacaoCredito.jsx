@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
 import { supabaseAdmin } from '../lib/supabase';
@@ -34,9 +34,19 @@ import {
   MapPin,
   DownloadSimple,
   Trash,
+  ChatText,
+  Image,
+  Microphone,
+  VideoCamera,
+  File,
+  Play,
+  Pause,
+  MagnifyingGlassPlus,
+  Spinner,
 } from '@phosphor-icons/react';
 
 const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
+const EvolutionURL = 'https://apigestaocrosby-bw2v.onrender.com/api/evolution/';
 const BUCKET_NAME = 'clientes-confianca';
 
 const CLIENTES_BLOQUEADOS = [
@@ -178,9 +188,29 @@ const RecuperacaoCredito = () => {
   const [detalhesCliente, setDetalhesCliente] = useState(null);
   const [dadosPessoa, setDadosPessoa] = useState(null);
   const [estatisticas, setEstatisticas] = useState(null);
+  const [dadosCNPJ, setDadosCNPJ] = useState(null);
+  const [coordenadas, setCoordenadas] = useState(null);
   const [loadingDetalhes, setLoadingDetalhes] = useState(false);
   const [uploadingAnexo, setUploadingAnexo] = useState(false);
   const [abaDetalhe, setAbaDetalhe] = useState('info');
+  const [conversas, setConversas] = useState([]);
+  const [loadingConversas, setLoadingConversas] = useState(false);
+  const [conversasTotal, setConversasTotal] = useState(0);
+  const [conversasPhone, setConversasPhone] = useState('');
+  const conversasEndRef = useRef(null);
+  const [mediaCache, setMediaCache] = useState({});
+  const [loadingMediaId, setLoadingMediaId] = useState(null);
+  const [playingAudioId, setPlayingAudioId] = useState(null);
+  const audioRef = useRef(null);
+  const [lightboxImg, setLightboxImg] = useState(null);
+  const [conversasDateStart, setConversasDateStart] = useState('');
+  const [conversasDateEnd, setConversasDateEnd] = useState('');
+  const [instanceCards, setInstanceCards] = useState([]);
+  const [loadingInstances, setLoadingInstances] = useState(false);
+  const [selectedInstance, setSelectedInstance] = useState(null);
+  const [phoneModalMessages, setPhoneModalMessages] = useState([]);
+  const [loadingPhoneModal, setLoadingPhoneModal] = useState(false);
+  const [phoneModalTotal, setPhoneModalTotal] = useState(0);
 
   const hojeStr = new Date().toISOString().slice(0, 10);
 
@@ -554,6 +584,17 @@ const RecuperacaoCredito = () => {
     setAbaDetalhe('info');
     setDadosPessoa(null);
     setEstatisticas(null);
+    setDadosCNPJ(null);
+    setCoordenadas(null);
+    setConversas([]);
+    setConversasTotal(0);
+    setConversasPhone('');
+    setMediaCache({});
+    setInstanceCards([]);
+    setSelectedInstance(null);
+    setPhoneModalMessages([]);
+    setConversasDateStart('');
+    setConversasDateEnd('');
     setLoadingDetalhes(true);
     try {
       const personCode = parseInt(cliente.cd_cliente);
@@ -582,10 +623,190 @@ const RecuperacaoCredito = () => {
       } catch (err) {
         console.warn('Erro ao buscar estatísticas:', err.message);
       }
+
+      // Buscar dados do CNPJ via BrasilAPI
+      const cnpjRaw = (cliente.nr_cpfcnpj || '').replace(/\D/g, '');
+      if (cnpjRaw.length === 14) {
+        try {
+          const respCnpj = await fetch(`${TotvsURL}cnpj/${cnpjRaw}`);
+          if (respCnpj.ok) {
+            const cnpjResult = await respCnpj.json();
+            if (cnpjResult.success) {
+              setDadosCNPJ(cnpjResult.data);
+              // Buscar coordenadas via BrasilAPI CEP v2 (direto, com CORS)
+              const cepRaw = (cnpjResult.data.cep || '').replace(/\D/g, '');
+              if (cepRaw.length === 8) {
+                try {
+                  const respCep = await fetch(
+                    `https://brasilapi.com.br/api/cep/v2/${cepRaw}`,
+                  );
+                  if (respCep.ok) {
+                    const cepData = await respCep.json();
+                    const coords = cepData?.location?.coordinates;
+                    if (coords?.latitude && coords?.longitude) {
+                      setCoordenadas({
+                        latitude: coords.latitude,
+                        longitude: coords.longitude,
+                      });
+                    }
+                  }
+                } catch (e) {
+                  console.warn('Erro ao buscar coordenadas do CEP:', e.message);
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Erro ao buscar CNPJ na BrasilAPI:', err.message);
+        }
+      }
+      // Conversas serão carregadas manualmente via aba Conversas
     } catch (err) {
       console.warn('Erro ao buscar dados do cliente:', err.message);
     } finally {
       setLoadingDetalhes(false);
+    }
+  };
+
+  // ══════════════════════════════════════════════
+  // CONVERSAS WHATSAPP (Evolution API)
+  // ══════════════════════════════════════════════
+  const getConversasPhones = () => {
+    const phones = [];
+    const phoneTotvs = detalhesCliente?.nr_telefone || dadosPessoa?.telefone;
+    const phoneCnpj = dadosCNPJ?.ddd_telefone_1;
+    if (phoneTotvs) {
+      const clean = String(phoneTotvs).replace(/\D/g, '');
+      if (clean.length >= 10) phones.push(clean);
+    }
+    if (phoneCnpj) {
+      const clean = String(phoneCnpj).replace(/\D/g, '');
+      if (clean.length >= 10 && !phones.includes(clean)) phones.push(clean);
+    }
+    return phones;
+  };
+
+  const buscarInstancias = async () => {
+    const phones = getConversasPhones();
+    if (phones.length === 0) return;
+    setLoadingInstances(true);
+    setInstanceCards([]);
+    setConversasPhone('');
+    try {
+      for (const phone of phones) {
+        const qs = new URLSearchParams();
+        if (conversasDateStart) qs.set('startDate', conversasDateStart);
+        if (conversasDateEnd) qs.set('endDate', conversasDateEnd);
+        const resp = await fetch(`${EvolutionURL}instances/${phone}?${qs}`);
+        if (resp.ok) {
+          const json = await resp.json();
+          if (json.success && json.data.instances.length > 0) {
+            setInstanceCards(json.data.instances);
+            setConversasPhone(json.data.phone);
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Erro ao buscar instâncias:', e.message);
+    } finally {
+      setLoadingInstances(false);
+    }
+  };
+
+  const abrirConversaInstancia = async (instance) => {
+    setSelectedInstance(instance);
+    setLoadingPhoneModal(true);
+    setPhoneModalMessages([]);
+    setPhoneModalTotal(0);
+    setMediaCache({});
+    try {
+      const qs = new URLSearchParams({
+        limit: '500',
+        instanceId: instance.instanceId,
+      });
+      if (conversasDateStart) qs.set('startDate', conversasDateStart);
+      if (conversasDateEnd) qs.set('endDate', conversasDateEnd);
+      const resp = await fetch(
+        `${EvolutionURL}conversations/${conversasPhone}?${qs}`,
+      );
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json.success) {
+          setPhoneModalMessages(json.data.messages);
+          setPhoneModalTotal(json.data.total);
+        }
+      }
+    } catch (e) {
+      console.warn('Erro ao buscar conversas da instância:', e.message);
+    } finally {
+      setLoadingPhoneModal(false);
+    }
+  };
+
+  const fetchMediaRC = async (msg) => {
+    if (mediaCache[msg.id]) return mediaCache[msg.id];
+    setLoadingMediaId(msg.id);
+    try {
+      const resp = await fetch(`${EvolutionURL}media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageId: msg.id }),
+      });
+      const json = await resp.json();
+      if (json.success && json.data?.base64) {
+        const result = {
+          base64: json.data.base64,
+          mimetype: json.data.mimetype,
+        };
+        setMediaCache((prev) => ({ ...prev, [msg.id]: result }));
+        return result;
+      }
+      const expiredResult = { expired: true };
+      setMediaCache((prev) => ({ ...prev, [msg.id]: expiredResult }));
+      return expiredResult;
+    } catch (e) {
+      console.warn('Erro ao buscar mídia:', e.message);
+      return null;
+    } finally {
+      setLoadingMediaId(null);
+    }
+  };
+
+  const handlePlayAudioRC = async (msg) => {
+    if (playingAudioId === msg.id && audioRef.current) {
+      audioRef.current.pause();
+      setPlayingAudioId(null);
+      return;
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    const media = await fetchMediaRC(msg);
+    if (!media || media.expired) return;
+    const src = `data:${media.mimetype || 'audio/ogg'};base64,${media.base64}`;
+    const audio = new Audio(src);
+    audioRef.current = audio;
+    setPlayingAudioId(msg.id);
+    audio.onended = () => {
+      setPlayingAudioId(null);
+      audioRef.current = null;
+    };
+    audio.play().catch(() => setPlayingAudioId(null));
+  };
+
+  const handleImageClickRC = async (msg) => {
+    const imgData = msg.message?.imageMessage || msg.message?.albumMessage;
+    const thumb = imgData?.jpegThumbnail;
+    if (thumb) setLightboxImg(`data:image/jpeg;base64,${thumb}`);
+    const media = await fetchMediaRC(msg);
+    if (media && !media.expired) {
+      setLightboxImg(
+        `data:${media.mimetype || 'image/jpeg'};base64,${media.base64}`,
+      );
+    } else if (media?.expired && !thumb) {
+      setLightboxImg(null);
     }
   };
 
@@ -1565,11 +1786,11 @@ Crosby`;
           </div>
 
           {/* Filtros e busca */}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap justify-center items-center gap-3 pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm bg-white">
             <div className="relative flex-1 max-w-md">
               <MagnifyingGlass
                 size={18}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                className="absolute left-3 top-1/3 -translate-y-1/2 text-gray-400"
               />
               <input
                 type="text"
@@ -1663,34 +1884,34 @@ Crosby`;
                   <thead className="bg-[#000638] text-white">
                     <tr>
                       <th
-                        className="px-4 py-3 text-left cursor-pointer hover:bg-[#000d5c] select-none"
+                        className="px-4 py-0.5 text-left cursor-pointer hover:bg-[#000d5c] select-none"
                         onClick={() => handleOrdenar('nm_cliente')}
                       >
                         Cliente <SortIcon coluna="nm_cliente" />
                       </th>
-                      <th className="px-4 py-3 text-left">Nome Fantasia</th>
-                      <th className="px-4 py-3 text-left">CNPJ/CPF</th>
+                      <th className="px-4 py-0.5 text-left">Nome Fantasia</th>
+                      <th className="px-4 py-0.5 text-left">CNPJ/CPF</th>
                       <th
-                        className="px-4 py-3 text-left cursor-pointer hover:bg-[#000d5c] select-none"
+                        className="px-4 py-0.5 text-left cursor-pointer hover:bg-[#000d5c] select-none"
                         onClick={() => handleOrdenar('origem')}
                       >
                         Origem <SortIcon coluna="origem" />
                       </th>
                       <th
-                        className="px-4 py-3 text-right cursor-pointer hover:bg-[#000d5c] select-none"
+                        className="px-4 py-0.5 text-right cursor-pointer hover:bg-[#000d5c] select-none"
                         onClick={() => handleOrdenar('valor_total')}
                       >
-                        Valor Inadimplente <SortIcon coluna="valor_total" />
+                        Valor <SortIcon coluna="valor_total" />
                       </th>
                       <th
-                        className="px-4 py-3 text-center cursor-pointer hover:bg-[#000d5c] select-none"
+                        className="px-4 py-0.5 text-center cursor-pointer hover:bg-[#000d5c] select-none"
                         onClick={() => handleOrdenar('diasAtrasoMax')}
                       >
-                        Dias Atraso <SortIcon coluna="diasAtrasoMax" />
+                        Atraso <SortIcon coluna="diasAtrasoMax" />
                       </th>
-                      <th className="px-4 py-3 text-center">Status</th>
-                      <th className="px-4 py-3 text-center">Anexos</th>
-                      <th className="px-4 py-3 text-center">WhatsApp</th>
+                      <th className="px-4 py-0.5 text-center">Status</th>
+                      <th className="px-4 py-0.5 text-center">Anexos</th>
+                      <th className="px-4 py-0.5 text-center">WhatsApp</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -1950,9 +2171,19 @@ Crosby`;
                   icon: <Users size={14} />,
                 },
                 {
+                  key: 'resumo',
+                  label: 'Resumo Cliente',
+                  icon: <Scales size={14} />,
+                },
+                {
                   key: 'faturas',
                   label: `Faturas (${detalhesCliente.faturas?.length || 0})`,
                   icon: <Receipt size={14} />,
+                },
+                {
+                  key: 'conversas',
+                  label: 'Conversas',
+                  icon: <ChatText size={14} />,
                 },
                 {
                   key: 'anexos',
@@ -2075,6 +2306,286 @@ Crosby`;
                     </div>
                   </div>
 
+                  {/* Dados CNPJ - BrasilAPI */}
+                  {dadosCNPJ && (
+                    <div>
+                      <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
+                        <Buildings size={16} />
+                        Dados do CNPJ (Receita Federal)
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {dadosCNPJ.razao_social && (
+                          <div className="p-3 bg-gray-50 rounded-lg md:col-span-2">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              RAZÃO SOCIAL
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {dadosCNPJ.razao_social}
+                            </p>
+                          </div>
+                        )}
+                        {dadosCNPJ.nome_fantasia && (
+                          <div className="p-3 bg-gray-50 rounded-lg md:col-span-2">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              NOME FANTASIA
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {dadosCNPJ.nome_fantasia}
+                            </p>
+                          </div>
+                        )}
+                        <div className="p-3 bg-gray-50 rounded-lg">
+                          <p className="text-[10px] font-bold text-gray-500">
+                            SITUAÇÃO CADASTRAL
+                          </p>
+                          <p
+                            className={`text-sm font-bold ${dadosCNPJ.descricao_situacao_cadastral === 'ATIVA' ? 'text-green-600' : 'text-red-600'}`}
+                          >
+                            {dadosCNPJ.descricao_situacao_cadastral || '—'}
+                          </p>
+                          {dadosCNPJ.data_situacao_cadastral && (
+                            <p className="text-[10px] text-gray-400 mt-1">
+                              Desde{' '}
+                              {dadosCNPJ.data_situacao_cadastral
+                                .split('-')
+                                .reverse()
+                                .join('/')}
+                            </p>
+                          )}
+                        </div>
+                        {dadosCNPJ.natureza_juridica && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              NATUREZA JURÍDICA
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {dadosCNPJ.natureza_juridica}
+                            </p>
+                          </div>
+                        )}
+                        {dadosCNPJ.data_inicio_atividade && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              DATA DE ABERTURA
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {dadosCNPJ.data_inicio_atividade
+                                .split('-')
+                                .reverse()
+                                .join('/')}
+                            </p>
+                          </div>
+                        )}
+                        {dadosCNPJ.capital_social != null && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              CAPITAL SOCIAL
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {formatarMoeda(dadosCNPJ.capital_social)}
+                            </p>
+                          </div>
+                        )}
+                        {dadosCNPJ.porte && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              PORTE
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {dadosCNPJ.porte}
+                            </p>
+                          </div>
+                        )}
+                        {dadosCNPJ.cnae_fiscal_descricao && (
+                          <div className="p-3 bg-gray-50 rounded-lg md:col-span-2">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              CNAE PRINCIPAL
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {dadosCNPJ.cnae_fiscal} —{' '}
+                              {dadosCNPJ.cnae_fiscal_descricao}
+                            </p>
+                          </div>
+                        )}
+                        {(dadosCNPJ.logradouro ||
+                          dadosCNPJ.bairro ||
+                          dadosCNPJ.municipio ||
+                          dadosCNPJ.cep) && (
+                          <div className="p-3 bg-gray-50 rounded-lg md:col-span-2">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              ENDEREÇO
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {[
+                                [
+                                  dadosCNPJ.descricao_tipo_de_logradouro,
+                                  dadosCNPJ.logradouro,
+                                  dadosCNPJ.numero,
+                                  dadosCNPJ.complemento,
+                                ]
+                                  .filter(Boolean)
+                                  .join(', '),
+                                dadosCNPJ.bairro,
+                                dadosCNPJ.municipio && dadosCNPJ.uf
+                                  ? `${dadosCNPJ.municipio}/${dadosCNPJ.uf}`
+                                  : dadosCNPJ.municipio || dadosCNPJ.uf,
+                                dadosCNPJ.cep ? `CEP ${dadosCNPJ.cep}` : '',
+                              ]
+                                .filter(Boolean)
+                                .join(' — ')}
+                            </p>
+                            <div className="flex gap-2 mt-2">
+                              {coordenadas && (
+                                <a
+                                  href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${coordenadas.latitude},${coordenadas.longitude}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold rounded-md transition-colors"
+                                >
+                                  <MapPin size={12} weight="fill" />
+                                  Street View
+                                </a>
+                              )}
+                              <a
+                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                                  [
+                                    dadosCNPJ.descricao_tipo_de_logradouro,
+                                    dadosCNPJ.logradouro,
+                                    dadosCNPJ.numero,
+                                    dadosCNPJ.bairro,
+                                    dadosCNPJ.municipio,
+                                    dadosCNPJ.uf,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(', '),
+                                )}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold rounded-md transition-colors"
+                              >
+                                <MapPin size={12} />
+                                Google Maps
+                              </a>
+                            </div>
+                          </div>
+                        )}
+                        {dadosCNPJ.ddd_telefone_1 && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              TELEFONE
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {dadosCNPJ.ddd_telefone_1}
+                            </p>
+                          </div>
+                        )}
+                        {dadosCNPJ.email && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              E-MAIL
+                            </p>
+                            <p className="text-sm font-bold text-gray-900 lowercase">
+                              {dadosCNPJ.email}
+                            </p>
+                          </div>
+                        )}
+                        {dadosCNPJ.opcao_pelo_simples != null && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              SIMPLES NACIONAL
+                            </p>
+                            <p
+                              className={`text-sm font-bold ${dadosCNPJ.opcao_pelo_simples ? 'text-green-600' : 'text-gray-900'}`}
+                            >
+                              {dadosCNPJ.opcao_pelo_simples
+                                ? 'Optante'
+                                : 'Não optante'}
+                            </p>
+                          </div>
+                        )}
+                        {dadosCNPJ.opcao_pelo_mei != null && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              MEI
+                            </p>
+                            <p
+                              className={`text-sm font-bold ${dadosCNPJ.opcao_pelo_mei ? 'text-green-600' : 'text-gray-900'}`}
+                            >
+                              {dadosCNPJ.opcao_pelo_mei ? 'Sim' : 'Não'}
+                            </p>
+                          </div>
+                        )}
+                        {dadosCNPJ.descricao_identificador_matriz_filial && (
+                          <div className="p-3 bg-gray-50 rounded-lg">
+                            <p className="text-[10px] font-bold text-gray-500">
+                              TIPO
+                            </p>
+                            <p className="text-sm font-bold text-gray-900">
+                              {dadosCNPJ.descricao_identificador_matriz_filial}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* CNAEs Secundários */}
+                      {dadosCNPJ.cnaes_secundarios?.length > 0 &&
+                        dadosCNPJ.cnaes_secundarios[0].codigo !== 0 && (
+                          <div className="mt-4">
+                            <p className="text-[10px] font-bold text-gray-500 mb-2">
+                              CNAES SECUNDÁRIOS
+                            </p>
+                            <div className="space-y-1 max-h-32 overflow-y-auto">
+                              {dadosCNPJ.cnaes_secundarios.map((cnae, i) => (
+                                <p key={i} className="text-xs text-gray-700">
+                                  <span className="font-mono text-gray-500">
+                                    {cnae.codigo}
+                                  </span>{' '}
+                                  — {cnae.descricao}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                      {/* Quadro Societário (QSA) */}
+                      {dadosCNPJ.qsa?.length > 0 && (
+                        <div className="mt-4">
+                          <p className="text-[10px] font-bold text-gray-500 mb-2">
+                            QUADRO SOCIETÁRIO (QSA)
+                          </p>
+                          <div className="space-y-2">
+                            {dadosCNPJ.qsa.map((socio, i) => (
+                              <div
+                                key={i}
+                                className="p-2 bg-gray-50 rounded-lg flex justify-between items-center"
+                              >
+                                <div>
+                                  <p className="text-sm font-bold text-gray-900">
+                                    {socio.nome_socio}
+                                  </p>
+                                  <p className="text-[10px] text-gray-500">
+                                    {socio.qualificacao_socio}
+                                  </p>
+                                </div>
+                                {socio.data_entrada_sociedade && (
+                                  <p className="text-[10px] text-gray-400">
+                                    Desde{' '}
+                                    {socio.data_entrada_sociedade
+                                      .split('-')
+                                      .reverse()
+                                      .join('/')}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : abaDetalhe === 'resumo' ? (
+                <div className="space-y-6">
                   {/* Resumo Financeiro */}
                   <div>
                     <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
@@ -2186,6 +2697,184 @@ Crosby`;
                           </div>
                         )}
                       </div>
+                    </div>
+                  )}
+                </div>
+              ) : abaDetalhe === 'conversas' ? (
+                <div className="flex flex-col h-full">
+                  {/* Filtro de período */}
+                  <div className="mb-4 p-3 bg-gray-50 rounded-lg space-y-3">
+                    {/* Botões de período rápido */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {[
+                        { label: '7 dias', days: 7 },
+                        { label: '15 dias', days: 15 },
+                        { label: '30 dias', days: 30 },
+                        { label: '60 dias', days: 60 },
+                        { label: '90 dias', days: 90 },
+                      ].map((p) => {
+                        const end = new Date();
+                        const start = new Date();
+                        start.setDate(end.getDate() - p.days);
+                        const startStr = start.toISOString().slice(0, 10);
+                        const endStr = end.toISOString().slice(0, 10);
+                        const isActive =
+                          conversasDateStart === startStr &&
+                          conversasDateEnd === endStr;
+                        return (
+                          <button
+                            key={p.days}
+                            onClick={() => {
+                              setConversasDateStart(startStr);
+                              setConversasDateEnd(endStr);
+                            }}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-colors ${
+                              isActive
+                                ? 'bg-green-600 text-white border-green-600'
+                                : 'bg-white text-gray-600 border-gray-300 hover:border-green-400 hover:text-green-700'
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        );
+                      })}
+                      <button
+                        onClick={() => {
+                          setConversasDateStart('');
+                          setConversasDateEnd('');
+                        }}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-colors ${
+                          conversasDateStart &&
+                          ![
+                            ...[7, 15, 30, 60, 90].map((d) => {
+                              const e = new Date();
+                              const s = new Date();
+                              s.setDate(e.getDate() - d);
+                              return s.toISOString().slice(0, 10);
+                            }),
+                          ].includes(conversasDateStart)
+                            ? 'bg-green-600 text-white border-green-600'
+                            : 'bg-white text-gray-600 border-gray-300 hover:border-green-400 hover:text-green-700'
+                        }`}
+                      >
+                        Personalizado
+                      </button>
+                    </div>
+                    {/* Inputs de data (sempre visíveis) */}
+                    <div className="flex items-end gap-3">
+                      <div className="flex-1">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">
+                          Data Início
+                        </label>
+                        <input
+                          type="date"
+                          value={conversasDateStart}
+                          onChange={(e) =>
+                            setConversasDateStart(e.target.value)
+                          }
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">
+                          Data Fim
+                        </label>
+                        <input
+                          type="date"
+                          value={conversasDateEnd}
+                          onChange={(e) => setConversasDateEnd(e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        />
+                      </div>
+                      <button
+                        onClick={buscarInstancias}
+                        disabled={loadingInstances}
+                        className="px-5 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 shrink-0"
+                      >
+                        {loadingInstances ? (
+                          <CircleNotch size={16} className="animate-spin" />
+                        ) : (
+                          <MagnifyingGlass size={16} />
+                        )}
+                        Buscar
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Loading */}
+                  {loadingInstances && (
+                    <div className="flex items-center justify-center py-12">
+                      <Spinner
+                        size={32}
+                        className="animate-spin text-green-600"
+                      />
+                      <span className="ml-3 text-sm text-gray-500">
+                        Buscando instâncias...
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Cards das instâncias */}
+                  {!loadingInstances && instanceCards.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {instanceCards.map((inst) => (
+                        <div
+                          key={inst.instanceId}
+                          onClick={() => abrirConversaInstancia(inst)}
+                          className="p-4 bg-white border border-gray-200 rounded-xl cursor-pointer hover:shadow-lg hover:border-green-400 transition-all group"
+                        >
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center group-hover:bg-green-200 transition">
+                              <WhatsappLogo
+                                size={22}
+                                className="text-green-600"
+                                weight="fill"
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold text-gray-900 truncate">
+                                {inst.instanceName || 'Instância'}
+                              </p>
+                              <p className="text-[10px] text-gray-400">
+                                {inst.instanceId?.slice(0, 8)}...
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-gray-500">
+                            <span className="font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+                              {inst.messageCount} mensagens
+                            </span>
+                            <span>
+                              {inst.lastMessage
+                                ? new Date(inst.lastMessage).toLocaleDateString(
+                                    'pt-BR',
+                                  )
+                                : ''}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Estado vazio */}
+                  {!loadingInstances && instanceCards.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+                      <WhatsappLogo size={48} className="mb-3 opacity-30" />
+                      <p className="text-sm font-medium">
+                        Selecione um período e clique em Buscar
+                      </p>
+                      <p className="text-xs mt-1">
+                        As conversas serão agrupadas por instância (número).
+                      </p>
+                      {(detalhesCliente?.nr_telefone ||
+                        dadosPessoa?.telefone) && (
+                        <p className="text-[10px] mt-3 text-gray-300">
+                          Tel:{' '}
+                          {detalhesCliente?.nr_telefone ||
+                            dadosPessoa?.telefone}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2416,6 +3105,336 @@ Crosby`;
                 >
                   Fechar
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox para imagem full-res */}
+      {lightboxImg && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-[999]"
+          onClick={() => setLightboxImg(null)}
+        >
+          <div
+            className="relative max-w-[90vw] max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setLightboxImg(null)}
+              className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-white shadow flex items-center justify-center z-10 hover:bg-gray-100"
+            >
+              <X size={16} weight="bold" />
+            </button>
+            <img
+              src={lightboxImg}
+              alt="imagem ampliada"
+              className="rounded-lg max-w-[90vw] max-h-[90vh] object-contain"
+            />
+            {loadingMediaId && (
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-2">
+                <CircleNotch size={12} className="animate-spin" /> Carregando
+                alta resolução...
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal iPhone — conversa da instância */}
+      {selectedInstance && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-[998]"
+          onClick={() => setSelectedInstance(null)}
+        >
+          <div className="relative mx-4" onClick={(e) => e.stopPropagation()}>
+            {/* Frame iPhone */}
+            <div className="w-[375px] max-w-[calc(100vw-2rem)] h-[720px] max-h-[calc(100vh-2rem)] bg-black rounded-[50px] p-3 shadow-2xl relative">
+              {/* Notch */}
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[120px] h-[30px] bg-black rounded-b-2xl z-10" />
+              {/* Screen */}
+              <div
+                className="w-full h-full bg-[#e5ddd5] rounded-[38px] overflow-hidden flex flex-col"
+                style={{
+                  backgroundImage:
+                    "url(\"data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z' fill='%23d4cfc4' fill-opacity='.15' fill-rule='evenodd'/%3E%3C/svg%3E\")",
+                }}
+              >
+                {/* Header WhatsApp */}
+                <div className="bg-[#075e54] pt-10 pb-3 px-4 flex items-center gap-3 shrink-0">
+                  <button
+                    onClick={() => setSelectedInstance(null)}
+                    className="text-white hover:text-gray-200"
+                  >
+                    <X size={20} weight="bold" />
+                  </button>
+                  <div className="w-9 h-9 rounded-full bg-gray-300 flex items-center justify-center">
+                    <WhatsappLogo
+                      size={20}
+                      className="text-white"
+                      weight="fill"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-bold truncate">
+                      {selectedInstance.instanceName}
+                    </p>
+                    <p className="text-green-200 text-[10px]">
+                      {phoneModalTotal} mensagens • {conversasPhone}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Mensagens */}
+                <div className="flex-1 overflow-y-auto p-3 space-y-1">
+                  {loadingPhoneModal ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Spinner
+                        size={24}
+                        className="animate-spin text-green-600"
+                      />
+                      <span className="ml-2 text-xs text-gray-500">
+                        Carregando...
+                      </span>
+                    </div>
+                  ) : phoneModalMessages.length === 0 ? (
+                    <div className="flex items-center justify-center py-12">
+                      <p className="text-xs text-gray-400">
+                        Nenhuma mensagem encontrada
+                      </p>
+                    </div>
+                  ) : (
+                    phoneModalMessages.map((msg, idx) => {
+                      const isFromMe = msg.key?.fromMe === true;
+                      const msgType = msg.messageType;
+                      const prevMsg =
+                        idx > 0 ? phoneModalMessages[idx - 1] : null;
+                      const msgDate = msg.msg_ts_tz
+                        ? new Date(msg.msg_ts_tz).toLocaleDateString('pt-BR')
+                        : '';
+                      const prevDate = prevMsg?.msg_ts_tz
+                        ? new Date(prevMsg.msg_ts_tz).toLocaleDateString(
+                            'pt-BR',
+                          )
+                        : '';
+                      const showDateSep = msgDate && msgDate !== prevDate;
+                      const msgTime = msg.msg_ts_tz
+                        ? new Date(msg.msg_ts_tz).toLocaleTimeString('pt-BR', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : '';
+                      if (
+                        msgType === 'protocolMessage' ||
+                        msgType === 'reactionMessage'
+                      )
+                        return null;
+
+                      let content = null;
+                      if (
+                        msgType === 'conversation' ||
+                        msgType === 'extendedTextMessage' ||
+                        msgType === 'editedMessage'
+                      ) {
+                        content = (
+                          <p className="text-[12px] leading-relaxed whitespace-pre-wrap break-words">
+                            {msg.text_content || ''}
+                          </p>
+                        );
+                      } else if (
+                        msgType === 'imageMessage' ||
+                        msgType === 'albumMessage'
+                      ) {
+                        const imgData =
+                          msg.message?.imageMessage ||
+                          msg.message?.albumMessage;
+                        const thumb = imgData?.jpegThumbnail;
+                        content = (
+                          <div>
+                            {thumb ? (
+                              <div
+                                className="relative cursor-pointer group"
+                                onClick={() => handleImageClickRC(msg)}
+                              >
+                                <img
+                                  src={
+                                    mediaCache[msg.id]?.base64
+                                      ? `data:${mediaCache[msg.id].mimetype || 'image/jpeg'};base64,${mediaCache[msg.id].base64}`
+                                      : `data:image/jpeg;base64,${thumb}`
+                                  }
+                                  alt="imagem"
+                                  className="rounded-lg max-w-[180px] max-h-[180px]"
+                                />
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 rounded-lg transition">
+                                  {loadingMediaId === msg.id ? (
+                                    <CircleNotch
+                                      size={20}
+                                      className="text-white animate-spin"
+                                    />
+                                  ) : (
+                                    <MagnifyingGlassPlus
+                                      size={20}
+                                      className="text-white opacity-0 group-hover:opacity-100 transition"
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <div
+                                className="flex items-center gap-1 text-[12px] cursor-pointer hover:underline"
+                                onClick={() => handleImageClickRC(msg)}
+                              >
+                                <Image size={12} className="opacity-60" />
+                                <span className="italic opacity-75">
+                                  Imagem
+                                </span>
+                              </div>
+                            )}
+                            {msg.text_content && (
+                              <p className="text-[12px] mt-1 whitespace-pre-wrap break-words">
+                                {msg.text_content}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      } else if (
+                        msgType === 'audioMessage' ||
+                        msgType === 'ptvMessage'
+                      ) {
+                        const audioData =
+                          msg.message?.audioMessage || msg.message?.ptvMessage;
+                        const seconds = audioData?.seconds || 0;
+                        const isExpired = mediaCache[msg.id]?.expired;
+                        content = (
+                          <div
+                            className={`flex items-center gap-2 min-w-[140px] max-w-[200px] select-none ${isExpired ? 'opacity-60' : 'cursor-pointer'}`}
+                            onClick={() => !isExpired && handlePlayAudioRC(msg)}
+                          >
+                            <div className="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
+                              {loadingMediaId === msg.id ? (
+                                <CircleNotch
+                                  size={14}
+                                  className="text-white animate-spin"
+                                />
+                              ) : playingAudioId === msg.id ? (
+                                <Pause
+                                  size={14}
+                                  className="text-white"
+                                  weight="fill"
+                                />
+                              ) : (
+                                <Play
+                                  size={14}
+                                  className="text-white"
+                                  weight="fill"
+                                />
+                              )}
+                            </div>
+                            <div className="h-[2px] flex-1 bg-gray-300 rounded-full" />
+                            <span className="text-[10px] text-gray-500 shrink-0">
+                              {isExpired
+                                ? '⏱'
+                                : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`}
+                            </span>
+                          </div>
+                        );
+                      } else if (msgType === 'videoMessage') {
+                        const vidData = msg.message?.videoMessage;
+                        const vidThumb = vidData?.jpegThumbnail;
+                        content = (
+                          <div className="relative inline-block">
+                            {vidThumb ? (
+                              <img
+                                src={`data:image/jpeg;base64,${vidThumb}`}
+                                alt="vídeo"
+                                className="rounded-lg max-w-[180px] max-h-[180px]"
+                              />
+                            ) : (
+                              <div className="w-[140px] h-[80px] bg-gray-200 rounded-lg flex items-center justify-center">
+                                <VideoCamera
+                                  size={20}
+                                  className="text-gray-400"
+                                />
+                              </div>
+                            )}
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="w-9 h-9 rounded-full bg-black/50 flex items-center justify-center">
+                                <VideoCamera
+                                  size={18}
+                                  className="text-white"
+                                  weight="fill"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      } else if (msgType === 'documentMessage') {
+                        content = (
+                          <div className="flex items-center gap-1 text-[12px]">
+                            <File size={12} className="opacity-60" />
+                            <span className="italic opacity-75">Documento</span>
+                          </div>
+                        );
+                      } else if (msgType === 'stickerMessage') {
+                        const stickerThumb =
+                          msg.message?.stickerMessage?.jpegThumbnail;
+                        content = stickerThumb ? (
+                          <img
+                            src={`data:image/webp;base64,${stickerThumb}`}
+                            className="w-[80px] h-[80px] object-contain"
+                            alt="sticker"
+                          />
+                        ) : (
+                          <span className="text-[12px] italic">Figurinha</span>
+                        );
+                      } else {
+                        content = (
+                          <p className="text-[12px] italic opacity-75">
+                            {msg.text_content || msgType}
+                          </p>
+                        );
+                      }
+
+                      return (
+                        <React.Fragment key={msg.id}>
+                          {showDateSep && (
+                            <div className="flex justify-center my-2">
+                              <span className="bg-white/80 text-[9px] font-bold text-gray-500 px-2 py-0.5 rounded-full shadow-sm">
+                                {msgDate}
+                              </span>
+                            </div>
+                          )}
+                          <div
+                            className={`flex ${isFromMe ? 'justify-end' : 'justify-start'}`}
+                          >
+                            <div
+                              className={`relative max-w-[80%] px-2.5 py-1 rounded-lg shadow-sm ${isFromMe ? 'bg-[#d9fdd3]' : 'bg-white'}`}
+                            >
+                              {!isFromMe && msg.pushName && (
+                                <p className="text-[9px] font-bold text-emerald-700 mb-0.5">
+                                  {msg.pushName}
+                                </p>
+                              )}
+                              {content}
+                              <p
+                                className={`text-[8px] mt-0.5 text-right ${isFromMe ? 'text-gray-500' : 'text-gray-400'}`}
+                              >
+                                {msgTime}
+                              </p>
+                            </div>
+                          </div>
+                        </React.Fragment>
+                      );
+                    })
+                  )}
+                  <div ref={conversasEndRef} />
+                </div>
+
+                {/* Bottom bar (home indicator) */}
+                <div className="h-6 bg-[#f0f0f0] flex items-center justify-center shrink-0 rounded-b-[38px]">
+                  <div className="w-[120px] h-[4px] bg-gray-400 rounded-full" />
+                </div>
               </div>
             </div>
           </div>

@@ -7346,4 +7346,42 @@ router.post(
   }),
 );
 
+/**
+ * @route GET /totvs/cnpj/:cnpj
+ * @desc Consulta dados completos de CNPJ via BrasilAPI (gratuita, sem auth)
+ */
+router.get(
+  '/cnpj/:cnpj',
+  asyncHandler(async (req, res) => {
+    const cnpj = req.params.cnpj.replace(/\D/g, '');
+    if (cnpj.length !== 14) {
+      return errorResponse(res, 'CNPJ inválido — deve conter 14 dígitos', 400);
+    }
+    const response = await axios.get(
+      `https://brasilapi.com.br/api/cnpj/v1/${cnpj}`,
+      { timeout: 15000 },
+    );
+    successResponse(res, response.data, 'CNPJ consultado com sucesso');
+  }),
+);
+
+/**
+ * @route GET /totvs/cep/:cep
+ * @desc Consulta CEP com geolocalização via BrasilAPI v2 (gratuita, sem auth)
+ */
+router.get(
+  '/cep/:cep',
+  asyncHandler(async (req, res) => {
+    const cep = req.params.cep.replace(/\D/g, '');
+    if (cep.length !== 8) {
+      return errorResponse(res, 'CEP inválido — deve conter 8 dígitos', 400);
+    }
+    const response = await axios.get(
+      `https://brasilapi.com.br/api/cep/v2/${cep}`,
+      { timeout: 15000 },
+    );
+    successResponse(res, response.data, 'CEP consultado com sucesso');
+  }),
+);
+
 export default router;

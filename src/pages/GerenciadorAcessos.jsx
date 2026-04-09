@@ -274,6 +274,11 @@ const AVAILABLE_PAGES = [
     name: 'Gerenciador de Avisos',
     category: 'Administração',
   },
+  {
+    path: '/api-claude',
+    name: 'API Claude',
+    category: 'Administração',
+  },
 ];
 
 const GerenciadorAcessos = () => {
