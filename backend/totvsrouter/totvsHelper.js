@@ -58,6 +58,7 @@ async function fetchBranchesList(token) {
             b.fantasyName ||
             b.description ||
             `Filial ${b.code}`,
+          groupName: b.branchGroupName || null,
         }))
         .filter((b) => !isNaN(b.code) && b.code > 0);
       cachedBranchCodes = cachedBranchesWithNames.map((b) => b.code);
