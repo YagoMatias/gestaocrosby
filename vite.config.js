@@ -9,6 +9,8 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:4001',
         changeOrigin: true,
+        timeout: 600000, // 10 min — rotas pesadas como top-customers
+        proxyTimeout: 600000,
       },
     },
   },

@@ -97,6 +97,8 @@ const PainelVendas = lazy(() => import('./pages/PainelVendas'));
 const VoucherUsage = lazy(() => import('./pages/VoucherUsage'));
 const CatalogoAdmin = lazy(() => import('./pages/CatalogoAdmin'));
 const CrosbyManage = lazy(() => import('./pages/CrosbyManage'));
+const ExtratoTotvs = lazy(() => import('./pages/ExtratoTotvs'));
+const TopClientes = lazy(() => import('./pages/TopClientes'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -162,6 +164,7 @@ const protectedRoutes = [
   { path: '/consulta-cliente', component: ConsultaCliente },
   { path: '/clientes-totvs', component: ClientesTotvs },
   { path: '/creditos-clientes', component: CreditosClientes },
+  { path: '/top-clientes', component: TopClientes },
   { path: '/solicitacao-baixa', component: SolicitacaoBaixa },
   { path: '/minhas-solicitacoes-baixa', component: MinhasSolicitacoesBaixa },
   {
@@ -184,6 +187,7 @@ const protectedRoutes = [
   { path: '/voucher-usage', component: VoucherUsage },
   { path: '/catalogo-admin', component: CatalogoAdmin },
   { path: '/crosby-manage', component: CrosbyManage },
+  { path: '/extrato-totvs', component: ExtratoTotvs },
 ];
 
 // Layout compartilhado - estável, preserva estado das páginas ao interagir com sidebar

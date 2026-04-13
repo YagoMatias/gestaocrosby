@@ -82,6 +82,11 @@ const AVAILABLE_PAGES = [
     name: 'Extratos Bancos',
     category: 'Financeiro',
   },
+  {
+    path: '/extrato-totvs',
+    name: 'Extrato TOTVS',
+    category: 'Financeiro',
+  },
 
   // CMV
   { path: '/cmv-consolidado', name: 'CMV Consolidado', category: 'CMV' },

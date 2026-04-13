@@ -150,6 +150,13 @@ const financeiro = [
     color: 'text-purple-600',
     roles: ['owner', 'admin', 'manager', 'user'],
   },
+  {
+    name: 'Extrato TOTVS',
+    href: '/extrato-totvs',
+    icon: Bank,
+    color: 'text-teal-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
 ];
 
 const faturamento = [
@@ -387,6 +394,12 @@ const clientesItems = [
     href: '/creditos-clientes',
     icon: Wallet,
     color: 'text-emerald-600',
+  },
+  {
+    name: 'Top Clientes',
+    href: '/top-clientes',
+    icon: Trophy,
+    color: 'text-amber-600',
   },
 ];
 

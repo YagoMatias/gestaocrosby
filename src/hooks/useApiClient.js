@@ -21,7 +21,16 @@ const jsonHeaders = {
 const useApiClient = () => {
   // Método auxiliar para requisições POST/PUT/DELETE
   const apiMutate = useCallback(
-    async (endpoint, method = 'POST', body = null, params = {}) => {
+    async (
+      endpoint,
+      method = 'POST',
+      body = null,
+      params = {},
+      options = {},
+    ) => {
+      const { timeout } = options;
+      let controller;
+      let timeoutId;
       try {
         // Construir URL com parâmetros (para GET em métodos DELETE)
         const url = new URL(endpoint, API_BASE_URL);
@@ -34,16 +43,22 @@ const useApiClient = () => {
 
         console.log(`🌐 API ${method}:`, url.toString(), body ? { body } : '');
 
-        const options = {
+        const fetchOptions = {
           method,
           headers: jsonHeaders,
         };
 
-        if (body && (method === 'POST' || method === 'PUT')) {
-          options.body = JSON.stringify(body);
+        if (timeout) {
+          controller = new AbortController();
+          fetchOptions.signal = controller.signal;
+          timeoutId = setTimeout(() => controller.abort(), timeout);
         }
 
-        const response = await fetch(url.toString(), options);
+        if (body && (method === 'POST' || method === 'PUT')) {
+          fetchOptions.body = JSON.stringify(body);
+        }
+
+        const response = await fetch(url.toString(), fetchOptions);
 
         if (!response.ok) {
           let errorBody = null;
@@ -69,8 +84,15 @@ const useApiClient = () => {
 
         return result;
       } catch (error) {
+        if (error.name === 'AbortError') {
+          throw new Error(
+            'Requisição expirou (timeout). Tente com um período menor ou menos lojas.',
+          );
+        }
         console.error(`❌ Erro na API ${method}:`, error);
         throw error;
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
       }
     },
     [],
@@ -725,6 +747,24 @@ const useApiClient = () => {
 
     salePanelSellers: (body) =>
       apiMutate('/api/totvs/sale-panel/sellers', 'POST', body),
+
+    sellerPanelTopCustomers: (body) =>
+      apiMutate(
+        '/api/totvs/seller-panel/top-customers',
+        'POST',
+        body,
+        {},
+        { timeout: 600000 },
+      ),
+
+    sellerPanelTopCustomersTransactions: (body) =>
+      apiMutate(
+        '/api/totvs/seller-panel/top-customers/transactions',
+        'POST',
+        body,
+        {},
+        { timeout: 300000 },
+      ),
   };
 
   const franchise = {

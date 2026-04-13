@@ -424,7 +424,7 @@ export default function PainelVendas() {
             650, 870, 880, 890, 891, 910, 920, 930, 940, 950, 960, 970, 980,
           ]);
           const EXCLUDED_SELLERS = new Set([
-            59, 40, 20, 161, 241, 25, 165, 15, 779,
+            59, 40, 20, 161, 241, 25, 165, 15, 779, 65, 177, 259, 21, 26,
           ]);
 
           const varejoBranches = sellers.branches
@@ -591,6 +591,63 @@ export default function PainelVendas() {
             itemQuantity: 0,
           };
 
+          // Vendedores fixos MULTIMARCAS
+          const MULTIMARCAS_CODES = [65, 177, 259, 21];
+          const multimarcasSellers = MULTIMARCAS_CODES.map((code) => {
+            const s = {
+              seller_code: code,
+              seller_name: '',
+              seller_sale_qty: 0,
+              seller_sale_value: 0,
+            };
+            for (const b of sellers.branches) {
+              const found = b.dataRow?.find((r) => r.seller_code === code);
+              if (found) {
+                if (!s.seller_name) s.seller_name = found.seller_name;
+                s.seller_sale_qty += found.seller_sale_qty || 0;
+                s.seller_sale_value += found.seller_sale_value || 0;
+              }
+            }
+            return s;
+          }).filter((s) => s.seller_sale_qty > 0);
+          const multimarcasBranch = {
+            branch_code: 0,
+            branch_name: 'MULTIMARCAS',
+            dataRow: multimarcasSellers,
+            invoiceQuantity: multimarcasSellers.reduce(
+              (sum, s) => sum + s.seller_sale_qty,
+              0,
+            ),
+            invoiceValue: multimarcasSellers.reduce(
+              (sum, s) => sum + s.seller_sale_value,
+              0,
+            ),
+            itemQuantity: 0,
+          };
+
+          // Vendedor fixo B2M INBOUND: 26 - DAVID ALMEIDA
+          const b2mSeller = {
+            seller_code: 26,
+            seller_name: 'DAVID ALMEIDA',
+            seller_sale_qty: 0,
+            seller_sale_value: 0,
+          };
+          for (const b of sellers.branches) {
+            const found = b.dataRow?.find((s) => s.seller_code === 26);
+            if (found) {
+              b2mSeller.seller_sale_qty += found.seller_sale_qty || 0;
+              b2mSeller.seller_sale_value += found.seller_sale_value || 0;
+            }
+          }
+          const b2mBranch = {
+            branch_code: 0,
+            branch_name: 'B2M INBOUND',
+            dataRow: [b2mSeller],
+            invoiceQuantity: b2mSeller.seller_sale_qty,
+            invoiceValue: b2mSeller.seller_sale_value,
+            itemQuantity: 0,
+          };
+
           return (
             <div className="flex flex-wrap gap-3">
               {varejoBranches.length > 0 && (
@@ -734,6 +791,64 @@ export default function PainelVendas() {
                       </p>
                       <p className="text-[10px] text-gray-400">
                         {formatInt(revendaBranch.invoiceQuantity)} vendas
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {multimarcasSellers.length > 0 && (
+                <Card
+                  className="flex-1 min-w-[200px] cursor-pointer hover:ring-2 hover:ring-[#000638]/30 transition-all"
+                  onClick={() =>
+                    setModalSellers({
+                      title: 'Multimarcas',
+                      branches: [multimarcasBranch],
+                    })
+                  }
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="p-2 rounded-full bg-indigo-50 shrink-0">
+                      <Storefront size={20} className="text-indigo-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500 font-medium">
+                        Multimarcas
+                      </p>
+                      <p className="text-base font-bold text-[#000638]">
+                        R$ {formatBRL(multimarcasBranch.invoiceValue)}
+                      </p>
+                      <p className="text-[10px] text-gray-400">
+                        {formatInt(multimarcasBranch.invoiceQuantity)} vendas
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {b2mSeller.seller_sale_qty > 0 && (
+                <Card
+                  className="flex-1 min-w-[200px] cursor-pointer hover:ring-2 hover:ring-[#000638]/30 transition-all"
+                  onClick={() =>
+                    setModalSellers({
+                      title: 'B2M Inbound',
+                      branches: [b2mBranch],
+                    })
+                  }
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="p-2 rounded-full bg-rose-50 shrink-0">
+                      <Storefront size={20} className="text-rose-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500 font-medium">
+                        B2M Inbound
+                      </p>
+                      <p className="text-base font-bold text-[#000638]">
+                        R$ {formatBRL(b2mSeller.seller_sale_value)}
+                      </p>
+                      <p className="text-[10px] text-gray-400">
+                        {formatInt(b2mSeller.seller_sale_qty)} vendas
                       </p>
                     </div>
                   </CardContent>
