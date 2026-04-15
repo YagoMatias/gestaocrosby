@@ -7,3 +7,4 @@ backend/node_modules/
 backend/.env
 planilhas/
 # ... outras regras existentes ...
+backend/.cache/
