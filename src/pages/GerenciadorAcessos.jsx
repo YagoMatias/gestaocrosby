@@ -99,6 +99,12 @@ const AVAILABLE_PAGES = [
   { path: '/dashboard-varejo', name: 'Dashboard Varejo', category: 'Varejo' },
   { path: '/metas-varejo', name: 'Metas Varejo', category: 'Varejo' },
   { path: '/credev-varejo', name: 'CREDEV Varejo', category: 'Varejo' },
+  { path: '/top-clientes', name: 'Top Clientes', category: 'Varejo' },
+  {
+    path: '/documento-bluecred',
+    name: 'Documento Bluecred',
+    category: 'Varejo',
+  },
 
   // Multimarcas
   {

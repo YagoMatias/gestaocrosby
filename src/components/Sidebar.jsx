@@ -235,6 +235,24 @@ const varejo = [
     icon: Buildings,
     color: 'text-green-600',
   },
+  {
+    name: 'Top Clientes',
+    href: '/top-clientes',
+    icon: Trophy,
+    color: 'text-amber-600',
+  },
+  {
+    name: 'Documento Bluecred',
+    href: '/documento-bluecred',
+    icon: FileText,
+    color: 'text-blue-600',
+  },
+  {
+    name: 'Clientes Bluecred',
+    href: '/clientes-bluecred',
+    icon: ClipboardText,
+    color: 'text-blue-700',
+  },
 ];
 
 const multimarcas = [

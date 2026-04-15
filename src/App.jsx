@@ -99,6 +99,8 @@ const CatalogoAdmin = lazy(() => import('./pages/CatalogoAdmin'));
 const CrosbyManage = lazy(() => import('./pages/CrosbyManage'));
 const ExtratoTotvs = lazy(() => import('./pages/ExtratoTotvs'));
 const TopClientes = lazy(() => import('./pages/TopClientes'));
+const DocumentoBluecred = lazy(() => import('./pages/DocumentoBluecred'));
+const ClientesBluecred = lazy(() => import('./pages/ClientesBluecred'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -165,6 +167,8 @@ const protectedRoutes = [
   { path: '/clientes-totvs', component: ClientesTotvs },
   { path: '/creditos-clientes', component: CreditosClientes },
   { path: '/top-clientes', component: TopClientes },
+  { path: '/documento-bluecred', component: DocumentoBluecred },
+  { path: '/clientes-bluecred', component: ClientesBluecred },
   { path: '/solicitacao-baixa', component: SolicitacaoBaixa },
   { path: '/minhas-solicitacoes-baixa', component: MinhasSolicitacoesBaixa },
   {
