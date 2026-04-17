@@ -16,7 +16,6 @@ const Home = lazy(() => import('./pages/Home'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const BIExterno = lazy(() => import('./pages/BIExterno'));
 const ContasAPagar = lazy(() => import('./pages/ContasAPagar'));
-const ContasAPagarEmissao = lazy(() => import('./pages/ContasAPagarEmissao'));
 const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
 const BatidaCarteira = lazy(() => import('./pages/BatidaCarteira'));
 const ContasPagarFranquias = lazy(() => import('./pages/ContasPagarFranquias'));
@@ -123,7 +122,6 @@ const protectedRoutes = [
   { path: '/dashboard', component: Dashboard },
   { path: '/bi-externo', component: BIExterno },
   { path: '/contas-a-pagar', component: ContasAPagar },
-  { path: '/contas-a-pagar-emissao', component: ContasAPagarEmissao },
   { path: '/contas-a-receber', component: ContasAReceber },
   { path: '/batida-carteira', component: BatidaCarteira },
   { path: '/contas-pagar-franquias', component: ContasPagarFranquias },

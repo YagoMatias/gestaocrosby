@@ -57,26 +57,10 @@ const ChevronIcon = ({ open }) =>
 const financeiro = [
   {
     name: 'Contas a Pagar',
-    href: '#',
+    href: '/contas-a-pagar',
     icon: Money,
     color: 'text-red-600',
     roles: ['owner', 'admin', 'manager', 'user'],
-    children: [
-      {
-        name: 'Vencimento',
-        href: '/contas-a-pagar',
-        icon: Calendar,
-        color: 'text-red-600',
-        roles: ['owner', 'admin', 'manager', 'user'],
-      },
-      {
-        name: 'Emissão',
-        href: '/contas-a-pagar-emissao',
-        icon: Calendar,
-        color: 'text-red-600',
-        roles: ['owner', 'admin', 'manager', 'user'],
-      },
-    ],
   },
   {
     name: 'Contas a Receber',
