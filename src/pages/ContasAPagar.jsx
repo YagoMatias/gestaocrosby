@@ -99,6 +99,8 @@ const ContasAPagar = (props) => {
 
   // ─── Estado Filtro Pagamento ───
   const [filtroPagamento, setFiltroPagamento] = useState('TODOS');
+  const [valorInicial, setValorInicial] = useState('');
+  const [valorFinal, setValorFinal] = useState('');
 
   // ─── Estado Chat IA ───
   const [chatIAAberto, setChatIAAberto] = useState(false);
@@ -551,6 +553,9 @@ const ContasAPagar = (props) => {
         modo: modoData,
         situacao: situacao || 'N',
         previsao: previsao === 'PREVISÃO' ? 'PREVISAO' : previsao || 'TODOS',
+        filtroPagamento,
+        ...(valorInicial !== '' && { valorInicial: parseFloat(valorInicial) }),
+        ...(valorFinal !== '' && { valorFinal: parseFloat(valorFinal) }),
       };
 
       if (fornecedorBuscaSelecionado) {
@@ -698,6 +703,9 @@ const ContasAPagar = (props) => {
       blockedCostCenters,
       despesasFixas,
       modoData,
+      filtroPagamento,
+      valorInicial,
+      valorFinal,
     ],
   );
 
@@ -743,6 +751,12 @@ const ContasAPagar = (props) => {
         buscarFornecedorPorNome={buscarFornecedorPorNome}
         limparFornecedorBusca={limparFornecedorBusca}
         handleFiltrar={handleFiltrarFn}
+        filtroPagamento={filtroPagamento}
+        setFiltroPagamento={setFiltroPagamento}
+        valorInicial={valorInicial}
+        setValorInicial={setValorInicial}
+        valorFinal={valorFinal}
+        setValorFinal={setValorFinal}
       />
 
       {/* Cards de Resumo */}

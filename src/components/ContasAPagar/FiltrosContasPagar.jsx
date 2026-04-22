@@ -43,12 +43,18 @@ const FiltrosContasPagar = React.memo(
     buscarFornecedorPorNome,
     limparFornecedorBusca,
     handleFiltrar,
+    filtroPagamento,
+    setFiltroPagamento,
+    valorInicial,
+    setValorInicial,
+    valorFinal,
+    setValorFinal,
   }) => {
     return (
       <div className="mb-4">
         <form
           onSubmit={handleFiltrar}
-          className="flex flex-col bg-white p-3 rounded-lg shadow-lg w-full max-w-4xl mx-auto border border-[#000638]/10"
+          className="flex flex-col bg-white p-3 rounded-lg shadow-lg w-full border border-[#000638]/10"
         >
           <div className="mb-2">
             <span className="text-lg font-bold text-[#000638] flex items-center gap-1">
@@ -60,8 +66,9 @@ const FiltrosContasPagar = React.memo(
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-1 mb-3">
-            <div className="lg:col-span-2">
+          {/* Linha 1: Empresas | Tipo Data | Data Início | Data Fim | Situação | Pagamento | Valor Inicial | Valor Final */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2 mb-2">
+            <div className="col-span-2">
               <FiltroEmpresa
                 empresasSelecionadas={empresasSelecionadas}
                 onSelectEmpresas={handleSelectEmpresas}
@@ -121,9 +128,52 @@ const FiltrosContasPagar = React.memo(
                 <option value="Q">QUEBRADA</option>
               </select>
             </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Pagamento
+              </label>
+              <select
+                value={filtroPagamento}
+                onChange={(e) => setFiltroPagamento(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              >
+                <option value="TODOS">TODOS</option>
+                <option value="ABERTO">ABERTO</option>
+                <option value="PAGO">PAGO</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Valor Inicial (R$)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={valorInicial}
+                onChange={(e) => setValorInicial(e.target.value)}
+                placeholder="0,00"
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Valor Final (R$)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={valorFinal}
+                onChange={(e) => setValorFinal(e.target.value)}
+                placeholder="0,00"
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 text-xs"
+              />
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {/* Linha 2: Previsão | Fornecedor | Fantasia | Despesas | Duplicata | Centro de Custo | Botão */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                 Previsão
@@ -274,10 +324,10 @@ const FiltrosContasPagar = React.memo(
                 dadosCentroCusto={dadosCentroCusto}
               />
             </div>
-            <div className="flex items-center">
+            <div className="flex items-end">
               <button
                 type="submit"
-                className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors h-7 text-xs font-bold shadow-md tracking-wide uppercase"
+                className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1.5 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full justify-center text-xs font-bold shadow-md tracking-wide uppercase"
                 disabled={loading || !dataInicio || !dataFim}
               >
                 {loading ? (
