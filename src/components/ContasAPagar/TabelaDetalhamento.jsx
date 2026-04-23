@@ -123,6 +123,7 @@ const TabelaDetalhamento = React.memo(
     handleApplyFilter,
     abrirModalDetalhes,
     exportarExcelDetalhamento,
+    onEnviarPagamento,
     hasRole,
     filtroPagamento,
     setFiltroPagamento,
@@ -298,6 +299,16 @@ const TabelaDetalhamento = React.memo(
             >
               Baixar Excel
             </button>
+            {onEnviarPagamento && (
+              <button
+                onClick={onEnviarPagamento}
+                disabled={linhasSelecionadasAgrupadas.size === 0}
+                className="text-xs px-2 py-1 bg-[#000638] text-white rounded hover:bg-[#001060] disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-semibold"
+                title="Enviar títulos selecionados para Liberação de Pagamento"
+              >
+                Enviar para Pagamento ({linhasSelecionadasAgrupadas.size})
+              </button>
+            )}
             {/* Filtro PAGO / ABERTO / TODOS */}
             <div className="flex items-center gap-1 ml-auto">
               <span className="text-xs text-gray-500 font-medium">Status:</span>

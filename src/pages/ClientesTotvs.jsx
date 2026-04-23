@@ -1,20 +1,22 @@
 import React, { useState, useRef } from 'react';
 import { API_BASE_URL } from '../config/constants';
 
-const BATCH_SIZE = 500;
-const MAX_CONSECUTIVE_EMPTY = 10;
-const MAX_CODE = 100000;
+const PAGE_SIZE = 100;
+const MAX_PAGES_PER_TYPE = 5000;
 
 export default function ClientesTotvs() {
   const [processando, setProcessando] = useState(false);
   const [lotes, setLotes] = useState([]);
-  const [totalEnviados, setTotalEnviados] = useState(0);
+  const [totalInseridos, setTotalInseridos] = useState(0);
+  const [totalIgnorados, setTotalIgnorados] = useState(0);
+  const [totalErros, setTotalErros] = useState(0);
   const [totalPF, setTotalPF] = useState(0);
   const [totalPJ, setTotalPJ] = useState(0);
   const [status, setStatus] = useState(null);
   const [personCode, setPersonCode] = useState('');
-  const [codigoInicial, setCodigoInicial] = useState('1');
   const [ultimoLote, setUltimoLote] = useState([]);
+  const [ignorados, setIgnorados] = useState([]);
+  const [erros, setErros] = useState([]);
   const cancelRef = useRef(false);
 
   const saveBatch = async (clientes) => {
@@ -29,127 +31,194 @@ export default function ClientesTotvs() {
     return resp.json();
   };
 
-  // Processo principal: busca em lotes de 500 códigos e salva cada um
-  const handleBuscarTodos = async () => {
-    setProcessando(true);
-    setLotes([]);
-    setUltimoLote([]);
-    setTotalEnviados(0);
-    setTotalPF(0);
-    setTotalPJ(0);
-    setStatus(null);
-    cancelRef.current = false;
+  const fetchRawPage = async (type, page) => {
+    const resp = await fetch(
+      `${API_BASE_URL}/api/totvs/clientes/fetch-raw-page?type=${type}&page=${page}&pageSize=${PAGE_SIZE}`,
+    );
+    return resp.json();
+  };
 
-    let startCode = Math.max(1, parseInt(codigoInicial, 10) || 1);
-    let loteNum = 0;
-    let consecutiveEmpty = 0;
-    let totalSent = 0;
-    let pfCount = 0;
-    let pjCount = 0;
-    const allLotes = [];
+  const processarTipo = async (tipo, estado) => {
+    let page = 1;
+    let hasNext = true;
 
-    while (startCode <= MAX_CODE && consecutiveEmpty < MAX_CONSECUTIVE_EMPTY) {
-      if (cancelRef.current) {
-        setStatus({
-          type: 'warning',
-          msg: `Cancelado. ${totalSent} clientes enviados em ${allLotes.filter((l) => l.count > 0).length} lotes.`,
-        });
-        break;
-      }
-
-      const endCode = startCode + BATCH_SIZE - 1;
-      loteNum++;
+    while (hasNext && page <= MAX_PAGES_PER_TYPE) {
+      if (cancelRef.current) break;
 
       setStatus({
         type: 'info',
-        msg: `Buscando lote ${loteNum} (códigos ${startCode} a ${endCode})...`,
+        msg: `Buscando ${tipo} - página ${page}...`,
       });
 
+      let fetchJson;
       try {
-        const resp = await fetch(
-          `${API_BASE_URL}/api/totvs/clientes/fetch-batch?startCode=${startCode}&endCode=${endCode}`,
-        );
-        const json = await resp.json();
-
-        if (json.success && json.data?.clientes?.length > 0) {
-          const clientes = json.data.clientes;
-          consecutiveEmpty = 0;
-
-          setStatus({
-            type: 'info',
-            msg: `Salvando lote ${loteNum} (${clientes.length} clientes)...`,
-          });
-
-          const saveJson = await saveBatch(clientes);
-
-          totalSent += clientes.length;
-          pfCount += json.data.totalPF || 0;
-          pjCount += json.data.totalPJ || 0;
-
-          const lote = {
-            num: loteNum,
-            startCode,
-            endCode,
-            count: clientes.length,
-            pfCount: json.data.totalPF || 0,
-            pjCount: json.data.totalPJ || 0,
-            saved: saveJson.success
-              ? saveJson.data?.inserted || clientes.length
-              : 0,
-            errors: saveJson.data?.errors || 0,
-            status: saveJson.success ? 'enviado' : 'erro',
-            duration: json.data.duration,
-          };
-          allLotes.push(lote);
-          setLotes([...allLotes]);
-          setUltimoLote(clientes);
-          setTotalEnviados(totalSent);
-          setTotalPF(pfCount);
-          setTotalPJ(pjCount);
-        } else {
-          consecutiveEmpty++;
-          allLotes.push({
-            num: loteNum,
-            startCode,
-            endCode,
-            count: 0,
-            status: 'vazio',
-          });
-          setLotes([...allLotes]);
-        }
+        fetchJson = await fetchRawPage(tipo, page);
       } catch (err) {
-        allLotes.push({
-          num: loteNum,
-          startCode,
-          endCode,
+        estado.lotes.push({
+          num: estado.loteNum++,
+          tipo,
+          page,
           count: 0,
           status: 'erro',
           error: err.message,
         });
-        setLotes([...allLotes]);
+        setLotes([...estado.lotes]);
+        page++;
+        continue;
       }
 
-      startCode = endCode + 1;
-    }
+      if (!fetchJson.success) {
+        estado.lotes.push({
+          num: estado.loteNum++,
+          tipo,
+          page,
+          count: 0,
+          status: 'erro',
+          error: fetchJson.message || 'Falha na busca',
+        });
+        setLotes([...estado.lotes]);
+        hasNext = false;
+        break;
+      }
 
-    if (!cancelRef.current) {
+      const clientes = fetchJson.data?.clientes || [];
+      hasNext = fetchJson.data?.hasNext || false;
+
+      if (clientes.length === 0) {
+        estado.lotes.push({
+          num: estado.loteNum++,
+          tipo,
+          page,
+          count: 0,
+          status: 'vazio',
+        });
+        setLotes([...estado.lotes]);
+        page++;
+        continue;
+      }
+
+      setStatus({
+        type: 'info',
+        msg: `Salvando ${tipo} página ${page} (${clientes.length} clientes)...`,
+      });
+
+      let saveJson;
+      try {
+        saveJson = await saveBatch(clientes);
+      } catch (err) {
+        estado.lotes.push({
+          num: estado.loteNum++,
+          tipo,
+          page,
+          count: clientes.length,
+          status: 'erro',
+          error: err.message,
+        });
+        setLotes([...estado.lotes]);
+        page++;
+        continue;
+      }
+
+      const saveData = saveJson.data || {};
+      const insertedNow = saveData.inserted || 0;
+      const skippedNow = saveData.skipped || 0;
+      const errorsNow = saveData.errors || 0;
+
+      estado.totalInseridos += insertedNow;
+      estado.totalIgnorados += skippedNow;
+      estado.totalErros += errorsNow;
+      if (tipo === 'PF') estado.totalPF += clientes.length;
+      else estado.totalPJ += clientes.length;
+
+      if (Array.isArray(saveData.skippedList)) {
+        estado.ignorados.push(...saveData.skippedList);
+      }
+      if (Array.isArray(saveData.errorsList)) {
+        estado.erros.push(...saveData.errorsList);
+      }
+
+      estado.lotes.push({
+        num: estado.loteNum++,
+        tipo,
+        page,
+        count: clientes.length,
+        inserted: insertedNow,
+        skipped: skippedNow,
+        errors: errorsNow,
+        status: saveJson.success ? 'enviado' : 'erro',
+        duration: fetchJson.data?.duration,
+        error: saveJson.success ? null : saveJson.message,
+      });
+
+      setLotes([...estado.lotes]);
+      setUltimoLote(clientes);
+      setTotalInseridos(estado.totalInseridos);
+      setTotalIgnorados(estado.totalIgnorados);
+      setTotalErros(estado.totalErros);
+      setTotalPF(estado.totalPF);
+      setTotalPJ(estado.totalPJ);
+      setIgnorados([...estado.ignorados]);
+      setErros([...estado.erros]);
+
+      page++;
+    }
+  };
+
+  const handleBuscarTodos = async () => {
+    setProcessando(true);
+    setLotes([]);
+    setUltimoLote([]);
+    setTotalInseridos(0);
+    setTotalIgnorados(0);
+    setTotalErros(0);
+    setTotalPF(0);
+    setTotalPJ(0);
+    setIgnorados([]);
+    setErros([]);
+    setStatus(null);
+    cancelRef.current = false;
+
+    const estado = {
+      lotes: [],
+      loteNum: 1,
+      totalInseridos: 0,
+      totalIgnorados: 0,
+      totalErros: 0,
+      totalPF: 0,
+      totalPJ: 0,
+      ignorados: [],
+      erros: [],
+    };
+
+    await processarTipo('PF', estado);
+    if (!cancelRef.current) await processarTipo('PJ', estado);
+
+    if (cancelRef.current) {
+      setStatus({
+        type: 'warning',
+        msg: `Cancelado. Inseridos: ${estado.totalInseridos} | Já existiam: ${estado.totalIgnorados} | Erros: ${estado.totalErros}`,
+      });
+    } else {
       setStatus({
         type: 'success',
-        msg: `Finalizado! ${totalSent} clientes (PF: ${pfCount} | PJ: ${pjCount}) enviados ao Supabase em ${allLotes.filter((l) => l.count > 0).length} lotes.`,
+        msg: `Finalizado! PF: ${estado.totalPF} | PJ: ${estado.totalPJ} — Inseridos: ${estado.totalInseridos} | Já existiam: ${estado.totalIgnorados} | Erros: ${estado.totalErros}`,
       });
     }
     setProcessando(false);
   };
 
-  // Busca individual por código específico
   const handleBuscarCodigo = async () => {
     if (!personCode.trim()) return;
     setProcessando(true);
     setLotes([]);
     setUltimoLote([]);
-    setTotalEnviados(0);
+    setTotalInseridos(0);
+    setTotalIgnorados(0);
+    setTotalErros(0);
     setTotalPF(0);
     setTotalPJ(0);
+    setIgnorados([]);
+    setErros([]);
     setStatus(null);
 
     try {
@@ -166,29 +235,32 @@ export default function ClientesTotvs() {
         setUltimoLote(clientes);
 
         const saveJson = await saveBatch(clientes);
-        setTotalEnviados(clientes.length);
+        const saveData = saveJson.data || {};
+
+        setTotalInseridos(saveData.inserted || 0);
+        setTotalIgnorados(saveData.skipped || 0);
+        setTotalErros(saveData.errors || 0);
         setTotalPF(json.data.totalPF || 0);
         setTotalPJ(json.data.totalPJ || 0);
+        setIgnorados(saveData.skippedList || []);
+        setErros(saveData.errorsList || []);
 
         setLotes([
           {
             num: 1,
-            startCode: personCode,
-            endCode: personCode,
+            tipo: 'BUSCA',
+            page: personCode,
             count: clientes.length,
-            pfCount: json.data.totalPF || 0,
-            pjCount: json.data.totalPJ || 0,
-            saved: saveJson.success
-              ? saveJson.data?.inserted || clientes.length
-              : 0,
-            errors: saveJson.data?.errors || 0,
+            inserted: saveData.inserted || 0,
+            skipped: saveData.skipped || 0,
+            errors: saveData.errors || 0,
             status: saveJson.success ? 'enviado' : 'erro',
             duration: json.data.duration || json.data.fetchDuration,
           },
         ]);
         setStatus({
           type: 'success',
-          msg: `${clientes.length} clientes encontrados e salvos no Supabase`,
+          msg: `${clientes.length} cliente(s) — Inseridos: ${saveData.inserted || 0} | Já existiam: ${saveData.skipped || 0} | Erros: ${saveData.errors || 0}`,
         });
       } else {
         setStatus({
@@ -209,26 +281,13 @@ export default function ClientesTotvs() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Clientes TOTVS</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Busca automática em lotes de {BATCH_SIZE} códigos — cada lote é salvo
-          automaticamente no Supabase
+          Busca paginada (PF + PJ) direto da TOTVS — clientes já existentes no
+          Supabase são ignorados automaticamente
         </p>
       </div>
 
       {/* Controles */}
       <div className="flex flex-wrap items-end gap-4 mb-6">
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">
-            Código inicial
-          </label>
-          <input
-            type="number"
-            min="1"
-            value={codigoInicial}
-            onChange={(e) => setCodigoInicial(e.target.value)}
-            disabled={processando}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-28 disabled:opacity-50"
-          />
-        </div>
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1">
             Ou código específico
@@ -283,7 +342,7 @@ export default function ClientesTotvs() {
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                   />
                 </svg>
-                Processando lotes...
+                Processando páginas...
               </span>
             ) : (
               'BUSCAR CLIENTES'
@@ -321,19 +380,36 @@ export default function ClientesTotvs() {
       )}
 
       {/* Resumo */}
-      {totalEnviados > 0 && (
+      {(totalInseridos > 0 || totalIgnorados > 0 || totalErros > 0) && (
         <div className="flex gap-4 mb-6 flex-wrap">
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4 min-w-[200px]">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4 min-w-[180px]">
             <p className="text-xs font-semibold text-green-600 uppercase">
-              Total Enviados ao Supabase
+              Inseridos
             </p>
             <p className="text-2xl font-bold text-green-800 mt-1">
-              {totalEnviados}
+              {totalInseridos}
             </p>
             <p className="text-xs text-green-600 mt-1">
-              PF: {totalPF} | PJ: {totalPJ} |{' '}
-              {lotes.filter((l) => l.count > 0).length} lotes
+              PF: {totalPF} | PJ: {totalPJ}
             </p>
+          </div>
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 min-w-[180px]">
+            <p className="text-xs font-semibold text-yellow-700 uppercase">
+              Já existiam
+            </p>
+            <p className="text-2xl font-bold text-yellow-800 mt-1">
+              {totalIgnorados}
+            </p>
+            <p className="text-xs text-yellow-700 mt-1">
+              Não reenviados ao Supabase
+            </p>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 min-w-[180px]">
+            <p className="text-xs font-semibold text-red-600 uppercase">
+              Erros
+            </p>
+            <p className="text-2xl font-bold text-red-800 mt-1">{totalErros}</p>
+            <p className="text-xs text-red-600 mt-1">Falhas ao inserir</p>
           </div>
         </div>
       )}
@@ -341,7 +417,7 @@ export default function ClientesTotvs() {
       {/* Log de lotes — estilo terminal */}
       {lotes.length > 0 && (
         <div className="mb-6 bg-gray-900 rounded-lg p-4 max-h-[350px] overflow-y-auto font-mono text-xs leading-relaxed">
-          <p className="text-gray-500 mb-2">--- Log de envio em lotes ---</p>
+          <p className="text-gray-500 mb-2">--- Log de envio por página ---</p>
           {lotes.map((lote) => (
             <div
               key={lote.num}
@@ -354,19 +430,90 @@ export default function ClientesTotvs() {
               }`}
             >
               {lote.status === 'enviado' &&
-                `✅ Lote ${lote.num} de ${lote.count} CLIENTES enviado (códigos ${lote.startCode}-${lote.endCode} | PF:${lote.pfCount} PJ:${lote.pjCount} | ${lote.duration})`}
+                `✅ [${lote.tipo}] Pág ${lote.page} — ${lote.count} clientes | inseridos:${lote.inserted} já existiam:${lote.skipped} erros:${lote.errors} (${lote.duration || ''})`}
               {lote.status === 'vazio' &&
-                `⏭️ Lote ${lote.num} vazio (códigos ${lote.startCode}-${lote.endCode})`}
+                `⏭️ [${lote.tipo}] Pág ${lote.page} vazia`}
               {lote.status === 'erro' &&
-                `❌ Lote ${lote.num} erro (códigos ${lote.startCode}-${lote.endCode}): ${lote.error || 'Falha ao salvar'}`}
+                `❌ [${lote.tipo}] Pág ${lote.page}: ${lote.error || 'Falha'}`}
             </div>
           ))}
           {processando && (
             <div className="text-blue-400 animate-pulse mt-1">
-              ⏳ Processando próximo lote...
+              ⏳ Processando próxima página...
             </div>
           )}
         </div>
+      )}
+
+      {/* Lista de ignorados */}
+      {ignorados.length > 0 && (
+        <details className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <summary className="px-4 py-3 cursor-pointer font-semibold text-yellow-800">
+            Clientes ignorados (já existem no Supabase): {ignorados.length}
+          </summary>
+          <div className="max-h-64 overflow-auto border-t border-yellow-200">
+            <table className="w-full text-xs">
+              <thead className="bg-yellow-100 sticky top-0">
+                <tr>
+                  <th className="px-2 py-1 text-left">Código</th>
+                  <th className="px-2 py-1 text-left">Empresa</th>
+                  <th className="px-2 py-1 text-left">Tipo</th>
+                  <th className="px-2 py-1 text-left">Nome</th>
+                  <th className="px-2 py-1 text-left">Motivo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ignorados.slice(0, 500).map((s, i) => (
+                  <tr key={i} className="border-t border-yellow-100">
+                    <td className="px-2 py-1 font-mono">{s.code}</td>
+                    <td className="px-2 py-1">{s.cd_empresacad}</td>
+                    <td className="px-2 py-1">{s.tipo_pessoa || '—'}</td>
+                    <td className="px-2 py-1">{s.nm_pessoa || '—'}</td>
+                    <td className="px-2 py-1">{s.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {ignorados.length > 500 && (
+              <p className="p-2 text-xs text-yellow-700">
+                Exibindo 500 de {ignorados.length}
+              </p>
+            )}
+          </div>
+        </details>
+      )}
+
+      {/* Lista de erros */}
+      {erros.length > 0 && (
+        <details className="mb-6 bg-red-50 border border-red-200 rounded-lg">
+          <summary className="px-4 py-3 cursor-pointer font-semibold text-red-800">
+            Clientes com erro: {erros.length}
+          </summary>
+          <div className="max-h-64 overflow-auto border-t border-red-200">
+            <table className="w-full text-xs">
+              <thead className="bg-red-100 sticky top-0">
+                <tr>
+                  <th className="px-2 py-1 text-left">Código</th>
+                  <th className="px-2 py-1 text-left">Empresa</th>
+                  <th className="px-2 py-1 text-left">Tipo</th>
+                  <th className="px-2 py-1 text-left">Nome</th>
+                  <th className="px-2 py-1 text-left">Erro</th>
+                </tr>
+              </thead>
+              <tbody>
+                {erros.slice(0, 500).map((s, i) => (
+                  <tr key={i} className="border-t border-red-100">
+                    <td className="px-2 py-1 font-mono">{s.code}</td>
+                    <td className="px-2 py-1">{s.cd_empresacad}</td>
+                    <td className="px-2 py-1">{s.tipo_pessoa || '—'}</td>
+                    <td className="px-2 py-1">{s.nm_pessoa || '—'}</td>
+                    <td className="px-2 py-1 text-red-700">{s.error}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
       )}
 
       {/* Tabela do último lote */}
@@ -374,7 +521,7 @@ export default function ClientesTotvs() {
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
             <p className="text-sm font-semibold text-gray-700">
-              Último lote carregado: {ultimoLote.length} clientes
+              Última página carregada: {ultimoLote.length} clientes
             </p>
           </div>
           <div className="overflow-auto max-h-[40vh]">
@@ -487,12 +634,12 @@ export default function ClientesTotvs() {
         !status && (
           <div className="text-center py-20 text-gray-400">
             <p className="text-lg">
-              Clique em "BUSCAR CLIENTES" para buscar em lotes de {BATCH_SIZE} e
-              enviar ao Supabase
+              Clique em "BUSCAR CLIENTES" para trazer PF + PJ paginando direto
+              da TOTVS
             </p>
             <p className="text-sm mt-2">
-              Códigos 1-{BATCH_SIZE}, {BATCH_SIZE + 1}-{BATCH_SIZE * 2},{' '}
-              {BATCH_SIZE * 2 + 1}-{BATCH_SIZE * 3}...
+              Clientes que já existem no Supabase são ignorados e listados no
+              log
             </p>
           </div>
         )}

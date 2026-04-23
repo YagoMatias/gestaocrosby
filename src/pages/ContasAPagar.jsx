@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../components/AuthContext';
 import useApiClient from '../hooks/useApiClient';
 import { API_BASE_URL } from '../config/constants';
+import { supabase } from '../lib/supabase';
 import PageTitle from '../components/ui/PageTitle';
 import {
   Receipt,
@@ -62,9 +63,8 @@ const ContasAPagar = (props) => {
   const [filtroDia, setFiltroDia] = useState(null);
 
   // ─── Estados de Busca de Fornecedor ───
+  const [tipoBuscaFornecedor, setTipoBuscaFornecedor] = useState('nome');
   const [termoBuscaFornecedor, setTermoBuscaFornecedor] = useState('');
-  const [termoBuscaFantasiaFornecedor, setTermoBuscaFantasiaFornecedor] =
-    useState('');
   const [fornecedoresEncontrados, setFornecedoresEncontrados] = useState([]);
   const [modalBuscaFornecedorAberto, setModalBuscaFornecedorAberto] =
     useState(false);
@@ -406,43 +406,72 @@ const ContasAPagar = (props) => {
   );
 
   // ─── Busca de fornecedor ───
-  const buscarFornecedorPorNome = useCallback(async () => {
-    const nome = termoBuscaFornecedor.trim();
-    const fantasia = termoBuscaFantasiaFornecedor.trim();
-    if (!nome && !fantasia) {
-      alert('Digite o nome ou nome fantasia para buscar!');
+  const buscarFornecedor = useCallback(async () => {
+    const termo = termoBuscaFornecedor.trim();
+    if (!termo) {
+      alert('Digite um valor para buscar!');
       return;
     }
+
+    // Busca por código: aplica direto sem chamar API
+    if (tipoBuscaFornecedor === 'codigo') {
+      const code = parseInt(termo, 10);
+      if (isNaN(code) || code <= 0) {
+        alert('Código inválido. Digite um número inteiro positivo.');
+        return;
+      }
+      setFornecedorBuscaSelecionado({
+        cd_pessoa: code,
+        nm_pessoa: `Fornecedor Cód. ${code}`,
+      });
+      return;
+    }
+
     setBuscandoFornecedores(true);
     try {
-      let query = '';
-      if (nome && fantasia)
-        query = `nm_pessoa=${encodeURIComponent(nome)}&nm_fantasia=${encodeURIComponent(fantasia)}`;
-      else if (nome) query = `nm_pessoa=${encodeURIComponent(nome)}`;
-      else query = `nm_fantasia=${encodeURIComponent(fantasia)}`;
+      let queryParam = '';
+      if (tipoBuscaFornecedor === 'nome')
+        queryParam = `nome=${encodeURIComponent(termo)}`;
+      else if (tipoBuscaFornecedor === 'fantasia')
+        queryParam = `fantasia=${encodeURIComponent(termo)}`;
+      else if (tipoBuscaFornecedor === 'cnpj_cpf')
+        queryParam = `cnpj=${encodeURIComponent(termo.replace(/\D/g, ''))}`;
 
       const response = await fetch(
-        `${API_BASE_URL}/api/financial/buscar-clientes?${query}`,
+        `${API_BASE_URL}/api/totvs/clientes/search-name?${queryParam}`,
       );
       if (!response.ok) throw new Error('Erro ao buscar fornecedores');
       const data = await response.json();
 
       let fornecedores = [];
-      if (data.success && Array.isArray(data.data)) fornecedores = data.data;
-      else if (Array.isArray(data)) fornecedores = data;
+      if (data.success && data.data?.clientes) {
+        fornecedores = data.data.clientes.map((f) => ({
+          cd_pessoa: f.code,
+          nm_pessoa: f.nm_pessoa,
+          nm_fantasia: f.fantasy_name || null,
+          cpf: f.cpf || null,
+          tipo_pessoa: f.tipo_pessoa || null,
+        }));
+      }
 
       if (fornecedores.length === 0) {
         alert('Nenhum fornecedor encontrado com os critérios informados.');
+      } else if (
+        fornecedores.length === 1 &&
+        tipoBuscaFornecedor === 'cnpj_cpf'
+      ) {
+        // Auto-seleciona quando resultado único por CNPJ/CPF
+        setFornecedorBuscaSelecionado(fornecedores[0]);
       } else {
         setFornecedoresEncontrados(fornecedores);
         setModalBuscaFornecedorAberto(true);
       }
     } catch {
-      alert('Erro ao buscar fornecedores. Tente novamente.');
+      alert('Erro ao buscar fornecedor. Tente novamente.');
     } finally {
       setBuscandoFornecedores(false);
     }
-  }, [termoBuscaFornecedor, termoBuscaFantasiaFornecedor]);
+  }, [tipoBuscaFornecedor, termoBuscaFornecedor]);
 
   const selecionarFornecedorBusca = useCallback((fornecedor) => {
     setFornecedorBuscaSelecionado(fornecedor);
@@ -452,8 +481,87 @@ const ContasAPagar = (props) => {
   const limparFornecedorBusca = useCallback(() => {
     setFornecedorBuscaSelecionado(null);
     setTermoBuscaFornecedor('');
-    setTermoBuscaFantasiaFornecedor('');
   }, []);
+
+  // ─── Enviar títulos selecionados para Liberação de Pagamento ───
+  const enviarParaPagamento = useCallback(async () => {
+    if (linhasSelecionadasAgrupadas.size === 0) {
+      alert('Selecione pelo menos um título para enviar.');
+      return;
+    }
+
+    // Coletar itens selecionados, filtrando só os que estão em aberto (não pagos)
+    const itensSelecionados = [];
+    const idsInvalidos = [];
+    linhasSelecionadasAgrupadas.forEach((idx) => {
+      const grupo = dadosOrdenadosParaCards[idx];
+      if (!grupo) return;
+      const status = getStatusFromData(grupo.item);
+      if (status === 'Pago') {
+        idsInvalidos.push(idx);
+      } else {
+        itensSelecionados.push(grupo.item);
+      }
+    });
+
+    if (itensSelecionados.length === 0) {
+      alert(
+        'Os títulos selecionados já estão pagos. Selecione apenas títulos em aberto.',
+      );
+      return;
+    }
+
+    if (idsInvalidos.length > 0) {
+      const continuar = window.confirm(
+        `${idsInvalidos.length} título(s) já pago(s) serão ignorados. Enviar os ${itensSelecionados.length} em aberto?`,
+      );
+      if (!continuar) return;
+    } else if (
+      !window.confirm(
+        `Enviar ${itensSelecionados.length} título(s) para Liberação de Pagamento?`,
+      )
+    ) {
+      return;
+    }
+
+    const toDate = (d) => {
+      if (!d) return null;
+      const s = String(d).split('T')[0];
+      return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+    };
+
+    const registros = itensSelecionados.map((item) => ({
+      cd_empresa: item.cd_empresa ? parseInt(item.cd_empresa) : null,
+      nm_empresa: item.nm_empresa || null,
+      nr_duplicata: item.nr_duplicata ? String(item.nr_duplicata) : null,
+      nr_parcela: item.nr_parcela ? String(item.nr_parcela) : null,
+      nr_portador: item.nr_portador ? String(item.nr_portador) : null,
+      cd_fornecedor: item.cd_fornecedor ? String(item.cd_fornecedor) : null,
+      nm_fornecedor: item.nm_fornecedor || null,
+      cd_despesaitem: item.cd_despesaitem ? String(item.cd_despesaitem) : null,
+      ds_despesaitem: item.ds_despesaitem || null,
+      cd_ccusto: item.cd_ccusto ? String(item.cd_ccusto) : null,
+      dt_emissao: toDate(item.dt_emissao),
+      dt_vencimento: toDate(item.dt_vencimento),
+      vl_duplicata: parseFloat(item.vl_duplicata || 0),
+      status: 'PENDENTE',
+      enviado_por: user?.email || null,
+      dados_completos: item,
+    }));
+
+    try {
+      const { error } = await supabase
+        .from('pagamentos_liberacao')
+        .insert(registros);
+      if (error) throw error;
+      alert(
+        `${registros.length} título(s) enviado(s) com sucesso para Liberação de Pagamento!`,
+      );
+      setLinhasSelecionadasAgrupadas(new Set());
+    } catch (err) {
+      alert('Erro ao enviar para pagamento: ' + (err.message || err));
+    }
+  }, [linhasSelecionadasAgrupadas, dadosOrdenadosParaCards, user]);
 
   // ─── Exportar Excel ───
   const exportarExcelDetalhamento = useCallback(() => {
@@ -742,13 +850,13 @@ const ContasAPagar = (props) => {
         dadosDespesa={dadosDespesa}
         loading={loading}
         fornecedorBuscaSelecionado={fornecedorBuscaSelecionado}
+        tipoBuscaFornecedor={tipoBuscaFornecedor}
+        setTipoBuscaFornecedor={setTipoBuscaFornecedor}
         termoBuscaFornecedor={termoBuscaFornecedor}
         setTermoBuscaFornecedor={setTermoBuscaFornecedor}
-        termoBuscaFantasiaFornecedor={termoBuscaFantasiaFornecedor}
-        setTermoBuscaFantasiaFornecedor={setTermoBuscaFantasiaFornecedor}
         setFornecedorBuscaSelecionado={setFornecedorBuscaSelecionado}
         buscandoFornecedores={buscandoFornecedores}
-        buscarFornecedorPorNome={buscarFornecedorPorNome}
+        buscarFornecedor={buscarFornecedor}
         limparFornecedorBusca={limparFornecedorBusca}
         handleFiltrar={handleFiltrarFn}
         filtroPagamento={filtroPagamento}
@@ -850,6 +958,7 @@ const ContasAPagar = (props) => {
                 handleApplyFilter={handleApplyFilter}
                 abrirModalDetalhes={abrirModalDetalhes}
                 exportarExcelDetalhamento={exportarExcelDetalhamento}
+                onEnviarPagamento={enviarParaPagamento}
                 hasRole={hasRole}
                 filtroPagamento={filtroPagamento}
                 setFiltroPagamento={setFiltroPagamento}

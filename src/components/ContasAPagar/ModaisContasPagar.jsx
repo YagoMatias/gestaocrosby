@@ -249,6 +249,7 @@ const ModaisContasPagar = React.memo(
                       </th>
                       <th className="px-3 py-2 text-left">Nome</th>
                       <th className="px-3 py-2 text-left">Nome Fantasia</th>
+                      <th className="px-3 py-2 text-left">CPF / CNPJ</th>
                       <th className="px-3 py-2 text-center rounded-tr-lg">
                         Ação
                       </th>
@@ -267,6 +268,9 @@ const ModaisContasPagar = React.memo(
                         <td className="px-3 py-2">{f.nm_pessoa}</td>
                         <td className="px-3 py-2 text-gray-600">
                           {f.nm_fantasia || '--'}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs text-gray-600">
+                          {f.cpf || '--'}
                         </td>
                         <td className="px-3 py-2 text-center">
                           <button

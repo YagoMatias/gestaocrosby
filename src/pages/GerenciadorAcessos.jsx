@@ -37,6 +37,16 @@ const AVAILABLE_PAGES = [
   { path: '/contas-a-pagar', name: 'Contas a Pagar', category: 'Financeiro' },
   { path: '/emprestimos', name: 'Empréstimos', category: 'Financeiro' },
   {
+    path: '/despesa-filial',
+    name: 'Despesas por Filial',
+    category: 'Financeiro',
+  },
+  {
+    path: '/liberacao-pagamento',
+    name: 'Liberação de Pagamento',
+    category: 'Financeiro',
+  },
+  {
     path: '/contas-a-pagar-emissao',
     name: 'Contas a Pagar (Emissão)',
     category: 'Financeiro',

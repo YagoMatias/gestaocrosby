@@ -34,13 +34,13 @@ const FiltrosContasPagar = React.memo(
     dadosDespesa,
     loading,
     fornecedorBuscaSelecionado,
+    tipoBuscaFornecedor,
+    setTipoBuscaFornecedor,
     termoBuscaFornecedor,
     setTermoBuscaFornecedor,
-    termoBuscaFantasiaFornecedor,
-    setTermoBuscaFantasiaFornecedor,
     setFornecedorBuscaSelecionado,
     buscandoFornecedores,
-    buscarFornecedorPorNome,
+    buscarFornecedor,
     limparFornecedorBusca,
     handleFiltrar,
     filtroPagamento,
@@ -189,14 +189,38 @@ const FiltrosContasPagar = React.memo(
                 <option value="CONSIGNADO">CONSIGNADO</option>
               </select>
             </div>
-            {/* Busca de fornecedor por nome */}
+            {/* Tipo de busca de fornecedor */}
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Tp. Busca Fornecedor
+              </label>
+              <select
+                value={tipoBuscaFornecedor}
+                onChange={(e) => {
+                  setTipoBuscaFornecedor(e.target.value);
+                  setTermoBuscaFornecedor('');
+                  if (fornecedorBuscaSelecionado)
+                    setFornecedorBuscaSelecionado(null);
+                }}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              >
+                <option value="nome">Nome</option>
+                <option value="fantasia">Nome Fantasia</option>
+                <option value="cnpj_cpf">CNPJ / CPF</option>
+                <option value="codigo">Código</option>
+              </select>
+            </div>
+            {/* Campo de busca unificado */}
             <div className="relative">
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                Buscar Fornecedor
+                {tipoBuscaFornecedor === 'nome' && 'Buscar por Nome'}
+                {tipoBuscaFornecedor === 'fantasia' && 'Buscar por Fantasia'}
+                {tipoBuscaFornecedor === 'cnpj_cpf' && 'Buscar por CNPJ/CPF'}
+                {tipoBuscaFornecedor === 'codigo' && 'Buscar por Código'}
               </label>
               <div className="relative">
                 <input
-                  type="text"
+                  type={tipoBuscaFornecedor === 'codigo' ? 'number' : 'text'}
                   value={
                     fornecedorBuscaSelecionado
                       ? fornecedorBuscaSelecionado.nm_pessoa
@@ -207,11 +231,19 @@ const FiltrosContasPagar = React.memo(
                     if (fornecedorBuscaSelecionado)
                       setFornecedorBuscaSelecionado(null);
                   }}
-                  onKeyPress={(e) =>
+                  onKeyDown={(e) =>
                     e.key === 'Enter' &&
-                    (e.preventDefault(), buscarFornecedorPorNome())
+                    (e.preventDefault(), buscarFornecedor())
                   }
-                  placeholder="Nome do fornecedor..."
+                  placeholder={
+                    tipoBuscaFornecedor === 'nome'
+                      ? 'Nome do fornecedor...'
+                      : tipoBuscaFornecedor === 'fantasia'
+                        ? 'Nome fantasia...'
+                        : tipoBuscaFornecedor === 'cnpj_cpf'
+                          ? 'CPF ou CNPJ...'
+                          : 'Código do fornecedor...'
+                  }
                   className={`border border-[#000638]/30 rounded-lg px-2 py-1.5 pr-8 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] text-xs ${
                     fornecedorBuscaSelecionado
                       ? 'bg-blue-50 text-blue-800 font-medium'
@@ -230,7 +262,7 @@ const FiltrosContasPagar = React.memo(
                 ) : (
                   <button
                     type="button"
-                    onClick={buscarFornecedorPorNome}
+                    onClick={buscarFornecedor}
                     disabled={buscandoFornecedores}
                     className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[#000638] hover:text-[#000638]/70 disabled:opacity-50"
                     title="Buscar fornecedor"
@@ -243,60 +275,14 @@ const FiltrosContasPagar = React.memo(
                   </button>
                 )}
               </div>
-            </div>
-            <div className="relative">
-              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                Buscar Fantasia
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={
-                    fornecedorBuscaSelecionado
-                      ? fornecedorBuscaSelecionado.nm_fantasia || ''
-                      : termoBuscaFantasiaFornecedor
-                  }
-                  onChange={(e) => {
-                    setTermoBuscaFantasiaFornecedor(e.target.value);
-                    if (fornecedorBuscaSelecionado)
-                      setFornecedorBuscaSelecionado(null);
-                  }}
-                  onKeyPress={(e) =>
-                    e.key === 'Enter' &&
-                    (e.preventDefault(), buscarFornecedorPorNome())
-                  }
-                  placeholder="Nome fantasia..."
-                  className={`border border-[#000638]/30 rounded-lg px-2 py-1.5 pr-8 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] text-xs ${
-                    fornecedorBuscaSelecionado
-                      ? 'bg-blue-50 text-blue-800 font-medium'
-                      : 'bg-[#f8f9fb] text-[#000638]'
-                  }`}
-                />
-                {fornecedorBuscaSelecionado ? (
-                  <button
-                    type="button"
-                    onClick={limparFornecedorBusca}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-red-500 hover:text-red-700"
-                    title="Limpar fornecedor"
-                  >
-                    <X size={14} weight="bold" />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={buscarFornecedorPorNome}
-                    disabled={buscandoFornecedores}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[#000638] hover:text-[#000638]/70 disabled:opacity-50"
-                    title="Buscar fornecedor"
-                  >
-                    {buscandoFornecedores ? (
-                      <Spinner size={14} className="animate-spin" />
-                    ) : (
-                      <MagnifyingGlass size={14} weight="bold" />
-                    )}
-                  </button>
-                )}
-              </div>
+              {fornecedorBuscaSelecionado && (
+                <p className="text-[10px] text-blue-600 mt-0.5 truncate">
+                  Cód. {fornecedorBuscaSelecionado.cd_pessoa}
+                  {fornecedorBuscaSelecionado.cpf
+                    ? ` · ${fornecedorBuscaSelecionado.cpf}`
+                    : ''}
+                </p>
+              )}
             </div>
             <div>
               <FiltroDespesas
@@ -324,7 +310,7 @@ const FiltrosContasPagar = React.memo(
                 dadosCentroCusto={dadosCentroCusto}
               />
             </div>
-            <div className="flex items-end">
+            <div className="flex items-center gap-2 mt-1">
               <button
                 type="submit"
                 className="flex items-center gap-1 bg-[#000638] text-white px-3 py-1.5 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full justify-center text-xs font-bold shadow-md tracking-wide uppercase"
@@ -338,7 +324,7 @@ const FiltrosContasPagar = React.memo(
                 ) : (
                   <>
                     <Calendar size={10} />
-                    <span>Buscar Dados</span>
+                    <span>Buscar</span>
                   </>
                 )}
               </button>

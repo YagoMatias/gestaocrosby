@@ -76,6 +76,20 @@ const financeiro = [
         color: 'text-red-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
+      {
+        name: 'Controle de Filiais',
+        href: '/despesa-filial',
+        icon: Buildings,
+        color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Liberação de Pagamento',
+        href: '/liberacao-pagamento',
+        icon: CheckCircle,
+        color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
     ],
   },
   {
