@@ -18,6 +18,7 @@ import {
   fetchAndMapPersons,
   mapPersonToRow,
   upsertBatch,
+  insertSkipExisting,
 } from '../utils/syncPesPessoa.js';
 import supabase from '../config/supabase.js';
 const router = express.Router();
@@ -1173,7 +1174,8 @@ const FRANCHISE_CACHE_TTL = 60 * 60 * 1000; // 60 minutos
 /**
  * @route GET /totvs/franchise-clients
  * @desc Retorna lista de códigos de clientes FRANQUIA (classificação TOTVS)
- * Classificações: type 2 codeList ["1"] OU type 20 codeList ["4"]
+ *       Classificações: type 2 codeList ["1"] OU type 20 codeList ["4"]
+ */
 
 // Rotas para sincronizar pessoas (PF + PJ)
 // ==========================================
@@ -1526,25 +1528,39 @@ router.post(
     }
 
     const startTime = Date.now();
-    console.log(`💾 Salvando ${clientes.length} clientes no Supabase...`);
+    console.log(
+      `💾 Salvando ${clientes.length} clientes no Supabase (skip duplicados)...`,
+    );
 
     try {
-      const result = await upsertBatch(clientes);
+      const result = await insertSkipExisting(clientes);
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
       console.log(
-        `✅ Upsert concluído: ${result.inserted} inseridos, ${result.errors} erros em ${duration}s`,
+        `✅ Save concluído em ${duration}s — inseridos: ${result.inserted} | já existiam: ${result.skipped.length} | erros: ${result.errors.length}`,
       );
+
+      if (result.skipped.length > 0) {
+        console.log(
+          `ℹ️ Clientes ignorados (já existem): ${result.skipped
+            .slice(0, 10)
+            .map((s) => s.code)
+            .join(', ')}${result.skipped.length > 10 ? '...' : ''}`,
+        );
+      }
 
       successResponse(
         res,
         {
           inserted: result.inserted,
-          errors: result.errors,
+          skipped: result.skipped.length,
+          errors: result.errors.length,
+          skippedList: result.skipped,
+          errorsList: result.errors,
           total: clientes.length,
           duration: `${duration}s`,
         },
-        `${result.inserted} clientes salvos no Supabase`,
+        `${result.inserted} inseridos, ${result.skipped.length} já existiam, ${result.errors.length} erros`,
       );
     } catch (error) {
       console.error('❌ Erro ao salvar no Supabase:', error.message);
@@ -1553,6 +1569,113 @@ router.post(
         `Erro ao salvar clientes no Supabase: ${error.message}`,
         500,
         'SAVE_SUPABASE_ERROR',
+      );
+    }
+  }),
+);
+
+/**
+ * @route GET /totvs/clientes/fetch-raw-page
+ * @desc Busca UMA página crua de PF ou PJ diretamente da API TOTVS e retorna
+ *       os clientes já mapeados para o schema pes_pessoa. Sem cache, sem
+ *       iteração por código — apenas paginação server-side do TOTVS.
+ * @query type (PF|PJ) - Tipo de pessoa (default: PF)
+ * @query page (default 1) - Página TOTVS
+ * @query pageSize (default 100, max 500)
+ */
+router.get(
+  '/clientes/fetch-raw-page',
+  asyncHandler(async (req, res) => {
+    const startTime = Date.now();
+    const type = String(req.query.type || 'PF').toUpperCase();
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(
+      500,
+      Math.max(1, parseInt(req.query.pageSize, 10) || 100),
+    );
+
+    if (type !== 'PF' && type !== 'PJ') {
+      return errorResponse(
+        res,
+        'Parâmetro type deve ser PF ou PJ',
+        400,
+        'INVALID_TYPE',
+      );
+    }
+
+    const tokenData = await getToken();
+    if (!tokenData?.access_token) {
+      return errorResponse(
+        res,
+        'Não foi possível obter token TOTVS',
+        503,
+        'TOKEN_UNAVAILABLE',
+      );
+    }
+
+    const endpoint =
+      type === 'PF'
+        ? `${TOTVS_BASE_URL}/person/v2/individuals/search`
+        : `${TOTVS_BASE_URL}/person/v2/legal-entities/search`;
+
+    const payload = {
+      filter: {},
+      expand: 'phones,emails,addresses',
+      page,
+      pageSize,
+    };
+
+    const doRequest = async (accessToken) =>
+      axios.post(endpoint, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        timeout: 60000,
+      });
+
+    try {
+      let response;
+      try {
+        response = await doRequest(tokenData.access_token);
+      } catch (err) {
+        if (err.response?.status === 401) {
+          const fresh = await getToken(true);
+          response = await doRequest(fresh.access_token);
+        } else {
+          throw err;
+        }
+      }
+
+      const items = response.data?.items || [];
+      const hasNext = response.data?.hasNext ?? false;
+      const clientes = items.map((it) => mapPersonToRow(it, type));
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
+      successResponse(
+        res,
+        {
+          clientes,
+          type,
+          page,
+          pageSize,
+          count: clientes.length,
+          hasNext,
+          duration: `${duration}s`,
+        },
+        `${type} página ${page}: ${clientes.length} clientes em ${duration}s`,
+      );
+    } catch (error) {
+      console.error(
+        `❌ Erro fetch-raw-page ${type} pág ${page}:`,
+        error.message,
+      );
+      errorResponse(
+        res,
+        `Erro ao buscar ${type} página ${page}: ${error.message}`,
+        500,
+        'FETCH_RAW_PAGE_ERROR',
       );
     }
   }),
