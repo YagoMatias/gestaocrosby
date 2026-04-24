@@ -26,6 +26,9 @@ import {
   PlusCircle,
   PencilSimple,
   ArrowsLeftRight,
+  ArrowUp,
+  ArrowDown,
+  ArrowsDownUp,
 } from '@phosphor-icons/react';
 
 const BANCOS = [
@@ -1053,6 +1056,34 @@ const ModalAdicionarDuplicata = ({ onClose, onSalvo, userEmail }) => {
   );
 };
 
+// ─── Cabeçalho ordenável ──────────────────────────────
+const ThSortable = ({ label, coluna, ordenacao, onSort, className = '' }) => {
+  const ativo = ordenacao.coluna === coluna;
+  return (
+    <th
+      className={`px-2 py-2 text-left text-[10px] font-bold uppercase cursor-pointer select-none group ${className}`}
+      onClick={() => onSort(coluna)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <span
+          className={`transition-opacity ${ativo ? 'opacity-100' : 'opacity-30 group-hover:opacity-70'}`}
+        >
+          {ativo ? (
+            ordenacao.dir === 'asc' ? (
+              <ArrowUp size={10} weight="bold" />
+            ) : (
+              <ArrowDown size={10} weight="bold" />
+            )
+          ) : (
+            <ArrowsDownUp size={10} weight="bold" />
+          )}
+        </span>
+      </span>
+    </th>
+  );
+};
+
 // ─── Linha da tabela ──────────────────────────────────
 const LinhaTitulo = React.memo(
   ({
@@ -1080,6 +1111,9 @@ const LinhaTitulo = React.memo(
     const [dirty, setDirty] = useState(false);
     const [showDetalhePopover, setShowDetalhePopover] = useState(false);
     const [showObsPopover, setShowObsPopover] = useState(false);
+    const [showVlRealPopover, setShowVlRealPopover] = useState(false);
+    const [juros, setJuros] = useState('');
+    const [parcial, setParcial] = useState('');
     const [detalheRascunho, setDetalheRascunho] = useState(detalhe);
     const [obsRascunho, setObsRascunho] = useState(obs);
 
@@ -1195,22 +1229,118 @@ const LinhaTitulo = React.memo(
         </td>
         <td className="px-2 py-2 text-xs w-28">
           {podeEditar && !isTransferencia ? (
-            <div className="relative">
-              <span className="absolute left-1.5 top-1/3 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">
-                R$
-              </span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={vlReal}
-                onChange={(e) => {
-                  setVlReal(e.target.value);
-                  marcarDirty();
+            <div className="relative flex items-center gap-1">
+              {vlReal ? (
+                <span className="text-xs font-bold text-blue-700 truncate max-w-[70px]">
+                  {fmtBRL(vlReal)}
+                </span>
+              ) : (
+                <span className="text-[10px] text-gray-400">—</span>
+              )}
+              <button
+                onClick={() => {
+                  const base = parseFloat(item.vl_duplicata || 0);
+                  const currentReal = vlReal !== '' ? parseFloat(vlReal) : null;
+                  // Reverse-engineer juros/parcial from existing vl_real
+                  setJuros('');
+                  setParcial(currentReal != null ? String(currentReal) : '');
+                  setShowVlRealPopover((v) => !v);
+                  setShowDetalhePopover(false);
+                  setShowObsPopover(false);
                 }}
-                placeholder={fmtBRL(item.vl_duplicata).replace('R$\u00a0', '')}
-                className="w-full border border-blue-300 rounded pl-6 pr-1.5 py-1 text-xs focus:ring-1 focus:ring-blue-500 bg-blue-50"
-              />
+                className="flex-shrink-0 flex items-center justify-center w-5 h-5 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300 transition-colors"
+                title="Juros / Parcial"
+              >
+                <PlusCircle size={11} weight="bold" />
+              </button>
+              {showVlRealPopover && (
+                <div className="absolute z-30 top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl p-3 w-60">
+                  <p className="text-[10px] font-bold text-gray-600 uppercase mb-2">
+                    Ajuste de Valor
+                  </p>
+                  <div className="space-y-2 mb-3">
+                    <div>
+                      <label className="text-[9px] font-bold uppercase text-gray-500 block mb-0.5">
+                        Parcial (substitui)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">
+                          R$
+                        </span>
+                        <input
+                          autoFocus
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={parcial}
+                          onChange={(e) => setParcial(e.target.value)}
+                          placeholder={String(item.vl_duplicata)}
+                          className="w-full border border-gray-300 rounded pl-6 pr-2 py-1 text-xs focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold uppercase text-gray-500 block mb-0.5">
+                        Juros (soma)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">
+                          R$
+                        </span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={juros}
+                          onChange={(e) => setJuros(e.target.value)}
+                          placeholder="0,00"
+                          className="w-full border border-gray-300 rounded pl-6 pr-2 py-1 text-xs focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  {/* Preview */}
+                  {(parcial || juros) && (
+                    <div className="bg-blue-50 rounded px-2 py-1 mb-2 text-[10px] text-blue-700 font-semibold">
+                      Valor real:{' '}
+                      {fmtBRL(
+                        (parcial !== ''
+                          ? parseFloat(parcial)
+                          : parseFloat(item.vl_duplicata || 0)) +
+                          (juros !== '' ? parseFloat(juros) : 0),
+                      )}
+                    </div>
+                  )}
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => {
+                        setVlReal('');
+                        marcarDirty();
+                        setShowVlRealPopover(false);
+                      }}
+                      className="flex-1 border border-gray-300 text-gray-500 text-[10px] font-semibold py-1 rounded hover:bg-gray-50"
+                    >
+                      Limpar
+                    </button>
+                    <button
+                      onClick={() => {
+                        const base =
+                          parcial !== ''
+                            ? parseFloat(parcial)
+                            : parseFloat(item.vl_duplicata || 0);
+                        const j = juros !== '' ? parseFloat(juros) : 0;
+                        const resultado = base + j;
+                        setVlReal(String(resultado));
+                        marcarDirty();
+                        setShowVlRealPopover(false);
+                      }}
+                      className="flex-1 bg-blue-600 text-white text-[10px] font-semibold py-1 rounded hover:bg-blue-700"
+                    >
+                      OK
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <span
@@ -1478,7 +1608,7 @@ const LinhaTitulo = React.memo(
                 )}
               </button>
             )}
-            {isAdmin && item.status === 'PENDENTE' && (
+            {(isAdmin || isFinanceiro) && item.status === 'PENDENTE' && (
               <button
                 onClick={() => {
                   const extra = {
@@ -1520,7 +1650,7 @@ const LinhaTitulo = React.memo(
                 PAGAR
               </button>
             )}
-            {isAdmin &&
+            {(isAdmin || isFinanceiro) &&
               item.status !== 'PAGO' &&
               item.status !== 'CANCELADO' && (
                 <button
@@ -1566,6 +1696,15 @@ const LiberacaoPagamento = () => {
   const [filtroTipo, setFiltroTipo] = useState('TODOS'); // TODOS | PAGAMENTO | TRANSFERENCIA
   const [filtroInclusao, setFiltroInclusao] = useState('TODOS'); // TODOS | TOTVS | MANUAL
   const [showModalAdicionar, setShowModalAdicionar] = useState(false);
+  const [ordenacao, setOrdenacao] = useState({ coluna: null, dir: 'asc' });
+
+  const toggleOrdem = useCallback((coluna) => {
+    setOrdenacao((prev) =>
+      prev.coluna === coluna
+        ? { coluna, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { coluna, dir: 'asc' },
+    );
+  }, []);
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -1636,6 +1775,37 @@ const LiberacaoPagamento = () => {
           !t.dados_completos?.transferencia_entre_contas,
       );
     }
+    // Ordenação
+    if (ordenacao.coluna) {
+      const { coluna, dir } = ordenacao;
+      lista = [...lista].sort((a, b) => {
+        let va, vb;
+        if (coluna === 'vl_duplicata') {
+          va = parseFloat(a.vl_duplicata || 0);
+          vb = parseFloat(b.vl_duplicata || 0);
+        } else if (coluna === 'nm_fornecedor') {
+          va = (a.nm_fornecedor || '').toLowerCase();
+          vb = (b.nm_fornecedor || '').toLowerCase();
+        } else if (coluna === 'dt_vencimento') {
+          va = a.dt_vencimento || '';
+          vb = b.dt_vencimento || '';
+        } else if (coluna === 'ds_historico') {
+          va = (a.ds_historico || '').toLowerCase();
+          vb = (b.ds_historico || '').toLowerCase();
+        } else if (coluna === 'banco_pagamento') {
+          va = (a.banco_pagamento || '').toLowerCase();
+          vb = (b.banco_pagamento || '').toLowerCase();
+        } else if (coluna === 'forma_pagamento') {
+          va = (a.forma_pagamento || '').toLowerCase();
+          vb = (b.forma_pagamento || '').toLowerCase();
+        } else {
+          return 0;
+        }
+        if (va < vb) return dir === 'asc' ? -1 : 1;
+        if (va > vb) return dir === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
     return lista;
   }, [
     titulos,
@@ -1647,6 +1817,7 @@ const LiberacaoPagamento = () => {
     filtroValorMax,
     filtroInclusao,
     filtroSoManuais,
+    ordenacao,
   ]);
 
   const { totalSaldo, bancosSaldoCount } = useMemo(
@@ -1838,7 +2009,7 @@ const LiberacaoPagamento = () => {
     }
     const valorTotal = ids.reduce((acc, id) => {
       const t = titulos.find((x) => x.id === id);
-      return acc + parseFloat(t?.vl_duplicata || 0);
+      return acc + parseFloat(t?.vl_real ?? t?.vl_duplicata ?? 0);
     }, 0);
     if (
       !window.confirm(
@@ -1857,6 +2028,35 @@ const LiberacaoPagamento = () => {
       alert('Erro ao marcar como pago: ' + error.message);
       return;
     }
+    // Deduzir saldo por banco
+    const porBanco = {};
+    ids.forEach((id) => {
+      const t = titulos.find((x) => x.id === id);
+      if (!t?.banco_pagamento) return;
+      const v = parseFloat(t.vl_real ?? t.vl_duplicata ?? 0);
+      porBanco[t.banco_pagamento] = (porBanco[t.banco_pagamento] || 0) + v;
+    });
+    for (const [banco, vlPago] of Object.entries(porBanco)) {
+      const { data: saldoRow } = await supabase
+        .from('saldo_bancario')
+        .select('valor')
+        .eq('banco', banco)
+        .single();
+      if (saldoRow) {
+        const novoSaldo = parseFloat(saldoRow.valor || 0) - vlPago;
+        await supabase
+          .from('saldo_bancario')
+          .update({
+            valor: novoSaldo,
+            updated_at: now,
+            updated_by: user?.email,
+          })
+          .eq('banco', banco);
+        setSaldos((prev) =>
+          prev.map((r) => (r.banco === banco ? { ...r, valor: novoSaldo } : r)),
+        );
+      }
+    }
     setSelecionados(new Set());
     setTitulos((prev) =>
       prev.map((t) =>
@@ -1872,33 +2072,66 @@ const LiberacaoPagamento = () => {
       if (!window.confirm('Confirmar pagamento deste título?')) return;
       setProcessandoId(id);
       const now = new Date().toISOString();
+      const titulo = titulos.find((t) => t.id === id);
+      const patch = {
+        status: 'PAGO',
+        pago_por: user?.email || null,
+        pago_em: now,
+        ...extraData,
+      };
       const { error } = await supabase
         .from('pagamentos_liberacao')
-        .update({
-          status: 'PAGO',
-          pago_por: user?.email || null,
-          pago_em: now,
-          ...extraData,
-        })
+        .update(patch)
         .eq('id', id);
-      setProcessandoId(null);
-      if (error) alert('Erro ao marcar como pago: ' + error.message);
-      else
-        setTitulos((prev) =>
-          prev.map((t) =>
-            t.id === id
-              ? {
-                  ...t,
-                  status: 'PAGO',
-                  pago_por: user?.email,
-                  pago_em: now,
-                  ...extraData,
-                }
-              : t,
-          ),
+      if (error) {
+        setProcessandoId(null);
+        alert('Erro ao marcar como pago: ' + error.message);
+        return;
+      }
+      // Deduzir do saldo bancário
+      const banco = extraData.banco_pagamento ?? titulo?.banco_pagamento;
+      if (banco) {
+        const vlPago = parseFloat(
+          extraData.vl_real ?? titulo?.vl_real ?? titulo?.vl_duplicata ?? 0,
         );
+        const { data: saldoRow } = await supabase
+          .from('saldo_bancario')
+          .select('valor')
+          .eq('banco', banco)
+          .single();
+        if (saldoRow) {
+          const novoSaldo = parseFloat(saldoRow.valor || 0) - vlPago;
+          await supabase
+            .from('saldo_bancario')
+            .update({
+              valor: novoSaldo,
+              updated_at: now,
+              updated_by: user?.email,
+            })
+            .eq('banco', banco);
+          setSaldos((prev) =>
+            prev.map((r) =>
+              r.banco === banco ? { ...r, valor: novoSaldo } : r,
+            ),
+          );
+        }
+      }
+      setProcessandoId(null);
+      setTitulos((prev) =>
+        prev.map((t) =>
+          t.id === id
+            ? {
+                ...t,
+                status: 'PAGO',
+                pago_por: user?.email,
+                pago_em: now,
+                ...extraData,
+              }
+            : t,
+        ),
+      );
     },
-    [user],
+    [user, titulos],
   );
 
   const adicionarTransferencia = useCallback((novoItem) => {
@@ -2304,7 +2537,7 @@ const LiberacaoPagamento = () => {
                 <span className="text-xs text-gray-500">
                   {selecionados.size} selecionado(s)
                 </span>
-                {isAdmin &&
+                {(isAdmin || isFinanceiro) &&
                   Array.from(selecionados).some(
                     (id) =>
                       titulos.find((t) => t.id === id)?.status === 'PENDENTE',
@@ -2372,30 +2605,50 @@ const LiberacaoPagamento = () => {
                   <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
                     Status
                   </th>
-                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
-                    Vencimento / Histórico
-                  </th>
-                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
-                    Valor
-                  </th>
+                  <ThSortable
+                    label="Vencimento / Histórico"
+                    coluna="dt_vencimento"
+                    ordenacao={ordenacao}
+                    onSort={toggleOrdem}
+                  />
+                  <ThSortable
+                    label="Valor"
+                    coluna="vl_duplicata"
+                    ordenacao={ordenacao}
+                    onSort={toggleOrdem}
+                  />
                   <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-28 text-blue-300">
                     Valor Real
                   </th>
-                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
-                    Fornecedor
-                  </th>
-                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
-                    Despesa
-                  </th>
+                  <ThSortable
+                    label="Fornecedor"
+                    coluna="nm_fornecedor"
+                    ordenacao={ordenacao}
+                    onSort={toggleOrdem}
+                  />
+                  <ThSortable
+                    label="Despesa"
+                    coluna="ds_historico"
+                    ordenacao={ordenacao}
+                    onSort={toggleOrdem}
+                  />
                   <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
                     Duplicata
                   </th>
-                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-32">
-                    Banco
-                  </th>
-                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-24">
-                    Forma Pgto
-                  </th>
+                  <ThSortable
+                    label="Banco"
+                    coluna="banco_pagamento"
+                    ordenacao={ordenacao}
+                    onSort={toggleOrdem}
+                    className="w-32"
+                  />
+                  <ThSortable
+                    label="Forma Pgto"
+                    coluna="forma_pagamento"
+                    ordenacao={ordenacao}
+                    onSort={toggleOrdem}
+                    className="w-24"
+                  />
                   <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
                     Detalhe Pgto
                   </th>
@@ -2464,9 +2717,9 @@ const LiberacaoPagamento = () => {
         <CheckCircle size={11} />
         As alterações de banco / forma de pagamento / observações são salvas
         individualmente ao clicar no ícone de disquete.
-        {isAdmin
-          ? ' Admin/Owner pode Aprovar (PENDENTE→APROVADO) e Pagar (APROVADO→PAGO) por linha.'
-          : ' Somente Admin/Owner pode aprovar e marcar como pago.'}
+        {isAdmin || isFinanceiro
+          ? ' Financeiro/Admin pode Aprovar, Pagar e Excluir títulos.'
+          : ' Somente Financeiro/Admin pode aprovar, pagar e excluir.'}
       </p>
     </div>
   );
