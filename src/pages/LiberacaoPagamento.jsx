@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../components/AuthContext';
 import PageTitle from '../components/ui/PageTitle';
@@ -15,6 +16,12 @@ import {
   XCircle,
   Stamp,
   Bank,
+  FileXls,
+  Info,
+  ChatCircleText,
+  Wallet,
+  MagnifyingGlass,
+  X,
 } from '@phosphor-icons/react';
 
 const BANCOS = [
@@ -94,6 +101,242 @@ const fmtDateTime = (d) => {
   });
 };
 
+const BANCOS_SALDO = [
+  'SICREDI CROSBY',
+  'SICREDI FÁBIO',
+  'STONE',
+  'ITAU FLAVIO',
+  'CAIXA IRMAOS',
+];
+
+// ─── Modal de Saldo Bancário ──────────────────────────
+const ModalSaldoBancario = ({ onClose, onSaved, userEmail }) => {
+  const [valores, setValores] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase.from('saldo_bancario').select('*');
+      const map = {};
+      (data || []).forEach((r) => {
+        map[r.banco] = r.valor;
+      });
+      setValores(map);
+      setLoading(false);
+    };
+    load();
+  }, []);
+
+  const total = BANCOS_SALDO.reduce(
+    (s, b) => s + parseFloat(valores[b] || 0),
+    0,
+  );
+
+  const handleSalvar = async () => {
+    setSaving(true);
+    const now = new Date().toISOString();
+    const rows = BANCOS_SALDO.map((banco) => ({
+      banco,
+      valor: parseFloat(valores[banco] || 0),
+      updated_at: now,
+      updated_by: userEmail || null,
+    }));
+    const { error } = await supabase
+      .from('saldo_bancario')
+      .upsert(rows, { onConflict: 'banco' });
+    setSaving(false);
+    if (error) {
+      alert('Erro ao salvar: ' + error.message);
+      return;
+    }
+    onSaved(rows);
+    onClose();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl border border-gray-200 p-5 w-full max-w-md mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-sm text-gray-800 flex items-center gap-2">
+            <Wallet size={16} weight="bold" className="text-teal-600" />
+            Saldo Bancário
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-700"
+          >
+            <X size={18} weight="bold" />
+          </button>
+        </div>
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <Spinner size={20} className="animate-spin text-gray-400" />
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {BANCOS_SALDO.map((banco) => (
+              <div key={banco} className="flex items-center gap-3">
+                <label className="text-xs font-semibold text-gray-700 w-36 shrink-0 flex items-center gap-1">
+                  <Bank size={11} className="text-[#000638]" />
+                  {banco}
+                </label>
+                <div className="relative flex-1">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
+                    R$
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={valores[banco] ?? ''}
+                    onChange={(e) =>
+                      setValores((p) => ({ ...p, [banco]: e.target.value }))
+                    }
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs pl-7 focus:ring-1 focus:ring-teal-500"
+                    placeholder="0,00"
+                  />
+                </div>
+                <span className="text-xs font-semibold text-teal-700 w-24 text-right">
+                  {fmtBRL(parseFloat(valores[banco] || 0))}
+                </span>
+              </div>
+            ))}
+            <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
+              <span className="text-xs font-bold text-gray-600 uppercase tracking-wide">
+                Total
+              </span>
+              <span className="text-base font-bold text-teal-700">
+                {fmtBRL(total)}
+              </span>
+            </div>
+          </div>
+        )}
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 border border-gray-300 text-gray-600 text-xs font-semibold py-2 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSalvar}
+            disabled={saving || loading}
+            className="flex-1 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-1"
+          >
+            {saving ? (
+              <Spinner size={12} className="animate-spin" />
+            ) : (
+              <FloppyDisk size={12} weight="bold" />
+            )}
+            Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Modal de detalhes do pagamento ──────────────────
+const ModalInfoPagamento = ({ item, onClose }) => {
+  const formaCfg = FORMAS_PAGAMENTO.find(
+    (f) => f.value === item.forma_pagamento,
+  );
+  const detalhe = item.chave_pix || item.codigo_barras || item.link_pagamento;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl border border-gray-200 p-5 w-full max-w-sm mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-sm text-gray-800">
+            Detalhes do Pagamento
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-700"
+          >
+            <XCircle size={18} weight="bold" />
+          </button>
+        </div>
+        <div className="space-y-3">
+          {item.banco_pagamento && (
+            <div>
+              <p className="text-[10px] font-bold uppercase text-gray-400 mb-0.5">
+                Banco
+              </p>
+              <p className="text-sm text-gray-800 font-semibold flex items-center gap-1">
+                <Bank size={13} className="text-[#000638]" />
+                {item.banco_pagamento}
+              </p>
+            </div>
+          )}
+          {item.forma_pagamento && (
+            <div>
+              <p className="text-[10px] font-bold uppercase text-gray-400 mb-0.5">
+                Forma de Pagamento
+              </p>
+              <span className="inline-block text-xs px-2 py-0.5 rounded bg-[#000638] text-white font-semibold">
+                {formaCfg?.label || item.forma_pagamento}
+              </span>
+            </div>
+          )}
+          {detalhe && (
+            <div>
+              <p className="text-[10px] font-bold uppercase text-gray-400 mb-0.5">
+                {formaCfg?.detalheLabel || 'Detalhe'}
+              </p>
+              <p className="text-xs text-gray-800 font-mono break-all bg-gray-50 rounded p-2 border border-gray-100">
+                {detalhe}
+              </p>
+            </div>
+          )}
+          {item.observacao && (
+            <div>
+              <p className="text-[10px] font-bold uppercase text-gray-400 mb-0.5">
+                Observação
+              </p>
+              <p className="text-sm text-gray-700 italic">{item.observacao}</p>
+            </div>
+          )}
+          {!item.banco_pagamento &&
+            !item.forma_pagamento &&
+            !detalhe &&
+            !item.observacao && (
+              <p className="text-sm text-gray-400 text-center py-2">
+                Nenhum detalhe registrado.
+              </p>
+            )}
+        </div>
+        {item.pago_em && (
+          <div className="mt-4 pt-3 border-t border-gray-100">
+            <p className="text-[10px] text-gray-400">
+              Pago em {fmtDateTime(item.pago_em)}
+              {item.pago_por ? ` · ${item.pago_por}` : ''}
+            </p>
+          </div>
+        )}
+        <button
+          onClick={onClose}
+          className="mt-4 w-full bg-[#000638] text-white text-xs font-semibold py-2 rounded-lg hover:bg-[#001060] transition-colors"
+        >
+          Fechar
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ─── Linha da tabela ──────────────────────────────────
 const LinhaTitulo = React.memo(
   ({
@@ -105,6 +348,7 @@ const LinhaTitulo = React.memo(
     onExcluir,
     onAprovar,
     onMarcarPago,
+    onAbrirModal,
   }) => {
     const [forma, setForma] = useState(item.forma_pagamento || '');
     const [banco, setBanco] = useState(item.banco_pagamento || '');
@@ -291,11 +535,19 @@ const LinhaTitulo = React.memo(
               className="w-full border border-gray-300 rounded px-1.5 py-1 text-xs disabled:bg-gray-100 focus:ring-1 focus:ring-[#000638]"
             />
           ) : (
-            <span className="text-xs text-gray-700 break-all">
-              {item.chave_pix || item.codigo_barras || item.link_pagamento || (
-                <span className="text-gray-400">—</span>
+            <div>
+              {item.chave_pix || item.codigo_barras || item.link_pagamento ? (
+                <button
+                  onClick={() => onAbrirModal(item)}
+                  className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
+                >
+                  <Info size={10} weight="bold" />
+                  Detalhe
+                </button>
+              ) : (
+                <span className="text-gray-400 text-xs">—</span>
               )}
-            </span>
+            </div>
           )}
         </td>
         <td className="px-2 py-2">
@@ -310,11 +562,19 @@ const LinhaTitulo = React.memo(
               className="w-full border border-gray-300 rounded px-1.5 py-1 text-xs focus:ring-1 focus:ring-[#000638]"
             />
           ) : (
-            <span className="text-xs text-gray-700 italic">
-              {item.observacao || (
-                <span className="text-gray-400 not-italic">—</span>
+            <div>
+              {item.observacao ? (
+                <button
+                  onClick={() => onAbrirModal(item)}
+                  className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors"
+                >
+                  <ChatCircleText size={10} weight="bold" />
+                  Obs
+                </button>
+              ) : (
+                <span className="text-gray-400 text-xs">—</span>
               )}
-            </span>
+            </div>
           )}
         </td>
         <td className="px-2 py-2">
@@ -406,6 +666,15 @@ const LiberacaoPagamento = () => {
   const [selecionados, setSelecionados] = useState(new Set());
   const [processando, setProcessando] = useState(false);
   const [processandoId, setProcessandoId] = useState(null);
+  const [modalItem, setModalItem] = useState(null);
+  // Saldo bancário
+  const [saldos, setSaldos] = useState([]);
+  const [showModalSaldo, setShowModalSaldo] = useState(false);
+  // Filtros extras (PAGO)
+  const [filtroFornecedor, setFiltroFornecedor] = useState('');
+  const [filtroBancoFiltro, setFiltroBancoFiltro] = useState('');
+  const [filtroValorMin, setFiltroValorMin] = useState('');
+  const [filtroValorMax, setFiltroValorMax] = useState('');
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -420,14 +689,61 @@ const LiberacaoPagamento = () => {
     setLoading(false);
   }, []);
 
+  const carregarSaldos = useCallback(async () => {
+    const { data } = await supabase.from('saldo_bancario').select('*');
+    setSaldos(data || []);
+  }, []);
+
   useEffect(() => {
     carregar();
-  }, [carregar]);
+    carregarSaldos();
+  }, [carregar, carregarSaldos]);
 
   const titulosFiltrados = useMemo(() => {
-    if (filtroStatus === 'TODOS') return titulos;
-    return titulos.filter((t) => t.status === filtroStatus);
-  }, [titulos, filtroStatus]);
+    let lista =
+      filtroStatus === 'TODOS'
+        ? titulos
+        : titulos.filter((t) => t.status === filtroStatus);
+    if (filtroFornecedor.trim()) {
+      const q = filtroFornecedor.toLowerCase();
+      lista = lista.filter((t) =>
+        (t.nm_fornecedor || '').toLowerCase().includes(q),
+      );
+    }
+    if (filtroBancoFiltro) {
+      lista = lista.filter((t) => t.banco_pagamento === filtroBancoFiltro);
+    }
+    if (filtroValorMin !== '') {
+      lista = lista.filter(
+        (t) => parseFloat(t.vl_duplicata || 0) >= parseFloat(filtroValorMin),
+      );
+    }
+    if (filtroValorMax !== '') {
+      lista = lista.filter(
+        (t) => parseFloat(t.vl_duplicata || 0) <= parseFloat(filtroValorMax),
+      );
+    }
+    return lista;
+  }, [
+    titulos,
+    filtroStatus,
+    filtroFornecedor,
+    filtroBancoFiltro,
+    filtroValorMin,
+    filtroValorMax,
+  ]);
+
+  const { totalSaldo, bancosSaldoCount } = useMemo(
+    () => ({
+      totalSaldo: saldos.reduce((s, r) => s + parseFloat(r.valor || 0), 0),
+      bancosSaldoCount: saldos.filter((r) => parseFloat(r.valor || 0) > 0)
+        .length,
+    }),
+    [saldos],
+  );
+
+  const temFiltroExtra =
+    filtroFornecedor || filtroBancoFiltro || filtroValorMin || filtroValorMax;
 
   const resumo = useMemo(() => {
     const agg = {
@@ -651,6 +967,38 @@ const LiberacaoPagamento = () => {
     [user],
   );
 
+  const exportarExcel = useCallback(() => {
+    const rows = titulosFiltrados.map((t) => ({
+      Status: t.status,
+      Empresa: t.nm_empresa || '',
+      Fornecedor: t.nm_fornecedor || '',
+      'Cód. Fornecedor': t.cd_fornecedor || '',
+      Duplicata: t.nr_duplicata || '',
+      Parcela: t.nr_parcela || '',
+      Vencimento: fmtDate(t.dt_vencimento),
+      Valor: parseFloat(t.vl_duplicata || 0),
+      Despesa: t.ds_despesaitem || '',
+      'C. Custo': t.cd_ccusto || '',
+      Banco: t.banco_pagamento || '',
+      'Forma Pgto': t.forma_pagamento || '',
+      'Detalhe Pgto': t.chave_pix || t.codigo_barras || t.link_pagamento || '',
+      Observação: t.observacao || '',
+      'Enviado por': t.enviado_por || '',
+      'Enviado em': t.enviado_em ? fmtDateTime(t.enviado_em) : '',
+      'Aprovado por': t.aprovado_por || '',
+      'Aprovado em': t.aprovado_em ? fmtDateTime(t.aprovado_em) : '',
+      'Pago por': t.pago_por || '',
+      'Pago em': t.pago_em ? fmtDateTime(t.pago_em) : '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Pagamentos');
+    XLSX.writeFile(
+      wb,
+      `liberacao-pagamento-${filtroStatus.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.xlsx`,
+    );
+  }, [titulosFiltrados, filtroStatus]);
+
   const CardStat = ({ label, value, cor, Icon, onClick }) => (
     <button
       onClick={onClick}
@@ -716,6 +1064,123 @@ const LiberacaoPagamento = () => {
         </div>
       </div>
 
+      {/* Card Saldo Bancário + Cards de seleção */}
+      <div className="flex flex-wrap gap-3 mb-4">
+        {/* Saldo Bancário */}
+        <button
+          onClick={() => setShowModalSaldo(true)}
+          className="flex-1 min-w-[260px] bg-white rounded-xl shadow border border-teal-200 p-4 text-left hover:shadow-md transition-shadow group"
+        >
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2 bg-teal-50 rounded-lg group-hover:bg-teal-100 transition-colors">
+              <Wallet size={20} weight="bold" className="text-teal-600" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-teal-600 mb-0.5">
+                Saldo Bancário
+                <span className="ml-2 text-gray-400 font-normal normal-case">
+                  · {bancosSaldoCount} banco(s)
+                </span>
+              </p>
+              <p className="text-2xl font-bold text-gray-800">
+                {fmtBRL(totalSaldo)}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {BANCOS_SALDO.map((b) => {
+              const s = saldos.find((r) => r.banco === b);
+              const v = parseFloat(s?.valor || 0);
+              return (
+                <span
+                  key={b}
+                  className={`inline-flex items-center gap-1 text-[9px] px-2 py-1 rounded-full border font-semibold ${
+                    v > 0
+                      ? 'bg-teal-50 text-teal-700 border-teal-200'
+                      : 'bg-gray-50 text-gray-400 border-gray-200'
+                  }`}
+                >
+                  <Bank size={8} />
+                  {b}: {fmtBRL(v)}
+                </span>
+              );
+            })}
+          </div>
+        </button>
+
+        {/* Títulos selecionados */}
+        <div className="flex-1 min-w-[200px] bg-white rounded-xl shadow border border-blue-200 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="p-2 bg-blue-50 rounded-lg">
+              <Receipt size={18} weight="bold" className="text-blue-600" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-blue-600 mb-0.5">
+                Títulos Selecionados
+              </p>
+              <p className="text-2xl font-bold text-gray-800">
+                {fmtBRL(valorSelecionado)}
+              </p>
+            </div>
+          </div>
+          <p className="text-[11px] text-gray-400 font-medium">
+            {selecionados.size} título(s) marcado(s)
+          </p>
+        </div>
+
+        {/* Saldo após pagamento */}
+        <div
+          className={`flex-1 min-w-[200px] rounded-xl shadow border p-4 ${
+            totalSaldo - valorSelecionado >= 0
+              ? 'bg-white border-green-200'
+              : 'bg-red-50 border-red-300'
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <div
+              className={`p-2 rounded-lg ${
+                totalSaldo - valorSelecionado >= 0
+                  ? 'bg-green-50'
+                  : 'bg-red-100'
+              }`}
+            >
+              <CurrencyDollar
+                size={18}
+                weight="bold"
+                className={
+                  totalSaldo - valorSelecionado >= 0
+                    ? 'text-green-600'
+                    : 'text-red-600'
+                }
+              />
+            </div>
+            <div>
+              <p
+                className={`text-[10px] font-bold uppercase tracking-wide mb-0.5 ${
+                  totalSaldo - valorSelecionado >= 0
+                    ? 'text-green-600'
+                    : 'text-red-600'
+                }`}
+              >
+                Saldo após pagamento
+              </p>
+              <p
+                className={`text-2xl font-bold ${
+                  totalSaldo - valorSelecionado >= 0
+                    ? 'text-gray-800'
+                    : 'text-red-700'
+                }`}
+              >
+                {fmtBRL(totalSaldo - valorSelecionado)}
+              </p>
+            </div>
+          </div>
+          <p className="text-[11px] text-gray-400 font-medium">
+            Saldo Bancário − Selecionados
+          </p>
+        </div>
+      </div>
+
       {/* Toolbar */}
       <div className="bg-white rounded-xl shadow border border-gray-200 p-3 mb-3 flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1">
@@ -737,6 +1202,15 @@ const LiberacaoPagamento = () => {
             </button>
           ))}
         </div>
+
+        <button
+          onClick={exportarExcel}
+          disabled={titulosFiltrados.length === 0}
+          className="flex items-center gap-1.5 bg-green-700 hover:bg-green-800 disabled:opacity-40 text-white text-xs font-semibold px-3 py-1.5 rounded transition-colors"
+        >
+          <FileXls size={14} weight="bold" />
+          Exportar Excel
+        </button>
 
         {isAdmin && (
           <div className="ml-auto flex items-center gap-2">
@@ -789,6 +1263,71 @@ const LiberacaoPagamento = () => {
             )}
           </div>
         )}
+      </div>
+
+      {/* Filtros extras */}
+      <div className="bg-white rounded-xl shadow border border-gray-200 px-3 py-2.5 mb-3 flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1 text-xs font-semibold text-gray-500">
+          <MagnifyingGlass size={13} />
+          Filtrar:
+        </div>
+        <input
+          type="text"
+          value={filtroFornecedor}
+          onChange={(e) => setFiltroFornecedor(e.target.value)}
+          placeholder="Fornecedor..."
+          className="border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-[#000638] w-44"
+        />
+        <select
+          value={filtroBancoFiltro}
+          onChange={(e) => setFiltroBancoFiltro(e.target.value)}
+          className="border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-[#000638] bg-white"
+        >
+          <option value="">Todos os bancos</option>
+          {BANCOS_SALDO.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+        </select>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-gray-500">R$ mín</span>
+          <input
+            type="number"
+            value={filtroValorMin}
+            onChange={(e) => setFiltroValorMin(e.target.value)}
+            placeholder="0"
+            min="0"
+            className="border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-[#000638] w-24"
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-gray-500">máx</span>
+          <input
+            type="number"
+            value={filtroValorMax}
+            onChange={(e) => setFiltroValorMax(e.target.value)}
+            placeholder="∞"
+            min="0"
+            className="border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-[#000638] w-24"
+          />
+        </div>
+        {temFiltroExtra && (
+          <button
+            onClick={() => {
+              setFiltroFornecedor('');
+              setFiltroBancoFiltro('');
+              setFiltroValorMin('');
+              setFiltroValorMax('');
+            }}
+            className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 font-semibold ml-1"
+          >
+            <X size={12} weight="bold" /> Limpar
+          </button>
+        )}
+        <span className="ml-auto text-[10px] text-gray-400">
+          {titulosFiltrados.length} registro(s)
+        </span>
       </div>
 
       {/* Tabela */}
@@ -859,6 +1398,7 @@ const LiberacaoPagamento = () => {
                     onExcluir={excluirTitulo}
                     onAprovar={aprovarTitulo}
                     onMarcarPago={marcarPagoTitulo}
+                    onAbrirModal={setModalItem}
                   />
                 ))}
               </tbody>
@@ -866,6 +1406,21 @@ const LiberacaoPagamento = () => {
           </div>
         )}
       </div>
+
+      {modalItem && (
+        <ModalInfoPagamento
+          item={modalItem}
+          onClose={() => setModalItem(null)}
+        />
+      )}
+
+      {showModalSaldo && (
+        <ModalSaldoBancario
+          onClose={() => setShowModalSaldo(false)}
+          onSaved={(rows) => setSaldos(rows)}
+          userEmail={user?.email}
+        />
+      )}
 
       <p className="mt-3 text-[10px] text-gray-400 flex items-center gap-1">
         <CheckCircle size={11} />
