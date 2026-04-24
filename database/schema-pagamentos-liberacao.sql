@@ -22,10 +22,11 @@ CREATE TABLE IF NOT EXISTS pagamentos_liberacao (
   dt_emissao        DATE,
   dt_vencimento     DATE,
   vl_duplicata      NUMERIC(15, 2) NOT NULL DEFAULT 0,
+  vl_real           NUMERIC(15, 2),          -- valor efetivamente pago (quando diferente do duplicata)
 
   -- Workflow
   status            VARCHAR(20) NOT NULL DEFAULT 'PENDENTE'
-                    CHECK (status IN ('PENDENTE', 'APROVADO', 'PAGO', 'CANCELADO')),
+                    CHECK (status IN ('PENDENTE', 'APROVADO', 'PAGO', 'CANCELADO', 'TRANSFERENCIA')),
 
   -- Dados de pagamento (preenchidos pelo financeiro)
   banco_pagamento   VARCHAR(50),    -- banco em que o pagamento será efetuado
@@ -98,4 +99,5 @@ ALTER TABLE pagamentos_liberacao
   ADD COLUMN IF NOT EXISTS aprovado_por     VARCHAR(255),
   ADD COLUMN IF NOT EXISTS aprovado_em      TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS cancelado_por    VARCHAR(255),
-  ADD COLUMN IF NOT EXISTS cancelado_em     TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS cancelado_em     TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS vl_real          NUMERIC(15, 2);

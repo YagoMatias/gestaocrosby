@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
+import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
 import PageTitle from '../components/ui/PageTitle';
 import {
@@ -22,6 +23,9 @@ import {
   Wallet,
   MagnifyingGlass,
   X,
+  PlusCircle,
+  PencilSimple,
+  ArrowsLeftRight,
 } from '@phosphor-icons/react';
 
 const BANCOS = [
@@ -30,6 +34,7 @@ const BANCOS = [
   'STONE',
   'ITAU FLAVIO',
   'CAIXA IRMAOS',
+  'MENTORE',
 ];
 
 const FORMAS_PAGAMENTO = [
@@ -75,6 +80,11 @@ const STATUS_CONFIG = {
     color: 'bg-red-100 text-red-800 border-red-300',
     icon: XCircle,
   },
+  TRANSFERENCIA: {
+    label: 'Entre Contas',
+    color: 'bg-purple-100 text-purple-800 border-purple-300',
+    icon: ArrowsLeftRight,
+  },
 };
 
 const fmtBRL = (v) =>
@@ -107,6 +117,7 @@ const BANCOS_SALDO = [
   'STONE',
   'ITAU FLAVIO',
   'CAIXA IRMAOS',
+  'MENTORE',
 ];
 
 // ─── Modal de Saldo Bancário ──────────────────────────
@@ -188,7 +199,7 @@ const ModalSaldoBancario = ({ onClose, onSaved, userEmail }) => {
                   {banco}
                 </label>
                 <div className="relative flex-1">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
+                  <span className="absolute left-2 top-1/3 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
                     R$
                   </span>
                   <input
@@ -337,11 +348,717 @@ const ModalInfoPagamento = ({ item, onClose }) => {
   );
 };
 
+// ─── Modal Transferência entre Contas ────────────────
+const ModalTransferencia = ({ onClose, onSalvo, userEmail }) => {
+  const [bancoOrigem, setBancoOrigem] = useState('');
+  const [bancoDestino, setBancoDestino] = useState('');
+  const [valor, setValor] = useState('');
+  const [formaPgto, setFormaPgto] = useState('');
+  const [detalhe, setDetalhe] = useState('');
+  const [dataTransf, setDataTransf] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [obs, setObs] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const formaCfg = FORMAS_PAGAMENTO.find((f) => f.value === formaPgto);
+
+  const handleSalvar = async () => {
+    if (!bancoOrigem) {
+      alert('Selecione o banco de origem.');
+      return;
+    }
+    if (!bancoDestino) {
+      alert('Selecione o banco de destino.');
+      return;
+    }
+    if (bancoOrigem === bancoDestino) {
+      alert('Origem e destino devem ser bancos diferentes.');
+      return;
+    }
+    if (!valor || isNaN(parseFloat(valor)) || parseFloat(valor) <= 0) {
+      alert('Informe um valor válido.');
+      return;
+    }
+    if (!dataTransf) {
+      alert('Informe a data da transferência.');
+      return;
+    }
+    setSaving(true);
+    const patch = {
+      chave_pix: null,
+      codigo_barras: null,
+      link_pagamento: null,
+    };
+    if (formaCfg) patch[formaCfg.campo] = detalhe || null;
+    const row = {
+      status: 'TRANSFERENCIA',
+      nm_empresa: 'Transferência',
+      nm_fornecedor: `${bancoOrigem} → ${bancoDestino}`,
+      dt_emissao: dataTransf,
+      dt_vencimento: dataTransf,
+      vl_duplicata: parseFloat(valor),
+      banco_pagamento: bancoOrigem,
+      forma_pagamento: formaPgto || null,
+      observacao: obs.trim() || null,
+      enviado_por: userEmail || null,
+      enviado_em: new Date().toISOString(),
+      dados_completos: {
+        transferencia_entre_contas: true,
+        banco_origem: bancoOrigem,
+        banco_destino: bancoDestino,
+      },
+      ...patch,
+    };
+    const { data, error } = await supabase
+      .from('pagamentos_liberacao')
+      .insert([row])
+      .select()
+      .single();
+    setSaving(false);
+    if (error) {
+      alert('Erro ao salvar: ' + error.message);
+      return;
+    }
+    onSalvo(data);
+    onClose();
+  };
+
+  const inputCls =
+    'w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-purple-500';
+  const labelCls = 'text-[10px] font-bold uppercase text-gray-500 mb-0.5 block';
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl border border-purple-200 p-5 w-full max-w-md mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-sm text-gray-800 flex items-center gap-2">
+            <ArrowsLeftRight
+              size={16}
+              weight="bold"
+              className="text-purple-600"
+            />
+            Transferência Entre Contas
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-700"
+          >
+            <X size={18} weight="bold" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>Banco Origem *</label>
+            <select
+              className={`${inputCls} bg-white`}
+              value={bancoOrigem}
+              onChange={(e) => setBancoOrigem(e.target.value)}
+            >
+              <option value="">— Selecione —</option>
+              {BANCOS.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Banco Destino *</label>
+            <select
+              className={`${inputCls} bg-white`}
+              value={bancoDestino}
+              onChange={(e) => setBancoDestino(e.target.value)}
+            >
+              <option value="">— Selecione —</option>
+              {BANCOS.filter((b) => b !== bancoOrigem).map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {bancoOrigem && bancoDestino && (
+            <div className="col-span-2 flex items-center justify-center gap-2 bg-purple-50 rounded-lg py-2 border border-purple-100">
+              <span className="text-xs font-bold text-purple-700">
+                {bancoOrigem}
+              </span>
+              <ArrowsLeftRight
+                size={14}
+                weight="bold"
+                className="text-purple-500"
+              />
+              <span className="text-xs font-bold text-purple-700">
+                {bancoDestino}
+              </span>
+            </div>
+          )}
+
+          <div>
+            <label className={labelCls}>Valor *</label>
+            <div className="relative">
+              <span className="absolute left-2 top-1/3 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
+                R$
+              </span>
+              <input
+                className={`${inputCls} pl-7`}
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={valor}
+                onChange={(e) => setValor(e.target.value)}
+                placeholder="0,00"
+              />
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Data da Transferência *</label>
+            <input
+              className={inputCls}
+              type="date"
+              value={dataTransf}
+              onChange={(e) => setDataTransf(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className={labelCls}>Forma de Pagamento</label>
+            <select
+              className={`${inputCls} bg-white`}
+              value={formaPgto}
+              onChange={(e) => {
+                setFormaPgto(e.target.value);
+                setDetalhe('');
+              }}
+            >
+              <option value="">— Forma —</option>
+              {FORMAS_PAGAMENTO.map((f) => (
+                <option key={f.value} value={f.value}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>
+              {formaCfg?.detalheLabel || 'Chave / Código'}
+            </label>
+            <input
+              className={inputCls}
+              value={detalhe}
+              disabled={!formaCfg}
+              onChange={(e) => setDetalhe(e.target.value)}
+              placeholder={
+                formaCfg ? formaCfg.detalheLabel : 'Selecione a forma'
+              }
+            />
+          </div>
+
+          <div className="col-span-2">
+            <label className={labelCls}>Observação</label>
+            <textarea
+              className={`${inputCls} resize-none`}
+              rows={2}
+              value={obs}
+              onChange={(e) => setObs(e.target.value)}
+              placeholder="Observações adicionais"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 border border-gray-300 text-gray-600 text-xs font-semibold py-2 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSalvar}
+            disabled={saving}
+            className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-1"
+          >
+            {saving ? (
+              <Spinner size={12} className="animate-spin" />
+            ) : (
+              <FloppyDisk size={12} weight="bold" />
+            )}
+            Registrar Transferência
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Modal adicionar duplicata manual ────────────────
+const CAMPOS_FORM_INICIAL = {
+  nm_fornecedor: '',
+  cd_fornecedor: '',
+  dt_emissao: '',
+  dt_vencimento: '',
+  vl_duplicata: '',
+  ds_despesaitem: '',
+  cd_ccusto: '',
+  banco_pagamento: '',
+  forma_pagamento: '',
+  detalhe: '',
+  observacao: '',
+};
+
+const TIPOS_BUSCA_FORN = [
+  { value: 'nome', label: 'Nome' },
+  { value: 'fantasia', label: 'Fantasia' },
+  { value: 'cnpj_cpf', label: 'CPF/CNPJ' },
+  { value: 'codigo', label: 'Código' },
+];
+
+const ModalAdicionarDuplicata = ({ onClose, onSalvo, userEmail }) => {
+  const [form, setForm] = useState(CAMPOS_FORM_INICIAL);
+  const [saving, setSaving] = useState(false);
+
+  // busca fornecedor
+  const [tipoBusca, setTipoBusca] = useState('nome');
+  const [termoBusca, setTermoBusca] = useState('');
+  const [buscando, setBuscando] = useState(false);
+  const [resultados, setResultados] = useState([]);
+  const [fornSelecionado, setFornSelecionado] = useState(null);
+
+  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+  const formaCfg = FORMAS_PAGAMENTO.find(
+    (f) => f.value === form.forma_pagamento,
+  );
+
+  const buscarFornecedor = async () => {
+    const termo = termoBusca.trim();
+    if (!termo) {
+      alert('Digite um valor para buscar.');
+      return;
+    }
+    if (tipoBusca === 'codigo') {
+      const code = parseInt(termo, 10);
+      if (isNaN(code) || code <= 0) {
+        alert('Código inválido.');
+        return;
+      }
+      setFornSelecionado({
+        cd_pessoa: code,
+        nm_pessoa: `Fornecedor Cód. ${code}`,
+        nm_fantasia: null,
+        cpf: null,
+      });
+      setForm((p) => ({
+        ...p,
+        nm_fornecedor: `Fornecedor Cód. ${code}`,
+        cd_fornecedor: String(code),
+      }));
+      setResultados([]);
+      return;
+    }
+    setBuscando(true);
+    setResultados([]);
+    try {
+      let qp = '';
+      if (tipoBusca === 'nome') qp = `nome=${encodeURIComponent(termo)}`;
+      else if (tipoBusca === 'fantasia')
+        qp = `fantasia=${encodeURIComponent(termo)}`;
+      else if (tipoBusca === 'cnpj_cpf')
+        qp = `cnpj=${encodeURIComponent(termo.replace(/\D/g, ''))}`;
+      const res = await fetch(
+        `${API_BASE_URL}/api/totvs/clientes/search-name?${qp}`,
+      );
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const lista = (data?.data?.clientes || []).map((f) => ({
+        cd_pessoa: f.code,
+        nm_pessoa: f.nm_pessoa,
+        nm_fantasia: f.fantasy_name || null,
+        cpf: f.cpf || null,
+      }));
+      if (lista.length === 0) alert('Nenhum fornecedor encontrado.');
+      else if (lista.length === 1) selecionarForn(lista[0]);
+      else setResultados(lista);
+    } catch {
+      alert('Erro ao buscar fornecedor.');
+    } finally {
+      setBuscando(false);
+    }
+  };
+
+  const selecionarForn = (f) => {
+    setFornSelecionado(f);
+    setForm((p) => ({
+      ...p,
+      nm_fornecedor: f.nm_pessoa,
+      cd_fornecedor: String(f.cd_pessoa),
+    }));
+    setResultados([]);
+    setTermoBusca('');
+  };
+
+  const handleSalvar = async () => {
+    if (!form.nm_fornecedor.trim()) {
+      alert('Informe o fornecedor.');
+      return;
+    }
+    if (!form.dt_vencimento) {
+      alert('Informe o vencimento.');
+      return;
+    }
+    if (!form.vl_duplicata || isNaN(parseFloat(form.vl_duplicata))) {
+      alert('Informe um valor válido.');
+      return;
+    }
+    setSaving(true);
+    const now = new Date().toISOString();
+    const patch = {
+      chave_pix: null,
+      codigo_barras: null,
+      link_pagamento: null,
+    };
+    if (formaCfg) patch[formaCfg.campo] = form.detalhe || null;
+
+    const row = {
+      status: 'PENDENTE',
+      nm_empresa: 'Manual',
+      nm_fornecedor: form.nm_fornecedor.trim(),
+      cd_fornecedor: form.cd_fornecedor.trim() || null,
+      dt_emissao: form.dt_emissao || null,
+      dt_vencimento: form.dt_vencimento,
+      vl_duplicata: parseFloat(form.vl_duplicata),
+      ds_despesaitem: form.ds_despesaitem.trim() || null,
+      cd_ccusto: form.cd_ccusto.trim() || null,
+      banco_pagamento: form.banco_pagamento || null,
+      forma_pagamento: form.forma_pagamento || null,
+      observacao: form.observacao.trim() || null,
+      enviado_por: userEmail || null,
+      enviado_em: now,
+      dados_completos: { inserido_manualmente: true },
+      ...patch,
+    };
+    const { data, error } = await supabase
+      .from('pagamentos_liberacao')
+      .insert([row])
+      .select()
+      .single();
+    setSaving(false);
+    if (error) {
+      alert('Erro ao salvar: ' + error.message);
+      return;
+    }
+    onSalvo(data);
+    onClose();
+  };
+
+  const inputCls =
+    'w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-[#000638]';
+  const labelCls = 'text-[10px] font-bold uppercase text-gray-500 mb-0.5 block';
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl border border-gray-200 p-5 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-sm text-gray-800 flex items-center gap-2">
+            <PlusCircle size={16} weight="bold" className="text-orange-500" />
+            Adicionar Duplicata Manual
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-700"
+          >
+            <X size={18} weight="bold" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          {/* Busca de fornecedor TOTVS */}
+          <div className="col-span-2 bg-gray-50 rounded-lg p-3 border border-gray-200">
+            <p className="text-[10px] font-bold uppercase text-gray-500 mb-2 flex items-center gap-1">
+              <MagnifyingGlass size={11} />
+              Buscar fornecedor no TOTVS
+            </p>
+            <div className="flex gap-1.5 mb-2">
+              <select
+                value={tipoBusca}
+                onChange={(e) => {
+                  setTipoBusca(e.target.value);
+                  setResultados([]);
+                }}
+                className="border border-gray-300 rounded px-1.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#000638] w-28 shrink-0"
+              >
+                {TIPOS_BUSCA_FORN.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={termoBusca}
+                onChange={(e) => setTermoBusca(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && buscarFornecedor()}
+                placeholder={`Buscar por ${TIPOS_BUSCA_FORN.find((t) => t.value === tipoBusca)?.label.toLowerCase()}...`}
+                className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-[#000638]"
+              />
+              <button
+                onClick={buscarFornecedor}
+                disabled={buscando}
+                className="flex items-center gap-1 bg-[#000638] hover:bg-[#001060] disabled:opacity-50 text-white text-xs font-semibold px-2.5 py-1 rounded transition-colors"
+              >
+                {buscando ? (
+                  <Spinner size={11} className="animate-spin" />
+                ) : (
+                  <MagnifyingGlass size={11} weight="bold" />
+                )}
+                Buscar
+              </button>
+            </div>
+
+            {/* Resultados */}
+            {resultados.length > 0 && (
+              <div className="border border-gray-200 rounded-lg overflow-hidden max-h-36 overflow-y-auto">
+                <table className="w-full text-[10px]">
+                  <thead className="bg-[#000638] text-white">
+                    <tr>
+                      <th className="px-2 py-1 text-left">Cód.</th>
+                      <th className="px-2 py-1 text-left">Nome</th>
+                      <th className="px-2 py-1 text-left">Fantasia</th>
+                      <th className="px-2 py-1 text-left">CPF/CNPJ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resultados.map((f) => (
+                      <tr
+                        key={f.cd_pessoa}
+                        onClick={() => selecionarForn(f)}
+                        className="border-t border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
+                      >
+                        <td className="px-2 py-1 font-mono text-gray-600">
+                          {f.cd_pessoa}
+                        </td>
+                        <td className="px-2 py-1 font-semibold text-gray-800">
+                          {f.nm_pessoa}
+                        </td>
+                        <td className="px-2 py-1 text-gray-500">
+                          {f.nm_fantasia || '—'}
+                        </td>
+                        <td className="px-2 py-1 text-gray-500">
+                          {f.cpf || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Fornecedor selecionado */}
+            {fornSelecionado && (
+              <div className="mt-1.5 flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-2.5 py-1.5">
+                <CheckCircle
+                  size={13}
+                  weight="bold"
+                  className="text-green-600 shrink-0"
+                />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-green-800 truncate">
+                    {fornSelecionado.nm_pessoa}
+                  </p>
+                  {fornSelecionado.nm_fantasia && (
+                    <p className="text-[10px] text-green-600 truncate">
+                      {fornSelecionado.nm_fantasia}
+                    </p>
+                  )}
+                </div>
+                <span className="ml-auto text-[10px] text-green-700 font-mono shrink-0">
+                  Cód. {fornSelecionado.cd_pessoa}
+                </span>
+                <button
+                  onClick={() => {
+                    setFornSelecionado(null);
+                    setForm((p) => ({
+                      ...p,
+                      nm_fornecedor: '',
+                      cd_fornecedor: '',
+                    }));
+                  }}
+                  className="text-gray-400 hover:text-red-500 shrink-0"
+                >
+                  <X size={12} weight="bold" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="col-span-2">
+            <label className={labelCls}>Fornecedor *</label>
+            <input
+              className={inputCls}
+              value={form.nm_fornecedor}
+              onChange={(e) => set('nm_fornecedor', e.target.value)}
+              placeholder="Nome do fornecedor (ou use a busca acima)"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Código Fornecedor</label>
+            <input
+              className={inputCls}
+              value={form.cd_fornecedor}
+              onChange={(e) => set('cd_fornecedor', e.target.value)}
+              placeholder="Opcional"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Valor *</label>
+            <input
+              className={inputCls}
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.vl_duplicata}
+              onChange={(e) => set('vl_duplicata', e.target.value)}
+              placeholder="0,00"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Emissão</label>
+            <input
+              className={inputCls}
+              type="date"
+              value={form.dt_emissao}
+              onChange={(e) => set('dt_emissao', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Vencimento *</label>
+            <input
+              className={inputCls}
+              type="date"
+              value={form.dt_vencimento}
+              onChange={(e) => set('dt_vencimento', e.target.value)}
+            />
+          </div>
+          <div className="col-span-2">
+            <label className={labelCls}>Despesa / Item</label>
+            <input
+              className={inputCls}
+              value={form.ds_despesaitem}
+              onChange={(e) => set('ds_despesaitem', e.target.value)}
+              placeholder="Descrição da despesa"
+            />
+          </div>
+          <div className="col-span-2">
+            <label className={labelCls}>Centro de Custo</label>
+            <input
+              className={inputCls}
+              value={form.cd_ccusto}
+              onChange={(e) => set('cd_ccusto', e.target.value)}
+              placeholder="Código do C.C."
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Banco</label>
+            <select
+              className={`${inputCls} bg-white`}
+              value={form.banco_pagamento}
+              onChange={(e) => set('banco_pagamento', e.target.value)}
+            >
+              <option value="">— Banco —</option>
+              {BANCOS.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Forma de Pagamento</label>
+            <select
+              className={`${inputCls} bg-white`}
+              value={form.forma_pagamento}
+              onChange={(e) => {
+                set('forma_pagamento', e.target.value);
+                set('detalhe', '');
+              }}
+            >
+              <option value="">— Forma —</option>
+              {FORMAS_PAGAMENTO.map((f) => (
+                <option key={f.value} value={f.value}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="col-span-2">
+            <label className={labelCls}>
+              {formaCfg?.detalheLabel || 'Detalhe Pgto'}
+            </label>
+            <input
+              className={inputCls}
+              value={form.detalhe}
+              disabled={!formaCfg}
+              onChange={(e) => set('detalhe', e.target.value)}
+              placeholder={
+                formaCfg ? formaCfg.detalheLabel : 'Selecione a forma primeiro'
+              }
+            />
+          </div>
+          <div className="col-span-2">
+            <label className={labelCls}>Observação</label>
+            <textarea
+              className={`${inputCls} resize-none`}
+              rows={2}
+              value={form.observacao}
+              onChange={(e) => set('observacao', e.target.value)}
+              placeholder="Observações adicionais"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 border border-gray-300 text-gray-600 text-xs font-semibold py-2 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSalvar}
+            disabled={saving}
+            className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-1"
+          >
+            {saving ? (
+              <Spinner size={12} className="animate-spin" />
+            ) : (
+              <FloppyDisk size={12} weight="bold" />
+            )}
+            Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Linha da tabela ──────────────────────────────────
 const LinhaTitulo = React.memo(
   ({
     item,
     isAdmin,
+    isFinanceiro,
     selecionado,
     onToggleSelect,
     onSalvar,
@@ -356,8 +1073,15 @@ const LinhaTitulo = React.memo(
       item.chave_pix || item.codigo_barras || item.link_pagamento || '',
     );
     const [obs, setObs] = useState(item.observacao || '');
+    const [vlReal, setVlReal] = useState(
+      item.vl_real != null ? String(item.vl_real) : '',
+    );
     const [saving, setSaving] = useState(false);
     const [dirty, setDirty] = useState(false);
+    const [showDetalhePopover, setShowDetalhePopover] = useState(false);
+    const [showObsPopover, setShowObsPopover] = useState(false);
+    const [detalheRascunho, setDetalheRascunho] = useState(detalhe);
+    const [obsRascunho, setObsRascunho] = useState(obs);
 
     const formaCfg = FORMAS_PAGAMENTO.find((f) => f.value === forma);
     const statusCfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.PENDENTE;
@@ -374,6 +1098,10 @@ const LinhaTitulo = React.memo(
         codigo_barras: null,
         link_pagamento: null,
         observacao: obs || null,
+        vl_real:
+          vlReal !== '' && !isNaN(parseFloat(vlReal))
+            ? parseFloat(vlReal)
+            : null,
       };
       if (formaCfg) patch[formaCfg.campo] = detalhe || null;
 
@@ -401,12 +1129,21 @@ const LinhaTitulo = React.memo(
       },
     ].filter(Boolean);
 
+    const isManual = !!item.dados_completos?.inserido_manualmente;
+    const isTransferencia = item.status === 'TRANSFERENCIA';
+
     return (
       <tr
-        className={`border-b border-gray-100 ${selecionado ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+        className={`border-b border-gray-100 ${
+          selecionado
+            ? 'bg-blue-50'
+            : isManual && !isTransferencia
+              ? 'bg-orange-50 hover:bg-orange-100'
+              : 'hover:bg-gray-50'
+        } ${isManual && !isTransferencia ? 'border-l-2 border-l-orange-400' : ''}`}
       >
         <td className="px-2 py-2 text-center">
-          {isAdmin &&
+          {(isAdmin || isFinanceiro) &&
             (item.status === 'PENDENTE' || item.status === 'APROVADO') && (
               <input
                 type="checkbox"
@@ -417,12 +1154,25 @@ const LinhaTitulo = React.memo(
             )}
         </td>
         <td className="px-2 py-2 text-xs">
-          <span
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusCfg.color}`}
-          >
-            <StatusIcon size={11} weight="bold" />
-            {statusCfg.label}
-          </span>
+          {isTransferencia ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-purple-100 text-purple-800 border-purple-300">
+              <ArrowsLeftRight size={11} weight="bold" />
+              Entre Contas
+            </span>
+          ) : (
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusCfg.color}`}
+            >
+              <StatusIcon size={11} weight="bold" />
+              {statusCfg.label}
+            </span>
+          )}
+          {isManual && !isTransferencia && (
+            <span className="mt-1 flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-300 font-bold w-fit">
+              <PencilSimple size={8} weight="bold" />
+              Manual
+            </span>
+          )}
         </td>
         <td className="px-2 py-2 text-xs">
           <div className="font-mono text-gray-700">
@@ -442,6 +1192,37 @@ const LinhaTitulo = React.memo(
         </td>
         <td className="px-2 py-2 text-xs font-semibold text-green-700">
           {fmtBRL(item.vl_duplicata)}
+        </td>
+        <td className="px-2 py-2 text-xs w-28">
+          {podeEditar && !isTransferencia ? (
+            <div className="relative">
+              <span className="absolute left-1.5 top-1/3 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">
+                R$
+              </span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={vlReal}
+                onChange={(e) => {
+                  setVlReal(e.target.value);
+                  marcarDirty();
+                }}
+                placeholder={fmtBRL(item.vl_duplicata).replace('R$\u00a0', '')}
+                className="w-full border border-blue-300 rounded pl-6 pr-1.5 py-1 text-xs focus:ring-1 focus:ring-blue-500 bg-blue-50"
+              />
+            </div>
+          ) : (
+            <span
+              className={
+                item.vl_real != null
+                  ? 'font-bold text-blue-700'
+                  : 'text-gray-400 text-[10px]'
+              }
+            >
+              {item.vl_real != null ? fmtBRL(item.vl_real) : '—'}
+            </span>
+          )}
         </td>
         <td className="px-2 py-2 text-xs">
           <div
@@ -465,75 +1246,132 @@ const LinhaTitulo = React.memo(
           {item.nr_parcela ? `/${item.nr_parcela}` : ''}
         </td>
         <td className="px-2 py-2">
-          {podeEditar ? (
-            <>
-              <select
-                value={banco}
-                onChange={(e) => {
-                  setBanco(e.target.value);
-                  marcarDirty();
-                }}
-                className="w-full border border-gray-300 rounded px-1.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#000638] mb-1"
-              >
-                <option value="">— Banco —</option>
-                {BANCOS.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={forma}
-                onChange={(e) => {
-                  setForma(e.target.value);
-                  setDetalhe('');
-                  marcarDirty();
-                }}
-                className="w-full border border-gray-300 rounded px-1.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#000638]"
-              >
-                <option value="">— Forma —</option>
-                {FORMAS_PAGAMENTO.map((f) => (
-                  <option key={f.value} value={f.value}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
-            </>
+          {podeEditar && !isTransferencia ? (
+            <select
+              value={banco}
+              onChange={(e) => {
+                setBanco(e.target.value);
+                marcarDirty();
+              }}
+              className="w-full border border-gray-300 rounded px-1.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#000638]"
+            >
+              <option value="">— Banco —</option>
+              {BANCOS.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
           ) : (
-            <div className="space-y-0.5">
-              {item.banco_pagamento && (
+            <div>
+              {item.banco_pagamento ? (
                 <div className="flex items-center gap-1 text-xs font-semibold text-gray-700">
                   <Bank size={11} className="text-[#000638]" />
                   {item.banco_pagamento}
                 </div>
-              )}
-              {item.forma_pagamento && (
-                <span className="inline-block text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-semibold">
-                  {FORMAS_PAGAMENTO.find(
-                    (f) => f.value === item.forma_pagamento,
-                  )?.label || item.forma_pagamento}
-                </span>
-              )}
-              {!item.banco_pagamento && !item.forma_pagamento && (
+              ) : (
                 <span className="text-[10px] text-gray-400">—</span>
               )}
             </div>
           )}
         </td>
         <td className="px-2 py-2">
-          {podeEditar ? (
-            <input
-              value={detalhe}
-              disabled={!formaCfg}
+          {podeEditar && !isTransferencia ? (
+            <select
+              value={forma}
               onChange={(e) => {
-                setDetalhe(e.target.value);
+                setForma(e.target.value);
+                setDetalhe('');
                 marcarDirty();
               }}
-              placeholder={
-                formaCfg ? formaCfg.detalheLabel : 'Selecione a forma'
-              }
-              className="w-full border border-gray-300 rounded px-1.5 py-1 text-xs disabled:bg-gray-100 focus:ring-1 focus:ring-[#000638]"
-            />
+              className="w-full border border-gray-300 rounded px-1.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#000638]"
+            >
+              <option value="">— Forma —</option>
+              {FORMAS_PAGAMENTO.map((f) => (
+                <option key={f.value} value={f.value}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div>
+              {item.forma_pagamento ? (
+                <span className="inline-block text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-semibold border border-gray-200">
+                  {FORMAS_PAGAMENTO.find(
+                    (f) => f.value === item.forma_pagamento,
+                  )?.label || item.forma_pagamento}
+                </span>
+              ) : (
+                <span className="text-[10px] text-gray-400">—</span>
+              )}
+            </div>
+          )}
+        </td>
+        <td className="px-2 py-2">
+          {podeEditar && !isTransferencia ? (
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setDetalheRascunho(detalhe);
+                  setShowDetalhePopover((v) => !v);
+                  setShowObsPopover(false);
+                }}
+                disabled={!formaCfg}
+                className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded border transition-colors ${
+                  !formaCfg
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : detalhe
+                      ? 'bg-green-50 text-green-700 border-green-300 hover:bg-green-100'
+                      : 'bg-gray-50 text-gray-600 border-gray-300 hover:bg-gray-100'
+                }`}
+              >
+                <Info size={10} weight="bold" />
+                {formaCfg ? formaCfg.label : 'Forma'}
+                {detalhe && (
+                  <span className="ml-1 w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                )}
+              </button>
+              {showDetalhePopover && formaCfg && (
+                <div className="absolute z-30 top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl p-3 w-64">
+                  <p className="text-[10px] font-bold text-gray-600 uppercase mb-1.5">
+                    {formaCfg.detalheLabel}
+                  </p>
+                  <input
+                    autoFocus
+                    value={detalheRascunho}
+                    onChange={(e) => setDetalheRascunho(e.target.value)}
+                    placeholder={formaCfg.detalheLabel}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-[#000638] mb-2"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') setShowDetalhePopover(false);
+                      if (e.key === 'Enter') {
+                        setDetalhe(detalheRascunho);
+                        marcarDirty();
+                        setShowDetalhePopover(false);
+                      }
+                    }}
+                  />
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setShowDetalhePopover(false)}
+                      className="flex-1 border border-gray-300 text-gray-600 text-[10px] font-semibold py-1 rounded hover:bg-gray-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDetalhe(detalheRascunho);
+                        marcarDirty();
+                        setShowDetalhePopover(false);
+                      }}
+                      className="flex-1 bg-[#000638] text-white text-[10px] font-semibold py-1 rounded hover:bg-[#001060]"
+                    >
+                      OK
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
             <div>
               {item.chave_pix || item.codigo_barras || item.link_pagamento ? (
@@ -551,16 +1389,63 @@ const LinhaTitulo = React.memo(
           )}
         </td>
         <td className="px-2 py-2">
-          {podeEditar ? (
-            <input
-              value={obs}
-              onChange={(e) => {
-                setObs(e.target.value);
-                marcarDirty();
-              }}
-              placeholder="Observação"
-              className="w-full border border-gray-300 rounded px-1.5 py-1 text-xs focus:ring-1 focus:ring-[#000638]"
-            />
+          {podeEditar && !isTransferencia ? (
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setObsRascunho(obs);
+                  setShowObsPopover((v) => !v);
+                  setShowDetalhePopover(false);
+                }}
+                className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded border transition-colors ${
+                  obs
+                    ? 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100'
+                    : 'bg-gray-50 text-gray-600 border-gray-300 hover:bg-gray-100'
+                }`}
+              >
+                <ChatCircleText size={10} weight="bold" />
+                OBS
+                {obs && (
+                  <span className="ml-1 w-1.5 h-1.5 rounded-full bg-orange-500 inline-block" />
+                )}
+              </button>
+              {showObsPopover && (
+                <div className="absolute z-30 top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl p-3 w-64">
+                  <p className="text-[10px] font-bold text-gray-600 uppercase mb-1.5">
+                    Observação
+                  </p>
+                  <textarea
+                    autoFocus
+                    rows={3}
+                    value={obsRascunho}
+                    onChange={(e) => setObsRascunho(e.target.value)}
+                    placeholder="Adicione uma observação..."
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-[#000638] resize-none mb-2"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') setShowObsPopover(false);
+                    }}
+                  />
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setShowObsPopover(false)}
+                      className="flex-1 border border-gray-300 text-gray-600 text-[10px] font-semibold py-1 rounded hover:bg-gray-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => {
+                        setObs(obsRascunho);
+                        marcarDirty();
+                        setShowObsPopover(false);
+                      }}
+                      className="flex-1 bg-[#000638] text-white text-[10px] font-semibold py-1 rounded hover:bg-[#001060]"
+                    >
+                      OK
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
             <div>
               {item.observacao ? (
@@ -614,7 +1499,7 @@ const LinhaTitulo = React.memo(
                 APROVAR
               </button>
             )}
-            {isAdmin && item.status === 'APROVADO' && (
+            {(isAdmin || isFinanceiro) && item.status === 'APROVADO' && (
               <button
                 onClick={() => {
                   const extra = {
@@ -658,6 +1543,7 @@ LinhaTitulo.displayName = 'LinhaTitulo';
 const LiberacaoPagamento = () => {
   const { user, hasAnyRole } = useAuth() || {};
   const isAdmin = hasAnyRole?.(['owner', 'admin']) || false;
+  const isFinanceiro = hasAnyRole?.(['user']) || false;
 
   const [titulos, setTitulos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -670,11 +1556,16 @@ const LiberacaoPagamento = () => {
   // Saldo bancário
   const [saldos, setSaldos] = useState([]);
   const [showModalSaldo, setShowModalSaldo] = useState(false);
+  const [showModalTransferencia, setShowModalTransferencia] = useState(false);
   // Filtros extras (PAGO)
   const [filtroFornecedor, setFiltroFornecedor] = useState('');
   const [filtroBancoFiltro, setFiltroBancoFiltro] = useState('');
   const [filtroValorMin, setFiltroValorMin] = useState('');
   const [filtroValorMax, setFiltroValorMax] = useState('');
+  const [filtroSoManuais, setFiltroSoManuais] = useState(false);
+  const [filtroTipo, setFiltroTipo] = useState('TODOS'); // TODOS | PAGAMENTO | TRANSFERENCIA
+  const [filtroInclusao, setFiltroInclusao] = useState('TODOS'); // TODOS | TOTVS | MANUAL
+  const [showModalAdicionar, setShowModalAdicionar] = useState(false);
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -700,10 +1591,23 @@ const LiberacaoPagamento = () => {
   }, [carregar, carregarSaldos]);
 
   const titulosFiltrados = useMemo(() => {
-    let lista =
-      filtroStatus === 'TODOS'
-        ? titulos
-        : titulos.filter((t) => t.status === filtroStatus);
+    // Filtro por Tipo (Pagamento vs Entre Contas)
+    let lista;
+    if (filtroTipo === 'TRANSFERENCIA') {
+      lista = titulos.filter((t) => t.status === 'TRANSFERENCIA');
+    } else if (filtroTipo === 'PAGAMENTO') {
+      lista = titulos.filter((t) => t.status !== 'TRANSFERENCIA');
+    } else {
+      // TODOS: respeita filtroStatus
+      lista =
+        filtroStatus === 'TODOS'
+          ? titulos.filter((t) => t.status !== 'TRANSFERENCIA')
+          : titulos.filter((t) => t.status === filtroStatus);
+    }
+    // Se tipo for PAGAMENTO e tiver filtro de status, aplica também
+    if (filtroTipo === 'PAGAMENTO' && filtroStatus !== 'TODOS') {
+      lista = lista.filter((t) => t.status === filtroStatus);
+    }
     if (filtroFornecedor.trim()) {
       const q = filtroFornecedor.toLowerCase();
       lista = lista.filter((t) =>
@@ -723,14 +1627,26 @@ const LiberacaoPagamento = () => {
         (t) => parseFloat(t.vl_duplicata || 0) <= parseFloat(filtroValorMax),
       );
     }
+    if (filtroInclusao === 'MANUAL') {
+      lista = lista.filter((t) => !!t.dados_completos?.inserido_manualmente);
+    } else if (filtroInclusao === 'TOTVS') {
+      lista = lista.filter(
+        (t) =>
+          !t.dados_completos?.inserido_manualmente &&
+          !t.dados_completos?.transferencia_entre_contas,
+      );
+    }
     return lista;
   }, [
     titulos,
     filtroStatus,
+    filtroTipo,
     filtroFornecedor,
     filtroBancoFiltro,
     filtroValorMin,
     filtroValorMax,
+    filtroInclusao,
+    filtroSoManuais,
   ]);
 
   const { totalSaldo, bancosSaldoCount } = useMemo(
@@ -743,7 +1659,24 @@ const LiberacaoPagamento = () => {
   );
 
   const temFiltroExtra =
-    filtroFornecedor || filtroBancoFiltro || filtroValorMin || filtroValorMax;
+    filtroFornecedor ||
+    filtroBancoFiltro ||
+    filtroValorMin ||
+    filtroValorMax ||
+    filtroSoManuais ||
+    filtroTipo !== 'TODOS' ||
+    filtroInclusao !== 'TODOS';
+
+  const limparFiltros = () => {
+    setFiltroFornecedor('');
+    setFiltroBancoFiltro('');
+    setFiltroValorMin('');
+    setFiltroValorMax('');
+    setFiltroSoManuais(false);
+    setFiltroTipo('TODOS');
+    setFiltroInclusao('TODOS');
+    setFiltroStatus('TODOS');
+  };
 
   const resumo = useMemo(() => {
     const agg = {
@@ -757,7 +1690,7 @@ const LiberacaoPagamento = () => {
     titulos.forEach((t) => {
       agg[t.status] = (agg[t.status] || 0) + 1;
       agg.total++;
-      if (t.status !== 'CANCELADO')
+      if (t.status !== 'CANCELADO' && t.status !== 'TRANSFERENCIA')
         agg.valor += parseFloat(t.vl_duplicata || 0);
     });
     return agg;
@@ -767,7 +1700,8 @@ const LiberacaoPagamento = () => {
     let v = 0;
     selecionados.forEach((id) => {
       const t = titulos.find((x) => x.id === id);
-      if (t) v += parseFloat(t.vl_duplicata || 0);
+      if (t && t.status !== 'TRANSFERENCIA')
+        v += parseFloat(t.vl_real != null ? t.vl_real : t.vl_duplicata || 0);
     });
     return v;
   }, [selecionados, titulos]);
@@ -967,6 +1901,14 @@ const LiberacaoPagamento = () => {
     [user],
   );
 
+  const adicionarTransferencia = useCallback((novoItem) => {
+    setTitulos((prev) => [novoItem, ...prev]);
+  }, []);
+
+  const adicionarDuplicata = useCallback((novoItem) => {
+    setTitulos((prev) => [novoItem, ...prev]);
+  }, []);
+
   const exportarExcel = useCallback(() => {
     const rows = titulosFiltrados.map((t) => ({
       Status: t.status,
@@ -977,6 +1919,7 @@ const LiberacaoPagamento = () => {
       Parcela: t.nr_parcela || '',
       Vencimento: fmtDate(t.dt_vencimento),
       Valor: parseFloat(t.vl_duplicata || 0),
+      'Valor Real': t.vl_real != null ? parseFloat(t.vl_real) : '',
       Despesa: t.ds_despesaitem || '',
       'C. Custo': t.cd_ccusto || '',
       Banco: t.banco_pagamento || '',
@@ -1181,28 +2124,148 @@ const LiberacaoPagamento = () => {
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="bg-white rounded-xl shadow border border-gray-200 p-3 mb-3 flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1">
-          <Funnel size={14} className="text-[#000638]" />
-          <span className="text-xs font-semibold text-gray-600 mr-1">
-            Status:
-          </span>
-          {['TODOS', 'PENDENTE', 'APROVADO', 'PAGO', 'CANCELADO'].map((s) => (
+      {/* Painel de Filtros */}
+      <div className="bg-white rounded-xl shadow border border-gray-200 p-4 mb-3">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Funnel size={14} weight="bold" className="text-[#000638]" />
+            <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
+              Filtros
+            </span>
+            {temFiltroExtra && (
+              <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold">
+                ativos
+              </span>
+            )}
+          </div>
+          {temFiltroExtra && (
             <button
-              key={s}
-              onClick={() => setFiltroStatus(s)}
-              className={`text-xs px-2 py-1 rounded font-medium transition-colors ${
-                filtroStatus === s
-                  ? 'bg-[#000638] text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
+              onClick={limparFiltros}
+              className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 font-semibold"
             >
-              {s}
+              <X size={11} weight="bold" /> Limpar filtros
             </button>
-          ))}
+          )}
         </div>
 
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          {/* Status */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold uppercase text-gray-500">
+              Status
+            </label>
+            <select
+              value={filtroStatus}
+              onChange={(e) => setFiltroStatus(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#000638] h-[30px]"
+            >
+              <option value="TODOS">Todos</option>
+              <option value="PENDENTE">Pendente</option>
+              <option value="APROVADO">Aprovado</option>
+              <option value="PAGO">Pago</option>
+              <option value="CANCELADO">Cancelado</option>
+            </select>
+          </div>
+
+          {/* Tipo */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold uppercase text-gray-500">
+              Tipo
+            </label>
+            <select
+              value={filtroTipo}
+              onChange={(e) => setFiltroTipo(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#000638] h-[30px]"
+            >
+              <option value="TODOS">Todos</option>
+              <option value="PAGAMENTO">Pagamento</option>
+              <option value="TRANSFERENCIA">Entre Contas</option>
+            </select>
+          </div>
+
+          {/* Inclusão */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold uppercase text-gray-500">
+              Inclusão
+            </label>
+            <select
+              value={filtroInclusao}
+              onChange={(e) => setFiltroInclusao(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#000638] h-[30px]"
+            >
+              <option value="TODOS">Todos</option>
+              <option value="TOTVS">TOTVS</option>
+              <option value="MANUAL">Manual</option>
+            </select>
+          </div>
+
+          {/* Banco */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold uppercase text-gray-500">
+              Banco
+            </label>
+            <select
+              value={filtroBancoFiltro}
+              onChange={(e) => setFiltroBancoFiltro(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#000638] h-[30px]"
+            >
+              <option value="">Todos</option>
+              {BANCOS_SALDO.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Fornecedor */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold uppercase text-gray-500">
+              Fornecedor
+            </label>
+            <input
+              type="text"
+              value={filtroFornecedor}
+              onChange={(e) => setFiltroFornecedor(e.target.value)}
+              placeholder="Nome do fornecedor..."
+              className="border border-gray-300 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-[#000638] h-[30px]"
+            />
+          </div>
+
+          {/* Valor */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold uppercase text-gray-500">
+              Valor (R$)
+            </label>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                value={filtroValorMin}
+                onChange={(e) => setFiltroValorMin(e.target.value)}
+                placeholder="Mín"
+                min="0"
+                className="border border-gray-300 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-[#000638] h-[30px] w-full"
+              />
+              <span className="text-gray-400 text-xs">—</span>
+              <input
+                type="number"
+                value={filtroValorMax}
+                onChange={(e) => setFiltroValorMax(e.target.value)}
+                placeholder="Máx"
+                min="0"
+                className="border border-gray-300 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-[#000638] h-[30px] w-full"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-2.5 text-[10px] text-gray-400 font-medium">
+          {titulosFiltrados.length} registro(s) encontrado(s)
+        </div>
+      </div>
+
+      {/* Barra de ações acima da tabela */}
+      <div className="bg-white rounded-xl shadow border border-gray-200 px-3 py-2 mb-3 flex flex-wrap items-center gap-2">
         <button
           onClick={exportarExcel}
           disabled={titulosFiltrados.length === 0}
@@ -1212,7 +2275,23 @@ const LiberacaoPagamento = () => {
           Exportar Excel
         </button>
 
-        {isAdmin && (
+        <button
+          onClick={() => setShowModalTransferencia(true)}
+          className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-3 py-1.5 rounded transition-colors"
+        >
+          <ArrowsLeftRight size={14} weight="bold" />
+          Transferência
+        </button>
+
+        <button
+          onClick={() => setShowModalAdicionar(true)}
+          className="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold px-3 py-1.5 rounded transition-colors"
+        >
+          <PlusCircle size={14} weight="bold" />
+          Adicionar Duplicata
+        </button>
+
+        {(isAdmin || isFinanceiro) && (
           <div className="ml-auto flex items-center gap-2">
             <button
               onClick={selecionarTodosVisiveis}
@@ -1225,23 +2304,24 @@ const LiberacaoPagamento = () => {
                 <span className="text-xs text-gray-500">
                   {selecionados.size} selecionado(s)
                 </span>
-                {Array.from(selecionados).some(
-                  (id) =>
-                    titulos.find((t) => t.id === id)?.status === 'PENDENTE',
-                ) && (
-                  <button
-                    onClick={aprovarSelecionados}
-                    disabled={processando}
-                    className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-1.5 rounded transition-colors"
-                  >
-                    {processando ? (
-                      <Spinner size={12} className="animate-spin" />
-                    ) : (
-                      <Stamp size={12} weight="bold" />
-                    )}
-                    APROVAR SELECIONADOS
-                  </button>
-                )}
+                {isAdmin &&
+                  Array.from(selecionados).some(
+                    (id) =>
+                      titulos.find((t) => t.id === id)?.status === 'PENDENTE',
+                  ) && (
+                    <button
+                      onClick={aprovarSelecionados}
+                      disabled={processando}
+                      className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-1.5 rounded transition-colors"
+                    >
+                      {processando ? (
+                        <Spinner size={12} className="animate-spin" />
+                      ) : (
+                        <Stamp size={12} weight="bold" />
+                      )}
+                      APROVAR SELECIONADOS
+                    </button>
+                  )}
                 {Array.from(selecionados).some(
                   (id) =>
                     titulos.find((t) => t.id === id)?.status === 'APROVADO',
@@ -1263,71 +2343,6 @@ const LiberacaoPagamento = () => {
             )}
           </div>
         )}
-      </div>
-
-      {/* Filtros extras */}
-      <div className="bg-white rounded-xl shadow border border-gray-200 px-3 py-2.5 mb-3 flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 text-xs font-semibold text-gray-500">
-          <MagnifyingGlass size={13} />
-          Filtrar:
-        </div>
-        <input
-          type="text"
-          value={filtroFornecedor}
-          onChange={(e) => setFiltroFornecedor(e.target.value)}
-          placeholder="Fornecedor..."
-          className="border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-[#000638] w-44"
-        />
-        <select
-          value={filtroBancoFiltro}
-          onChange={(e) => setFiltroBancoFiltro(e.target.value)}
-          className="border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-[#000638] bg-white"
-        >
-          <option value="">Todos os bancos</option>
-          {BANCOS_SALDO.map((b) => (
-            <option key={b} value={b}>
-              {b}
-            </option>
-          ))}
-        </select>
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-gray-500">R$ mín</span>
-          <input
-            type="number"
-            value={filtroValorMin}
-            onChange={(e) => setFiltroValorMin(e.target.value)}
-            placeholder="0"
-            min="0"
-            className="border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-[#000638] w-24"
-          />
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-gray-500">máx</span>
-          <input
-            type="number"
-            value={filtroValorMax}
-            onChange={(e) => setFiltroValorMax(e.target.value)}
-            placeholder="∞"
-            min="0"
-            className="border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-[#000638] w-24"
-          />
-        </div>
-        {temFiltroExtra && (
-          <button
-            onClick={() => {
-              setFiltroFornecedor('');
-              setFiltroBancoFiltro('');
-              setFiltroValorMin('');
-              setFiltroValorMax('');
-            }}
-            className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 font-semibold ml-1"
-          >
-            <X size={12} weight="bold" /> Limpar
-          </button>
-        )}
-        <span className="ml-auto text-[10px] text-gray-400">
-          {titulosFiltrados.length} registro(s)
-        </span>
       </div>
 
       {/* Tabela */}
@@ -1363,6 +2378,9 @@ const LiberacaoPagamento = () => {
                   <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
                     Valor
                   </th>
+                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-28 text-blue-300">
+                    Valor Real
+                  </th>
                   <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
                     Fornecedor
                   </th>
@@ -1372,8 +2390,11 @@ const LiberacaoPagamento = () => {
                   <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
                     Duplicata
                   </th>
-                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-40">
-                    Banco / Forma Pgto
+                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-32">
+                    Banco
+                  </th>
+                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-24">
+                    Forma Pgto
                   </th>
                   <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
                     Detalhe Pgto
@@ -1392,6 +2413,7 @@ const LiberacaoPagamento = () => {
                     key={item.id}
                     item={item}
                     isAdmin={isAdmin}
+                    isFinanceiro={isFinanceiro}
                     selecionado={selecionados.has(item.id)}
                     onToggleSelect={toggleSelect}
                     onSalvar={salvarTitulo}
@@ -1411,6 +2433,22 @@ const LiberacaoPagamento = () => {
         <ModalInfoPagamento
           item={modalItem}
           onClose={() => setModalItem(null)}
+        />
+      )}
+
+      {showModalTransferencia && (
+        <ModalTransferencia
+          onClose={() => setShowModalTransferencia(false)}
+          onSalvo={adicionarTransferencia}
+          userEmail={user?.email}
+        />
+      )}
+
+      {showModalAdicionar && (
+        <ModalAdicionarDuplicata
+          onClose={() => setShowModalAdicionar(false)}
+          onSalvo={adicionarDuplicata}
+          userEmail={user?.email}
         />
       )}
 
