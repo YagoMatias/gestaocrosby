@@ -550,6 +550,50 @@ const ContasAPagar = (props) => {
     }));
 
     try {
+      // Verificar duplicatas já enviadas (mesma nr_duplicata + cd_empresa + status não cancelado)
+      const chaves = registros
+        .filter((r) => r.nr_duplicata && r.cd_empresa)
+        .map((r) => ({
+          nr_duplicata: r.nr_duplicata,
+          cd_empresa: r.cd_empresa,
+          nr_parcela: r.nr_parcela,
+        }));
+
+      if (chaves.length > 0) {
+        const { data: jaExistentes } = await supabase
+          .from('pagamentos_liberacao')
+          .select('nr_duplicata, cd_empresa, nr_parcela, status')
+          .in(
+            'nr_duplicata',
+            chaves.map((c) => c.nr_duplicata),
+          )
+          .not('status', 'eq', 'CANCELADO');
+
+        if (jaExistentes && jaExistentes.length > 0) {
+          const conflitos = jaExistentes.filter((ex) =>
+            chaves.some(
+              (c) =>
+                c.nr_duplicata === ex.nr_duplicata &&
+                c.cd_empresa === ex.cd_empresa &&
+                (c.nr_parcela || null) === (ex.nr_parcela || null),
+            ),
+          );
+
+          if (conflitos.length > 0) {
+            const msgs = conflitos
+              .map(
+                (c) =>
+                  `• Duplicata ${c.nr_duplicata}${c.nr_parcela ? `/${c.nr_parcela}` : ''} — já enviada (${c.status})`,
+              )
+              .join('\n');
+            alert(
+              `⚠️ Envio bloqueado!\n\nAs seguintes duplicatas já foram enviadas para Liberação de Pagamento:\n\n${msgs}\n\nDesmarque-as e tente novamente.`,
+            );
+            return;
+          }
+        }
+      }
+
       const { error } = await supabase
         .from('pagamentos_liberacao')
         .insert(registros);
