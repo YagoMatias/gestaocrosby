@@ -1639,6 +1639,10 @@ const LinhaTitulo = React.memo(
                     codigo_barras: null,
                     link_pagamento: null,
                     observacao: obs || null,
+                    vl_real:
+                      vlReal !== '' && !isNaN(parseFloat(vlReal))
+                        ? parseFloat(vlReal)
+                        : null,
                   };
                   if (formaCfg) extra[formaCfg.campo] = detalhe || null;
                   onMarcarPago(item.id, extra);
@@ -1877,6 +1881,18 @@ const LiberacaoPagamento = () => {
     return v;
   }, [selecionados, titulos]);
 
+  const { valorAprovados, qtdAprovados } = useMemo(() => {
+    const aprovados = titulos.filter((t) => t.status === 'APROVADO');
+    return {
+      qtdAprovados: aprovados.length,
+      valorAprovados: aprovados.reduce(
+        (acc, t) =>
+          acc + parseFloat(t.vl_real != null ? t.vl_real : t.vl_duplicata || 0),
+        0,
+      ),
+    };
+  }, [titulos]);
+
   const toggleSelect = useCallback((id) => {
     setSelecionados((prev) => {
       const n = new Set(prev);
@@ -2041,21 +2057,22 @@ const LiberacaoPagamento = () => {
         .from('saldo_bancario')
         .select('valor')
         .eq('banco', banco)
-        .single();
-      if (saldoRow) {
-        const novoSaldo = parseFloat(saldoRow.valor || 0) - vlPago;
-        await supabase
-          .from('saldo_bancario')
-          .update({
-            valor: novoSaldo,
-            updated_at: now,
-            updated_by: user?.email,
-          })
-          .eq('banco', banco);
-        setSaldos((prev) =>
-          prev.map((r) => (r.banco === banco ? { ...r, valor: novoSaldo } : r)),
+        .maybeSingle();
+      const novoSaldo = parseFloat(saldoRow?.valor || 0) - vlPago;
+      await supabase
+        .from('saldo_bancario')
+        .upsert(
+          { banco, valor: novoSaldo, updated_at: now, updated_by: user?.email },
+          { onConflict: 'banco' },
         );
-      }
+      setSaldos((prev) => {
+        const existe = prev.some((r) => r.banco === banco);
+        if (existe)
+          return prev.map((r) =>
+            r.banco === banco ? { ...r, valor: novoSaldo } : r,
+          );
+        return [...prev, { banco, valor: novoSaldo }];
+      });
     }
     setSelecionados(new Set());
     setTitulos((prev) =>
@@ -2098,23 +2115,25 @@ const LiberacaoPagamento = () => {
           .from('saldo_bancario')
           .select('valor')
           .eq('banco', banco)
-          .single();
-        if (saldoRow) {
-          const novoSaldo = parseFloat(saldoRow.valor || 0) - vlPago;
-          await supabase
-            .from('saldo_bancario')
-            .update({
-              valor: novoSaldo,
-              updated_at: now,
-              updated_by: user?.email,
-            })
-            .eq('banco', banco);
-          setSaldos((prev) =>
-            prev.map((r) =>
+          .maybeSingle();
+        const novoSaldo = parseFloat(saldoRow?.valor || 0) - vlPago;
+        await supabase.from('saldo_bancario').upsert(
+          {
+            banco,
+            valor: novoSaldo,
+            updated_at: now,
+            updated_by: user?.email,
+          },
+          { onConflict: 'banco' },
+        );
+        setSaldos((prev) => {
+          const existe = prev.some((r) => r.banco === banco);
+          if (existe)
+            return prev.map((r) =>
               r.banco === banco ? { ...r, valor: novoSaldo } : r,
-            ),
-          );
-        }
+            );
+          return [...prev, { banco, valor: novoSaldo }];
+        });
       }
       setProcessandoId(null);
       setTitulos((prev) =>
@@ -2284,14 +2303,34 @@ const LiberacaoPagamento = () => {
           </div>
         </button>
 
-        {/* Títulos selecionados */}
+        {/* Títulos Aprovados */}
         <div className="flex-1 min-w-[200px] bg-white rounded-xl shadow border border-blue-200 p-4">
           <div className="flex items-center gap-2 mb-2">
             <div className="p-2 bg-blue-50 rounded-lg">
-              <Receipt size={18} weight="bold" className="text-blue-600" />
+              <Stamp size={18} weight="bold" className="text-blue-600" />
             </div>
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wide text-blue-600 mb-0.5">
+                Títulos Aprovados
+              </p>
+              <p className="text-2xl font-bold text-gray-800">
+                {fmtBRL(valorAprovados)}
+              </p>
+            </div>
+          </div>
+          <p className="text-[11px] text-gray-400 font-medium">
+            {qtdAprovados} título(s) aguardando pagamento
+          </p>
+        </div>
+
+        {/* Títulos Selecionados */}
+        <div className="flex-1 min-w-[200px] bg-white rounded-xl shadow border border-purple-200 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="p-2 bg-purple-50 rounded-lg">
+              <Receipt size={18} weight="bold" className="text-purple-600" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-purple-600 mb-0.5">
                 Títulos Selecionados
               </p>
               <p className="text-2xl font-bold text-gray-800">
@@ -2304,57 +2343,51 @@ const LiberacaoPagamento = () => {
           </p>
         </div>
 
-        {/* Saldo após pagamento */}
-        <div
-          className={`flex-1 min-w-[200px] rounded-xl shadow border p-4 ${
-            totalSaldo - valorSelecionado >= 0
-              ? 'bg-white border-green-200'
-              : 'bg-red-50 border-red-300'
-          }`}
-        >
-          <div className="flex items-center gap-2 mb-2">
+        {/* Saldo Restante */}
+        {(() => {
+          const saldoRestante = totalSaldo - valorAprovados - valorSelecionado;
+          const positivo = saldoRestante >= 0;
+          return (
             <div
-              className={`p-2 rounded-lg ${
-                totalSaldo - valorSelecionado >= 0
-                  ? 'bg-green-50'
-                  : 'bg-red-100'
+              className={`flex-1 min-w-[200px] rounded-xl shadow border p-4 ${
+                positivo
+                  ? 'bg-white border-green-200'
+                  : 'bg-red-50 border-red-300'
               }`}
             >
-              <CurrencyDollar
-                size={18}
-                weight="bold"
-                className={
-                  totalSaldo - valorSelecionado >= 0
-                    ? 'text-green-600'
-                    : 'text-red-600'
-                }
-              />
-            </div>
-            <div>
-              <p
-                className={`text-[10px] font-bold uppercase tracking-wide mb-0.5 ${
-                  totalSaldo - valorSelecionado >= 0
-                    ? 'text-green-600'
-                    : 'text-red-600'
-                }`}
-              >
-                Saldo após pagamento
+              <div className="flex items-center gap-2 mb-2">
+                <div
+                  className={`p-2 rounded-lg ${positivo ? 'bg-green-50' : 'bg-red-100'}`}
+                >
+                  <CurrencyDollar
+                    size={18}
+                    weight="bold"
+                    className={positivo ? 'text-green-600' : 'text-red-600'}
+                  />
+                </div>
+                <div>
+                  <p
+                    className={`text-[10px] font-bold uppercase tracking-wide mb-0.5 ${
+                      positivo ? 'text-green-600' : 'text-red-600'
+                    }`}
+                  >
+                    Saldo Restante
+                  </p>
+                  <p
+                    className={`text-2xl font-bold ${
+                      positivo ? 'text-gray-800' : 'text-red-700'
+                    }`}
+                  >
+                    {fmtBRL(saldoRestante)}
+                  </p>
+                </div>
+              </div>
+              <p className="text-[11px] text-gray-400 font-medium">
+                Saldo Bancário − Aprovados − Selecionados
               </p>
-              <p
-                className={`text-2xl font-bold ${
-                  totalSaldo - valorSelecionado >= 0
-                    ? 'text-gray-800'
-                    : 'text-red-700'
-                }`}
-              >
-                {fmtBRL(totalSaldo - valorSelecionado)}
-              </p>
             </div>
-          </div>
-          <p className="text-[11px] text-gray-400 font-medium">
-            Saldo Bancário − Selecionados
-          </p>
-        </div>
+          );
+        })()}
       </div>
 
       {/* Painel de Filtros */}
