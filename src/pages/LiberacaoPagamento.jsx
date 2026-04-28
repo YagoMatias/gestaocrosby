@@ -5,6 +5,10 @@ import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
 import PageTitle from '../components/ui/PageTitle';
 import {
+  gerarArquivoRemessaSicredi,
+  proximoNomeArquivoRemessa,
+} from '../utils/cnab240Sicredi';
+import {
   CurrencyDollar,
   CheckCircle,
   Warning,
@@ -1699,6 +1703,7 @@ const LiberacaoPagamento = () => {
   const [filtroSoManuais, setFiltroSoManuais] = useState(false);
   const [filtroTipo, setFiltroTipo] = useState('TODOS'); // TODOS | PAGAMENTO | TRANSFERENCIA
   const [filtroInclusao, setFiltroInclusao] = useState('TODOS'); // TODOS | TOTVS | MANUAL
+  const [filtroForma, setFiltroForma] = useState(''); // '' | PIX | BOLETO | DEBITO | CREDITO
   const [showModalAdicionar, setShowModalAdicionar] = useState(false);
   const [ordenacao, setOrdenacao] = useState({ coluna: null, dir: 'asc' });
 
@@ -1770,6 +1775,9 @@ const LiberacaoPagamento = () => {
         (t) => parseFloat(t.vl_duplicata || 0) <= parseFloat(filtroValorMax),
       );
     }
+    if (filtroForma) {
+      lista = lista.filter((t) => t.forma_pagamento === filtroForma);
+    }
     if (filtroInclusao === 'MANUAL') {
       lista = lista.filter((t) => !!t.dados_completos?.inserido_manualmente);
     } else if (filtroInclusao === 'TOTVS') {
@@ -1817,6 +1825,7 @@ const LiberacaoPagamento = () => {
     filtroTipo,
     filtroFornecedor,
     filtroBancoFiltro,
+    filtroForma,
     filtroValorMin,
     filtroValorMax,
     filtroInclusao,
@@ -1836,6 +1845,7 @@ const LiberacaoPagamento = () => {
   const temFiltroExtra =
     filtroFornecedor ||
     filtroBancoFiltro ||
+    filtroForma ||
     filtroValorMin ||
     filtroValorMax ||
     filtroSoManuais ||
@@ -1845,6 +1855,7 @@ const LiberacaoPagamento = () => {
   const limparFiltros = () => {
     setFiltroFornecedor('');
     setFiltroBancoFiltro('');
+    setFiltroForma('');
     setFiltroValorMin('');
     setFiltroValorMax('');
     setFiltroSoManuais(false);
@@ -2083,6 +2094,59 @@ const LiberacaoPagamento = () => {
       ),
     );
   }, [selecionados, titulos, user]);
+
+  const gerarRemessaSicredi = useCallback(() => {
+    // Filtra selecionados: APROVADO + PIX
+    const elegiveis = Array.from(selecionados)
+      .map((id) => titulos.find((t) => t.id === id))
+      .filter(
+        (t) => t && t.status === 'APROVADO' && t.forma_pagamento === 'PIX',
+      );
+
+    if (elegiveis.length === 0) {
+      alert(
+        'Nenhum título selecionado com status APROVADO e forma de pagamento PIX.',
+      );
+      return;
+    }
+
+    // Valida chaves PIX
+    const semChave = elegiveis.filter(
+      (t) => !t.chave_pix || !String(t.chave_pix).trim(),
+    );
+    if (semChave.length > 0) {
+      alert(
+        `${semChave.length} título(s) sem Chave PIX preenchida. Preencha antes de gerar a remessa.`,
+      );
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Gerar arquivo de remessa SICREDI com ${elegiveis.length} título(s) PIX?`,
+      )
+    )
+      return;
+
+    try {
+      const conteudo = gerarArquivoRemessaSicredi(elegiveis, {
+        dataPagamento: new Date(),
+        dataGeracao: new Date(),
+      });
+      const nome = proximoNomeArquivoRemessa();
+      const blob = new Blob([conteudo], { type: 'text/plain;charset=latin1' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = nome;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Erro ao gerar remessa: ' + err.message);
+    }
+  }, [selecionados, titulos]);
 
   const marcarPagoTitulo = useCallback(
     async (id, extraData = {}) => {
@@ -2414,7 +2478,7 @@ const LiberacaoPagamento = () => {
           )}
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
           {/* Status */}
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold uppercase text-gray-500">
@@ -2481,6 +2545,24 @@ const LiberacaoPagamento = () => {
                   {b}
                 </option>
               ))}
+            </select>
+          </div>
+
+          {/* Forma de Pagamento */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold uppercase text-gray-500">
+              Forma Pgto
+            </label>
+            <select
+              value={filtroForma}
+              onChange={(e) => setFiltroForma(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#000638] h-[30px]"
+            >
+              <option value="">Todas</option>
+              <option value="PIX">PIX</option>
+              <option value="BOLETO">Boleto</option>
+              <option value="DEBITO">Débito</option>
+              <option value="CREDITO">Crédito</option>
             </select>
           </div>
 
@@ -2605,6 +2687,22 @@ const LiberacaoPagamento = () => {
                     PAGAR SELECIONADOS
                   </button>
                 )}
+                {Array.from(selecionados).some((id) => {
+                  const t = titulos.find((x) => x.id === id);
+                  return (
+                    t?.status === 'APROVADO' && t?.forma_pagamento === 'PIX'
+                  );
+                }) && (
+                  <button
+                    onClick={gerarRemessaSicredi}
+                    disabled={processando}
+                    className="flex items-center gap-1 bg-[#000638] hover:bg-[#001a5c] disabled:opacity-50 text-white text-xs font-bold px-3 py-1.5 rounded transition-colors"
+                    title="Gera arquivo CNAB 240 SICREDI com os aprovados + PIX selecionados"
+                  >
+                    <FileXls size={12} weight="bold" />
+                    GERAR REMESSA SICREDI
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -2629,13 +2727,13 @@ const LiberacaoPagamento = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="min-w-[1400px] w-full table-fixed">
               <thead className="bg-[#000638] text-white">
                 <tr>
                   <th className="px-2 py-2 text-center text-[10px] font-bold uppercase w-10">
                     Sel.
                   </th>
-                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
+                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-24">
                     Status
                   </th>
                   <ThSortable
@@ -2643,12 +2741,14 @@ const LiberacaoPagamento = () => {
                     coluna="dt_vencimento"
                     ordenacao={ordenacao}
                     onSort={toggleOrdem}
+                    className="w-44"
                   />
                   <ThSortable
                     label="Valor"
                     coluna="vl_duplicata"
                     ordenacao={ordenacao}
                     onSort={toggleOrdem}
+                    className="w-28"
                   />
                   <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-28 text-blue-300">
                     Valor Real
@@ -2658,14 +2758,16 @@ const LiberacaoPagamento = () => {
                     coluna="nm_fornecedor"
                     ordenacao={ordenacao}
                     onSort={toggleOrdem}
+                    className="w-44"
                   />
                   <ThSortable
                     label="Despesa"
                     coluna="ds_historico"
                     ordenacao={ordenacao}
                     onSort={toggleOrdem}
+                    className="w-32"
                   />
-                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
+                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-28">
                     Duplicata
                   </th>
                   <ThSortable
@@ -2673,7 +2775,7 @@ const LiberacaoPagamento = () => {
                     coluna="banco_pagamento"
                     ordenacao={ordenacao}
                     onSort={toggleOrdem}
-                    className="w-32"
+                    className="w-36"
                   />
                   <ThSortable
                     label="Forma Pgto"
@@ -2682,13 +2784,13 @@ const LiberacaoPagamento = () => {
                     onSort={toggleOrdem}
                     className="w-24"
                   />
-                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
+                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-32">
                     Detalhe Pgto
                   </th>
-                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase">
+                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-32">
                     Observação
                   </th>
-                  <th className="px-2 py-2 text-right text-[10px] font-bold uppercase">
+                  <th className="px-2 py-2 text-right text-[10px] font-bold uppercase w-28">
                     Ações
                   </th>
                 </tr>

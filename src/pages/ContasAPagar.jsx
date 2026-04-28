@@ -557,12 +557,13 @@ const ContasAPagar = (props) => {
           nr_duplicata: r.nr_duplicata,
           cd_empresa: r.cd_empresa,
           nr_parcela: r.nr_parcela,
+          cd_fornecedor: r.cd_fornecedor,
         }));
 
       if (chaves.length > 0) {
         const { data: jaExistentes } = await supabase
           .from('pagamentos_liberacao')
-          .select('nr_duplicata, cd_empresa, nr_parcela, status')
+          .select('nr_duplicata, cd_empresa, nr_parcela, status,cd_fornecedor')
           .in(
             'nr_duplicata',
             chaves.map((c) => c.nr_duplicata),
@@ -574,6 +575,7 @@ const ContasAPagar = (props) => {
             chaves.some(
               (c) =>
                 c.nr_duplicata === ex.nr_duplicata &&
+                c.cd_fornecedor === ex.cd_fornecedor &&
                 c.cd_empresa === ex.cd_empresa &&
                 (c.nr_parcela || null) === (ex.nr_parcela || null),
             ),
@@ -583,7 +585,7 @@ const ContasAPagar = (props) => {
             const msgs = conflitos
               .map(
                 (c) =>
-                  `• Duplicata ${c.nr_duplicata}${c.nr_parcela ? `/${c.nr_parcela}` : ''} — já enviada (${c.status})`,
+                  `Fornecedor ${c.cd_fornecedor} • Duplicata ${c.nr_duplicata}${c.nr_parcela ? `/${c.nr_parcela}` : ''} — já enviada (${c.status})`,
               )
               .join('\n');
             alert(
