@@ -17,8 +17,7 @@ import {
   Receipt,
   Spinner,
 } from '@phosphor-icons/react';
-
-const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
+import { TotvsURL } from '../config/constants';
 
 const tiposDocumento = {
   1: 'Fatura',

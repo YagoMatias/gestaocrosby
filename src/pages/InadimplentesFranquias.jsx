@@ -7,6 +7,7 @@ import { useAuth } from '../components/AuthContext';
 import { supabaseAdmin } from '../lib/supabase';
 import PageTitle from '../components/ui/PageTitle';
 import Notification from '../components/ui/Notification';
+import { TotvsURL } from '../config/constants';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
@@ -72,8 +73,6 @@ const InadimplentesFranquias = () => {
   const [filtroDataFinal, setFiltroDataFinal] = useState(hojeStr);
   const [filtroClientes, setFiltroClientes] = useState([]);
   const [filtroEstados, setFiltroEstados] = useState([]);
-
-  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
   const [modalAberto, setModalAberto] = useState(false);
   const [clienteSelecionado, setClienteSelecionado] = useState(null);

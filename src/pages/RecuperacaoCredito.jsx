@@ -44,8 +44,8 @@ import {
   MagnifyingGlassPlus,
   Spinner,
 } from '@phosphor-icons/react';
+import { TotvsURL } from '../config/constants';
 
-const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 const EvolutionURL = 'https://apigestaocrosby-bw2v.onrender.com/api/evolution/';
 const BUCKET_NAME = 'clientes-confianca';
 

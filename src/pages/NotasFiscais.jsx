@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import useApiClient from '../hooks/useApiClient';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { TotvsURL } from '../config/constants';
 import {
   Card,
   CardContent,
@@ -59,7 +60,6 @@ const NotasFiscais = () => {
   const [produtosLoading, setProdutosLoading] = useState(false);
   const [produtosError, setProdutosError] = useState('');
 
-  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/franchise/';
 
   // Estado para armazenar códigos das filiais (empresas próprias)

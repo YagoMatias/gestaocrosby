@@ -38,10 +38,10 @@ import {
   MagnifyingGlassPlus,
   CircleNotch,
 } from '@phosphor-icons/react';
+import { TotvsURL } from '../config/constants';
 
 const BUCKET_NAME = 'clientes-confianca';
 const SUPABASE_URL = 'https://dorztqiunewggydvkjnf.supabase.co';
-const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 const EvolutionURL = 'https://apigestaocrosby-bw2v.onrender.com/api/evolution/';
 
 const CATEGORIAS_DOCUMENTOS = [

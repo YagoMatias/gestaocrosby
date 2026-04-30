@@ -3,6 +3,7 @@ import { useAuth } from '../components/AuthContext';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import PageTitle from '../components/ui/PageTitle';
 import Notification from '../components/ui/Notification';
+import { TotvsURL } from '../config/constants';
 import {
   Receipt,
   CheckCircle,
@@ -90,8 +91,6 @@ const SolicitacaoBaixa = () => {
     cartao_debito: 'Cartão de Déb.',
     credev: 'CREDEV',
   };
-
-  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
   // Carregar solicitações
   const carregarSolicitacoes = async () => {

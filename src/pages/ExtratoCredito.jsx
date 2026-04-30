@@ -3,6 +3,7 @@ import useApiClient from '../hooks/useApiClient';
 import LoadingSpinner from '../components/LoadingSpinner';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import PageTitle from '../components/ui/PageTitle';
+import { TotvsURL } from '../config/constants';
 import {
   Card,
   CardContent,
@@ -77,7 +78,6 @@ const ExtratoCredito = () => {
   // Estados para ordenação
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
-  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
   const FranchiseURL =
     'https://apigestaocrosby-bw2v.onrender.com/api/franchise/';
 

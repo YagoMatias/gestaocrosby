@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, memo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import { supabase } from '../lib/supabase';
+import { TotvsURL } from '../config/constants';
 import {
   Card,
   CardContent,
@@ -59,8 +60,6 @@ ChartJS.register(
   Filler,
   ChartDataLabels,
 );
-
-const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
 const formatCurrency = (value) =>
   (value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });

@@ -13,6 +13,7 @@ import { useAuth } from '../components/AuthContext';
 import useClassificacoesInadimplentes from '../hooks/useClassificacoesInadimplentes';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import PageTitle from '../components/ui/PageTitle';
+import { TotvsURL } from '../config/constants';
 import Notification from '../components/ui/Notification';
 import {
   Card,
@@ -108,8 +109,6 @@ const InadimplentesMultimarcas = () => {
   const [filtroClientes, setFiltroClientes] = useState([]); // array de cd_cliente selecionados
   const [filtroEstados, setFiltroEstados] = useState([]); // array de siglas selecionadas
   const [filtroRepresentantes, setFiltroRepresentantes] = useState([]); // array de representantes selecionados
-
-  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
   // Estado para o modal de detalhes do cliente
   const [modalAberto, setModalAberto] = useState(false);

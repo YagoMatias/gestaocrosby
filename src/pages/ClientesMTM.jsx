@@ -22,8 +22,7 @@ import {
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-
-const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
+import { TotvsURL } from '../config/constants';
 
 const ClientesMTM = () => {
   const { user } = useAuth();

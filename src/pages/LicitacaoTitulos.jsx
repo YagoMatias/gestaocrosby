@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { supabase } from '../lib/supabase';
 import ClientePerfilModal from '../components/ClientePerfilModal';
+import { TotvsURL } from '../config/constants';
 import {
   Card,
   CardContent,
@@ -72,8 +73,6 @@ const LicitacaoTitulos = () => {
   const [remessaLoading, setRemessaLoading] = useState(false);
   const [titulosJaRemessados, setTitulosJaRemessados] = useState({});
   // { titulo_key: { user_nome, nr_remessa } }
-
-  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
   // Filtro de datas (input date)
   const calcDataPadrao = (dias) => {

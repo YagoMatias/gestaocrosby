@@ -1161,6 +1161,200 @@ router.post(
 );
 
 // ==========================================
+// BATCH LOOKUP SEPARADO POR TIPO (CRU)
+// Retorna o payload original da API TOTVS, sem mistura PF/PJ.
+// Isso preserva integridade dos dados quando o consumidor sabe
+// previamente qual é o tipo (PF ou PJ).
+// Docs: https://www30.bhan.com.br:9443/api/totvsmoda/person/v2/swagger/index.html
+// ==========================================
+
+/**
+ * Helper interno para batch-lookup cru contra um endpoint TOTVS
+ * (legal-entities OU individuals). Retorna o array de items
+ * agregado de todos os lotes, sem transformação.
+ */
+async function rawBatchLookup({ endpoint, personCodes, expand, pageSize }) {
+  const BATCH_SIZE = 50;
+  const uniqueCodes = [
+    ...new Set(
+      personCodes.map((c) => parseInt(c, 10)).filter((c) => !isNaN(c) && c > 0),
+    ),
+  ];
+
+  if (uniqueCodes.length === 0) {
+    return { items: [], totalRequested: 0, totalFound: 0 };
+  }
+
+  const tokenData = await getToken();
+  if (!tokenData?.access_token) {
+    const err = new Error('Não foi possível obter token TOTVS');
+    err.code = 'TOKEN_UNAVAILABLE';
+    throw err;
+  }
+
+  let token = tokenData.access_token;
+  const allItems = [];
+
+  const doRequest = async (payload, accessToken) =>
+    axios.post(endpoint, payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      timeout: 30000,
+    });
+
+  for (let i = 0; i < uniqueCodes.length; i += BATCH_SIZE) {
+    const batch = uniqueCodes.slice(i, i + BATCH_SIZE);
+    const payload = {
+      filter: { personCodeList: batch },
+      ...(expand ? { expand } : {}),
+      page: 1,
+      pageSize: pageSize || batch.length,
+    };
+
+    let resp;
+    try {
+      resp = await doRequest(payload, token);
+    } catch (err) {
+      if (err.response?.status === 401) {
+        const newToken = await getToken(true);
+        token = newToken.access_token;
+        resp = await doRequest(payload, token);
+      } else {
+        throw err;
+      }
+    }
+
+    const items = resp.data?.items || [];
+    allItems.push(...items);
+  }
+
+  return {
+    items: allItems,
+    totalRequested: uniqueCodes.length,
+    totalFound: allItems.length,
+  };
+}
+
+/**
+ * @route POST /totvs/persons/legal-entities/batch-lookup
+ * @desc Busca em lote de Pessoas Jurídicas (PJ) por personCodeList.
+ *       Endpoint TOTVS: POST /person/v2/legal-entities/search
+ *       Retorna o array bruto de items, sem mistura com PF.
+ * @body {
+ *   personCodes: number[]  (obrigatório) - Lista de códigos de pessoa
+ *   expand?: string         (opcional, default "phones") - Campos a expandir
+ *                          (phones, emails, addresses, contacts, classifications, observations)
+ *   pageSize?: number       (opcional)
+ * }
+ * @returns { items: [...itens TOTVS PJ crus...], totalRequested, totalFound }
+ */
+router.post(
+  '/persons/legal-entities/batch-lookup',
+  asyncHandler(async (req, res) => {
+    const { personCodes, expand = 'phones', pageSize } = req.body || {};
+
+    if (!Array.isArray(personCodes) || personCodes.length === 0) {
+      return errorResponse(
+        res,
+        'personCodes deve ser um array não vazio',
+        400,
+        'INVALID_INPUT',
+      );
+    }
+
+    const startTime = Date.now();
+    console.log(`🏢 PJ batch-lookup: ${personCodes.length} códigos recebidos`);
+
+    try {
+      const result = await rawBatchLookup({
+        endpoint: `${TOTVS_BASE_URL}/person/v2/legal-entities/search`,
+        personCodes,
+        expand,
+        pageSize,
+      });
+
+      const duration = Date.now() - startTime;
+      console.log(
+        `✅ PJ batch-lookup: ${result.totalFound}/${result.totalRequested} em ${duration}ms`,
+      );
+
+      return successResponse(
+        res,
+        result,
+        `${result.totalFound} pessoa(s) jurídica(s) encontrada(s) em ${duration}ms`,
+      );
+    } catch (error) {
+      console.error('❌ Erro PJ batch-lookup:', error.message);
+      if (error.code === 'TOKEN_UNAVAILABLE') {
+        return errorResponse(res, error.message, 503, 'TOKEN_UNAVAILABLE');
+      }
+      return errorResponse(res, error.message, 500, 'INTERNAL_ERROR');
+    }
+  }),
+);
+
+/**
+ * @route POST /totvs/persons/individuals/batch-lookup
+ * @desc Busca em lote de Pessoas Físicas (PF) por personCodeList.
+ *       Endpoint TOTVS: POST /person/v2/individuals/search
+ *       Retorna o array bruto de items, sem mistura com PJ.
+ * @body {
+ *   personCodes: number[]  (obrigatório) - Lista de códigos de pessoa
+ *   expand?: string         (opcional, default "phones") - Campos a expandir
+ *                          (phones, emails, addresses, contacts, classifications, observations)
+ *   pageSize?: number       (opcional)
+ * }
+ * @returns { items: [...itens TOTVS PF crus...], totalRequested, totalFound }
+ */
+router.post(
+  '/persons/individuals/batch-lookup',
+  asyncHandler(async (req, res) => {
+    const { personCodes, expand = 'phones', pageSize } = req.body || {};
+
+    if (!Array.isArray(personCodes) || personCodes.length === 0) {
+      return errorResponse(
+        res,
+        'personCodes deve ser um array não vazio',
+        400,
+        'INVALID_INPUT',
+      );
+    }
+
+    const startTime = Date.now();
+    console.log(`👤 PF batch-lookup: ${personCodes.length} códigos recebidos`);
+
+    try {
+      const result = await rawBatchLookup({
+        endpoint: `${TOTVS_BASE_URL}/person/v2/individuals/search`,
+        personCodes,
+        expand,
+        pageSize,
+      });
+
+      const duration = Date.now() - startTime;
+      console.log(
+        `✅ PF batch-lookup: ${result.totalFound}/${result.totalRequested} em ${duration}ms`,
+      );
+
+      return successResponse(
+        res,
+        result,
+        `${result.totalFound} pessoa(s) física(s) encontrada(s) em ${duration}ms`,
+      );
+    } catch (error) {
+      console.error('❌ Erro PF batch-lookup:', error.message);
+      if (error.code === 'TOKEN_UNAVAILABLE') {
+        return errorResponse(res, error.message, 503, 'TOKEN_UNAVAILABLE');
+      }
+      return errorResponse(res, error.message, 500, 'INTERNAL_ERROR');
+    }
+  }),
+);
+
+// ==========================================
 // ROTA: BUSCAR CLIENTES FRANQUIA (por classificação)
 // Cache em memória (recarrega a cada 60 min)
 // Classificação FRANQUIA:

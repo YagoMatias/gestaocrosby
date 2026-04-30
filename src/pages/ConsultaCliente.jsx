@@ -7,6 +7,7 @@ import {
   CardTitle,
 } from '../components/ui/cards';
 import PageTitle from '../components/ui/PageTitle';
+import { TotvsURL } from '../config/constants';
 import {
   MagnifyingGlass,
   User,
@@ -60,8 +61,6 @@ const ConsultaCliente = () => {
     preferences: false,
     observations: false,
   });
-
-  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
   // CSS customizado para consistência com ContasPagarFranquias
   useEffect(() => {

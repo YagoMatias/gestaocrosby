@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import useApiClient from '../hooks/useApiClient';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { TotvsURL } from '../config/constants';
 import {
   Card,
   CardContent,
@@ -88,7 +89,6 @@ const TitulosClientes = () => {
   const [filiaisCodigos, setFiliaisCodigos] = useState([]);
 
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
-  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
   const FranchiseURL =
     'https://apigestaocrosby-bw2v.onrender.com/api/franchise/';
 

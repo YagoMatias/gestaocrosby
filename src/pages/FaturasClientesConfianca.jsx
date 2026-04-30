@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
+import { TotvsURL } from '../config/constants';
 import {
   Card,
   CardContent,
@@ -67,8 +68,6 @@ const FaturasClientesAntecipacao = () => {
   const [notasFiscaisBuscadas, setNotasFiscaisBuscadas] = useState([]);
   const [notasFiscaisLoading, setNotasFiscaisLoading] = useState(false);
   const [notasFiscaisError, setNotasFiscaisError] = useState('');
-
-  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
   // Estado para armazenar códigos das filiais
   const [filiaisCodigos, setFiliaisCodigos] = useState([]);

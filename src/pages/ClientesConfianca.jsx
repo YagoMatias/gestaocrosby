@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { supabase } from '../lib/supabase';
 import PageTitle from '../components/ui/PageTitle';
+import { TotvsURL } from '../config/constants';
 import {
   Users,
   Spinner,
@@ -82,8 +83,6 @@ const ClientesAntecipacao = () => {
   const [abaDocAtiva, setAbaDocAtiva] = useState(CATEGORIAS_DOCUMENTOS[0].key);
 
   const location = useLocation();
-
-  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
   const isAdmin =
     user?.user_metadata?.role === 'owner' ||

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import useApiClient from '../hooks/useApiClient';
 import { useAuth } from '../components/AuthContext';
 import PageTitle from '../components/ui/PageTitle';
+import { TotvsURL } from '../config/constants';
 import {
   Card,
   CardHeader,
@@ -51,8 +52,6 @@ const RankingFaturamento = () => {
   // Mapas de empresas
   const [branchNames, setBranchNames] = useState({});
   const [branchGroupMap, setBranchGroupMap] = useState({});
-
-  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
   // ==========================================
   // FETCH: Nomes das empresas

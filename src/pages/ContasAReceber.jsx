@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import FiltroFormaPagamento from '../components/FiltroFormaPagamento';
+import { TotvsURL } from '../config/constants';
 import {
   Card,
   CardContent,
@@ -113,7 +114,6 @@ const ContasAReceber = () => {
   const [clienteBuscaSelecionado, setClienteBuscaSelecionado] = useState(null);
 
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
-  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
   // Helpers de data sem fuso horário (tratar 'YYYY-MM-DD' como data local)
   const parseDateNoTZ = (isoDate) => {

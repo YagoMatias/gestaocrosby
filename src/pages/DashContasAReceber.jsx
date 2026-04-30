@@ -5,6 +5,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import FiltroFormaPagamento from '../components/FiltroFormaPagamento';
+import { TotvsURL } from '../config/constants';
 import {
   Card,
   CardContent,
@@ -60,8 +61,6 @@ ChartJS.register(
   LineElement,
   ChartDataLabels,
 );
-
-const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
 // Mapeamento de tipo de documento para nome
 const tiposDocumento = {
@@ -223,8 +222,9 @@ const DashContasAReceber = memo(() => {
   }, []);
 
   // Classificar item como Pago / Vencido / A Vencer
+  // Regra de pago: data de liquidação OU valor pago > 0 (qualquer um basta)
   const getStatus = (item) => {
-    if ((parseFloat(item.vl_pago) || 0) > 0.01 && item.dt_liq) return 'Pago';
+    if (item.dt_liq || (parseFloat(item.vl_pago) || 0) > 0.01) return 'Pago';
     const dv = parseDateNoTZ(item.dt_vencimento);
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);

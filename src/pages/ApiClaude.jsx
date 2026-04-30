@@ -157,11 +157,11 @@ const ROUTE_CATEGORIES = [
         },
       },
       {
-        name: 'Batch Lookup (Busca em lote)',
+        name: 'Batch Lookup (PJ + PF combinado)',
         method: 'POST',
         path: '/api/totvs/persons/batch-lookup',
         description:
-          'Busca nome, fantasia, telefone e UF de múltiplas pessoas (PJ + PF em paralelo).',
+          'Busca nome, fantasia, telefone e UF de múltiplas pessoas (PJ + PF em paralelo). Retorno consolidado por código.',
         params: {
           body: {
             personCodes: {
@@ -169,6 +169,54 @@ const ROUTE_CATEGORIES = [
               required: true,
               description: 'Array de códigos de pessoa',
               placeholder: '[180, 500, 300]',
+            },
+          },
+        },
+      },
+      {
+        name: 'Batch Lookup PJ (cru)',
+        method: 'POST',
+        path: '/api/totvs/persons/legal-entities/batch-lookup',
+        description:
+          'Busca em lote APENAS de Pessoas Jurídicas. Retorna o array de items cru da API TOTVS (POST /person/v2/legal-entities/search).',
+        params: {
+          body: {
+            personCodes: {
+              type: 'number[]',
+              required: true,
+              description: 'Array de códigos de pessoa',
+              placeholder: '[180, 500, 300]',
+            },
+            expand: {
+              type: 'string',
+              required: false,
+              description:
+                'Campos a expandir (default: phones). Ex: phones,emails,addresses,contacts,classifications',
+              placeholder: 'phones,emails',
+            },
+          },
+        },
+      },
+      {
+        name: 'Batch Lookup PF (cru)',
+        method: 'POST',
+        path: '/api/totvs/persons/individuals/batch-lookup',
+        description:
+          'Busca em lote APENAS de Pessoas Físicas. Retorna o array de items cru da API TOTVS (POST /person/v2/individuals/search).',
+        params: {
+          body: {
+            personCodes: {
+              type: 'number[]',
+              required: true,
+              description: 'Array de códigos de pessoa',
+              placeholder: '[180, 500, 300]',
+            },
+            expand: {
+              type: 'string',
+              required: false,
+              description:
+                'Campos a expandir (default: phones). Ex: phones,emails,addresses,contacts,classifications',
+              placeholder: 'phones,emails',
             },
           },
         },

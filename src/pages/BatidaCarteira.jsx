@@ -4,6 +4,7 @@ import { saveAs } from 'file-saver';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import FiltroCliente from '../components/FiltroCliente';
 import PageTitle from '../components/ui/PageTitle';
+import { TotvsURL } from '../config/constants';
 import {
   Card,
   CardContent,
@@ -102,7 +103,6 @@ const BatidaCarteira = () => {
   ];
 
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
-  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
   // Helpers de data
   const parseDateNoTZ = (isoDate) => {

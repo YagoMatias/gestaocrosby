@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import useApiClient from '../hooks/useApiClient';
+import { TotvsURL } from '../config/constants';
 import {
   Card,
   CardContent,
@@ -55,8 +56,6 @@ const NotasFiscaisClientesAntecipacao = () => {
   const [danfeLoading, setDanfeLoading] = useState(false);
   const [danfeBase64, setDanfeBase64] = useState('');
   const [danfeError, setDanfeError] = useState('');
-
-  const TotvsURL = 'https://apigestaocrosby-bw2v.onrender.com/api/totvs/';
 
   const [filiaisCodigos, setFiliaisCodigos] = useState([]);
 

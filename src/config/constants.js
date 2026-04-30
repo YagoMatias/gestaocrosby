@@ -4,9 +4,18 @@
  */
 
 // URLs da API
-export const API_BASE_URL = import.meta.env.DEV
-  ? window.location.origin
-  : 'https://apigestaocrosby-bw2v.onrender.com';
+// Override opcional via .env(.local): VITE_API_BASE_URL=http://localhost:4001
+// Em DEV sem override: usa window.location.origin (Vite proxy de /api → localhost:4001).
+// Em PROD sem override: usa o backend público no Render.
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV
+    ? window.location.origin
+    : 'https://apigestaocrosby-bw2v.onrender.com');
+
+// Base das rotas TOTVS — sempre termina com "/" para uso como prefixo
+// (ex: `${TotvsURL}persons/individuals/batch-lookup`)
+export const TotvsURL = `${API_BASE_URL}/api/totvs/`;
 
 // Endpoints específicos - Nova estrutura de API
 export const API_ENDPOINTS = {
