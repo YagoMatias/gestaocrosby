@@ -101,16 +101,13 @@ const FaturamentoCanal = lazy(() => import('./pages/FaturamentoCanal'));
 const VoucherUsage = lazy(() => import('./pages/VoucherUsage'));
 const CatalogoAdmin = lazy(() => import('./pages/CatalogoAdmin'));
 const CrosbyManage = lazy(() => import('./pages/CrosbyManage'));
-<<<<<<< Updated upstream
 const ExtratoTotvs = lazy(() => import('./pages/ExtratoTotvs'));
 const TopClientes = lazy(() => import('./pages/TopClientes'));
 const DocumentoBluecred = lazy(() => import('./pages/DocumentoBluecred'));
 const ClientesBluecred = lazy(() => import('./pages/ClientesBluecred'));
-=======
 const ConsultaNFs = lazy(() => import('./pages/ConsultaNFs'));
 const FaturamentoPanel = lazy(() => import('./components/FaturamentoPanel'));
 const AtividadeClientes = lazy(() => import('./pages/AtividadeClientes'));
->>>>>>> Stashed changes
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
