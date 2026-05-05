@@ -223,6 +223,24 @@ const painelVendasItems = [
     color: 'text-blue-600',
   },
   {
+    name: 'CRM de Vendas',
+    href: '/crm-vendas',
+    icon: Storefront,
+    color: 'text-emerald-600',
+  },
+  {
+    name: 'Forecast',
+    href: '/faturamento-canal',
+    icon: ChartBar,
+    color: 'text-violet-600',
+  },
+  {
+    name: 'Faturamento TOTVS',
+    href: '/totvs',
+    icon: ChartBar,
+    color: 'text-blue-600',
+  },
+  {
     name: 'Catálogo Virtual',
     href: '/catalogo-admin',
     icon: Storefront,
@@ -515,6 +533,12 @@ const minhaFranquiaItem = {
       href: '/notas-fiscais',
       icon: Article,
       color: 'text-blue-600',
+    },
+    {
+      name: 'Consulta NFs',
+      href: '/consulta-nfs',
+      icon: Article,
+      color: 'text-indigo-600',
     },
   ],
 };

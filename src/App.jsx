@@ -96,13 +96,21 @@ const DownloadNotificacao = lazy(() => import('./pages/DownloadNotificacao'));
 const ApiClaude = lazy(() => import('./pages/ApiClaude'));
 const Estoque = lazy(() => import('./pages/Estoque'));
 const PainelVendas = lazy(() => import('./pages/PainelVendas'));
+const CRMVendas = lazy(() => import('./pages/CRMVendas'));
+const FaturamentoCanal = lazy(() => import('./pages/FaturamentoCanal'));
 const VoucherUsage = lazy(() => import('./pages/VoucherUsage'));
 const CatalogoAdmin = lazy(() => import('./pages/CatalogoAdmin'));
 const CrosbyManage = lazy(() => import('./pages/CrosbyManage'));
+<<<<<<< Updated upstream
 const ExtratoTotvs = lazy(() => import('./pages/ExtratoTotvs'));
 const TopClientes = lazy(() => import('./pages/TopClientes'));
 const DocumentoBluecred = lazy(() => import('./pages/DocumentoBluecred'));
 const ClientesBluecred = lazy(() => import('./pages/ClientesBluecred'));
+=======
+const ConsultaNFs = lazy(() => import('./pages/ConsultaNFs'));
+const FaturamentoPanel = lazy(() => import('./components/FaturamentoPanel'));
+const AtividadeClientes = lazy(() => import('./pages/AtividadeClientes'));
+>>>>>>> Stashed changes
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -137,6 +145,8 @@ const protectedRoutes = [
   { path: '/renegociacao-dividas', component: RenegociacaoDividas },
   { path: '/analise-renegociacao', component: AnaliseRenegociacao },
   { path: '/notas-fiscais', component: NotasFiscais },
+  { path: '/consulta-nfs', component: ConsultaNFs },
+  { path: '/atividade-clientes', component: AtividadeClientes },
   { path: '/extratos-bancos', component: ExtratosBancos },
   { path: '/extrato-credito', component: ExtratoCredito },
   { path: '/metas-varejo', component: MetasVarejo },
@@ -192,6 +202,9 @@ const protectedRoutes = [
   { path: '/api-claude', component: ApiClaude },
   { path: '/estoque', component: Estoque },
   { path: '/painel-vendas', component: PainelVendas },
+  { path: '/crm-vendas', component: CRMVendas },
+  { path: '/faturamento-canal', component: FaturamentoCanal },
+  { path: '/totvs', component: FaturamentoPanel },
   { path: '/voucher-usage', component: VoucherUsage },
   { path: '/catalogo-admin', component: CatalogoAdmin },
   { path: '/crosby-manage', component: CrosbyManage },

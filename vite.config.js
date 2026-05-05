@@ -13,6 +13,18 @@ export default defineConfig({
         proxyTimeout: 600000,
       },
     },
+    watch: {
+      // Ignora arquivos transitórios do backend (WhatsApp wwebjs gera lockfiles
+      // que somem entre o lstat() e o open() — quebra o FSWatcher do Vite)
+      ignored: [
+        '**/backend/**',
+        '**/.wwebjs_auth/**',
+        '**/.wwebjs_cache/**',
+        '**/.cache/**',
+        '**/node_modules/**',
+        '**/dist/**',
+      ],
+    },
   },
   build: {
     outDir: 'dist',

@@ -271,6 +271,9 @@ const AVAILABLE_PAGES = [
     category: 'Clientes',
   },
 
+  // CRM
+  { path: '/crm-vendas', name: 'CRM Vendas', category: 'CRM' },
+
   // Outros
   { path: '/widgets', name: 'Meus Widgets', category: 'Outros' },
   {

@@ -15,6 +15,7 @@ import {
 } from '@phosphor-icons/react';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
+const COTACAO_DOLAR = 5.8;
 
 const formatCurrency = (value, currency = 'BRL') =>
   Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency });
@@ -113,7 +114,8 @@ const WhatsAppReports = ({ accounts, activeAccount }) => {
 
   const deliveryRate = effectiveSent > 0 ? ((effectiveDelivered / effectiveSent) * 100).toFixed(1) : 0;
   const readRate = effectiveDelivered > 0 ? ((effectiveRead / effectiveDelivered) * 100).toFixed(1) : 0;
-  const totalCost = analytics?.summary?.totalCost || 0;
+  const totalCostUSD = analytics?.summary?.totalCost || 0;
+  const totalCost = totalCostUSD * COTACAO_DOLAR;
 
   const sorted = [...campaigns].sort((a, b) => {
     let va = a[sortKey];
@@ -177,7 +179,7 @@ const WhatsAppReports = ({ accounts, activeAccount }) => {
           taxaLeitura = (campaignRead.read / campaignRead.delivered) * 100;
         }
       }
-      return { templateName: name, category: cat, sent, delivered, read, cost: custo, taxaLeitura };
+      return { templateName: name, category: cat, sent, delivered, read, cost: custo * COTACAO_DOLAR, costUSD: custo, taxaLeitura };
     })
     .sort((a, b) => b.sent - a.sent);
 
@@ -326,7 +328,7 @@ const WhatsAppReports = ({ accounts, activeAccount }) => {
                   <div>
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Custo Total</p>
                     <p className="text-2xl font-bold text-[#000638]">{formatCurrency(totalCost)}</p>
-                    <p className="text-xs text-gray-400 mt-1">Período selecionado</p>
+                    <p className="text-xs text-gray-400 mt-1">{formatCurrency(totalCostUSD, 'USD')} · Câmbio R$ {COTACAO_DOLAR.toFixed(2)}</p>
                   </div>
                   <div className="bg-emerald-600 p-3 rounded-xl">
                     <CurrencyDollar size={24} weight="bold" className="text-white" />
@@ -356,7 +358,8 @@ const WhatsAppReports = ({ accounts, activeAccount }) => {
                         <th className="text-left p-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Categoria</th>
                         <th className="text-right p-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Msgs Enviadas</th>
                         <th className="text-right p-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Taxa de Leitura</th>
-                        <th className="text-right p-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Custo Estimado (R$)</th>
+                        <th className="text-right p-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Custo (USD)</th>
+                        <th className="text-right p-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Custo (R$)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -387,6 +390,7 @@ const WhatsAppReports = ({ accounts, activeAccount }) => {
                                 {t.taxaLeitura > 0 ? `${t.taxaLeitura.toFixed(1)}%` : '—'}
                               </span>
                             </td>
+                            <td className="p-3 font-medium text-gray-600 text-right">{formatCurrency(t.costUSD, 'USD')}</td>
                             <td className="p-3 font-bold text-emerald-700 text-right">{formatCurrency(t.cost)}</td>
                           </tr>
                         );
@@ -398,6 +402,7 @@ const WhatsAppReports = ({ accounts, activeAccount }) => {
                         <td className="p-3"></td>
                         <td className="p-3 text-right">{templateTableData.reduce((s, t) => s + t.sent, 0).toLocaleString('pt-BR')}</td>
                         <td className="p-3"></td>
+                        <td className="p-3 text-gray-600 text-right">{formatCurrency(templateTableData.reduce((s, t) => s + t.costUSD, 0), 'USD')}</td>
                         <td className="p-3 text-emerald-700 text-right">{formatCurrency(templateTableData.reduce((s, t) => s + t.cost, 0))}</td>
                       </tr>
                     </tfoot>

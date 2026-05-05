@@ -81,8 +81,8 @@ class ErrorBoundary extends React.Component {
                 : 'Tentar Novamente'}
             </button>
 
-            {/* Detalhes do erro (apenas em desenvolvimento) */}
-            {process.env.NODE_ENV === 'development' && this.state.error && (
+            {/* Detalhes do erro */}
+            {this.state.error && (
               <details className="mt-4 text-left">
                 <summary className="cursor-pointer text-sm text-red-700 hover:text-red-800">
                   Detalhes técnicos
