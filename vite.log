@@ -96,3 +96,13 @@ Instead of [36m/public/image (12).png[33m, use [36m/image (12).png[33m.[39m
 Instead of [36m/public/image (12).png[33m, use [36m/image (12).png[33m.[39m
 [2m08:55:10[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/VoucherUsage.jsx, /src/index.css[22m
 [2m08:55:10[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/VoucherUsage.jsx, /src/index.css[22m
+[33mfiles in the public directory are served at the root path.
+Instead of [36m/public/image (12).png[33m, use [36m/image (12).png[33m.[39m
+[33mfiles in the public directory are served at the root path.
+Instead of [36m/public/image (12).png[33m, use [36m/image (12).png[33m.[39m
+[33mfiles in the public directory are served at the root path.
+Instead of [36m/public/image (12).png[33m, use [36m/image (12).png[33m.[39m
+[33mfiles in the public directory are served at the root path.
+Instead of [36m/public/image (12).png[33m, use [36m/image (12).png[33m.[39m
+[2m08:59:12[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/VoucherUsage.jsx, /src/index.css[22m
+[2m08:59:12[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/VoucherUsage.jsx, /src/index.css[22m

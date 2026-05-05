@@ -9,3 +9,5 @@
 ⚠️  [1775729901862-d9sn60dnx] Query lenta detectada: 3901541ms em GET /branches
 ⚠️  [1775735346598-130t5jd96] Query lenta detectada: 16218ms em GET /vouchers/search
 ⚠️  [1775735362847-qbehxp96g] Query lenta detectada: 7623ms em POST /vouchers/customers/phones
+⚠️  [1775735875584-nw94krzjn] Query lenta detectada: 12085ms em GET /vouchers/search
+⚠️  [1775736051342-u57vdyyka] Query lenta detectada: 5335ms em GET /vouchers/search
