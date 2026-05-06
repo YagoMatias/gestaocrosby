@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import * as XLSX from 'xlsx';
+import { exportarPDF } from '../utils/exportarPDF';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../config/constants';
 import CENTROS_CUSTO from '../config/centrosCusto.json';
@@ -23,6 +24,7 @@ import {
   Stamp,
   Bank,
   FileXls,
+  FilePdf,
   Info,
   ChatCircleText,
   Wallet,
@@ -3129,6 +3131,59 @@ const LiberacaoPagamento = () => {
     );
   }, [titulosFiltrados, filtroStatus]);
 
+  const exportarPdf = useCallback(() => {
+    // Colunas: Status | Fornecedor | Cód. Forn. | Duplicata | Parcela | Vencimento | Valor | Valor Real | Despesa | C. Custo | Observação
+    const colunas = [
+      'Status',
+      'Fornecedor',
+      'Cód. Forn.',
+      'Duplicata',
+      'Parcela',
+      'Vencimento',
+      'Valor (R$)',
+      'Vlr. Real (R$)',
+      'Despesa',
+      'C. Custo',
+    ];
+    const colStyles = [
+      { cellWidth: 18 }, // Status
+      { cellWidth: 55 }, // Fornecedor
+      { cellWidth: 18 }, // Cód. Forn.
+      { cellWidth: 24 }, // Duplicata
+      { cellWidth: 14 }, // Parcela
+      { cellWidth: 24 }, // Vencimento
+      { cellWidth: 26 }, // Valor
+      { cellWidth: 26 }, // Valor Real
+      { cellWidth: 'auto' }, // Despesa — ocupa o restante
+      { cellWidth: 16 }, // C. Custo
+    ];
+    const linhas = titulosFiltrados.map((t) => [
+      t.status,
+      t.nm_fornecedor || '',
+      t.cd_fornecedor || '',
+      t.nr_duplicata || '',
+      t.nr_parcela || '',
+      fmtDate(t.dt_vencimento),
+      parseFloat(t.vl_duplicata || 0).toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+      }),
+      t.vl_real != null
+        ? parseFloat(t.vl_real).toLocaleString('pt-BR', {
+            minimumFractionDigits: 2,
+          })
+        : '',
+      t.ds_despesaitem || '',
+      t.cd_ccusto || '',
+    ]);
+    exportarPDF(
+      colunas,
+      linhas,
+      `liberacao-pagamento-${filtroStatus.toLowerCase()}`,
+      `Liberação de Pagamento — ${filtroStatus}`,
+      colStyles,
+    );
+  }, [titulosFiltrados, filtroStatus]);
+
   const CardStat = ({ label, value, cor, Icon, onClick }) => (
     <button
       onClick={onClick}
@@ -3549,6 +3604,15 @@ const LiberacaoPagamento = () => {
         >
           <FileXls size={14} weight="bold" />
           Exportar Excel
+        </button>
+
+        <button
+          onClick={exportarPdf}
+          disabled={titulosFiltrados.length === 0}
+          className="flex items-center gap-1.5 bg-red-700 hover:bg-red-800 disabled:opacity-40 text-white text-xs font-semibold px-3 py-1.5 rounded transition-colors"
+        >
+          <FilePdf size={14} weight="bold" />
+          Exportar PDF
         </button>
 
         <button

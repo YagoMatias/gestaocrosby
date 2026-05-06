@@ -10,6 +10,8 @@ import {
   WifiHigh,
   Phone,
   House,
+  Waves,
+  Buildings as BuildingsIcon,
   Spinner,
   Plus,
   Pencil,
@@ -43,6 +45,9 @@ const FILIAIS_CROSBY = [
   { cd: '97', nome: 'FILIAL 97' },
   { cd: '98', nome: 'FILIAL 98' },
   { cd: '99', nome: 'CROSBY BREJINHO' },
+  { cd: 'CASA_ECOVILLE', nome: 'CASA ECOVILLE', semTotvs: true },
+  { cd: 'CASA_CROSBY', nome: 'CASA CROSBY', semTotvs: true },
+  { cd: 'TERRENO_PAINEL', nome: 'TERRENO PAINEL SOLAR', semTotvs: true },
 ];
 
 const fmtCNPJ = (cnpj) => {
@@ -118,6 +123,24 @@ const DESPESAS_FIXAS = [
     bg: 'bg-red-50',
     border: 'border-red-200',
     match: (ds) => /aluguel|alugu[eé]is/i.test(ds),
+  },
+  {
+    key: 'agua_mineral',
+    label: 'Água Mineral',
+    icon: Waves,
+    color: 'text-cyan-600',
+    bg: 'bg-cyan-50',
+    border: 'border-cyan-200',
+    match: (ds) => /[áa]gua\s*mineral/i.test(ds),
+  },
+  {
+    key: 'condominio',
+    label: 'Condomínio',
+    icon: BuildingsIcon,
+    color: 'text-orange-600',
+    bg: 'bg-orange-50',
+    border: 'border-orange-200',
+    match: (ds) => /condom[ií]nio/i.test(ds),
   },
 ];
 
@@ -566,7 +589,7 @@ const FilialCard = ({ filial, onClick }) => {
         </div>
         <div className="min-w-0">
           <span className="inline-block text-[10px] font-bold text-[#000638] bg-blue-50 border border-[#000638]/20 px-2 py-0.5 rounded-full mb-1">
-            FILIAL {cd}
+            {status === 'manual' ? 'IMÓVEL' : `FILIAL ${cd}`}
           </span>
           <h3 className="text-sm font-bold text-[#000638] truncate">
             {grupoEmpresa || nome}
@@ -575,6 +598,11 @@ const FilialCard = ({ filial, onClick }) => {
         {status === 'ok' && (
           <span className="ml-auto text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full flex-shrink-0">
             Ativo
+          </span>
+        )}
+        {status === 'manual' && (
+          <span className="ml-auto text-[10px] font-semibold text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full flex-shrink-0">
+            Manual
           </span>
         )}
       </div>
@@ -654,6 +682,17 @@ const DespesaFilial = () => {
 
         // Montar as filiais cruzando com os dados da API
         const dados = FILIAIS_CROSBY.map((filial) => {
+          if (filial.semTotvs) {
+            return {
+              cd: filial.cd,
+              nome: filial.nome,
+              cnpj: null,
+              razaoSocial: null,
+              fantasyName: null,
+              grupoEmpresa: null,
+              status: 'manual',
+            };
+          }
           const apiItem = empresasArray.find(
             (e) => String(e.cd_empresa) === String(filial.cd),
           );
