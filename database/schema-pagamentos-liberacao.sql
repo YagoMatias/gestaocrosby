@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS pagamentos_liberacao (
   aprovado_em       TIMESTAMPTZ,
   pago_por          VARCHAR(255),
   pago_em           TIMESTAMPTZ,
+  dt_pagamento      DATE,           -- data efetiva de pagamento (informada pelo usuário)
   cancelado_por     VARCHAR(255),
   cancelado_em      TIMESTAMPTZ,
 
@@ -100,4 +101,5 @@ ALTER TABLE pagamentos_liberacao
   ADD COLUMN IF NOT EXISTS aprovado_em      TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS cancelado_por    VARCHAR(255),
   ADD COLUMN IF NOT EXISTS cancelado_em     TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS vl_real          NUMERIC(15, 2);
+  ADD COLUMN IF NOT EXISTS vl_real          NUMERIC(15, 2),
+  ADD COLUMN IF NOT EXISTS dt_pagamento     DATE;

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../config/constants';
+import CENTROS_CUSTO from '../config/centrosCusto.json';
 import { useAuth } from '../components/AuthContext';
 import PageTitle from '../components/ui/PageTitle';
 import {
@@ -1060,7 +1061,483 @@ const ModalAdicionarDuplicata = ({ onClose, onSalvo, userEmail }) => {
   );
 };
 
+// ─── Modal Detalhe Completo da Duplicata ─────────────
+const ModalDetalheDuplicata = ({
+  item,
+  onClose,
+  onSave,
+  isAdmin,
+  isFinanceiro,
+}) => {
+  const [status, setStatus] = useState(item.status || 'PENDENTE');
+  const [vlDuplicata, setVlDuplicata] = useState(
+    item.vl_duplicata != null ? String(item.vl_duplicata) : '',
+  );
+  const [vlReal, setVlReal] = useState(
+    item.vl_real != null ? String(item.vl_real) : '',
+  );
+  const [banco, setBanco] = useState(item.banco_pagamento || '');
+  const [forma, setForma] = useState(item.forma_pagamento || '');
+  const [detalhe, setDetalhe] = useState(
+    item.chave_pix || item.codigo_barras || item.link_pagamento || '',
+  );
+  const [obs, setObs] = useState(item.observacao || '');
+  const [dtPagamento, setDtPagamento] = useState(item.dt_pagamento || '');
+  const [saving, setSaving] = useState(false);
+
+  const formaCfg = FORMAS_PAGAMENTO.find((f) => f.value === forma);
+  const podeAlterarStatus = isAdmin || isFinanceiro;
+
+  // Snapshot original (campos extras vindos de Contas a Pagar)
+  const dc = item.dados_completos || {};
+
+  const camposInfo = [
+    { label: 'Empresa', value: item.nm_empresa || dc.nm_empresa },
+    { label: 'Cód. Empresa', value: item.cd_empresa || dc.cd_empresa },
+    { label: 'Fornecedor', value: item.nm_fornecedor },
+    { label: 'Cód. Fornecedor', value: item.cd_fornecedor },
+    { label: 'CNPJ/CPF', value: dc.nr_cnpj || dc.nr_cpfcnpj || dc.cnpj },
+    { label: 'Nº Duplicata', value: item.nr_duplicata },
+    { label: 'Parcela', value: item.nr_parcela },
+    { label: 'Portador', value: item.nr_portador },
+    {
+      label: 'Centro de Custo',
+      value: (() => {
+        const c = item.cd_ccusto || dc.cd_ccusto;
+        return c
+          ? `${c}${CENTROS_CUSTO[String(c)] ? ' - ' + CENTROS_CUSTO[String(c)] : ''}`
+          : null;
+      })(),
+    },
+    { label: 'Despesa Item', value: item.ds_despesaitem || dc.ds_despesaitem },
+    { label: 'Cód. Despesa', value: item.cd_despesaitem || dc.cd_despesaitem },
+    {
+      label: 'Emissão',
+      value: item.dt_emissao ? fmtDate(item.dt_emissao) : null,
+    },
+    {
+      label: 'Vencimento',
+      value: item.dt_vencimento ? fmtDate(item.dt_vencimento) : null,
+    },
+    {
+      label: 'Valor Original',
+      value:
+        dc.vl_original != null
+          ? fmtBRL(dc.vl_original)
+          : item.vl_duplicata != null
+            ? fmtBRL(item.vl_duplicata)
+            : null,
+    },
+    { label: 'Histórico', value: dc.ds_historico || dc.historico },
+    {
+      label: 'Observação Original',
+      value: dc.observacao_original || dc.ds_obs,
+    },
+  ].filter((c) => c.value !== undefined && c.value !== null && c.value !== '');
+
+  const handleSalvar = async () => {
+    setSaving(true);
+    const patch = {
+      banco_pagamento: banco || null,
+      forma_pagamento: forma || null,
+      chave_pix: null,
+      codigo_barras: null,
+      link_pagamento: null,
+      observacao: obs.trim() || null,
+      vl_duplicata:
+        vlDuplicata !== '' && !isNaN(parseFloat(vlDuplicata))
+          ? parseFloat(vlDuplicata)
+          : item.vl_duplicata,
+      vl_real:
+        vlReal !== '' && !isNaN(parseFloat(vlReal)) ? parseFloat(vlReal) : null,
+    };
+    if (formaCfg) patch[formaCfg.campo] = detalhe || null;
+
+    // Se mudou status, deixamos o handler superior (onSave) cuidar das transições
+    const statusMudou = status !== item.status;
+    const dtPagamentoMudou =
+      (dtPagamento || null) !== (item.dt_pagamento || null);
+
+    await onSave({
+      patchSimples: patch,
+      statusMudou,
+      novoStatus: status,
+      dtPagamentoMudou,
+      novaDtPagamento: dtPagamento || null,
+    });
+    setSaving(false);
+    onClose();
+  };
+
+  const inputCls =
+    'w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-[#000638]';
+  const labelCls = 'text-[10px] font-bold uppercase text-gray-500 mb-0.5 block';
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-3xl max-h-[92vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between z-10">
+          <h3 className="font-bold text-sm text-gray-800 flex items-center gap-2">
+            <Info size={16} weight="bold" className="text-[#000638]" />
+            Detalhes da Duplicata
+            <span className="text-xs font-normal text-gray-500">
+              · {item.nm_fornecedor}
+            </span>
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-700"
+          >
+            <X size={18} weight="bold" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Bloco: Informações originais (somente leitura) */}
+          <div>
+            <p className="text-[11px] font-bold uppercase text-gray-700 mb-2 flex items-center gap-1">
+              <Receipt size={12} weight="bold" className="text-[#000638]" />
+              Informações da Duplicata
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-gray-50 rounded-lg p-3 border border-gray-200">
+              {camposInfo.map((c) => (
+                <div key={c.label}>
+                  <p className="text-[9px] font-bold uppercase text-gray-400 mb-0.5">
+                    {c.label}
+                  </p>
+                  <p className="text-xs text-gray-800 font-semibold break-words">
+                    {String(c.value)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Bloco: Edição */}
+          <div>
+            <p className="text-[11px] font-bold uppercase text-gray-700 mb-2 flex items-center gap-1">
+              <PencilSimple
+                size={12}
+                weight="bold"
+                className="text-orange-500"
+              />
+              Editar
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {podeAlterarStatus && (
+                <div>
+                  <label className={labelCls}>Status</label>
+                  <select
+                    className={`${inputCls} bg-white`}
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                  >
+                    <option value="PENDENTE">Pendente</option>
+                    <option value="APROVADO">Aprovado</option>
+                    <option value="PAGO">Pago</option>
+                    {item.status === 'CANCELADO' && (
+                      <option value="CANCELADO">Cancelado</option>
+                    )}
+                    {item.status === 'TRANSFERENCIA' && (
+                      <option value="TRANSFERENCIA">Entre Contas</option>
+                    )}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className={labelCls}>Data de Pagamento</label>
+                <input
+                  className={inputCls}
+                  type="date"
+                  value={dtPagamento}
+                  onChange={(e) => setDtPagamento(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className={labelCls}>Valor da Duplicata</label>
+                <input
+                  className={inputCls}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={vlDuplicata}
+                  onChange={(e) => setVlDuplicata(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Valor Real (pago)</label>
+                <input
+                  className={inputCls}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={vlReal}
+                  onChange={(e) => setVlReal(e.target.value)}
+                  placeholder="Opcional"
+                />
+              </div>
+
+              <div>
+                <label className={labelCls}>Banco</label>
+                <select
+                  className={`${inputCls} bg-white`}
+                  value={banco}
+                  onChange={(e) => setBanco(e.target.value)}
+                >
+                  <option value="">— Banco —</option>
+                  {BANCOS.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelCls}>Forma de Pagamento</label>
+                <select
+                  className={`${inputCls} bg-white`}
+                  value={forma}
+                  onChange={(e) => {
+                    setForma(e.target.value);
+                    setDetalhe('');
+                  }}
+                >
+                  <option value="">— Forma —</option>
+                  {FORMAS_PAGAMENTO.map((f) => (
+                    <option key={f.value} value={f.value}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="col-span-2">
+                <label className={labelCls}>
+                  {formaCfg?.detalheLabel || 'Detalhe Pgto'}
+                </label>
+                <input
+                  className={inputCls}
+                  value={detalhe}
+                  disabled={!formaCfg}
+                  onChange={(e) => setDetalhe(e.target.value)}
+                  placeholder={
+                    formaCfg
+                      ? formaCfg.detalheLabel
+                      : 'Selecione a forma primeiro'
+                  }
+                />
+              </div>
+              <div className="col-span-2">
+                <label className={labelCls}>Observação</label>
+                <textarea
+                  className={`${inputCls} resize-none`}
+                  rows={3}
+                  value={obs}
+                  onChange={(e) => setObs(e.target.value)}
+                  placeholder="Observações..."
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Auditoria */}
+          <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+            <p className="text-[10px] font-bold uppercase text-gray-500 mb-1">
+              Auditoria
+            </p>
+            <div className="grid grid-cols-2 gap-1 text-[10px] text-gray-600">
+              {item.created_at && (
+                <p>
+                  <span className="font-bold">Inclusão:</span>{' '}
+                  {fmtDateTime(item.created_at)}
+                </p>
+              )}
+              {item.aprovado_em && (
+                <p>
+                  <span className="font-bold">Aprovado:</span>{' '}
+                  {fmtDateTime(item.aprovado_em)} · {item.aprovado_por}
+                </p>
+              )}
+              {item.pago_em && (
+                <p>
+                  <span className="font-bold">Pago em:</span>{' '}
+                  {fmtDateTime(item.pago_em)} · {item.pago_por}
+                </p>
+              )}
+              {item.dt_pagamento && (
+                <p>
+                  <span className="font-bold">Dt. Pagto:</span>{' '}
+                  {fmtDate(item.dt_pagamento)}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-5 py-3 flex gap-2 justify-end">
+          <button
+            onClick={onClose}
+            className="border border-gray-300 text-gray-600 text-xs font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSalvar}
+            disabled={saving}
+            className="bg-[#000638] hover:bg-[#001060] disabled:opacity-50 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors flex items-center gap-1"
+          >
+            {saving ? (
+              <Spinner size={12} className="animate-spin" />
+            ) : (
+              <FloppyDisk size={12} weight="bold" />
+            )}
+            Salvar Alterações
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Cabeçalho ordenável ──────────────────────────────
+// ─── Modal: Pagar Selecionados ─────────────────────────────
+const ModalPagarSelecionados = ({ titulos, onConfirmar, onClose }) => {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const [datas, setDatas] = useState(() => {
+    const m = {};
+    titulos.forEach((t) => {
+      m[t.id] = t.dt_pagamento || hoje;
+    });
+    return m;
+  });
+  const [dataGlobal, setDataGlobal] = useState(hoje);
+
+  const aplicarParaTodos = () => {
+    if (!dataGlobal) return;
+    setDatas((prev) => {
+      const next = { ...prev };
+      titulos.forEach((t) => {
+        next[t.id] = dataGlobal;
+      });
+      return next;
+    });
+  };
+
+  const total = titulos.reduce(
+    (acc, t) => acc + parseFloat(t.vl_real ?? t.vl_duplicata ?? 0),
+    0,
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b">
+          <div>
+            <h2 className="text-base font-bold text-gray-800">
+              Confirmar Pagamento
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {titulos.length} título(s) · Total:{' '}
+              <span className="font-bold text-green-700">{fmtBRL(total)}</span>
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            <X size={18} weight="bold" />
+          </button>
+        </div>
+
+        {/* Aplicar data global */}
+        <div className="px-5 py-3 bg-gray-50 border-b flex items-center gap-3">
+          <span className="text-xs font-bold text-gray-600 whitespace-nowrap">
+            Aplicar mesma data a todos:
+          </span>
+          <input
+            type="date"
+            value={dataGlobal}
+            onChange={(e) => setDataGlobal(e.target.value)}
+            className="border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-green-500"
+          />
+          <button
+            onClick={aplicarParaTodos}
+            className="flex items-center gap-1 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-bold px-3 py-1 rounded transition-colors"
+          >
+            Aplicar a todos
+          </button>
+        </div>
+
+        {/* Lista de títulos */}
+        <div className="overflow-y-auto flex-1 px-5 py-3 divide-y divide-gray-100">
+          {titulos.map((t) => (
+            <div key={t.id} className="flex items-center gap-3 py-2.5">
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold text-gray-800 truncate">
+                  {t.nm_fornecedor || '—'}
+                </div>
+                <div className="text-[10px] text-gray-500 flex gap-2 mt-0.5 flex-wrap">
+                  <span>
+                    {t.nr_duplicata}
+                    {t.nr_parcela ? `/${t.nr_parcela}` : ''}
+                  </span>
+                  {t.banco_pagamento && (
+                    <span className="text-[#000638] font-semibold">
+                      {t.banco_pagamento}
+                    </span>
+                  )}
+                  <span className="font-semibold text-green-700">
+                    {fmtBRL(t.vl_real ?? t.vl_duplicata)}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <label className="text-[9px] font-bold text-gray-500 uppercase whitespace-nowrap">
+                  Dt. Pag.
+                </label>
+                <input
+                  type="date"
+                  value={datas[t.id] || hoje}
+                  onChange={(e) =>
+                    setDatas((prev) => ({ ...prev, [t.id]: e.target.value }))
+                  }
+                  className="border border-gray-300 rounded px-1.5 py-1 text-xs focus:ring-1 focus:ring-green-500 w-[130px]"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t bg-gray-50 rounded-b-2xl">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-semibold text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => onConfirmar(datas)}
+            className="flex items-center gap-2 px-5 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-lg transition-colors"
+          >
+            <CheckCircle size={15} weight="bold" />
+            Confirmar Pagamento
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ThSortable = ({ label, coluna, ordenacao, onSort, className = '' }) => {
   const ativo = ordenacao.coluna === coluna;
   return (
@@ -1098,9 +1575,9 @@ const LinhaTitulo = React.memo(
     onToggleSelect,
     onSalvar,
     onExcluir,
-    onAprovar,
-    onMarcarPago,
+    onMudarStatus,
     onAbrirModal,
+    onAbrirDetalhe,
   }) => {
     const [forma, setForma] = useState(item.forma_pagamento || '');
     const [banco, setBanco] = useState(item.banco_pagamento || '');
@@ -1111,11 +1588,18 @@ const LinhaTitulo = React.memo(
     const [vlReal, setVlReal] = useState(
       item.vl_real != null ? String(item.vl_real) : '',
     );
+    const [dtPagamentoLinha, setDtPagamentoLinha] = useState(
+      item.dt_pagamento ||
+        (item.status === 'APROVADO'
+          ? new Date().toISOString().slice(0, 10)
+          : ''),
+    );
     const [saving, setSaving] = useState(false);
     const [dirty, setDirty] = useState(false);
     const [showDetalhePopover, setShowDetalhePopover] = useState(false);
     const [showObsPopover, setShowObsPopover] = useState(false);
     const [showVlRealPopover, setShowVlRealPopover] = useState(false);
+    const [showAcaoPopover, setShowAcaoPopover] = useState(false);
     const [juros, setJuros] = useState('');
     const [parcial, setParcial] = useState('');
     const [detalheRascunho, setDetalheRascunho] = useState(detalhe);
@@ -1160,6 +1644,10 @@ const LinhaTitulo = React.memo(
       item.pago_em && {
         label: 'Pago',
         value: `${fmtDateTime(item.pago_em)} · ${item.pago_por || ''}`,
+      },
+      item.dt_pagamento && {
+        label: 'Dt. Pagamento',
+        value: fmtDate(item.dt_pagamento),
       },
       item.cancelado_em && {
         label: 'Cancelado',
@@ -1374,6 +1862,24 @@ const LinhaTitulo = React.memo(
           title={item.ds_despesaitem}
         >
           {item.ds_despesaitem || '—'}
+        </td>
+        <td className="px-2 py-2 text-xs text-gray-600">
+          {item.cd_ccusto ? (
+            <div
+              title={`${item.cd_ccusto} - ${CENTROS_CUSTO[String(item.cd_ccusto)] || ''}`}
+            >
+              <span className="font-mono text-[9px] text-gray-400">
+                {item.cd_ccusto}
+              </span>
+              {CENTROS_CUSTO[String(item.cd_ccusto)] && (
+                <div className="text-[10px] font-semibold text-gray-700 leading-tight truncate max-w-[90px]">
+                  {CENTROS_CUSTO[String(item.cd_ccusto)]}
+                </div>
+              )}
+            </div>
+          ) : (
+            <span className="text-gray-400 text-[10px]">—</span>
+          )}
         </td>
         <td className="px-2 py-2 text-xs text-gray-700">
           {item.nr_duplicata || '—'}
@@ -1596,80 +2102,186 @@ const LinhaTitulo = React.memo(
             </div>
           )}
         </td>
+        {/* ── Coluna AÇÕES: salvar + botão AÇÃO ── */}
         <td className="px-2 py-2">
-          <div className="flex items-center gap-1 justify-end">
+          <div className="flex items-center gap-1 justify-center relative">
+            {/* Salvar */}
             {podeEditar && (
               <button
                 onClick={handleSalvar}
                 disabled={saving || !dirty}
-                className="flex items-center gap-1 bg-[#000638] hover:bg-[#001060] disabled:opacity-40 text-white text-[10px] font-semibold px-2 py-1 rounded transition-colors"
+                className="flex items-center justify-center bg-[#000638] hover:bg-[#001060] disabled:opacity-40 text-white text-[10px] font-semibold w-7 h-7 rounded transition-colors"
                 title="Salvar alterações"
               >
                 {saving ? (
-                  <Spinner size={10} className="animate-spin" />
+                  <Spinner size={11} className="animate-spin" />
                 ) : (
-                  <FloppyDisk size={10} weight="bold" />
+                  <FloppyDisk size={11} weight="bold" />
                 )}
               </button>
             )}
-            {(isAdmin || isFinanceiro) && item.status === 'PENDENTE' && (
-              <button
-                onClick={() => {
-                  const extra = {
-                    banco_pagamento: banco || null,
-                    forma_pagamento: forma || null,
-                    chave_pix: null,
-                    codigo_barras: null,
-                    link_pagamento: null,
-                    observacao: obs || null,
-                  };
-                  if (formaCfg) extra[formaCfg.campo] = detalhe || null;
-                  onAprovar(item.id, extra);
-                }}
-                className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold px-2 py-1 rounded transition-colors"
-                title="Aprovar título"
-              >
-                <Stamp size={10} weight="bold" />
-                APROVAR
-              </button>
-            )}
-            {(isAdmin || isFinanceiro) && item.status === 'APROVADO' && (
-              <button
-                onClick={() => {
-                  const extra = {
-                    banco_pagamento: banco || null,
-                    forma_pagamento: forma || null,
-                    chave_pix: null,
-                    codigo_barras: null,
-                    link_pagamento: null,
-                    observacao: obs || null,
-                    vl_real:
-                      vlReal !== '' && !isNaN(parseFloat(vlReal))
-                        ? parseFloat(vlReal)
-                        : null,
-                  };
-                  if (formaCfg) extra[formaCfg.campo] = detalhe || null;
-                  onMarcarPago(item.id, extra);
-                }}
-                className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold px-2 py-1 rounded transition-colors"
-                title="Marcar como pago"
-              >
-                <CheckCircle size={10} weight="bold" />
-                PAGAR
-              </button>
-            )}
-            {(isAdmin || isFinanceiro) &&
-              item.status !== 'PAGO' &&
-              item.status !== 'CANCELADO' && (
+
+            {/* Botão AÇÃO */}
+            {(isAdmin || isFinanceiro) && !isTransferencia && (
+              <div className="relative">
                 <button
-                  onClick={() => onExcluir(item.id)}
-                  className="text-red-500 hover:text-red-700 p-1 rounded"
-                  title="Excluir"
+                  onClick={() => setShowAcaoPopover((v) => !v)}
+                  className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold px-2 h-7 rounded transition-colors"
+                  title="Ações disponíveis"
                 >
-                  <Trash size={12} weight="bold" />
+                  AÇÃO
                 </button>
-              )}
+
+                {showAcaoPopover && (
+                  <>
+                    {/* overlay transparente para fechar */}
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowAcaoPopover(false)}
+                    />
+                    <div className="absolute z-50 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl p-3 w-60">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase mb-2 border-b pb-1">
+                        Ações — {item.nr_duplicata}
+                        {item.nr_parcela ? `/${item.nr_parcela}` : ''}
+                      </p>
+
+                      <div className="flex flex-col gap-1.5">
+                        {/* Data de pagamento (APROVADO) */}
+                        {item.status === 'APROVADO' && (
+                          <div className="flex items-center gap-2 bg-green-50 rounded px-2 py-1.5 border border-green-200">
+                            <label className="text-[9px] font-bold text-green-700 whitespace-nowrap">
+                              DT. PAG.
+                            </label>
+                            <input
+                              type="date"
+                              value={dtPagamentoLinha}
+                              onChange={(e) =>
+                                setDtPagamentoLinha(e.target.value)
+                              }
+                              className="flex-1 border border-green-300 rounded px-1 py-0.5 text-[10px] focus:ring-1 focus:ring-green-500 bg-white"
+                            />
+                          </div>
+                        )}
+
+                        {/* APROVAR */}
+                        {item.status === 'PENDENTE' && (
+                          <button
+                            onClick={() => {
+                              const extra = {
+                                banco_pagamento: banco || null,
+                                forma_pagamento: forma || null,
+                                chave_pix: null,
+                                codigo_barras: null,
+                                link_pagamento: null,
+                                observacao: obs || null,
+                              };
+                              if (formaCfg)
+                                extra[formaCfg.campo] = detalhe || null;
+                              onMudarStatus(item.id, 'APROVADO', extra);
+                              setShowAcaoPopover(false);
+                            }}
+                            className="flex items-center gap-2 w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded transition-colors"
+                          >
+                            <Stamp size={12} weight="bold" />
+                            Aprovar
+                          </button>
+                        )}
+
+                        {/* PAGAR */}
+                        {item.status === 'APROVADO' && (
+                          <button
+                            onClick={() => {
+                              const extra = {
+                                banco_pagamento: banco || null,
+                                forma_pagamento: forma || null,
+                                chave_pix: null,
+                                codigo_barras: null,
+                                link_pagamento: null,
+                                observacao: obs || null,
+                                vl_real:
+                                  vlReal !== '' && !isNaN(parseFloat(vlReal))
+                                    ? parseFloat(vlReal)
+                                    : null,
+                                dt_pagamento:
+                                  dtPagamentoLinha ||
+                                  new Date().toISOString().slice(0, 10),
+                              };
+                              if (formaCfg)
+                                extra[formaCfg.campo] = detalhe || null;
+                              onMudarStatus(item.id, 'PAGO', extra);
+                              setShowAcaoPopover(false);
+                            }}
+                            className="flex items-center gap-2 w-full bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-1.5 rounded transition-colors"
+                          >
+                            <CheckCircle size={12} weight="bold" />
+                            Pagar
+                          </button>
+                        )}
+
+                        {/* Voltar para APROVADO (se PAGO) */}
+                        {item.status === 'PAGO' && (
+                          <button
+                            onClick={() => {
+                              onMudarStatus(item.id, 'APROVADO');
+                              setShowAcaoPopover(false);
+                            }}
+                            className="flex items-center gap-2 w-full bg-blue-100 hover:bg-blue-200 text-blue-800 text-xs font-bold px-3 py-1.5 rounded border border-blue-300 transition-colors"
+                          >
+                            <Stamp size={12} weight="bold" />
+                            Voltar para Aprovado
+                          </button>
+                        )}
+
+                        {/* Voltar para PENDENTE (se APROVADO ou PAGO) */}
+                        {(item.status === 'APROVADO' ||
+                          item.status === 'PAGO') && (
+                          <button
+                            onClick={() => {
+                              onMudarStatus(item.id, 'PENDENTE');
+                              setShowAcaoPopover(false);
+                            }}
+                            className="flex items-center gap-2 w-full bg-yellow-50 hover:bg-yellow-100 text-yellow-800 text-xs font-bold px-3 py-1.5 rounded border border-yellow-300 transition-colors"
+                          >
+                            <Clock size={12} weight="bold" />
+                            Voltar para Pendente
+                          </button>
+                        )}
+
+                        {/* EXCLUIR */}
+                        {item.status !== 'PAGO' &&
+                          item.status !== 'CANCELADO' && (
+                            <button
+                              onClick={() => {
+                                onExcluir(item.id);
+                                setShowAcaoPopover(false);
+                              }}
+                              className="flex items-center gap-2 w-full bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold px-3 py-1.5 rounded border border-red-200 transition-colors mt-1"
+                            >
+                              <Trash size={12} weight="bold" />
+                              Excluir
+                            </button>
+                          )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
+        </td>
+
+        {/* ── Coluna DETALHAR ── */}
+        <td className="px-2 py-2 text-center">
+          {!isTransferencia && (
+            <button
+              onClick={() => onAbrirDetalhe(item)}
+              className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-bold px-2 py-1 rounded border border-gray-300 transition-colors mx-auto"
+              title="Ver detalhes completos"
+            >
+              <Info size={10} weight="bold" />
+              Detalhar
+            </button>
+          )}
         </td>
       </tr>
     );
@@ -1704,8 +2316,13 @@ const LiberacaoPagamento = () => {
   const [filtroTipo, setFiltroTipo] = useState('TODOS'); // TODOS | PAGAMENTO | TRANSFERENCIA
   const [filtroInclusao, setFiltroInclusao] = useState('TODOS'); // TODOS | TOTVS | MANUAL
   const [filtroForma, setFiltroForma] = useState(''); // '' | PIX | BOLETO | DEBITO | CREDITO
+  const [filtroPagamentoDe, setFiltroPagamentoDe] = useState('');
+  const [filtroPagamentoAte, setFiltroPagamentoAte] = useState('');
   const [showModalAdicionar, setShowModalAdicionar] = useState(false);
+  const [modalDetalhe, setModalDetalhe] = useState(null);
   const [ordenacao, setOrdenacao] = useState({ coluna: null, dir: 'asc' });
+  // Modal de pagamento em lote
+  const [modalPagarSelecionados, setModalPagarSelecionados] = useState(false);
 
   const toggleOrdem = useCallback((coluna) => {
     setOrdenacao((prev) =>
@@ -1778,6 +2395,19 @@ const LiberacaoPagamento = () => {
     if (filtroForma) {
       lista = lista.filter((t) => t.forma_pagamento === filtroForma);
     }
+    // Filtro por data de pagamento (apenas faz sentido em PAGO)
+    if (filtroPagamentoDe) {
+      lista = lista.filter((t) => {
+        const d = t.dt_pagamento || (t.pago_em ? t.pago_em.slice(0, 10) : null);
+        return d && d >= filtroPagamentoDe;
+      });
+    }
+    if (filtroPagamentoAte) {
+      lista = lista.filter((t) => {
+        const d = t.dt_pagamento || (t.pago_em ? t.pago_em.slice(0, 10) : null);
+        return d && d <= filtroPagamentoAte;
+      });
+    }
     if (filtroInclusao === 'MANUAL') {
       lista = lista.filter((t) => !!t.dados_completos?.inserido_manualmente);
     } else if (filtroInclusao === 'TOTVS') {
@@ -1830,6 +2460,8 @@ const LiberacaoPagamento = () => {
     filtroValorMax,
     filtroInclusao,
     filtroSoManuais,
+    filtroPagamentoDe,
+    filtroPagamentoAte,
     ordenacao,
   ]);
 
@@ -1850,7 +2482,9 @@ const LiberacaoPagamento = () => {
     filtroValorMax ||
     filtroSoManuais ||
     filtroTipo !== 'TODOS' ||
-    filtroInclusao !== 'TODOS';
+    filtroInclusao !== 'TODOS' ||
+    filtroPagamentoDe ||
+    filtroPagamentoAte;
 
   const limparFiltros = () => {
     setFiltroFornecedor('');
@@ -1862,6 +2496,8 @@ const LiberacaoPagamento = () => {
     setFiltroTipo('TODOS');
     setFiltroInclusao('TODOS');
     setFiltroStatus('TODOS');
+    setFiltroPagamentoDe('');
+    setFiltroPagamentoAte('');
   };
 
   const resumo = useMemo(() => {
@@ -1985,6 +2621,198 @@ const LiberacaoPagamento = () => {
     [user],
   );
 
+  // Helper: ajusta saldo bancário em + ou - delta
+  const ajustarSaldoBanco = useCallback(
+    async (banco, delta, now) => {
+      if (!banco || !delta) return;
+      const { data: row } = await supabase
+        .from('saldo_bancario')
+        .select('valor')
+        .eq('banco', banco)
+        .maybeSingle();
+      const novoSaldo = parseFloat(row?.valor || 0) + delta;
+      await supabase.from('saldo_bancario').upsert(
+        {
+          banco,
+          valor: novoSaldo,
+          updated_at: now,
+          updated_by: user?.email || null,
+        },
+        { onConflict: 'banco' },
+      );
+      setSaldos((prev) => {
+        const existe = prev.some((r) => r.banco === banco);
+        if (existe)
+          return prev.map((r) =>
+            r.banco === banco ? { ...r, valor: novoSaldo } : r,
+          );
+        return [...prev, { banco, valor: novoSaldo }];
+      });
+    },
+    [user],
+  );
+
+  // Mudança de status (forward ou backward) com ajuste de saldo automático.
+  // novoStatus: 'PENDENTE' | 'APROVADO' | 'PAGO'
+  // extra pode incluir: dt_pagamento, banco_pagamento, forma_pagamento, etc.
+  const mudarStatusTitulo = useCallback(
+    async (id, novoStatus, extra = {}, opts = {}) => {
+      const titulo = titulos.find((t) => t.id === id);
+      if (!titulo) return;
+      const oldStatus = titulo.status;
+      if (oldStatus === novoStatus) return;
+      const labels = {
+        PENDENTE: 'Pendente',
+        APROVADO: 'Aprovado',
+        PAGO: 'Pago',
+      };
+      if (
+        !opts.skipConfirm &&
+        !window.confirm(
+          `Mover este título de ${labels[oldStatus] || oldStatus} para ${labels[novoStatus] || novoStatus}?`,
+        )
+      )
+        return;
+      setProcessandoId(id);
+      const now = new Date().toISOString();
+      const patch = { status: novoStatus, ...extra };
+
+      if (novoStatus === 'PENDENTE') {
+        patch.aprovado_em = null;
+        patch.aprovado_por = null;
+        patch.pago_em = null;
+        patch.pago_por = null;
+        patch.dt_pagamento = null;
+      } else if (novoStatus === 'APROVADO') {
+        patch.aprovado_em = titulo.aprovado_em || now;
+        patch.aprovado_por = titulo.aprovado_por || user?.email || null;
+        patch.pago_em = null;
+        patch.pago_por = null;
+        patch.dt_pagamento = null;
+      } else if (novoStatus === 'PAGO') {
+        patch.aprovado_em = titulo.aprovado_em || now;
+        patch.aprovado_por = titulo.aprovado_por || user?.email || null;
+        patch.pago_em = now;
+        patch.pago_por = user?.email || null;
+        patch.dt_pagamento =
+          extra.dt_pagamento ||
+          titulo.dt_pagamento ||
+          new Date().toISOString().slice(0, 10);
+      }
+
+      const { error } = await supabase
+        .from('pagamentos_liberacao')
+        .update(patch)
+        .eq('id', id);
+      if (error) {
+        setProcessandoId(null);
+        alert('Erro ao alterar status: ' + error.message);
+        return;
+      }
+
+      // Ajuste de saldo bancário
+      const banco = patch.banco_pagamento ?? titulo.banco_pagamento;
+      const valorBase = parseFloat(
+        patch.vl_real ?? titulo.vl_real ?? titulo.vl_duplicata ?? 0,
+      );
+      if (banco && valorBase) {
+        if (oldStatus === 'PAGO' && novoStatus !== 'PAGO') {
+          await ajustarSaldoBanco(banco, +valorBase, now);
+        } else if (oldStatus !== 'PAGO' && novoStatus === 'PAGO') {
+          await ajustarSaldoBanco(banco, -valorBase, now);
+        }
+      }
+
+      setProcessandoId(null);
+      setTitulos((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+      );
+    },
+    [titulos, user, ajustarSaldoBanco],
+  );
+
+  // Mudança de status em lote
+  const mudarStatusSelecionados = useCallback(
+    async (novoStatus, dtPagamento) => {
+      const ids = Array.from(selecionados).filter((id) => {
+        const t = titulos.find((x) => x.id === id);
+        return t && t.status !== novoStatus && t.status !== 'TRANSFERENCIA';
+      });
+      if (ids.length === 0) {
+        alert('Nenhum título elegível selecionado.');
+        return;
+      }
+      const labels = {
+        PENDENTE: 'Pendente',
+        APROVADO: 'Aprovado',
+        PAGO: 'Pago',
+      };
+      if (
+        !window.confirm(
+          `Mover ${ids.length} título(s) para ${labels[novoStatus]}?`,
+        )
+      )
+        return;
+      setProcessando(true);
+      const now = new Date().toISOString();
+      for (const id of ids) {
+        const titulo = titulos.find((t) => t.id === id);
+        if (!titulo) continue;
+        const oldStatus = titulo.status;
+        const patch = { status: novoStatus };
+        if (novoStatus === 'PENDENTE') {
+          patch.aprovado_em = null;
+          patch.aprovado_por = null;
+          patch.pago_em = null;
+          patch.pago_por = null;
+          patch.dt_pagamento = null;
+        } else if (novoStatus === 'APROVADO') {
+          patch.aprovado_em = titulo.aprovado_em || now;
+          patch.aprovado_por = titulo.aprovado_por || user?.email || null;
+          patch.pago_em = null;
+          patch.pago_por = null;
+          patch.dt_pagamento = null;
+        } else if (novoStatus === 'PAGO') {
+          patch.aprovado_em = titulo.aprovado_em || now;
+          patch.aprovado_por = titulo.aprovado_por || user?.email || null;
+          patch.pago_em = now;
+          patch.pago_por = user?.email || null;
+          patch.dt_pagamento =
+            titulo.dt_pagamento ||
+            dtPagamento ||
+            new Date().toISOString().slice(0, 10);
+        }
+        const { error } = await supabase
+          .from('pagamentos_liberacao')
+          .update(patch)
+          .eq('id', id);
+        if (error) {
+          alert(
+            `Erro no título ${titulo.nm_fornecedor || id}: ${error.message}`,
+          );
+          continue;
+        }
+        const banco = titulo.banco_pagamento;
+        const valorBase = parseFloat(
+          titulo.vl_real != null ? titulo.vl_real : titulo.vl_duplicata || 0,
+        );
+        if (banco && valorBase) {
+          if (oldStatus === 'PAGO' && novoStatus !== 'PAGO') {
+            await ajustarSaldoBanco(banco, +valorBase, now);
+          } else if (oldStatus !== 'PAGO' && novoStatus === 'PAGO') {
+            await ajustarSaldoBanco(banco, -valorBase, now);
+          }
+        }
+        setTitulos((prev) =>
+          prev.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+        );
+      }
+      setProcessando(false);
+      setSelecionados(new Set());
+    },
+    [selecionados, titulos, user, ajustarSaldoBanco],
+  );
+
   const aprovarSelecionados = useCallback(async () => {
     if (selecionados.size === 0) {
       alert('Selecione pelo menos um título.');
@@ -2025,75 +2853,55 @@ const LiberacaoPagamento = () => {
     );
   }, [selecionados, user]);
 
-  const pagarSelecionados = useCallback(async () => {
-    const ids = Array.from(selecionados).filter((id) => {
-      const t = titulos.find((x) => x.id === id);
-      return t?.status === 'APROVADO';
-    });
-    if (ids.length === 0) {
-      alert('Nenhum título APROVADO selecionado.');
-      return;
-    }
-    const valorTotal = ids.reduce((acc, id) => {
-      const t = titulos.find((x) => x.id === id);
-      return acc + parseFloat(t?.vl_real ?? t?.vl_duplicata ?? 0);
-    }, 0);
-    if (
-      !window.confirm(
-        `Confirmar pagamento de ${ids.length} título(s) — Total: ${fmtBRL(valorTotal)}?`,
-      )
-    )
-      return;
-    setProcessando(true);
-    const now = new Date().toISOString();
-    const { error } = await supabase
-      .from('pagamentos_liberacao')
-      .update({ status: 'PAGO', pago_por: user?.email || null, pago_em: now })
-      .in('id', ids);
-    setProcessando(false);
-    if (error) {
-      alert('Erro ao marcar como pago: ' + error.message);
-      return;
-    }
-    // Deduzir saldo por banco
-    const porBanco = {};
-    ids.forEach((id) => {
-      const t = titulos.find((x) => x.id === id);
-      if (!t?.banco_pagamento) return;
-      const v = parseFloat(t.vl_real ?? t.vl_duplicata ?? 0);
-      porBanco[t.banco_pagamento] = (porBanco[t.banco_pagamento] || 0) + v;
-    });
-    for (const [banco, vlPago] of Object.entries(porBanco)) {
-      const { data: saldoRow } = await supabase
-        .from('saldo_bancario')
-        .select('valor')
-        .eq('banco', banco)
-        .maybeSingle();
-      const novoSaldo = parseFloat(saldoRow?.valor || 0) - vlPago;
-      await supabase
-        .from('saldo_bancario')
-        .upsert(
-          { banco, valor: novoSaldo, updated_at: now, updated_by: user?.email },
-          { onConflict: 'banco' },
-        );
-      setSaldos((prev) => {
-        const existe = prev.some((r) => r.banco === banco);
-        if (existe)
-          return prev.map((r) =>
-            r.banco === banco ? { ...r, valor: novoSaldo } : r,
-          );
-        return [...prev, { banco, valor: novoSaldo }];
+  // Recebe mapa { id: 'YYYY-MM-DD' } vindo do ModalPagarSelecionados
+  const pagarSelecionados = useCallback(
+    async (datasMap) => {
+      const hoje = new Date().toISOString().slice(0, 10);
+      const ids = Array.from(selecionados).filter((id) => {
+        const t = titulos.find((x) => x.id === id);
+        return t?.status === 'APROVADO';
       });
-    }
-    setSelecionados(new Set());
-    setTitulos((prev) =>
-      prev.map((t) =>
-        ids.includes(t.id)
-          ? { ...t, status: 'PAGO', pago_por: user?.email, pago_em: now }
-          : t,
-      ),
-    );
-  }, [selecionados, titulos, user]);
+      if (ids.length === 0) return;
+      setModalPagarSelecionados(false);
+      setProcessando(true);
+      const now = new Date().toISOString();
+      for (const id of ids) {
+        const t = titulos.find((x) => x.id === id);
+        if (!t) continue;
+        const patch = {
+          status: 'PAGO',
+          pago_por: user?.email || null,
+          pago_em: now,
+          dt_pagamento: (datasMap && datasMap[id]) || hoje,
+        };
+        const { error } = await supabase
+          .from('pagamentos_liberacao')
+          .update(patch)
+          .eq('id', id);
+        if (error) {
+          alert(`Erro: ${error.message}`);
+          continue;
+        }
+        setTitulos((prev) =>
+          prev.map((x) => (x.id === id ? { ...x, ...patch } : x)),
+        );
+      }
+      // Deduzir saldo por banco
+      const porBanco = {};
+      ids.forEach((id) => {
+        const t = titulos.find((x) => x.id === id);
+        if (!t?.banco_pagamento) return;
+        const v = parseFloat(t.vl_real ?? t.vl_duplicata ?? 0);
+        porBanco[t.banco_pagamento] = (porBanco[t.banco_pagamento] || 0) + v;
+      });
+      for (const [banco, vlPago] of Object.entries(porBanco)) {
+        await ajustarSaldoBanco(banco, -vlPago, now);
+      }
+      setProcessando(false);
+      setSelecionados(new Set());
+    },
+    [selecionados, titulos, user, ajustarSaldoBanco],
+  );
 
   const gerarRemessaSicredi = useCallback(() => {
     // Filtra selecionados: APROVADO + PIX
@@ -2159,6 +2967,10 @@ const LiberacaoPagamento = () => {
         pago_por: user?.email || null,
         pago_em: now,
         ...extraData,
+        dt_pagamento:
+          extraData.dt_pagamento ||
+          titulo?.dt_pagamento ||
+          new Date().toISOString().slice(0, 10),
       };
       const { error } = await supabase
         .from('pagamentos_liberacao')
@@ -2607,6 +3419,49 @@ const LiberacaoPagamento = () => {
           </div>
         </div>
 
+        {/* Filtro de data de pagamento (visível na aba Pagos) */}
+        {(filtroStatus === 'PAGO' ||
+          filtroPagamentoDe ||
+          filtroPagamentoAte) && (
+          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold uppercase text-green-700">
+                Data Pagto (de)
+              </label>
+              <input
+                type="date"
+                value={filtroPagamentoDe}
+                onChange={(e) => setFiltroPagamentoDe(e.target.value)}
+                className="border border-green-300 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-green-500 h-[30px] bg-green-50"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold uppercase text-green-700">
+                Data Pagto (até)
+              </label>
+              <input
+                type="date"
+                value={filtroPagamentoAte}
+                onChange={(e) => setFiltroPagamentoAte(e.target.value)}
+                className="border border-green-300 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-green-500 h-[30px] bg-green-50"
+              />
+            </div>
+            {(filtroPagamentoDe || filtroPagamentoAte) && (
+              <div className="flex items-end">
+                <button
+                  onClick={() => {
+                    setFiltroPagamentoDe('');
+                    setFiltroPagamentoAte('');
+                  }}
+                  className="text-[10px] text-red-500 hover:text-red-700 font-semibold flex items-center gap-1"
+                >
+                  <X size={10} weight="bold" /> Limpar datas
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="mt-2.5 text-[10px] text-gray-400 font-medium">
           {titulosFiltrados.length} registro(s) encontrado(s)
         </div>
@@ -2675,7 +3530,7 @@ const LiberacaoPagamento = () => {
                     titulos.find((t) => t.id === id)?.status === 'APROVADO',
                 ) && (
                   <button
-                    onClick={pagarSelecionados}
+                    onClick={() => setModalPagarSelecionados(true)}
                     disabled={processando}
                     className="flex items-center gap-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-1.5 rounded transition-colors"
                   >
@@ -2685,6 +3540,35 @@ const LiberacaoPagamento = () => {
                       <CheckCircle size={12} weight="bold" />
                     )}
                     PAGAR SELECIONADOS
+                  </button>
+                )}
+                {/* Voltar para PENDENTE em lote */}
+                {Array.from(selecionados).some((id) => {
+                  const s = titulos.find((t) => t.id === id)?.status;
+                  return s === 'APROVADO' || s === 'PAGO';
+                }) && (
+                  <button
+                    onClick={() => mudarStatusSelecionados('PENDENTE')}
+                    disabled={processando}
+                    className="flex items-center gap-1 bg-yellow-100 hover:bg-yellow-200 disabled:opacity-50 text-yellow-800 text-xs font-bold px-3 py-1.5 rounded border border-yellow-300 transition-colors"
+                    title="Voltar para Pendente (estorna saldo se necessário)"
+                  >
+                    <Clock size={12} weight="bold" />
+                    PENDENTE
+                  </button>
+                )}
+                {/* Voltar para APROVADO em lote */}
+                {Array.from(selecionados).some(
+                  (id) => titulos.find((t) => t.id === id)?.status === 'PAGO',
+                ) && (
+                  <button
+                    onClick={() => mudarStatusSelecionados('APROVADO')}
+                    disabled={processando}
+                    className="flex items-center gap-1 bg-blue-100 hover:bg-blue-200 disabled:opacity-50 text-blue-800 text-xs font-bold px-3 py-1.5 rounded border border-blue-300 transition-colors"
+                    title="Voltar para Aprovado (estorna saldo)"
+                  >
+                    <Stamp size={12} weight="bold" />
+                    APROVADO
                   </button>
                 )}
                 {Array.from(selecionados).some((id) => {
@@ -2727,7 +3611,7 @@ const LiberacaoPagamento = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[1400px] w-full table-fixed">
+            <table className="min-w-[1620px] w-full table-fixed">
               <thead className="bg-[#000638] text-white">
                 <tr>
                   <th className="px-2 py-2 text-center text-[10px] font-bold uppercase w-10">
@@ -2767,6 +3651,9 @@ const LiberacaoPagamento = () => {
                     onSort={toggleOrdem}
                     className="w-32"
                   />
+                  <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-24">
+                    C. Custo
+                  </th>
                   <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-28">
                     Duplicata
                   </th>
@@ -2790,8 +3677,11 @@ const LiberacaoPagamento = () => {
                   <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-32">
                     Observação
                   </th>
-                  <th className="px-2 py-2 text-right text-[10px] font-bold uppercase w-28">
+                  <th className="px-2 py-2 text-center text-[10px] font-bold uppercase w-24">
                     Ações
+                  </th>
+                  <th className="px-2 py-2 text-center text-[10px] font-bold uppercase w-20">
+                    Detalhar
                   </th>
                 </tr>
               </thead>
@@ -2806,9 +3696,9 @@ const LiberacaoPagamento = () => {
                     onToggleSelect={toggleSelect}
                     onSalvar={salvarTitulo}
                     onExcluir={excluirTitulo}
-                    onAprovar={aprovarTitulo}
-                    onMarcarPago={marcarPagoTitulo}
+                    onMudarStatus={mudarStatusTitulo}
                     onAbrirModal={setModalItem}
+                    onAbrirDetalhe={setModalDetalhe}
                   />
                 ))}
               </tbody>
@@ -2821,6 +3711,55 @@ const LiberacaoPagamento = () => {
         <ModalInfoPagamento
           item={modalItem}
           onClose={() => setModalItem(null)}
+        />
+      )}
+
+      {modalPagarSelecionados &&
+        (() => {
+          const titulosAprovados = Array.from(selecionados)
+            .map((id) => titulos.find((t) => t.id === id))
+            .filter((t) => t?.status === 'APROVADO');
+          return (
+            <ModalPagarSelecionados
+              titulos={titulosAprovados}
+              onConfirmar={pagarSelecionados}
+              onClose={() => setModalPagarSelecionados(false)}
+            />
+          );
+        })()}
+
+      {modalDetalhe && (
+        <ModalDetalheDuplicata
+          item={modalDetalhe}
+          isAdmin={isAdmin}
+          isFinanceiro={isFinanceiro}
+          onClose={() => setModalDetalhe(null)}
+          onSave={async ({
+            patchSimples,
+            statusMudou,
+            novoStatus,
+            dtPagamentoMudou,
+            novaDtPagamento,
+          }) => {
+            // 1) salva campos editáveis
+            await salvarTitulo(modalDetalhe.id, patchSimples);
+            // 2) se status mudou, executa transição com saldo
+            if (statusMudou) {
+              await mudarStatusTitulo(
+                modalDetalhe.id,
+                novoStatus,
+                novoStatus === 'PAGO' && novaDtPagamento
+                  ? { dt_pagamento: novaDtPagamento }
+                  : {},
+                { skipConfirm: true },
+              );
+            } else if (dtPagamentoMudou) {
+              // ajusta apenas a data de pagamento sem mudar status
+              await salvarTitulo(modalDetalhe.id, {
+                dt_pagamento: novaDtPagamento,
+              });
+            }
+          }}
         />
       )}
 
