@@ -1578,6 +1578,8 @@ const LinhaTitulo = React.memo(
     onMudarStatus,
     onAbrirModal,
     onAbrirDetalhe,
+    onToggleBaixado,
+    showBaixado,
   }) => {
     const [forma, setForma] = useState(item.forma_pagamento || '');
     const [banco, setBanco] = useState(item.banco_pagamento || '');
@@ -1700,20 +1702,48 @@ const LinhaTitulo = React.memo(
             </span>
           )}
         </td>
-        <td className="px-2 py-2 text-xs">
-          <div className="font-mono text-gray-700">
-            {fmtDate(item.dt_vencimento)}
-          </div>
-          <div className="mt-1 space-y-0.5">
-            {linhasAuditoria.map((a) => (
-              <div
-                key={a.label}
-                className="text-[9px] text-gray-400 leading-tight"
+
+        {/* Baixado (inline ao lado de status) */}
+        <td className="px-2 py-2 text-center">
+          {item.status === 'PAGO' && !isTransferencia && (
+            <label
+              className="inline-flex flex-col items-center gap-1 cursor-pointer"
+              title={
+                item.baixado
+                  ? `Baixado${item.baixado_por ? ' por ' + item.baixado_por : ''}${item.baixado_em ? ' em ' + new Date(item.baixado_em).toLocaleString('pt-BR') : ''}`
+                  : 'Marcar como baixado no TOTVS'
+              }
+            >
+              <input
+                type="checkbox"
+                checked={!!item.baixado}
+                onChange={() => onToggleBaixado(item.id, !item.baixado)}
+                className="w-4 h-4 accent-emerald-600 cursor-pointer"
+              />
+              <span
+                className={`text-[9px] font-bold leading-none ${
+                  item.baixado ? 'text-emerald-600' : 'text-gray-400'
+                }`}
               >
-                <span className="font-semibold text-gray-500">{a.label}:</span>{' '}
-                {a.value}
+                {item.baixado ? 'SIM' : 'Não'}
+              </span>
+            </label>
+          )}
+        </td>
+        <td className="px-5 py-5 text-xs">
+          <div className="">
+            <div className="flex items-center text-gray-500">
+              <span className="text-[9px] font-bold uppercase w-14 shrink-0 text-gray-400">
+                Venc. - {fmtDate(item.dt_vencimento) || '—'}
+              </span>
+            </div>
+            {item.dt_pagamento && (
+              <div className="flex items-center ">
+                <span className="text-[9px] font-bold uppercase w-14 shrink-0 text-green-800">
+                  Pgto. - {fmtDate(item.dt_pagamento)}
+                </span>
               </div>
-            ))}
+            )}
           </div>
         </td>
         <td className="px-2 py-2 text-xs font-semibold text-green-700">
@@ -2318,6 +2348,7 @@ const LiberacaoPagamento = () => {
   const [filtroForma, setFiltroForma] = useState(''); // '' | PIX | BOLETO | DEBITO | CREDITO
   const [filtroPagamentoDe, setFiltroPagamentoDe] = useState('');
   const [filtroPagamentoAte, setFiltroPagamentoAte] = useState('');
+  const [filtroBaixado, setFiltroBaixado] = useState(''); // '' | 'SIM' | 'NAO'
   const [showModalAdicionar, setShowModalAdicionar] = useState(false);
   const [modalDetalhe, setModalDetalhe] = useState(null);
   const [ordenacao, setOrdenacao] = useState({ coluna: null, dir: 'asc' });
@@ -2417,6 +2448,11 @@ const LiberacaoPagamento = () => {
           !t.dados_completos?.transferencia_entre_contas,
       );
     }
+    if (filtroBaixado === 'SIM') {
+      lista = lista.filter((t) => !!t.baixado);
+    } else if (filtroBaixado === 'NAO') {
+      lista = lista.filter((t) => !t.baixado);
+    }
     // Ordenação
     if (ordenacao.coluna) {
       const { coluna, dir } = ordenacao;
@@ -2462,6 +2498,7 @@ const LiberacaoPagamento = () => {
     filtroSoManuais,
     filtroPagamentoDe,
     filtroPagamentoAte,
+    filtroBaixado,
     ordenacao,
   ]);
 
@@ -2901,6 +2938,28 @@ const LiberacaoPagamento = () => {
       setSelecionados(new Set());
     },
     [selecionados, titulos, user, ajustarSaldoBanco],
+  );
+
+  const toggleBaixado = useCallback(
+    async (id, novoBaixado) => {
+      const patch = {
+        baixado: novoBaixado,
+        baixado_por: novoBaixado ? user?.email || null : null,
+        baixado_em: novoBaixado ? new Date().toISOString() : null,
+      };
+      const { error } = await supabase
+        .from('pagamentos_liberacao')
+        .update(patch)
+        .eq('id', id);
+      if (error) {
+        alert('Erro ao salvar: ' + error.message);
+        return;
+      }
+      setTitulos((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+      );
+    },
+    [user],
   );
 
   const gerarRemessaSicredi = useCallback(() => {
@@ -3459,6 +3518,20 @@ const LiberacaoPagamento = () => {
                 </button>
               </div>
             )}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold uppercase text-emerald-700">
+                Baixado
+              </label>
+              <select
+                value={filtroBaixado}
+                onChange={(e) => setFiltroBaixado(e.target.value)}
+                className="border border-emerald-300 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-emerald-500 h-[30px] bg-emerald-50"
+              >
+                <option value="">Todos</option>
+                <option value="SIM">Baixado</option>
+                <option value="NAO">Não baixado</option>
+              </select>
+            </div>
           </div>
         )}
 
@@ -3611,7 +3684,7 @@ const LiberacaoPagamento = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[1620px] w-full table-fixed">
+            <table className="min-w-[1700px] w-full table-fixed">
               <thead className="bg-[#000638] text-white">
                 <tr>
                   <th className="px-2 py-2 text-center text-[10px] font-bold uppercase w-10">
@@ -3620,12 +3693,17 @@ const LiberacaoPagamento = () => {
                   <th className="px-2 py-2 text-left text-[10px] font-bold uppercase w-24">
                     Status
                   </th>
+                  {filtroStatus === 'PAGO' && (
+                    <th className="px-2 py-2 text-center text-[10px] font-bold uppercase w-16 text-emerald-300">
+                      Baixado
+                    </th>
+                  )}
                   <ThSortable
-                    label="Vencimento / Histórico"
+                    label="Data"
                     coluna="dt_vencimento"
                     ordenacao={ordenacao}
                     onSort={toggleOrdem}
-                    className="w-44"
+                    className="w-36"
                   />
                   <ThSortable
                     label="Valor"
@@ -3699,6 +3777,8 @@ const LiberacaoPagamento = () => {
                     onMudarStatus={mudarStatusTitulo}
                     onAbrirModal={setModalItem}
                     onAbrirDetalhe={setModalDetalhe}
+                    onToggleBaixado={toggleBaixado}
+                    showBaixado={filtroStatus === 'PAGO'}
                   />
                 ))}
               </tbody>
