@@ -22,7 +22,12 @@ import {
 } from '@phosphor-icons/react';
 import { COLORS, VENDEDORES_POR_MODULO } from './constants';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4001';
+// Em DEV usa origin (Vite proxy /api → localhost:4100). Em PROD usa fallback.
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV
+    ? window.location.origin
+    : 'https://apigestaocrosby-bw2v.onrender.com');
 const API_KEY = import.meta.env.VITE_API_KEY || 'crosby2025';
 
 async function apiPostLocal(endpoint, body) {
@@ -2713,15 +2718,6 @@ export default function PerformanceView({
           />
         </div>
       </div>
-
-      {/* Faturamento por Segmento */}
-      {fatSegmentos && (
-        <FaturamentoPorSegmento
-          nfsBySegmento={fatSegmentos}
-          periodoLabel={periodoLabel}
-          loading={sellersTotalsLoading}
-        />
-      )}
 
       {/* Ranking de Aberturas de Cadastro */}
       {openingsRanking.length > 0 && (

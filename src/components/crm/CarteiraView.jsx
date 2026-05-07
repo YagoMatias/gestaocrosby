@@ -1358,21 +1358,61 @@ export default function CarteiraView({
       }
     }
     // Fallback para o hardcoded se vendedoresMap não carregou
-    const vendedoresModulo =
+    let vendedoresModulo =
       vendedoresPorModuloDinamico[modulo] || VENDEDORES_POR_MODULO[modulo];
+
+    // Multimarcas: SEMPRE remove os inbound (David=26, Thalis=69, Rafael=21),
+    // mesmo se o Supabase tagueou eles como 'multimarcas'. Esses vendedores
+    // têm canais próprios (inbound_david / inbound_rafael) e não devem
+    // aparecer na carteira de Multimarcas geral.
+    if (modulo === 'multimarcas' && vendedoresModulo) {
+      const INBOUND_EXCLUSO = new Set([21, 26, 69]);
+      vendedoresModulo = new Set(
+        [...vendedoresModulo].filter((c) => !INBOUND_EXCLUSO.has(Number(c))),
+      );
+    }
+
+    // Filiais válidas pra varejo (mesma lista do CANAL_CONFIG.varejo backend).
+    // Vendedor só conta como "do varejo" se transacionou em uma dessas branches.
+    const VAREJO_BRANCHES = new Set([
+      2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97,
+    ]);
 
     // Helper: verifica se uma transação pertence ao canal do módulo
     const txPertenceAoModulo = (tx) => {
-      if (modulo === 'varejo') return tx.canal === 'varejo';
+      if (modulo === 'varejo') {
+        // Restrição forte: tx deve ser do canal varejo E da branch varejo
+        const branch = Number(tx.branchCode || tx.branch_code || tx.branch);
+        if (!VAREJO_BRANCHES.has(branch)) return false;
+        return tx.canal === 'varejo';
+      }
       if (modulo === 'revenda') return tx.canal !== 'varejo';
       // business/franquia/multimarcas: não-varejo
       return tx.canal !== 'varejo';
     };
 
+    // Conjunto de TODOS os sellers conhecidos em canais não-varejo
+    // (revenda, multimarcas, inbound_*, business, franquia). Usado pra
+    // excluir esses sellers da carteira de varejo, mesmo que tenham
+    // alguma venda esporádica em filial varejo.
+    const sellersNaoVarejo = new Set();
+    for (const [mod, set] of Object.entries(vendedoresPorModuloDinamico)) {
+      if (mod === 'varejo') continue;
+      for (const id of set) sellersNaoVarejo.add(Number(id));
+    }
+    // Inclui também os hardcoded (caso vendedoresMap não cubra tudo)
+    for (const [mod, set] of Object.entries(VENDEDORES_POR_MODULO)) {
+      if (mod === 'varejo' || !set) continue;
+      for (const id of set) sellersNaoVarejo.add(Number(id));
+    }
+
     // Helper: verifica se um sellerCode pertence ao módulo
     const sellerDoModulo = (sc) => {
       const code = Number(sc);
-      if (modulo === 'varejo') return true; // varejo filtra por canal da tx
+      if (modulo === 'varejo') {
+        // Exclui sellers que pertencem a outros canais (revenda, MTM, etc.)
+        return !sellersNaoVarejo.has(code);
+      }
       if (vendedoresModulo) return vendedoresModulo.has(code);
       // business/franquia sem lista definida: exclui vendedores de outros módulos
       const allKnown = new Set();
@@ -1411,7 +1451,12 @@ export default function CarteiraView({
       });
 
       // Se não teve transações no módulo, tenta incluir pelo vendedorCode principal
+      // ATENÇÃO: pra varejo, NÃO aplica o fallback — sem lista canônica de
+      // vendedores varejo, o fallback inclui vendedores de outros canais (revenda
+      // atacado, MTM, etc.) que tiveram alguma compra mas não fazem parte do
+      // varejo. Cliente sem transação varejo no período é simplesmente ignorado.
       if (Object.keys(txBySeller).length === 0) {
+        if (modulo === 'varejo') return;
         const mainSc = c.vendedorCode;
         if (mainSc && sellerDoModulo(mainSc)) {
           txBySeller[mainSc] = []; // sem transações no módulo → será classificado como inativo
@@ -1477,6 +1522,28 @@ export default function CarteiraView({
         if (isNovo) grupos[sellerName].primeiraCompra += 1;
       }
     });
+
+    // Garante card pra cada vendedor ativo do canal mesmo sem clientes
+    // (ex: David ativo no inbound_david mas sem cliente no período).
+    // Dedup por vendedorCode pra não criar card duplicado quando o nome
+    // do TOTVS difere do Supabase (ex: "THALIS GOMES" vs "Thalis").
+    if (vendedoresModulo) {
+      const codesComGrupo = new Set(
+        Object.values(grupos).map((g) => Number(g.vendedorCode)),
+      );
+      for (const code of vendedoresModulo) {
+        const codeNum = Number(code);
+        if (codesComGrupo.has(codeNum)) continue;
+        const info = vendedoresMap?.byTotvsId?.[codeNum];
+        const sellerName =
+          info?.nome || sellerNameMap[String(codeNum)] || `Vendedor ${codeNum}`;
+        grupos[sellerName] = {
+          clientes: [],
+          vendedorCode: codeNum,
+          primeiraCompra: 0,
+        };
+      }
+    }
 
     return grupos;
   }, [erpData, modulo, vendedoresMap]);

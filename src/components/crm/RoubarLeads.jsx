@@ -73,6 +73,72 @@ function initials(name) {
   return (parts[0][0] + (parts[parts.length - 1][0] || '')).toUpperCase();
 }
 
+// Metadados visuais por canal de venda
+const CANAL_META = {
+  varejo: {
+    label: 'Varejo',
+    dot: 'bg-blue-500',
+    bg: 'bg-blue-50',
+    border: 'border-blue-200',
+    text: 'text-blue-700',
+  },
+  multimarcas: {
+    label: 'Multimarcas',
+    dot: 'bg-amber-500',
+    bg: 'bg-amber-50',
+    border: 'border-amber-200',
+    text: 'text-amber-700',
+  },
+  revenda: {
+    label: 'Revenda',
+    dot: 'bg-emerald-500',
+    bg: 'bg-emerald-50',
+    border: 'border-emerald-200',
+    text: 'text-emerald-700',
+  },
+  franquia: {
+    label: 'Franquia',
+    dot: 'bg-violet-500',
+    bg: 'bg-violet-50',
+    border: 'border-violet-200',
+    text: 'text-violet-700',
+  },
+  business: {
+    label: 'Business',
+    dot: 'bg-slate-500',
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    text: 'text-slate-700',
+  },
+  inbound: {
+    label: 'Inbound',
+    dot: 'bg-fuchsia-500',
+    bg: 'bg-fuchsia-50',
+    border: 'border-fuchsia-200',
+    text: 'text-fuchsia-700',
+  },
+  outros: {
+    label: 'Outros',
+    dot: 'bg-gray-400',
+    bg: 'bg-gray-50',
+    border: 'border-gray-200',
+    text: 'text-gray-700',
+  },
+  sem_canal: {
+    label: 'Sem canal',
+    dot: 'bg-gray-300',
+    bg: 'bg-gray-50',
+    border: 'border-gray-200',
+    text: 'text-gray-600',
+  },
+};
+
+const AVATAR_COLORS = [
+  '#6366f1', '#10b981', '#f59e0b', '#ef4444',
+  '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16',
+  '#f97316', '#14b8a6', '#a855f7', '#3b82f6',
+];
+
 // Categorias de instâncias para os quick filters
 const INST_GROUPS = {
   closers: ['anderson', 'rafael', 'david', 'walter', 'yago', 'renato', 'arthur', 'marcio', 'atc2318', 'atc1136', 'felipepb', 'michel', 'jucelino', 'baatacado'],
@@ -687,46 +753,75 @@ export default function RoubarLeads({ modulo, onChatLead, data, vendedoresMap, o
     return roubos.filter((r) => r.status === filtroRoubos);
   }, [roubos, filtroRoubos]);
 
-  // ── Leads roubáveis agrupados por vendedor ──
-  // Aceita por canalDetalhe (Categoria ClickUp) OU vendedorModulo, qualquer um.
-  const leadsPorVendedor = useMemo(() => {
-    if (!data?.canais || !modulo) return [];
-    const matchesModulo = (lead) => {
-      const c = String(lead.canalDetalhe || '').toLowerCase();
-      const v = String(lead.vendedorModulo || '').toLowerCase();
-      const matchCanal = (() => {
-        if (!c) return false;
-        if (modulo === 'multimarcas')
-          return c.includes('multimarcas') || c.includes('multimarca') || c.includes('b2m');
-        if (modulo === 'revenda')
-          return c.includes('revenda') || c.includes('revend') || c.includes('b2r') || c.includes('atacado');
-        if (modulo === 'varejo')
-          return c.includes('varejo') || c.includes('b2c') || c.includes('consumidor');
-        return false;
-      })();
-      const matchVendedor = v === modulo;
-      if (!c && !v) return true;
-      return matchCanal || matchVendedor;
-    };
-    const grupos = {};
+  // ── Leads roubáveis organizados por CANAL DE VENDA → VENDEDOR ──
+  // Estrutura nested para permitir filtro por canal e visualização clara.
+  // Normaliza canalDetalhe em chaves canônicas (varejo / multimarcas / revenda / outros).
+  const normalizarCanal = (lead) => {
+    const c = String(lead.canalDetalhe || '').toLowerCase();
+    if (!c) return 'sem_canal';
+    if (c.includes('multimarcas') || c.includes('multimarca') || c.includes('b2m'))
+      return 'multimarcas';
+    if (c.includes('revenda') || c.includes('revend') || c.includes('b2r') || c.includes('atacado'))
+      return 'revenda';
+    if (c.includes('varejo') || c.includes('b2c') || c.includes('consumidor'))
+      return 'varejo';
+    if (c.includes('franqu')) return 'franquia';
+    if (c.includes('business') || c.includes('b2b')) return 'business';
+    if (c.includes('inbound')) return 'inbound';
+    return 'outros';
+  };
+
+  const [filtroCanalRoubo, setFiltroCanalRoubo] = useState('todos');
+
+  const leadsPorCanal = useMemo(() => {
+    if (!data?.canais) return {};
+    const porCanal = {};
     for (const canal of data.canais) {
       for (const t of canal.tarefas || []) {
         if (!isRoubavel(t)) continue;
-        if (!t.vendedorClickupId) continue; // roubo precisa de origem
-        if (!matchesModulo(t)) continue;
-        if (!grupos[t.vendedorClickupId]) {
-          grupos[t.vendedorClickupId] = {
+        if (!t.vendedorClickupId) continue;
+        const canalKey = normalizarCanal(t);
+        if (!porCanal[canalKey]) porCanal[canalKey] = {};
+        const grupo = porCanal[canalKey];
+        if (!grupo[t.vendedorClickupId]) {
+          grupo[t.vendedorClickupId] = {
             clickupId: t.vendedorClickupId,
             nome: t.vendedor || 'Sem nome',
-            modulo: t.vendedorModulo || modulo,
+            modulo: t.vendedorModulo || canalKey,
             leads: [],
           };
         }
-        grupos[t.vendedorClickupId].leads.push(t);
+        grupo[t.vendedorClickupId].leads.push(t);
       }
     }
-    return Object.values(grupos).sort((a, b) => b.leads.length - a.leads.length);
-  }, [data, modulo]);
+    // Ordena vendedores dentro de cada canal por # de leads desc
+    const result = {};
+    for (const [k, v] of Object.entries(porCanal)) {
+      result[k] = Object.values(v).sort((a, b) => b.leads.length - a.leads.length);
+    }
+    return result;
+  }, [data]);
+
+  // Estatísticas por canal
+  const totaisPorCanal = useMemo(() => {
+    const totals = {};
+    for (const [canal, vendedores] of Object.entries(leadsPorCanal)) {
+      totals[canal] = vendedores.reduce((s, v) => s + v.leads.length, 0);
+    }
+    return totals;
+  }, [leadsPorCanal]);
+
+  // Lista de canais disponíveis (com leads) para mostrar nas pills
+  const canaisDisponiveis = useMemo(() => {
+    const lista = ['varejo', 'multimarcas', 'revenda', 'franquia', 'business', 'inbound', 'outros', 'sem_canal'];
+    return lista.filter((c) => (leadsPorCanal[c]?.length || 0) > 0);
+  }, [leadsPorCanal]);
+
+  // Canais a renderizar (com base no filtro selecionado)
+  const canaisRender = useMemo(() => {
+    if (filtroCanalRoubo === 'todos') return canaisDisponiveis;
+    return canaisDisponiveis.filter((c) => c === filtroCanalRoubo);
+  }, [canaisDisponiveis, filtroCanalRoubo]);
 
   // Lista de vendedores possíveis como destino para o lead atual (mesmo módulo, ≠ atual, ativos)
   const vendedoresOpcoesTransfer = useMemo(() => {
@@ -797,131 +892,226 @@ export default function RoubarLeads({ modulo, onChatLead, data, vendedoresMap, o
         ))}
       </div>
 
-      {/* ═══ LEADS POR VENDEDOR (ROUBO DIRETO) ═════════════════════════ */}
+      {/* ═══ LEADS POR CANAL × VENDEDOR (ROUBO DIRETO) ═══════════════════ */}
       <div>
-        <div className="flex items-baseline justify-between mb-3">
-          <h2 className="text-sm font-medium text-gray-900">Leads por Vendedor</h2>
-          <p className="text-[11px] text-gray-500">
-            Apenas leads em <span className="font-medium">SQL</span> ou{' '}
-            <span className="font-medium">1º Contato Feito</span> — módulo{' '}
-            <span className="font-medium uppercase">{modulo || '—'}</span>
-          </p>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div>
+            <h2 className="text-sm font-bold text-[#000638]">
+              Leads disponíveis para roubo
+            </h2>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              Em <span className="font-medium">SQL</span> ou{' '}
+              <span className="font-medium">1º Contato Feito</span> · separados por canal de venda
+            </p>
+          </div>
+          <span className="text-[11px] text-gray-500 tabular-nums px-2.5 py-1 bg-gray-50 rounded-full">
+            {Object.values(totaisPorCanal).reduce((s, n) => s + n, 0)} leads
+            roubáveis
+          </span>
         </div>
 
-        {leadsPorVendedor.length === 0 ? (
-          <div className="bg-white border border-gray-100 rounded-lg p-6 text-center">
-            <Users size={28} className="text-gray-200 mx-auto mb-2" />
-            <p className="text-xs text-gray-500">
-              Nenhum lead roubável neste módulo
+        {/* Pills de filtro por canal */}
+        {canaisDisponiveis.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 mb-4 p-1 bg-gray-50 rounded-lg w-fit">
+            <button
+              onClick={() => setFiltroCanalRoubo('todos')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                filtroCanalRoubo === 'todos'
+                  ? 'bg-[#000638] text-white shadow'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Todos
+              <span
+                className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] tabular-nums ${
+                  filtroCanalRoubo === 'todos'
+                    ? 'bg-white/20'
+                    : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                {Object.values(totaisPorCanal).reduce((s, n) => s + n, 0)}
+              </span>
+            </button>
+            {canaisDisponiveis.map((c) => {
+              const meta = CANAL_META[c] || { label: c, dot: 'bg-gray-400' };
+              const isActive = filtroCanalRoubo === c;
+              return (
+                <button
+                  key={c}
+                  onClick={() => setFiltroCanalRoubo(c)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
+                    isActive
+                      ? 'bg-white text-[#000638] shadow border border-gray-200'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+                  {meta.label}
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] tabular-nums ${
+                      isActive
+                        ? 'bg-gray-100 text-gray-700'
+                        : 'bg-gray-200 text-gray-600'
+                    }`}
+                  >
+                    {totaisPorCanal[c] || 0}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {canaisDisponiveis.length === 0 ? (
+          <div className="bg-white border border-gray-100 rounded-xl p-8 text-center">
+            <Users size={32} className="text-gray-200 mx-auto mb-2" />
+            <p className="text-sm text-gray-500">
+              Nenhum lead roubável no período selecionado
+            </p>
+            <p className="text-[11px] text-gray-400 mt-1">
+              Apenas leads em SQL ou 1º Contato Feito aparecem aqui
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {leadsPorVendedor.map((v) => {
-              const expandido = vendedorExpandido === v.clickupId;
+          <div className="space-y-5">
+            {canaisRender.map((canalKey) => {
+              const meta = CANAL_META[canalKey] || {
+                label: canalKey,
+                dot: 'bg-gray-400',
+                bg: 'bg-gray-50',
+                border: 'border-gray-200',
+                text: 'text-gray-700',
+              };
+              const vendedores = leadsPorCanal[canalKey] || [];
+              const totalCanal = totaisPorCanal[canalKey] || 0;
               return (
                 <div
-                  key={v.clickupId}
-                  className="bg-white border border-gray-100 rounded-lg overflow-hidden"
+                  key={canalKey}
+                  className="bg-white border border-gray-200 rounded-xl overflow-hidden"
                 >
-                  <button
-                    onClick={() =>
-                      setVendedorExpandido(expandido ? null : v.clickupId)
-                    }
-                    className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                  <div
+                    className={`${meta.bg} border-b ${meta.border} px-4 py-2.5 flex items-center justify-between`}
                   >
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold flex items-center justify-center">
-                        {initials(v.nome)}
-                      </div>
-                      <span className="text-sm font-medium text-gray-900">
-                        {v.nome}
+                      <span
+                        className={`w-2.5 h-2.5 rounded-full ${meta.dot}`}
+                      />
+                      <h3
+                        className={`text-xs font-bold uppercase tracking-widest ${meta.text}`}
+                      >
+                        {meta.label}
+                      </h3>
+                      <span className="text-[10px] text-gray-500">
+                        · {vendedores.length} vendedor
+                        {vendedores.length === 1 ? '' : 'es'}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold tabular-nums text-gray-700 bg-gray-100 px-2 py-0.5 rounded-full">
-                        {v.leads.length}
-                      </span>
-                      {expandido ? (
-                        <CaretUp size={12} className="text-gray-400" />
-                      ) : (
-                        <CaretDown size={12} className="text-gray-400" />
-                      )}
-                    </div>
-                  </button>
-                  {expandido && (
-                    <div className="border-t border-gray-100 max-h-[360px] overflow-y-auto">
-                      <table className="w-full text-xs">
-                        <thead className="bg-gray-50 sticky top-0">
-                          <tr>
-                            <th className="text-left px-3 py-2 font-medium text-gray-500 uppercase tracking-wide text-[10px]">
-                              Lead
-                            </th>
-                            <th className="text-left px-2 py-2 font-medium text-gray-500 uppercase tracking-wide text-[10px]">
-                              Status
-                            </th>
-                            <th className="text-left px-2 py-2 font-medium text-gray-500 uppercase tracking-wide text-[10px]">
-                              Categoria
-                            </th>
-                            <th className="px-2 py-2"></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {v.leads.map((lead) => (
-                            <tr
-                              key={lead.id}
-                              className="border-t border-gray-50 hover:bg-blue-50/30"
-                            >
-                              <td className="px-3 py-2 max-w-[140px]">
-                                <div className="font-medium text-gray-800 truncate">
-                                  {lead.nome || '—'}
+                    <span
+                      className={`text-xs font-bold tabular-nums px-2 py-0.5 rounded-full bg-white border ${meta.border} ${meta.text}`}
+                    >
+                      {totalCanal} leads
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-3">
+                    {vendedores.map((v, idx) => {
+                      const expandido = vendedorExpandido === v.clickupId;
+                      const avatarColor = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+                      return (
+                        <div
+                          key={v.clickupId}
+                          className={`bg-white border rounded-lg overflow-hidden transition-all ${
+                            expandido ? 'border-orange-300 shadow-md' : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <button
+                            onClick={() =>
+                              setVendedorExpandido(
+                                expandido ? null : v.clickupId,
+                              )
+                            }
+                            className="w-full flex items-center justify-between gap-2 px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div
+                                className="shrink-0 w-9 h-9 rounded-full text-white text-xs font-bold flex items-center justify-center shadow-sm"
+                                style={{ background: avatarColor }}
+                              >
+                                {initials(v.nome)}
+                              </div>
+                              <div className="min-w-0 text-left">
+                                <div className="text-sm font-semibold text-[#000638] truncate">
+                                  {v.nome}
                                 </div>
-                                <div className="text-[10px] text-gray-400 font-mono">
-                                  {formatPhone(lead.telefone) || '—'}
+                                <div className="text-[10px] text-gray-400 mt-0.5">
+                                  Clique para ver os leads
                                 </div>
-                              </td>
-                              <td className="px-2 py-2">
-                                <span className="inline-block px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 text-[10px] font-medium whitespace-nowrap">
-                                  {lead.status}
-                                </span>
-                              </td>
-                              <td className="px-2 py-2 text-gray-600 text-[11px]">
-                                {lead.canalDetalhe || '—'}
-                              </td>
-                              <td className="px-2 py-2 text-right whitespace-nowrap">
-                                <div className="inline-flex items-center gap-1">
-                                  {onChatLead && (
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-base font-bold tabular-nums text-orange-600">
+                                {v.leads.length}
+                              </span>
+                              {expandido ? (
+                                <CaretUp size={12} className="text-gray-400" />
+                              ) : (
+                                <CaretDown size={12} className="text-gray-400" />
+                              )}
+                            </div>
+                          </button>
+                          {expandido && (
+                            <div className="border-t border-gray-100 bg-gray-50/40 max-h-[400px] overflow-y-auto">
+                              {v.leads.map((lead) => (
+                                <div
+                                  key={lead.id}
+                                  className="border-b border-gray-100 last:border-0 px-3 py-2.5 hover:bg-white"
+                                >
+                                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-xs font-semibold text-[#000638] truncate">
+                                        {lead.nome || 'Sem nome'}
+                                      </div>
+                                      <div className="text-[10px] text-gray-500 font-mono mt-0.5">
+                                        {formatPhone(lead.telefone) || '—'}
+                                      </div>
+                                    </div>
+                                    <span className="shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">
+                                      {lead.status}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1 mt-2">
+                                    {onChatLead && (
+                                      <button
+                                        onClick={() =>
+                                          onChatLead({
+                                            telefone: lead.telefone,
+                                            nome: lead.nome,
+                                            inst: lead.vendedorEvolutionInst,
+                                          })
+                                        }
+                                        className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-emerald-700 hover:bg-emerald-50 rounded-md border border-emerald-200"
+                                        title="Ver conversa"
+                                      >
+                                        <WhatsappLogo size={11} weight="bold" />
+                                        Conversa
+                                      </button>
+                                    )}
                                     <button
-                                      onClick={() =>
-                                        onChatLead({
-                                          telefone: lead.telefone,
-                                          nome: lead.nome,
-                                          inst: lead.vendedorEvolutionInst,
-                                        })
-                                      }
-                                      className="px-2 py-1 text-[10px] font-medium text-emerald-700 hover:bg-emerald-50 rounded border border-emerald-200 inline-flex items-center gap-1"
-                                      title="Ver conversa do lead"
+                                      onClick={() => handleAbrirTransfer(lead)}
+                                      className="ml-auto flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-white bg-orange-500 hover:bg-orange-600 rounded-md transition shadow-sm"
+                                      title="Pegar este lead pra mim"
                                     >
-                                      <WhatsappLogo size={11} weight="bold" />
-                                      Conversa
+                                      <Swap size={11} weight="bold" />
+                                      Pegar este lead
                                     </button>
-                                  )}
-                                  <button
-                                    onClick={() => handleAbrirTransfer(lead)}
-                                    className="px-2 py-1 text-[10px] font-medium text-orange-600 hover:bg-orange-50 rounded border border-orange-200 inline-flex items-center gap-1"
-                                    title="Roubar este lead"
-                                  >
-                                    <Swap size={11} weight="bold" />
-                                    Roubar
-                                  </button>
+                                  </div>
                                 </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}

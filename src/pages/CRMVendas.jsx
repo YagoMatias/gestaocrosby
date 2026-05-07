@@ -45,6 +45,7 @@ const TurnoView = lazy(() => import('../components/crm/TurnoView'));
 const ChatPanel = lazy(() => import('../components/crm/ChatPanel'));
 const ConversaoView = lazy(() => import('../components/crm/ConversaoView'));
 const PainelGeral = lazy(() => import('../components/crm/PainelGeral'));
+const LeadGeneration = lazy(() => import('../components/crm/LeadGeneration'));
 
 const LazyFallback = () => (
   <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
@@ -204,6 +205,23 @@ export default function CRMVendas() {
     phonesCacheRef.current = { key: '', data: null };
     carregarPhoneStatus(data.canais);
   }, [data, carregarPhoneStatus]);
+
+  // ── Auto-refresh em background (sem botão manual) ──
+  // ClickUp: a cada 5 min  |  Evolution (status WhatsApp): a cada 2 min
+  useEffect(() => {
+    if (!dataInicio || !dataFim) return;
+    const clickupInterval = setInterval(() => {
+      // Não dispara se já está carregando
+      if (!loading) carregarLeads();
+    }, 5 * 60 * 1000);
+    const evoInterval = setInterval(() => {
+      if (data && !loading) atualizarEvolution();
+    }, 2 * 60 * 1000);
+    return () => {
+      clearInterval(clickupInterval);
+      clearInterval(evoInterval);
+    };
+  }, [dataInicio, dataFim, data, loading, carregarLeads, atualizarEvolution]);
 
   const [erpLoading, setErpLoading] = useState(false);
   const [erpProgress, setErpProgress] = useState(null);
@@ -488,7 +506,7 @@ export default function CRMVendas() {
   // Busca vendedoresMap do Supabase sob demanda (só nas abas que precisam)
   const vendedoresLoadedRef = useRef(false);
   useEffect(() => {
-    const tabsQueUsamVendedores = ['carteira', 'performance'];
+    const tabsQueUsamVendedores = ['carteira', 'performance', 'lead-gen'];
     if (tabsQueUsamVendedores.includes(tab) && !vendedoresLoadedRef.current) {
       vendedoresLoadedRef.current = true;
       apiGet('/api/crm/vendedores')
@@ -561,16 +579,16 @@ export default function CRMVendas() {
       />
 
       {/* ═══ CARD DE CONTROLES ════════════════════════════════════════════ */}
-      <Card className="shadow-lg rounded-xl">
+      <Card className="shadow-sm rounded-2xl border border-gray-100 bg-gradient-to-br from-white to-gray-50/50">
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             {/* Módulos + Painel Geral (modo neutro) */}
-            <div className="flex items-center gap-1 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 onClick={() => setTab('painel')}
-                className={`px-3 py-1 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
                   tab === 'painel'
-                    ? 'bg-indigo-600 text-white shadow'
+                    ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-md shadow-indigo-500/30'
                     : 'text-indigo-600 hover:bg-indigo-50 border border-indigo-200'
                 }`}
                 title="Painel geral neutro (não filtra por módulo)"
@@ -578,8 +596,8 @@ export default function CRMVendas() {
                 <ChartBar size={12} weight="bold" />
                 Painel Geral
               </button>
-              <span className="text-gray-200 mx-1">|</span>
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mr-1">
+              <div className="w-px h-5 bg-gray-200 mx-2" />
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mr-1">
                 Módulo
               </span>
               {MODULOS.filter((m) =>
@@ -592,10 +610,10 @@ export default function CRMVendas() {
                     // Se tava no painel geral, sai pra aba padrão do módulo
                     if (tab === 'painel') setTab('abertura');
                   }}
-                  className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
                     modulo === m.key && tab !== 'painel'
-                      ? 'bg-[#000638] text-white shadow'
-                      : 'text-gray-500 hover:text-[#000638] hover:bg-[#000638]/5 border border-gray-200'
+                      ? 'bg-gradient-to-r from-[#000638] to-[#1a1f5a] text-white shadow-md shadow-[#000638]/30'
+                      : 'text-gray-600 hover:text-[#000638] hover:bg-[#000638]/5 border border-gray-200'
                   }`}
                 >
                   {m.label}
@@ -603,36 +621,24 @@ export default function CRMVendas() {
               ))}
             </div>
 
-            {/* Sync buttons */}
+            {/* Sync indicators (auto-refresh em background, sem botão manual) */}
             <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={carregarLeads}
-                disabled={loading}
-                className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-[#000638] px-3 py-1.5 rounded-lg border border-gray-200 hover:border-[#000638]/30 hover:bg-[#000638]/5 disabled:opacity-50 transition-colors"
-                title="Atualizar leads do ClickUp"
-              >
-                <ArrowsClockwise size={13} />
-                ClickUp
-                {lastUpdate.clickup && (
-                  <span className="text-[10px] text-gray-400">
-                    {formatTime(lastUpdate.clickup)}
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={atualizarEvolution}
-                disabled={loading || !data}
-                className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-[#000638] px-3 py-1.5 rounded-lg border border-gray-200 hover:border-[#000638]/30 hover:bg-[#000638]/5 disabled:opacity-50 transition-colors"
-                title="Atualizar status do WhatsApp"
-              >
-                <ArrowsClockwise size={13} />
-                Evolution
-                {lastUpdate.evo && (
-                  <span className="text-[10px] text-gray-400">
-                    {formatTime(lastUpdate.evo)}
-                  </span>
-                )}
-              </button>
+              {(lastUpdate.clickup || lastUpdate.evo) && (
+                <div className="flex items-center gap-2 text-[10px] text-gray-400 px-2 py-1.5">
+                  {lastUpdate.clickup && (
+                    <span className="flex items-center gap-1" title="ClickUp atualizado automaticamente">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      ClickUp {formatTime(lastUpdate.clickup)}
+                    </span>
+                  )}
+                  {lastUpdate.evo && (
+                    <span className="flex items-center gap-1" title="Evolution atualizado automaticamente">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Evolution {formatTime(lastUpdate.evo)}
+                    </span>
+                  )}
+                </div>
+              )}
               <select
                 value={erpMeses}
                 onChange={(e) => {
@@ -877,6 +883,7 @@ export default function CRMVendas() {
               data={data}
               modulo={modulo}
               phoneStatus={phoneStatus}
+              onChatLead={onChatLead}
             />
           )}
           {tab === 'carteira' && (
@@ -888,6 +895,14 @@ export default function CRMVendas() {
               vendedoresMap={vendedoresMap}
               erpLoading={erpLoading}
               erpProgress={erpProgress}
+            />
+          )}
+          {tab === 'lead-gen' && (
+            <LeadGeneration
+              erpData={erpData}
+              modulo={modulo}
+              vendedoresMap={vendedoresMap}
+              onChatLead={onChatLead}
             />
           )}
           {tab === 'performance' && (

@@ -20,6 +20,7 @@ export const MODULOS = [
 export const TABS = [
   { key: 'abertura', label: 'CRM Abertura' },
   { key: 'carteira', label: 'CRM Carteira' },
+  { key: 'lead-gen', label: 'Lead Generation' },
   { key: 'performance', label: 'Performance' },
   { key: 'contato', label: 'Último Contato' },
   { key: 'turno', label: 'Turno' },

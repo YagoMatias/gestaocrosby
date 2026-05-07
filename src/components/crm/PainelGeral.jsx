@@ -62,14 +62,18 @@ const CHART_PALETTE = [
 ];
 
 // ─── KPI Card ───────────────────────────────────────────────────────────────
-function KpiCard({ icon: Icon, color, label, value, subtitle, accent, onClick }) {
+function KpiCard({ icon: Icon, color, label, value, subtitle, accent, onClick, active }) {
   const El = onClick ? 'button' : 'div';
   return (
     <El
       onClick={onClick}
-      className={`bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-1 text-left ${
+      className={`bg-white border rounded-lg p-4 flex flex-col gap-1 text-left transition ${
+        active
+          ? 'border-indigo-500 ring-2 ring-indigo-200 shadow-md'
+          : 'border-gray-200'
+      } ${
         onClick
-          ? 'hover:border-indigo-300 hover:shadow-md transition cursor-pointer'
+          ? 'hover:border-indigo-300 hover:shadow-md cursor-pointer'
           : ''
       }`}
       style={accent ? { borderLeft: `4px solid ${accent}` } : {}}
@@ -539,15 +543,33 @@ export default function PainelGeral() {
   const [erro, setErro] = useState('');
   const [reloadAt, setReloadAt] = useState(0);
   const [modalSel, setModalSel] = useState(null); // { titulo, filter, value }
+  // Modo de clique nos cards: 'detalhar' (modal) ou 'filtrar' (re-filtra painel)
+  const [clickMode, setClickMode] = useState(() => {
+    if (typeof window === 'undefined') return 'detalhar';
+    return localStorage.getItem('painel:clickMode') || 'detalhar';
+  });
+  // Filtro de canal ativo (quando clickMode='filtrar' ou setado por chip)
+  const [canalFiltro, setCanalFiltro] = useState(null); // { canal, label } | null
+
+  // Salva clickMode no localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('painel:clickMode', clickMode);
+    }
+  }, [clickMode]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setErro('');
-    const forceParam = reloadAt > 0 ? '?force=1' : '';
-    fetch(`${API_BASE_URL}/api/crm/dashboard-overview${forceParam}`, {
-      headers: { 'x-api-key': API_KEY },
-    })
+    const params = new URLSearchParams();
+    if (reloadAt > 0) params.set('force', '1');
+    if (canalFiltro?.canal) params.set('canal', canalFiltro.canal);
+    const qs = params.toString();
+    fetch(
+      `${API_BASE_URL}/api/crm/dashboard-overview${qs ? `?${qs}` : ''}`,
+      { headers: { 'x-api-key': API_KEY } },
+    )
       .then((r) => r.json())
       .then((j) => {
         if (cancelled) return;
@@ -562,11 +584,34 @@ export default function PainelGeral() {
     return () => {
       cancelled = true;
     };
-  }, [reloadAt]);
+  }, [reloadAt, canalFiltro]);
 
   const openModal = (titulo, filter, value) =>
     setModalSel({ titulo, filter, value });
   const closeModal = () => setModalSel(null);
+
+  // Clique em canal (Varejo/Revenda/Multimarcas/Sem Categoria/Outra)
+  // Comportamento depende do clickMode escolhido pelo usuário
+  const onCanalClick = (canal, label) => {
+    if (clickMode === 'filtrar') {
+      // Toggle: clicar de novo no mesmo canal limpa o filtro
+      if (canalFiltro?.canal === canal) setCanalFiltro(null);
+      else setCanalFiltro({ canal, label });
+    } else {
+      // Modo detalhar: abre modal com lista de leads
+      const filterMap = {
+        varejo: 'canal',
+        revenda: 'canal',
+        multimarcas: 'canal',
+        sem_categoria: 'sem_categoria',
+      };
+      if (canal.startsWith('outra:')) {
+        openModal(`Leads em "${label}"`, 'outra_categoria', canal.slice(6));
+      } else {
+        openModal(`Leads de ${label}`, filterMap[canal] || 'canal', canal);
+      }
+    }
+  };
 
   // ── Datasets para charts ──
   const canalChartData = useMemo(() => {
@@ -654,20 +699,66 @@ export default function PainelGeral() {
 
   return (
     <div className="space-y-4">
-      {/* Header com timestamp + refresh + sync compras */}
+      {/* Header com timestamp + toggle + sync compras */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-base font-bold text-[#000638]">
             Painel Geral — CRM 26
           </h2>
           <p className="text-[11px] text-gray-500">
-            {fmtNum(total)} leads ·{' '}
-            {data.loaded_at
-              ? `atualizado ${new Date(data.loaded_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
-              : ''}
+            {fmtNum(total)} leads
+            {canalFiltro && (
+              <span className="ml-1">
+                · filtrado por <span className="font-semibold">{canalFiltro.label}</span>
+              </span>
+            )}
+            {data.loaded_at && !canalFiltro && (
+              <span className="ml-1">
+                · atualizado{' '}
+                {new Date(data.loaded_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Toggle de modo de clique */}
+          <div className="inline-flex items-center bg-gray-100 rounded-lg p-0.5 text-[11px]">
+            <button
+              onClick={() => setClickMode('detalhar')}
+              className={`px-2.5 py-1 rounded-md font-medium transition ${
+                clickMode === 'detalhar'
+                  ? 'bg-white text-[#000638] shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+              title="Ao clicar num card, abre lista de leads"
+            >
+              👁️ Detalhar
+            </button>
+            <button
+              onClick={() => setClickMode('filtrar')}
+              className={`px-2.5 py-1 rounded-md font-medium transition ${
+                clickMode === 'filtrar'
+                  ? 'bg-white text-indigo-700 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+              title="Ao clicar num card, filtra todo o painel por aquele canal"
+            >
+              🎯 Filtrar
+            </button>
+          </div>
+
+          {/* Chip de filtro ativo */}
+          {canalFiltro && (
+            <button
+              onClick={() => setCanalFiltro(null)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-medium"
+              title="Limpar filtro"
+            >
+              <span className="text-[11px]">Filtro: {canalFiltro.label}</span>
+              <X size={12} weight="bold" />
+            </button>
+          )}
+
           <SyncComprasButton onSyncComplete={() => setReloadAt(Date.now())} />
           <button
             onClick={() => setReloadAt(Date.now())}
@@ -696,7 +787,8 @@ export default function PainelGeral() {
           value={fmtNum(canal.varejo)}
           subtitle={total ? `${((canal.varejo / total) * 100).toFixed(1)}%` : ''}
           accent={COLORS.varejo}
-          onClick={() => openModal('Leads de Varejo', 'canal', 'varejo')}
+          onClick={() => onCanalClick('varejo', 'Varejo')}
+          active={canalFiltro?.canal === 'varejo'}
         />
         <KpiCard
           icon={ShoppingBag}
@@ -705,7 +797,8 @@ export default function PainelGeral() {
           value={fmtNum(canal.revenda)}
           subtitle={total ? `${((canal.revenda / total) * 100).toFixed(1)}%` : ''}
           accent={COLORS.revenda}
-          onClick={() => openModal('Leads de Revenda', 'canal', 'revenda')}
+          onClick={() => onCanalClick('revenda', 'Revenda')}
+          active={canalFiltro?.canal === 'revenda'}
         />
         <KpiCard
           icon={Buildings}
@@ -716,7 +809,8 @@ export default function PainelGeral() {
             total ? `${((canal.multimarcas / total) * 100).toFixed(1)}%` : ''
           }
           accent={COLORS.multimarcas}
-          onClick={() => openModal('Leads de Multimarcas', 'canal', 'multimarcas')}
+          onClick={() => onCanalClick('multimarcas', 'Multimarcas')}
+          active={canalFiltro?.canal === 'multimarcas'}
         />
         <KpiCard
           icon={Question}
@@ -729,9 +823,8 @@ export default function PainelGeral() {
               : ''
           }
           accent="#94a3b8"
-          onClick={() =>
-            openModal('Leads sem categoria', 'sem_categoria', '')
-          }
+          onClick={() => onCanalClick('sem_categoria', 'Sem Categoria')}
+          active={canalFiltro?.canal === 'sem_categoria'}
         />
         <KpiCard
           icon={ListChecks}
@@ -805,9 +898,13 @@ export default function PainelGeral() {
               <button
                 key={c.name}
                 onClick={() =>
-                  openModal(`Leads em "${c.name}"`, 'outra_categoria', c.name)
+                  onCanalClick(`outra:${c.name}`, c.name)
                 }
-                className="px-3 py-1.5 text-xs rounded-full bg-gray-100 hover:bg-indigo-100 text-gray-700 hover:text-indigo-700 transition border border-gray-200 hover:border-indigo-300"
+                className={`px-3 py-1.5 text-xs rounded-full transition border ${
+                  canalFiltro?.canal === `outra:${c.name}`
+                    ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
+                    : 'bg-gray-100 hover:bg-indigo-100 text-gray-700 hover:text-indigo-700 border-gray-200 hover:border-indigo-300'
+                }`}
               >
                 {c.name} <span className="font-bold ml-1">{fmtNum(c.total)}</span>
               </button>
@@ -878,12 +975,8 @@ export default function PainelGeral() {
                   innerRadius={50}
                   cursor="pointer"
                   onClick={(d) => {
-                    if (d.key === 'outros') return; // já tem card abaixo
-                    if (d.key === 'sem_categoria') {
-                      openModal('Leads sem categoria', 'sem_categoria', '');
-                    } else {
-                      openModal(`Leads de ${d.name}`, 'canal', d.key);
-                    }
+                    if (d.key === 'outros') return;
+                    onCanalClick(d.key, d.name);
                   }}
                   label={({ name, percent }) =>
                     percent > 0.04 ? `${name} ${(percent * 100).toFixed(0)}%` : ''

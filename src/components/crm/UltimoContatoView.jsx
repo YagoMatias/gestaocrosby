@@ -322,21 +322,33 @@ export default function UltimoContatoView({
 
   // Agrupa leads por vendedor (filtra pela Categoria do Lead = canal de vendas).
   // Leads sem vendedor caem num grupo "Sem vendedor".
+  // Para VAREJO: agrupa por LOJA (campo "Enviar Contato" da ClickUp) e
+  // só considera tasks cujo valor desse campo começa com "Loja".
   const grupos = useMemo(() => {
     if (!data?.canais) return [];
     const map = {};
     const SEM_VENDEDOR_KEY = '__sem_vendedor__';
+    const isLoja = (s) => /^\s*loja\b/i.test(String(s || ''));
     for (const c of data.canais) {
       for (const t of c.tarefas || []) {
         if (!leadEnoModulo(t, modulo)) continue;
-        const key = t.vendedorClickupId || SEM_VENDEDOR_KEY;
+        let key;
+        if (modulo === 'varejo') {
+          const contato = (t.enviarContato || '').trim();
+          if (!isLoja(contato)) continue; // só lojas
+          key = contato;
+        } else {
+          key = t.vendedorClickupId || SEM_VENDEDOR_KEY;
+        }
         if (!map[key]) {
           map[key] = {
             clickupId: key,
             nome:
-              key === SEM_VENDEDOR_KEY
-                ? 'Sem vendedor'
-                : t.vendedor || 'Sem nome',
+              modulo === 'varejo'
+                ? key
+                : key === SEM_VENDEDOR_KEY
+                  ? 'Sem vendedor'
+                  : t.vendedor || 'Sem nome',
             modulo: t.vendedorModulo || modulo,
             evolutionInst: t.vendedorEvolutionInst || '',
             leads: [],

@@ -409,22 +409,38 @@ export default function ConversaoView({ modulo }) {
       .finally(() => setLoadingCross(false));
   }, [data, modulo]);
 
-  // Agrupa leads por vendedor
+  // Agrupa leads por vendedor (ou por LOJA quando varejo, usando o
+  // campo "Enviar Contato" do ClickUp).
+  // Para varejo, considera APENAS opções cujo nome começa com "Loja"
+  // (ignora opções como "Revenda", "Multimarcas Inbound", "SDR" etc.).
   const vendedores = useMemo(() => {
     if (!data?.canais) return [];
     const map = {};
-    const SEM_VENDEDOR = '__sem_vendedor__';
+    const SEM_KEY = modulo === 'varejo' ? '__sem_loja__' : '__sem_vendedor__';
+    const SEM_LABEL =
+      modulo === 'varejo' ? 'Sem vendedor' : 'Sem vendedor';
+    const isLoja = (s) => /^\s*loja\b/i.test(String(s || ''));
     for (const c of data.canais) {
       for (const t of c.tarefas || []) {
         if (!leadEnoModulo(t, modulo)) continue;
-        const key = t.vendedorClickupId || SEM_VENDEDOR;
+        let key;
+        if (modulo === 'varejo') {
+          const contato = (t.enviarContato || '').trim();
+          // Filtro forte: só conta se o nome começa com "Loja"
+          if (!isLoja(contato)) continue;
+          key = contato;
+        } else {
+          key = t.vendedorClickupId || SEM_KEY;
+        }
         if (!map[key]) {
           map[key] = {
             clickupId: key,
             nome:
-              key === SEM_VENDEDOR
-                ? 'Sem vendedor'
-                : t.vendedor || 'Sem nome',
+              key === SEM_KEY
+                ? SEM_LABEL
+                : modulo === 'varejo'
+                  ? key
+                  : t.vendedor || 'Sem nome',
             total: 0,
             fechados: 0,
             perdidos: 0,

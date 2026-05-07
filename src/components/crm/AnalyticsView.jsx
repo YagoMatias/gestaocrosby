@@ -587,7 +587,7 @@ export default function AnalyticsView({
         )}
 
       {/* KPIs resumo + comparativo ano passado */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <KpiCard
           label="Faturamento total"
           valor={loading ? '...' : fmtMoeda(data?.total_value)}
@@ -648,6 +648,18 @@ export default function AnalyticsView({
           color="amber"
           loading={loading}
           onClick={data ? () => setKpiSel('aberturas') : null}
+        />
+        <KpiCard
+          label="Reativações de cadastro"
+          valor={loading ? '...' : fmtNum(data?.total_reativacoes_cadastro)}
+          subValor={
+            data?.total_reativacoes_cadastro_ly != null
+              ? `LY: ${fmtNum(data.total_reativacoes_cadastro_ly)}`
+              : null
+          }
+          icone={UserPlus}
+          color="violet"
+          loading={loading}
         />
         <KpiCard
           label="Estados (UFs)"
@@ -1253,6 +1265,11 @@ function KpiCard({
       from: 'from-amber-400',
       bg: 'bg-amber-100',
       text: 'text-amber-600',
+    },
+    violet: {
+      from: 'from-violet-400',
+      bg: 'bg-violet-100',
+      text: 'text-violet-600',
     },
   };
   const t = COLORS[color] || COLORS.blue;

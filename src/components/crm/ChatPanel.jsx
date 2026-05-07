@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, WhatsappLogo, Spinner, PaperPlaneTilt } from '@phosphor-icons/react';
+import { X, WhatsappLogo, Spinner, PaperPlaneTilt, Eye, EyeSlash } from '@phosphor-icons/react';
 import { ALL_INSTANCES, instLabel, formatPhone } from './constants';
 import { API_BASE_URL } from '../../config/constants';
 
 const API_KEY = import.meta.env.VITE_API_KEY || '';
+
+// limpa telefone para o endpoint /lead-instances
+const cleanPhoneCp = (s) => String(s || '').replace(/\D/g, '');
 
 export default function ChatPanel({ open, tel, nome, defaultInst, defaultProvider, instancias = [], onClose }) {
   const [selectedInst, setSelectedInst] = useState(defaultInst || '');
@@ -11,11 +14,49 @@ export default function ChatPanel({ open, tel, nome, defaultInst, defaultProvide
   const [mensagens, setMensagens] = useState([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
+  // Auto-carregamento de instâncias quando o painel abre (caso não venham via prop)
+  const [autoInstancias, setAutoInstancias] = useState([]);
+  const [loadingInst, setLoadingInst] = useState(false);
+  const [showAll, setShowAll] = useState(false); // permite forçar todas as instâncias
   const bodyRef = useRef(null);
 
   useEffect(() => {
     if (open && tel && selectedInst) loadMessages();
   }, [open, tel, selectedInst, selectedProvider]);
+
+  // Auto-busca as instâncias com chat para esse telefone (sempre que abre)
+  useEffect(() => {
+    if (!open || !tel) return;
+    // Se vieram via prop (instancias), não refaz
+    if (instancias && instancias.length > 0) {
+      setAutoInstancias([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingInst(true);
+    setAutoInstancias([]);
+    setShowAll(false);
+    fetch(
+      `${API_BASE_URL}/api/crm/lead-instances/${cleanPhoneCp(tel)}`,
+      { headers: { 'x-api-key': API_KEY } },
+    )
+      .then((r) => (r.ok ? r.json() : { data: { instances: [] } }))
+      .then((j) => {
+        if (cancelled) return;
+        const list = j.data?.instances || j.instances || [];
+        setAutoInstancias(list);
+        // Se há defaults, mantém. Senão, escolhe primeiro
+        if (!defaultInst && list.length > 0) {
+          setSelectedInst(list[0].name);
+          setSelectedProvider(list[0].provider || 'evolution');
+        }
+      })
+      .catch(() => {})
+      .finally(() => !cancelled && setLoadingInst(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, tel, instancias, defaultInst]);
 
   useEffect(() => {
     setSelectedInst(defaultInst || '');
@@ -47,9 +88,15 @@ export default function ChatPanel({ open, tel, nome, defaultInst, defaultProvide
   if (!open) return null;
 
   // Lista de instâncias para o dropdown (Evolution+UAzapi unificado)
-  // Aceita: array de strings (legado), array de objetos {name|instanceName, provider?, count?|messageCount?}.
-  const opcoesInst = instancias.length > 0
-    ? instancias.map((raw) => {
+  // Prioriza prop `instancias`; senão usa `autoInstancias` (fetch interno).
+  // SÓ cai pra ALL_INSTANCES se o usuário clicar em "Mostrar todas".
+  const fonteInstancias =
+    instancias && instancias.length > 0 ? instancias : autoInstancias;
+  const semInstanciasComChat =
+    !loadingInst && fonteInstancias.length === 0;
+  const opcoesInst = (showAll && semInstanciasComChat)
+    ? ALL_INSTANCES.map((i) => ({ name: i.name, provider: 'evolution', count: null }))
+    : fonteInstancias.map((raw) => {
         if (typeof raw === 'string') {
           return { name: raw, provider: 'evolution', count: null };
         }
@@ -57,8 +104,7 @@ export default function ChatPanel({ open, tel, nome, defaultInst, defaultProvide
         const provider = raw.provider || 'evolution';
         const count = raw.count ?? raw.messageCount ?? null;
         return { name, provider, count };
-      })
-    : ALL_INSTANCES.map((i) => ({ name: i.name, provider: 'evolution', count: null }));
+      });
 
   const handleInstChange = (e) => {
     const name = e.target.value;
@@ -90,26 +136,60 @@ export default function ChatPanel({ open, tel, nome, defaultInst, defaultProvide
 
         {/* Seletor de instância */}
         <div className="border-b border-gray-200 p-2 bg-gray-50">
-          <label className="block text-[10px] font-semibold text-gray-600 mb-1">
-            INSTÂNCIA
-          </label>
-          <select
-            value={selectedInst}
-            onChange={handleInstChange}
-            className="w-full border border-gray-300 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          >
-            <option value="">Selecione uma instância</option>
-            {opcoesInst.map((i) => {
-              const label = instLabel(i.name) || i.name;
-              const meta = i.provider === 'uazapi' ? '· UAzapi' : '';
-              const cnt = i.count ? `(${i.count} msgs)` : '';
-              return (
-                <option key={`${i.provider}:${i.name}`} value={i.name}>
-                  {`${label} ${cnt} ${meta}`.trim()}
-                </option>
-              );
-            })}
-          </select>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-[10px] font-semibold text-gray-600">
+              INSTÂNCIA
+              {loadingInst && (
+                <span className="ml-2 text-[10px] text-gray-400">
+                  buscando…
+                </span>
+              )}
+              {!loadingInst && fonteInstancias.length > 0 && (
+                <span className="ml-2 text-[10px] text-emerald-600 font-normal">
+                  · {fonteInstancias.length} com chat
+                </span>
+              )}
+            </label>
+            {/* Toggle "Mostrar todas" — só aparece quando não há chats */}
+            {!loadingInst && semInstanciasComChat && (
+              <button
+                onClick={() => setShowAll((v) => !v)}
+                className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-700 px-1.5 py-0.5 rounded"
+                title="Forçar exibição de todas as instâncias"
+              >
+                {showAll ? <EyeSlash size={11} /> : <Eye size={11} />}
+                {showAll ? 'Só com chat' : 'Mostrar todas'}
+              </button>
+            )}
+          </div>
+          {!loadingInst && semInstanciasComChat && !showAll ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 text-[11px] text-amber-700">
+              Nenhuma instância tem conversa com este telefone.
+              <br />
+              <span className="text-amber-600">
+                Clique em &quot;Mostrar todas&quot; para tentar manualmente.
+              </span>
+            </div>
+          ) : (
+            <select
+              value={selectedInst}
+              onChange={handleInstChange}
+              disabled={opcoesInst.length === 0}
+              className="w-full border border-gray-300 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              <option value="">Selecione uma instância</option>
+              {opcoesInst.map((i) => {
+                const label = instLabel(i.name) || i.name;
+                const meta = i.provider === 'uazapi' ? '· UAzapi' : '';
+                const cnt = i.count ? `(${i.count} msgs)` : '';
+                return (
+                  <option key={`${i.provider}:${i.name}`} value={i.name}>
+                    {`${label} ${cnt} ${meta}`.trim()}
+                  </option>
+                );
+              })}
+            </select>
+          )}
         </div>
 
         {/* Body com mensagens */}
@@ -154,7 +234,25 @@ export default function ChatPanel({ open, tel, nome, defaultInst, defaultProvide
                         {m.texto || '[mídia]'}
                       </div>
                       <div className="text-[9px] text-gray-400 mt-1 text-right">
-                        {m.tempo ? new Date(m.tempo).toLocaleString('pt-BR') : ''}
+                        {(() => {
+                          if (!m.tempo) return '';
+                          // Detecta segundos vs milissegundos
+                          // (Evolution retorna segundos; UAzapi pode retornar ms)
+                          const ts =
+                            Number(m.tempo) < 1e12
+                              ? Number(m.tempo) * 1000
+                              : Number(m.tempo);
+                          const d = new Date(ts);
+                          if (isNaN(d.getTime())) return '';
+                          // Formato compacto: dd/mm HH:mm
+                          return d.toLocaleString('pt-BR', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          });
+                        })()}
                       </div>
                     </div>
                   </div>
