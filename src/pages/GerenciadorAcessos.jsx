@@ -28,6 +28,11 @@ import {
 const AVAILABLE_PAGES = [
   // Principal
   { path: '/home', name: 'Home', category: 'Principal' },
+  {
+    path: '/solicitacoes-crosby',
+    name: 'Solicitações Crosby',
+    category: 'Principal',
+  },
   { path: '/crosby-bot', name: 'Crosby Bot', category: 'Principal' },
   { path: '/dashboard', name: 'BI Externo (Dashboard)', category: 'Principal' },
   { path: '/bi-externo', name: 'BI Externo', category: 'Principal' },

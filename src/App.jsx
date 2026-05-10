@@ -18,6 +18,7 @@ const BIExterno = lazy(() => import('./pages/BIExterno'));
 const ContasAPagar = lazy(() => import('./pages/ContasAPagar'));
 const Emprestimos = lazy(() => import('./pages/Emprestimos'));
 const DespesaFilial = lazy(() => import('./pages/DespesaFilial'));
+const DespesasFixas = lazy(() => import('./pages/DespesasFixas'));
 const LiberacaoPagamento = lazy(() => import('./pages/LiberacaoPagamento'));
 const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
 const BatidaCarteira = lazy(() => import('./pages/BatidaCarteira'));
@@ -108,6 +109,10 @@ const ClientesBluecred = lazy(() => import('./pages/ClientesBluecred'));
 const ConsultaNFs = lazy(() => import('./pages/ConsultaNFs'));
 const FaturamentoPanel = lazy(() => import('./components/FaturamentoPanel'));
 const AtividadeClientes = lazy(() => import('./pages/AtividadeClientes'));
+const SolicitacoesCrosby = lazy(() => import('./pages/SolicitacoesCrosby'));
+const FormularioSolicitacoes = lazy(
+  () => import('./pages/FormularioSolicitacoes'),
+);
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -132,6 +137,7 @@ const protectedRoutes = [
   { path: '/contas-a-pagar', component: ContasAPagar },
   { path: '/emprestimos', component: Emprestimos },
   { path: '/despesa-filial', component: DespesaFilial },
+  { path: '/despesas-fixas', component: DespesasFixas },
   { path: '/liberacao-pagamento', component: LiberacaoPagamento },
   { path: '/contas-a-receber', component: ContasAReceber },
   { path: '/batida-carteira', component: BatidaCarteira },
@@ -206,6 +212,7 @@ const protectedRoutes = [
   { path: '/catalogo-admin', component: CatalogoAdmin },
   { path: '/crosby-manage', component: CrosbyManage },
   { path: '/extrato-totvs', component: ExtratoTotvs },
+  { path: '/solicitacoes-crosby', component: SolicitacoesCrosby },
 ];
 
 // Layout compartilhado - estável, preserva estado das páginas ao interagir com sidebar
@@ -254,6 +261,14 @@ function App() {
           element={
             <Suspense fallback={<PageLoadingFallback />}>
               <DownloadNotificacao />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/formulario-solicitacoes"
+          element={
+            <Suspense fallback={<PageLoadingFallback />}>
+              <FormularioSolicitacoes />
             </Suspense>
           }
         />

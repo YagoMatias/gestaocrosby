@@ -84,6 +84,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'Despesas Fixas',
+        href: '/despesas-fixas',
+        icon: Receipt,
+        color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
         name: 'Liberação de Pagamento',
         href: '/liberacao-pagamento',
         icon: CheckCircle,
@@ -803,6 +810,18 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             color: 'text-blue-600',
           }}
           isActive={pathname === '/home'}
+        />
+
+        {/* Solicitações Crosby */}
+        <MenuItem
+          {...menuProps}
+          item={{
+            name: 'Solicitações Crosby',
+            href: '/solicitacoes-crosby',
+            icon: ClipboardText,
+            color: 'text-orange-600',
+          }}
+          isActive={pathname === '/solicitacoes-crosby'}
         />
 
         {/* Crosby Bot */}
