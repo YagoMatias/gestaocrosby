@@ -29,7 +29,7 @@ import {
   Phone,
   UploadSimple,
 } from '@phosphor-icons/react';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseAdmin } from '../lib/supabase';
 import { API_BASE_URL } from '../config/constants';
 import CENTROS_CUSTO from '../config/centrosCusto.json';
 import DESPESAS_JSON from '../config/despesas.json';
@@ -591,11 +591,11 @@ const FormularioSolicitacoes = () => {
     const fileName = `${prefix}/${Date.now()}-${Math.random()
       .toString(36)
       .slice(2)}.${ext}`;
-    const { error } = await supabase.storage
+    const { error } = await supabaseAdmin.storage
       .from(STORAGE_BUCKET)
       .upload(fileName, file, { contentType: file.type, upsert: false });
     if (error) throw error;
-    const { data } = supabase.storage
+    const { data } = supabaseAdmin.storage
       .from(STORAGE_BUCKET)
       .getPublicUrl(fileName);
     return data.publicUrl;
@@ -627,9 +627,9 @@ const FormularioSolicitacoes = () => {
     if (!descricao.trim())
       return 'Descreva brevemente a solicitação (descrição).';
 
-    const exigeFornecedor = tipo === 'pagamento' || tipo === 'reembolso';
-    const exigeParcelas = tipo === 'pagamento';
-    const exigeFormaPagamento = tipo === 'pagamento' || tipo === 'reembolso';
+    const exigeFornecedor = !!tipo;
+    const exigeParcelas = !!tipo;
+    const exigeFormaPagamento = !!tipo;
 
     if (exigeFornecedor) {
       if (onlyDigits(fornecedorCpfCnpj).length < 11)
@@ -743,9 +743,9 @@ const FormularioSolicitacoes = () => {
     setErro(null);
     setEnviando(true);
     try {
-      const exigeParcelas = tipo === 'pagamento';
-      const exigeFornecedor = tipo === 'pagamento' || tipo === 'reembolso';
-      const exigeFormaPagamento = tipo === 'pagamento' || tipo === 'reembolso';
+      const exigeParcelas = !!tipo;
+      const exigeFornecedor = !!tipo;
+      const exigeFormaPagamento = !!tipo;
 
       // Uploads pr\u00e9vios para Supabase Storage
       let comprovanteUrl = null;
@@ -818,7 +818,7 @@ const FormularioSolicitacoes = () => {
         insertData.payload_totvs = payloadTotvs;
       }
 
-      const { error } = await supabase
+      const { error } = await supabaseAdmin
         .from('solicitacoes_crosby')
         .insert([insertData]);
 
@@ -1097,11 +1097,11 @@ const FormularioSolicitacoes = () => {
             </div>
           )}
 
-          {/* FORNECEDOR / DUPLICATA — somente para pagamento e reembolso */}
-          {(tipo === 'pagamento' || tipo === 'reembolso') && (
+          {/* FORNECEDOR / DUPLICATA — todos os tipos */}
+          {!!tipo && (
             <section className="space-y-4">
               <h2 className="text-xs font-bold text-[#000638] uppercase tracking-wide">
-                3 · Fornecedor{tipo === 'pagamento' ? ' e Duplicata' : ''}
+                3 · Fornecedor e Duplicata
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -1158,24 +1158,22 @@ const FormularioSolicitacoes = () => {
                     } focus:border-[#000638]`}
                   />
                 </div>
-                {tipo === 'pagamento' && (
-                  <div>
-                    <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
-                      <Hash size={14} weight="bold" />
-                      Código da Duplicata *
-                    </label>
-                    <input
-                      type="number"
-                      value={duplicateCode}
-                      onChange={(e) => setDuplicateCode(e.target.value)}
-                      placeholder="Ex.: 12345"
-                      className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
-                    />
-                    <p className="mt-1 text-[10px] text-gray-500">
-                      Campo "Duplicata" do componente FCPFM004 — máx. 10 dígitos
-                    </p>
-                  </div>
-                )}
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <Hash size={14} weight="bold" />
+                    Código da Duplicata *
+                  </label>
+                  <input
+                    type="number"
+                    value={duplicateCode}
+                    onChange={(e) => setDuplicateCode(e.target.value)}
+                    placeholder="Ex.: 12345"
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
+                  />
+                  <p className="mt-1 text-[10px] text-gray-500">
+                    Campo "Duplicata" do componente FCPFM004 — máx. 10 dígitos
+                  </p>
+                </div>
                 <div>
                   <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
                     <CreditCard size={14} weight="bold" />
@@ -1202,7 +1200,7 @@ const FormularioSolicitacoes = () => {
           {tipo === 'reembolso' && (
             <section className="space-y-3">
               <h2 className="text-xs font-bold text-[#000638] uppercase tracking-wide">
-                4 · Comprovante *
+                4 · Comprovante de Pagamento *
               </h2>
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-6 cursor-pointer hover:border-[#000638] transition-colors bg-gray-50/40">
                 <UploadSimple size={28} className="text-gray-400 mb-2" />
@@ -1239,11 +1237,11 @@ const FormularioSolicitacoes = () => {
             </section>
           )}
 
-          {/* COMPRA — link e imagens de exemplo + fornecedor opcional */}
+          {/* COMPRA — link e imagens de exemplo */}
           {tipo === 'compra' && (
             <section className="space-y-4">
               <h2 className="text-xs font-bold text-[#000638] uppercase tracking-wide">
-                3 · Detalhes da Compra
+                4 · Detalhes da Compra
               </h2>
               <div>
                 <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
@@ -1304,45 +1302,14 @@ const FormularioSolicitacoes = () => {
                   </div>
                 )}
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-dashed">
-                <div>
-                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
-                    <IdentificationBadge size={14} weight="bold" />
-                    CPF/CNPJ do Fornecedor (opcional)
-                  </label>
-                  <input
-                    type="text"
-                    value={formatCnpjCpf(fornecedorCpfCnpj)}
-                    onChange={(e) => setFornecedorCpfCnpj(e.target.value)}
-                    maxLength={18}
-                    placeholder="Preencher se já souber"
-                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-[#000638] transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
-                    <Buildings size={14} weight="bold" />
-                    Nome do Fornecedor (opcional)
-                  </label>
-                  <input
-                    type="text"
-                    value={fornecedorNome}
-                    onChange={(e) => setFornecedorNome(e.target.value)}
-                    maxLength={120}
-                    placeholder="Será definido pelo financeiro após orçamento"
-                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
-                  />
-                </div>
-              </div>
             </section>
           )}
 
-          {/* MANUTENÇÃO — contatos de prestadores + fornecedor opcional */}
+          {/* MANUTENÇÃO — contatos de prestadores */}
           {tipo === 'manutencao' && (
             <section className="space-y-4">
               <h2 className="text-xs font-bold text-[#000638] uppercase tracking-wide">
-                3 · Contatos de Prestadores *
+                4 · Contatos de Prestadores *
               </h2>
               <p className="text-[11px] text-gray-500 -mt-2">
                 Liste prestadores de serviço da região que possam atender.
@@ -1418,46 +1385,15 @@ const FormularioSolicitacoes = () => {
                   <Plus size={14} weight="bold" /> Adicionar contato
                 </button>
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-dashed">
-                <div>
-                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
-                    <IdentificationBadge size={14} weight="bold" />
-                    CPF/CNPJ do Fornecedor (opcional)
-                  </label>
-                  <input
-                    type="text"
-                    value={formatCnpjCpf(fornecedorCpfCnpj)}
-                    onChange={(e) => setFornecedorCpfCnpj(e.target.value)}
-                    maxLength={18}
-                    placeholder="Preencher se já souber"
-                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-[#000638] transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
-                    <Buildings size={14} weight="bold" />
-                    Nome do Fornecedor (opcional)
-                  </label>
-                  <input
-                    type="text"
-                    value={fornecedorNome}
-                    onChange={(e) => setFornecedorNome(e.target.value)}
-                    maxLength={120}
-                    placeholder="Será definido pelo financeiro"
-                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
-                  />
-                </div>
-              </div>
             </section>
           )}
 
-          {/* PARCELAS — apenas para pagamento */}
-          {tipo === 'pagamento' && (
+          {/* PARCELAS — todos os tipos */}
+          {!!tipo && (
             <section className="space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-xs font-bold text-[#000638] uppercase tracking-wide">
-                  4 · Parcelas *
+                  5 · Parcelas *
                 </h2>
                 <div className="relative">
                   {showParcelasPopover ? (
@@ -1800,7 +1736,7 @@ const FormularioSolicitacoes = () => {
           {/* DESCRIÇÃO */}
           <section className="space-y-3">
             <h2 className="text-xs font-bold text-[#000638] uppercase tracking-wide">
-              5 · Descrição da Solicitação
+              6 · Descrição da Solicitação
             </h2>
             <div>
               <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">

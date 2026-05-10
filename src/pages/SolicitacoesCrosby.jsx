@@ -130,6 +130,28 @@ const TIPO_CONFIG = {
   },
 };
 
+// Status secundário — apenas para compra e manutenção
+const STATUS_SECUNDARIO = [
+  {
+    value: 'em_processo',
+    label: 'Em Processo',
+    color: 'bg-sky-100 text-sky-800',
+  },
+  { value: 'orcado', label: 'Orçado', color: 'bg-violet-100 text-violet-800' },
+  {
+    value: 'contratado',
+    label: 'Comprado / Contratado',
+    color: 'bg-amber-100 text-amber-800',
+  },
+  {
+    value: 'finalizado',
+    label: 'Finalizado',
+    color: 'bg-teal-100 text-teal-800',
+  },
+];
+
+const TIPOS_COM_STATUS_SEC = ['compra', 'manutencao'];
+
 // =====================================================================
 // HELPERS
 // =====================================================================
@@ -181,6 +203,8 @@ const SolicitacoesCrosby = () => {
 
   const [filtroStatus, setFiltroStatus] = useState('TODOS');
   const [filtroTipo, setFiltroTipo] = useState('TODOS');
+  const [filtroSetor, setFiltroSetor] = useState('TODOS');
+  const [filtroStatusSec, setFiltroStatusSec] = useState('TODOS');
   const [filtroDataInicio, setFiltroDataInicio] = useState('');
   const [filtroDataFim, setFiltroDataFim] = useState('');
 
@@ -240,6 +264,10 @@ const SolicitacoesCrosby = () => {
       lista = lista.filter((s) => s.status === filtroStatus);
     if (filtroTipo !== 'TODOS')
       lista = lista.filter((s) => s.tipo_solicitacao === filtroTipo);
+    if (filtroSetor !== 'TODOS')
+      lista = lista.filter((s) => s.setor === filtroSetor);
+    if (filtroStatusSec !== 'TODOS')
+      lista = lista.filter((s) => s.status_secundario === filtroStatusSec);
     if (filtroDataInicio) {
       const ini = new Date(filtroDataInicio + 'T00:00:00');
       lista = lista.filter((s) => new Date(s.data_solicitacao) >= ini);
@@ -249,7 +277,7 @@ const SolicitacoesCrosby = () => {
       lista = lista.filter((s) => new Date(s.data_solicitacao) <= fim);
     }
     return lista;
-  }, [solicitacoes, filtroStatus, filtroTipo, filtroDataInicio, filtroDataFim]);
+  }, [solicitacoes, filtroStatus, filtroTipo, filtroSetor, filtroStatusSec, filtroDataInicio, filtroDataFim]);
 
   const totais = useMemo(
     () => ({
@@ -470,6 +498,21 @@ const SolicitacoesCrosby = () => {
     }
   };
 
+  const atualizarStatusSecundario = async (sol, novoStatus) => {
+    try {
+      const { error } = await supabaseAdmin
+        .from('solicitacoes_crosby')
+        .update({ status_secundario: novoStatus })
+        .eq('id', sol.id);
+      if (error) throw error;
+      await carregarSolicitacoes();
+      notify('success', 'Status atualizado.');
+    } catch (err) {
+      console.error(err);
+      notify('error', 'Erro ao atualizar status.');
+    }
+  };
+
   const devolverParaGestor = async (sol) => {
     if (!isFinanceiro) return;
     try {
@@ -532,6 +575,8 @@ const SolicitacoesCrosby = () => {
   const limparFiltros = () => {
     setFiltroStatus('TODOS');
     setFiltroTipo('TODOS');
+    setFiltroSetor('TODOS');
+    setFiltroStatusSec('TODOS');
     setFiltroDataInicio('');
     setFiltroDataFim('');
   };
@@ -653,6 +698,7 @@ const SolicitacoesCrosby = () => {
           >
             <option value="TODOS">Todos</option>
             <option value="pagamento">Pagamento</option>
+            <option value="reembolso">Reembolso</option>
             <option value="compra">Compra</option>
             <option value="manutencao">Manutenção</option>
           </select>
@@ -671,6 +717,36 @@ const SolicitacoesCrosby = () => {
               <option key={k} value={k}>
                 {v.label}
               </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col">
+          <label className="text-[10px] font-bold text-gray-500 uppercase">
+            Setor
+          </label>
+          <select
+            value={filtroSetor}
+            onChange={(e) => setFiltroSetor(e.target.value)}
+            className="border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638] min-w-[150px] mb-4"
+          >
+            <option value="TODOS">Todos</option>
+            {['VAREJO','FINANCEIRO','RH','MULTIMARCAS','REVENDA','PRODUÇÃO','EXPEDIÇÃO','MARKETING','TRÁFEGO','TECNOLOGIA','CENTRAL DE FRANQUIAS'].map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col">
+          <label className="text-[10px] font-bold text-gray-500 uppercase">
+            Etapa (compra/manut.)
+          </label>
+          <select
+            value={filtroStatusSec}
+            onChange={(e) => setFiltroStatusSec(e.target.value)}
+            className="border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638] min-w-[170px] mb-4"
+          >
+            <option value="TODOS">Todas</option>
+            {STATUS_SECUNDARIO.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>
         </div>
@@ -774,6 +850,20 @@ const SolicitacoesCrosby = () => {
                         <StatusIcon size={12} weight="bold" />
                         {statusCfg.label}
                       </span>
+                      {TIPOS_COM_STATUS_SEC.includes(sol.tipo_solicitacao) &&
+                        sol.status_secundario &&
+                        (() => {
+                          const sec = STATUS_SECUNDARIO.find(
+                            (s) => s.value === sol.status_secundario,
+                          );
+                          return sec ? (
+                            <span
+                              className={`mt-1 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${sec.color}`}
+                            >
+                              {sec.label}
+                            </span>
+                          ) : null;
+                        })()}
                     </td>
                     <td className="px-3 py-2">
                       <span
@@ -866,6 +956,7 @@ const SolicitacoesCrosby = () => {
           onRejeitar={abrirRejeicao}
           onSalvarEdicao={salvarEdicao}
           onDevolverParaGestor={devolverParaGestor}
+          onAtualizarStatusSecundario={atualizarStatusSecundario}
           onRecarregar={carregarSolicitacoes}
         />
       )}
@@ -943,6 +1034,7 @@ const ModalDetalhe = ({
   onRejeitar,
   onSalvarEdicao,
   onDevolverParaGestor,
+  onAtualizarStatusSecundario,
   onRecarregar,
 }) => {
   const tipoCfg = TIPO_CONFIG[sol.tipo_solicitacao] || TIPO_CONFIG.compra;
@@ -1033,12 +1125,28 @@ const ModalDetalhe = ({
                     </span>
                   )}
                 </div>
-                <span
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${statusCfg.color}`}
-                >
-                  <StatusIcon size={12} weight="bold" />
-                  {statusCfg.label}
-                </span>
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${statusCfg.color}`}
+                  >
+                    <StatusIcon size={12} weight="bold" />
+                    {statusCfg.label}
+                  </span>
+                  {TIPOS_COM_STATUS_SEC.includes(sol.tipo_solicitacao) &&
+                    sol.status_secundario &&
+                    (() => {
+                      const sec = STATUS_SECUNDARIO.find(
+                        (s) => s.value === sol.status_secundario,
+                      );
+                      return sec ? (
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${sec.color}`}
+                        >
+                          {sec.label}
+                        </span>
+                      ) : null;
+                    })()}
+                </div>
               </div>
 
               {/* Grid principal do documento */}
@@ -1489,7 +1597,59 @@ const ModalDetalhe = ({
           {/* fim p-5 */}
 
           {/* ── AÇÕES ── */}
-          <div className="border-t-2 border-[#000638]/10 px-5 py-4 bg-gray-50 rounded-b-xl flex flex-wrap gap-2">
+          <div className="border-t-2 border-[#000638]/10 px-5 py-4 bg-gray-50 rounded-b-xl flex flex-wrap gap-2 items-center">
+            {/* STATUS SECUNDÁRIO — compra/manutencao após aprovação financeira */}
+            {TIPOS_COM_STATUS_SEC.includes(sol.tipo_solicitacao) &&
+              !['rejeitado', 'cancelada'].includes(sol.status) &&
+              isFinanceiro && (
+                <div className="flex items-center gap-2 w-full pb-2 border-b border-gray-200 mb-1">
+                  <span className="text-[11px] font-bold text-gray-600 shrink-0">
+                    Etapa:
+                  </span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {STATUS_SECUNDARIO.map((s) => (
+                      <button
+                        key={s.value}
+                        onClick={() =>
+                          onAtualizarStatusSecundario(
+                            sol,
+                            sol.status_secundario === s.value ? null : s.value,
+                          )
+                        }
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all border-2 ${
+                          sol.status_secundario === s.value
+                            ? `${s.color} border-current shadow-sm`
+                            : 'bg-white border-gray-200 text-gray-500 hover:border-gray-400'
+                        }`}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            {/* Exibição apenas (não-financeiro) quando há status secundário */}
+            {TIPOS_COM_STATUS_SEC.includes(sol.tipo_solicitacao) &&
+              sol.status_secundario &&
+              !isFinanceiro &&
+              (() => {
+                const sec = STATUS_SECUNDARIO.find(
+                  (s) => s.value === sol.status_secundario,
+                );
+                return sec ? (
+                  <div className="flex items-center gap-2 w-full pb-2 border-b border-gray-200 mb-1">
+                    <span className="text-[11px] font-bold text-gray-600">
+                      Etapa:
+                    </span>
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${sec.color}`}
+                    >
+                      {sec.label}
+                    </span>
+                  </div>
+                ) : null;
+              })()}
             {podeAprovarGestor && (
               <button
                 onClick={() => onAprovarGestor(sol)}
