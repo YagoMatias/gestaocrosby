@@ -194,8 +194,8 @@ const novaParcela = (numero = 1, base = null) => ({
 const inputCls =
   'w-full border-2 border-gray-200 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:border-[#000638] transition-colors bg-white';
 
-const Field = ({ label, hint, icon, children }) => (
-  <div>
+const Field = ({ label, hint, icon, children, className }) => (
+  <div className={className}>
     <label className="text-[11px] font-bold text-[#000638] flex items-center gap-1 mb-1">
       {icon}
       {label}
@@ -1560,7 +1560,11 @@ const FormularioSolicitacoes = () => {
                         className={inputCls}
                       />
                     </Field>
-                    <Field label="Portador *" hint="bearerCode">
+                    <Field
+                      label="Portador *"
+                      hint="bearerCode"
+                      className="col-span-2 sm:col-span-2"
+                    >
                       <PortadorCombobox
                         value={p.bearerCode}
                         onChange={(code) =>
