@@ -277,7 +277,15 @@ const SolicitacoesCrosby = () => {
       lista = lista.filter((s) => new Date(s.data_solicitacao) <= fim);
     }
     return lista;
-  }, [solicitacoes, filtroStatus, filtroTipo, filtroSetor, filtroStatusSec, filtroDataInicio, filtroDataFim]);
+  }, [
+    solicitacoes,
+    filtroStatus,
+    filtroTipo,
+    filtroSetor,
+    filtroStatusSec,
+    filtroDataInicio,
+    filtroDataFim,
+  ]);
 
   const totais = useMemo(
     () => ({
@@ -730,8 +738,22 @@ const SolicitacoesCrosby = () => {
             className="border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638] min-w-[150px] mb-4"
           >
             <option value="TODOS">Todos</option>
-            {['VAREJO','FINANCEIRO','RH','MULTIMARCAS','REVENDA','PRODUÇÃO','EXPEDIÇÃO','MARKETING','TRÁFEGO','TECNOLOGIA','CENTRAL DE FRANQUIAS'].map((s) => (
-              <option key={s} value={s}>{s}</option>
+            {[
+              'VAREJO',
+              'FINANCEIRO',
+              'RH',
+              'MULTIMARCAS',
+              'REVENDA',
+              'PRODUÇÃO',
+              'EXPEDIÇÃO',
+              'MARKETING',
+              'TRÁFEGO',
+              'TECNOLOGIA',
+              'CENTRAL DE FRANQUIAS',
+            ].map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
             ))}
           </select>
         </div>
@@ -746,7 +768,9 @@ const SolicitacoesCrosby = () => {
           >
             <option value="TODOS">Todas</option>
             {STATUS_SECUNDARIO.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
             ))}
           </select>
         </div>

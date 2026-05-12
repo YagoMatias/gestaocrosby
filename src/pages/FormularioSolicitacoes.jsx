@@ -33,6 +33,7 @@ import { supabase, supabaseAdmin } from '../lib/supabase';
 import { API_BASE_URL } from '../config/constants';
 import CENTROS_CUSTO from '../config/centrosCusto.json';
 import DESPESAS_JSON from '../config/despesas.json';
+import PORTADORES_JSON from '../config/portadores.json';
 
 const CENTROS_CUSTO_OPTIONS = Object.entries(CENTROS_CUSTO).sort(
   (a, b) => parseInt(a[0]) - parseInt(b[0]),
@@ -41,6 +42,10 @@ const CENTROS_CUSTO_OPTIONS = Object.entries(CENTROS_CUSTO).sort(
 const DESPESAS_OPTIONS = Object.entries(DESPESAS_JSON)
   .filter(([code]) => parseInt(code) >= 1000)
   .sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
+
+const PORTADORES_OPTIONS = Object.entries(PORTADORES_JSON).sort(
+  (a, b) => parseInt(a[0]) - parseInt(b[0]),
+);
 
 // =====================================================================
 // CONSTANTES
@@ -282,9 +287,85 @@ const DespesaCombobox = ({ value, onChange }) => {
   );
 };
 
+// Combobox pesquisável para portadores
+const PortadorCombobox = ({ value, onChange }) => {
+  const [search, setSearch] = React.useState('');
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+
+  const selectedLabel = value
+    ? `${value} — ${PORTADORES_JSON[String(value)] || value}`
+    : '';
+
+  const filtered = React.useMemo(() => {
+    const q = search.toLowerCase();
+    if (!q) return PORTADORES_OPTIONS;
+    return PORTADORES_OPTIONS.filter(
+      ([code, name]) => code.includes(q) || name.toLowerCase().includes(q),
+    );
+  }, [search]);
+
+  React.useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const select = (code) => {
+    onChange(code);
+    setSearch('');
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <input
+        type="text"
+        value={open ? search : selectedLabel}
+        placeholder="Digite código ou nome do portador..."
+        className={inputCls}
+        onFocus={() => {
+          setSearch('');
+          setOpen(true);
+        }}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setOpen(true);
+        }}
+      />
+      {open && (
+        <div className="absolute z-50 top-full left-0 right-0 mt-0.5 bg-white border-2 border-[#000638] rounded-lg shadow-xl max-h-52 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-gray-400 italic">
+              Nenhum portador encontrado
+            </div>
+          ) : (
+            filtered.map(([code, name]) => (
+              <button
+                key={code}
+                type="button"
+                onClick={() => select(code)}
+                className={`w-full text-left px-3 py-2 text-xs hover:bg-[#000638] hover:text-white transition-colors flex gap-2 ${
+                  String(value) === code ? 'bg-[#000638]/10 font-bold' : ''
+                }`}
+              >
+                <span className="font-mono shrink-0">{code}</span>
+                <span className="truncate">{name}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // =====================================================================
 // COMPONENTE PRINCIPAL
 // =====================================================================
+
 const FormularioSolicitacoes = () => {
   const [empresas, setEmpresas] = useState([]);
   const [empresasLoading, setEmpresasLoading] = useState(true);
@@ -1480,14 +1561,11 @@ const FormularioSolicitacoes = () => {
                       />
                     </Field>
                     <Field label="Portador *" hint="bearerCode">
-                      <input
-                        type="number"
+                      <PortadorCombobox
                         value={p.bearerCode}
-                        onChange={(e) =>
-                          updateParcela(idx, { bearerCode: e.target.value })
+                        onChange={(code) =>
+                          updateParcela(idx, { bearerCode: code })
                         }
-                        placeholder="Ex.: 1"
-                        className={inputCls}
                       />
                     </Field>
                     <Field label="Tipo documento *">

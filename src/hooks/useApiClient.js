@@ -765,6 +765,37 @@ const useApiClient = () => {
         {},
         { timeout: 300000 },
       ),
+
+    /**
+     * CMV — Proxy cru para POST /api/totvsmoda/fiscal/v2/invoices/search
+     * @param {Object} body - { filter: { branchCodeList, startIssueDate, endIssueDate, ... }, page, pageSize, expand, order }
+     */
+    cmvInvoicesSearch: (body) =>
+      apiMutate('/api/totvs/cmv/invoices/search', 'POST', body),
+
+    /**
+     * CMV — Proxy cru para GET /api/totvsmoda/fiscal/v2/invoices/item-detail-search
+     * @param {Object} params - { BranchCode, InvoiceDate, InvoiceSequence, AccessKey?, Expand? }
+     */
+    cmvItemDetailSearch: (params) =>
+      apiCall('/api/totvs/cmv/invoices/item-detail-search', params),
+
+    /**
+     * CMV — Proxy cru para POST /api/totvsmoda/product/v2/products/search
+     * Usado para mapear productCode → referenceCode.
+     * @param {Object} body - { filter:{ productCodeList|referenceCodeList,... }, option:{ branchInfoCode }, page, pageSize, expand }
+     */
+    cmvProductsSearch: (body) =>
+      apiMutate('/api/totvs/cmv/products/search', 'POST', body),
+
+    /**
+     * CMV — Proxy cru para POST /api/totvsmoda/product/v2/costs/search
+     * Usado para obter custo por produto/referência.
+     * @param {Object} body - { filter:{ referenceCodeList|productCodeList,... }, option:{ costs:[{branchCode,costCodeList}] }, page, pageSize }
+     */
+    cmvCostsSearch: (body) =>
+      apiMutate('/api/totvs/cmv/costs/search', 'POST', body),
+    cmvClearCache: () => apiMutate('/api/totvs/cmv/cache', 'DELETE'),
   };
 
   const franchise = {
