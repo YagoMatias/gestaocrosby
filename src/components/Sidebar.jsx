@@ -38,6 +38,8 @@ import {
   Package,
   Ticket,
   WhatsappLogo,
+  DeviceMobile,
+  Cpu,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -240,6 +242,12 @@ const painelVendasItems = [
     href: '/faturamento-canal',
     icon: ChartBar,
     color: 'text-violet-600',
+  },
+  {
+    name: 'Painel Competição',
+    href: '/crm/competicao',
+    icon: Trophy,
+    color: 'text-amber-500',
   },
   {
     name: 'Faturamento TOTVS',
@@ -457,6 +465,15 @@ const clientesItems = [
     href: '/top-clientes',
     icon: Trophy,
     color: 'text-amber-600',
+  },
+];
+
+const tecnologiaItems = [
+  {
+    name: 'Controle de Chip',
+    href: '/tecnologia/controle-chip',
+    icon: DeviceMobile,
+    color: 'text-cyan-600',
   },
 ];
 
@@ -1036,6 +1053,19 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             />
           </div>
         )}
+
+        {/* Seção Tecnologia */}
+        <div className="pt-6 border-t border-gray-200">
+          <MenuSection
+            {...menuProps}
+            title="Tecnologia"
+            items={tecnologiaItems}
+            isOpen={openSection === 'tecnologia'}
+            onToggle={() => handleSectionToggle('tecnologia')}
+            icon={Cpu}
+            color="text-cyan-600"
+          />
+        </div>
 
         {/* Seção Administrativa */}
         <div className="pt-6 border-t border-gray-200">

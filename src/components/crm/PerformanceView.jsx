@@ -19,8 +19,14 @@ import {
   CalendarBlank,
   ListBullets,
   UserPlus,
+  Pencil,
+  Target,
+  Hourglass,
 } from '@phosphor-icons/react';
 import { COLORS, VENDEDORES_POR_MODULO } from './constants';
+import { useAuth } from '../AuthContext';
+import VarejoReuniao from './VarejoReuniao';
+import VarejoFilaAdmin from './VarejoFilaAdmin';
 
 // Em DEV usa origin (Vite proxy /api → localhost:4100). Em PROD usa fallback.
 const API_BASE_URL =
@@ -1020,6 +1026,249 @@ function SellerCustomersModal({ seller, dataInicio, dataFim, onClose }) {
   );
 }
 
+// ─── Modal: editar metas (faturamento/aberturas/reativações) — admin only
+// Para varejo, meta é por loja → entity_type='branch' e código = branch_code.
+function MetaEditModal({
+  seller,
+  periodoMensalKey,
+  periodoSemanalKey,
+  metasAll,
+  onSave,
+  onClose,
+  entityType = 'seller',
+  allowScopeToggle = false, // varejo: gerente pode alternar entre Loja e Vendedor
+}) {
+  const [kind, setKind] = useState('faturamento'); // faturamento | aberturas | reativacoes
+  const [tipo, setTipo] = useState('mensal');
+  const [valor, setValor] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState('');
+  // Escopo: 'branch' (meta da loja, compartilhada) ou 'seller' (meta individual)
+  const [escopo, setEscopo] = useState(entityType);
+
+  // Resolve código/nome conforme o escopo selecionado
+  const entityCode = escopo === 'branch'
+    ? Number(seller?.branch_code || seller?._meta_entity_code)
+    : Number(seller?.seller_code);
+  const entityName = escopo === 'branch'
+    ? seller?.branch_name || seller?._meta_entity_name
+    : seller?.seller_name;
+  const entityLabel = escopo === 'branch' ? 'Loja' : 'Vendedor';
+
+  // Lookup do valor atual:
+  //  - escopo='branch' → metasAll[kind][tipo] (entity_type=branch)
+  //  - escopo='seller' (varejo) → metasAll[kind][tipo + '_seller']
+  //  - escopo='seller' (outros canais) → metasAll[kind][tipo]
+  const currentValue = useMemo(() => {
+    if (!seller) return null;
+    const isVarejoSellerScope = allowScopeToggle && escopo === 'seller';
+    const tipoKey = isVarejoSellerScope ? `${tipo}_seller` : tipo;
+    return metasAll?.[kind]?.[tipoKey]?.[entityCode] ?? null;
+  }, [seller, kind, tipo, metasAll, entityCode, escopo, allowScopeToggle]);
+
+  useEffect(() => {
+    if (!seller) return;
+    setKind('faturamento');
+    setTipo('mensal');
+    setEscopo(entityType); // reset ao escopo padrão quando abre outro vendedor
+    setErro('');
+  }, [seller, entityType]);
+
+  useEffect(() => {
+    setValor(currentValue != null ? String(currentValue) : '');
+  }, [currentValue]);
+
+  if (!seller) return null;
+
+  const handleSave = async () => {
+    const v = parseFloat(String(valor).replace(',', '.'));
+    if (!isFinite(v) || v < 0) {
+      setErro('Valor inválido');
+      return;
+    }
+    setLoading(true);
+    setErro('');
+    try {
+      await onSave({
+        seller_code: entityCode,
+        seller_name: entityName,
+        entity_type: escopo, // 'branch' ou 'seller' conforme toggle
+        meta_kind: kind,
+        period_type: tipo,
+        valor_meta: v,
+      });
+      onClose();
+    } catch (e) {
+      setErro(e.message || 'Erro ao salvar');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const KIND_LABELS = {
+    faturamento: { label: 'Faturamento (R$)', step: 0.01, prefix: 'R$ ' },
+    aberturas: { label: 'Aberturas (qtd)', step: 1, prefix: '' },
+    reativacoes: { label: 'Reativações (qtd)', step: 1, prefix: '' },
+  };
+  const kindCfg = KIND_LABELS[kind];
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-gray-200 p-4">
+          <div>
+            <h3 className="text-base font-bold text-[#000638] flex items-center gap-2">
+              <Target size={16} weight="bold" /> Meta {escopo === 'branch' ? 'da Loja' : 'do Vendedor'}
+            </h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              {entityLabel}: {entityName}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 p-1">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          {/* Escopo — apenas para varejo (gerente pode escolher entre Loja ou Vendedor) */}
+          {allowScopeToggle && (
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">
+                Aplicar meta para
+              </label>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => setEscopo('branch')}
+                  className={`flex-1 px-3 py-2 rounded-lg border-2 text-xs font-bold transition ${
+                    escopo === 'branch'
+                      ? 'border-amber-500 bg-amber-50 text-amber-700'
+                      : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                  }`}
+                  title="Meta compartilhada entre todos vendedores da loja"
+                >
+                  🏪 Loja inteira
+                </button>
+                <button
+                  onClick={() => setEscopo('seller')}
+                  className={`flex-1 px-3 py-2 rounded-lg border-2 text-xs font-bold transition ${
+                    escopo === 'seller'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                  }`}
+                  title="Meta individual deste vendedor (prevalece sobre meta de loja)"
+                >
+                  👤 Apenas vendedor
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1.5">
+                {escopo === 'branch'
+                  ? 'Esta meta será compartilhada por todos os vendedores da loja.'
+                  : 'Meta individual deste vendedor — tem prioridade sobre a meta da loja.'}
+              </p>
+            </div>
+          )}
+
+          {/* Tipo de Meta */}
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">
+              Tipo de Meta
+            </label>
+            <div className="flex gap-1.5">
+              {[
+                { k: 'faturamento', label: 'Faturamento' },
+                { k: 'aberturas', label: 'Aberturas' },
+                { k: 'reativacoes', label: 'Reativações' },
+              ].map((opt) => (
+                <button
+                  key={opt.k}
+                  onClick={() => setKind(opt.k)}
+                  className={`flex-1 px-2 py-2 rounded-lg border-2 text-[11px] font-bold transition ${
+                    kind === opt.k
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                      : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Período */}
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">
+              Período
+            </label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setTipo('mensal')}
+                className={`flex-1 px-3 py-2 rounded-lg border-2 text-xs font-bold transition ${
+                  tipo === 'mensal'
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                Mensal ({periodoMensalKey})
+              </button>
+              <button
+                onClick={() => setTipo('semanal')}
+                className={`flex-1 px-3 py-2 rounded-lg border-2 text-xs font-bold transition ${
+                  tipo === 'semanal'
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                Semanal ({periodoSemanalKey})
+              </button>
+            </div>
+          </div>
+
+          {/* Valor */}
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">
+              {kindCfg.label}
+            </label>
+            <input
+              type="number"
+              value={valor}
+              onChange={(e) => setValor(e.target.value)}
+              step={kindCfg.step}
+              min="0"
+              placeholder={kind === 'faturamento' ? 'Ex: 50000.00' : 'Ex: 5'}
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            />
+            <p className="text-[10px] text-gray-400 mt-1">
+              Atual: {currentValue != null
+                ? `${kindCfg.prefix}${Number(currentValue).toLocaleString('pt-BR', { minimumFractionDigits: kind === 'faturamento' ? 2 : 0, maximumFractionDigits: kind === 'faturamento' ? 2 : 0 })}`
+                : 'sem meta cadastrada'}
+            </p>
+          </div>
+
+          {erro && (
+            <div className="bg-red-50 border border-red-200 rounded-md px-3 py-2 text-xs text-red-700">
+              {erro}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-gray-100 p-3">
+          <button onClick={onClose} disabled={loading} className="px-4 py-2 text-xs font-medium text-gray-600 hover:text-gray-900">
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg disabled:opacity-50"
+          >
+            {loading ? <Spinner size={12} className="animate-spin" /> : <Target size={12} weight="fill" />}
+            {loading ? 'Salvando...' : 'Salvar meta'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Tabela completa faturamento TOTVS por vendedor ─────────────────────────
 function SellersTotalsTable({
   sellersTotals,
@@ -1032,7 +1281,26 @@ function SellersTotalsTable({
   dataFim,
   openingsMap,
   reativacoesMap,
+  modulo,
+  metasAll = {
+    faturamento: { mensal: {}, semanal: {} },
+    aberturas: { mensal: {}, semanal: {} },
+    reativacoes: { mensal: {}, semanal: {} },
+  },
+  periodoMensalKey,
+  periodoSemanalKey,
+  isAdmin = false,
+  onSaveMeta,
 }) {
+  const [metaSeller, setMetaSeller] = useState(null); // seller selecionado pra editar meta
+  // Atalhos para metas de faturamento (compatibilidade com código abaixo)
+  const metasMensal = metasAll?.faturamento?.mensal || {};
+  const metasSemanal = metasAll?.faturamento?.semanal || {};
+  // Apenas varejo: metas individuais por vendedor (têm prioridade sobre meta de loja)
+  const metasMensalSeller = metasAll?.faturamento?.mensal_seller || {};
+  const metasSemanalSeller = metasAll?.faturamento?.semanal_seller || {};
+  const metasAberturasM = metasAll?.aberturas?.mensal || {};
+  const metasReativacoesM = metasAll?.reativacoes?.mensal || {};
   const [busca, setBusca] = useState('');
   const [sortCol, setSortCol] = useState('invoice_value');
   const [sortAsc, setSortAsc] = useState(false);
@@ -1060,9 +1328,15 @@ function SellersTotalsTable({
 
   const filtrados = useMemo(() => {
     if (!sellersTotals || !Array.isArray(sellersTotals)) return [];
-    let list = sellersTotals.filter(
-      (s) => s.seller_name && s.invoice_value > 0,
-    );
+    const isVarejo = modulo === 'varejo';
+    // VAREJO: usa BRUTO (apenas operações de saída, sem subtrair credev/devolução).
+    // Outros canais mantém líquido (saída - credev).
+    const normalize = (s) => isVarejo
+      ? { ...s, invoice_value: Number(s.invoice_value_gross ?? s.invoice_value ?? 0) }
+      : s;
+    let list = sellersTotals
+      .map(normalize)
+      .filter((s) => s.seller_name && s.invoice_value > 0);
     // Filtra por módulo: só vendedores do módulo selecionado
     if (vendedoresDoModulo && vendedoresDoModulo.size > 0) {
       list = list.filter((s) => vendedoresDoModulo.has(Number(s.seller_code)));
@@ -1072,15 +1346,50 @@ function SellersTotalsTable({
       const branchCode = Number(lojaFiltro);
       list = list.filter((s) => Number(s.branch_code) === branchCode);
     }
-    // Injeta aberturas, reativações e flag inativo no objeto do vendedor
+    // Injeta aberturas, reativações, metas e flag inativo no objeto do vendedor.
+    // Para VAREJO: meta é por loja (lookup por branch_code, não seller_code).
+    // Vendedores da mesma loja compartilham a meta.
     list = list.map((s) => {
       const vInfo = vendedoresMap?.byTotvsId?.[s.seller_code];
       const inativo = vInfo && vInfo.ativo === false;
+      const sellerCode = Number(s.seller_code);
+      const branchCode = Number(s.branch_code);
+
+      // Para varejo: prioriza meta INDIVIDUAL do vendedor; se não existir, usa meta da loja
+      let metaM, metaS, metaEntityType, metaEntityCode, metaEntityName;
+      if (isVarejo) {
+        const metaSellerM = metasMensalSeller?.[sellerCode];
+        const metaSellerS = metasSemanalSeller?.[sellerCode];
+        const metaBranchM = metasMensal?.[branchCode];
+        const metaBranchS = metasSemanal?.[branchCode];
+        const hasSellerMeta = (metaSellerM != null) || (metaSellerS != null);
+        metaM = metaSellerM ?? metaBranchM;
+        metaS = metaSellerS ?? metaBranchS;
+        // Meta entity reflete a fonte que está sendo usada (para o modal abrir certo)
+        metaEntityType = hasSellerMeta ? 'seller' : 'branch';
+        metaEntityCode = hasSellerMeta ? sellerCode : branchCode;
+        metaEntityName = hasSellerMeta ? s.seller_name : s.branch_name;
+      } else {
+        metaM = metasMensal?.[sellerCode];
+        metaS = metasSemanal?.[sellerCode];
+        metaEntityType = 'seller';
+        metaEntityCode = sellerCode;
+        metaEntityName = s.seller_name;
+      }
+
+      const fat = Number(s.invoice_value || 0);
       return {
         ...s,
-        openings: openingsMap?.[Number(s.seller_code)] ?? 0,
-        reativacoes: reativacoesMap?.[Number(s.seller_code)] ?? 0,
+        openings: openingsMap?.[sellerCode] ?? 0,
+        reativacoes: reativacoesMap?.[sellerCode] ?? 0,
+        meta_mensal: metaM ?? null,
+        meta_semanal: metaS ?? null,
+        pct_meta_mensal: metaM && metaM > 0 ? (fat / metaM) * 100 : null,
+        pct_meta_semanal: metaS && metaS > 0 ? (fat / metaS) * 100 : null,
         _inativo: inativo,
+        _meta_entity_type: metaEntityType,
+        _meta_entity_code: metaEntityCode,
+        _meta_entity_name: metaEntityName,
       };
     });
     if (busca.trim()) {
@@ -1105,6 +1414,11 @@ function SellersTotalsTable({
     reativacoesMap,
     vendedoresMap,
     lojaFiltro,
+    modulo,
+    metasMensal,
+    metasSemanal,
+    metasMensalSeller,
+    metasSemanalSeller,
   ]);
 
   const totais = useMemo(() => {
@@ -1251,6 +1565,26 @@ function SellersTotalsTable({
                   </th>
                   <th
                     className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    onClick={() => toggleSort('pct_meta_mensal')}
+                    title={`Meta mensal · ${periodoMensalKey || ''}`}
+                  >
+                    <span className="flex items-center justify-end gap-1">
+                      <Target size={11} /> Meta Mês{' '}
+                      <SortIcon col="pct_meta_mensal" />
+                    </span>
+                  </th>
+                  <th
+                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    onClick={() => toggleSort('pct_meta_semanal')}
+                    title={`Meta semanal · ${periodoSemanalKey || ''}`}
+                  >
+                    <span className="flex items-center justify-end gap-1">
+                      <Target size={11} weight="fill" /> Meta Sem{' '}
+                      <SortIcon col="pct_meta_semanal" />
+                    </span>
+                  </th>
+                  <th
+                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
                     onClick={() => toggleSort('openings')}
                   >
                     <span className="flex items-center justify-end gap-1">
@@ -1321,25 +1655,118 @@ function SellersTotalsTable({
                     <td className="px-3 py-2 text-right text-gray-600">
                       {fmtMoeda(s.pmpv)}
                     </td>
-                    <td className="px-3 py-2 text-right">
-                      {s.openings > 0 ? (
-                        <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold text-[11px]">
-                          <UserPlus size={10} /> {s.openings}
-                        </span>
+                    {/* Meta Mensal */}
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {s.meta_mensal != null ? (
+                        <div className="flex flex-col items-end leading-tight">
+                          <span className={`text-[11px] font-bold ${
+                            (s.pct_meta_mensal || 0) >= 100
+                              ? 'text-emerald-600'
+                              : (s.pct_meta_mensal || 0) >= 70
+                                ? 'text-amber-600'
+                                : 'text-rose-600'
+                          }`}>
+                            {(s.pct_meta_mensal || 0).toFixed(1)}%
+                          </span>
+                          <span className="text-[9px] text-gray-400 font-mono">
+                            {fmtMoeda(s.meta_mensal)}
+                          </span>
+                        </div>
                       ) : (
-                        <span className="text-gray-300">0</span>
+                        <span className="text-gray-300 text-[10px]">
+                          {isAdmin ? 'definir' : '—'}
+                        </span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-right">
-                      {s.reativacoes > 0 ? (
-                        <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full font-bold text-[11px]">
-                          <ArrowsClockwise size={10} /> {s.reativacoes}
-                        </span>
+                    {/* Meta Semanal */}
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {s.meta_semanal != null ? (
+                        <div className="flex flex-col items-end leading-tight">
+                          <span className={`text-[11px] font-bold ${
+                            (s.pct_meta_semanal || 0) >= 100
+                              ? 'text-emerald-600'
+                              : (s.pct_meta_semanal || 0) >= 70
+                                ? 'text-amber-600'
+                                : 'text-rose-600'
+                          }`}>
+                            {(s.pct_meta_semanal || 0).toFixed(1)}%
+                          </span>
+                          <span className="text-[9px] text-gray-400 font-mono">
+                            {fmtMoeda(s.meta_semanal)}
+                          </span>
+                        </div>
                       ) : (
-                        <span className="text-gray-300">0</span>
+                        <span className="text-gray-300 text-[10px]">
+                          {isAdmin ? 'definir' : '—'}
+                        </span>
                       )}
                     </td>
-                    <td className="px-3 py-1.5 text-center">
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {(() => {
+                        const code = Number(s.seller_code);
+                        const metaA = metasAberturasM?.[code];
+                        const pct = metaA && metaA > 0 ? (s.openings / metaA) * 100 : null;
+                        return (
+                          <div className="flex flex-col items-end leading-tight">
+                            {s.openings > 0 ? (
+                              <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold text-[11px]">
+                                <UserPlus size={10} /> {s.openings}
+                                {metaA != null && <span className="font-mono ml-1">/{metaA}</span>}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300 text-[11px]">
+                                0{metaA != null && ` / ${metaA}`}
+                              </span>
+                            )}
+                            {pct != null && (
+                              <span className={`text-[9px] font-bold ${
+                                pct >= 100 ? 'text-emerald-600'
+                                  : pct >= 70 ? 'text-amber-600'
+                                  : 'text-rose-600'
+                              }`}>{pct.toFixed(0)}%</span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {(() => {
+                        const code = Number(s.seller_code);
+                        const metaR = metasReativacoesM?.[code];
+                        const pct = metaR && metaR > 0 ? (s.reativacoes / metaR) * 100 : null;
+                        return (
+                          <div className="flex flex-col items-end leading-tight">
+                            {s.reativacoes > 0 ? (
+                              <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full font-bold text-[11px]">
+                                <ArrowsClockwise size={10} /> {s.reativacoes}
+                                {metaR != null && <span className="font-mono ml-1">/{metaR}</span>}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300 text-[11px]">
+                                0{metaR != null && ` / ${metaR}`}
+                              </span>
+                            )}
+                            {pct != null && (
+                              <span className={`text-[9px] font-bold ${
+                                pct >= 100 ? 'text-emerald-600'
+                                  : pct >= 70 ? 'text-amber-600'
+                                  : 'text-rose-600'
+                              }`}>{pct.toFixed(0)}%</span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-3 py-1.5 text-center whitespace-nowrap">
+                      {isAdmin && (
+                        <button
+                          onClick={() => setMetaSeller(s)}
+                          className="p-1 rounded hover:bg-emerald-100 text-gray-400 hover:text-emerald-700 transition-colors"
+                          title="Editar meta"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                      )}
                       <button
                         onClick={() => setSelectedSeller(s)}
                         className="p-1 rounded hover:bg-[#000638]/10 text-gray-400 hover:text-[#000638] transition-colors"
@@ -1369,6 +1796,10 @@ function SellersTotalsTable({
                       {fmtNum(totais.itens_qty)}
                     </td>
                     <td className="px-3 py-2" colSpan={3} />
+                    {/* Coluna Meta Mês — totais não fazem sentido aqui */}
+                    <td className="px-3 py-2" />
+                    {/* Coluna Meta Sem */}
+                    <td className="px-3 py-2" />
                     <td className="px-3 py-2 text-right">
                       {totais.openings > 0 ? (
                         <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold text-[11px]">
@@ -1398,6 +1829,19 @@ function SellersTotalsTable({
           dataInicio={dataInicio}
           dataFim={dataFim}
           onClose={() => setSelectedSeller(null)}
+        />
+      )}
+
+      {metaSeller && (
+        <MetaEditModal
+          seller={metaSeller}
+          periodoMensalKey={periodoMensalKey}
+          periodoSemanalKey={periodoSemanalKey}
+          metasAll={metasAll}
+          entityType={modulo === 'varejo' ? 'branch' : 'seller'}
+          allowScopeToggle={modulo === 'varejo'}
+          onSave={onSaveMeta}
+          onClose={() => setMetaSeller(null)}
         />
       )}
     </div>
@@ -2123,6 +2567,26 @@ function FaturamentoPorSegmento({ nfsBySegmento, periodoLabel, loading }) {
 }
 
 // ─── Componente principal ───────────────────────────────────────────────────
+// ─── Helpers de período (mensal=YYYY-MM, semanal=ISO YYYY-Www) ──────────────
+function periodKeyMensal(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+function periodKeySemanal(d = new Date()) {
+  // ISO 8601 week number
+  const target = new Date(d.valueOf());
+  const dayNr = (d.getDay() + 6) % 7;
+  target.setDate(target.getDate() - dayNr + 3);
+  const firstThursday = target.valueOf();
+  target.setMonth(0, 1);
+  if (target.getDay() !== 4) {
+    target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+  }
+  const week = 1 + Math.ceil((firstThursday - target) / 604800000);
+  return `${d.getFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
 export default function PerformanceView({
   erpData,
   modulo,
@@ -2138,6 +2602,113 @@ export default function PerformanceView({
   dataInicio,
   dataFim,
 }) {
+  // ─── Metas por vendedor (mensal + semanal) ────────────────────────────
+  const { user } = useAuth() || {};
+  const userRole = (user?.user_metadata?.role || user?.role || 'user').toLowerCase();
+  const isAdmin = userRole === 'admin' || userRole === 'owner';
+  const userLogin = user?.email || user?.user_metadata?.login || '';
+
+  const periodoMensalKey = useMemo(() => {
+    if (!dataInicio) return periodKeyMensal();
+    return periodKeyMensal(new Date(dataInicio + 'T12:00:00'));
+  }, [dataInicio]);
+  const periodoSemanalKey = useMemo(() => {
+    if (!dataInicio) return periodKeySemanal();
+    return periodKeySemanal(new Date(dataInicio + 'T12:00:00'));
+  }, [dataInicio]);
+
+  // Estrutura: metasAll[meta_kind][period_type][seller_code] = valor
+  const [metasAll, setMetasAll] = useState({
+    faturamento: { mensal: {}, semanal: {} },
+    aberturas: { mensal: {}, semanal: {} },
+    reativacoes: { mensal: {}, semanal: {} },
+  });
+  const [metasReloadKey, setMetasReloadKey] = useState(0);
+
+  // Toggle de aba dentro do VAREJO: 'geral' (atual) | 'reuniao' (novo)
+  const [varejoView, setVarejoView] = useState('geral');
+
+  // Para varejo, meta padrão é por LOJA (branch_code). Mas o gerente também pode
+  // definir meta INDIVIDUAL por vendedor (entity_type='seller'). Quando existir
+  // meta de vendedor, ela tem prioridade sobre a meta da loja.
+  // Outros canais usam apenas seller.
+  const entityTypeForModulo = modulo === 'varejo' ? 'branch' : 'seller';
+  const isVarejoModulo = modulo === 'varejo';
+
+  useEffect(() => {
+    if (!modulo || !periodoMensalKey) return;
+    const fetchMetas = async (kind, period_type, period_key, entityType) => {
+      try {
+        const r = await fetch(
+          `${API_BASE_URL}/api/crm/seller-metas?modulo=${encodeURIComponent(modulo)}&meta_kind=${kind}&period_type=${period_type}&period_key=${period_key}&entity_type=${entityType}`,
+          { headers: { 'x-api-key': API_KEY } },
+        );
+        const j = await r.json();
+        const arr = j?.data?.metas || j?.metas || [];
+        const map = {};
+        for (const m of arr) map[Number(m.seller_code)] = Number(m.valor_meta);
+        return map;
+      } catch (e) {
+        console.warn(`[metas ${kind} ${period_type} ${entityType}]`, e.message);
+        return {};
+      }
+    };
+    (async () => {
+      const kinds = ['faturamento', 'aberturas', 'reativacoes'];
+      const fresh = {
+        faturamento: { mensal: {}, semanal: {}, mensal_seller: {}, semanal_seller: {} },
+        aberturas: { mensal: {}, semanal: {}, mensal_seller: {}, semanal_seller: {} },
+        reativacoes: { mensal: {}, semanal: {}, mensal_seller: {}, semanal_seller: {} },
+      };
+      const tasks = [];
+      for (const k of kinds) {
+        // Metas no entity_type padrão (branch para varejo, seller para outros)
+        tasks.push(fetchMetas(k, 'mensal', periodoMensalKey, entityTypeForModulo).then((m) => { fresh[k].mensal = m; }));
+        tasks.push(fetchMetas(k, 'semanal', periodoSemanalKey, entityTypeForModulo).then((m) => { fresh[k].semanal = m; }));
+        // Para varejo: também busca metas individuais por vendedor
+        if (isVarejoModulo) {
+          tasks.push(fetchMetas(k, 'mensal', periodoMensalKey, 'seller').then((m) => { fresh[k].mensal_seller = m; }));
+          tasks.push(fetchMetas(k, 'semanal', periodoSemanalKey, 'seller').then((m) => { fresh[k].semanal_seller = m; }));
+        }
+      }
+      await Promise.all(tasks);
+      setMetasAll(fresh);
+    })();
+  }, [modulo, periodoMensalKey, periodoSemanalKey, metasReloadKey, entityTypeForModulo, isVarejoModulo]);
+
+  const saveMeta = useCallback(
+    async ({ seller_code, seller_name, period_type, valor_meta, meta_kind, entity_type }) => {
+      const period_key =
+        period_type === 'mensal' ? periodoMensalKey : periodoSemanalKey;
+      const r = await fetch(`${API_BASE_URL}/api/crm/seller-metas`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_KEY,
+          'x-user-role': userRole,
+          'x-user-login': userLogin,
+        },
+        body: JSON.stringify({
+          seller_code,
+          seller_name,
+          modulo,
+          entity_type: entity_type || entityTypeForModulo,
+          meta_kind: meta_kind || 'faturamento',
+          period_type,
+          period_key,
+          valor_meta,
+          user_login: userLogin,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok || j?.success === false) {
+        throw new Error(j?.message || 'Erro ao salvar meta');
+      }
+      setMetasReloadKey((k) => k + 1);
+      return j;
+    },
+    [modulo, periodoMensalKey, periodoSemanalKey, userRole, userLogin, entityTypeForModulo],
+  );
   // Conjunto canônico (ID de constants.js) — fonte da verdade da equipe do canal.
   // Quando definido (multimarcas/revenda), tem prioridade — exclui vendedores
   // legados/inválidos como "GERAL".
@@ -2402,6 +2973,72 @@ export default function PerformanceView({
 
   return (
     <div className="space-y-4">
+      {/* ─── Toggle "Visão Geral / Reunião" — só pra varejo ──────────────── */}
+      {modulo === 'varejo' && (
+        <div className="flex items-center gap-1 border-b border-gray-200 -mb-1">
+          <button
+            onClick={() => setVarejoView('geral')}
+            className={`px-4 py-2 inline-flex items-center gap-2 text-sm font-medium transition border-b-2 -mb-px ${
+              varejoView === 'geral'
+                ? 'text-blue-700 border-blue-600'
+                : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <ChartBar
+              size={14}
+              weight={varejoView === 'geral' ? 'duotone' : 'regular'}
+            />
+            Visão Geral
+          </button>
+          <button
+            onClick={() => setVarejoView('reuniao')}
+            className={`px-4 py-2 inline-flex items-center gap-2 text-sm font-medium transition border-b-2 -mb-px ${
+              varejoView === 'reuniao'
+                ? 'text-red-600 border-red-600'
+                : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <Trophy
+              size={14}
+              weight={varejoView === 'reuniao' ? 'duotone' : 'regular'}
+            />
+            Reunião
+          </button>
+          <button
+            onClick={() => setVarejoView('fila')}
+            className={`px-4 py-2 inline-flex items-center gap-2 text-sm font-medium transition border-b-2 -mb-px ${
+              varejoView === 'fila'
+                ? 'text-indigo-600 border-indigo-600'
+                : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <Hourglass
+              size={14}
+              weight={varejoView === 'fila' ? 'duotone' : 'regular'}
+            />
+            Fila da Vez
+          </button>
+        </div>
+      )}
+
+      {/* Conteúdo da aba REUNIÃO (só quando varejo + reuniao) */}
+      {modulo === 'varejo' && varejoView === 'reuniao' && (
+        <VarejoReuniao isAdmin={isAdmin} userLogin={userLogin} />
+      )}
+
+      {/* Conteúdo da aba FILA DA VEZ — admin (config, vendedoras, motivos) */}
+      {modulo === 'varejo' && varejoView === 'fila' && (
+        <VarejoFilaAdmin />
+      )}
+
+      {/* Conteúdo VISÃO GERAL — esconde quando alguma outra view tá ativa.
+          Usa `display: contents` pra não mexer no flow do layout original. */}
+      <div
+        style={{
+          display:
+            modulo === 'varejo' && (varejoView === 'reuniao' || varejoView === 'fila') ? 'none' : 'contents',
+        }}
+      >
       {/* KPI Cards resumo */}
       {sellersTotalsLoading ? (
         <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
@@ -2538,6 +3175,12 @@ export default function PerformanceView({
             dataFim={dataFim}
             openingsMap={openingsMap}
             reativacoesMap={reativacoesMap}
+            modulo={modulo}
+            metasAll={metasAll}
+            periodoMensalKey={periodoMensalKey}
+            periodoSemanalKey={periodoSemanalKey}
+            isAdmin={isAdmin}
+            onSaveMeta={saveMeta}
           />
         )}
       </div>
@@ -2762,6 +3405,8 @@ export default function PerformanceView({
           onClose={() => setReativacaoModalOpen(false)}
         />
       )}
+      </div>
+      {/* fim do wrapper de "Visão Geral" — toggle varejo */}
     </div>
   );
 }

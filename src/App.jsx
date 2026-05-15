@@ -94,11 +94,14 @@ const SolicitacoesRemessa = lazy(() => import('./pages/SolicitacoesRemessa'));
 const MinhasRemessas = lazy(() => import('./pages/MinhasRemessas'));
 const ClientesMTM = lazy(() => import('./pages/ClientesMTM'));
 const DownloadNotificacao = lazy(() => import('./pages/DownloadNotificacao'));
+const FilaDaVez = lazy(() => import('./pages/FilaDaVez'));
+const ControleChips = lazy(() => import('./pages/ControleChips'));
 const ApiClaude = lazy(() => import('./pages/ApiClaude'));
 const Estoque = lazy(() => import('./pages/Estoque'));
 const PainelVendas = lazy(() => import('./pages/PainelVendas'));
 const CRMVendas = lazy(() => import('./pages/CRMVendas'));
 const FaturamentoCanal = lazy(() => import('./pages/FaturamentoCanal'));
+const PainelCompeticao = lazy(() => import('./pages/PainelCompeticao'));
 const VoucherUsage = lazy(() => import('./pages/VoucherUsage'));
 const CatalogoAdmin = lazy(() => import('./pages/CatalogoAdmin'));
 const CrosbyManage = lazy(() => import('./pages/CrosbyManage'));
@@ -125,6 +128,7 @@ PageLoadingFallback.displayName = 'PageLoadingFallback';
 
 // Lista de rotas protegidas (constante estática no módulo)
 const protectedRoutes = [
+  { path: '/tecnologia/controle-chip', component: ControleChips },
   { path: '/gerenciador-dashboards', component: GerenciadorDashboards },
   { path: '/widgets', component: Widgets },
 
@@ -207,6 +211,7 @@ const protectedRoutes = [
   { path: '/painel-vendas', component: PainelVendas },
   { path: '/crm-vendas', component: CRMVendas },
   { path: '/faturamento-canal', component: FaturamentoCanal },
+  { path: '/crm/competicao', component: PainelCompeticao },
   { path: '/totvs', component: FaturamentoPanel },
   { path: '/voucher-usage', component: VoucherUsage },
   { path: '/catalogo-admin', component: CatalogoAdmin },
@@ -269,6 +274,14 @@ function App() {
           element={
             <Suspense fallback={<PageLoadingFallback />}>
               <FormularioSolicitacoes />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/fila"
+          element={
+            <Suspense fallback={<PageLoadingFallback />}>
+              <FilaDaVez />
             </Suspense>
           }
         />

@@ -278,6 +278,8 @@ const AVAILABLE_PAGES = [
 
   // CRM
   { path: '/crm-vendas', name: 'CRM Vendas', category: 'CRM' },
+  { path: '/crm/competicao', name: 'Painel Competição (B2R × B2M)', category: 'CRM' },
+  { path: '/faturamento-canal', name: 'Forecast', category: 'CRM' },
 
   // Outros
   { path: '/widgets', name: 'Meus Widgets', category: 'Outros' },

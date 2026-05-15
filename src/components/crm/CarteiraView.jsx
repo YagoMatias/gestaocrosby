@@ -1375,7 +1375,7 @@ export default function CarteiraView({
     // Filiais válidas pra varejo (mesma lista do CANAL_CONFIG.varejo backend).
     // Vendedor só conta como "do varejo" se transacionou em uma dessas branches.
     const VAREJO_BRANCHES = new Set([
-      2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97,
+      2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97, 98,
     ]);
 
     // Helper: verifica se uma transação pertence ao canal do módulo
