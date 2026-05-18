@@ -1,4 +1,10 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import * as XLSX from 'xlsx';
 import { exportarPDF } from '../utils/exportarPDF';
 import { supabase } from '../lib/supabase';
@@ -36,6 +42,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowsDownUp,
+  CaretDown,
 } from '@phosphor-icons/react';
 
 const BANCOS = [
@@ -1706,45 +1713,46 @@ const LinhaTitulo = React.memo(
         </td>
 
         {/* Baixado (inline ao lado de status) */}
-        <td className="px-2 py-2 text-center">
-          {item.status === 'PAGO' && !isTransferencia && (
-            <label
-              className="inline-flex flex-col items-center gap-1 cursor-pointer"
-              title={
-                item.baixado
-                  ? `Baixado${item.baixado_por ? ' por ' + item.baixado_por : ''}${item.baixado_em ? ' em ' + new Date(item.baixado_em).toLocaleString('pt-BR') : ''}`
-                  : 'Marcar como baixado no TOTVS'
-              }
-            >
-              <input
-                type="checkbox"
-                checked={!!item.baixado}
-                onChange={() => onToggleBaixado(item.id, !item.baixado)}
-                className="w-4 h-4 accent-emerald-600 cursor-pointer"
-              />
-              <span
-                className={`text-[9px] font-bold leading-none ${
-                  item.baixado ? 'text-emerald-600' : 'text-gray-400'
-                }`}
+        {showBaixado && (
+          <td className="px-2 py-2 text-center">
+            {item.status === 'PAGO' && !isTransferencia && (
+              <label
+                className="inline-flex flex-col items-center gap-1 cursor-pointer"
+                title={
+                  item.baixado
+                    ? `Baixado${item.baixado_por ? ' por ' + item.baixado_por : ''}${item.baixado_em ? ' em ' + new Date(item.baixado_em).toLocaleString('pt-BR') : ''}`
+                    : 'Marcar como baixado no TOTVS'
+                }
               >
-                {item.baixado ? 'SIM' : 'Não'}
-              </span>
-            </label>
-          )}
-        </td>
-        <td className="px-5 py-5 text-xs">
-          <div className="">
-            <div className="flex items-center text-gray-500">
-              <span className="text-[9px] font-bold uppercase w-14 shrink-0 text-gray-400">
-                Venc. - {fmtDate(item.dt_vencimento) || '—'}
-              </span>
-            </div>
-            {item.dt_pagamento && (
-              <div className="flex items-center ">
-                <span className="text-[9px] font-bold uppercase w-14 shrink-0 text-green-800">
-                  Pgto. - {fmtDate(item.dt_pagamento)}
+                <input
+                  type="checkbox"
+                  checked={!!item.baixado}
+                  onChange={() => onToggleBaixado(item.id, !item.baixado)}
+                  className="w-4 h-4 accent-emerald-600 cursor-pointer"
+                />
+                <span
+                  className={`text-[9px] font-bold leading-none ${
+                    item.baixado ? 'text-emerald-600' : 'text-gray-400'
+                  }`}
+                >
+                  {item.baixado ? 'SIM' : 'Não'}
                 </span>
-              </div>
+              </label>
+            )}
+          </td>
+        )}
+        <td className="px-2 py-2 text-xs">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold text-gray-600 whitespace-nowrap">
+              {fmtDate(item.dt_vencimento) || '—'}
+            </span>
+            <span className="text-[9px] font-bold uppercase text-gray-400">
+              Venc.
+            </span>
+            {item.dt_pagamento && (
+              <span className="text-[9px] font-semibold text-green-700 whitespace-nowrap">
+                Pgto. {fmtDate(item.dt_pagamento)}
+              </span>
             )}
           </div>
         </td>
@@ -2321,6 +2329,88 @@ const LinhaTitulo = React.memo(
 );
 LinhaTitulo.displayName = 'LinhaTitulo';
 
+// ─── Multi-select de Despesas ─────────────────────────────────────────────────
+const FiltroDespesaMultiSelect = ({ opcoes, selecionadas, onChange }) => {
+  const [aberto, setAberto] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setAberto(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const toggle = (val) =>
+    onChange(
+      selecionadas.includes(val)
+        ? selecionadas.filter((s) => s !== val)
+        : [...selecionadas, val],
+    );
+
+  const labelBtn =
+    selecionadas.length === 0
+      ? 'Todas'
+      : selecionadas.length === 1
+        ? selecionadas[0]
+        : `${selecionadas.length} selecionadas`;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setAberto((p) => !p)}
+        className={`w-full flex items-center justify-between border rounded px-2 py-1.5 text-xs h-[30px] focus:ring-1 focus:ring-[#000638] bg-white ${
+          selecionadas.length > 0
+            ? 'border-[#000638] text-[#000638] font-semibold'
+            : 'border-gray-300 text-gray-500'
+        }`}
+      >
+        <span className="truncate mr-1">{labelBtn}</span>
+        <CaretDown size={10} weight="bold" className="shrink-0" />
+      </button>
+      {aberto && (
+        <div className="absolute z-50 top-full mt-1 left-0 w-60 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden">
+          {selecionadas.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="w-full text-left px-3 py-1.5 text-[10px] font-bold text-red-500 hover:bg-red-50 border-b border-gray-100"
+            >
+              Limpar seleção
+            </button>
+          )}
+          <div className="max-h-56 overflow-y-auto">
+            {opcoes.length === 0 ? (
+              <p className="text-[10px] text-gray-400 text-center py-3">
+                Nenhuma despesa disponível
+              </p>
+            ) : (
+              opcoes.map((op) => (
+                <label
+                  key={op}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-blue-50 cursor-pointer select-none"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selecionadas.includes(op)}
+                    onChange={() => toggle(op)}
+                    className="accent-[#000638] shrink-0 w-3.5 h-3.5"
+                  />
+                  <span className="flex-1 min-w-0 leading-snug break-words">
+                    {op}
+                  </span>
+                </label>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── Página principal ──────────────────────────────────
 const LiberacaoPagamento = () => {
   const { user, hasAnyRole } = useAuth() || {};
@@ -2348,6 +2438,7 @@ const LiberacaoPagamento = () => {
   const [filtroTipo, setFiltroTipo] = useState('TODOS'); // TODOS | PAGAMENTO | TRANSFERENCIA
   const [filtroInclusao, setFiltroInclusao] = useState('TODOS'); // TODOS | TOTVS | MANUAL
   const [filtroForma, setFiltroForma] = useState(''); // '' | PIX | BOLETO | DEBITO | CREDITO
+  const [filtroDespesa, setFiltroDespesa] = useState([]);
   const [filtroPagamentoDe, setFiltroPagamentoDe] = useState('');
   const [filtroPagamentoAte, setFiltroPagamentoAte] = useState('');
   const [filtroBaixado, setFiltroBaixado] = useState(''); // '' | 'SIM' | 'NAO'
@@ -2428,6 +2519,11 @@ const LiberacaoPagamento = () => {
     if (filtroForma) {
       lista = lista.filter((t) => t.forma_pagamento === filtroForma);
     }
+    if (filtroDespesa.length > 0) {
+      lista = lista.filter((t) =>
+        filtroDespesa.includes(t.ds_despesaitem || ''),
+      );
+    }
     // Filtro por data de pagamento (apenas faz sentido em PAGO)
     if (filtroPagamentoDe) {
       lista = lista.filter((t) => {
@@ -2494,6 +2590,7 @@ const LiberacaoPagamento = () => {
     filtroFornecedor,
     filtroBancoFiltro,
     filtroForma,
+    filtroDespesa,
     filtroValorMin,
     filtroValorMax,
     filtroInclusao,
@@ -2503,6 +2600,14 @@ const LiberacaoPagamento = () => {
     filtroBaixado,
     ordenacao,
   ]);
+
+  const despesasDisponiveis = useMemo(() => {
+    const set = new Set();
+    titulos.forEach((t) => {
+      if (t.ds_despesaitem) set.add(t.ds_despesaitem);
+    });
+    return Array.from(set).sort();
+  }, [titulos]);
 
   const { totalSaldo, bancosSaldoCount } = useMemo(
     () => ({
@@ -2517,6 +2622,7 @@ const LiberacaoPagamento = () => {
     filtroFornecedor ||
     filtroBancoFiltro ||
     filtroForma ||
+    filtroDespesa.length > 0 ||
     filtroValorMin ||
     filtroValorMax ||
     filtroSoManuais ||
@@ -2529,6 +2635,7 @@ const LiberacaoPagamento = () => {
     setFiltroFornecedor('');
     setFiltroBancoFiltro('');
     setFiltroForma('');
+    setFiltroDespesa([]);
     setFiltroValorMin('');
     setFiltroValorMax('');
     setFiltroSoManuais(false);
@@ -3132,9 +3239,7 @@ const LiberacaoPagamento = () => {
   }, [titulosFiltrados, filtroStatus]);
 
   const exportarPdf = useCallback(() => {
-    // Colunas: Status | Fornecedor | Cód. Forn. | Duplicata | Parcela | Vencimento | Valor | Valor Real | Despesa | C. Custo | Observação
     const colunas = [
-      'Status',
       'Fornecedor',
       'Cód. Forn.',
       'Duplicata',
@@ -3143,10 +3248,9 @@ const LiberacaoPagamento = () => {
       'Valor (R$)',
       'Vlr. Real (R$)',
       'Despesa',
-      'C. Custo',
+      'Centro de Custo',
     ];
     const colStyles = [
-      { cellWidth: 18 }, // Status
       { cellWidth: 55 }, // Fornecedor
       { cellWidth: 18 }, // Cód. Forn.
       { cellWidth: 24 }, // Duplicata
@@ -3154,11 +3258,10 @@ const LiberacaoPagamento = () => {
       { cellWidth: 24 }, // Vencimento
       { cellWidth: 26 }, // Valor
       { cellWidth: 26 }, // Valor Real
-      { cellWidth: 'auto' }, // Despesa — ocupa o restante
-      { cellWidth: 16 }, // C. Custo
+      { cellWidth: 'auto' }, // Despesa
+      { cellWidth: 36 }, // Centro de Custo
     ];
     const linhas = titulosFiltrados.map((t) => [
-      t.status,
       t.nm_fornecedor || '',
       t.cd_fornecedor || '',
       t.nr_duplicata || '',
@@ -3173,13 +3276,23 @@ const LiberacaoPagamento = () => {
           })
         : '',
       t.ds_despesaitem || '',
-      t.cd_ccusto || '',
+      t.cd_ccusto
+        ? CENTROS_CUSTO[String(t.cd_ccusto)] || `CC ${t.cd_ccusto}`
+        : '',
     ]);
+    const totalValor = titulosFiltrados.reduce(
+      (s, t) => s + parseFloat(t.vl_duplicata || 0),
+      0,
+    );
+    const totalStr = totalValor.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
     exportarPDF(
       colunas,
       linhas,
       `liberacao-pagamento-${filtroStatus.toLowerCase()}`,
-      `Liberação de Pagamento — ${filtroStatus}`,
+      `Liberação de Pagamento — ${filtroStatus} · Total: ${totalStr} (${titulosFiltrados.length} registro(s))`,
       colStyles,
     );
   }, [titulosFiltrados, filtroStatus]);
@@ -3404,7 +3517,7 @@ const LiberacaoPagamento = () => {
           )}
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
           {/* Status */}
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold uppercase text-gray-500">
@@ -3453,6 +3566,23 @@ const LiberacaoPagamento = () => {
               <option value="TOTVS">TOTVS</option>
               <option value="MANUAL">Manual</option>
             </select>
+          </div>
+
+          {/* Despesa */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold uppercase text-gray-500">
+              Despesa
+              {filtroDespesa.length > 0 && (
+                <span className="ml-1 text-[9px] bg-[#000638] text-white px-1 py-0.5 rounded-full">
+                  {filtroDespesa.length}
+                </span>
+              )}
+            </label>
+            <FiltroDespesaMultiSelect
+              opcoes={despesasDisponiveis}
+              selecionadas={filtroDespesa}
+              onChange={setFiltroDespesa}
+            />
           </div>
 
           {/* Banco */}
