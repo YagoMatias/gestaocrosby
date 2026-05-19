@@ -791,9 +791,6 @@ const FormularioSolicitacoes = () => {
       issueDate: toIsoDateTime(p.issueDate),
       dueDate: toIsoDateTime(p.dueDate),
       arrivalDate: toIsoDateTime(p.arrivalDate),
-      document: p.document || 'Duplicate',
-      prevision: p.prevision || 'Forecast',
-      stage: p.stage || 'InvoiceNotConfered',
       duplicateValue: parseFloat(p.duplicateValue) || 0,
       expenses: p.expenses.map((e) => ({
         expenseCode: parseInt(e.expenseCode),

@@ -371,6 +371,10 @@ const SolicitacoesCrosby = () => {
       if (updErr) throw updErr;
 
       // 2) Envia para TOTVS
+      console.log(
+        '📤 Enviando payload TOTVS:',
+        JSON.stringify(sol.payload_totvs, null, 2),
+      );
       const resp = await fetch(
         `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
         {
@@ -380,6 +384,12 @@ const SolicitacoesCrosby = () => {
         },
       );
       const result = await resp.json().catch(() => ({}));
+      console.log(
+        '📥 Resposta TOTVS (HTTP',
+        resp.status,
+        '):',
+        JSON.stringify(result, null, 2),
+      );
 
       if (!resp.ok || result?.success === false) {
         const msg =
@@ -421,6 +431,10 @@ const SolicitacoesCrosby = () => {
     if (!sol.payload_totvs) return;
     setEnviandoTotvs(true);
     try {
+      console.log(
+        '📤 Reenviando payload TOTVS:',
+        JSON.stringify(sol.payload_totvs, null, 2),
+      );
       const resp = await fetch(
         `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
         {
@@ -430,6 +444,12 @@ const SolicitacoesCrosby = () => {
         },
       );
       const result = await resp.json().catch(() => ({}));
+      console.log(
+        '📥 Resposta TOTVS reenvio (HTTP',
+        resp.status,
+        '):',
+        JSON.stringify(result, null, 2),
+      );
       if (!resp.ok || result?.success === false) {
         const msg =
           result?.message || `Falha no envio TOTVS (HTTP ${resp.status})`;
@@ -1138,7 +1158,19 @@ const ModalDetalhe = ({
                   <WarningCircle size={16} weight="bold" />
                   Erro no envio ao TOTVS
                 </div>
-                <p className="whitespace-pre-wrap text-xs">{sol.totvs_erro}</p>
+                <p className="whitespace-pre-wrap text-xs font-bold">
+                  {sol.totvs_erro}
+                </p>
+                {sol.totvs_response && (
+                  <details className="mt-2">
+                    <summary className="text-xs cursor-pointer text-red-600 hover:text-red-800 font-bold">
+                      Ver detalhes técnicos
+                    </summary>
+                    <pre className="mt-1 text-[10px] bg-red-100 rounded p-2 overflow-x-auto max-h-40 whitespace-pre-wrap">
+                      {JSON.stringify(sol.totvs_response, null, 2)}
+                    </pre>
+                  </details>
+                )}
               </div>
             )}
 
@@ -1863,19 +1895,31 @@ const PortadorComboCrosby = ({ value, onChange }) => {
         value={open ? search : selectedLabel}
         placeholder="Digite código ou nome do portador..."
         className={inpCls}
-        onFocus={() => { setSearch(''); setOpen(true); }}
-        onChange={(e) => { setSearch(e.target.value); setOpen(true); }}
+        onFocus={() => {
+          setSearch('');
+          setOpen(true);
+        }}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setOpen(true);
+        }}
       />
       {open && (
         <div className="absolute z-50 top-full left-0 right-0 mt-0.5 bg-white border-2 border-[#000638] rounded-lg shadow-xl max-h-48 overflow-y-auto">
           {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-gray-400 italic">Nenhum portador encontrado</div>
+            <div className="px-3 py-2 text-xs text-gray-400 italic">
+              Nenhum portador encontrado
+            </div>
           ) : (
             filtered.map(([code, name]) => (
               <button
                 key={code}
                 type="button"
-                onClick={() => { onChange(code); setSearch(''); setOpen(false); }}
+                onClick={() => {
+                  onChange(code);
+                  setSearch('');
+                  setOpen(false);
+                }}
                 className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[#000638] hover:text-white transition-colors flex gap-2 ${String(value) === code ? 'bg-[#000638]/10 font-bold' : ''}`}
               >
                 <span className="font-mono shrink-0">{code}</span>
@@ -1906,17 +1950,29 @@ const ModalEdicao = ({
   const [tipo, setTipo] = React.useState(sol.tipo || '');
   const [solicitante, setSolicitante] = React.useState(sol.solicitante || '');
   const [setor, setSetor] = React.useState(sol.setor || '');
-  const [solicitanteEmail, setSolicitanteEmail] = React.useState(sol.solicitante_email || '');
+  const [solicitanteEmail, setSolicitanteEmail] = React.useState(
+    sol.solicitante_email || '',
+  );
   const [descricao, setDescricao] = React.useState(sol.descricao || '');
   const [observacao, setObservacao] = React.useState(sol.observacao || '');
-  const [formaPagamento, setFormaPagamento] = React.useState(sol.forma_pagamento || '');
-  const [supplierCpfCnpj, setSupplierCpfCnpj] = React.useState(sol.supplier_cpf_cnpj || '');
-  const [supplierName, setSupplierName] = React.useState(sol.supplier_name || '');
+  const [formaPagamento, setFormaPagamento] = React.useState(
+    sol.forma_pagamento || '',
+  );
+  const [supplierCpfCnpj, setSupplierCpfCnpj] = React.useState(
+    sol.supplier_cpf_cnpj || '',
+  );
+  const [supplierName, setSupplierName] = React.useState(
+    sol.supplier_name || '',
+  );
   const [buscandoFornecedor, setBuscandoFornecedor] = React.useState(false);
-  const [duplicateCode, setDuplicateCode] = React.useState(sol.duplicate_code || '');
+  const [duplicateCode, setDuplicateCode] = React.useState(
+    sol.duplicate_code || '',
+  );
 
   // Tipo-específico: reembolso
-  const [comprovanteUrl, setComprovanteUrl] = React.useState(sol.comprovante_url || '');
+  const [comprovanteUrl, setComprovanteUrl] = React.useState(
+    sol.comprovante_url || '',
+  );
   const [comprovanteFile, setComprovanteFile] = React.useState(null);
 
   // Tipo-específico: compra
@@ -1928,8 +1984,12 @@ const ModalEdicao = ({
 
   // Tipo-específico: manutencao
   const [contatosPrestadores, setContatosPrestadores] = React.useState(() => {
-    const saved = Array.isArray(sol.contatos_prestadores) ? sol.contatos_prestadores : [];
-    return saved.length > 0 ? saved : [{ nome: '', telefone: '', observacao: '' }];
+    const saved = Array.isArray(sol.contatos_prestadores)
+      ? sol.contatos_prestadores
+      : [];
+    return saved.length > 0
+      ? saved
+      : [{ nome: '', telefone: '', observacao: '' }];
   });
 
   // Parcelas
@@ -1946,13 +2006,34 @@ const ModalEdicao = ({
             proratedPercentage: e.proratedPercentage ?? 100,
           })),
         }))
-      : [{ installmentCode: 1, bearerCode: '', dueDate: '', duplicateValue: '',
-           expenses: [{ expenseCode: '', costCenterCode: '', proratedPercentage: 100 }] }],
+      : [
+          {
+            installmentCode: 1,
+            bearerCode: '',
+            dueDate: '',
+            duplicateValue: '',
+            expenses: [
+              { expenseCode: '', costCenterCode: '', proratedPercentage: 100 },
+            ],
+          },
+        ],
   );
   const [salvando, setSalvando] = React.useState(false);
   const [parcelaIdx, setParcelaIdx] = React.useState(0);
 
-  const SETORES = ['VAREJO','FINANCEIRO','RH','MULTIMARCAS','REVENDA','PRODUÇÃO','EXPEDIÇÃO','MARKETING','TRÁFEGO','TECNOLOGIA','CENTRAL DE FRANQUIAS'];
+  const SETORES = [
+    'VAREJO',
+    'FINANCEIRO',
+    'RH',
+    'MULTIMARCAS',
+    'REVENDA',
+    'PRODUÇÃO',
+    'EXPEDIÇÃO',
+    'MARKETING',
+    'TRÁFEGO',
+    'TECNOLOGIA',
+    'CENTRAL DE FRANQUIAS',
+  ];
   const TIPOS = [
     { value: 'pagamento', label: 'Pagamento' },
     { value: 'reembolso', label: 'Reembolso' },
@@ -1970,7 +2051,9 @@ const ModalEdicao = ({
       .from(STORAGE_BUCKET)
       .upload(fileName, file, { contentType: file.type, upsert: false });
     if (error) throw error;
-    const { data } = supabaseAdmin.storage.from(STORAGE_BUCKET).getPublicUrl(fileName);
+    const { data } = supabaseAdmin.storage
+      .from(STORAGE_BUCKET)
+      .getPublicUrl(fileName);
     return data.publicUrl;
   };
 
@@ -1980,7 +2063,9 @@ const ModalEdicao = ({
     if (digits.length !== 11 && digits.length !== 14) return;
     setBuscandoFornecedor(true);
     try {
-      const resp = await fetch(`${API_BASE_URL}/api/totvs/supplier/search?cpfCnpj=${digits}`);
+      const resp = await fetch(
+        `${API_BASE_URL}/api/totvs/supplier/search?cpfCnpj=${digits}`,
+      );
       if (resp.status === 404) {
         setSupplierName('');
         return;
@@ -2004,13 +2089,22 @@ const ModalEdicao = ({
       d.setMonth(d.getMonth() + 1);
       nextDate = d.toISOString().slice(0, 10);
     }
-    setParcelas([...parcelas, {
-      installmentCode: (last?.installmentCode ?? parcelas.length) + 1,
-      bearerCode: last?.bearerCode ?? '',
-      dueDate: nextDate,
-      duplicateValue: '',
-      expenses: [{ expenseCode: last?.expenses?.[0]?.expenseCode ?? '', costCenterCode: last?.expenses?.[0]?.costCenterCode ?? '', proratedPercentage: 100 }],
-    }]);
+    setParcelas([
+      ...parcelas,
+      {
+        installmentCode: (last?.installmentCode ?? parcelas.length) + 1,
+        bearerCode: last?.bearerCode ?? '',
+        dueDate: nextDate,
+        duplicateValue: '',
+        expenses: [
+          {
+            expenseCode: last?.expenses?.[0]?.expenseCode ?? '',
+            costCenterCode: last?.expenses?.[0]?.costCenterCode ?? '',
+            proratedPercentage: 100,
+          },
+        ],
+      },
+    ]);
     setParcelaIdx(parcelas.length);
   };
   const removeParcela = (i) => {
@@ -2020,25 +2114,60 @@ const ModalEdicao = ({
     setParcelaIdx(Math.min(parcelaIdx, next.length - 1));
   };
   const updateParcela = (i, patch) =>
-    setParcelas((prev) => prev.map((p, idx) => idx === i ? { ...p, ...patch } : p));
+    setParcelas((prev) =>
+      prev.map((p, idx) => (idx === i ? { ...p, ...patch } : p)),
+    );
   const addExpense = (pi) =>
-    setParcelas((prev) => prev.map((p, idx) =>
-      idx === pi ? { ...p, expenses: [...p.expenses, { expenseCode: '', costCenterCode: '', proratedPercentage: '' }] } : p));
+    setParcelas((prev) =>
+      prev.map((p, idx) =>
+        idx === pi
+          ? {
+              ...p,
+              expenses: [
+                ...p.expenses,
+                { expenseCode: '', costCenterCode: '', proratedPercentage: '' },
+              ],
+            }
+          : p,
+      ),
+    );
   const removeExpense = (pi, ei) =>
-    setParcelas((prev) => prev.map((p, idx) =>
-      idx === pi ? { ...p, expenses: p.expenses.filter((_, j) => j !== ei) } : p));
+    setParcelas((prev) =>
+      prev.map((p, idx) =>
+        idx === pi
+          ? { ...p, expenses: p.expenses.filter((_, j) => j !== ei) }
+          : p,
+      ),
+    );
   const updateExpense = (pi, ei, patch) =>
-    setParcelas((prev) => prev.map((p, idx) =>
-      idx === pi ? { ...p, expenses: p.expenses.map((e, j) => j === ei ? { ...e, ...patch } : e) } : p));
+    setParcelas((prev) =>
+      prev.map((p, idx) =>
+        idx === pi
+          ? {
+              ...p,
+              expenses: p.expenses.map((e, j) =>
+                j === ei ? { ...e, ...patch } : e,
+              ),
+            }
+          : p,
+      ),
+    );
 
   // ── Contatos prestadores ───────────────────────────────────────────
-  const addContato = () => setContatosPrestadores((prev) => [...prev, { nome: '', telefone: '', observacao: '' }]);
-  const removeContato = (i) => setContatosPrestadores((prev) => {
-    const next = prev.filter((_, idx) => idx !== i);
-    return next.length ? next : [{ nome: '', telefone: '', observacao: '' }];
-  });
+  const addContato = () =>
+    setContatosPrestadores((prev) => [
+      ...prev,
+      { nome: '', telefone: '', observacao: '' },
+    ]);
+  const removeContato = (i) =>
+    setContatosPrestadores((prev) => {
+      const next = prev.filter((_, idx) => idx !== i);
+      return next.length ? next : [{ nome: '', telefone: '', observacao: '' }];
+    });
   const updateContato = (i, patch) =>
-    setContatosPrestadores((prev) => prev.map((c, idx) => idx === i ? { ...c, ...patch } : c));
+    setContatosPrestadores((prev) =>
+      prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)),
+    );
 
   // ── Build payload TOTVS ────────────────────────────────────────────
   const buildPayload = () => {
@@ -2054,7 +2183,11 @@ const ModalEdicao = ({
         proratedPercentage: parseFloat(e.proratedPercentage) || 100,
       })),
     }));
-    return { ...payload, supplierCpfCnpj: onlyDigits(supplierCpfCnpj) || payload.supplierCpfCnpj, installments: newInst };
+    return {
+      ...payload,
+      supplierCpfCnpj: onlyDigits(supplierCpfCnpj) || payload.supplierCpfCnpj,
+      installments: newInst,
+    };
   };
 
   // ── Salvar ─────────────────────────────────────────────────────────
@@ -2063,15 +2196,22 @@ const ModalEdicao = ({
     try {
       let novoComprovanteUrl = comprovanteUrl;
       if (comprovanteFile) {
-        novoComprovanteUrl = await uploadArquivo(comprovanteFile, 'comprovantes');
+        novoComprovanteUrl = await uploadArquivo(
+          comprovanteFile,
+          'comprovantes',
+        );
       }
       let novasImagensUrls = [...imagensExemploUrls];
       for (const file of imagensNovasFiles) {
         const url = await uploadArquivo(file, 'imagens-compra');
         novasImagensUrls.push(url);
       }
-      const newPayload = instOrig.length > 0 ? buildPayload() : sol.payload_totvs;
-      const valorTotal = parcelas.reduce((s, p) => s + (parseFloat(p.duplicateValue) || 0), 0);
+      const newPayload =
+        instOrig.length > 0 ? buildPayload() : sol.payload_totvs;
+      const valorTotal = parcelas.reduce(
+        (s, p) => s + (parseFloat(p.duplicateValue) || 0),
+        0,
+      );
       const dados = {
         tipo: tipo || sol.tipo,
         solicitante: solicitante.trim() || sol.solicitante,
@@ -2088,9 +2228,12 @@ const ModalEdicao = ({
         comprovante_url: tipo === 'reembolso' ? novoComprovanteUrl : null,
         link_exemplo: tipo === 'compra' ? linkExemplo.trim() : null,
         imagens_exemplo_urls: tipo === 'compra' ? novasImagensUrls : [],
-        contatos_prestadores: tipo === 'manutencao'
-          ? contatosPrestadores.filter((c) => c.nome.trim() || c.telefone.trim())
-          : [],
+        contatos_prestadores:
+          tipo === 'manutencao'
+            ? contatosPrestadores.filter(
+                (c) => c.nome.trim() || c.telefone.trim(),
+              )
+            : [],
       };
       const ok = await onSalvar(sol, dados);
       if (ok) onClose();
@@ -2111,21 +2254,25 @@ const ModalEdicao = ({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[94vh] overflow-y-auto">
-
         {/* Header */}
         <div className="sticky top-0 bg-[#000638] text-white px-5 py-3.5 rounded-t-xl flex justify-between items-center z-10">
           <div className="flex items-center gap-2">
             <PencilSimple size={18} weight="bold" />
-            <span className="font-bold">Editar Solicitação · #{sol.duplicate_code || sol.id}</span>
+            <span className="font-bold">
+              Editar Solicitação · #{sol.duplicate_code || sol.id}
+            </span>
           </div>
-          <button onClick={onClose} className="text-white hover:text-red-300"><X size={20} weight="bold" /></button>
+          <button onClick={onClose} className="text-white hover:text-red-300">
+            <X size={20} weight="bold" />
+          </button>
         </div>
 
         <div className="p-5 space-y-5">
-
           {/* 1 · TIPO */}
           <div className="border-2 border-gray-200 rounded-xl p-4 space-y-3">
-            <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">Tipo de Solicitação</p>
+            <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">
+              Tipo de Solicitação
+            </p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {TIPOS.map((t) => (
                 <button
@@ -2146,112 +2293,216 @@ const ModalEdicao = ({
 
           {/* 2 · SOLICITANTE */}
           <div className="border-2 border-gray-200 rounded-xl p-4 space-y-3">
-            <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">Solicitante</p>
+            <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">
+              Solicitante
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <ELabel>Nome *</ELabel>
-                <input className={inpCls} value={solicitante} onChange={(e) => setSolicitante(e.target.value)} placeholder="Nome do solicitante" />
+                <input
+                  className={inpCls}
+                  value={solicitante}
+                  onChange={(e) => setSolicitante(e.target.value)}
+                  placeholder="Nome do solicitante"
+                />
               </div>
               <div>
                 <ELabel>Setor</ELabel>
-                <select className={inpCls} value={setor} onChange={(e) => setSetor(e.target.value)}>
+                <select
+                  className={inpCls}
+                  value={setor}
+                  onChange={(e) => setSetor(e.target.value)}
+                >
                   <option value="">Selecione...</option>
-                  {SETORES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  {SETORES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
             <div>
               <ELabel>E-mail (opcional)</ELabel>
-              <input className={inpCls} type="email" value={solicitanteEmail} onChange={(e) => setSolicitanteEmail(e.target.value)} placeholder="email@empresa.com" />
+              <input
+                className={inpCls}
+                type="email"
+                value={solicitanteEmail}
+                onChange={(e) => setSolicitanteEmail(e.target.value)}
+                placeholder="email@empresa.com"
+              />
             </div>
           </div>
 
           {/* 3 · FORNECEDOR */}
           <div className="border-2 border-gray-200 rounded-xl p-4 space-y-3">
-            <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">Fornecedor</p>
+            <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">
+              Fornecedor
+            </p>
             <div className="flex gap-2">
               <div className="flex-1">
                 <ELabel>CPF / CNPJ</ELabel>
-                <input className={inpCls} value={supplierCpfCnpj} onChange={(e) => setSupplierCpfCnpj(e.target.value)} placeholder="Digite CPF ou CNPJ" maxLength={18} />
+                <input
+                  className={inpCls}
+                  value={supplierCpfCnpj}
+                  onChange={(e) => setSupplierCpfCnpj(e.target.value)}
+                  placeholder="Digite CPF ou CNPJ"
+                  maxLength={18}
+                />
               </div>
               <div className="flex items-end">
-                <button onClick={buscarFornecedor} disabled={buscandoFornecedor}
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-[#000638] text-white rounded-lg hover:bg-[#fe0000] disabled:opacity-60 transition-colors shrink-0">
-                  {buscandoFornecedor ? <Spinner size={14} className="animate-spin" /> : <MagnifyingGlass size={14} weight="bold" />}
+                <button
+                  onClick={buscarFornecedor}
+                  disabled={buscandoFornecedor}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-[#000638] text-white rounded-lg hover:bg-[#fe0000] disabled:opacity-60 transition-colors shrink-0"
+                >
+                  {buscandoFornecedor ? (
+                    <Spinner size={14} className="animate-spin" />
+                  ) : (
+                    <MagnifyingGlass size={14} weight="bold" />
+                  )}
                   Buscar
                 </button>
               </div>
             </div>
             <div>
               <ELabel>Nome do Fornecedor</ELabel>
-              <input className={inpCls} value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder="Nome (preenchido automaticamente)" />
+              <input
+                className={inpCls}
+                value={supplierName}
+                onChange={(e) => setSupplierName(e.target.value)}
+                placeholder="Nome (preenchido automaticamente)"
+              />
             </div>
           </div>
 
           {/* 4 · DADOS GERAIS */}
           <div className="border-2 border-gray-200 rounded-xl p-4 space-y-3">
-            <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">Dados Gerais</p>
+            <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">
+              Dados Gerais
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <ELabel>Código da Duplicata</ELabel>
-                <input className={inpCls} value={duplicateCode} onChange={(e) => setDuplicateCode(e.target.value)} placeholder="Ex: 9961565" />
+                <input
+                  className={inpCls}
+                  value={duplicateCode}
+                  onChange={(e) => setDuplicateCode(e.target.value)}
+                  placeholder="Ex: 9961565"
+                />
               </div>
               <div>
                 <ELabel>Forma de Pagamento</ELabel>
-                <select className={inpCls} value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
+                <select
+                  className={inpCls}
+                  value={formaPagamento}
+                  onChange={(e) => setFormaPagamento(e.target.value)}
+                >
                   <option value="">Selecione...</option>
-                  {FORMAS_PAGAMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
+                  {FORMAS_PAGAMENTO.map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
             <div>
               <ELabel>Descrição</ELabel>
-              <textarea className={inpCls} rows={3} value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Descrição da solicitação" />
+              <textarea
+                className={inpCls}
+                rows={3}
+                value={descricao}
+                onChange={(e) => setDescricao(e.target.value)}
+                placeholder="Descrição da solicitação"
+              />
             </div>
             <div>
               <ELabel>Observação (opcional)</ELabel>
-              <textarea className={inpCls} rows={2} value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Observação adicional" />
+              <textarea
+                className={inpCls}
+                rows={2}
+                value={observacao}
+                onChange={(e) => setObservacao(e.target.value)}
+                placeholder="Observação adicional"
+              />
             </div>
           </div>
 
           {/* 5 · TIPO-ESPECÍFICO */}
           {tipo === 'reembolso' && (
             <div className="border-2 border-gray-200 rounded-xl p-4 space-y-3">
-              <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">Comprovante de Pagamento</p>
+              <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">
+                Comprovante de Pagamento
+              </p>
               {comprovanteUrl && !comprovanteFile && (
-                <a href={comprovanteUrl} target="_blank" rel="noreferrer"
-                  className="flex items-center gap-1.5 text-xs text-[#000638] font-bold hover:text-[#fe0000] underline">
+                <a
+                  href={comprovanteUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 text-xs text-[#000638] font-bold hover:text-[#fe0000] underline"
+                >
                   <LinkSimple size={14} weight="bold" /> Ver comprovante atual
                 </a>
               )}
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-5 cursor-pointer hover:border-[#000638] transition-colors bg-gray-50/40">
                 <UploadSimple size={24} className="text-gray-400 mb-1" />
                 <span className="text-xs font-bold text-[#000638]">
-                  {comprovanteFile ? comprovanteFile.name : 'Substituir comprovante (JPG, PNG, PDF)'}
+                  {comprovanteFile
+                    ? comprovanteFile.name
+                    : 'Substituir comprovante (JPG, PNG, PDF)'}
                 </span>
-                <input type="file" accept="image/*,application/pdf"
-                  onChange={(e) => { if (e.target.files?.[0]) setComprovanteFile(e.target.files[0]); }}
-                  className="hidden" />
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => {
+                    if (e.target.files?.[0])
+                      setComprovanteFile(e.target.files[0]);
+                  }}
+                  className="hidden"
+                />
               </label>
             </div>
           )}
 
           {tipo === 'compra' && (
             <div className="border-2 border-gray-200 rounded-xl p-4 space-y-3">
-              <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">Detalhes da Compra</p>
+              <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">
+                Detalhes da Compra
+              </p>
               <div>
                 <ELabel>Link de exemplo</ELabel>
-                <input className={inpCls} type="url" value={linkExemplo} onChange={(e) => setLinkExemplo(e.target.value)} placeholder="https://..." />
+                <input
+                  className={inpCls}
+                  type="url"
+                  value={linkExemplo}
+                  onChange={(e) => setLinkExemplo(e.target.value)}
+                  placeholder="https://..."
+                />
               </div>
               <div>
                 <ELabel>Imagens de referência</ELabel>
                 {imagensExemploUrls.length > 0 && (
                   <div className="grid grid-cols-4 gap-2 mb-2">
                     {imagensExemploUrls.map((url, i) => (
-                      <div key={i} className="relative group rounded-lg overflow-hidden border">
-                        <img src={url} alt="" className="w-full h-20 object-cover" />
-                        <button type="button" onClick={() => setImagensExemploUrls((prev) => prev.filter((_, j) => j !== i))}
-                          className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div
+                        key={i}
+                        className="relative group rounded-lg overflow-hidden border"
+                      >
+                        <img
+                          src={url}
+                          alt=""
+                          className="w-full h-20 object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setImagensExemploUrls((prev) =>
+                              prev.filter((_, j) => j !== i),
+                            )
+                          }
+                          className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
                           <XCircle size={14} weight="bold" />
                         </button>
                       </div>
@@ -2261,11 +2512,23 @@ const ModalEdicao = ({
                 <label className="flex items-center gap-2 px-3 py-2 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-[#000638] transition-colors text-xs text-gray-500">
                   <ImageIcon size={16} className="text-gray-400" />
                   Adicionar imagens
-                  <input type="file" accept="image/*" multiple className="hidden"
-                    onChange={(e) => { if (e.target.files) setImagensNovasFiles((prev) => [...prev, ...Array.from(e.target.files)].slice(0, 8)); }} />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files)
+                        setImagensNovasFiles((prev) =>
+                          [...prev, ...Array.from(e.target.files)].slice(0, 8),
+                        );
+                    }}
+                  />
                 </label>
                 {imagensNovasFiles.length > 0 && (
-                  <p className="text-[11px] text-gray-500">{imagensNovasFiles.length} nova(s) imagem(ns) selecionada(s)</p>
+                  <p className="text-[11px] text-gray-500">
+                    {imagensNovasFiles.length} nova(s) imagem(ns) selecionada(s)
+                  </p>
                 )}
               </div>
             </div>
@@ -2274,28 +2537,62 @@ const ModalEdicao = ({
           {tipo === 'manutencao' && (
             <div className="border-2 border-gray-200 rounded-xl p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">Contatos de Prestadores</p>
-                <button type="button" onClick={addContato}
-                  className="flex items-center gap-1 text-xs font-bold text-[#000638] hover:text-[#fe0000]">
+                <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">
+                  Contatos de Prestadores
+                </p>
+                <button
+                  type="button"
+                  onClick={addContato}
+                  className="flex items-center gap-1 text-xs font-bold text-[#000638] hover:text-[#fe0000]"
+                >
                   <Plus size={13} weight="bold" /> Adicionar
                 </button>
               </div>
               {contatosPrestadores.map((c, i) => (
-                <div key={i} className="grid grid-cols-1 sm:grid-cols-[1fr_140px_1fr_auto] gap-2 items-end border border-gray-200 rounded-lg p-2 bg-gray-50/40">
+                <div
+                  key={i}
+                  className="grid grid-cols-1 sm:grid-cols-[1fr_140px_1fr_auto] gap-2 items-end border border-gray-200 rounded-lg p-2 bg-gray-50/40"
+                >
                   <div>
                     {i === 0 && <ELabel>Nome</ELabel>}
-                    <input className={inpCls} value={c.nome} onChange={(e) => updateContato(i, { nome: e.target.value })} placeholder="Ex.: João da Silva" />
+                    <input
+                      className={inpCls}
+                      value={c.nome}
+                      onChange={(e) =>
+                        updateContato(i, { nome: e.target.value })
+                      }
+                      placeholder="Ex.: João da Silva"
+                    />
                   </div>
                   <div>
                     {i === 0 && <ELabel>Telefone</ELabel>}
-                    <input className={inpCls} type="tel" value={c.telefone} onChange={(e) => updateContato(i, { telefone: e.target.value })} placeholder="(00) 00000-0000" />
+                    <input
+                      className={inpCls}
+                      type="tel"
+                      value={c.telefone}
+                      onChange={(e) =>
+                        updateContato(i, { telefone: e.target.value })
+                      }
+                      placeholder="(00) 00000-0000"
+                    />
                   </div>
                   <div>
                     {i === 0 && <ELabel>Observação</ELabel>}
-                    <input className={inpCls} value={c.observacao} onChange={(e) => updateContato(i, { observacao: e.target.value })} placeholder="Especialidade, indicação..." />
+                    <input
+                      className={inpCls}
+                      value={c.observacao}
+                      onChange={(e) =>
+                        updateContato(i, { observacao: e.target.value })
+                      }
+                      placeholder="Especialidade, indicação..."
+                    />
                   </div>
                   {contatosPrestadores.length > 1 && (
-                    <button type="button" onClick={() => removeContato(i)} className="text-red-500 hover:text-red-700 p-1.5">
+                    <button
+                      type="button"
+                      onClick={() => removeContato(i)}
+                      className="text-red-500 hover:text-red-700 p-1.5"
+                    >
                       <TrashIcon size={14} />
                     </button>
                   )}
@@ -2308,25 +2605,38 @@ const ModalEdicao = ({
           {parcelas.length > 0 && (
             <div className="border-2 border-gray-200 rounded-xl overflow-hidden">
               <div className="bg-gray-100 px-4 py-2.5 flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-bold uppercase text-gray-600 shrink-0">Parcelas</span>
+                <span className="text-xs font-bold uppercase text-gray-600 shrink-0">
+                  Parcelas
+                </span>
                 <div className="flex gap-1 flex-wrap">
                   {parcelas.map((_, i) => (
-                    <button key={i} onClick={() => setParcelaIdx(i)}
-                      className={`w-7 h-7 rounded-full text-xs font-bold transition-all ${parcelaIdx === i ? 'bg-[#000638] text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>
+                    <button
+                      key={i}
+                      onClick={() => setParcelaIdx(i)}
+                      className={`w-7 h-7 rounded-full text-xs font-bold transition-all ${parcelaIdx === i ? 'bg-[#000638] text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}
+                    >
                       {i + 1}
                     </button>
                   ))}
                 </div>
-                <button onClick={addParcela} className="flex items-center gap-1 text-xs font-bold text-[#000638] hover:text-[#fe0000] ml-auto">
+                <button
+                  onClick={addParcela}
+                  className="flex items-center gap-1 text-xs font-bold text-[#000638] hover:text-[#fe0000] ml-auto"
+                >
                   <Plus size={14} weight="bold" /> Add Parcela
                 </button>
               </div>
 
               <div className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-700">Parcela {p.installmentCode} / {parcelas.length}</span>
+                  <span className="text-xs font-bold text-gray-700">
+                    Parcela {p.installmentCode} / {parcelas.length}
+                  </span>
                   {parcelas.length > 1 && (
-                    <button onClick={() => removeParcela(parcelaIdx)} className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1">
+                    <button
+                      onClick={() => removeParcela(parcelaIdx)}
+                      className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                    >
                       <TrashIcon size={12} /> Remover
                     </button>
                   )}
@@ -2336,18 +2646,36 @@ const ModalEdicao = ({
                     <ELabel>Portador (bearerCode) *</ELabel>
                     <PortadorComboCrosby
                       value={p.bearerCode}
-                      onChange={(code) => updateParcela(parcelaIdx, { bearerCode: code })}
+                      onChange={(code) =>
+                        updateParcela(parcelaIdx, { bearerCode: code })
+                      }
                     />
                   </div>
                   <div>
                     <ELabel>Vencimento *</ELabel>
-                    <input className={inpCls} type="date" value={p.dueDate}
-                      onChange={(e) => updateParcela(parcelaIdx, { dueDate: e.target.value })} />
+                    <input
+                      className={inpCls}
+                      type="date"
+                      value={p.dueDate}
+                      onChange={(e) =>
+                        updateParcela(parcelaIdx, { dueDate: e.target.value })
+                      }
+                    />
                   </div>
                   <div>
                     <ELabel>Valor *</ELabel>
-                    <input className={inpCls} type="number" step="0.01" value={p.duplicateValue}
-                      onChange={(e) => updateParcela(parcelaIdx, { duplicateValue: e.target.value })} placeholder="0,00" />
+                    <input
+                      className={inpCls}
+                      type="number"
+                      step="0.01"
+                      value={p.duplicateValue}
+                      onChange={(e) =>
+                        updateParcela(parcelaIdx, {
+                          duplicateValue: e.target.value,
+                        })
+                      }
+                      placeholder="0,00"
+                    />
                   </div>
                 </div>
 
@@ -2355,36 +2683,68 @@ const ModalEdicao = ({
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <ELabel>Rateio de Despesas</ELabel>
-                    <button onClick={() => addExpense(parcelaIdx)}
-                      className="flex items-center gap-1 text-xs font-bold text-[#000638] hover:text-[#fe0000]">
+                    <button
+                      onClick={() => addExpense(parcelaIdx)}
+                      className="flex items-center gap-1 text-xs font-bold text-[#000638] hover:text-[#fe0000]"
+                    >
                       <Plus size={12} weight="bold" /> Add C.Custo
                     </button>
                   </div>
                   {p.expenses.map((exp, ei) => (
-                    <div key={ei} className="grid grid-cols-[1fr_1fr_80px_auto] gap-2 mb-2 items-end">
+                    <div
+                      key={ei}
+                      className="grid grid-cols-[1fr_1fr_80px_auto] gap-2 mb-2 items-end"
+                    >
                       <div>
                         {ei === 0 && <ELabel>Despesa *</ELabel>}
-                        <DespesaComboCrosby value={exp.expenseCode}
-                          onChange={(code) => updateExpense(parcelaIdx, ei, { expenseCode: code })} />
+                        <DespesaComboCrosby
+                          value={exp.expenseCode}
+                          onChange={(code) =>
+                            updateExpense(parcelaIdx, ei, { expenseCode: code })
+                          }
+                        />
                       </div>
                       <div>
                         {ei === 0 && <ELabel>Centro de Custo *</ELabel>}
-                        <select className={inpCls} value={exp.costCenterCode}
-                          onChange={(e) => updateExpense(parcelaIdx, ei, { costCenterCode: e.target.value })}>
+                        <select
+                          className={inpCls}
+                          value={exp.costCenterCode}
+                          onChange={(e) =>
+                            updateExpense(parcelaIdx, ei, {
+                              costCenterCode: e.target.value,
+                            })
+                          }
+                        >
                           <option value="">Selecione...</option>
                           {CENTROS_CUSTO_OPTIONS.map(([code, name]) => (
-                            <option key={code} value={code}>{code} — {name}</option>
+                            <option key={code} value={code}>
+                              {code} — {name}
+                            </option>
                           ))}
                         </select>
                       </div>
                       <div>
                         {ei === 0 && <ELabel>Rateio %</ELabel>}
-                        <input className={inpCls} type="number" min="1" max="100" value={exp.proratedPercentage}
-                          onChange={(e) => updateExpense(parcelaIdx, ei, { proratedPercentage: e.target.value })} placeholder="100" />
+                        <input
+                          className={inpCls}
+                          type="number"
+                          min="1"
+                          max="100"
+                          value={exp.proratedPercentage}
+                          onChange={(e) =>
+                            updateExpense(parcelaIdx, ei, {
+                              proratedPercentage: e.target.value,
+                            })
+                          }
+                          placeholder="100"
+                        />
                       </div>
                       <div className="flex items-end pb-0.5">
                         {p.expenses.length > 1 && (
-                          <button onClick={() => removeExpense(parcelaIdx, ei)} className="text-red-400 hover:text-red-600 p-1">
+                          <button
+                            onClick={() => removeExpense(parcelaIdx, ei)}
+                            className="text-red-400 hover:text-red-600 p-1"
+                          >
                             <TrashIcon size={14} />
                           </button>
                         )}
@@ -2399,18 +2759,30 @@ const ModalEdicao = ({
 
         {/* Rodapé */}
         <div className="border-t px-5 py-4 bg-gray-50 rounded-b-xl flex flex-wrap gap-2 justify-end">
-          <button onClick={onClose} className="px-4 py-2 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg"
+          >
             Cancelar
           </button>
           {podeDevolver && (
-            <button onClick={handleDevolverEFechar}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded-lg transition-colors">
+            <button
+              onClick={handleDevolverEFechar}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded-lg transition-colors"
+            >
               <ArrowUUpLeft size={14} weight="bold" /> Devolver para Gestor
             </button>
           )}
-          <button onClick={handleSalvar} disabled={salvando}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-[#000638] text-white hover:bg-[#fe0000] disabled:opacity-60 rounded-lg transition-colors">
-            {salvando ? <Spinner size={14} className="animate-spin" /> : <CheckSquare size={14} weight="bold" />}
+          <button
+            onClick={handleSalvar}
+            disabled={salvando}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-[#000638] text-white hover:bg-[#fe0000] disabled:opacity-60 rounded-lg transition-colors"
+          >
+            {salvando ? (
+              <Spinner size={14} className="animate-spin" />
+            ) : (
+              <CheckSquare size={14} weight="bold" />
+            )}
             Salvar Alterações
           </button>
         </div>
