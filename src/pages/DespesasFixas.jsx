@@ -1,29 +1,46 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import PageTitle from '../components/ui/PageTitle';
-import FiltroEmpresa from '../components/FiltroEmpresa';
 import useApiClient from '../hooks/useApiClient';
 import centrosCusto from '../config/centrosCusto.json';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../components/AuthContext';
 
 // ─── Mapeamento código TOTVS → categoria de despesa fixa ─────────────────────
 // Fonte: despesas.json fornecido pela equipe
 const CODIGO_PARA_CATEGORIA = {
   6010: 'energia', // ENERGIA ELETRICA
   6011: 'agua', // AGUA E ESGOTO
-  6012: 'telefone', // TELEFONE
   6028: 'internet', // INTERNET
   4001: 'aluguel', // ALUGUEIS DE IMOVEIS
-  // Condôminio: sem código específico na tabela; fallback via regex abaixo
 };
 
 // Todos os códigos de despesas fixas a enviar para a API
 const CODIGOS_DESPESAS_FIXAS = Object.keys(CODIGO_PARA_CATEGORIA).map(Number);
+
+// Filiais fixas — não requer seleção pelo usuário
+const FILIAIS_FIXAS = [
+  { cd: '1', nome: 'CROSBY MATRIZ' },
+  { cd: '2', nome: 'FILIAL 2' },
+  { cd: '5', nome: 'FILIAL 5' },
+  { cd: '55', nome: 'FILIAL 55' },
+  { cd: '65', nome: 'FILIAL 65' },
+  { cd: '87', nome: 'FILIAL 87' },
+  { cd: '88', nome: 'FILIAL 88' },
+  { cd: '90', nome: 'FILIAL 90' },
+  { cd: '93', nome: 'FILIAL 93' },
+  { cd: '94', nome: 'FILIAL 94' },
+  { cd: '95', nome: 'CROSBY SHOPPING MIDWAY' },
+  { cd: '97', nome: 'FILIAL 97' },
+  { cd: '98', nome: 'FILIAL 98' },
+  { cd: '99', nome: 'CROSBY BREJINHO' },
+];
+
 import {
   Funnel,
   Spinner,
   Lightning,
   Drop,
   WifiHigh,
-  Phone,
   House,
   Buildings,
   Warning,
@@ -36,6 +53,7 @@ import {
   Receipt,
   Copy,
   Question,
+  PaperPlaneTilt,
 } from '@phosphor-icons/react';
 
 // ─── Tipos de Despesas Fixas ─────────────────────────────────────────────────
@@ -47,7 +65,6 @@ const TIPOS_DESPESAS_FIXAS = [
     colorClass: 'text-yellow-600',
     bgClass: 'bg-yellow-50',
     borderClass: 'border-yellow-300',
-    match: (ds) => /energia\s*(el[eé]trica)?/i.test(ds),
   },
   {
     key: 'agua',
@@ -56,7 +73,6 @@ const TIPOS_DESPESAS_FIXAS = [
     colorClass: 'text-blue-600',
     bgClass: 'bg-blue-50',
     borderClass: 'border-blue-300',
-    match: (ds) => /[áa]gua|esgoto/i.test(ds),
   },
   {
     key: 'internet',
@@ -65,25 +81,6 @@ const TIPOS_DESPESAS_FIXAS = [
     colorClass: 'text-purple-600',
     bgClass: 'bg-purple-50',
     borderClass: 'border-purple-300',
-    match: (ds) => /internet/i.test(ds),
-  },
-  {
-    key: 'telefone',
-    label: 'TELEFONE',
-    icon: Phone,
-    colorClass: 'text-green-600',
-    bgClass: 'bg-green-50',
-    borderClass: 'border-green-300',
-    match: (ds) => /telefone/i.test(ds),
-  },
-  {
-    key: 'condominio',
-    label: 'CONDOMÍNIO',
-    icon: Buildings,
-    colorClass: 'text-orange-600',
-    bgClass: 'bg-orange-50',
-    borderClass: 'border-orange-300',
-    match: (ds) => /condom[ií]nio/i.test(ds),
   },
   {
     key: 'aluguel',
@@ -92,15 +89,14 @@ const TIPOS_DESPESAS_FIXAS = [
     colorClass: 'text-red-600',
     bgClass: 'bg-red-50',
     borderClass: 'border-red-300',
-    match: (ds) => /aluguel|alugu[eé]is/i.test(ds),
   },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-function getCategoriaDespesa(ds) {
-  if (!ds) return null;
-  for (const tipo of TIPOS_DESPESAS_FIXAS) {
-    if (tipo.match(ds)) return tipo.key;
+function getCategoriaDespesa(codigo) {
+  const codigoInt = parseInt(codigo);
+  if (!isNaN(codigoInt) && codigoInt > 0) {
+    return CODIGO_PARA_CATEGORIA[codigoInt] || null;
   }
   return null;
 }
@@ -182,7 +178,10 @@ function getStatusCelula(itens) {
     }
     // Se algum mês de emissão tiver 2+ lançamentos → duplicidade
     const temDuplica = Object.values(contPorEmissao).some((c) => c > 1);
-    if (temDuplica) return 'duplicidade';
+    if (temDuplica) {
+      const todosPagos = itens.every((i) => !!i.dt_liq);
+      return todosPagos ? 'duplicidade_pago' : 'duplicidade';
+    }
   }
 
   // Status do pior caso entre todos os itens da célula
@@ -248,14 +247,145 @@ const STATUS_CONFIG = {
     badgeText: 'text-orange-700',
     border: 'border-orange-200',
   },
+  duplicidade_pago: {
+    label: 'Pago (Dupl.)',
+    icon: CheckCircle,
+    cellBg: 'bg-green-50',
+    textColor: 'text-green-700',
+    badgeBg: 'bg-green-100',
+    badgeText: 'text-green-700',
+    border: 'border-green-200',
+  },
 };
 
 // ─── Modal de detalhes da célula ──────────────────────────────────────────────
 const ModalCelula = ({ celula, onClose }) => {
+  const { user } = useAuth?.() || { user: null };
+  const [enviando, setEnviando] = useState(false);
+  const [msgEnvio, setMsgEnvio] = useState(null);
+  const [itensLiberados, setItensLiberados] = useState(new Set());
+
   if (!celula) return null;
   const { itens, despesaLabel, mesLabel, ccNome, status } = celula;
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.nao_lancado;
   const StatusIcon = cfg.icon;
+
+  // Apenas itens em aberto (sem dt_liq) podem ser liberados para pagamento
+  const itensLiberaveis = itens.filter(
+    (i) => !i.dt_liq && !itensLiberados.has(itemKey(i)),
+  );
+  const podeLiberar = itensLiberaveis.length > 0;
+
+  function itemKey(i) {
+    return `${i.cd_empresa || ''}|${i.nr_duplicata || ''}|${i.nr_parcela || ''}|${i.cd_fornecedor || ''}`;
+  }
+
+  const handleLiberar = async () => {
+    if (!podeLiberar) return;
+    if (
+      !window.confirm(
+        `Enviar ${itensLiberaveis.length} título(s) para Liberação de Pagamento?`,
+      )
+    )
+      return;
+
+    const toDate = (d) => {
+      if (!d) return null;
+      const s = String(d).split('T')[0];
+      return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+    };
+
+    setEnviando(true);
+    setMsgEnvio(null);
+    try {
+      // Verificar duplicatas já enviadas (chave: nr_duplicata + cd_empresa + nr_parcela + cd_fornecedor)
+      const chaves = itensLiberaveis
+        .filter((i) => i.nr_duplicata && i.cd_empresa)
+        .map((i) => ({
+          nr_duplicata: String(i.nr_duplicata),
+          cd_empresa: parseInt(i.cd_empresa),
+          nr_parcela: i.nr_parcela ? String(i.nr_parcela) : null,
+          cd_fornecedor: i.cd_fornecedor ? String(i.cd_fornecedor) : null,
+        }));
+
+      if (chaves.length > 0) {
+        const { data: jaExistentes } = await supabase
+          .from('pagamentos_liberacao')
+          .select('nr_duplicata, cd_empresa, nr_parcela, status, cd_fornecedor')
+          .in(
+            'nr_duplicata',
+            chaves.map((c) => c.nr_duplicata),
+          )
+          .not('status', 'eq', 'CANCELADO');
+
+        if (jaExistentes && jaExistentes.length > 0) {
+          const conflitos = jaExistentes.filter((ex) =>
+            chaves.some(
+              (c) =>
+                c.nr_duplicata === ex.nr_duplicata &&
+                c.cd_fornecedor === ex.cd_fornecedor &&
+                c.cd_empresa === ex.cd_empresa &&
+                (c.nr_parcela || null) === (ex.nr_parcela || null),
+            ),
+          );
+          if (conflitos.length > 0) {
+            const msgs = conflitos
+              .map(
+                (c) =>
+                  `Fornecedor ${c.cd_fornecedor} • Duplicata ${c.nr_duplicata}${c.nr_parcela ? `/${c.nr_parcela}` : ''} — já enviada (${c.status})`,
+              )
+              .join('\n');
+            alert(
+              `⚠️ Envio bloqueado!\n\nAs seguintes duplicatas já foram enviadas para Liberação de Pagamento:\n\n${msgs}`,
+            );
+            setEnviando(false);
+            return;
+          }
+        }
+      }
+
+      const registros = itensLiberaveis.map((item) => ({
+        cd_empresa: item.cd_empresa ? parseInt(item.cd_empresa) : null,
+        nm_empresa: item.nm_empresa || null,
+        nr_duplicata: item.nr_duplicata ? String(item.nr_duplicata) : null,
+        nr_parcela: item.nr_parcela ? String(item.nr_parcela) : null,
+        nr_portador: item.nr_portador ? String(item.nr_portador) : null,
+        cd_fornecedor: item.cd_fornecedor ? String(item.cd_fornecedor) : null,
+        nm_fornecedor: item.nm_fornecedor || null,
+        cd_despesaitem: item.cd_despesaitem
+          ? String(item.cd_despesaitem)
+          : null,
+        ds_despesaitem: item.ds_despesaitem || null,
+        cd_ccusto: item.cd_ccusto ? String(item.cd_ccusto) : null,
+        dt_emissao: toDate(item.dt_emissao),
+        dt_vencimento: toDate(item.dt_vencimento),
+        vl_duplicata: parseFloat(item.vl_duplicata || 0),
+        status: 'PENDENTE',
+        enviado_por: user?.email || null,
+        dados_completos: item,
+      }));
+
+      const { error } = await supabase
+        .from('pagamentos_liberacao')
+        .insert(registros);
+      if (error) throw error;
+
+      setItensLiberados(
+        (prev) => new Set([...prev, ...itensLiberaveis.map(itemKey)]),
+      );
+      setMsgEnvio({
+        tipo: 'ok',
+        texto: `${registros.length} título(s) enviado(s) com sucesso!`,
+      });
+    } catch (err) {
+      setMsgEnvio({
+        tipo: 'erro',
+        texto: 'Erro ao enviar: ' + (err.message || err),
+      });
+    } finally {
+      setEnviando(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -355,7 +485,41 @@ const ModalCelula = ({ celula, onClose }) => {
           )}
         </div>
 
-        <div className="px-5 py-3 border-t border-gray-100 flex justify-end">
+        {msgEnvio && (
+          <div
+            className={`mx-5 mb-2 px-3 py-2 rounded-lg text-xs font-medium ${
+              msgEnvio.tipo === 'ok'
+                ? 'bg-green-50 border border-green-200 text-green-700'
+                : 'bg-red-50 border border-red-200 text-red-700'
+            }`}
+          >
+            {msgEnvio.texto}
+          </div>
+        )}
+
+        <div className="px-5 py-3 border-t border-gray-100 flex justify-between items-center gap-2">
+          {podeLiberar ? (
+            <button
+              onClick={handleLiberar}
+              disabled={enviando}
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white text-sm font-semibold rounded-lg transition"
+            >
+              {enviando ? (
+                <Spinner size={13} className="animate-spin" />
+              ) : (
+                <PaperPlaneTilt size={13} weight="bold" />
+              )}
+              Liberar para Pagamento ({itensLiberaveis.length})
+            </button>
+          ) : (
+            <span className="text-xs text-gray-400 italic">
+              {itens.length === 0
+                ? ''
+                : itensLiberados.size > 0
+                  ? 'Todos os títulos foram enviados.'
+                  : 'Nenhum título em aberto para liberar.'}
+            </span>
+          )}
           <button
             onClick={onClose}
             className="px-4 py-1.5 bg-[#000638] text-white text-sm rounded-lg hover:opacity-90 transition"
@@ -403,7 +567,7 @@ const CelulaFluxo = React.memo(({ itens, onClick }) => {
         >
           <StatusIcon size={9} weight="bold" />
           {cfg.label}
-          {status === 'duplicidade' && (
+          {(status === 'duplicidade' || status === 'duplicidade_pago') && (
             <span className="ml-0.5">({itens.length}x)</span>
           )}
         </span>
@@ -418,7 +582,6 @@ const DespesasFixas = () => {
   const apiClient = useApiClient();
 
   // ─── Estados de filtro ───
-  const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
   const [modoData, setModoData] = useState('vencimento');
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
@@ -439,7 +602,7 @@ const DespesasFixas = () => {
   // ─── Datas padrão (últimos 6 meses) ───
   useEffect(() => {
     const hoje = new Date();
-    const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1);
+    const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 3, 1);
     const fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
     setDataInicio(inicio.toISOString().split('T')[0]);
     setDataFim(fim.toISOString().split('T')[0]);
@@ -448,17 +611,11 @@ const DespesasFixas = () => {
   // ─── Buscar dados ────────────────────────────────────────────────────────────
   const buscarDados = useCallback(async () => {
     if (!dataInicio || !dataFim) return;
-    if (empresasSelecionadas.length === 0) {
-      alert('Selecione pelo menos uma empresa para consultar!');
-      return;
-    }
 
     setLoading(true);
     setErro(null);
     try {
-      const codigosEmpresas = empresasSelecionadas
-        .filter((e) => e.cd_empresa)
-        .map((e) => parseInt(e.cd_empresa));
+      const codigosEmpresas = FILIAIS_FIXAS.map((f) => parseInt(f.cd));
 
       const payload = {
         dt_inicio: dataInicio,
@@ -484,14 +641,25 @@ const DespesasFixas = () => {
 
       // Mapa empresa
       const empresaMap = {};
-      empresasSelecionadas.forEach((e) => {
-        if (e.cd_empresa) {
-          empresaMap[String(e.cd_empresa)] =
-            e.nm_grupoempresa || e.fantasyName || e.description || '';
-        }
+      FILIAIS_FIXAS.forEach((f) => {
+        empresaMap[String(f.cd)] = f.nome;
       });
 
-      // Processar — a API já retornou apenas despesas fixas (filtro por expenseCodeList no backend)
+      // DEBUG temporário: inspecionar primeiros itens
+      if (dadosArray.length > 0) {
+        const sample = dadosArray.slice(0, 3).map((i) => ({
+          cd_despesaitem: i.cd_despesaitem,
+          ds_despesaitem: i.ds_despesaitem,
+          cd_ccusto: i.cd_ccusto,
+          nm_fornecedor: i.nm_fornecedor,
+        }));
+        console.log(
+          '🔬 DEBUG primeiros 3 itens (cd_despesaitem/ds_despesaitem):',
+          sample,
+        );
+      }
+
+      // Processar — filtrar por código/descrição de despesa fixa
       const processados = dadosArray
         .map((item) => ({
           ...item,
@@ -502,6 +670,10 @@ const DespesasFixas = () => {
           ),
         }))
         .filter((item) => item._categoria !== null);
+
+      console.log(
+        `🔍 Itens após filtro de categoria: ${processados.length} de ${dadosArray.length}`,
+      );
 
       setDados(processados);
       setDadosCarregados(true);
@@ -517,7 +689,6 @@ const DespesasFixas = () => {
   }, [
     dataInicio,
     dataFim,
-    empresasSelecionadas,
     modoData,
     situacao,
     previsao,
@@ -679,15 +850,8 @@ const DespesasFixas = () => {
             <Funnel size={16} weight="bold" className="text-[#000638]" />
             <span className="font-bold text-[#000638] text-sm">Filtros</span>
           </div>
-          {/* Linha 1: Empresa | Tipo Data | Data Início | Data Fim */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 mb-2">
-            <div className="col-span-2">
-              <FiltroEmpresa
-                empresasSelecionadas={empresasSelecionadas}
-                onSelectEmpresas={(emp) => setEmpresasSelecionadas([...emp])}
-              />
-            </div>
-
+          {/* Linha 1: Tipo Data | Data Início | Data Fim */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-2">
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                 Tipo de Data
