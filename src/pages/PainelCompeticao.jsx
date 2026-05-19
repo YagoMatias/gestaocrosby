@@ -38,6 +38,14 @@ const ymd = (d) => {
   return `${y}-${m}-${dd}`;
 };
 
+// Formata segundos para mm:ss (countdown do refresh)
+const formatRefreshCountdown = (s) => {
+  if (s == null || isNaN(s)) return '—';
+  const min = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+};
+
 const fmtDataBr = (iso) => {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
@@ -234,7 +242,7 @@ export default function PainelCompeticao() {
         </>
       )}
 
-      <div className={`relative z-10 ${fullscreen ? 'flex-1 flex flex-col p-3 lg:p-4 min-h-0' : ''}`}>
+      <div className={`relative z-10 ${fullscreen ? 'flex-1 flex flex-col p-5 lg:p-7 min-h-0' : ''}`}>
         {/* ═════ HEADER ═════ */}
         <Header
           fullscreen={fullscreen}
@@ -264,7 +272,7 @@ export default function PainelCompeticao() {
         />
 
         {/* ═════ PODIUM DE VENDEDORES ═════ */}
-        <div className={`grid grid-cols-1 lg:grid-cols-2 ${fullscreen ? 'gap-3 mt-3 flex-1 min-h-0' : 'gap-4 mt-5'}`}>
+        <div className={`grid grid-cols-1 lg:grid-cols-2 ${fullscreen ? 'gap-6 mt-5 flex-1 min-h-0' : 'gap-4 mt-5'}`}>
           {CANAIS.map((c) => (
             <PodiumCanal
               key={c.key}
@@ -293,7 +301,7 @@ export default function PainelCompeticao() {
 // ═══════════════════════════════════════════════════════════════════
 function Header({ fullscreen, toggleFullscreen, loading, lastUpdate, nextRefreshIn, onRefresh, hojeIso, semanaInicio }) {
   return (
-    <div className={`flex items-center justify-between ${fullscreen ? 'mb-2 flex-shrink-0' : 'mb-4'}`}>
+    <div className={`flex items-center justify-between ${fullscreen ? 'mb-4 flex-shrink-0' : 'mb-4'}`}>
       <div className="flex items-center gap-2">
         <div
           className={`relative ${fullscreen ? 'w-10 h-10' : 'w-12 h-12'} rounded-xl flex items-center justify-center ${
@@ -333,7 +341,7 @@ function Header({ fullscreen, toggleFullscreen, loading, lastUpdate, nextRefresh
               <span className="relative inline-flex w-2 h-2 rounded-full bg-emerald-500" />
             </span>
             <span className={`${fullscreen ? 'text-[10px]' : 'text-xs'} font-semibold ${fullscreen ? 'text-slate-300' : 'text-gray-700'}`}>
-              AO VIVO · {nextRefreshIn}s
+              AO VIVO · {formatRefreshCountdown(nextRefreshIn)}
             </span>
           </div>
         )}
@@ -368,7 +376,7 @@ function Header({ fullscreen, toggleFullscreen, loading, lastUpdate, nextRefresh
 // ═══════════════════════════════════════════════════════════════════
 function VsHero({ dadosDia, dadosSemana, liderDia, liderSemana, loading, fullscreen }) {
   return (
-    <div className={`grid grid-cols-1 lg:grid-cols-2 ${fullscreen ? 'gap-3 flex-shrink-0' : 'gap-4'}`}>
+    <div className={`grid grid-cols-1 lg:grid-cols-2 ${fullscreen ? 'gap-6 flex-shrink-0' : 'gap-4'}`}>
       <PlacarPeriodo
         titulo="DIA"
         icon={Fire}
@@ -411,12 +419,12 @@ function PlacarPeriodo({ titulo, icon: TitleIcon, iconColor, dados, lider, loadi
       {/* Faixa decorativa superior */}
       <div className="h-1 bg-gradient-to-r from-emerald-500 via-amber-400 to-purple-500" />
 
-      <div className={`${fullscreen ? 'p-3' : 'p-5'}`}>
+      <div className={`${fullscreen ? 'p-5' : 'p-5'}`}>
         {/* Cabeçalho do placar */}
-        <div className={`flex items-center justify-between ${fullscreen ? 'mb-2' : 'mb-4'}`}>
+        <div className={`flex items-center justify-between ${fullscreen ? 'mb-3' : 'mb-4'}`}>
           <div className="flex items-center gap-2">
-            <TitleIcon size={fullscreen ? 18 : 18} weight="fill" className={iconColor} />
-            <h2 className={`${fullscreen ? 'text-base' : 'text-lg'} font-black tracking-widest ${fullscreen ? 'text-white' : 'text-[#000638]'}`}>
+            <TitleIcon size={fullscreen ? 20 : 18} weight="fill" className={iconColor} />
+            <h2 className={`${fullscreen ? 'text-lg' : 'text-lg'} font-black tracking-widest ${fullscreen ? 'text-white' : 'text-[#000638]'}`}>
               {titulo}
             </h2>
           </div>
@@ -431,7 +439,7 @@ function PlacarPeriodo({ titulo, icon: TitleIcon, iconColor, dados, lider, loadi
         </div>
 
         {/* Cards vs */}
-        <div className={`grid grid-cols-2 ${fullscreen ? 'gap-2' : 'gap-3'} relative`}>
+        <div className={`grid grid-cols-2 ${fullscreen ? 'gap-3' : 'gap-3'} relative`}>
           <CanalScoreCard
             canal={CANAIS[0]}
             valor={r}
@@ -461,8 +469,8 @@ function PlacarPeriodo({ titulo, icon: TitleIcon, iconColor, dados, lider, loadi
         </div>
 
         {/* Barra de proporção */}
-        <div className={`${fullscreen ? 'mt-2' : 'mt-4'} relative`}>
-          <div className={`flex ${fullscreen ? 'h-2' : 'h-3'} rounded-full overflow-hidden ${fullscreen ? 'bg-slate-800' : 'bg-gray-200'}`}>
+        <div className={`${fullscreen ? 'mt-3' : 'mt-4'} relative`}>
+          <div className={`flex ${fullscreen ? 'h-2.5' : 'h-3'} rounded-full overflow-hidden ${fullscreen ? 'bg-slate-800' : 'bg-gray-200'}`}>
             <div
               className="bg-gradient-to-r from-emerald-400 to-emerald-600 transition-all duration-700 ease-out"
               style={{ width: `${pctR}%` }}
@@ -472,7 +480,7 @@ function PlacarPeriodo({ titulo, icon: TitleIcon, iconColor, dados, lider, loadi
               style={{ width: `${pctM}%` }}
             />
           </div>
-          <div className={`flex justify-between mt-1 ${fullscreen ? 'text-[10px]' : 'text-xs'} font-bold`}>
+          <div className={`flex justify-between mt-1.5 ${fullscreen ? 'text-xs' : 'text-xs'} font-bold`}>
             <span className={fullscreen ? 'text-emerald-300' : 'text-emerald-600'}>{pctR.toFixed(0)}%</span>
             <span className={fullscreen ? 'text-purple-300' : 'text-purple-600'}>{pctM.toFixed(0)}%</span>
           </div>
@@ -480,9 +488,9 @@ function PlacarPeriodo({ titulo, icon: TitleIcon, iconColor, dados, lider, loadi
 
         {/* Diferença */}
         {(r > 0 || m > 0) && (
-          <div className={`${fullscreen ? 'mt-1.5' : 'mt-3'} text-center`}>
+          <div className={`${fullscreen ? 'mt-3' : 'mt-3'} text-center`}>
             {lider ? (
-              <div className={`inline-flex items-center gap-1.5 ${fullscreen ? 'text-xs' : 'text-sm'} ${fullscreen ? 'text-amber-300' : 'text-amber-700'}`}>
+              <div className={`inline-flex items-center gap-1.5 ${fullscreen ? 'text-sm' : 'text-sm'} ${fullscreen ? 'text-amber-300' : 'text-amber-700'}`}>
                 <Star size={fullscreen ? 11 : 12} weight="fill" />
                 <span className="font-semibold">
                   Diferença: <strong>{fmtBRL(diff)}</strong>
@@ -510,25 +518,25 @@ function CanalScoreCard({ canal, valor, isLider, loading, fullscreen }) {
           : fullscreen
             ? 'bg-slate-800/50 border border-white/5 text-slate-300'
             : 'bg-gray-50 border border-gray-200 text-gray-700'
-      } ${fullscreen ? 'p-2.5' : 'p-3'}`}
+      } ${fullscreen ? 'p-4' : 'p-3'}`}
       style={isLider && fullscreen ? { ['--glow-color']: canal.glow } : undefined}
     >
       {/* Sparkle decorativo do líder */}
       {isLider && fullscreen && (
-        <div className="absolute top-1.5 right-1.5 float">
-          <Crown size={14} weight="fill" className="text-amber-300 drop-shadow-lg" />
+        <div className="absolute top-2 right-2 float">
+          <Crown size={16} weight="fill" className="text-amber-300 drop-shadow-lg" />
         </div>
       )}
 
-      <div className={`flex items-center gap-1.5 ${fullscreen ? 'mb-1' : 'mb-2'}`}>
-        <Icon size={fullscreen ? 16 : 16} weight={isLider ? 'fill' : 'bold'} />
+      <div className={`flex items-center gap-2 ${fullscreen ? 'mb-2' : 'mb-2'}`}>
+        <Icon size={fullscreen ? 18 : 16} weight={isLider ? 'fill' : 'bold'} />
         <div>
-          <div className={`${fullscreen ? 'text-[11px]' : 'text-[10px]'} font-black uppercase tracking-widest opacity-80`}>{canal.label}</div>
-          <div className={`${fullscreen ? 'text-[9px]' : 'text-[9px]'} opacity-60 uppercase tracking-wider`}>{canal.nome}</div>
+          <div className={`${fullscreen ? 'text-xs' : 'text-[10px]'} font-black uppercase tracking-widest opacity-80`}>{canal.label}</div>
+          <div className={`${fullscreen ? 'text-[10px]' : 'text-[9px]'} opacity-60 uppercase tracking-wider`}>{canal.nome}</div>
         </div>
       </div>
 
-      <div className={`${fullscreen ? 'text-2xl lg:text-3xl' : 'text-xl'} font-black tabular-nums leading-none ${fullscreen ? 'mt-1' : 'mt-2'}`}>
+      <div className={`${fullscreen ? 'text-3xl lg:text-4xl' : 'text-xl'} font-black tabular-nums leading-none ${fullscreen ? 'mt-2' : 'mt-2'}`}>
         {loading ? (
           <span className="opacity-40">R$ ...</span>
         ) : valor === 0 ? (
@@ -589,7 +597,7 @@ function PodiumCanal({ canal, dadosDia, dadosSemana, isLiderSemana, loading, ful
     >
       {/* Header colorido */}
       <div
-        className={`relative ${fullscreen ? 'px-3 py-2 flex-shrink-0' : 'px-4 py-3'} bg-gradient-to-r ${canal.gradient} text-white overflow-hidden`}
+        className={`relative ${fullscreen ? 'px-5 py-3 flex-shrink-0' : 'px-4 py-3'} bg-gradient-to-r ${canal.gradient} text-white overflow-hidden`}
       >
         {/* Shimmer no líder */}
         {isLiderSemana && (
@@ -619,7 +627,7 @@ function PodiumCanal({ canal, dadosDia, dadosSemana, isLiderSemana, loading, ful
 
       {/* Tabela vendedores */}
       <div className={`${fullscreen ? 'bg-slate-900/50 flex-1 flex flex-col min-h-0' : 'bg-white'}`}>
-        <div className={`grid grid-cols-12 ${fullscreen ? 'px-3 py-1 flex-shrink-0' : 'px-4 py-2'} text-[9px] font-black uppercase tracking-widest ${fullscreen ? 'text-slate-400 bg-slate-900/40 border-b border-white/5' : 'text-gray-500 bg-gray-50 border-b border-gray-200'}`}>
+        <div className={`grid grid-cols-12 ${fullscreen ? 'px-5 py-2 flex-shrink-0 text-[10px]' : 'px-4 py-2 text-[9px]'} font-black uppercase tracking-widest ${fullscreen ? 'text-slate-400 bg-slate-900/40 border-b border-white/5' : 'text-gray-500 bg-gray-50 border-b border-gray-200'}`}>
           <div className="col-span-7">Vendedor</div>
           <div className="col-span-2 text-right">Dia</div>
           <div className="col-span-3 text-right">Semana</div>
@@ -628,7 +636,7 @@ function PodiumCanal({ canal, dadosDia, dadosSemana, isLiderSemana, loading, ful
         <div className={fullscreen ? 'flex-1 overflow-y-auto min-h-0' : ''}>
         {loading && sellers.length === 0 ? (
           [1, 2, 3].map((i) => (
-            <div key={i} className={`grid grid-cols-12 ${fullscreen ? 'px-3 py-1.5' : 'px-4 py-2.5'} ${fullscreen ? 'border-b border-white/5' : 'border-b border-gray-100'}`}>
+            <div key={i} className={`grid grid-cols-12 ${fullscreen ? 'px-5 py-2.5' : 'px-4 py-2.5'} ${fullscreen ? 'border-b border-white/5' : 'border-b border-gray-100'}`}>
               <div className="col-span-7">
                 <div className={`h-3 ${fullscreen ? 'bg-slate-700' : 'bg-gray-200'} rounded animate-pulse w-3/4`} />
               </div>
@@ -650,26 +658,26 @@ function PodiumCanal({ canal, dadosDia, dadosSemana, isLiderSemana, loading, ful
             return (
               <div
                 key={s.seller_code}
-                className={`grid grid-cols-12 items-center ${fullscreen ? 'px-3 py-1' : 'px-4 py-2.5'} ${
+                className={`grid grid-cols-12 items-center ${fullscreen ? 'px-5 py-2.5' : 'px-4 py-2.5'} ${
                   fullscreen ? 'border-b border-white/5' : 'border-b border-gray-100'
                 } ${top3 && idx === 0 ? (fullscreen ? 'bg-amber-500/5' : canal.bgSoft) : ''} transition-colors`}
               >
                 {/* Vendedor */}
-                <div className="col-span-7 flex items-center gap-2">
+                <div className="col-span-7 flex items-center gap-3">
                   {top3 ? (
-                    <span className={`${fullscreen ? 'text-base' : 'text-lg'} leading-none`}>{medalhas[idx]}</span>
+                    <span className={`${fullscreen ? 'text-lg' : 'text-lg'} leading-none`}>{medalhas[idx]}</span>
                   ) : (
-                    <span className={`${fullscreen ? 'w-5 text-[10px]' : 'w-5 text-xs'} text-center font-bold ${fullscreen ? 'text-slate-500' : 'text-gray-400'}`}>
+                    <span className={`${fullscreen ? 'w-6 text-xs' : 'w-5 text-xs'} text-center font-bold ${fullscreen ? 'text-slate-500' : 'text-gray-400'}`}>
                       #{idx + 1}
                     </span>
                   )}
-                  <span className={`${fullscreen ? 'text-xs' : 'text-sm'} font-bold uppercase tracking-wide ${fullscreen ? 'text-white' : 'text-gray-800'} truncate`}>
+                  <span className={`${fullscreen ? 'text-sm' : 'text-sm'} font-bold uppercase tracking-wide ${fullscreen ? 'text-white' : 'text-gray-800'} truncate`}>
                     {s.seller_name}
                   </span>
                 </div>
 
                 {/* Dia */}
-                <div className={`col-span-2 text-right tabular-nums ${fullscreen ? 'text-[11px]' : 'text-xs'} font-semibold ${
+                <div className={`col-span-2 text-right tabular-nums ${fullscreen ? 'text-xs' : 'text-xs'} font-semibold ${
                   s.dia > 0
                     ? fullscreen ? 'text-emerald-300' : canal.text
                     : fullscreen ? 'text-slate-700' : 'text-gray-300'
@@ -678,7 +686,7 @@ function PodiumCanal({ canal, dadosDia, dadosSemana, isLiderSemana, loading, ful
                 </div>
 
                 {/* Semana */}
-                <div className={`col-span-3 text-right tabular-nums ${fullscreen ? 'text-xs' : 'text-sm'} font-black ${fullscreen ? 'text-white' : 'text-gray-900'}`}>
+                <div className={`col-span-3 text-right tabular-nums ${fullscreen ? 'text-sm' : 'text-sm'} font-black ${fullscreen ? 'text-white' : 'text-gray-900'}`}>
                   {s.semana > 0 ? fmtBRLcompacto(s.semana) : <span className={fullscreen ? 'text-slate-700' : 'text-gray-300'}>—</span>}
                 </div>
               </div>
@@ -690,17 +698,17 @@ function PodiumCanal({ canal, dadosDia, dadosSemana, isLiderSemana, loading, ful
         {/* Total final */}
         {sellers.length > 0 && (
           <div
-            className={`grid grid-cols-12 items-center ${fullscreen ? 'px-3 py-1.5 flex-shrink-0' : 'px-4 py-3'} border-t-2 ${
+            className={`grid grid-cols-12 items-center ${fullscreen ? 'px-5 py-3 flex-shrink-0' : 'px-4 py-3'} border-t-2 ${
               fullscreen ? 'border-white/10 bg-slate-900/80' : `${canal.border} ${canal.bgSoft}`
             }`}
           >
-            <div className={`col-span-7 ${fullscreen ? 'text-xs text-white' : 'text-base text-gray-900'} font-black tracking-wide uppercase`}>
+            <div className={`col-span-7 ${fullscreen ? 'text-sm text-white' : 'text-base text-gray-900'} font-black tracking-wide uppercase`}>
               Total
             </div>
-            <div className={`col-span-2 text-right tabular-nums ${fullscreen ? 'text-xs text-emerald-300' : 'text-sm ' + canal.text} font-black`}>
+            <div className={`col-span-2 text-right tabular-nums ${fullscreen ? 'text-sm text-emerald-300' : 'text-sm ' + canal.text} font-black`}>
               {fmtBRL(dadosDia?.invoice_value ?? 0)}
             </div>
-            <div className={`col-span-3 text-right tabular-nums ${fullscreen ? 'text-sm text-white' : 'text-base text-gray-900'} font-black`}>
+            <div className={`col-span-3 text-right tabular-nums ${fullscreen ? 'text-base text-white' : 'text-base text-gray-900'} font-black`}>
               {fmtBRL(dadosSemana?.invoice_value ?? 0)}
             </div>
           </div>

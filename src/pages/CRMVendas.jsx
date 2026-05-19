@@ -243,6 +243,7 @@ export default function CRMVendas() {
   });
   const [canalTotals, setCanalTotals] = useState(null); // { invoice_value, invoice_qty, ... }
   const [sellersTotalsLoading, setSellersTotalsLoading] = useState(false);
+  const [syncHojeLoading, setSyncHojeLoading] = useState(false);
   const sellersTotalsDatesRef = useRef('');
 
   const pararPollERP = useCallback(() => {
@@ -473,6 +474,38 @@ export default function CRMVendas() {
       setSellersTotalsLoading(false);
     }
   }, [dataInicio, dataFim, modulo]);
+
+  // Sincroniza NFs de HOJE do TOTVS → Supabase, e em seguida refaz sellers-totals.
+  // Use para varejo: Supabase só sincroniza às 01:30, então vendas do dia ficam
+  // ausentes até a próxima sync. Este botão força a importação imediata.
+  const sincronizarHoje = useCallback(async () => {
+    setSyncHojeLoading(true);
+    try {
+      const hoje = toLocalDateStr(new Date());
+      const yest = new Date();
+      yest.setDate(yest.getDate() - 1);
+      const yestStr = toLocalDateStr(yest);
+      const res = await fetch(
+        `${API_BASE_URL}/api/forecast/reimportar-faturamento`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+          body: JSON.stringify({ datemin: yestStr, datemax: hoje }),
+        },
+      );
+      const j = await res.json();
+      if (!res.ok || !j?.success) {
+        alert(`Falha ao sincronizar: ${j?.message || 'erro'}`);
+        return;
+      }
+      // Após sync, refaz sellers-totals para refletir os novos dados
+      await carregarSellersTotals();
+    } catch (e) {
+      alert(`Erro: ${e.message}`);
+    } finally {
+      setSyncHojeLoading(false);
+    }
+  }, [carregarSellersTotals]);
 
   // Auto-carrega ao abrir aba performance (se nunca carregou ou datas mudaram)
   useEffect(() => {
@@ -917,6 +950,8 @@ export default function CRMVendas() {
               canalTotals={canalTotals}
               sellersTotalsLoading={sellersTotalsLoading}
               onRefreshSellers={carregarSellersTotals}
+              onSincronizarHoje={sincronizarHoje}
+              syncHojeLoading={syncHojeLoading}
               periodoLabel={`${dataInicio?.split('-').reverse().join('/')} — ${dataFim?.split('-').reverse().join('/')}`}
               dataInicio={dataInicio}
               dataFim={dataFim}

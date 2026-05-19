@@ -2598,6 +2598,8 @@ export default function PerformanceView({
   canalTotals,
   sellersTotalsLoading,
   onRefreshSellers,
+  onSincronizarHoje,
+  syncHojeLoading,
   periodoLabel,
   dataInicio,
   dataFim,
@@ -3055,20 +3057,37 @@ export default function PerformanceView({
                 ? `(${periodoLabel})`
                 : `(Ano ${new Date().getFullYear()})`}
             </span>
-            {onRefreshSellers && (
-              <button
-                onClick={onRefreshSellers}
-                disabled={sellersTotalsLoading}
-                className="ml-auto flex items-center gap-1 text-[10px] text-gray-500 hover:text-[#000638] px-2 py-1 rounded border border-gray-200 hover:border-[#000638]/30 disabled:opacity-50 transition-colors"
-                title="Atualizar"
-              >
-                <ArrowsClockwise
-                  size={12}
-                  className={sellersTotalsLoading ? 'animate-spin' : ''}
-                />
-                Atualizar
-              </button>
-            )}
+            <div className="ml-auto flex items-center gap-1.5">
+              {onSincronizarHoje && (
+                <button
+                  onClick={onSincronizarHoje}
+                  disabled={syncHojeLoading || sellersTotalsLoading}
+                  className="flex items-center gap-1 text-[10px] font-semibold text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1 rounded border border-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+                  title="Importa NFs de hoje do TOTVS (Supabase só sincroniza às 01:30)"
+                >
+                  <ArrowsClockwise
+                    size={12}
+                    weight="bold"
+                    className={syncHojeLoading ? 'animate-spin' : ''}
+                  />
+                  {syncHojeLoading ? 'Sincronizando...' : 'Sincronizar hoje'}
+                </button>
+              )}
+              {onRefreshSellers && (
+                <button
+                  onClick={onRefreshSellers}
+                  disabled={sellersTotalsLoading}
+                  className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-[#000638] px-2 py-1 rounded border border-gray-200 hover:border-[#000638]/30 disabled:opacity-50 transition-colors"
+                  title="Re-busca dados (sem re-importar)"
+                >
+                  <ArrowsClockwise
+                    size={12}
+                    className={sellersTotalsLoading ? 'animate-spin' : ''}
+                  />
+                  Atualizar
+                </button>
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
             <KpiCard
