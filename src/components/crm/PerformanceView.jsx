@@ -28,12 +28,10 @@ import { useAuth } from '../AuthContext';
 import VarejoReuniao from './VarejoReuniao';
 import VarejoFilaAdmin from './VarejoFilaAdmin';
 
-// Em DEV usa origin (Vite proxy /api → localhost:4100). Em PROD usa fallback.
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV
-    ? window.location.origin
-    : 'https://apigestaocrosby-bw2v.onrender.com');
+// Em DEV: usa VITE_API_BASE_URL se definido, senão origin (proxy Vite). Em PROD: SEMPRE Render.
+const API_BASE_URL = import.meta.env.DEV
+  ? import.meta.env.VITE_API_BASE_URL || window.location.origin
+  : 'https://apigestaocrosby-bw2v.onrender.com';
 const API_KEY = import.meta.env.VITE_API_KEY || 'crosby2025';
 
 async function apiPostLocal(endpoint, body) {
