@@ -17,6 +17,9 @@ const CODIGO_PARA_CATEGORIA = {
 // Todos os códigos de despesas fixas a enviar para a API
 const CODIGOS_DESPESAS_FIXAS = Object.keys(CODIGO_PARA_CATEGORIA).map(Number);
 
+// Centros de custo que não devem aparecer na tabela de Despesas Fixas
+const CC_EXCLUIDOS = new Set(['4', '30', '35', '43']);
+
 // Filiais fixas — não requer seleção pelo usuário
 const FILIAIS_FIXAS = [
   { cd: '1', nome: 'CROSBY MATRIZ' },
@@ -669,7 +672,8 @@ const DespesasFixas = () => {
             item.ds_despesaitem,
           ),
         }))
-        .filter((item) => item._categoria !== null);
+        .filter((item) => item._categoria !== null)
+        .filter((item) => !CC_EXCLUIDOS.has(String(item.cd_ccusto)));
 
       console.log(
         `🔍 Itens após filtro de categoria: ${processados.length} de ${dadosArray.length}`,
