@@ -125,7 +125,16 @@ const KPI_COLOR_TOKENS = {
   },
 };
 
-function KpiCard({ label, valor, sub, icone: Icone, cor, color, onClick, loading }) {
+function KpiCard({
+  label,
+  valor,
+  sub,
+  icone: Icone,
+  cor,
+  color,
+  onClick,
+  loading,
+}) {
   const clickable = typeof onClick === 'function' && !loading;
   const tokens = (color && KPI_COLOR_TOKENS[color]) || null;
   return (
@@ -236,9 +245,8 @@ function ReativacaoModal({ data, dataInicio, dataFim, onClose }) {
             </h3>
             <p className="text-[10px] text-gray-400 mt-0.5">
               {dataInicio?.split('-').reverse().join('/')} —{' '}
-              {dataFim?.split('-').reverse().join('/')} ·{' '}
-              {filtrados.length} clientes ·{' '}
-              {fmtMoeda(totalValor)} em vendas de retorno · ≥{' '}
+              {dataFim?.split('-').reverse().join('/')} · {filtrados.length}{' '}
+              clientes · {fmtMoeda(totalValor)} em vendas de retorno · ≥{' '}
               {data?.days_inactive_threshold || 60} dias inativos
             </p>
           </div>
@@ -340,7 +348,10 @@ function ReativacaoModal({ data, dataInicio, dataFim, onClose }) {
               </tbody>
               <tfoot className="bg-gray-50 border-t border-gray-200 sticky bottom-0">
                 <tr>
-                  <td colSpan={6} className="px-3 py-2 text-right font-bold text-gray-700">
+                  <td
+                    colSpan={6}
+                    className="px-3 py-2 text-right font-bold text-gray-700"
+                  >
                     TOTAL ({filtrados.length} clientes)
                   </td>
                   <td className="px-3 py-2 text-right font-bold text-[#000638]">
@@ -507,8 +518,8 @@ function AperturasModal({
             <p className="text-[10px] text-gray-400 mt-0.5">
               {dataInicio?.split('-').reverse().join('/')} —{' '}
               {dataFim?.split('-').reverse().join('/')} ·{' '}
-              {linhasFiltradas.length} clientes ·{' '}
-              {fmtMoeda(totalValor)} em primeiras compras
+              {linhasFiltradas.length} clientes · {fmtMoeda(totalValor)} em
+              primeiras compras
             </p>
           </div>
           <button
@@ -678,7 +689,10 @@ function AperturasModal({
               {linhasFiltradas.length > 0 && (
                 <tfoot className="bg-gray-50 border-t border-gray-200 sticky bottom-0">
                   <tr>
-                    <td colSpan={5} className="px-3 py-2 text-right font-bold text-gray-700">
+                    <td
+                      colSpan={5}
+                      className="px-3 py-2 text-right font-bold text-gray-700"
+                    >
                       TOTAL ({linhasFiltradas.length} clientes)
                     </td>
                     <td className="px-3 py-2 text-right font-bold text-[#000638]">
@@ -1045,12 +1059,14 @@ function MetaEditModal({
   const [escopo, setEscopo] = useState(entityType);
 
   // Resolve código/nome conforme o escopo selecionado
-  const entityCode = escopo === 'branch'
-    ? Number(seller?.branch_code || seller?._meta_entity_code)
-    : Number(seller?.seller_code);
-  const entityName = escopo === 'branch'
-    ? seller?.branch_name || seller?._meta_entity_name
-    : seller?.seller_name;
+  const entityCode =
+    escopo === 'branch'
+      ? Number(seller?.branch_code || seller?._meta_entity_code)
+      : Number(seller?.seller_code);
+  const entityName =
+    escopo === 'branch'
+      ? seller?.branch_name || seller?._meta_entity_name
+      : seller?.seller_name;
   const entityLabel = escopo === 'branch' ? 'Loja' : 'Vendedor';
 
   // Lookup do valor atual:
@@ -1111,18 +1127,28 @@ function MetaEditModal({
   const kindCfg = KIND_LABELS[kind];
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-sm"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between border-b border-gray-200 p-4">
           <div>
             <h3 className="text-base font-bold text-[#000638] flex items-center gap-2">
-              <Target size={16} weight="bold" /> Meta {escopo === 'branch' ? 'da Loja' : 'do Vendedor'}
+              <Target size={16} weight="bold" /> Meta{' '}
+              {escopo === 'branch' ? 'da Loja' : 'do Vendedor'}
             </h3>
             <p className="text-[11px] text-gray-500 mt-0.5">
               {entityLabel}: {entityName}
             </p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 p-1">
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-700 p-1"
+          >
             <X size={20} />
           </button>
         </div>
@@ -1236,7 +1262,8 @@ function MetaEditModal({
               className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200"
             />
             <p className="text-[10px] text-gray-400 mt-1">
-              Atual: {currentValue != null
+              Atual:{' '}
+              {currentValue != null
                 ? `${kindCfg.prefix}${Number(currentValue).toLocaleString('pt-BR', { minimumFractionDigits: kind === 'faturamento' ? 2 : 0, maximumFractionDigits: kind === 'faturamento' ? 2 : 0 })}`
                 : 'sem meta cadastrada'}
             </p>
@@ -1250,7 +1277,11 @@ function MetaEditModal({
         </div>
 
         <div className="flex justify-end gap-2 border-t border-gray-100 p-3">
-          <button onClick={onClose} disabled={loading} className="px-4 py-2 text-xs font-medium text-gray-600 hover:text-gray-900">
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="px-4 py-2 text-xs font-medium text-gray-600 hover:text-gray-900"
+          >
             Cancelar
           </button>
           <button
@@ -1258,7 +1289,11 @@ function MetaEditModal({
             disabled={loading}
             className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg disabled:opacity-50"
           >
-            {loading ? <Spinner size={12} className="animate-spin" /> : <Target size={12} weight="fill" />}
+            {loading ? (
+              <Spinner size={12} className="animate-spin" />
+            ) : (
+              <Target size={12} weight="fill" />
+            )}
             {loading ? 'Salvando...' : 'Salvar meta'}
           </button>
         </div>
@@ -1329,9 +1364,15 @@ function SellersTotalsTable({
     const isVarejo = modulo === 'varejo';
     // VAREJO: usa BRUTO (apenas operações de saída, sem subtrair credev/devolução).
     // Outros canais mantém líquido (saída - credev).
-    const normalize = (s) => isVarejo
-      ? { ...s, invoice_value: Number(s.invoice_value_gross ?? s.invoice_value ?? 0) }
-      : s;
+    const normalize = (s) =>
+      isVarejo
+        ? {
+            ...s,
+            invoice_value: Number(
+              s.invoice_value_gross ?? s.invoice_value ?? 0,
+            ),
+          }
+        : s;
     let list = sellersTotals
       .map(normalize)
       .filter((s) => s.seller_name && s.invoice_value > 0);
@@ -1360,7 +1401,7 @@ function SellersTotalsTable({
         const metaSellerS = metasSemanalSeller?.[sellerCode];
         const metaBranchM = metasMensal?.[branchCode];
         const metaBranchS = metasSemanal?.[branchCode];
-        const hasSellerMeta = (metaSellerM != null) || (metaSellerS != null);
+        const hasSellerMeta = metaSellerM != null || metaSellerS != null;
         metaM = metaSellerM ?? metaBranchM;
         metaS = metaSellerS ?? metaBranchS;
         // Meta entity reflete a fonte que está sendo usada (para o modal abrir certo)
@@ -1657,13 +1698,15 @@ function SellersTotalsTable({
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       {s.meta_mensal != null ? (
                         <div className="flex flex-col items-end leading-tight">
-                          <span className={`text-[11px] font-bold ${
-                            (s.pct_meta_mensal || 0) >= 100
-                              ? 'text-emerald-600'
-                              : (s.pct_meta_mensal || 0) >= 70
-                                ? 'text-amber-600'
-                                : 'text-rose-600'
-                          }`}>
+                          <span
+                            className={`text-[11px] font-bold ${
+                              (s.pct_meta_mensal || 0) >= 100
+                                ? 'text-emerald-600'
+                                : (s.pct_meta_mensal || 0) >= 70
+                                  ? 'text-amber-600'
+                                  : 'text-rose-600'
+                            }`}
+                          >
                             {(s.pct_meta_mensal || 0).toFixed(1)}%
                           </span>
                           <span className="text-[9px] text-gray-400 font-mono">
@@ -1680,13 +1723,15 @@ function SellersTotalsTable({
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       {s.meta_semanal != null ? (
                         <div className="flex flex-col items-end leading-tight">
-                          <span className={`text-[11px] font-bold ${
-                            (s.pct_meta_semanal || 0) >= 100
-                              ? 'text-emerald-600'
-                              : (s.pct_meta_semanal || 0) >= 70
-                                ? 'text-amber-600'
-                                : 'text-rose-600'
-                          }`}>
+                          <span
+                            className={`text-[11px] font-bold ${
+                              (s.pct_meta_semanal || 0) >= 100
+                                ? 'text-emerald-600'
+                                : (s.pct_meta_semanal || 0) >= 70
+                                  ? 'text-amber-600'
+                                  : 'text-rose-600'
+                            }`}
+                          >
                             {(s.pct_meta_semanal || 0).toFixed(1)}%
                           </span>
                           <span className="text-[9px] text-gray-400 font-mono">
@@ -1703,13 +1748,20 @@ function SellersTotalsTable({
                       {(() => {
                         const code = Number(s.seller_code);
                         const metaA = metasAberturasM?.[code];
-                        const pct = metaA && metaA > 0 ? (s.openings / metaA) * 100 : null;
+                        const pct =
+                          metaA && metaA > 0
+                            ? (s.openings / metaA) * 100
+                            : null;
                         return (
                           <div className="flex flex-col items-end leading-tight">
                             {s.openings > 0 ? (
                               <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold text-[11px]">
                                 <UserPlus size={10} /> {s.openings}
-                                {metaA != null && <span className="font-mono ml-1">/{metaA}</span>}
+                                {metaA != null && (
+                                  <span className="font-mono ml-1">
+                                    /{metaA}
+                                  </span>
+                                )}
                               </span>
                             ) : (
                               <span className="text-gray-300 text-[11px]">
@@ -1717,11 +1769,17 @@ function SellersTotalsTable({
                               </span>
                             )}
                             {pct != null && (
-                              <span className={`text-[9px] font-bold ${
-                                pct >= 100 ? 'text-emerald-600'
-                                  : pct >= 70 ? 'text-amber-600'
-                                  : 'text-rose-600'
-                              }`}>{pct.toFixed(0)}%</span>
+                              <span
+                                className={`text-[9px] font-bold ${
+                                  pct >= 100
+                                    ? 'text-emerald-600'
+                                    : pct >= 70
+                                      ? 'text-amber-600'
+                                      : 'text-rose-600'
+                                }`}
+                              >
+                                {pct.toFixed(0)}%
+                              </span>
                             )}
                           </div>
                         );
@@ -1731,13 +1789,20 @@ function SellersTotalsTable({
                       {(() => {
                         const code = Number(s.seller_code);
                         const metaR = metasReativacoesM?.[code];
-                        const pct = metaR && metaR > 0 ? (s.reativacoes / metaR) * 100 : null;
+                        const pct =
+                          metaR && metaR > 0
+                            ? (s.reativacoes / metaR) * 100
+                            : null;
                         return (
                           <div className="flex flex-col items-end leading-tight">
                             {s.reativacoes > 0 ? (
                               <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full font-bold text-[11px]">
                                 <ArrowsClockwise size={10} /> {s.reativacoes}
-                                {metaR != null && <span className="font-mono ml-1">/{metaR}</span>}
+                                {metaR != null && (
+                                  <span className="font-mono ml-1">
+                                    /{metaR}
+                                  </span>
+                                )}
                               </span>
                             ) : (
                               <span className="text-gray-300 text-[11px]">
@@ -1745,11 +1810,17 @@ function SellersTotalsTable({
                               </span>
                             )}
                             {pct != null && (
-                              <span className={`text-[9px] font-bold ${
-                                pct >= 100 ? 'text-emerald-600'
-                                  : pct >= 70 ? 'text-amber-600'
-                                  : 'text-rose-600'
-                              }`}>{pct.toFixed(0)}%</span>
+                              <span
+                                className={`text-[9px] font-bold ${
+                                  pct >= 100
+                                    ? 'text-emerald-600'
+                                    : pct >= 70
+                                      ? 'text-amber-600'
+                                      : 'text-rose-600'
+                                }`}
+                              >
+                                {pct.toFixed(0)}%
+                              </span>
                             )}
                           </div>
                         );
@@ -1856,10 +1927,26 @@ function tierAlcancado(realizado, meta) {
   return null;
 }
 const TIER_META = {
-  DIAMANTE: { emoji: '💎', barColor: 'bg-cyan-500', badge: 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200' },
-  OURO:     { emoji: '🥇', barColor: 'bg-yellow-400', badge: 'bg-yellow-50 text-yellow-700 ring-1 ring-yellow-200' },
-  PRATA:    { emoji: '🥈', barColor: 'bg-slate-400', badge: 'bg-slate-50 text-slate-700 ring-1 ring-slate-300' },
-  BRONZE:   { emoji: '🥉', barColor: 'bg-orange-400', badge: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200' },
+  DIAMANTE: {
+    emoji: '💎',
+    barColor: 'bg-cyan-500',
+    badge: 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200',
+  },
+  OURO: {
+    emoji: '🥇',
+    barColor: 'bg-yellow-400',
+    badge: 'bg-yellow-50 text-yellow-700 ring-1 ring-yellow-200',
+  },
+  PRATA: {
+    emoji: '🥈',
+    barColor: 'bg-slate-400',
+    badge: 'bg-slate-50 text-slate-700 ring-1 ring-slate-300',
+  },
+  BRONZE: {
+    emoji: '🥉',
+    barColor: 'bg-orange-400',
+    badge: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
+  },
 };
 
 function BranchMetaCard({ titulo, branches, metaInfo }) {
@@ -1875,7 +1962,10 @@ function BranchMetaCard({ titulo, branches, metaInfo }) {
 
   const totals = useMemo(() => {
     let real = 0;
-    let bronze = 0, prata = 0, ouro = 0, diamante = 0;
+    let bronze = 0,
+      prata = 0,
+      ouro = 0,
+      diamante = 0;
     for (const b of sorted) {
       real += b.invoice_value;
       bronze += b.meta?.bronze || 0;
@@ -1989,7 +2079,9 @@ function BranchMetaCard({ titulo, branches, metaInfo }) {
                     <span
                       className={`flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${tierCfg.badge}`}
                     >
-                      <span className="text-sm leading-none">{tierCfg.emoji}</span>
+                      <span className="text-sm leading-none">
+                        {tierCfg.emoji}
+                      </span>
                       {tier}
                     </span>
                   ) : (
@@ -2006,7 +2098,9 @@ function BranchMetaCard({ titulo, branches, metaInfo }) {
                       {fmtMoeda(real)}
                     </span>
                   </div>
-                  <span className={`text-lg font-bold tabular-nums ${pctColor}`}>
+                  <span
+                    className={`text-lg font-bold tabular-nums ${pctColor}`}
+                  >
                     {pctOuro.toFixed(0)}%
                   </span>
                 </div>
@@ -2161,8 +2255,7 @@ function RankingCard({ titulo, icone: Icone, entries, tipoValor }) {
     return '';
   };
 
-  const fmtVal = (v) =>
-    tipoValor === 'moeda' ? fmtMoeda(v) : fmtNum(v);
+  const fmtVal = (v) => (tipoValor === 'moeda' ? fmtMoeda(v) : fmtNum(v));
 
   const top1 = entries[0];
   const rest = entries.slice(1);
@@ -2246,7 +2339,9 @@ function RankingCard({ titulo, icone: Icone, entries, tipoValor }) {
                     )}
                     <span
                       className={`text-xs truncate ${
-                        idx < 3 ? 'font-bold text-gray-900' : 'font-medium text-gray-700'
+                        idx < 3
+                          ? 'font-bold text-gray-900'
+                          : 'font-medium text-gray-700'
                       }`}
                     >
                       {e.vendedor}
@@ -2579,7 +2674,7 @@ function periodKeySemanal(d = new Date()) {
   const firstThursday = target.valueOf();
   target.setMonth(0, 1);
   if (target.getDay() !== 4) {
-    target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+    target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
   }
   const week = 1 + Math.ceil((firstThursday - target) / 604800000);
   return `${d.getFullYear()}-W${String(week).padStart(2, '0')}`;
@@ -2604,7 +2699,11 @@ export default function PerformanceView({
 }) {
   // ─── Metas por vendedor (mensal + semanal) ────────────────────────────
   const { user } = useAuth() || {};
-  const userRole = (user?.user_metadata?.role || user?.role || 'user').toLowerCase();
+  const userRole = (
+    user?.user_metadata?.role ||
+    user?.role ||
+    'user'
+  ).toLowerCase();
   const isAdmin = userRole === 'admin' || userRole === 'owner';
   const userLogin = user?.email || user?.user_metadata?.login || '';
 
@@ -2656,28 +2755,77 @@ export default function PerformanceView({
     (async () => {
       const kinds = ['faturamento', 'aberturas', 'reativacoes'];
       const fresh = {
-        faturamento: { mensal: {}, semanal: {}, mensal_seller: {}, semanal_seller: {} },
-        aberturas: { mensal: {}, semanal: {}, mensal_seller: {}, semanal_seller: {} },
-        reativacoes: { mensal: {}, semanal: {}, mensal_seller: {}, semanal_seller: {} },
+        faturamento: {
+          mensal: {},
+          semanal: {},
+          mensal_seller: {},
+          semanal_seller: {},
+        },
+        aberturas: {
+          mensal: {},
+          semanal: {},
+          mensal_seller: {},
+          semanal_seller: {},
+        },
+        reativacoes: {
+          mensal: {},
+          semanal: {},
+          mensal_seller: {},
+          semanal_seller: {},
+        },
       };
       const tasks = [];
       for (const k of kinds) {
         // Metas no entity_type padrão (branch para varejo, seller para outros)
-        tasks.push(fetchMetas(k, 'mensal', periodoMensalKey, entityTypeForModulo).then((m) => { fresh[k].mensal = m; }));
-        tasks.push(fetchMetas(k, 'semanal', periodoSemanalKey, entityTypeForModulo).then((m) => { fresh[k].semanal = m; }));
+        tasks.push(
+          fetchMetas(k, 'mensal', periodoMensalKey, entityTypeForModulo).then(
+            (m) => {
+              fresh[k].mensal = m;
+            },
+          ),
+        );
+        tasks.push(
+          fetchMetas(k, 'semanal', periodoSemanalKey, entityTypeForModulo).then(
+            (m) => {
+              fresh[k].semanal = m;
+            },
+          ),
+        );
         // Para varejo: também busca metas individuais por vendedor
         if (isVarejoModulo) {
-          tasks.push(fetchMetas(k, 'mensal', periodoMensalKey, 'seller').then((m) => { fresh[k].mensal_seller = m; }));
-          tasks.push(fetchMetas(k, 'semanal', periodoSemanalKey, 'seller').then((m) => { fresh[k].semanal_seller = m; }));
+          tasks.push(
+            fetchMetas(k, 'mensal', periodoMensalKey, 'seller').then((m) => {
+              fresh[k].mensal_seller = m;
+            }),
+          );
+          tasks.push(
+            fetchMetas(k, 'semanal', periodoSemanalKey, 'seller').then((m) => {
+              fresh[k].semanal_seller = m;
+            }),
+          );
         }
       }
       await Promise.all(tasks);
       setMetasAll(fresh);
     })();
-  }, [modulo, periodoMensalKey, periodoSemanalKey, metasReloadKey, entityTypeForModulo, isVarejoModulo]);
+  }, [
+    modulo,
+    periodoMensalKey,
+    periodoSemanalKey,
+    metasReloadKey,
+    entityTypeForModulo,
+    isVarejoModulo,
+  ]);
 
   const saveMeta = useCallback(
-    async ({ seller_code, seller_name, period_type, valor_meta, meta_kind, entity_type }) => {
+    async ({
+      seller_code,
+      seller_name,
+      period_type,
+      valor_meta,
+      meta_kind,
+      entity_type,
+    }) => {
       const period_key =
         period_type === 'mensal' ? periodoMensalKey : periodoSemanalKey;
       const r = await fetch(`${API_BASE_URL}/api/crm/seller-metas`, {
@@ -2707,7 +2855,14 @@ export default function PerformanceView({
       setMetasReloadKey((k) => k + 1);
       return j;
     },
-    [modulo, periodoMensalKey, periodoSemanalKey, userRole, userLogin, entityTypeForModulo],
+    [
+      modulo,
+      periodoMensalKey,
+      periodoSemanalKey,
+      userRole,
+      userLogin,
+      entityTypeForModulo,
+    ],
   );
   // Conjunto canônico (ID de constants.js) — fonte da verdade da equipe do canal.
   // Quando definido (multimarcas/revenda), tem prioridade — exclui vendedores
@@ -2964,12 +3119,7 @@ export default function PerformanceView({
       qtdVendedores: sellersFiltered.length,
       dados: sellersFiltered,
     };
-  }, [
-    modulo,
-    canalTotals,
-    sellerCodesAtivosDoModuloSet,
-    sellersTotals,
-  ]);
+  }, [modulo, canalTotals, sellerCodesAtivosDoModuloSet, sellersTotals]);
 
   return (
     <div className="space-y-4">
@@ -3027,401 +3177,402 @@ export default function PerformanceView({
       )}
 
       {/* Conteúdo da aba FILA DA VEZ — admin (config, vendedoras, motivos) */}
-      {modulo === 'varejo' && varejoView === 'fila' && (
-        <VarejoFilaAdmin />
-      )}
+      {modulo === 'varejo' && varejoView === 'fila' && <VarejoFilaAdmin />}
 
       {/* Conteúdo VISÃO GERAL — esconde quando alguma outra view tá ativa.
           Usa `display: contents` pra não mexer no flow do layout original. */}
       <div
         style={{
           display:
-            modulo === 'varejo' && (varejoView === 'reuniao' || varejoView === 'fila') ? 'none' : 'contents',
+            modulo === 'varejo' &&
+            (varejoView === 'reuniao' || varejoView === 'fila')
+              ? 'none'
+              : 'contents',
         }}
       >
-      {/* KPI Cards resumo */}
-      {sellersTotalsLoading ? (
-        <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
-          <Spinner size={18} className="animate-spin" />
-          <span className="text-xs">Carregando indicadores...</span>
-        </div>
-      ) : totaisGerais ? (
-        <>
-          <div className="flex items-center gap-2 mb-1">
-            <ChartBar size={16} className="text-[#000638]" />
-            <h2 className="text-sm font-bold text-[#000638]">Resumo Geral</h2>
+        {/* KPI Cards resumo */}
+        {sellersTotalsLoading ? (
+          <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
+            <Spinner size={18} className="animate-spin" />
+            <span className="text-xs">Carregando indicadores...</span>
+          </div>
+        ) : totaisGerais ? (
+          <>
+            <div className="flex items-center gap-2 mb-1">
+              <ChartBar size={16} className="text-[#000638]" />
+              <h2 className="text-sm font-bold text-[#000638]">Resumo Geral</h2>
+              <span className="text-[10px] text-gray-400">
+                {periodoLabel
+                  ? `(${periodoLabel})`
+                  : `(Ano ${new Date().getFullYear()})`}
+              </span>
+              <div className="ml-auto flex items-center gap-1.5">
+                {onSincronizarHoje && (
+                  <button
+                    onClick={onSincronizarHoje}
+                    disabled={syncHojeLoading || sellersTotalsLoading}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1 rounded border border-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+                    title="Importa NFs de hoje do TOTVS (Supabase só sincroniza às 01:30)"
+                  >
+                    <ArrowsClockwise
+                      size={12}
+                      weight="bold"
+                      className={syncHojeLoading ? 'animate-spin' : ''}
+                    />
+                    {syncHojeLoading ? 'Sincronizando...' : 'Sincronizar hoje'}
+                  </button>
+                )}
+                {onRefreshSellers && (
+                  <button
+                    onClick={onRefreshSellers}
+                    disabled={sellersTotalsLoading}
+                    className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-[#000638] px-2 py-1 rounded border border-gray-200 hover:border-[#000638]/30 disabled:opacity-50 transition-colors"
+                    title="Re-busca dados (sem re-importar)"
+                  >
+                    <ArrowsClockwise
+                      size={12}
+                      className={sellersTotalsLoading ? 'animate-spin' : ''}
+                    />
+                    Atualizar
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+              <KpiCard
+                label="Faturamento"
+                valor={fmtMoeda(totaisGerais.faturamento)}
+                sub={`${totaisGerais.qtdVendedores} vendedores`}
+                icone={CurrencyDollar}
+                color="green"
+              />
+              <KpiCard
+                label="Vendas"
+                valor={fmtNum(totaisGerais.vendas)}
+                sub="total de notas"
+                icone={ShoppingCart}
+                color="indigo"
+              />
+              <KpiCard
+                label="Peças"
+                valor={fmtNum(totaisGerais.pecas)}
+                sub="itens vendidos"
+                icone={Package}
+                color="sky"
+              />
+              <KpiCard
+                label="Ticket Médio"
+                valor={fmtMoeda(totaisGerais.tm)}
+                sub="fat / vendas"
+                icone={CurrencyDollar}
+                color="blue"
+              />
+              <KpiCard
+                label="PA"
+                valor={totaisGerais.pa.toFixed(1)}
+                sub="peças / atendimento"
+                icone={TrendUp}
+                color="purple"
+              />
+              <KpiCard
+                label="Aberturas"
+                valor={fmtNum(openingsData?.total ?? 0)}
+                sub="novos clientes"
+                icone={UserPlus}
+                color="rose"
+                loading={openingsLoading}
+                onClick={
+                  !openingsLoading && (openingsData?.total ?? 0) > 0
+                    ? () => setAperturasModalOpen(true)
+                    : undefined
+                }
+              />
+              <KpiCard
+                label="Reativações"
+                valor={fmtNum(reativacaoData?.count ?? 0)}
+                sub="60+ dias inativos"
+                icone={ArrowsClockwise}
+                color="amber"
+                loading={reativacaoLoading}
+                onClick={
+                  !reativacaoLoading && (reativacaoData?.count ?? 0) > 0
+                    ? () => setReativacaoModalOpen(true)
+                    : undefined
+                }
+              />
+            </div>
+          </>
+        ) : null}
+
+        {/* Tabela completa de faturamento (colapsável) */}
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <button
+            onClick={() => setTabelaAberta(!tabelaAberta)}
+            className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+          >
+            <CaretRight
+              size={14}
+              weight="bold"
+              className={`text-[#000638] transition-transform ${tabelaAberta ? 'rotate-90' : ''}`}
+            />
+            <Table size={14} className="text-[#000638]" />
+            <span className="text-sm font-bold text-[#000638]">
+              Detalhes por Vendedor
+            </span>
             <span className="text-[10px] text-gray-400">
               {periodoLabel
                 ? `(${periodoLabel})`
                 : `(Ano ${new Date().getFullYear()})`}
             </span>
-            <div className="ml-auto flex items-center gap-1.5">
-              {onSincronizarHoje && (
-                <button
-                  onClick={onSincronizarHoje}
-                  disabled={syncHojeLoading || sellersTotalsLoading}
-                  className="flex items-center gap-1 text-[10px] font-semibold text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1 rounded border border-blue-700 disabled:opacity-50 transition-colors shadow-sm"
-                  title="Importa NFs de hoje do TOTVS (Supabase só sincroniza às 01:30)"
-                >
-                  <ArrowsClockwise
-                    size={12}
-                    weight="bold"
-                    className={syncHojeLoading ? 'animate-spin' : ''}
-                  />
-                  {syncHojeLoading ? 'Sincronizando...' : 'Sincronizar hoje'}
-                </button>
-              )}
-              {onRefreshSellers && (
-                <button
-                  onClick={onRefreshSellers}
-                  disabled={sellersTotalsLoading}
-                  className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-[#000638] px-2 py-1 rounded border border-gray-200 hover:border-[#000638]/30 disabled:opacity-50 transition-colors"
-                  title="Re-busca dados (sem re-importar)"
-                >
-                  <ArrowsClockwise
-                    size={12}
-                    className={sellersTotalsLoading ? 'animate-spin' : ''}
-                  />
-                  Atualizar
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-            <KpiCard
-              label="Faturamento"
-              valor={fmtMoeda(totaisGerais.faturamento)}
-              sub={`${totaisGerais.qtdVendedores} vendedores`}
-              icone={CurrencyDollar}
-              color="green"
+            {totaisGerais && (
+              <span className="text-[10px] text-gray-400 ml-auto">
+                {totaisGerais.qtdVendedores} vendedores ·{' '}
+                {fmtMoeda(totaisGerais.faturamento)}
+              </span>
+            )}
+          </button>
+          {tabelaAberta && (
+            <SellersTotalsTable
+              sellersTotals={sellersTotals?.periodo}
+              loading={sellersTotalsLoading}
+              vendedoresDoModulo={sellerCodesAtivosDoModuloSet}
+              vendedoresMap={vendedoresMap}
+              periodoLabel={periodoLabel}
+              onRefresh={onRefreshSellers}
+              dataInicio={dataInicio}
+              dataFim={dataFim}
+              openingsMap={openingsMap}
+              reativacoesMap={reativacoesMap}
+              modulo={modulo}
+              metasAll={metasAll}
+              periodoMensalKey={periodoMensalKey}
+              periodoSemanalKey={periodoSemanalKey}
+              isAdmin={isAdmin}
+              onSaveMeta={saveMeta}
             />
-            <KpiCard
-              label="Vendas"
-              valor={fmtNum(totaisGerais.vendas)}
-              sub="total de notas"
-              icone={ShoppingCart}
-              color="indigo"
-            />
-            <KpiCard
-              label="Peças"
-              valor={fmtNum(totaisGerais.pecas)}
-              sub="itens vendidos"
-              icone={Package}
-              color="sky"
-            />
-            <KpiCard
-              label="Ticket Médio"
-              valor={fmtMoeda(totaisGerais.tm)}
-              sub="fat / vendas"
-              icone={CurrencyDollar}
-              color="blue"
-            />
-            <KpiCard
-              label="PA"
-              valor={totaisGerais.pa.toFixed(1)}
-              sub="peças / atendimento"
-              icone={TrendUp}
-              color="purple"
-            />
-            <KpiCard
-              label="Aberturas"
-              valor={fmtNum(openingsData?.total ?? 0)}
-              sub="novos clientes"
-              icone={UserPlus}
-              color="rose"
-              loading={openingsLoading}
-              onClick={
-                !openingsLoading && (openingsData?.total ?? 0) > 0
-                  ? () => setAperturasModalOpen(true)
-                  : undefined
-              }
-            />
-            <KpiCard
-              label="Reativações"
-              valor={fmtNum(reativacaoData?.count ?? 0)}
-              sub="60+ dias inativos"
-              icone={ArrowsClockwise}
-              color="amber"
-              loading={reativacaoLoading}
-              onClick={
-                !reativacaoLoading && (reativacaoData?.count ?? 0) > 0
-                  ? () => setReativacaoModalOpen(true)
-                  : undefined
-              }
-            />
-          </div>
-        </>
-      ) : null}
-
-      {/* Tabela completa de faturamento (colapsável) */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <button
-          onClick={() => setTabelaAberta(!tabelaAberta)}
-          className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-        >
-          <CaretRight
-            size={14}
-            weight="bold"
-            className={`text-[#000638] transition-transform ${tabelaAberta ? 'rotate-90' : ''}`}
-          />
-          <Table size={14} className="text-[#000638]" />
-          <span className="text-sm font-bold text-[#000638]">
-            Detalhes por Vendedor
-          </span>
-          <span className="text-[10px] text-gray-400">
-            {periodoLabel
-              ? `(${periodoLabel})`
-              : `(Ano ${new Date().getFullYear()})`}
-          </span>
-          {totaisGerais && (
-            <span className="text-[10px] text-gray-400 ml-auto">
-              {totaisGerais.qtdVendedores} vendedores ·{' '}
-              {fmtMoeda(totaisGerais.faturamento)}
-            </span>
           )}
-        </button>
-        {tabelaAberta && (
-          <SellersTotalsTable
-            sellersTotals={sellersTotals?.periodo}
-            loading={sellersTotalsLoading}
-            vendedoresDoModulo={sellerCodesAtivosDoModuloSet}
-            vendedoresMap={vendedoresMap}
-            periodoLabel={periodoLabel}
-            onRefresh={onRefreshSellers}
-            dataInicio={dataInicio}
-            dataFim={dataFim}
-            openingsMap={openingsMap}
-            reativacoesMap={reativacoesMap}
-            modulo={modulo}
-            metasAll={metasAll}
-            periodoMensalKey={periodoMensalKey}
-            periodoSemanalKey={periodoSemanalKey}
-            isAdmin={isAdmin}
-            onSaveMeta={saveMeta}
-          />
-        )}
-      </div>
+        </div>
 
-      {/* Faturamento por LOJA com Meta — só varejo */}
-      {modulo === 'varejo' && (
-        <>
+        {/* Faturamento por LOJA com Meta — só varejo */}
+        {modulo === 'varejo' && (
+          <>
+            <div>
+              <h2 className="text-sm font-bold text-[#000638] mb-2 flex items-center gap-2">
+                <CurrencyDollar size={16} /> Faturamento por Loja vs Meta
+                <span className="text-[10px] font-normal text-gray-400 ml-1">
+                  (B2C · BRONZE 3% · PRATA 4% · OURO 5% · DIAMANTE 6%)
+                </span>
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <BranchMetaCard
+                  titulo={periodoLabel ? 'Período' : 'Período Atual'}
+                  branches={branchesTotals?.periodo || []}
+                  metaInfo={branchesTotals?.metaPeriodo}
+                />
+                <BranchMetaCard
+                  titulo="Mês"
+                  branches={branchesTotals?.mes || []}
+                  metaInfo={branchesTotals?.metaMes}
+                />
+                <BranchMetaCard
+                  titulo="Semana"
+                  branches={branchesTotals?.semana || []}
+                  metaInfo={branchesTotals?.metaSemana}
+                />
+              </div>
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-[#000638] mb-2 flex items-center gap-2">
+                <TrendUp size={16} /> Quantidade de Vendas por Loja
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <RankingCard
+                  titulo="Lojas — Período"
+                  icone={Trophy}
+                  entries={branchesRankings.vendasPeriodo}
+                  tipoValor="numero"
+                />
+                <RankingCard
+                  titulo="Lojas — Mês"
+                  icone={Trophy}
+                  entries={branchesRankings.vendasMes}
+                  tipoValor="numero"
+                />
+                <RankingCard
+                  titulo="Lojas — Semana"
+                  icone={Trophy}
+                  entries={branchesRankings.vendasSemana}
+                  tipoValor="numero"
+                />
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Rankings de Faturamento */}
+        <div>
+          <h2 className="text-sm font-bold text-[#000638] mb-2 flex items-center gap-2">
+            <CurrencyDollar size={16} />{' '}
+            {modulo === 'varejo' ? 'Faturamento por Vendedor' : 'Faturamento'}
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <RankingCard
+              titulo={
+                periodoLabel
+                  ? 'Faturamento Período'
+                  : `Faturamento ${new Date().getFullYear()}`
+              }
+              icone={Trophy}
+              entries={rankings.fatPeriodo}
+              tipoValor="moeda"
+            />
+            <RankingCard
+              titulo="Faturamento Mês"
+              icone={Trophy}
+              entries={rankings.fatMes}
+              tipoValor="moeda"
+            />
+            <RankingCard
+              titulo="Faturamento Semana"
+              icone={Trophy}
+              entries={rankings.fatSemana}
+              tipoValor="moeda"
+            />
+          </div>
+        </div>
+
+        {/* Rankings de Qtd Vendas */}
+        <div>
+          <h2 className="text-sm font-bold text-[#000638] mb-2 flex items-center gap-2">
+            <TrendUp size={16} /> Quantidade de Vendas
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <RankingCard
+              titulo={
+                periodoLabel
+                  ? 'Vendas Período'
+                  : `Vendas ${new Date().getFullYear()}`
+              }
+              icone={Trophy}
+              entries={rankings.vendasPeriodo}
+              tipoValor="num"
+            />
+            <RankingCard
+              titulo="Vendas Mês"
+              icone={Trophy}
+              entries={rankings.vendasMes}
+              tipoValor="num"
+            />
+            <RankingCard
+              titulo="Vendas Semana"
+              icone={Trophy}
+              entries={rankings.vendasSemana}
+              tipoValor="num"
+            />
+          </div>
+        </div>
+
+        {/* Rankings de Ticket Médio */}
+        <div>
+          <h2 className="text-sm font-bold text-[#000638] mb-2 flex items-center gap-2">
+            <TrendUp size={16} /> Ticket Médio
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <RankingCard
+              titulo={
+                periodoLabel ? 'TM Período' : `TM ${new Date().getFullYear()}`
+              }
+              icone={Trophy}
+              entries={rankings.tmPeriodo}
+              tipoValor="moeda"
+            />
+            <RankingCard
+              titulo="TM Mês"
+              icone={Trophy}
+              entries={rankings.tmMes}
+              tipoValor="moeda"
+            />
+            <RankingCard
+              titulo="TM Semana"
+              icone={Trophy}
+              entries={rankings.tmSemana}
+              tipoValor="moeda"
+            />
+          </div>
+        </div>
+
+        {/* Rankings de PA */}
+        <div>
+          <h2 className="text-sm font-bold text-[#000638] mb-2 flex items-center gap-2">
+            <TrendUp size={16} /> Peças por Atendimento (PA)
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <RankingCard
+              titulo={
+                periodoLabel ? 'PA Período' : `PA ${new Date().getFullYear()}`
+              }
+              icone={Trophy}
+              entries={rankings.paPeriodo}
+              tipoValor="num"
+            />
+            <RankingCard
+              titulo="PA Mês"
+              icone={Trophy}
+              entries={rankings.paMes}
+              tipoValor="num"
+            />
+            <RankingCard
+              titulo="PA Semana"
+              icone={Trophy}
+              entries={rankings.paSemana}
+              tipoValor="num"
+            />
+          </div>
+        </div>
+
+        {/* Ranking de Aberturas de Cadastro */}
+        {openingsRanking.length > 0 && (
           <div>
             <h2 className="text-sm font-bold text-[#000638] mb-2 flex items-center gap-2">
-              <CurrencyDollar size={16} /> Faturamento por Loja vs Meta
-              <span className="text-[10px] font-normal text-gray-400 ml-1">
-                (B2C · BRONZE 3% · PRATA 4% · OURO 5% · DIAMANTE 6%)
+              <UserPlus size={16} /> Aberturas de Cadastro
+              <span className="text-[10px] text-gray-400 font-normal">
+                {openingsData?.meta?.jason_openings > 0
+                  ? `(novos clientes no período · ${fmtNum(openingsData.meta.jason_openings)} Jason)`
+                  : '(novos clientes no período)'}
               </span>
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <BranchMetaCard
-                titulo={periodoLabel ? 'Período' : 'Período Atual'}
-                branches={branchesTotals?.periodo || []}
-                metaInfo={branchesTotals?.metaPeriodo}
-              />
-              <BranchMetaCard
-                titulo="Mês"
-                branches={branchesTotals?.mes || []}
-                metaInfo={branchesTotals?.metaMes}
-              />
-              <BranchMetaCard
-                titulo="Semana"
-                branches={branchesTotals?.semana || []}
-                metaInfo={branchesTotals?.metaSemana}
+              <OpeningsRankingCard
+                titulo={
+                  periodoLabel
+                    ? 'Aberturas Período'
+                    : `Aberturas ${new Date().getFullYear()}`
+                }
+                entries={openingsRanking}
+                vendedoresMap={vendedoresMap}
               />
             </div>
           </div>
-          <div>
-            <h2 className="text-sm font-bold text-[#000638] mb-2 flex items-center gap-2">
-              <TrendUp size={16} /> Quantidade de Vendas por Loja
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <RankingCard
-                titulo="Lojas — Período"
-                icone={Trophy}
-                entries={branchesRankings.vendasPeriodo}
-                tipoValor="numero"
-              />
-              <RankingCard
-                titulo="Lojas — Mês"
-                icone={Trophy}
-                entries={branchesRankings.vendasMes}
-                tipoValor="numero"
-              />
-              <RankingCard
-                titulo="Lojas — Semana"
-                icone={Trophy}
-                entries={branchesRankings.vendasSemana}
-                tipoValor="numero"
-              />
-            </div>
-          </div>
-        </>
-      )}
+        )}
 
-      {/* Rankings de Faturamento */}
-      <div>
-        <h2 className="text-sm font-bold text-[#000638] mb-2 flex items-center gap-2">
-          <CurrencyDollar size={16} />{' '}
-          {modulo === 'varejo' ? 'Faturamento por Vendedor' : 'Faturamento'}
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <RankingCard
-            titulo={
-              periodoLabel
-                ? 'Faturamento Período'
-                : `Faturamento ${new Date().getFullYear()}`
-            }
-            icone={Trophy}
-            entries={rankings.fatPeriodo}
-            tipoValor="moeda"
+        {aperturasModalOpen && (
+          <AperturasModal
+            openingsData={openingsData}
+            sellersTotals={sellersTotals?.periodo || []}
+            dataInicio={dataInicio}
+            dataFim={dataFim}
+            onClose={() => setAperturasModalOpen(false)}
           />
-          <RankingCard
-            titulo="Faturamento Mês"
-            icone={Trophy}
-            entries={rankings.fatMes}
-            tipoValor="moeda"
-          />
-          <RankingCard
-            titulo="Faturamento Semana"
-            icone={Trophy}
-            entries={rankings.fatSemana}
-            tipoValor="moeda"
-          />
-        </div>
-      </div>
+        )}
 
-      {/* Rankings de Qtd Vendas */}
-      <div>
-        <h2 className="text-sm font-bold text-[#000638] mb-2 flex items-center gap-2">
-          <TrendUp size={16} /> Quantidade de Vendas
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <RankingCard
-            titulo={
-              periodoLabel
-                ? 'Vendas Período'
-                : `Vendas ${new Date().getFullYear()}`
-            }
-            icone={Trophy}
-            entries={rankings.vendasPeriodo}
-            tipoValor="num"
+        {reativacaoModalOpen && (
+          <ReativacaoModal
+            data={reativacaoData}
+            dataInicio={dataInicio}
+            dataFim={dataFim}
+            onClose={() => setReativacaoModalOpen(false)}
           />
-          <RankingCard
-            titulo="Vendas Mês"
-            icone={Trophy}
-            entries={rankings.vendasMes}
-            tipoValor="num"
-          />
-          <RankingCard
-            titulo="Vendas Semana"
-            icone={Trophy}
-            entries={rankings.vendasSemana}
-            tipoValor="num"
-          />
-        </div>
-      </div>
-
-      {/* Rankings de Ticket Médio */}
-      <div>
-        <h2 className="text-sm font-bold text-[#000638] mb-2 flex items-center gap-2">
-          <TrendUp size={16} /> Ticket Médio
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <RankingCard
-            titulo={
-              periodoLabel ? 'TM Período' : `TM ${new Date().getFullYear()}`
-            }
-            icone={Trophy}
-            entries={rankings.tmPeriodo}
-            tipoValor="moeda"
-          />
-          <RankingCard
-            titulo="TM Mês"
-            icone={Trophy}
-            entries={rankings.tmMes}
-            tipoValor="moeda"
-          />
-          <RankingCard
-            titulo="TM Semana"
-            icone={Trophy}
-            entries={rankings.tmSemana}
-            tipoValor="moeda"
-          />
-        </div>
-      </div>
-
-      {/* Rankings de PA */}
-      <div>
-        <h2 className="text-sm font-bold text-[#000638] mb-2 flex items-center gap-2">
-          <TrendUp size={16} /> Peças por Atendimento (PA)
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <RankingCard
-            titulo={
-              periodoLabel ? 'PA Período' : `PA ${new Date().getFullYear()}`
-            }
-            icone={Trophy}
-            entries={rankings.paPeriodo}
-            tipoValor="num"
-          />
-          <RankingCard
-            titulo="PA Mês"
-            icone={Trophy}
-            entries={rankings.paMes}
-            tipoValor="num"
-          />
-          <RankingCard
-            titulo="PA Semana"
-            icone={Trophy}
-            entries={rankings.paSemana}
-            tipoValor="num"
-          />
-        </div>
-      </div>
-
-      {/* Ranking de Aberturas de Cadastro */}
-      {openingsRanking.length > 0 && (
-        <div>
-          <h2 className="text-sm font-bold text-[#000638] mb-2 flex items-center gap-2">
-            <UserPlus size={16} /> Aberturas de Cadastro
-            <span className="text-[10px] text-gray-400 font-normal">
-              {openingsData?.meta?.jason_openings > 0
-                ? `(novos clientes no período · ${fmtNum(openingsData.meta.jason_openings)} Jason)`
-                : '(novos clientes no período)'}
-            </span>
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <OpeningsRankingCard
-              titulo={
-                periodoLabel
-                  ? 'Aberturas Período'
-                  : `Aberturas ${new Date().getFullYear()}`
-              }
-              entries={openingsRanking}
-              vendedoresMap={vendedoresMap}
-            />
-          </div>
-        </div>
-      )}
-
-      {aperturasModalOpen && (
-        <AperturasModal
-          openingsData={openingsData}
-          sellersTotals={sellersTotals?.periodo || []}
-          dataInicio={dataInicio}
-          dataFim={dataFim}
-          onClose={() => setAperturasModalOpen(false)}
-        />
-      )}
-
-      {reativacaoModalOpen && (
-        <ReativacaoModal
-          data={reativacaoData}
-          dataInicio={dataInicio}
-          dataFim={dataFim}
-          onClose={() => setReativacaoModalOpen(false)}
-        />
-      )}
+        )}
       </div>
       {/* fim do wrapper de "Visão Geral" — toggle varejo */}
     </div>
