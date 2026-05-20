@@ -33,6 +33,11 @@ const AVAILABLE_PAGES = [
     name: 'Solicitações Crosby',
     category: 'Principal',
   },
+  {
+    path: '/solicitacoes-crosby-rh',
+    name: 'Solicitações Crosby RH (dados sensíveis)',
+    category: 'Principal',
+  },
   { path: '/crosby-bot', name: 'Crosby Bot', category: 'Principal' },
   { path: '/dashboard', name: 'BI Externo (Dashboard)', category: 'Principal' },
   { path: '/bi-externo', name: 'BI Externo', category: 'Principal' },
@@ -278,7 +283,11 @@ const AVAILABLE_PAGES = [
 
   // CRM
   { path: '/crm-vendas', name: 'CRM Vendas', category: 'CRM' },
-  { path: '/crm/competicao', name: 'Painel Competição (B2R × B2M)', category: 'CRM' },
+  {
+    path: '/crm/competicao',
+    name: 'Painel Competição (B2R × B2M)',
+    category: 'CRM',
+  },
   { path: '/faturamento-canal', name: 'Forecast', category: 'CRM' },
 
   // Outros

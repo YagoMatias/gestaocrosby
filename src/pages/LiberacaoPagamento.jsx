@@ -271,6 +271,173 @@ const ModalSaldoBancario = ({ onClose, onSaved, userEmail }) => {
   );
 };
 
+// ─── Botão Buscar Chave PIX no TOTVS ─────────────────
+const PIX_KEY_TYPE_LABEL = {
+  Phone: 'Telefone',
+  Email: 'E-mail',
+  CPF_CNPJ: 'CPF/CNPJ',
+  Random: 'Chave aleatória',
+};
+
+const BotaoBuscarPixTotvs = ({ personCode, onSelect, disabled, compact }) => {
+  const [loading, setLoading] = useState(false);
+  const [opcoes, setOpcoes] = useState([]);
+  const [erro, setErro] = useState('');
+  const [aberto, setAberto] = useState(false);
+
+  const codigoNum = parseInt(personCode, 10);
+  const codigoValido = !isNaN(codigoNum) && codigoNum > 0;
+
+  const escolher = (chave) => {
+    onSelect?.(chave);
+    setAberto(false);
+    setOpcoes([]);
+  };
+
+  const buscar = async () => {
+    if (!codigoValido) {
+      alert(
+        'Não há código de fornecedor (cd_pessoa) associado para consultar o TOTVS.',
+      );
+      return;
+    }
+    setLoading(true);
+    setErro('');
+    setOpcoes([]);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/totvs/person/pix-keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personCode: codigoNum }),
+      });
+      const data = await res.json();
+      if (!res.ok || data?.success === false) {
+        setErro(data?.message || 'Erro ao consultar TOTVS.');
+        setAberto(true);
+        return;
+      }
+      const lista = data?.data?.pixKeys || [];
+      if (lista.length === 0) {
+        const dbg = data?.data?.debug;
+        const baCount = dbg?.bankAccountsCount;
+        let msg = 'Nenhuma chave PIX cadastrada para este fornecedor no TOTVS.';
+        if (typeof baCount === 'number') {
+          msg += ` (Contas bancárias retornadas: ${baCount})`;
+        }
+        if (dbg?.personKeys) {
+          console.log('[PIX TOTVS] debug personKeys:', dbg.personKeys);
+          console.log('[PIX TOTVS] resposta completa:', data?.data);
+        }
+        setErro(msg);
+        setAberto(true);
+        return;
+      }
+      if (lista.length === 1) {
+        escolher(lista[0]);
+        return;
+      }
+      setOpcoes(lista);
+      setAberto(true);
+    } catch (e) {
+      setErro('Falha de conexão ao consultar TOTVS.');
+      setAberto(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="relative inline-block">
+      <button
+        type="button"
+        onClick={buscar}
+        disabled={disabled || loading || !codigoValido}
+        title={
+          codigoValido
+            ? 'Buscar chave PIX cadastrada no TOTVS'
+            : 'Selecione um fornecedor para habilitar'
+        }
+        className={`flex items-center gap-1 ${
+          compact ? 'text-[10px] px-1.5 py-1' : 'text-[11px] px-2 py-1.5'
+        } font-semibold rounded border transition-colors ${
+          disabled || !codigoValido
+            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+            : 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+        }`}
+      >
+        {loading ? (
+          <Spinner size={11} className="animate-spin" />
+        ) : (
+          <MagnifyingGlass size={11} weight="bold" />
+        )}
+        TOTVS
+      </button>
+
+      {aberto && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setAberto(false)}
+          />
+          <div className="absolute z-50 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-2xl p-3 w-80">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-bold text-gray-600 uppercase">
+                Chaves PIX no TOTVS
+              </p>
+              <button
+                onClick={() => setAberto(false)}
+                className="text-gray-400 hover:text-gray-700"
+              >
+                <X size={12} weight="bold" />
+              </button>
+            </div>
+            {erro && (
+              <p className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+                {erro}
+              </p>
+            )}
+            {opcoes.length > 0 && (
+              <ul className="flex flex-col gap-1.5 max-h-72 overflow-y-auto">
+                {opcoes.map((p, i) => (
+                  <li key={`${p.sequenceNumber || i}-${p.pixKey}`}>
+                    <button
+                      type="button"
+                      onClick={() => escolher(p)}
+                      className="w-full text-left bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-300 rounded p-2 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[9px] font-bold uppercase text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                          {PIX_KEY_TYPE_LABEL[p.pixKeyType] ||
+                            p.pixKeyType ||
+                            'PIX'}
+                        </span>
+                        {p.bankNumber && (
+                          <span className="text-[9px] text-gray-500 font-mono">
+                            Bco {p.bankNumber}
+                            {p.branchNumber ? ` · Ag ${p.branchNumber}` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs font-semibold text-gray-800 break-all mt-0.5">
+                        {p.pixKey}
+                      </p>
+                      {p.holderName && (
+                        <p className="text-[10px] text-gray-500 truncate">
+                          {p.holderName}
+                        </p>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 // ─── Modal de detalhes do pagamento ──────────────────
 const ModalInfoPagamento = ({ item, onClose }) => {
   const formaCfg = FORMAS_PAGAMENTO.find(
@@ -1020,9 +1187,18 @@ const ModalAdicionarDuplicata = ({ onClose, onSalvo, userEmail }) => {
             </select>
           </div>
           <div className="col-span-2">
-            <label className={labelCls}>
-              {formaCfg?.detalheLabel || 'Detalhe Pgto'}
-            </label>
+            <div className="flex items-center justify-between mb-0.5">
+              <label className={labelCls}>
+                {formaCfg?.detalheLabel || 'Detalhe Pgto'}
+              </label>
+              {form.forma_pagamento === 'PIX' && (
+                <BotaoBuscarPixTotvs
+                  personCode={form.cd_fornecedor}
+                  onSelect={(p) => set('detalhe', p.pixKey)}
+                  compact
+                />
+              )}
+            </div>
             <input
               className={inputCls}
               value={form.detalhe}
@@ -1329,9 +1505,18 @@ const ModalDetalheDuplicata = ({
               </div>
 
               <div className="col-span-2">
-                <label className={labelCls}>
-                  {formaCfg?.detalheLabel || 'Detalhe Pgto'}
-                </label>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className={labelCls}>
+                    {formaCfg?.detalheLabel || 'Detalhe Pgto'}
+                  </label>
+                  {forma === 'PIX' && (
+                    <BotaoBuscarPixTotvs
+                      personCode={item.cd_fornecedor}
+                      onSelect={(p) => setDetalhe(p.pixKey)}
+                      compact
+                    />
+                  )}
+                </div>
                 <input
                   className={inputCls}
                   value={detalhe}
@@ -2013,9 +2198,22 @@ const LinhaTitulo = React.memo(
               </button>
               {showDetalhePopover && formaCfg && (
                 <div className="absolute z-30 top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl p-3 w-64">
-                  <p className="text-[10px] font-bold text-gray-600 uppercase mb-1.5">
-                    {formaCfg.detalheLabel}
-                  </p>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-[10px] font-bold text-gray-600 uppercase">
+                      {formaCfg.detalheLabel}
+                    </p>
+                    {forma === 'PIX' && (
+                      <BotaoBuscarPixTotvs
+                        personCode={item.cd_fornecedor}
+                        onSelect={(p) => {
+                          setDetalheRascunho(p.pixKey);
+                          setDetalhe(p.pixKey);
+                          marcarDirty();
+                        }}
+                        compact
+                      />
+                    )}
+                  </div>
                   <input
                     autoFocus
                     value={detalheRascunho}

@@ -33,6 +33,7 @@ import {
   UploadSimple,
   Image as ImageIcon,
   LinkSimple,
+  IdentificationBadge,
 } from '@phosphor-icons/react';
 
 import DESPESAS_JSON from '../config/despesas.json';
@@ -136,6 +137,11 @@ const TIPO_CONFIG = {
     icon: Wrench,
     color: 'bg-orange-100 text-orange-800',
   },
+  rh: {
+    label: 'RH',
+    icon: IdentificationBadge,
+    color: 'bg-pink-100 text-pink-800',
+  },
 };
 
 // Status secundário — apenas para compra e manutenção
@@ -209,6 +215,13 @@ const SolicitacoesCrosby = () => {
   const [notification, setNotification] = useState(null);
   const [enviandoTotvs, setEnviandoTotvs] = useState(false);
 
+  // Seleção em massa
+  const [selecionados, setSelecionados] = useState(new Set());
+  const [modalMassa, setModalMassa] = useState(null); // 'tipo' | 'reprovar'
+  const [tipoMassa, setTipoMassa] = useState('');
+  const [motivoMassa, setMotivoMassa] = useState('');
+  const [executandoMassa, setExecutandoMassa] = useState(false);
+
   const [filtroStatus, setFiltroStatus] = useState('TODOS');
   const [filtroTipo, setFiltroTipo] = useState('TODOS');
   const [filtroSetor, setFiltroSetor] = useState('TODOS');
@@ -230,6 +243,8 @@ const SolicitacoesCrosby = () => {
   const isAdmin = role === 'owner' || role === 'admin' || role === 'user'; // owner + admin + financeiro
   const isGestor = !!user; // todos os usuários autenticados podem aprovar como gestor
   const isFinanceiro = isAdmin; // NÃO inclui 'manager' — gestor nunca envia ao TOTVS
+  const canVerRH =
+    isAdmin || user?.allowedPages?.includes('/solicitacoes-crosby-rh');
 
   const userNome =
     user?.name ||
@@ -268,6 +283,7 @@ const SolicitacoesCrosby = () => {
   // ----- filtros -----
   const solicitacoesFiltradas = useMemo(() => {
     let lista = solicitacoes;
+    if (!canVerRH) lista = lista.filter((s) => s.tipo_solicitacao !== 'rh');
     if (filtroStatus !== 'TODOS')
       lista = lista.filter((s) => s.status === filtroStatus);
     if (filtroTipo !== 'TODOS')
@@ -287,6 +303,7 @@ const SolicitacoesCrosby = () => {
     return lista;
   }, [
     solicitacoes,
+    canVerRH,
     filtroStatus,
     filtroTipo,
     filtroSetor,
@@ -617,6 +634,186 @@ const SolicitacoesCrosby = () => {
     setFiltroDataFim('');
   };
 
+  // ----- seleção helpers -----
+  const todosVisivelsSelecionados =
+    solicitacoesFiltradas.length > 0 &&
+    solicitacoesFiltradas.every((s) => selecionados.has(s.id));
+  const algunsSelecionados = selecionados.size > 0;
+
+  const toggleSelecionado = (id) =>
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const toggleTodos = () => {
+    if (todosVisivelsSelecionados) {
+      setSelecionados(new Set());
+    } else {
+      setSelecionados(new Set(solicitacoesFiltradas.map((s) => s.id)));
+    }
+  };
+
+  // ----- ações em massa -----
+  const alterarTipoEmMassa = async () => {
+    if (!tipoMassa) return;
+    setExecutandoMassa(true);
+    try {
+      const ids = [...selecionados];
+      const { error } = await supabaseAdmin
+        .from('solicitacoes_crosby')
+        .update({ tipo_solicitacao: tipoMassa })
+        .in('id', ids);
+      if (error) throw error;
+      await carregarSolicitacoes();
+      setSelecionados(new Set());
+      setModalMassa(null);
+      setTipoMassa('');
+      notify('success', `Tipo alterado em ${ids.length} solicitação(ões).`);
+    } catch (err) {
+      console.error(err);
+      notify('error', 'Erro ao alterar tipo em massa.');
+    } finally {
+      setExecutandoMassa(false);
+    }
+  };
+
+  const aprovarGestorEmMassa = async () => {
+    if (!isGestor) return;
+    if (
+      !window.confirm(
+        `Aprovar como gestor ${selecionados.size} solicitação(ões) selecionada(s)?`,
+      )
+    )
+      return;
+    setExecutandoMassa(true);
+    try {
+      const ids = [...selecionados];
+      const agora = new Date().toISOString();
+      const { error } = await supabaseAdmin
+        .from('solicitacoes_crosby')
+        .update({
+          status: 'aprovado_gestor',
+          aprovado_gestor_em: agora,
+          aprovado_gestor_por: user?.id || null,
+          aprovado_gestor_por_nome: userNome,
+        })
+        .in('id', ids);
+      if (error) throw error;
+      await carregarSolicitacoes();
+      setSelecionados(new Set());
+      notify(
+        'success',
+        `${ids.length} solicitação(ões) aprovada(s) pelo gestor.`,
+      );
+    } catch (err) {
+      console.error(err);
+      notify('error', 'Erro ao aprovar em massa.');
+    } finally {
+      setExecutandoMassa(false);
+    }
+  };
+
+  const reprovarGestorEmMassa = async () => {
+    if (!motivoMassa.trim()) {
+      notify('error', 'Informe o motivo da rejeição.');
+      return;
+    }
+    setExecutandoMassa(true);
+    try {
+      const ids = [...selecionados];
+      const agora = new Date().toISOString();
+      const { error } = await supabaseAdmin
+        .from('solicitacoes_crosby')
+        .update({
+          status: 'rejeitado',
+          rejeitado_em: agora,
+          rejeitado_por: user?.id || null,
+          rejeitado_por_nome: userNome,
+          motivo_rejeicao: motivoMassa.trim(),
+        })
+        .in('id', ids);
+      if (error) throw error;
+      await carregarSolicitacoes();
+      setSelecionados(new Set());
+      setModalMassa(null);
+      setMotivoMassa('');
+      notify('success', `${ids.length} solicitação(ões) rejeitada(s).`);
+    } catch (err) {
+      console.error(err);
+      notify('error', 'Erro ao rejeitar em massa.');
+    } finally {
+      setExecutandoMassa(false);
+    }
+  };
+
+  const enviarTotvsEmMassa = async () => {
+    if (!isFinanceiro) return;
+    const candidatas = solicitacoesFiltradas.filter(
+      (s) => selecionados.has(s.id) && s.payload_totvs,
+    );
+    if (candidatas.length === 0) {
+      notify('error', 'Nenhuma selecionada possui payload TOTVS.');
+      return;
+    }
+    if (!window.confirm(`Enviar ${candidatas.length} duplicata(s) ao TOTVS?`))
+      return;
+    setExecutandoMassa(true);
+    let okCount = 0;
+    let failCount = 0;
+    try {
+      for (const sol of candidatas) {
+        try {
+          const resp = await fetch(
+            `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(sol.payload_totvs),
+            },
+          );
+          const result = await resp.json().catch(() => ({}));
+          if (!resp.ok || result?.success === false) {
+            const msg = result?.message || `HTTP ${resp.status}`;
+            await supabaseAdmin
+              .from('solicitacoes_crosby')
+              .update({
+                status: 'erro_envio',
+                totvs_erro: msg,
+                totvs_response: result?.details || result || null,
+              })
+              .eq('id', sol.id);
+            failCount++;
+          } else {
+            await supabaseAdmin
+              .from('solicitacoes_crosby')
+              .update({
+                status: 'enviado_totvs',
+                enviado_totvs_em: new Date().toISOString(),
+                totvs_response: result?.data ?? result ?? null,
+                totvs_erro: null,
+              })
+              .eq('id', sol.id);
+            okCount++;
+          }
+        } catch {
+          failCount++;
+        }
+      }
+      await carregarSolicitacoes();
+      setSelecionados(new Set());
+      if (failCount === 0)
+        notify('success', `${okCount} duplicata(s) enviada(s) com sucesso!`);
+      else notify('error', `${okCount} enviada(s), ${failCount} com erro.`);
+    } catch (err) {
+      console.error(err);
+      notify('error', 'Erro no envio em massa.');
+    } finally {
+      setExecutandoMassa(false);
+    }
+  };
+
   // =====================================================================
   // RENDER
   // =====================================================================
@@ -737,6 +934,7 @@ const SolicitacoesCrosby = () => {
             <option value="reembolso">Reembolso</option>
             <option value="compra">Compra</option>
             <option value="manutencao">Manutenção</option>
+            {canVerRH && <option value="rh">RH</option>}
           </select>
         </div>
         <div className="flex flex-col">
@@ -840,6 +1038,69 @@ const SolicitacoesCrosby = () => {
         <span className="ml-auto text-xs text-gray-500">
           {solicitacoesFiltradas.length} de {solicitacoes.length}
         </span>
+
+        {/* Ações em massa */}
+        {algunsSelecionados && (
+          <>
+            <div className="w-full h-px bg-gray-200" />
+            <div className="w-full flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold text-[#000638]">
+                {selecionados.size} selecionada
+                {selecionados.size !== 1 ? 's' : ''}:
+              </span>
+              <button
+                onClick={() => {
+                  setTipoMassa('');
+                  setModalMassa('tipo');
+                }}
+                className="px-3 py-1.5 text-xs font-bold text-white bg-[#000638] hover:bg-[#fe0000] rounded-lg transition-colors"
+              >
+                Alterar Tipo
+              </button>
+              {isGestor && (
+                <button
+                  onClick={aprovarGestorEmMassa}
+                  disabled={executandoMassa}
+                  className="px-3 py-1.5 text-xs font-bold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg transition-colors flex items-center gap-1"
+                >
+                  {executandoMassa && (
+                    <Spinner size={11} className="animate-spin" />
+                  )}
+                  Aprovar (Gestor)
+                </button>
+              )}
+              {isGestor && (
+                <button
+                  onClick={() => {
+                    setMotivoMassa('');
+                    setModalMassa('reprovar');
+                  }}
+                  className="px-3 py-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                >
+                  Reprovar (Gestor)
+                </button>
+              )}
+              {isFinanceiro && (
+                <button
+                  onClick={enviarTotvsEmMassa}
+                  disabled={executandoMassa}
+                  className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg transition-colors flex items-center gap-1"
+                >
+                  {executandoMassa && (
+                    <Spinner size={11} className="animate-spin" />
+                  )}
+                  Enviar ao TOTVS
+                </button>
+              )}
+              <button
+                onClick={() => setSelecionados(new Set())}
+                className="px-3 py-1.5 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Limpar seleção
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Tabela */}
@@ -861,6 +1122,15 @@ const SolicitacoesCrosby = () => {
           <table className="min-w-full text-xs">
             <thead className="bg-[#000638] text-white sticky top-0">
               <tr>
+                <th className="px-3 py-2.5 text-center w-8">
+                  <input
+                    type="checkbox"
+                    checked={todosVisivelsSelecionados}
+                    onChange={toggleTodos}
+                    className="w-3.5 h-3.5 cursor-pointer accent-white"
+                    title="Selecionar todos"
+                  />
+                </th>
                 <th className="px-3 py-2.5 text-left font-semibold">Status</th>
                 <th className="px-3 py-2.5 text-left font-semibold">Tipo</th>
                 <th className="px-3 py-2.5 text-left font-semibold">Loja</th>
@@ -893,8 +1163,16 @@ const SolicitacoesCrosby = () => {
                 return (
                   <tr
                     key={sol.id}
-                    className="border-b hover:bg-gray-50 transition-colors"
+                    className={`border-b hover:bg-gray-50 transition-colors ${selecionados.has(sol.id) ? 'bg-blue-50' : ''}`}
                   >
+                    <td className="px-3 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selecionados.has(sol.id)}
+                        onChange={() => toggleSelecionado(sol.id)}
+                        className="w-3.5 h-3.5 cursor-pointer accent-[#000638]"
+                      />
+                    </td>
                     <td className="px-3 py-2">
                       <span
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${statusCfg.color}`}
@@ -1011,6 +1289,110 @@ const SolicitacoesCrosby = () => {
           onAtualizarStatusSecundario={atualizarStatusSecundario}
           onRecarregar={carregarSolicitacoes}
         />
+      )}
+
+      {/* MODAL ALTERAR TIPO EM MASSA */}
+      {modalMassa === 'tipo' && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full">
+            <div className="bg-[#000638] text-white p-4 rounded-t-xl flex justify-between items-center">
+              <h3 className="text-base font-bold">Alterar tipo em massa</h3>
+              <button
+                onClick={() => setModalMassa(null)}
+                className="text-white hover:text-gray-200"
+              >
+                <X size={20} weight="bold" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-600">
+                Alterar tipo de <strong>{selecionados.size}</strong>{' '}
+                solicitação(ões) para:
+              </p>
+              <select
+                value={tipoMassa}
+                onChange={(e) => setTipoMassa(e.target.value)}
+                className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#000638]"
+              >
+                <option value="">Selecione o tipo...</option>
+                <option value="pagamento">Pagamento</option>
+                <option value="reembolso">Reembolso</option>
+                <option value="compra">Compra</option>
+                <option value="manutencao">Manutenção</option>
+                {canVerRH && <option value="rh">RH</option>}
+              </select>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setModalMassa(null)}
+                  className="px-3 py-1.5 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={alterarTipoEmMassa}
+                  disabled={!tipoMassa || executandoMassa}
+                  className="px-3 py-1.5 text-xs font-bold text-white bg-[#000638] hover:bg-[#fe0000] disabled:opacity-50 rounded-lg flex items-center gap-1"
+                >
+                  {executandoMassa && (
+                    <Spinner size={12} className="animate-spin" />
+                  )}
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL REPROVAR EM MASSA */}
+      {modalMassa === 'reprovar' && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            <div className="bg-red-600 text-white p-4 rounded-t-xl flex justify-between items-center">
+              <h3 className="text-base font-bold flex items-center gap-2">
+                <XCircle size={18} weight="bold" />
+                Reprovar em massa
+              </h3>
+              <button
+                onClick={() => setModalMassa(null)}
+                className="text-white hover:text-gray-200"
+              >
+                <X size={20} weight="bold" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-sm text-gray-700">
+                Rejeitar <strong>{selecionados.size}</strong> solicitação(ões).
+                Informe o motivo:
+              </p>
+              <textarea
+                rows={4}
+                value={motivoMassa}
+                onChange={(e) => setMotivoMassa(e.target.value)}
+                placeholder="Motivo da rejeição..."
+                className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-red-500 resize-y"
+              />
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setModalMassa(null)}
+                  className="px-3 py-1.5 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={reprovarGestorEmMassa}
+                  disabled={!motivoMassa.trim() || executandoMassa}
+                  className="px-3 py-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-lg flex items-center gap-1"
+                >
+                  {executandoMassa && (
+                    <Spinner size={12} className="animate-spin" />
+                  )}
+                  Confirmar Rejeição
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* MODAL REJEIÇÃO */}
@@ -1947,7 +2329,7 @@ const ModalEdicao = ({
   const instOrig = payload.installments || [];
 
   // ── Estado editável ────────────────────────────────────────────────
-  const [tipo, setTipo] = React.useState(sol.tipo || '');
+  const [tipo, setTipo] = React.useState(sol.tipo_solicitacao || '');
   const [solicitante, setSolicitante] = React.useState(sol.solicitante || '');
   const [setor, setSetor] = React.useState(sol.setor || '');
   const [solicitanteEmail, setSolicitanteEmail] = React.useState(
@@ -2039,6 +2421,7 @@ const ModalEdicao = ({
     { value: 'reembolso', label: 'Reembolso' },
     { value: 'compra', label: 'Compra' },
     { value: 'manutencao', label: 'Manutenção' },
+    { value: 'rh', label: 'RH' },
   ];
 
   const onlyDigits = (v) => String(v || '').replace(/\D+/g, '');
@@ -2213,7 +2596,7 @@ const ModalEdicao = ({
         0,
       );
       const dados = {
-        tipo: tipo || sol.tipo,
+        tipo_solicitacao: tipo || sol.tipo_solicitacao,
         solicitante: solicitante.trim() || sol.solicitante,
         setor: setor || sol.setor,
         solicitante_email: solicitanteEmail.trim() || null,

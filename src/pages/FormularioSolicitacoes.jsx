@@ -87,6 +87,15 @@ const TIPOS = [
     border: 'border-orange-200',
     selectedBg: 'bg-orange-600',
   },
+  {
+    id: 'rh',
+    label: 'Solicitação de RH',
+    icon: IdentificationBadge,
+    color: 'text-pink-700',
+    bg: 'bg-pink-50',
+    border: 'border-pink-200',
+    selectedBg: 'bg-pink-600',
+  },
 ];
 
 const FORMAS_PAGAMENTO = [
