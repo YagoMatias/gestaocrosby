@@ -208,8 +208,8 @@ export default function VarejoCrescimento() {
         </div>
       ) : data ? (
         <>
-          {/* TOTAIS — 3 cards big */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* TOTAIS — 4 cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <SummaryCard
               title="Atual"
               subtitle={formatPeriodLabel(data.periodo_atual)}
@@ -226,6 +226,16 @@ export default function VarejoCrescimento() {
               delta={totais.delta}
               pct={totais.crescimento_pct}
             />
+            {/* Crescimento "apples-to-apples" — só lojas que existiam em ambos */}
+            {totais.comp_lojas_count != null && totais.comp_lojas_count > 0 && (
+              <SummaryGrowthCard
+                title="Crescimento mesmas lojas"
+                subtitle={`${totais.comp_lojas_count} de ${totais.total_lojas_count} lojas comparáveis`}
+                delta={totais.comp_delta}
+                pct={totais.comp_crescimento_pct}
+                accent="blue"
+              />
+            )}
           </div>
 
           {/* Tabela por loja */}
@@ -342,14 +352,24 @@ function SummaryCard({ title, subtitle, valor, color = 'emerald' }) {
   );
 }
 
-function SummaryGrowthCard({ delta, pct }) {
+function SummaryGrowthCard({
+  delta,
+  pct,
+  title = 'Crescimento Total',
+  subtitle = 'vs ano anterior',
+  accent,
+}) {
   const positive = (delta ?? 0) >= 0;
   const isFlat = pct == null;
-  const colorBase = isFlat
-    ? 'from-gray-500 to-gray-700'
-    : positive
-      ? 'from-emerald-500 to-emerald-700'
-      : 'from-rose-500 to-rose-700';
+  // Accent forçado (blue) sobrescreve a cor automática (verde/vermelho).
+  const colorBase =
+    accent === 'blue'
+      ? 'from-blue-500 to-blue-700'
+      : isFlat
+        ? 'from-gray-500 to-gray-700'
+        : positive
+          ? 'from-emerald-500 to-emerald-700'
+          : 'from-rose-500 to-rose-700';
   const Icon = positive ? TrendUp : TrendDown;
   return (
     <div
@@ -359,9 +379,9 @@ function SummaryGrowthCard({ delta, pct }) {
         <Icon size={100} weight="duotone" />
       </div>
       <p className="text-[11px] uppercase tracking-wider opacity-80 mb-0.5">
-        Crescimento
+        {title}
       </p>
-      <p className="text-[10px] opacity-70 mb-1">vs ano anterior</p>
+      <p className="text-[10px] opacity-70 mb-1">{subtitle}</p>
       <p className="text-2xl font-bold tabular-nums">
         {isFlat ? '—' : `${positive ? '+' : ''}${pct.toFixed(1)}%`}
       </p>
@@ -375,7 +395,17 @@ function SummaryGrowthCard({ delta, pct }) {
 // ─── Linha da tabela por loja ──────────────────────────────────────────
 function LojaRow({ loja, maxFat }) {
   const positive = (loja.delta ?? 0) >= 0;
-  const isNew = loja.faturamento_anterior === 0 && loja.faturamento_atual > 0;
+  // Loja MIGRADA = era franquia antes, virou loja própria. Franquia não aparece
+  // em sale-panel (era cliente externo), então ano anterior = 0 e o comparativo
+  // não é apples-to-apples. Mostra label específico.
+  const isMigradaSemComp =
+    loja.teve_migracao &&
+    loja.faturamento_anterior === 0 &&
+    loja.faturamento_atual > 0;
+  const isNovaLoja =
+    !loja.teve_migracao &&
+    loja.faturamento_anterior === 0 &&
+    loja.faturamento_atual > 0;
   const isGone = loja.faturamento_atual === 0 && loja.faturamento_anterior > 0;
   const Icon = loja.type === 'shopping' ? Buildings : Storefront;
 
@@ -387,20 +417,26 @@ function LojaRow({ loja, maxFat }) {
       <td className="py-2.5 px-3">
         <div className="flex items-center gap-2">
           <div
-            className={`w-7 h-7 rounded-full flex items-center justify-center ${
+            className={`w-8 h-8 rounded-lg flex items-center justify-center ${
               loja.teve_migracao
-                ? 'bg-amber-100 text-amber-700'
+                ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-200'
                 : 'bg-gray-100 text-gray-600'
             }`}
-            title={loja.teve_migracao ? 'Loja com migração de código' : ''}
+            title={loja.teve_migracao ? 'Loja com migração de código (era franquia)' : ''}
           >
-            <Icon size={13} weight={loja.teve_migracao ? 'fill' : 'regular'} />
+            <Icon size={14} weight="duotone" />
           </div>
           <div>
             <div className="font-semibold text-gray-800 text-sm flex items-center gap-1">
               {loja.shortName}
               {loja.teve_migracao && (
-                <Sparkle size={10} weight="fill" className="text-amber-500" />
+                <span
+                  className="inline-flex items-center gap-0.5 px-1 py-0 rounded bg-amber-50 border border-amber-200 text-[8px] font-black uppercase tracking-wider text-amber-700"
+                  title="Antes era franquia (código 6xxx) — virou loja própria"
+                >
+                  <Sparkle size={7} weight="fill" />
+                  Migrada
+                </span>
               )}
             </div>
             <div className="text-[10px] text-gray-400">
@@ -413,6 +449,13 @@ function LojaRow({ loja, maxFat }) {
       <td className="py-2.5 px-3 text-right tabular-nums text-gray-600">
         {loja.faturamento_anterior > 0 ? (
           <>R$ {formatBRL(loja.faturamento_anterior)}</>
+        ) : isMigradaSemComp ? (
+          <span
+            className="text-amber-500 text-[10px] italic"
+            title="Era franquia (cliente externo) — vendas não aparecem em sale-panel"
+          >
+            n/d (era franq.)
+          </span>
         ) : (
           <span className="text-gray-400 text-xs">—</span>
         )}
@@ -426,19 +469,37 @@ function LojaRow({ loja, maxFat }) {
       </td>
       <td
         className={`py-2.5 px-3 text-right tabular-nums font-medium ${
-          loja.delta >= 0 ? 'text-emerald-700' : 'text-rose-700'
+          isMigradaSemComp || isNovaLoja
+            ? 'text-gray-400'
+            : loja.delta >= 0
+              ? 'text-emerald-700'
+              : 'text-rose-700'
         }`}
       >
-        {loja.delta >= 0 ? '+' : ''}R$ {formatBRL(loja.delta)}
+        {isMigradaSemComp || isNovaLoja ? (
+          <span className="text-xs">—</span>
+        ) : (
+          <>
+            {loja.delta >= 0 ? '+' : ''}R$ {formatBRL(loja.delta)}
+          </>
+        )}
       </td>
       <td className="py-2.5 px-3 text-right">
-        {isNew ? (
+        {isMigradaSemComp ? (
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 cursor-help"
+            title="Sem comparativo: era franquia em 2025 (vendas como cliente externo, não aparecem em sale-panel)"
+          >
+            <Info size={9} weight="bold" />
+            Sem comp.
+          </span>
+        ) : isNovaLoja ? (
           <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">
-            NOVO
+            Nova loja
           </span>
         ) : isGone ? (
           <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-600">
-            SEM VENDA
+            Sem venda
           </span>
         ) : loja.crescimento_pct == null ? (
           <span className="text-gray-400">—</span>
@@ -480,7 +541,11 @@ function LojaRow({ loja, maxFat }) {
             <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
               <div
                 className={`h-full ${
-                  positive ? 'bg-emerald-500' : 'bg-rose-500'
+                  isMigradaSemComp || isNovaLoja
+                    ? 'bg-blue-400'
+                    : positive
+                      ? 'bg-emerald-500'
+                      : 'bg-rose-500'
                 }`}
                 style={{ width: `${Math.max(2, pctAtual)}%` }}
               />
