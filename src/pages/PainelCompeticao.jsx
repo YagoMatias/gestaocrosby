@@ -101,6 +101,12 @@ const CANAIS = [
   },
 ];
 
+// Intervalo de auto-refresh — sincronizado com cache TTL do backend (30min realtime)
+// pra não bater TOTVS na frente do cache. 1h = boa margem.
+const AUTO_REFRESH_SECS = 3600; // 1h
+// Circuit-breaker: após N erros consecutivos, para de tentar até user clicar atualizar
+const MAX_ERROS_CONSECUTIVOS = 3;
+
 // ─── Componente principal ──────────────────────────────────────────
 export default function PainelCompeticao() {
   const [dadosDia, setDadosDia] = useState({});
@@ -109,7 +115,8 @@ export default function PainelCompeticao() {
   const [erro, setErro] = useState('');
   const [fullscreen, setFullscreen] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
-  const [nextRefreshIn, setNextRefreshIn] = useState(3600);
+  const [nextRefreshIn, setNextRefreshIn] = useState(AUTO_REFRESH_SECS);
+  const errosRef = useRef(0); // contador de erros consecutivos (circuit-breaker)
   const containerRef = useRef(null);
 
   // Atualiza referência de "hoje" a cada chamada — mantém data correta após meia-noite
@@ -117,7 +124,7 @@ export default function PainelCompeticao() {
   const hojeIso = ymd(refDate);
   const semanaInicio = ymd(startOfIsoWeek(refDate));
 
-  const carregar = useCallback(async () => {
+  const carregar = useCallback(async ({ manual = false } = {}) => {
     setLoading(true);
     setErro('');
     // Atualiza data de referência (importante após meia-noite)
@@ -145,9 +152,17 @@ export default function PainelCompeticao() {
       setDadosDia({ revenda: revDia, multimarcas: mmDia });
       setDadosSemana({ revenda: revSem, multimarcas: mmSem });
       setLastUpdate(new Date());
-      setNextRefreshIn(3600);
+      setNextRefreshIn(AUTO_REFRESH_SECS);
+      errosRef.current = 0; // reset circuit-breaker em sucesso
     } catch (e) {
-      setErro(e.message);
+      errosRef.current += 1;
+      const breaker = errosRef.current >= MAX_ERROS_CONSECUTIVOS;
+      const msg = breaker
+        ? `${e.message} — auto-refresh PAUSADO após ${errosRef.current} erros consecutivos. Clique em "Atualizar" pra tentar de novo.`
+        : `${e.message} (tentativa ${errosRef.current}/${MAX_ERROS_CONSECUTIVOS})`;
+      setErro(msg);
+      // Se foi manual e deu erro, reseta contador (user pediu)
+      if (manual) errosRef.current = 0;
     } finally {
       setLoading(false);
     }
@@ -155,13 +170,17 @@ export default function PainelCompeticao() {
 
   useEffect(() => { carregar(); }, [carregar]);
 
-  // Auto-refresh a cada 1h + countdown visual
+  // Auto-refresh + countdown visual. Circuit-breaker: pausa após N erros
+  // consecutivos, evita bombardear TOTVS quando ele tá fora.
   useEffect(() => {
     const tick = setInterval(() => {
       setNextRefreshIn((s) => {
         if (s <= 1) {
-          carregar();
-          return 3600;
+          // Só re-fetch se circuit-breaker não acionou
+          if (errosRef.current < MAX_ERROS_CONSECUTIVOS) {
+            carregar();
+          }
+          return AUTO_REFRESH_SECS;
         }
         return s - 1;
       });
@@ -250,7 +269,7 @@ export default function PainelCompeticao() {
           loading={loading}
           lastUpdate={lastUpdate}
           nextRefreshIn={nextRefreshIn}
-          onRefresh={carregar}
+          onRefresh={() => carregar({ manual: true })}
           hojeIso={hojeIso}
           semanaInicio={semanaInicio}
         />

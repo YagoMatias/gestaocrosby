@@ -748,6 +748,13 @@ const useApiClient = () => {
     salePanelComprasFranquias: (body) =>
       apiMutate('/api/totvs/sale-panel/compras-franquias', 'POST', body),
 
+    salePanelComprasFranquiaDetalhe: (body) =>
+      apiMutate(
+        '/api/totvs/sale-panel/compras-franquia-detalhe',
+        'POST',
+        body,
+      ),
+
     salePanelSellers: (body) =>
       apiMutate('/api/totvs/sale-panel/sellers', 'POST', body),
 

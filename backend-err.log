@@ -1,0 +1,442 @@
+[canal-totals movement] pág 1: stream has been aborted
+⚠️  [1779388829426-er3po22g2] Query lenta detectada: 56642ms em POST /canal-totals
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+⚠️  [1779388894001-kxkfuvt7e] Query lenta detectada: 5260ms em POST /canal-totals
+⚠️  [1779388899437-u55eqbqeg] Query lenta detectada: 19883ms em POST /canal-totals
+[fat-seg invoices] pág 8 tentativa 1 falhou (stream has been aborted), retry em 1500ms
+[canal-totals movement] pág 19: stream has been aborted
+⚠️  [1779388899422-98rmp6at6] Query lenta detectada: 25388ms em POST /canal-totals
+[fat-seg invoices] pág 2 tentativa 1 falhou (socket hang up), retry em 1500ms
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+[canal-sellers business] sellers/search br 6020 falhou: read ECONNRESET
+⚠️  [1779388899433-ah2zzrf4d] Query lenta detectada: 37667ms em POST /canal-totals
+[canal-sellers business] sellers/search br 6188 falhou: read ECONNRESET
+[canal-sellers business] sellers/search br 6194 falhou: read ECONNRESET
+[canal-totals movement] pág 2: read ECONNRESET
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+⚠️  [1779388829433-o2lwtb7lk] Query lenta detectada: 118208ms em POST /canal-totals
+[canal-totals movement] pág 5: stream has been aborted
+[canal-totals movement] pág 2: stream has been aborted
+[canal-totals movement] pág 8: stream has been aborted
+⚠️  [1779388829429-l0ojx8c9t] Query lenta detectada: 131652ms em POST /canal-totals
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+⚠️  [1779388973621-manue2zpp] Query lenta detectada: 7671ms em POST /canal-totals
+[fat-seg invoices] pág 1 tentativa 1 falhou (stream has been aborted), retry em 1500ms
+[canal-totals movement] pág 2: stream has been aborted
+[canal-sellers franquia] sellers/search br 6194 falhou: timeout of 60000ms exceeded
+[forecast/promessa] getFaturamentoPorSegmento falhou (2026-05-01~2026-05-20): timeout of 180000ms exceeded — tentando fallback via canal-totals
+[forecast/promessa] getFaturamentoPorSegmento falhou (2026-05-20~2026-05-20): timeout of 180000ms exceeded — tentando fallback via canal-totals
+[forecast/promessa] getFaturamentoPorSegmento falhou (2026-05-18~2026-05-20): timeout of 180000ms exceeded — tentando fallback via canal-totals
+[forecast/promessa] getFaturamentoPorSegmento falhou (2026-05-20~2026-05-20): timeout of 180000ms exceeded — tentando fallback via canal-totals
+[forecast/promessa] getFaturamentoPorSegmento falhou (2026-05-01~2026-05-20): timeout of 180000ms exceeded — tentando fallback via canal-totals
+[canal-totals movement] pág 1: stream has been aborted
+⚠️  [1779388899425-j0d6g9oy1] Query lenta detectada: 108512ms em POST /canal-totals
+[fat-seg] 2026-05-20|2026-05-20 — TOTVS retornou parcial (0 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-05-20|2026-05-20 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+⚠️  [1779388818372-0c2mbtb7r] Query lenta detectada: 189573ms em POST /faturamento-por-segmento
+[canal-totals invoices] pág 1: stream has been aborted
+[forecast/vendedores] per_seller(revenda) falhou: timeout of 180000ms exceeded
+⚠️  [1779388818330-2uf8775iy] Query lenta detectada: 190830ms em GET /promessa-vendedores
+[fat-seg invoices] pág 5 tentativa 1 falhou (stream has been aborted), retry em 1500ms
+[canal-sellers bazar] sellers/search br 6194 falhou: read ECONNRESET
+[canal-sellers bazar] sellers/search br 6200 falhou: read ECONNRESET
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+[canal-totals movement] pág 9: stream has been aborted
+⚠️  [1779388973628-efbhyfft8] Query lenta detectada: 55375ms em POST /canal-totals
+⚠️  [1779388998680-q4fo3jzm4] Query lenta detectada: 32359ms em POST /canal-totals
+[canal-totals movement] pág 24: stream has been aborted
+[canal-totals invoices] pág 1: stream has been aborted
+[fat-seg invoices] pág 1 tentativa 1 falhou (stream has been aborted), retry em 1500ms
+⚠️  [1779388879205-8sixcnsoy] Query lenta detectada: 157308ms em POST /canal-totals
+[canal-totals movement] pág 9: stream has been aborted
+⚠️  [1779388998591-0gvxddjpb] Query lenta detectada: 48427ms em POST /canal-totals
+[manualTx pg 3] stream has been aborted
+⚠️ [erp-bg] 2025-09-01~2025-09-30 pág 3: stream has been aborted
+[canal-totals movement] pág 13: stream has been aborted
+⚠️  [1779388929018-rt4ync68f] Query lenta detectada: 129755ms em POST /canal-totals
+[fat-seg invoices] pág 5 tentativa 1 falhou (stream has been aborted), retry em 1500ms
+⚠️  [1779388929009-80kyasdv0] Query lenta detectada: 145037ms em POST /canal-totals
+[fat-seg] 2026-05-20|2026-05-20 — TOTVS retornou parcial (0 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-05-20|2026-05-20 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+⚠️  [1779388829416-22fqk2vkf] Query lenta detectada: 244639ms em POST /faturamento-por-segmento
+⚠️  [1779388947410-qarfxozc5] Query lenta detectada: 128402ms em POST /canal-totals
+[canal-totals movement] pág 9: stream has been aborted
+[canal-totals movement] pág 11: socket hang up
+⚠️  [1779388829424-ozt01ch2m] Query lenta detectada: 266330ms em POST /canal-totals
+[canal-totals movement] pág 13: stream has been aborted
+⚠️  [1779388998543-h0bx8kvxt] Query lenta detectada: 98051ms em POST /canal-totals
+[canal-totals movement] pág 10: read ECONNRESET
+⚠️  [1779388973636-bt01wz5z7] Query lenta detectada: 132187ms em POST /canal-totals
+⚠️  [1779388998640-5rx7xvbg8] Query lenta detectada: 107921ms em POST /canal-totals
+[canal-totals movement] pág 17: stream has been aborted
+[manualTx pg 1] stream has been aborted
+⚠️ [erp-bg] 2025-08-01~2025-08-31 pág 6: stream has been aborted
+[fat-seg fallback] canal multimarcas falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal inbound_david falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal inbound_rafael falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal franquia falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal business falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal bazar falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal showroom falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal novidadesfranquia falhou: timeout of 120000ms exceeded
+⚠️  [1779388818274-8pbeglvap] Query lenta detectada: 300096ms em GET /promessa-mensal
+[fat-seg fallback] canal franquia falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal business falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal bazar falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal showroom falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal business falhou: timeout of 120000ms exceeded
+⚠️  [1779388818313-9nc28w30l] Query lenta detectada: 300127ms em GET /promessa-semanal
+[fat-seg fallback] canal revenda falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal multimarcas falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal inbound_david falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal inbound_rafael falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal franquia falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal business falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal bazar falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal showroom falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal novidadesfranquia falhou: timeout of 120000ms exceeded
+⚠️  [1779388879228-rbyasurlh] Query lenta detectada: 241756ms em POST /canal-totals
+⚠️  [1779388998673-nkn6dh3s0] Query lenta detectada: 122872ms em POST /canal-totals
+⚠️  [1779388879197-v1a3xgl5k] Query lenta detectada: 242838ms em POST /canal-totals
+⚠️  [1779388947397-7xgufhj17] Query lenta detectada: 178262ms em POST /canal-totals
+[fat-seg invoices] pág 15 tentativa 1 falhou (stream has been aborted), retry em 1500ms
+⚠️  [1779388788292-tksufebjk] Query lenta detectada: 344323ms em POST /canal-totals
+⚠️  [1779388947407-ori2an4s1] Query lenta detectada: 187435ms em POST /canal-totals
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+[canal-totals movement] pág 1: socket hang up
+[manualTx pg 1] stream has been aborted
+⚠️  [1779388818337-isn088rog] Query lenta detectada: 331605ms em GET /comparativo-anual
+[fat-seg invoices] pág 10 tentativa 1 falhou (stream has been aborted), retry em 1500ms
+⚠️  [1779388973639-zh1v3oy1p] Query lenta detectada: 180825ms em POST /canal-totals
+[manualTx pg 4] stream has been aborted
+[canal-totals invoices] pág 1: stream has been aborted
+[canal-totals movement] pág 8: socket hang up
+[canal-totals movement] pág 2: stream has been aborted
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+⚠️  [1779388879203-idtgp6biq] Query lenta detectada: 296766ms em POST /canal-totals
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+[canal-totals movement] pág 8: socket hang up
+⚠️  [1779388788381-val81cys1] Query lenta detectada: 397056ms em POST /canal-totals
+⚠️  [1779388788387-om4p6f5yy] Query lenta detectada: 410081ms em POST /canal-totals
+⚠️  [1779388879219-0fvz2zv1p] Query lenta detectada: 319262ms em POST /canal-totals
+⚠️  [1779388998656-s8hj6i4bt] Query lenta detectada: 209703ms em POST /canal-totals
+[canal-totals movement] pág 3: stream has been aborted
+⚠️  [1779389140798-up4fcga7s] Query lenta detectada: 69219ms em POST /canal-totals
+⚠️  [1779388998667-6h52evavx] Query lenta detectada: 211476ms em POST /canal-totals
+⚠️  [1779388998706-nz2lafhkc] Query lenta detectada: 216116ms em POST /canal-totals
+[canal-totals movement] pág 10: stream has been aborted
+⚠️  [1779388998566-tr8ggpt5x] Query lenta detectada: 220135ms em POST /canal-totals
+⚠️  [1779389175927-0pkh8wvvs] Query lenta detectada: 46578ms em POST /canal-totals
+[canal-sellers showroom] sellers/search br 6184 falhou: read ECONNRESET
+[canal-sellers showroom] sellers/search br 6191 falhou: read ECONNRESET
+[canal-sellers showroom] sellers/search br 6193 falhou: read ECONNRESET
+[canal-sellers showroom] sellers/search br 6203 falhou: read ECONNRESET
+[canal-sellers showroom] sellers/search br 6207 falhou: read ECONNRESET
+[canal-sellers showroom] sellers/search br 6212 falhou: read ECONNRESET
+⚠️ [erp-bg] 2025-06-01~2025-06-30 pág 14: stream has been aborted
+[canal-totals movement] pág 15: stream has been aborted
+⚠️  [1779389175895-uvh3wpxd2] Query lenta detectada: 60657ms em POST /canal-totals
+⚠️  [1779388947403-5rz89ioza] Query lenta detectada: 299553ms em POST /canal-totals
+[canal-sellers business] sellers/search br 6212 falhou: read ECONNRESET
+[canal-totals movement] pág 5: stream has been aborted
+⚠️  [1779389175831-g76zhedbv] Query lenta detectada: 83604ms em POST /canal-totals
+[canal-totals movement] pág 1: stream has been aborted
+[canal-sellers novidadesfranquia] sellers/search br 6187 falhou: read ECONNRESET
+[canal-sellers business] sellers/search br 6189 falhou: 
+⚠️  [1779388998747-rcmogl0a1] Query lenta detectada: 278654ms em POST /canal-totals
+[canal-totals movement] pág 6: stream has been aborted
+⚠️  [1779388788327-d7if9eqvi] Query lenta detectada: 503922ms em POST /canal-totals
+⚠️  [1779389020918-nuxordt0o] Query lenta detectada: 272514ms em POST /canal-totals
+[canal-totals movement] pág 5: stream has been aborted
+[canal-totals movement] pág 2: stream has been aborted
+[canal-totals movement] pág 17: stream has been aborted
+[canal-totals movement] pág 19: stream has been aborted
+⚠️  [1779388998662-z4aezdryq] Query lenta detectada: 328894ms em POST /canal-totals
+[canal-sellers novidadesfranquia] sellers/search br 6174 falhou: 
+[canal-totals movement] pág 14: stream has been aborted
+⚠️  [1779389175974-pg83cs3hu] Query lenta detectada: 160287ms em POST /canal-totals
+[canal-totals movement] pág 17: stream has been aborted
+[canal-sellers showroom] sellers/search br 6176 falhou: read ECONNRESET
+[canal-sellers business] sellers/search br 6196 falhou: 
+[canal-totals invoices] pág 1: stream has been aborted
+[canal-sellers novidadesfranquia] sellers/search br 6134 falhou: read ECONNRESET
+⚠️  [1779389293616-si1h01mh5] Query lenta detectada: 54994ms em POST /canal-totals
+[fat-seg] 2026-05-18|2026-05-20 — TOTVS retornou parcial (0 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-05-18|2026-05-20 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+⚠️  [1779388829412-zhnhcaf66] Query lenta detectada: 519211ms em POST /faturamento-por-segmento
+[canal-sellers bazar] sellers/search br 6213 falhou: read ECONNRESET
+[canal-sellers novidadesfranquia] sellers/search br 6181 falhou: read ECONNRESET
+[canal-sellers novidadesfranquia] sellers/search br 6184 falhou: read ECONNRESET
+⚠️  [1779388788378-1huartuc1] Query lenta detectada: 581855ms em POST /canal-totals
+[canal-sellers business] sellers/search br 6193 falhou: read ECONNRESET
+[canal-sellers business] sellers/search br 6204 falhou: read ECONNRESET
+⚠️  [1779388788367-v2i8scmip] Query lenta detectada: 584707ms em POST /canal-totals
+[canal-totals movement] pág 2: socket hang up
+⚠️  [1779388973632-b9hl8u4wo] Query lenta detectada: 411705ms em POST /canal-totals
+[getCanalTotalsCached franquia 2026-05-01~2026-05-21] HTTP fallback falhou: timeout of 600000ms exceeded
+[getCanalTotalsCached franquia 2026-05-01~2026-05-31] HTTP fallback falhou: timeout of 600000ms exceeded
+[getCanalTotalsCached business 2026-05-01~2026-05-21] HTTP fallback falhou: timeout of 600000ms exceeded
+[getCanalTotalsCached business 2026-05-01~2026-05-20] HTTP fallback falhou: timeout of 600000ms exceeded
+[getCanalTotalsCached showroom 2026-05-01~2026-05-21] HTTP fallback falhou: timeout of 600000ms exceeded
+[getCanalTotalsCached showroom 2026-05-01~2026-05-20] HTTP fallback falhou: timeout of 600000ms exceeded
+[getCanalTotalsCached showroom 2026-05-01~2026-05-31] HTTP fallback falhou: timeout of 600000ms exceeded
+[getCanalTotalsCached novidadesfranquia 2026-05-01~2026-05-21] HTTP fallback falhou: timeout of 600000ms exceeded
+[getCanalTotalsCached novidadesfranquia 2026-05-01~2026-05-31] HTTP fallback falhou: timeout of 600000ms exceeded
+⚠️  [1779389385873-7wul2c7c5] Query lenta detectada: 5175ms em POST /canal-totals
+[canal-totals movement] pág 13: stream has been aborted
+⚠️  [1779388788318-0srw8i08l] Query lenta detectada: 604686ms em POST /canal-totals
+[canal-totals movement] pág 13: read ECONNRESET
+[canal-totals movement] pág 3: stream has been aborted
+⚠️  [1779389248138-hcs07yh01] Query lenta detectada: 151897ms em POST /canal-totals
+[canal-totals movement] pág 8: stream has been aborted
+[canal-totals movement] pág 20: stream has been aborted
+[canal-sellers business] sellers/search br 6212 falhou: read ECONNRESET
+⚠️  [1779388879222-ej7ttdohw] Query lenta detectada: 552387ms em POST /canal-totals
+[fat-seg invoices] pág 4 tentativa 1 falhou (stream has been aborted), retry em 1500ms
+[canal-sellers showroom] sellers/search br 6185 falhou: 
+[canal-sellers franquia] sellers/search br 6126 falhou: read ECONNRESET
+⚠️  [1779388998741-fb2j8up94] Query lenta detectada: 438006ms em POST /canal-totals
+[canal-sellers franquia] sellers/search br 6196 falhou: read ECONNRESET
+⚠️  [1779388998548-vdnnileb9] Query lenta detectada: 442206ms em POST /canal-totals
+⚠️  [1779389248118-5eq4hvtmq] Query lenta detectada: 194011ms em POST /canal-totals
+⚠️  [1779388879189-sp2rjm7rh] Query lenta detectada: 563667ms em POST /canal-totals
+⚠️  [1779389385855-ilcb0kd2x] Query lenta detectada: 58733ms em POST /canal-totals
+[canal-totals movement] pág 5: stream has been aborted
+⚠️  [1779388788281-mylokkpie] Query lenta detectada: 657784ms em POST /canal-totals
+⚠️  [1779389385838-sgktan3ho] Query lenta detectada: 61074ms em POST /canal-totals
+⚠️  [1779389140802-ncvvvewn3] Query lenta detectada: 309493ms em POST /canal-totals
+⚠️  [1779389385779-ojmpwc49x] Query lenta detectada: 64840ms em POST /canal-totals
+[canal-sellers franquia] sellers/search br 6067 falhou: 
+[canal-sellers franquia] sellers/search br 6107 falhou: 
+[canal-sellers franquia] sellers/search br 90 falhou: read ECONNRESET
+[canal-sellers franquia] sellers/search br 6007 falhou: read ECONNRESET
+[canal-sellers franquia] sellers/search br 6003 falhou: read ECONNRESET
+[canal-sellers franquia] sellers/search br 6045 falhou: read ECONNRESET
+⚠️  [1779388998775-3wsih5sd6] Query lenta detectada: 456961ms em POST /canal-totals
+⚠️  [1779389337604-d50nekukq] Query lenta detectada: 123755ms em POST /canal-totals
+⚠️  [1779388998752-1e7aww3rx] Query lenta detectada: 462973ms em POST /canal-totals
+⚠️  [1779389179078-dytjqdftu] Query lenta detectada: 289303ms em POST /canal-totals
+[fat-seg invoices] pág 30 tentativa 1 falhou (stream has been aborted), retry em 1500ms
+⚠️  [1779388998767-s14xz0lgo] Query lenta detectada: 474386ms em POST /canal-totals
+[getCanalTotalsCached inbound_david 2026-05-01~2026-05-21] HTTP fallback falhou: timeout of 600000ms exceeded
+[getCanalTotalsCached business 2026-05-01~2026-05-21] HTTP fallback falhou: timeout of 600000ms exceeded
+⚠️  [1779388879099-bgx3miiky] Query lenta detectada: 600022ms em POST /canais-totals-all
+⚠️  [1779389479799-lgsdlrcgw] Query lenta detectada: 10502ms em POST /faturamento-por-segmento
+[canal-sellers novidadesfranquia] sellers/search br 6187 falhou: read ECONNRESET
+[canal-sellers novidadesfranquia] sellers/search br 6184 falhou: read ECONNRESET
+[canal-sellers novidadesfranquia] sellers/search br 6204 falhou: read ECONNRESET
+[canal-sellers novidadesfranquia] sellers/search br 6198 falhou: read ECONNRESET
+[canal-sellers novidadesfranquia] sellers/search br 6192 falhou: read ECONNRESET
+[canal-sellers novidadesfranquia] sellers/search br 6212 falhou: read ECONNRESET
+[canal-sellers novidadesfranquia] sellers/search br 6208 falhou: read ECONNRESET
+[canal-sellers novidadesfranquia] sellers/search br 6201 falhou: 
+[canal-totals movement] pág 5: socket hang up
+⚠️  [1779389490382-mdd4vl8fi] Query lenta detectada: 9443ms em POST /canal-totals
+⚠️  [1779389248096-17hirq7hx] Query lenta detectada: 252691ms em POST /canal-totals
+⚠️  [1779389490393-gpx551qco] Query lenta detectada: 11008ms em POST /canal-totals
+⚠️  [1779389479193-x0h4499yb] Query lenta detectada: 29678ms em GET /promessa-semanal
+⚠️  [1779389490389-kqocrgqbt] Query lenta detectada: 20433ms em POST /canal-totals
+⚠️  [1779389479177-bnrl35qjm] Query lenta detectada: 31667ms em GET /promessa-vendedores
+[fat-seg invoices] pág 22 tentativa 1 falhou (socket hang up), retry em 1500ms
+⚠️ [erp-bg] 2025-12-01~2025-12-31 pág 15: stream has been aborted
+⚠️  [1779388788361-uh1eo2sz3] Query lenta detectada: 749954ms em POST /canal-totals
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+[fat-seg credev business] timeout
+[fat-seg credev showroom] timeout
+[fat-seg] business credev INDEFINIDO — fat-seg não será cacheado
+[fat-seg] showroom credev INDEFINIDO — fat-seg não será cacheado
+[fat-seg] 2026-05-04|2026-05-10 — TOTVS retornou parcial (0 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-05-04|2026-05-10 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+⚠️  [1779388879096-9n92jj1ee] Query lenta detectada: 669032ms em POST /faturamento-por-segmento
+⚠️  [1779388998563-z4f8wj0d7] Query lenta detectada: 552926ms em POST /canal-totals
+⚠️  [1779388879215-gm6wcnmtm] Query lenta detectada: 680558ms em POST /canal-totals
+[canal-totals invoices] pág 1: stream has been aborted
+⚠️ [erp-bg] 2025-10-01~2025-10-31 pág 14: stream has been aborted
+[fat-seg invoices] pág 9: timeout of 120000ms exceeded — RESULTADO PARCIAL
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+[forecast/promessa] getFaturamentoPorSegmento falhou (2026-05-01~2026-05-20): timeout of 180000ms exceeded — tentando fallback via canal-totals
+⚠️  [1779389248127-krurvea8z] Query lenta detectada: 322106ms em POST /canal-totals
+⚠️  [1779388788306-oj06r9pg8] Query lenta detectada: 793554ms em POST /canal-totals
+⚠️  [1779388998760-qqg54ogg6] Query lenta detectada: 583691ms em POST /canal-totals
+[canal-sellers business] sellers/search br 6191 falhou: read ECONNRESET
+[canal-totals movement] pág 2: stream has been aborted
+⚠️  [1779388998574-b8gut2y81] Query lenta detectada: 585397ms em POST /canal-totals
+[canal-totals movement] pág 3: stream has been aborted
+[canal-totals movement] pág 4: stream has been aborted
+⚠️  [1779389337616-lfw36zks1] Query lenta detectada: 251367ms em POST /canal-totals
+⚠️  [1779388788371-jv6g3rm5y] Query lenta detectada: 802137ms em POST /canal-totals
+⚠️  [1779388788346-jhr536ohf] Query lenta detectada: 805363ms em POST /canal-totals
+⚠️  [1779388998572-ftjll8yt6] Query lenta detectada: 596827ms em POST /canal-totals
+[canal-totals movement] pág 1: stream has been aborted
+⚠️  [1779389248123-8d6zoikwk] Query lenta detectada: 352001ms em POST /canal-totals
+[fat-seg invoices] pág 11 tentativa 1 falhou (stream has been aborted), retry em 1500ms
+[canal-sellers showroom] sellers/search br 6213 falhou: read ECONNRESET
+⚠️  [1779388879201-vb1hsf7iu] Query lenta detectada: 735909ms em POST /canal-totals
+⚠️  [1779389385823-c8t6tmrns] Query lenta detectada: 233634ms em POST /canal-totals
+⚠️  [1779389179066-fjcplhm88] Query lenta detectada: 441197ms em POST /canal-totals
+⚠️  [1779389539822-rnh3043hf] Query lenta detectada: 82449ms em POST /canal-totals
+⚠️  [1779389566345-g7xz4x2br] Query lenta detectada: 58037ms em POST /canal-totals
+[fat-seg invoices] pág 10 tentativa 1 falhou (stream has been aborted), retry em 1500ms
+⚠️ [erp-bg] 2026-01-01~2026-01-31 pág 24: stream has been aborted
+⚠️  [1779389566436-ipfpqm2xi] Query lenta detectada: 70275ms em POST /canal-totals
+[fat-seg credev franquia] timeout
+[fat-seg credev bazar] timeout
+[fat-seg credev novidadesfranquia] timeout
+[fat-seg] franquia credev INDEFINIDO — fat-seg não será cacheado
+[fat-seg] bazar credev INDEFINIDO — fat-seg não será cacheado
+[fat-seg] novidadesfranquia credev INDEFINIDO — fat-seg não será cacheado
+[fat-seg] 2026-04-27|2026-05-03 — TOTVS retornou parcial (0 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-04-27|2026-05-03 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+⚠️  [1779388879089-5x94c19jb] Query lenta detectada: 758499ms em POST /faturamento-por-segmento
+[fat-seg invoices] pág 24 tentativa 1 falhou (stream has been aborted), retry em 1500ms
+⚠️  [1779389337619-fbu9wi25r] Query lenta detectada: 310172ms em POST /canal-totals
+[canal-sellers bazar] sellers/search br 6199 falhou: 
+⚠️  [1779388998729-5tvx2tj8o] Query lenta detectada: 657716ms em POST /canal-totals
+⚠️  [1779388998556-5g8a493jx] Query lenta detectada: 660352ms em POST /canal-totals
+[forecast/promessa] getFaturamentoPorSegmento falhou (2026-05-01~2026-05-20): timeout of 180000ms exceeded — tentando fallback via canal-totals
+⚠️  [1779389337589-nj4957cu8] Query lenta detectada: 329752ms em POST /canal-totals
+⚠️  [1779388788336-9mio4z0ur] Query lenta detectada: 881632ms em POST /canal-totals
+⚠️  [1779389566354-9eb6seujt] Query lenta detectada: 111134ms em POST /canal-totals
+[fat-seg] 2026-05-01|2026-05-20 — TOTVS retornou parcial (0 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-05-01|2026-05-20 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+⚠️  [1779388818363-vk93dqnho] Query lenta detectada: 859285ms em POST /faturamento-por-segmento
+⚠️  [1779388788300-antlhmjt5] Query lenta detectada: 893047ms em POST /canal-totals
+[canal-totals movement] pág 6: stream has been aborted
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+[fat-seg credev business] timeout
+[fat-seg] business credev INDEFINIDO — fat-seg não será cacheado
+[fat-seg] 2026-05-11|2026-05-17 — TOTVS retornou parcial (0 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-05-11|2026-05-17 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+⚠️  [1779388879753-2ohekh65l] Query lenta detectada: 805994ms em POST /faturamento-por-segmento
+[fat-seg fallback] canal revenda falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal multimarcas falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal franquia falhou: timeout of 120000ms exceeded
+⚠️  [1779389386011-nd6emvmkf] Query lenta detectada: 300225ms em GET /promessa-mensal
+⚠️  [1779388788353-5nvnlgxb2] Query lenta detectada: 904865ms em POST /canal-totals
+⚠️  [1779389566376-0qn7oiau6] Query lenta detectada: 144861ms em POST /canal-totals
+⚠️  [1779388998546-yh9odnzi7] Query lenta detectada: 712898ms em POST /canal-totals
+⚠️  [1779388998552-kqpx8w1vv] Query lenta detectada: 735604ms em POST /canal-totals
+⚠️  [1779389385891-tga8qe5u9] Query lenta detectada: 350244ms em POST /canal-totals
+[getCanalTotalsCached multimarcas 2026-05-01~2026-05-21] HTTP fallback falhou: timeout of 600000ms exceeded
+[fat-seg override multimarcas] canal-totals null — mantendo per-NF
+⚠️  [1779388998735-bayz9bpf0] Query lenta detectada: 744427ms em POST /canal-totals
+[fat-seg fallback] canal multimarcas falhou: timeout of 120000ms exceeded
+[fat-seg fallback] canal inbound_rafael falhou: timeout of 120000ms exceeded
+⚠️  [1779389337610-qbmcm57yo] Query lenta detectada: 452418ms em POST /canal-totals
+⚠️  [1779389479212-rqan4upcg] Query lenta detectada: 327649ms em GET /comparativo-anual
+⚠️  [1779389620575-xvkxu574a] Query lenta detectada: 189187ms em POST /canal-totals
+[fat-seg] 2026-05-01|2026-05-21 — TOTVS retornou parcial (0 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-05-01|2026-05-21 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+⚠️  [1779388785348-kkc1vtlko] Query lenta detectada: 1024430ms em POST /faturamento-por-segmento
+⚠️  [1779389539825-v0i0y2kqw] Query lenta detectada: 276015ms em POST /canal-totals
+[fat-seg] 2026-05-01|2026-05-20 — TOTVS retornou parcial (0 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-05-01|2026-05-20 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+⚠️  [1779388829418-f4hj7mq8j] Query lenta detectada: 986560ms em POST /faturamento-por-segmento
+⚠️  [1779389812516-y7jikfege] Query lenta detectada: 15195ms em POST /canal-totals
+[canal-totals movement] pág 4: stream has been aborted
+[fat-seg invoices] pág 25 tentativa 1 falhou (stream has been aborted), retry em 1500ms
+⚠️  [1779389140780-t5uq6uldy] Query lenta detectada: 697598ms em POST /canal-totals
+[fat-seg invoices] pág 18 tentativa 1 falhou (stream has been aborted), retry em 1500ms
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+[fat-seg] 2026-05-01|2026-05-20 — TOTVS retornou parcial (1 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-05-01|2026-05-20 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+⚠️  [1779389386112-45jx38cii] Query lenta detectada: 497036ms em POST /faturamento-por-segmento
+⚠️  [1779389659240-3bd9f5o4v] Query lenta detectada: 240918ms em POST /canal-totals
+⚠️  [1779389741251-9mq521mkv] Query lenta detectada: 189591ms em POST /canal-totals
+⚠️  [1779389566417-o17vkiuze] Query lenta detectada: 377762ms em POST /canal-totals
+⚠️  [1779389685596-2kw0cmdso] Query lenta detectada: 267491ms em POST /canal-totals
+[canal-totals invoices] pág 1: stream has been aborted
+⚠️  [1779388998732-lv9j5wjij] Query lenta detectada: 978183ms em POST /canal-totals
+⚠️  [1779389812591-75md3nw9q] Query lenta detectada: 171746ms em POST /canal-totals
+⚠️  [1779389812584-7ji2hi8gn] Query lenta detectada: 173727ms em POST /canal-totals
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+⚠️  [1779389659244-yzoii513y] Query lenta detectada: 368058ms em POST /canal-totals
+[fat-seg credev franquia] timeout
+[fat-seg] franquia credev INDEFINIDO — fat-seg não será cacheado
+[fat-seg] 2026-05-01|2026-05-21 — TOTVS retornou parcial (0 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-05-01|2026-05-21 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+⚠️  [1779388879747-vqb2tyevp] Query lenta detectada: 1161484ms em POST /faturamento-por-segmento
+⚠️ [erp-bg] 2026-05-01~2026-05-21 pág 6: stream has been aborted
+[canal-totals invoices] pág 2: stream has been aborted
+⚠️ [erp-bg] 2026-02-01~2026-02-28 pág 11: stream has been aborted
+[canal-totals invoices] pág 3: stream has been aborted
+[getCanalTotalsCached inbound_rafael 2026-05-01~2026-05-20] HTTP fallback falhou: timeout of 600000ms exceeded
+[fat-seg override inbound_rafael] canal-totals null — mantendo per-NF
+[fat-seg] 2026-05-01|2026-05-20 — TOTVS retornou parcial (0 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-05-01|2026-05-20 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+⚠️  [1779389490332-b5wrgoodz] Query lenta detectada: 806276ms em POST /faturamento-por-segmento
+[canal-totals movement] pág 13: read ECONNRESET
+⚠️ [erp-bg] 2026-03-01~2026-03-31 pág 26: stream has been aborted
+[getCanalTotalsCached franquia 2026-05-01~2026-05-21] HTTP fallback falhou: timeout of 600000ms exceeded
+[canal-totals movement] pág 12: stream has been aborted
+⚠️ [erp-bg credev] 2026-05-01~2026-05-21 pág 6: stream has been aborted
+[getCanalTotalsCached revenda 2026-05-01~2026-05-21] HTTP fallback falhou: timeout of 600000ms exceeded
+⚠️  [1779389812470-ndgq0q7u5] Query lenta detectada: 600032ms em POST /canais-totals-all
+[canal-totals movement] pág 1: stream has been aborted
+⚠️  [1779389685599-vf3b9mv17] Query lenta detectada: 771412ms em POST /canal-totals
+⚠️  [1779389812578-muvel3msg] Query lenta detectada: 649196ms em POST /canal-totals
+⚠️ [erp-bg credev] 2026-03-01~2026-03-31 pág 5: stream has been aborted
+⚠️ [erp-bg credev] 2025-06-01~2025-06-30 pág 2: socket hang up
+⚠️ [erp-bg credev] 2025-08-01~2025-08-31 pág 1: stream has been aborted
+⚠️ [erp-bg credev] 2025-09-01~2025-09-30 pág 6: stream has been aborted
+⚠️ [erp-bg credev] 2026-01-01~2026-01-31 pág 6: stream has been aborted
+[canal-totals movement] pág 14: stream has been aborted
+⚠️ [erp-bg credev] 2026-02-01~2026-02-28 pág 6: stream has been aborted
+⚠️ [erp-bg credev] 2025-09-01~2025-09-30 pág 5: stream has been aborted
+[getCanalTotalsCached revenda 2026-05-01~2026-05-21] HTTP fallback falhou: timeout of 600000ms exceeded
+[fat-seg override revenda] canal-totals null — mantendo per-NF
+⚠️ [erp-bg credev] 2025-07-01~2025-07-31 pág 4: stream has been aborted
+⚠️ [erp-bg credev] 2025-10-01~2025-10-31 pág 7: socket hang up
+⚠️ [erp-bg credev] 2025-07-01~2025-07-31 pág 3: stream has been aborted
+⚠️  [1779389741237-pfbmukjdu] Query lenta detectada: 903956ms em POST /canal-totals
+⚠️ [erp-bg credev] 2026-03-01~2026-03-31 pág 9: stream has been aborted
+⚠️ [erp-bg credev] 2025-07-01~2025-07-31 pág 2: stream has been aborted
+⚠️ [erp-bg credev] 2026-03-01~2026-03-31 pág 7: stream has been aborted
+⚠️ [erp-bg credev] 2025-11-01~2025-11-30 pág 7: read ECONNRESET
+⚠️ [erp-bg credev] 2026-01-01~2026-01-31 pág 11: stream has been aborted
+⚠️  [1779389566385-1vouq2a45] Query lenta detectada: 1211108ms em POST /canal-totals
+⚠️ [erp-bg credev] 2025-06-01~2025-06-30 pág 12: stream has been aborted
+⚠️ [erp-bg credev] 2026-02-01~2026-02-28 pág 13: stream has been aborted
+⚠️ [erp-bg credev] 2026-05-01~2026-05-21 pág 12: stream has been aborted
+⚠️ [erp-bg credev] 2026-04-01~2026-04-30 pág 27: stream has been aborted
+⚠️ [erp-bg credev] 2025-12-01~2025-12-31 pág 14: stream has been aborted
+[canal-totals movement] pág 1: stream has been aborted
+[fat-seg credev novidadesfranquia] timeout
+[fat-seg] novidadesfranquia credev INDEFINIDO — fat-seg não será cacheado
+[fat-seg] 2026-05-01|2026-05-21 — TOTVS retornou parcial (0 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-05-01|2026-05-21 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+⚠️  [1779389583104-25bc4n4sf] Query lenta detectada: 1310340ms em POST /faturamento-por-segmento
+⚠️  [1779390593431-4y63uzvr0] Query lenta detectada: 345318ms em POST /canal-totals
+⚠️  [1779389993238-bv084haoj] Query lenta detectada: 951473ms em POST /canal-totals
+⚠️ [erp-bg credev] 2025-09-01~2025-09-30 pág 27: stream has been aborted
+⚠️ [erp-bg credev] 2026-02-01~2026-02-28 pág 19: stream has been aborted
+⚠️ [erp-bg credev] 2025-10-01~2025-10-31 pág 32: socket hang up
+⚠️ [erp-bg credev] 2025-07-01~2025-07-31 pág 17: stream has been aborted
+⚠️  [1779391510366-yr2u0cqaz] Query lenta detectada: 17227ms em GET /promessa-semanal
+⚠️  [1779391510064-j8i3m1rdw] Query lenta detectada: 21978ms em GET /promessa-mensal
+⚠️  [1779391510415-ckn3o3guw] Query lenta detectada: 38455ms em GET /comparativo-anual
+⚠️  [1779391511230-pq3l2914t] Query lenta detectada: 76675ms em POST /canal-totals
+⚠️  [1779391511151-t5ww12fcb] Query lenta detectada: 89210ms em POST /canal-totals
+⚠️  [1779391511180-t2x0te6ye] Query lenta detectada: 96469ms em POST /canal-totals
+⚠️  [1779391511208-oszo8yu7v] Query lenta detectada: 101875ms em POST /canal-totals
+⚠️  [1779391510479-s61hbyuob] Query lenta detectada: 102614ms em GET /promessa-vendedores
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+[fat-seg invoices] pág 1: Request failed with status code 400 — RESULTADO PARCIAL
+[canal-totals movement] pág 3: stream has been aborted
+[fat-seg credev business] timeout
+[fat-seg] business credev INDEFINIDO — fat-seg não será cacheado
+[fat-seg] 2026-05-01|2026-05-21 — TOTVS retornou parcial (0 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-05-01|2026-05-21 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+[fat-seg] usando STALE cache de 3622s — TOTVS instável
+⚠️  [1779391516327-kdo151ogh] Query lenta detectada: 570314ms em POST /faturamento-por-segmento
+{"level":"ERROR","message":"[ads-spend] Erro inesperado na conta act_889028215658099 (Business): fetch failed","error":{},"timestamp":"2026-05-21T19:34:57.555Z"}
+⚠️  [1779392086844-u7wuq3z1x] Query lenta detectada: 10729ms em POST /conversation-costs
+⚠️  [1779392086890-2pe004hx6] Query lenta detectada: 13826ms em POST /ads-spend
+[fat-seg credev business] timeout
+[fat-seg] business credev INDEFINIDO — fat-seg não será cacheado
+[fat-seg] 2026-05-01|2026-05-21 — TOTVS retornou parcial (0 pgs main falharam, 1 pgs RE)
+[fat-seg] CACHEANDO PARCIAL 2026-05-01|2026-05-21 (TTL 10min) — evita re-bater TOTVS enquanto recupera
+[fat-seg] usando STALE cache de 3624s — TOTVS instável
+⚠️  [1779391518403-om3tr4wuk] Query lenta detectada: 607393ms em POST /faturamento-por-segmento
+⚠️  [1779391825784-1cok9b2ds] Query lenta detectada: 316671ms em POST /canal-totals
+⚠️  [1779391786666-b9tyzggek] Query lenta detectada: 425412ms em POST /canal-totals

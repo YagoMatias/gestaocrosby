@@ -34,6 +34,7 @@ const ExtratoCredito = lazy(() => import('./pages/ExtratoCredito'));
 const MetasVarejo = lazy(() => import('./pages/MetasVarejo'));
 
 const RankingFaturamento = lazy(() => import('./pages/RankingFaturamento'));
+const RankingComprasFranquias = lazy(() => import('./pages/RankingComprasFranquias'));
 const ComprasFranquias = lazy(() => import('./pages/ComprasFranquias'));
 const Credev = lazy(() => import('./pages/Credev'));
 const CreditoFranquia = lazy(() => import('./pages/CreditoFranquia'));
@@ -95,6 +96,7 @@ const MinhasRemessas = lazy(() => import('./pages/MinhasRemessas'));
 const ClientesMTM = lazy(() => import('./pages/ClientesMTM'));
 const DownloadNotificacao = lazy(() => import('./pages/DownloadNotificacao'));
 const FilaDaVez = lazy(() => import('./pages/FilaDaVez'));
+const PrintForecast = lazy(() => import('./pages/PrintForecast'));
 const ControleChips = lazy(() => import('./pages/ControleChips'));
 const ApiClaude = lazy(() => import('./pages/ApiClaude'));
 const Estoque = lazy(() => import('./pages/Estoque'));
@@ -158,6 +160,7 @@ const protectedRoutes = [
   { path: '/extrato-credito', component: ExtratoCredito },
   { path: '/metas-varejo', component: MetasVarejo },
   { path: '/ranking-faturamento', component: RankingFaturamento },
+  { path: '/ranking-compras-franquias', component: RankingComprasFranquias },
   { path: '/cmv-consolidado', component: CMVConsolidado },
   { path: '/cmv-multimarcas', component: CMVMultimarcas },
   { path: '/cmv-revenda', component: CMVRevenda },
@@ -282,6 +285,15 @@ function App() {
           element={
             <Suspense fallback={<PageLoadingFallback />}>
               <FilaDaVez />
+            </Suspense>
+          }
+        />
+        {/* Pública: captura de relatórios pra envio WhatsApp via Puppeteer */}
+        <Route
+          path="/print/forecast"
+          element={
+            <Suspense fallback={<PageLoadingFallback />}>
+              <PrintForecast />
             </Suspense>
           }
         />

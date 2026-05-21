@@ -4163,7 +4163,35 @@ export default function FaturamentoCanal() {
         {/* ╔═══════════════ ABA: MÉTRICAS DIÁRIAS ═══════════════╗ */}
         {/* Promessa Mensal + Semanal + Vendedores (B2R/B2M) + Comparativo Anual */}
         {aba === 'metricas-diarias' && (
-          <div className="space-y-6">
+          <div className="space-y-4">
+            {/* Hero banner com instruções rápidas */}
+            <div className="bg-gradient-to-r from-[#000638] via-[#1a2461] to-[#000638] text-white rounded-xl px-5 py-4 shadow-md flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/10 p-2.5 rounded-lg">
+                  <Target size={20} weight="duotone" className="text-blue-200" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-extrabold">Métricas Diárias</h2>
+                  <p className="text-xs text-blue-200 mt-0.5">
+                    Promessa por canal, vendedores B2R/B2M e comparativo ano a ano · atualização em tempo real
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 text-[10px] text-blue-200">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>≥100%</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  <span>70-99%</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                  <span>&lt;70%</span>
+                </div>
+              </div>
+            </div>
             <PromessaMensal />
             <PromessaSemanal />
             <PromessaVendedores />

@@ -281,7 +281,7 @@ const AVAILABLE_PAGES = [
     category: 'Clientes',
   },
 
-  // CRM
+  // CRM / Painel de Vendas
   { path: '/crm-vendas', name: 'CRM Vendas', category: 'CRM' },
   {
     path: '/crm/competicao',
@@ -289,6 +289,11 @@ const AVAILABLE_PAGES = [
     category: 'CRM',
   },
   { path: '/faturamento-canal', name: 'Forecast', category: 'CRM' },
+  {
+    path: '/ranking-compras-franquias',
+    name: 'Compras Franquias (Sellin)',
+    category: 'CRM',
+  },
 
   // Outros
   { path: '/widgets', name: 'Meus Widgets', category: 'Outros' },

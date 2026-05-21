@@ -82,11 +82,15 @@ const CANAL_LABELS = {
   fabrica: 'Fábrica (Kleiton)',
   business: 'Business',
   ricardoeletro: 'Ricardo Eletro',
+  bluecard: 'BlueCard (cartões)',
 };
+
+// Canais quantitativos — meta é em quantidade, não R$
+const CANAIS_QUANTITATIVOS = new Set(['bluecard']);
 
 const CANAIS_PADRAO = [
   'varejo', 'revenda', 'multimarcas', 'inbound_david', 'inbound_rafael',
-  'franquia', 'bazar', 'fabrica', 'business', 'ricardoeletro',
+  'franquia', 'bazar', 'fabrica', 'business', 'ricardoeletro', 'bluecard',
 ];
 
 export default function PlanejamentoMensalModal({
@@ -332,10 +336,20 @@ export default function PlanejamentoMensalModal({
                   const mensalNum = parseNum(valores[c]?.mensal);
                   const soma = somaSemanas(c);
                   const diff = mensalNum - soma;
+                  const isQty = CANAIS_QUANTITATIVOS.has(c);
+                  const fmtVal = (v) =>
+                    isQty
+                      ? `${Math.round(Number(v || 0))} un`
+                      : `R$ ${formatBRL(v)}`;
                   return (
-                    <tr key={c} className="border-b border-gray-100 hover:bg-gray-50/60">
+                    <tr key={c} className={`border-b border-gray-100 hover:bg-gray-50/60 ${isQty ? 'bg-sky-50/30' : ''}`}>
                       <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">
                         {CANAL_LABELS[c] || c}
+                        {isQty && (
+                          <span className="ml-1.5 text-[9px] uppercase tracking-wider font-bold text-sky-700 bg-sky-100 px-1.5 py-0.5 rounded align-middle">
+                            qty
+                          </span>
+                        )}
                       </td>
                       <td className="px-2 py-1 text-right">
                         <input
@@ -343,7 +357,7 @@ export default function PlanejamentoMensalModal({
                           inputMode="decimal"
                           value={valores[c]?.mensal ?? ''}
                           onChange={(e) => setMensal(c, e.target.value)}
-                          placeholder="0"
+                          placeholder={isQty ? '0 cartões' : '0'}
                           className="w-32 px-2 py-1 border border-blue-200 rounded text-right tabular-nums focus:ring-1 focus:ring-blue-400 outline-none"
                         />
                       </td>
@@ -362,10 +376,10 @@ export default function PlanejamentoMensalModal({
                       <td className={`px-3 py-2 text-right tabular-nums text-xs font-semibold ${
                         Math.abs(diff) < 0.01 ? 'text-emerald-600' : mensalNum > 0 ? 'text-amber-600' : 'text-gray-400'
                       }`}>
-                        R$ {formatBRL(soma)}
+                        {fmtVal(soma)}
                         {mensalNum > 0 && Math.abs(diff) >= 0.01 && (
                           <span className="block text-[10px] font-normal text-amber-600">
-                            (Δ {diff > 0 ? '+' : ''}{formatBRL(diff)})
+                            (Δ {diff > 0 ? '+' : ''}{isQty ? Math.round(diff) : formatBRL(diff)})
                           </span>
                         )}
                       </td>

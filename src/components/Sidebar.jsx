@@ -250,6 +250,12 @@ const painelVendasItems = [
     color: 'text-amber-500',
   },
   {
+    name: 'Compras Franquias',
+    href: '/ranking-compras-franquias',
+    icon: ShoppingCart,
+    color: 'text-orange-600',
+  },
+  {
     name: 'Faturamento TOTVS',
     href: '/totvs',
     icon: ChartBar,
@@ -1053,6 +1059,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             />
           </div>
         )}
+
 
         {/* Seção Tecnologia */}
         <div className="pt-6 border-t border-gray-200">

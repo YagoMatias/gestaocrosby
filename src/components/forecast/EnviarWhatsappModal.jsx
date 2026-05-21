@@ -1,8 +1,12 @@
 // Modal reusável: captura a card via html2canvas e envia imagem via crosbybot
-import React, { useState, useEffect } from 'react';
+// Quando `reportData` + `reportTipo` são fornecidos, captura uma versão
+// otimizada pra WhatsApp (vertical, fontes maiores). Caso contrário, faz
+// fallback pro `targetRef` (captura o componente original na tela).
+import React, { useState, useEffect, useRef } from 'react';
 import { X, WhatsappLogo, CheckCircle, PaperPlaneTilt, Image as ImageIcon } from '@phosphor-icons/react';
 import html2canvas from 'html2canvas';
 import { API_BASE_URL } from '../../config/constants';
+import WhatsappReportCard from './WhatsappReportCard';
 
 const STORAGE_KEY = 'forecast_whatsapp_phone';
 
@@ -17,12 +21,24 @@ function maskPhone(s) {
 // targetRef: ref do elemento a capturar como imagem
 // tipo: identificador do relatório (caption)
 // titulo: nome amigável que aparece no modal + caption
-export default function EnviarWhatsappModal({ targetRef, tipo, titulo, params = {}, onClose }) {
+export default function EnviarWhatsappModal({
+  targetRef,
+  tipo,
+  titulo,
+  params = {},
+  onClose,
+  // Novo: dados pra renderizar o report card otimizado (preferencial sobre targetRef)
+  reportData,
+  reportTipo, // 'semanal' | 'mensal' | 'comparativo'
+}) {
   const [phone, setPhone] = useState('');
   const [sending, setSending] = useState(false);
   const [erro, setErro] = useState('');
   const [ok, setOk] = useState(false);
   const [preview, setPreview] = useState(null);
+  // Ref pro report card otimizado (renderizado offscreen)
+  const optimizedRef = useRef(null);
+  const usesOptimized = Boolean(reportData && reportTipo);
 
   useEffect(() => {
     try {
@@ -32,17 +48,18 @@ export default function EnviarWhatsappModal({ targetRef, tipo, titulo, params = 
   }, []);
 
   // Captura a card como PNG base64
-  // O modal está em cima da card — usamos `ignoreElements` pra excluí-lo da captura
+  // Prioriza o report card otimizado (vertical, mobile-friendly). Fallback pro targetRef.
   useEffect(() => {
     let cancelled = false;
     async function snap() {
-      if (!targetRef?.current) return;
-      // Pequeno delay pra garantir que o DOM acabou de pintar com o modal visível
-      await new Promise((r) => setTimeout(r, 80));
+      const refToUse = usesOptimized ? optimizedRef : targetRef;
+      if (!refToUse?.current) return;
+      // Delay maior pro DOM offscreen estabilizar (fontes, layout, etc)
+      await new Promise((r) => setTimeout(r, usesOptimized ? 200 : 80));
       try {
-        const canvas = await html2canvas(targetRef.current, {
+        const canvas = await html2canvas(refToUse.current, {
           backgroundColor: '#ffffff',
-          scale: 1.5,
+          scale: 2, // 2x pra ficar nítido em mobile
           useCORS: true,
           logging: false,
           ignoreElements: (el) =>
@@ -57,7 +74,7 @@ export default function EnviarWhatsappModal({ targetRef, tipo, titulo, params = 
     }
     snap();
     return () => { cancelled = true; };
-  }, [targetRef]);
+  }, [targetRef, usesOptimized]);
 
   const submit = async (e) => {
     e?.preventDefault();
@@ -96,6 +113,33 @@ export default function EnviarWhatsappModal({ targetRef, tipo, titulo, params = 
   };
 
   return (
+    <>
+      {/* Report card otimizado renderizado FORA do modal pra captura.
+          Fica posicionado offscreen (esquerda = -10000px) mas visível pro
+          html2canvas. NÃO usa display:none nem visibility:hidden (que
+          quebrariam o cálculo de layout). NÃO tem data-h2c-ignore (o ignore
+          é só pro overlay do modal). */}
+      {usesOptimized && (
+        <div
+          style={{
+            position: 'fixed',
+            left: '-10000px',
+            top: 0,
+            zIndex: -1,
+            pointerEvents: 'none',
+          }}
+          aria-hidden="true"
+        >
+          <div ref={optimizedRef}>
+            <WhatsappReportCard
+              tipo={reportTipo}
+              data={reportData}
+              titulo={titulo}
+            />
+          </div>
+        </div>
+      )}
+
     <div
       data-h2c-ignore="true"
       className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
@@ -171,5 +215,6 @@ export default function EnviarWhatsappModal({ targetRef, tipo, titulo, params = 
         </form>
       </div>
     </div>
+    </>
   );
 }

@@ -48,9 +48,6 @@ const RankingFaturamento = () => {
   const [branchTotals, setBranchTotals] = useState([]);
   const [meta, setMeta] = useState(null);
   const [filterType, setFilterType] = useState('todas'); // 'todas' | 'franquia' | 'filial'
-  // Compras das franquias da matriz (sellin) — só carregado quando filterType=franquia
-  const [comprasFranquias, setComprasFranquias] = useState([]);
-  const [loadingCompras, setLoadingCompras] = useState(false);
 
   // Mapas de empresas
   const [branchNames, setBranchNames] = useState({});
@@ -130,81 +127,6 @@ const RankingFaturamento = () => {
     }
   };
 
-  // Busca compras das franquias da matriz (sellin) — sob demanda
-  // (apenas quando o usuário entrar no filtro 'franquia')
-  useEffect(() => {
-    if (filterType !== 'franquia') return;
-    if (!startDate || !endDate) return;
-    if (branchTotals.length === 0) return;
-    let canceled = false;
-    setLoadingCompras(true);
-    apiClient.totvs
-      .salePanelComprasFranquias({ datemin: startDate, datemax: endDate })
-      .then((res) => {
-        if (canceled) return;
-        const data = res?.data ?? res ?? {};
-        setComprasFranquias(Array.isArray(data.franquias) ? data.franquias : []);
-      })
-      .catch(() => {
-        if (!canceled) setComprasFranquias([]);
-      })
-      .finally(() => {
-        if (!canceled) setLoadingCompras(false);
-      });
-    return () => { canceled = true; };
-  }, [filterType, startDate, endDate, branchTotals.length]);
-
-  // Mapa fantasy_name normalizado → totalCompras (para join com ranking)
-  const comprasByName = useMemo(() => {
-    const m = new Map();
-    const norm = (s) => String(s || '')
-      .toUpperCase()
-      .normalize('NFD')
-      .replace(/[̀-ͯ]/g, '') // remove acentos
-      .replace(/[^A-Z0-9 ]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    // Gera múltiplas variações de uma string normalizada
-    const variacoes = (k) => {
-      if (!k) return [];
-      const v = new Set([k]);
-      // remove prefixo F123, F123 - , 123 - no início
-      const semCodigo = k.replace(/^F?\d{2,4}\s*-?\s*/i, '').trim();
-      if (semCodigo) v.add(semCodigo);
-      // remove FRANQUIA
-      const semFranquia = k.replace(/\bFRANQUIA\b/g, '').replace(/\s+/g, ' ').trim();
-      if (semFranquia) v.add(semFranquia);
-      // remove CROSBY
-      const semCrosby = k.replace(/\bCROSBY\b/g, '').replace(/\s+/g, ' ').trim();
-      if (semCrosby) v.add(semCrosby);
-      // remove F### + CROSBY + FRANQUIA
-      const minimo = k
-        .replace(/^F?\d{2,4}\s*-?\s*/i, '')
-        .replace(/\bFRANQUIA\b/g, '')
-        .replace(/\bCROSBY\b/g, '')
-        .replace(/\b(LTDA|ME|EPP|EIRELI|SA)\b/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      if (minimo) v.add(minimo);
-      return [...v];
-    };
-    for (const f of comprasFranquias) {
-      const keys = new Set();
-      if (f.fantasy_name) for (const v of variacoes(norm(f.fantasy_name))) keys.add(v);
-      if (f.nm_pessoa) for (const v of variacoes(norm(f.nm_pessoa))) keys.add(v);
-      for (const k of keys) {
-        if (!k) continue;
-        m.set(k, (m.get(k) || 0) + Number(f.total_value || 0));
-      }
-    }
-    return { map: m, norm, variacoes };
-  }, [comprasFranquias]);
-
-  // Total geral de compras (sellin) das franquias visíveis
-  const totalCompras = useMemo(() => {
-    if (filterType !== 'franquia') return 0;
-    return comprasFranquias.reduce((s, f) => s + Number(f.total_value || 0), 0);
-  }, [filterType, comprasFranquias]);
 
   // ==========================================
   // AGRUPAMENTO: Mapear totais por filial
@@ -358,19 +280,6 @@ const RankingFaturamento = () => {
     </span>
   );
 
-  // Helper: dado um branchName de franquia, retorna o total de compras da matriz
-  const comprasDaFranquia = (branchName) => {
-    if (filterType !== 'franquia') return null;
-    const k = comprasByName.norm(branchName);
-    if (!k) return 0;
-    // tenta a chave direta + todas as variações (cobre F### -, CROSBY, FRANQUIA, LTDA)
-    const tentativas = comprasByName.variacoes(k);
-    for (const v of tentativas) {
-      if (v && comprasByName.map.has(v)) return comprasByName.map.get(v);
-    }
-    return 0;
-  };
-
   const top1 = filteredGrouped.length > 0 ? filteredGrouped[0] : null;
 
   // ==========================================
@@ -486,7 +395,7 @@ const RankingFaturamento = () => {
       {!loading && filteredGrouped.length > 0 && (
         <>
           {/* Cards de Resumo */}
-          <div className={`grid grid-cols-2 ${filterType === 'franquia' ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-2 mb-4`}>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
             <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 rounded-xl bg-white">
               <CardHeader className="pb-1 pt-2.5 px-2.5 sm:px-3">
                 <div className="flex items-center gap-1.5">
@@ -579,30 +488,6 @@ const RankingFaturamento = () => {
               </CardContent>
             </Card>
 
-            {filterType === 'franquia' && (
-              <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 rounded-xl bg-white">
-                <CardHeader className="pb-1 pt-2.5 px-2.5 sm:px-3">
-                  <div className="flex items-center gap-1.5">
-                    <ShoppingCart
-                      size={14}
-                      weight="bold"
-                      className="text-orange-600"
-                    />
-                    <CardTitle className="text-[10px] sm:text-xs font-bold text-orange-700 font-barlow">
-                      Compras Matriz
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0 px-2.5 sm:px-3 pb-2.5">
-                  <div className="text-sm sm:text-base font-extrabold text-orange-600 break-words font-barlow">
-                    {loadingCompras ? '...' : `R$ ${formatBRL(totalCompras)}`}
-                  </div>
-                  <CardDescription className="text-[10px] sm:text-xs text-gray-500 font-barlow hidden sm:block">
-                    Sellin · empresa 99 → franquias
-                  </CardDescription>
-                </CardContent>
-              </Card>
-            )}
           </div>
 
           {/* TOP 1 — Destaque */}
@@ -677,21 +562,11 @@ const RankingFaturamento = () => {
             {/* Desktop table header */}
             <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-2 bg-[#000638] text-white text-[10px] font-bold uppercase tracking-wider font-barlow">
               <div className="col-span-1 text-center">#</div>
-              <div className={filterType === 'franquia' ? 'col-span-3' : 'col-span-4'}>Loja</div>
-              <div className="col-span-2 text-right">
-                {filterType === 'franquia' ? 'Sellout (Vendas)' : 'Faturamento'}
-              </div>
-              {filterType === 'franquia' && (
-                <div className="col-span-2 text-right text-orange-200">Compras Matriz</div>
-              )}
-              <div className={filterType === 'franquia' ? 'col-span-2 text-right' : 'col-span-2 text-right'}>Ticket Médio</div>
+              <div className="col-span-4">Loja</div>
+              <div className="col-span-2 text-right">Faturamento</div>
+              <div className="col-span-2 text-right">Ticket Médio</div>
               <div className="col-span-1 text-right">PA</div>
-              {filterType !== 'franquia' && (
-                <div className="col-span-2 text-right">Vendas</div>
-              )}
-              {filterType === 'franquia' && (
-                <div className="col-span-1 text-right">Vendas</div>
-              )}
+              <div className="col-span-2 text-right">Vendas</div>
             </div>
 
             {/* Rows */}
@@ -737,17 +612,6 @@ const RankingFaturamento = () => {
                           {group.saidaCount}
                         </strong>
                       </span>
-                      {filterType === 'franquia' && (() => {
-                        const c = comprasDaFranquia(group.branchName);
-                        return (
-                          <span>
-                            Compras Matriz:{' '}
-                            <strong className="text-orange-700">
-                              {loadingCompras ? '...' : c > 0 ? `R$ ${formatBRL(c)}` : '—'}
-                            </strong>
-                          </span>
-                        );
-                      })()}
                     </div>
                   </div>
                 </div>
@@ -757,7 +621,7 @@ const RankingFaturamento = () => {
                   <div className="col-span-1 text-center">
                     {getPositionBadge(index)}
                   </div>
-                  <div className={`${filterType === 'franquia' ? 'col-span-3' : 'col-span-4'} text-left truncate`}>
+                  <div className="col-span-4 text-left truncate">
                     <span
                       className={`font-semibold font-barlow ${index < 3 ? 'text-[#000638]' : 'text-gray-700'}`}
                     >
@@ -771,21 +635,6 @@ const RankingFaturamento = () => {
                       R$ {formatBRL(group.totalValue)}
                     </span>
                   </div>
-                  {filterType === 'franquia' && (
-                    <div className="col-span-2 text-right">
-                      {(() => {
-                        const c = comprasDaFranquia(group.branchName);
-                        if (loadingCompras) return <span className="text-gray-400 text-xs">...</span>;
-                        return c > 0 ? (
-                          <span className="text-orange-700 font-mono font-bold text-xs">
-                            R$ {formatBRL(c)}
-                          </span>
-                        ) : (
-                          <span className="text-gray-300 font-mono text-xs">—</span>
-                        );
-                      })()}
-                    </div>
-                  )}
                   <div className="col-span-2 text-right">
                     <span className="text-blue-700 font-mono font-medium text-xs">
                       R$ {formatBRL(group.ticketMedio)}
@@ -796,7 +645,7 @@ const RankingFaturamento = () => {
                       {group.pa.toFixed(1)}
                     </span>
                   </div>
-                  <div className={`${filterType === 'franquia' ? 'col-span-1' : 'col-span-2'} text-right`}>
+                  <div className="col-span-2 text-right">
                     <span className="text-gray-600 font-mono text-xs">
                       {group.saidaCount}
                     </span>
@@ -821,6 +670,7 @@ const RankingFaturamento = () => {
           </p>
         </div>
       )}
+
     </div>
   );
 };

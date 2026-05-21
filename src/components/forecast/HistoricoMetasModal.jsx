@@ -46,6 +46,7 @@ const CANAL_LABEL = {
   ricardoeletro: 'Ricardo Eletro',
   showroom: 'Showroom',
   novidadesfranquia: 'Novidades Franquia',
+  bluecard: 'BlueCard (cartões)',
 };
 
 export default function HistoricoMetasModal({ onClose }) {

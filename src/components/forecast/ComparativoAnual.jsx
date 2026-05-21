@@ -3,7 +3,6 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   CaretDoubleUp,
   CaretDoubleDown,
-  ArrowsClockwise,
   Storefront,
   Buildings,
   TShirt,
@@ -12,43 +11,51 @@ import {
   Package,
   ChartBar,
   TrendUp,
-  WhatsappLogo,
+  TrendDown,
+  CreditCard,
+  CurrencyDollar,
+  Scales,
 } from '@phosphor-icons/react';
-import { Card, CardContent } from '../ui/cards';
 import { API_BASE_URL } from '../../config/constants';
 import EnviarWhatsappModal from './EnviarWhatsappModal';
+import {
+  MetricaHeader,
+  KpiStripe,
+  LoadingRow,
+  LoadingValue,
+  InfoBanner,
+  formatBRL,
+} from './MetricasDiariasUI';
 
-function LoadingValue({ width = 70 }) {
-  return (
-    <span className="inline-block bg-gray-200 rounded animate-pulse" style={{ width: width + 'px', height: '14px' }}>&nbsp;</span>
-  );
-}
-
-const formatBRL = (v) =>
-  Number(v || 0).toLocaleString('pt-BR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-
-const pctColor = (pct) => {
-  if (pct >= 0) return 'text-emerald-600 bg-emerald-50';
-  if (pct >= -30) return 'text-amber-600 bg-amber-50';
-  return 'text-rose-600 bg-rose-50';
+const pctColorDelta = (pct) => {
+  if (pct >= 0) return 'text-emerald-700 bg-emerald-50 border-emerald-200';
+  if (pct >= -30) return 'text-amber-700 bg-amber-50 border-amber-200';
+  return 'text-rose-700 bg-rose-50 border-rose-200';
 };
 
 const CANAL_CFG = {
-  varejo:           { icon: Storefront, text: 'text-blue-600' },
-  revenda:          { icon: Package,    text: 'text-emerald-600' },
-  multimarcas:      { icon: TShirt,     text: 'text-purple-600' },
-  inbound_david:    { icon: TShirt,     text: 'text-pink-600' },
-  inbound_rafael:   { icon: TShirt,     text: 'text-fuchsia-600' },
-  franquia:         { icon: Buildings,  text: 'text-amber-700' },
-  bazar:            { icon: Tag,        text: 'text-orange-600' },
-  fabrica:          { icon: Buildings,  text: 'text-cyan-700' },
-  business:         { icon: Briefcase,  text: 'text-slate-700' },
-  ricardoeletro:    { icon: Storefront, text: 'text-red-600' },
-  showroom:         { icon: Buildings,  text: 'text-cyan-600' },
-  novidadesfranquia:{ icon: Buildings,  text: 'text-cyan-600' },
+  varejo:           { icon: Storefront, text: 'text-blue-600', bg: 'bg-blue-50' },
+  revenda:          { icon: Package,    text: 'text-emerald-600', bg: 'bg-emerald-50' },
+  multimarcas:      { icon: TShirt,     text: 'text-purple-600', bg: 'bg-purple-50' },
+  inbound_david:    { icon: TShirt,     text: 'text-pink-600', bg: 'bg-pink-50' },
+  inbound_rafael:   { icon: TShirt,     text: 'text-fuchsia-600', bg: 'bg-fuchsia-50' },
+  franquia:         { icon: Buildings,  text: 'text-amber-700', bg: 'bg-amber-50' },
+  bazar:            { icon: Tag,        text: 'text-orange-600', bg: 'bg-orange-50' },
+  fabrica:          { icon: Buildings,  text: 'text-cyan-700', bg: 'bg-cyan-50' },
+  business:         { icon: Briefcase,  text: 'text-slate-700', bg: 'bg-slate-50' },
+  ricardoeletro:    { icon: Storefront, text: 'text-red-600', bg: 'bg-red-50' },
+  showroom:         { icon: Buildings,  text: 'text-cyan-600', bg: 'bg-cyan-50' },
+  novidadesfranquia:{ icon: Buildings,  text: 'text-cyan-600', bg: 'bg-cyan-50' },
+  bluecard:         { icon: CreditCard, text: 'text-sky-600', bg: 'bg-sky-50' },
+  b2m_total:        { icon: TShirt,     text: 'text-purple-700', bg: 'bg-purple-50' },
+};
+
+const fmtCanalValor = (canal, valor) => {
+  if (canal?.is_quantity) {
+    const n = Math.round(Number(valor || 0));
+    return `${n} ${canal.unit || 'un'}`;
+  }
+  return `R$ ${formatBRL(valor)}`;
 };
 
 const MESES = [
@@ -64,7 +71,7 @@ export default function ComparativoAnual() {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
   const [showWhats, setShowWhats] = useState(false);
-  const [untilToday, setUntilToday] = useState(false); // false = D-1 (default); true = até hoje
+  const [untilToday, setUntilToday] = useState(false);
   const cardRef = useRef(null);
 
   const carregar = useCallback(async () => {
@@ -85,189 +92,217 @@ export default function ComparativoAnual() {
 
   useEffect(() => { carregar(); }, [carregar]);
 
+  const mesAnterior = () => {
+    if (mes <= 1) { setAno(ano - 1); setMes(12); } else setMes(mes - 1);
+  };
+  const mesProximo = () => {
+    if (mes >= 12) { setAno(ano + 1); setMes(1); } else setMes(mes + 1);
+  };
+  const irParaAtual = () => { setAno(now.getFullYear()); setMes(now.getMonth() + 1); };
+
   const canais = data?.canais || [];
   const total = data?.total || {};
+  const anoAnt = data?.ano_anterior || ano - 1;
+  const anoAtual = data?.ano_atual || ano;
+
+  const totalPct = Number(total.comparativo_pct || 0);
+  const totalUp = totalPct >= 0;
+
+  const kpis = data ? [
+    {
+      label: `${anoAnt} Mês Completo`,
+      valor: `R$ ${formatBRL(total.fat_ano_anterior_full || 0)}`,
+      icon: CurrencyDollar,
+      color: 'gray',
+      sub: `${MESES[mes - 1]}/${anoAnt}`,
+    },
+    {
+      label: `${anoAnt} Acumulado`,
+      valor: `R$ ${formatBRL(total.fat_ano_anterior_acumulado || 0)}`,
+      icon: ChartBar,
+      color: 'blue',
+      sub: data?.dia_referencia ? `Até dia ${data.dia_referencia}` : 'Mês fechado',
+    },
+    {
+      label: `${anoAtual} Real`,
+      valor: `R$ ${formatBRL(total.fat_ano_atual_real || 0)}`,
+      icon: CurrencyDollar,
+      color: 'emerald',
+      sub: untilToday ? 'Até hoje (parcial)' : 'Até ontem',
+    },
+    {
+      label: 'Diferença',
+      valor: `${total.diferenca < 0 ? '-' : ''}R$ ${formatBRL(Math.abs(total.diferenca || 0))}`,
+      icon: Scales,
+      color: total.diferenca < 0 ? 'emerald' : 'rose',
+      sub: total.diferenca < 0 ? `${anoAtual} ganhou` : `${anoAtual} perdeu`,
+    },
+    {
+      label: 'Comparativo',
+      valor: `${totalUp ? '+' : ''}${totalPct.toFixed(1)}%`,
+      icon: totalUp ? TrendUp : TrendDown,
+      color: totalUp ? 'emerald' : 'rose',
+      sub: `vs ${anoAnt}`,
+    },
+  ] : [];
 
   return (
-    <div ref={cardRef}>
-    <Card className="mb-6">
-      <CardContent className="pt-4">
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <TrendUp size={20} className="text-blue-700" />
-            <h3 className="text-lg font-semibold text-gray-800">
-              Comparativo {data?.ano_anterior || ano - 1} × {data?.ano_atual || ano}
-            </h3>
-            <span className="text-xs text-gray-500">
-              ({MESES[mes - 1]}/{ano}{data?.dia_referencia ? ` · até dia ${data.dia_referencia}` : ''})
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            {/* Toggle: até ontem (D-1) ↔ até hoje */}
-            <button
-              onClick={() => setUntilToday((v) => !v)}
-              className={`text-xs px-2.5 py-1.5 rounded border inline-flex items-center gap-1 transition ${
-                untilToday
-                  ? 'bg-blue-600 text-white border-blue-700 hover:bg-blue-700'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-              }`}
-              title={untilToday ? 'Mostrando dados até HOJE (parcial)' : 'Mostrando dados até ONTEM (fechado)'}
-            >
-              <span className={`w-2 h-2 rounded-full ${untilToday ? 'bg-emerald-300 animate-pulse' : 'bg-gray-400'}`} />
-              {untilToday ? 'Hoje' : 'Até ontem'}
-            </button>
-            <button
-              onClick={carregar}
-              disabled={loading}
-              className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 inline-flex items-center gap-1 disabled:opacity-50"
-            >
-              <ArrowsClockwise size={12} className={loading ? 'animate-spin' : ''} />
-              {loading ? 'Carregando...' : 'Atualizar'}
-            </button>
-            <button
-              onClick={() => setShowWhats(true)}
-              className="text-xs px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white inline-flex items-center gap-1"
-              title="Enviar via WhatsApp"
-            >
-              <WhatsappLogo size={12} weight="bold" /> WhatsApp
-            </button>
-          </div>
+    <div ref={cardRef} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+      <MetricaHeader
+        title={`Comparativo ${anoAnt} × ${anoAtual}`}
+        subtitle={`${MESES[mes - 1]}${data?.dia_referencia ? ` · até dia ${data.dia_referencia}` : ''}`}
+        icon={TrendUp}
+        color="purple"
+        onPrev={mesAnterior}
+        onNext={mesProximo}
+        onToday={irParaAtual}
+        untilToday={untilToday}
+        setUntilToday={setUntilToday}
+        onRefresh={carregar}
+        loading={loading}
+        onWhatsapp={() => setShowWhats(true)}
+      />
+
+      {data && <KpiStripe items={kpis} loading={loading && canais.length === 0} />}
+
+      {erro && (
+        <div className="p-4">
+          <InfoBanner tone="rose">{erro}</InfoBanner>
         </div>
+      )}
 
-        {erro && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm mb-3">{erro}</div>}
-
-        {/* Banner "atualizando" quando refetching com dados visíveis */}
-        {loading && canais.length > 0 && (
-          <div className="mb-2 text-[11px] text-blue-600 inline-flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-            Atualizando valores 2026... (consulta TOTVS pode demorar)
-          </div>
-        )}
-
-        {loading && !canais.length ? (
-          /* Skeleton inicial */
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <tbody>
-                {[1,2,3,4,5,6,7].map((i) => (
-                  <tr key={i} className="border-b border-gray-100">
-                    <td className="py-3 px-3"><LoadingValue width={100} /></td>
-                    <td className="py-3 px-3 text-right"><LoadingValue /></td>
-                    <td className="py-3 px-3 text-right"><LoadingValue /></td>
-                    <td className="py-3 px-3 text-right"><LoadingValue /></td>
-                    <td className="py-3 px-3 text-right"><LoadingValue /></td>
-                    <td className="py-3 px-3 text-center"><LoadingValue width={50} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="py-2 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Canal</th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    {data?.ano_anterior || ano - 1}
-                  </th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    {data?.ano_anterior || ano - 1} Acumulado
-                  </th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    Real {data?.ano_atual || ano}
-                  </th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Diferença</th>
-                  <th className="py-2 px-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Comparativo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {canais.map((c) => {
-                  const cfg = CANAL_CFG[c.canal_key] || { icon: ChartBar, text: 'text-gray-600' };
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 bg-gradient-to-b from-gray-50 to-white">
+              <th className="py-2.5 px-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">Canal</th>
+              <th className="py-2.5 px-3 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider bg-cyan-50/30">
+                {anoAnt} <span className="text-[9px] text-gray-400 normal-case">cheio</span>
+              </th>
+              <th className="py-2.5 px-3 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                {anoAnt} <span className="text-[9px] text-gray-400 normal-case">acum.</span>
+              </th>
+              <th className="py-2.5 px-3 text-right text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50/30">
+                {anoAtual} <span className="text-[9px] text-blue-500 normal-case">real</span>
+              </th>
+              <th className="py-2.5 px-3 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider">Δ</th>
+              <th className="py-2.5 px-3 text-center text-[10px] font-bold text-gray-500 uppercase tracking-wider w-[100px]">Comparativo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && canais.length === 0
+              ? [1,2,3,4,5,6,7].map((i) => <LoadingRow key={i} cols={6} />)
+              : canais.map((c, idx) => {
+                  const cfg = CANAL_CFG[c.canal_key] || { icon: ChartBar, text: 'text-gray-600', bg: 'bg-gray-50' };
                   const Icon = cfg.icon;
-                  // Usa o label vindo do backend (já configurado: B2M, B2R, B2C, etc)
                   const label = c.nome;
-                  const Arrow = c.comparativo_pct >= 0 ? CaretDoubleUp : CaretDoubleDown;
-                  const arrowColor = c.comparativo_pct >= 0 ? 'text-emerald-600' : 'text-rose-600';
+                  const cpct = Number(c.comparativo_pct || 0);
+                  const up = cpct >= 0;
+                  const Arrow = up ? CaretDoubleUp : CaretDoubleDown;
+                  const arrowColor = up ? 'text-emerald-600' : 'text-rose-600';
                   const hasData = c.fat_ano_anterior_acumulado > 0 || c.fat_ano_atual_real > 0;
+                  const isQty = c.is_quantity;
+                  const zebraBg = isQty ? 'bg-sky-50/30' : (idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40');
+                  const fmtDif = (v) => {
+                    if (isQty) return `${v < 0 ? '-' : ''}${Math.abs(Math.round(v))} ${c.unit || 'un'}`;
+                    return `R$ ${v < 0 ? '-' : ''}${formatBRL(Math.abs(v))}`;
+                  };
                   return (
-                    <tr key={c.canal_key} className="border-b border-gray-100 hover:bg-gray-50/60">
-                      <td className="py-2.5 px-3 font-medium text-gray-800">
+                    <tr
+                      key={c.canal_key}
+                      className={`border-b border-gray-100 transition-colors hover:bg-purple-50/40 ${zebraBg}`}
+                    >
+                      <td className="py-2.5 px-3">
                         <div className="inline-flex items-center gap-2">
-                          <Icon size={14} weight="bold" className={cfg.text} />
-                          {label}
+                          <div className={`${cfg.bg} p-1 rounded`}>
+                            <Icon size={12} weight="bold" className={cfg.text} />
+                          </div>
+                          <span className="font-semibold text-gray-800 text-[13px]">{label}</span>
+                          {isQty && (
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-sky-700 bg-sky-100 px-1.5 py-0.5 rounded">
+                              qty
+                            </span>
+                          )}
                         </div>
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-700 bg-cyan-50/40">
-                        R$ {formatBRL(c.fat_ano_anterior_full)}
+                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-600 text-[12px] bg-cyan-50/20">
+                        {fmtCanalValor(c, c.fat_ano_anterior_full)}
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-700">
-                        R$ {formatBRL(c.fat_ano_anterior_acumulado)}
+                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-700 text-[12px]">
+                        {fmtCanalValor(c, c.fat_ano_anterior_acumulado)}
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-800 font-semibold">
-                        {loading ? <LoadingValue /> : `R$ ${formatBRL(c.fat_ano_atual_real)}`}
+                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-900 font-semibold bg-blue-50/20">
+                        {loading ? <LoadingValue /> : fmtCanalValor(c, c.fat_ano_atual_real)}
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-700">
-                        {loading ? <LoadingValue /> : `R$ ${c.diferenca < 0 ? '-' : ''}${formatBRL(Math.abs(c.diferenca))}`}
+                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-700 text-[12px]">
+                        {loading ? <LoadingValue /> : fmtDif(c.diferenca)}
                       </td>
-                      <td className="py-2.5 px-3 text-center">
-                        {loading ? (
-                          <LoadingValue width={50} />
-                        ) : hasData ? (
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold ${pctColor(c.comparativo_pct)}`}>
-                            <Arrow size={10} weight="bold" className={arrowColor} />
-                            {c.comparativo_pct >= 0 ? '+' : ''}{c.comparativo_pct.toFixed(0)}%
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 text-xs">—</span>
-                        )}
+                      <td className="py-2.5 px-3">
+                        <div className="flex justify-center">
+                          {loading ? (
+                            <LoadingValue width={50} />
+                          ) : hasData ? (
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-bold tabular-nums ${pctColorDelta(cpct)}`}
+                            >
+                              <Arrow size={10} weight="bold" className={arrowColor} />
+                              {up ? '+' : ''}{cpct.toFixed(0)}%
+                            </span>
+                          ) : (
+                            <span className="text-gray-300 text-xs">—</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
-                <tr className="bg-gray-50 font-bold border-t-2 border-gray-200">
-                  <td className="py-3 px-3 text-gray-800">Total</td>
-                  <td className="py-3 px-3 text-right tabular-nums text-gray-800 bg-cyan-50/40">
-                    R$ {formatBRL(total.fat_ano_anterior_full)}
-                  </td>
-                  <td className="py-3 px-3 text-right tabular-nums text-gray-800">
-                    R$ {formatBRL(total.fat_ano_anterior_acumulado)}
-                  </td>
-                  <td className="py-3 px-3 text-right tabular-nums text-gray-800">
-                    {loading ? <LoadingValue /> : `R$ ${formatBRL(total.fat_ano_atual_real)}`}
-                  </td>
-                  <td className="py-3 px-3 text-right tabular-nums text-gray-800">
-                    {loading ? <LoadingValue /> : `R$ ${total.diferenca < 0 ? '-' : ''}${formatBRL(Math.abs(total.diferenca || 0))}`}
-                  </td>
-                  <td className="py-3 px-3 text-center">
+            {!loading && canais.length > 0 && (
+              <tr className="bg-gradient-to-r from-gray-50 to-gray-100 font-bold border-t-2 border-gray-300">
+                <td className="py-3 px-3 text-gray-800 text-[13px] uppercase tracking-wider">Total</td>
+                <td className="py-3 px-3 text-right tabular-nums text-gray-800 bg-cyan-50/30">
+                  R$ {formatBRL(total.fat_ano_anterior_full)}
+                </td>
+                <td className="py-3 px-3 text-right tabular-nums text-gray-800">
+                  R$ {formatBRL(total.fat_ano_anterior_acumulado)}
+                </td>
+                <td className="py-3 px-3 text-right tabular-nums text-gray-900 font-extrabold text-[13px] bg-blue-50/30">
+                  {loading ? <LoadingValue /> : `R$ ${formatBRL(total.fat_ano_atual_real)}`}
+                </td>
+                <td className="py-3 px-3 text-right tabular-nums text-gray-800">
+                  {loading ? <LoadingValue /> : `R$ ${total.diferenca < 0 ? '-' : ''}${formatBRL(Math.abs(total.diferenca || 0))}`}
+                </td>
+                <td className="py-3 px-3">
+                  <div className="flex justify-center">
                     {(total.fat_ano_anterior_acumulado || 0) > 0 ? (
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold ${pctColor(total.comparativo_pct)}`}>
-                        {(total.comparativo_pct || 0) >= 0
-                          ? <CaretDoubleUp size={10} weight="bold" className="text-emerald-600" />
-                          : <CaretDoubleDown size={10} weight="bold" className="text-rose-600" />
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md border text-sm font-extrabold tabular-nums ${pctColorDelta(totalPct)}`}>
+                        {totalUp
+                          ? <CaretDoubleUp size={12} weight="bold" className="text-emerald-600" />
+                          : <CaretDoubleDown size={12} weight="bold" className="text-rose-600" />
                         }
-                        {(total.comparativo_pct || 0) >= 0 ? '+' : ''}{Number(total.comparativo_pct || 0).toFixed(0)}%
+                        {totalUp ? '+' : ''}{totalPct.toFixed(0)}%
                       </span>
                     ) : (
-                      <span className="text-gray-400 text-xs">—</span>
+                      <span className="text-gray-300 text-xs">—</span>
                     )}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-    {showWhats && (
-      <EnviarWhatsappModal
-        targetRef={cardRef}
-        tipo="comparativo"
-        titulo={`Comparativo ${ano - 1} × ${ano} (${MESES[mes - 1]})`}
-        params={{ ano, mes }}
-        onClose={() => setShowWhats(false)}
-      />
-    )}
+                  </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {showWhats && (
+        <EnviarWhatsappModal
+          targetRef={cardRef}
+          tipo="comparativo"
+          reportTipo="comparativo"
+          reportData={data}
+          titulo={`Comparativo ${anoAnt} × ${anoAtual} (${MESES[mes - 1]})`}
+          params={{ ano, mes }}
+          onClose={() => setShowWhats(false)}
+        />
+      )}
     </div>
   );
 }

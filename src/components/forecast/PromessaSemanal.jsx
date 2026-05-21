@@ -3,10 +3,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Target,
-  ArrowsClockwise,
-  CaretLeft,
-  CaretRight,
-  Spinner,
   Storefront,
   Buildings,
   TShirt,
@@ -14,43 +10,49 @@ import {
   Briefcase,
   Package,
   ChartBar,
-  WhatsappLogo,
+  CreditCard,
+  TrendUp,
+  CurrencyDollar,
+  Lightning,
 } from '@phosphor-icons/react';
-import { Card, CardContent } from '../ui/cards';
 import { API_BASE_URL } from '../../config/constants';
 import EnviarWhatsappModal from './EnviarWhatsappModal';
+import {
+  MetricaHeader,
+  KpiStripe,
+  PctPill,
+  MiniProgress,
+  LoadingRow,
+  LoadingValue,
+  InfoBanner,
+  formatBRL,
+  formatBRLCompact,
+  pctColor,
+} from './MetricasDiariasUI';
 
-const formatBRL = (v) =>
-  Number(v || 0).toLocaleString('pt-BR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-
-// Placeholder pulsando para cells em loading
-function LoadingValue({ width = 70 }) {
-  return (
-    <span className="inline-block bg-gray-200 rounded animate-pulse" style={{ width: width + 'px', height: '14px' }}>&nbsp;</span>
-  );
-}
-
-const pctColor = (pct) => {
-  if (pct >= 100) return 'text-emerald-600 bg-emerald-50';
-  if (pct >= 70) return 'text-amber-600 bg-amber-50';
-  return 'text-rose-600 bg-rose-50';
+// Config visual de cada canal
+const CANAL_CFG = {
+  varejo:         { label: 'Varejo',             icon: Storefront, text: 'text-blue-600', bg: 'bg-blue-50' },
+  revenda:        { label: 'Revenda',            icon: Package,    text: 'text-emerald-600', bg: 'bg-emerald-50' },
+  multimarcas:    { label: 'Multimarcas',        icon: TShirt,     text: 'text-purple-600', bg: 'bg-purple-50' },
+  inbound_david:  { label: 'MTM Inbound David',  icon: TShirt,     text: 'text-pink-600', bg: 'bg-pink-50' },
+  inbound_rafael: { label: 'MTM Inbound Rafael', icon: TShirt,     text: 'text-fuchsia-600', bg: 'bg-fuchsia-50' },
+  franquia:       { label: 'Franquia',           icon: Buildings,  text: 'text-amber-700', bg: 'bg-amber-50' },
+  bazar:          { label: 'Bazar',              icon: Tag,        text: 'text-orange-600', bg: 'bg-orange-50' },
+  fabrica:        { label: 'Fábrica (Kleiton)',  icon: Buildings,  text: 'text-cyan-700', bg: 'bg-cyan-50' },
+  business:       { label: 'Business',           icon: Briefcase,  text: 'text-slate-700', bg: 'bg-slate-50' },
+  ricardoeletro:  { label: 'Ricardo Eletro',     icon: Storefront, text: 'text-red-600', bg: 'bg-red-50' },
+  bluecard:       { label: 'BlueCard',           icon: CreditCard, text: 'text-sky-600', bg: 'bg-sky-50' },
 };
 
-// Config visual de cada canal (alinhado com Forecast "Por Canal")
-const CANAL_CFG = {
-  varejo:         { label: 'Varejo',             icon: Storefront, text: 'text-blue-600' },
-  revenda:        { label: 'Revenda',            icon: Package,    text: 'text-emerald-600' },
-  multimarcas:    { label: 'Multimarcas',        icon: TShirt,     text: 'text-purple-600' },
-  inbound_david:  { label: 'MTM Inbound David',  icon: TShirt,     text: 'text-pink-600' },
-  inbound_rafael: { label: 'MTM Inbound Rafael', icon: TShirt,     text: 'text-fuchsia-600' },
-  franquia:       { label: 'Franquia',           icon: Buildings,  text: 'text-amber-700' },
-  bazar:          { label: 'Bazar',              icon: Tag,        text: 'text-orange-600' },
-  fabrica:        { label: 'Fábrica (Kleiton)',  icon: Buildings,  text: 'text-cyan-700' },
-  business:       { label: 'Business',           icon: Briefcase,  text: 'text-slate-700' },
-  ricardoeletro:  { label: 'Ricardo Eletro',     icon: Storefront, text: 'text-red-600' },
+const fmtCanalValor = (canal, valor, opts = {}) => {
+  if (canal?.is_quantity) {
+    const n = Math.round(Number(valor || 0));
+    if (opts.compact) return `${n}`;
+    return `${n} ${canal.unit || 'un'}`;
+  }
+  if (opts.compact) return formatBRLCompact(valor);
+  return `R$ ${formatBRL(valor)}`;
 };
 
 const api = {
@@ -71,17 +73,6 @@ function isoWeek(date) {
   return { ano: d.getUTCFullYear(), semana: weekNo };
 }
 
-// Última semana completa (segunda passada → domingo passado).
-// Mesma referência usada na aba "Métricas por Canal".
-function lastCompletedIsoWeek() {
-  const today = new Date();
-  const dow = today.getUTCDay();
-  const daysSinceLastSunday = dow === 0 ? 7 : dow;
-  const sun = new Date(today);
-  sun.setUTCDate(today.getUTCDate() - daysSinceLastSunday);
-  return isoWeek(sun);
-}
-
 const fmtDataBr = (iso) => {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
@@ -89,7 +80,6 @@ const fmtDataBr = (iso) => {
 };
 
 export default function PromessaSemanal() {
-  // Default: semana corrente (ISO em curso) — visão operacional do dia
   const cur = isoWeek(new Date());
   const [ano, setAno] = useState(cur.ano);
   const [semana, setSemana] = useState(cur.semana);
@@ -97,7 +87,7 @@ export default function PromessaSemanal() {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
   const [showWhats, setShowWhats] = useState(false);
-  const [untilToday, setUntilToday] = useState(false); // false = até ontem (D-1); true = até hoje
+  const [untilToday, setUntilToday] = useState(false);
   const cardRef = useRef(null);
 
   const carregar = useCallback(async () => {
@@ -127,215 +117,190 @@ export default function PromessaSemanal() {
   const canais = data?.canais || [];
   const total = data?.total || {};
 
+  // KPIs do topo (filtrando canais monetários do total)
+  const kpis = data ? [
+    {
+      label: 'Meta Semana',
+      valor: `R$ ${formatBRL(total.meta_realista || 0)}`,
+      icon: Target,
+      color: 'blue',
+      sub: `${data.dias_uteis_decorridos || 0}/${data.dias_uteis_total || 0} dias úteis`,
+    },
+    {
+      label: 'Real Acumulado',
+      valor: `R$ ${formatBRL(total.faturamento_real || 0)}`,
+      icon: CurrencyDollar,
+      color: 'emerald',
+      sub: data?.data_inicio ? `${fmtDataBr(data.data_inicio)} → ${fmtDataBr(data.data_fim)}` : '',
+    },
+    {
+      label: 'Qnt Deveria',
+      valor: `R$ ${formatBRL(total.qnt_deveria || 0)}`,
+      icon: TrendUp,
+      color: 'amber',
+      sub: 'Ritmo esperado',
+    },
+    {
+      label: 'Fat. Ontem',
+      valor: `R$ ${formatBRL(total.fat_dia_anterior || 0)}`,
+      icon: Lightning,
+      color: 'purple',
+      sub: 'Dia anterior',
+    },
+    {
+      label: '% Realizado',
+      valor: `${Number(total.percentual || 0).toFixed(0)}%`,
+      icon: ChartBar,
+      color: (total.percentual || 0) >= 100 ? 'emerald' : (total.percentual || 0) >= 70 ? 'amber' : 'rose',
+      sub: `Real / Meta`,
+    },
+  ] : [];
+
   return (
-    <div ref={cardRef}>
-    <Card className="mb-6">
-      <CardContent className="pt-4">
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Target size={20} className="text-blue-700" />
-            <h3 className="text-lg font-semibold text-gray-800">Promessa Semanal por Canal</h3>
-            <span className="text-xs text-gray-500">
-              ({data?.period_key || `${ano}-W${String(semana).padStart(2, '0')}`}
-              {data?.data_inicio && ` [${fmtDataBr(data.data_inicio)}–${fmtDataBr(data.data_fim)}]`}
-              {' · '}
-              {data ? `${data.dias_uteis_decorridos}/${data.dias_uteis_total} dias úteis` : ''})
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={semanaAnterior}
-              className="p-1.5 text-gray-500 hover:text-gray-800 border border-gray-300 rounded hover:bg-gray-50"
-              title="Semana anterior"
-            >
-              <CaretLeft size={12} />
-            </button>
-            <button
-              onClick={irParaAtual}
-              className="text-xs px-2 py-1.5 border border-gray-300 rounded hover:bg-gray-50"
-              title="Ir para semana atual"
-            >
-              Hoje
-            </button>
-            <button
-              onClick={semanaProxima}
-              className="p-1.5 text-gray-500 hover:text-gray-800 border border-gray-300 rounded hover:bg-gray-50"
-              title="Próxima semana"
-            >
-              <CaretRight size={12} />
-            </button>
-            {/* Toggle: até ontem (D-1) ↔ até hoje */}
-            <button
-              onClick={() => setUntilToday((v) => !v)}
-              className={`text-xs px-2.5 py-1.5 rounded border inline-flex items-center gap-1 ml-1 transition ${
-                untilToday
-                  ? 'bg-blue-600 text-white border-blue-700 hover:bg-blue-700'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-              }`}
-              title={untilToday ? 'Mostrando dados até HOJE (parcial)' : 'Mostrando dados até ONTEM (fechado)'}
-            >
-              <span className={`w-2 h-2 rounded-full ${untilToday ? 'bg-emerald-300 animate-pulse' : 'bg-gray-400'}`} />
-              {untilToday ? 'Hoje' : 'Até ontem'}
-            </button>
-            <button
-              onClick={carregar}
-              disabled={loading}
-              className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 inline-flex items-center gap-1 disabled:opacity-50 ml-1"
-              title="Atualizar"
-            >
-              <ArrowsClockwise size={12} className={loading ? 'animate-spin' : ''} />
-              {loading ? 'Carregando...' : 'Atualizar'}
-            </button>
-            <button
-              onClick={() => setShowWhats(true)}
-              className="text-xs px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white inline-flex items-center gap-1"
-              title="Enviar via WhatsApp"
-            >
-              <WhatsappLogo size={12} weight="bold" /> WhatsApp
-            </button>
-          </div>
+    <div ref={cardRef} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+      <MetricaHeader
+        title="Promessa Semanal por Canal"
+        subtitle={
+          data
+            ? `Semana ${data.semana_iso}/${data.ano} · ${fmtDataBr(data.data_inicio)}–${fmtDataBr(data.data_fim)}`
+            : `Semana ${semana}/${ano}`
+        }
+        icon={Target}
+        color="blue"
+        onPrev={semanaAnterior}
+        onNext={semanaProxima}
+        onToday={irParaAtual}
+        untilToday={untilToday}
+        setUntilToday={setUntilToday}
+        onRefresh={carregar}
+        loading={loading}
+        onWhatsapp={() => setShowWhats(true)}
+      />
+
+      {data && <KpiStripe items={kpis} loading={loading && canais.length === 0} />}
+
+      {erro && (
+        <div className="p-4">
+          <InfoBanner tone="rose">{erro}</InfoBanner>
         </div>
+      )}
 
-        {erro && (
-          <div className="mb-3 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
-            {erro}
-          </div>
-        )}
-
-        {/* Banner global de "atualizando" quando refetching com dados visíveis */}
-        {loading && canais.length > 0 && (
-          <div className="mb-2 text-[11px] text-blue-600 inline-flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-            Atualizando valores...
-          </div>
-        )}
-
-        {loading && canais.length === 0 ? (
-          /* Skeleton inicial */
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="py-2 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Canal</th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Meta Realista</th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Faturamento Real</th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Qnt Deveria</th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Meta do Dia</th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Fat. Dia Anterior</th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[1,2,3,4,5,6,7].map((i) => (
-                  <tr key={i} className="border-b border-gray-100">
-                    <td className="py-3 px-3"><LoadingValue width={90} /></td>
-                    <td className="py-3 px-3 text-right"><LoadingValue /></td>
-                    <td className="py-3 px-3 text-right"><LoadingValue /></td>
-                    <td className="py-3 px-3 text-right"><LoadingValue /></td>
-                    <td className="py-3 px-3 text-right"><LoadingValue /></td>
-                    <td className="py-3 px-3 text-right"><LoadingValue /></td>
-                    <td className="py-3 px-3 text-right"><LoadingValue width={40} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="py-2 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Canal</th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Meta Realista</th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Faturamento Real</th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Qnt Deveria</th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Meta do Dia</th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Fat. Dia Anterior</th>
-                  <th className="py-2 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {canais.map((c) => {
-                  const cfg = CANAL_CFG[c.canal_key] || { label: c.nome, icon: ChartBar, text: 'text-gray-600' };
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 bg-gradient-to-b from-gray-50 to-white">
+              <th className="py-2.5 px-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">Canal</th>
+              <th className="py-2.5 px-3 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider">Meta</th>
+              <th className="py-2.5 px-3 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider">Real</th>
+              <th className="py-2.5 px-3 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider">Qnt Dev.</th>
+              <th className="py-2.5 px-3 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider">Meta/Dia</th>
+              <th className="py-2.5 px-3 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider">Fat. Ontem</th>
+              <th className="py-2.5 px-3 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider w-[120px]">% Realizado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && canais.length === 0
+              ? [1,2,3,4,5,6,7].map((i) => <LoadingRow key={i} cols={7} />)
+              : canais.map((c, idx) => {
+                  const cfg = CANAL_CFG[c.canal_key] || { label: c.nome, icon: ChartBar, text: 'text-gray-600', bg: 'bg-gray-50' };
                   const Icon = cfg.icon;
                   const hasMeta = c.meta_realista > 0;
+                  const isQty = c.is_quantity;
+                  // Zebra: linha par usa branco, ímpar usa cinza muito suave.
+                  // Quando é canal quantitativo (BlueCard), prevalece o sky/30.
+                  const zebraBg = isQty ? 'bg-sky-50/30' : (idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40');
                   return (
-                    <tr key={c.canal_key} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                      <td className="py-2.5 px-3 font-medium text-gray-800">
+                    <tr
+                      key={c.canal_key}
+                      className={`border-b border-gray-100 transition-colors hover:bg-blue-50/40 ${zebraBg}`}
+                    >
+                      <td className="py-2.5 px-3">
                         <div className="inline-flex items-center gap-2">
-                          <Icon size={14} weight="bold" className={cfg.text} />
-                          {cfg.label}
+                          <div className={`${cfg.bg} p-1 rounded`}>
+                            <Icon size={12} weight="bold" className={cfg.text} />
+                          </div>
+                          <span className="font-semibold text-gray-800 text-[13px]">{cfg.label}</span>
+                          {isQty && (
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-sky-700 bg-sky-100 px-1.5 py-0.5 rounded">
+                              qty
+                            </span>
+                          )}
                         </div>
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-700">
-                        {hasMeta ? `R$ ${formatBRL(c.meta_realista)}` : '—'}
+                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-600 text-[12px]">
+                        {hasMeta ? fmtCanalValor(c, c.meta_realista) : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-800 font-semibold">
-                        {loading ? <LoadingValue /> : `R$ ${formatBRL(c.faturamento_real)}`}
+                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-900 font-semibold">
+                        {loading ? <LoadingValue /> : fmtCanalValor(c, c.faturamento_real)}
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-700">
-                        {hasMeta ? `R$ ${formatBRL(c.qnt_deveria)}` : '—'}
+                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-600 text-[12px]">
+                        {hasMeta ? fmtCanalValor(c, c.qnt_deveria) : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-700">
-                        {c.meta_do_dia > 0 ? `R$ ${formatBRL(c.meta_do_dia)}` : '—'}
+                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-600 text-[12px]">
+                        {c.meta_do_dia > 0 ? fmtCanalValor(c, c.meta_do_dia) : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-700">
-                        {loading ? <LoadingValue /> : `R$ ${formatBRL(c.fat_dia_anterior)}`}
+                      <td className="py-2.5 px-3 text-right tabular-nums text-gray-600 text-[12px]">
+                        {loading ? <LoadingValue /> : fmtCanalValor(c, c.fat_dia_anterior)}
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums">
+                      <td className="py-2.5 px-3">
                         {hasMeta ? (
-                          <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${pctColor(c.percentual)}`}>
-                            {c.percentual.toFixed(1)}%
-                          </span>
+                          <div className="flex flex-col items-end gap-1">
+                            <PctPill pct={c.percentual} />
+                            <div className="w-full max-w-[100px]">
+                              <MiniProgress pct={c.percentual} />
+                            </div>
+                          </div>
                         ) : (
-                          <span className="text-gray-400 text-xs">—</span>
+                          <span className="text-gray-300 text-xs flex justify-end">—</span>
                         )}
                       </td>
                     </tr>
                   );
                 })}
-                <tr className="bg-gray-50 font-bold border-t-2 border-gray-200">
-                  <td className="py-3 px-3 text-gray-800">Total</td>
-                  <td className="py-3 px-3 text-right tabular-nums text-gray-800">
-                    R$ {formatBRL(total.meta_realista)}
-                  </td>
-                  <td className="py-3 px-3 text-right tabular-nums text-gray-800">
-                    {loading ? <LoadingValue /> : `R$ ${formatBRL(total.faturamento_real)}`}
-                  </td>
-                  <td className="py-3 px-3 text-right tabular-nums text-gray-800">
-                    R$ {formatBRL(total.qnt_deveria)}
-                  </td>
-                  <td className="py-3 px-3 text-right tabular-nums text-gray-800">
-                    R$ {formatBRL(total.meta_do_dia)}
-                  </td>
-                  <td className="py-3 px-3 text-right tabular-nums text-gray-800">
-                    {loading ? <LoadingValue /> : `R$ ${formatBRL(total.fat_dia_anterior)}`}
-                  </td>
-                  <td className="py-3 px-3 text-right tabular-nums">
+            {!loading && canais.length > 0 && (
+              <tr className="bg-gradient-to-r from-gray-50 to-gray-100 font-bold border-t-2 border-gray-300">
+                <td className="py-3 px-3 text-gray-800 text-[13px] uppercase tracking-wider">Total</td>
+                <td className="py-3 px-3 text-right tabular-nums text-gray-800">
+                  R$ {formatBRL(total.meta_realista)}
+                </td>
+                <td className="py-3 px-3 text-right tabular-nums text-gray-900 font-extrabold text-[13px]">
+                  {loading ? <LoadingValue /> : `R$ ${formatBRL(total.faturamento_real)}`}
+                </td>
+                <td className="py-3 px-3 text-right tabular-nums text-gray-800">
+                  R$ {formatBRL(total.qnt_deveria)}
+                </td>
+                <td className="py-3 px-3 text-right tabular-nums text-gray-800">
+                  R$ {formatBRL(total.meta_do_dia)}
+                </td>
+                <td className="py-3 px-3 text-right tabular-nums text-gray-800">
+                  {loading ? <LoadingValue /> : `R$ ${formatBRL(total.fat_dia_anterior)}`}
+                </td>
+                <td className="py-3 px-3">
+                  <div className="flex justify-end">
                     {total.meta_realista > 0 ? (
-                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${pctColor(total.percentual || 0)}`}>
-                        {Number(total.percentual || 0).toFixed(1)}%
-                      </span>
+                      <PctPill pct={total.percentual || 0} size="md" />
                     ) : (
-                      <span className="text-gray-400 text-xs">—</span>
+                      <span className="text-gray-300 text-xs">—</span>
                     )}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-    {showWhats && (
-      <EnviarWhatsappModal
-        targetRef={cardRef}
-        tipo="semanal"
-        titulo={`Promessa Semanal ${data?.period_key || `${ano}-W${semana}`}`}
-        params={{ ano, semana }}
-        onClose={() => setShowWhats(false)}
-      />
-    )}
+                  </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {showWhats && (
+        <EnviarWhatsappModal
+          targetRef={cardRef}
+          tipo="semanal"
+          reportTipo="semanal"
+          reportData={data}
+          titulo={`Promessa Semanal ${data?.period_key || `${ano}-W${semana}`}`}
+          params={{ ano, semana }}
+          onClose={() => setShowWhats(false)}
+        />
+      )}
     </div>
   );
 }
