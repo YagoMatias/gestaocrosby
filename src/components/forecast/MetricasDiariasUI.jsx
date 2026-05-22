@@ -26,21 +26,28 @@ export const formatBRLCompact = (v) => {
   return `R$ ${formatBRL(n)}`;
 };
 
+// Threshold consistente com o DISPLAY arredondado: o pill mostra
+// `.toFixed(0)` (ex: 99,6% → "100%"), então a cor segue o mesmo round.
+// Antes, Ricardo Eletro em 99,6% (real 1.504,40 / meta 1.510,37) aparecia
+// como "100%" mas em AMARELO — visual confuso.
 export const pctColor = (pct) => {
-  if (pct >= 100) return 'text-emerald-700 bg-emerald-50 border-emerald-200';
-  if (pct >= 70) return 'text-amber-700 bg-amber-50 border-amber-200';
+  const r = Math.round(Number(pct) || 0);
+  if (r >= 100) return 'text-emerald-700 bg-emerald-50 border-emerald-200';
+  if (r >= 70) return 'text-amber-700 bg-amber-50 border-amber-200';
   return 'text-rose-700 bg-rose-50 border-rose-200';
 };
 
 export const pctBarColor = (pct) => {
-  if (pct >= 100) return 'bg-emerald-500';
-  if (pct >= 70) return 'bg-amber-400';
+  const r = Math.round(Number(pct) || 0);
+  if (r >= 100) return 'bg-emerald-500';
+  if (r >= 70) return 'bg-amber-400';
   return 'bg-rose-500';
 };
 
 export const statusIcon = (pct) => {
-  if (pct >= 100) return <CheckCircle size={12} weight="fill" className="text-emerald-600" />;
-  if (pct >= 70) return <WarningCircle size={12} weight="fill" className="text-amber-500" />;
+  const r = Math.round(Number(pct) || 0);
+  if (r >= 100) return <CheckCircle size={12} weight="fill" className="text-emerald-600" />;
+  if (r >= 70) return <WarningCircle size={12} weight="fill" className="text-amber-500" />;
   return <Circle size={12} weight="fill" className="text-rose-500" />;
 };
 

@@ -2727,6 +2727,62 @@ export default function PerformanceView({
   // Toggle de aba dentro do VAREJO: 'geral' (atual) | 'reuniao' (novo)
   const [varejoView, setVarejoView] = useState('geral');
 
+  // ─── Toggle de aba dentro do MULTIMARCAS: 'time' (atual) | 'global' (novo) ──
+  // 'time' = apenas vendedores cadastrados em multimarcas (exclui inbound).
+  // 'global' = soma multimarcas + inbound_david + inbound_rafael (B2M total).
+  //
+  // Estratégia: fetcha os 3 canais SEPARADOS e faz merge dos per_seller no
+  // frontend. Motivo: o canal `b2m_total` (sale-panel agregado sem filtro de
+  // sellers) NÃO inclui as NFs de David/Rafael que precisam de
+  // manualTransactions pra serem corretamente atribuídas (ex: NF op 7240 do
+  // David, NF dealer=121 Peu corrigida pra Rafael). Cada canal individual
+  // tem essas regras aplicadas. Como os canais usam cache TOTVS, o custo é
+  // baixo nas chamadas seguintes.
+  const [multiView, setMultiView] = useState('time');
+  const [b2mGlobalCanais, setB2mGlobalCanais] = useState(null);
+  const [b2mGlobalOpenings, setB2mGlobalOpenings] = useState(null);
+  const [b2mGlobalLoading, setB2mGlobalLoading] = useState(false);
+  const [b2mGlobalErro, setB2mGlobalErro] = useState('');
+
+  // Reset da aba quando muda de módulo (volta sempre pra default)
+  useEffect(() => {
+    if (modulo !== 'multimarcas') setMultiView('time');
+  }, [modulo]);
+
+  // Fetch lazy do B2M Global — só quando a aba é ativada.
+  // Usa endpoint CONSOLIDADO `/multimarcas-global` que faz server-side:
+  //   - 3 canais (multimarcas, inbound_david, inbound_rafael) com coalescing
+  //   - openings de todos os sellers combinados
+  // → 1 HTTP request do frontend (era 4). Cache 5min próprio + cache nas
+  // camadas underlying (canal-totals 1h-24h, seller-openings 30min).
+  useEffect(() => {
+    if (modulo !== 'multimarcas' || multiView !== 'global') return;
+    if (!dataInicio || !dataFim) return;
+    let cancelled = false;
+    setB2mGlobalLoading(true);
+    setB2mGlobalErro('');
+
+    fetch(`${API_BASE_URL}/api/crm/multimarcas-global`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ datemin: dataInicio, datemax: dataFim }),
+    })
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        if (!j?.success) throw new Error(j?.message || 'Erro ao buscar B2M global');
+        setB2mGlobalCanais(j.data?.canais || null);
+        setB2mGlobalOpenings(j.data?.openings || {});
+      })
+      .catch((e) => {
+        if (!cancelled) setB2mGlobalErro(e.message || 'Erro');
+      })
+      .finally(() => {
+        if (!cancelled) setB2mGlobalLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [modulo, multiView, dataInicio, dataFim]);
+
   // Para varejo, meta padrão é por LOJA (branch_code). Mas o gerente também pode
   // definir meta INDIVIDUAL por vendedor (entity_type='seller'). Quando existir
   // meta de vendedor, ela tem prioridade sobre a meta da loja.
@@ -3171,6 +3227,58 @@ export default function PerformanceView({
         </div>
       )}
 
+      {/* ─── Toggle "Time Multimarcas / Global" — só pra multimarcas ─────── */}
+      {modulo === 'multimarcas' && (
+        <div className="flex items-center gap-1 border-b border-gray-200 -mb-1">
+          <button
+            onClick={() => setMultiView('time')}
+            className={`px-4 py-2 inline-flex items-center gap-2 text-sm font-medium transition border-b-2 -mb-px ${
+              multiView === 'time'
+                ? 'text-purple-700 border-purple-600'
+                : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <ChartBar
+              size={14}
+              weight={multiView === 'time' ? 'duotone' : 'regular'}
+            />
+            Time Multimarcas
+          </button>
+          <button
+            onClick={() => setMultiView('global')}
+            className={`px-4 py-2 inline-flex items-center gap-2 text-sm font-medium transition border-b-2 -mb-px ${
+              multiView === 'global'
+                ? 'text-blue-700 border-blue-600'
+                : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
+            }`}
+            title="B2M Global = Multimarcas + Inbound David + Inbound Rafael"
+          >
+            <Trophy
+              size={14}
+              weight={multiView === 'global' ? 'duotone' : 'regular'}
+            />
+            Multimarcas Global
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold uppercase tracking-wider">
+              B2M
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* ─── Conteúdo da aba MULTIMARCAS GLOBAL ──────────────────────────── */}
+      {modulo === 'multimarcas' && multiView === 'global' && (
+        <MultimarcasGlobalView
+          canais={b2mGlobalCanais}
+          openings={b2mGlobalOpenings}
+          loading={b2mGlobalLoading}
+          erro={b2mGlobalErro}
+          vendedoresMap={vendedoresMap}
+          periodoLabel={periodoLabel}
+          dataInicio={dataInicio}
+          dataFim={dataFim}
+        />
+      )}
+
       {/* Conteúdo da aba REUNIÃO (só quando varejo + reuniao) */}
       {modulo === 'varejo' && varejoView === 'reuniao' && (
         <VarejoReuniao isAdmin={isAdmin} userLogin={userLogin} />
@@ -3184,8 +3292,9 @@ export default function PerformanceView({
       <div
         style={{
           display:
-            modulo === 'varejo' &&
-            (varejoView === 'reuniao' || varejoView === 'fila')
+            (modulo === 'varejo' &&
+              (varejoView === 'reuniao' || varejoView === 'fila')) ||
+            (modulo === 'multimarcas' && multiView === 'global')
               ? 'none'
               : 'contents',
         }}
@@ -3575,6 +3684,319 @@ export default function PerformanceView({
         )}
       </div>
       {/* fim do wrapper de "Visão Geral" — toggle varejo */}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MULTIMARCAS GLOBAL — aba que agrega vendedores de multimarcas + inbound
+// David + inbound Rafael (B2M total). Usa canal virtual `b2m_total` que faz
+// 1 só query sale-panel sem excludeSellers (inclui Rafael, David, Thalis).
+// ═══════════════════════════════════════════════════════════════════════════
+function MultimarcasGlobalView({
+  canais,
+  openings,
+  loading,
+  erro,
+  vendedoresMap,
+  periodoLabel,
+  dataInicio,
+  dataFim,
+}) {
+  const fmtMoeda = (v) =>
+    Number(v || 0).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  // Mapa canal_id → label/cor (pra mostrar de onde vem cada vendedor)
+  const canalMeta = {
+    multimarcas: { label: 'MM', cls: 'bg-purple-100 text-purple-700 border-purple-200' },
+    inbound_david: { label: 'David', cls: 'bg-amber-100 text-amber-700 border-amber-200' },
+    inbound_rafael: { label: 'Rafael', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  };
+
+  // Merge dos 3 canais → array unificado de vendedores.
+  // Mesmo seller_code presente em múltiplos canais é agregado (raro, mas
+  // possível). Líquido = invoice_value (bruto) − credev_value.
+  const sellers = useMemo(() => {
+    if (!canais) return [];
+    const map = new Map();
+    for (const canalKey of ['multimarcas', 'inbound_david', 'inbound_rafael']) {
+      const data = canais[canalKey];
+      if (!data?.per_seller) continue;
+      for (const s of data.per_seller) {
+        const code = String(s.seller_code);
+        const bruto = Number(s.invoice_value || 0);
+        const credev = Number(s.credev_value || 0);
+        const liquido = Math.max(0, bruto - credev);
+        const qty = Number(s.invoice_qty || 0);
+        const itens = Number(s.itens_qty || 0);
+        // Resolve nome com fallback no vendedoresMap
+        let nome = s.seller_name || s.name || '';
+        if (!nome || /^Vend\.|^Vendedor/.test(nome)) {
+          const v = vendedoresMap?.byTotvsId?.[Number(s.seller_code)];
+          if (v?.nome) nome = v.nome;
+        }
+        const cur = map.get(code);
+        if (cur) {
+          cur.bruto += bruto;
+          cur.credev += credev;
+          cur.liquido += liquido;
+          cur.invoice_qty += qty;
+          cur.itens_qty += itens;
+          if (!cur.canais.includes(canalKey)) cur.canais.push(canalKey);
+        } else {
+          map.set(code, {
+            seller_code: s.seller_code,
+            seller_name: nome || `Vendedor ${s.seller_code}`,
+            bruto,
+            credev,
+            liquido,
+            invoice_qty: qty,
+            itens_qty: itens,
+            canais: [canalKey],
+          });
+        }
+      }
+    }
+    // Anexa aberturas (clientes novos no período) por seller_code
+    if (openings) {
+      for (const seller of map.values()) {
+        const open = openings[Number(seller.seller_code)];
+        seller.aberturas = open?.openings ?? open?.count ?? 0;
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.liquido - a.liquido);
+  }, [canais, openings, vendedoresMap]);
+
+  const totais = useMemo(() => {
+    const liq = sellers.reduce((s, v) => s + v.liquido, 0);
+    const credev = sellers.reduce((s, v) => s + v.credev, 0);
+    const bruto = sellers.reduce((s, v) => s + v.bruto, 0);
+    const nfs = sellers.reduce((s, v) => s + v.invoice_qty, 0);
+    const aberturas = sellers.reduce((s, v) => s + (v.aberturas || 0), 0);
+    return { liq, credev, bruto, nfs, aberturas };
+  }, [sellers]);
+
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12 gap-2 text-gray-400">
+        <Spinner size={20} className="animate-spin" />
+        <span className="text-sm">Carregando Multimarcas Global...</span>
+      </div>
+    );
+  }
+
+  if (erro) {
+    return (
+      <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+        ⚠️ {erro}
+      </div>
+    );
+  }
+
+  if (!canais || sellers.length === 0) {
+    return (
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-8 text-center text-gray-500">
+        <Trophy size={32} weight="duotone" className="mx-auto mb-2 text-gray-400" />
+        <p className="text-sm">Sem dados de Multimarcas Global no período selecionado.</p>
+      </div>
+    );
+  }
+
+  const medalhas = ['🥇', '🥈', '🥉'];
+
+  return (
+    <div className="space-y-4">
+      {/* ─── Banner explicativo ─── */}
+      <div className="bg-gradient-to-r from-blue-50 via-purple-50 to-blue-50 border border-blue-200 rounded-xl p-3 flex items-start gap-3">
+        <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-md">
+          <Trophy size={18} weight="fill" className="text-white" />
+        </div>
+        <div className="flex-1">
+          <h3 className="text-sm font-bold text-blue-900">Multimarcas Global (B2M)</h3>
+          <p className="text-xs text-blue-700/80 mt-0.5">
+            Agrega o time Multimarcas + Inbound David + Inbound Rafael num único ranking.
+            {periodoLabel ? ` Período: ${periodoLabel}.` : ''}
+          </p>
+        </div>
+      </div>
+
+      {/* ─── KPIs ─── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-white border-l-4 border-l-blue-500 rounded-xl shadow-sm p-3">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1">
+            Faturamento Líquido
+          </div>
+          <div className="text-lg sm:text-xl font-extrabold text-blue-700 tabular-nums">
+            {fmtMoeda(totais.liq)}
+          </div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Bruto − Credev</div>
+        </div>
+        <div className="bg-white border-l-4 border-l-purple-500 rounded-xl shadow-sm p-3">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1">
+            Faturamento Bruto
+          </div>
+          <div className="text-lg sm:text-xl font-extrabold text-purple-700 tabular-nums">
+            {fmtMoeda(totais.bruto)}
+          </div>
+          <div className="text-[10px] text-gray-500 mt-0.5">{totais.nfs} NFs</div>
+        </div>
+        <div className="bg-white border-l-4 border-l-rose-500 rounded-xl shadow-sm p-3">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1">
+            Credev (descontado)
+          </div>
+          <div className="text-lg sm:text-xl font-extrabold text-rose-600 tabular-nums">
+            − {fmtMoeda(totais.credev)}
+          </div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Vale-troca usado</div>
+        </div>
+        <div className="bg-white border-l-4 border-l-indigo-500 rounded-xl shadow-sm p-3">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1">
+            Aberturas
+          </div>
+          <div className="text-lg sm:text-xl font-extrabold text-indigo-700 tabular-nums">
+            {totais.aberturas}
+          </div>
+          <div className="text-[10px] text-gray-500 mt-0.5">
+            clientes novos · {sellers.length} vendedor{sellers.length !== 1 ? 'es' : ''}
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Tabela de Vendedores (líquido por vendedor) ─── */}
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="px-4 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white">
+          <h3 className="text-sm font-bold tracking-wide flex items-center gap-2">
+            <Trophy size={16} weight="fill" />
+            Ranking · {sellers.length} vendedor{sellers.length !== 1 ? 'es' : ''}
+            <span className="text-[10px] font-normal opacity-80 ml-auto">
+              {dataInicio} → {dataFim}
+            </span>
+          </h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-gray-600 border-b border-gray-200">
+              <tr>
+                <th className="px-3 py-2.5 text-left font-bold uppercase tracking-wider w-12">
+                  #
+                </th>
+                <th className="px-3 py-2.5 text-left font-bold uppercase tracking-wider">
+                  Vendedor
+                </th>
+                <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wider text-indigo-700">
+                  Aberturas
+                </th>
+                <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wider">
+                  NFs
+                </th>
+                <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wider">
+                  Bruto
+                </th>
+                <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wider text-rose-600">
+                  Credev
+                </th>
+                <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wider text-blue-700 bg-blue-50">
+                  Líquido
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {sellers.map((s, idx) => {
+                const top3 = idx < 3;
+                return (
+                  <tr
+                    key={s.seller_code}
+                    className={`hover:bg-blue-50/40 transition-colors ${
+                      top3 ? 'bg-amber-50/30' : ''
+                    }`}
+                  >
+                    <td className="px-3 py-2.5">
+                      {top3 ? (
+                        <span className="text-lg leading-none">{medalhas[idx]}</span>
+                      ) : (
+                        <span className="text-xs font-bold text-gray-400">
+                          {idx + 1}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="font-bold text-gray-800 uppercase tracking-wide flex items-center gap-1.5 flex-wrap">
+                        {s.seller_name}
+                        {s.canais.map((ck) => {
+                          const m = canalMeta[ck];
+                          if (!m) return null;
+                          return (
+                            <span
+                              key={ck}
+                              className={`text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded border ${m.cls}`}
+                            >
+                              {m.label}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      <div className="text-[10px] text-gray-400 font-mono">
+                        cód {s.seller_code}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums font-semibold">
+                      {s.aberturas > 0 ? (
+                        <span className="text-indigo-700">{s.aberturas}</span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-gray-600 font-semibold">
+                      {s.invoice_qty}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-purple-700 font-semibold">
+                      {fmtMoeda(s.bruto)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums font-semibold">
+                      {s.credev > 0 ? (
+                        <span className="text-rose-600">− {fmtMoeda(s.credev)}</span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums font-extrabold text-blue-700 bg-blue-50/40">
+                      {fmtMoeda(s.liquido)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+              <tr className="font-extrabold">
+                <td colSpan={2} className="px-3 py-3 text-gray-700 uppercase tracking-wider text-xs">
+                  TOTAL
+                </td>
+                <td className="px-3 py-3 text-right tabular-nums text-indigo-700">
+                  {totais.aberturas}
+                </td>
+                <td className="px-3 py-3 text-right tabular-nums text-gray-700">
+                  {totais.nfs}
+                </td>
+                <td className="px-3 py-3 text-right tabular-nums text-purple-700">
+                  {fmtMoeda(totais.bruto)}
+                </td>
+                <td className="px-3 py-3 text-right tabular-nums text-rose-600">
+                  − {fmtMoeda(totais.credev)}
+                </td>
+                <td className="px-3 py-3 text-right tabular-nums text-blue-700 bg-blue-100 text-base">
+                  {fmtMoeda(totais.liq)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

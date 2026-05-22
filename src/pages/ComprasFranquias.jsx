@@ -23,6 +23,7 @@ import {
   FileArrowDown,
   CalendarBlank,
   ListBullets,
+  CurrencyDollar,
 } from '@phosphor-icons/react';
 
 const LOJAS_DESTAQUE = [
@@ -716,10 +717,39 @@ const ComprasFranquias = () => {
         </div>
       ) : groupedRows.length > 0 ? (
         <>
-          {/* Cards de Resumo */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          {/* ═══ EQUAÇÃO VISUAL: Compras Bruto − Devoluções = Líquido ═══════
+              Apresentação reorganizada pra deixar claro o fluxo:
+                COMPRAS BRUTO → (−) DEVOLUÇÕES → (=) COMPRAS LÍQUIDO
+              Antes: 3 cards soltos sem mostrar a relação matemática.
+              Agora: cards 1 e 2 são "operandos", card 3 é "resultado" destacado. */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr_auto_1.2fr] gap-3 mb-6 items-stretch">
+            {/* Compras (Bruto) */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl rounded-xl bg-white border-l-4 border-l-green-500">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <ShoppingCart size={20} className="text-green-600" />
+                  <CardTitle className="text-sm font-bold text-green-700">
+                    Compras (Bruto)
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <div className="text-2xl font-extrabold text-green-600 mb-0.5 tabular-nums">
+                  {formatBRL(totalCompras)}
+                </div>
+                <CardDescription className="text-xs text-gray-500">
+                  NFs de venda da Crosby pra franquia (saída do estoque)
+                </CardDescription>
+              </CardContent>
+            </Card>
+
+            {/* Operador (−) */}
+            <div className="hidden lg:flex items-center justify-center text-3xl font-black text-gray-400 select-none">
+              −
+            </div>
+
             {/* Devoluções */}
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl rounded-xl bg-white border-l-4 border-l-red-500">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
                   <TrendDown size={20} className="text-red-600" />
@@ -729,54 +759,48 @@ const ComprasFranquias = () => {
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-lg font-extrabold text-red-600 mb-0.5">
+                <div className="text-2xl font-extrabold text-red-600 mb-0.5 tabular-nums">
                   {formatBRL(totalDevolucoes)}
                 </div>
                 <CardDescription className="text-xs text-gray-500">
-                  Total devolvido
+                  NFs de retorno (vira credev na franquia)
                 </CardDescription>
               </CardContent>
             </Card>
 
-            {/* Compras */}
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2">
-                  <ShoppingCart size={20} className="text-green-600" />
-                  <CardTitle className="text-sm font-bold text-green-700">
-                    Compras
-                  </CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-lg font-extrabold text-green-600 mb-0.5">
-                  {formatBRL(totalCompras)}
-                </div>
-                <CardDescription className="text-xs text-gray-500">
-                  Total comprado
-                </CardDescription>
-              </CardContent>
-            </Card>
+            {/* Operador (=) */}
+            <div className="hidden lg:flex items-center justify-center text-3xl font-black text-gray-400 select-none">
+              =
+            </div>
 
-            {/* Líquido */}
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
+            {/* Compras Líquidas (destaque) */}
+            <Card className="shadow-xl transition-all duration-200 hover:shadow-2xl rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
-                  <TrendUp size={20} className="text-blue-600" />
-                  <CardTitle className="text-sm font-bold text-blue-700">
-                    Líquido
+                  <CurrencyDollar size={22} weight="bold" className="text-blue-700" />
+                  <CardTitle className="text-sm font-extrabold text-blue-800">
+                    Compras Líquidas
                   </CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-lg font-extrabold text-blue-600 mb-0.5">
+                <div className="text-2xl font-black text-blue-700 mb-0.5 tabular-nums">
                   {formatBRL(totalLiquido)}
                 </div>
-                <CardDescription className="text-xs text-gray-500">
-                  Compras - Devoluções
+                <CardDescription className="text-xs text-blue-700/70 font-medium">
+                  Compras efetivas no período (Bruto − Devoluções)
                 </CardDescription>
               </CardContent>
             </Card>
+          </div>
+
+          {/* Linha mobile com operadores (visível só em telas estreitas) */}
+          <div className="lg:hidden text-center text-xs text-gray-500 -mt-3 mb-4">
+            <span className="font-bold text-green-700">Compras</span>
+            {' − '}
+            <span className="font-bold text-red-700">Devoluções</span>
+            {' = '}
+            <span className="font-bold text-blue-700">Líquido</span>
           </div>
 
           {/* Tabela de Dados */}
@@ -1011,7 +1035,26 @@ const ComprasFranquias = () => {
                         </th>
                         <th
                           className="px-4 py-3 text-right cursor-pointer hover:bg-[#fe0000] transition-colors"
+                          onClick={() => handleSort('total_compras')}
+                          title="NFs de venda da Crosby pra franquia (saída do estoque)"
+                        >
+                          <div className="flex items-center justify-end gap-1">
+                            Compras (Bruto)
+                            {sortField === 'total_compras' && (
+                              <span>
+                                {sortDirection === 'asc' ? (
+                                  <ArrowUp size={14} weight="bold" />
+                                ) : (
+                                  <ArrowDown size={14} weight="bold" />
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-4 py-3 text-right cursor-pointer hover:bg-[#fe0000] transition-colors"
                           onClick={() => handleSort('total_devolucao')}
+                          title="NFs de retorno (vira credev na franquia)"
                         >
                           <div className="flex items-center justify-end gap-1">
                             Devoluções
@@ -1027,28 +1070,12 @@ const ComprasFranquias = () => {
                           </div>
                         </th>
                         <th
-                          className="px-4 py-3 text-right cursor-pointer hover:bg-[#fe0000] transition-colors"
-                          onClick={() => handleSort('total_compras')}
-                        >
-                          <div className="flex items-center justify-end gap-1">
-                            Compras
-                            {sortField === 'total_compras' && (
-                              <span>
-                                {sortDirection === 'asc' ? (
-                                  <ArrowUp size={14} weight="bold" />
-                                ) : (
-                                  <ArrowDown size={14} weight="bold" />
-                                )}
-                              </span>
-                            )}
-                          </div>
-                        </th>
-                        <th
-                          className="px-4 py-3 text-right cursor-pointer hover:bg-[#fe0000] transition-colors"
+                          className="px-4 py-3 text-right cursor-pointer hover:bg-blue-700 transition-colors bg-[#0a1a5a]"
                           onClick={() => handleSort('total_liquido')}
+                          title="Compras Bruto − Devoluções = valor efetivo de compras no período"
                         >
                           <div className="flex items-center justify-end gap-1">
-                            Líquido
+                            Compras Líquidas
                             {sortField === 'total_liquido' && (
                               <span>
                                 {sortDirection === 'asc' ? (
@@ -1102,13 +1129,13 @@ const ComprasFranquias = () => {
                                   {r.nm_fantasia || '-'}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 text-right font-semibold text-red-600">
-                                {formatBRL(r.total_devolucao)}
-                              </td>
-                              <td className="px-4 py-3 text-right font-semibold text-green-600">
+                              <td className="px-4 py-3 text-right font-semibold text-green-600 tabular-nums">
                                 {formatBRL(r.total_compras)}
                               </td>
-                              <td className="px-4 py-3 text-right font-semibold text-blue-600">
+                              <td className="px-4 py-3 text-right font-semibold text-red-600 tabular-nums">
+                                {formatBRL(r.total_devolucao)}
+                              </td>
+                              <td className="px-4 py-3 text-right font-extrabold text-blue-700 tabular-nums bg-blue-50/40">
                                 {formatBRL(r.total_liquido)}
                               </td>
                             </tr>
@@ -1151,23 +1178,23 @@ const ComprasFranquias = () => {
               </button>
             </div>
 
-            {/* Resumo */}
+            {/* Resumo — ordem: Compras − Devoluções = Líquido */}
             <div className="grid grid-cols-3 gap-3 px-6 py-3 bg-gray-50 border-b border-gray-200">
               <div className="text-center">
-                <p className="text-xs text-gray-500">Devoluções</p>
-                <p className="text-sm font-bold text-red-600">
+                <p className="text-xs text-gray-500 mb-0.5">Compras (Bruto)</p>
+                <p className="text-sm font-bold text-green-600 tabular-nums">
+                  {formatBRL(modalData.total_compras)}
+                </p>
+              </div>
+              <div className="text-center border-x border-gray-200">
+                <p className="text-xs text-gray-500 mb-0.5">− Devoluções</p>
+                <p className="text-sm font-bold text-red-600 tabular-nums">
                   {formatBRL(modalData.total_devolucao)}
                 </p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-gray-500">Compras</p>
-                <p className="text-sm font-bold text-green-600">
-                  {formatBRL(modalData.total_compras)}
-                </p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-gray-500">Líquido</p>
-                <p className="text-sm font-bold text-blue-600">
+                <p className="text-[10px] text-blue-700 uppercase tracking-wide font-bold mb-0.5">= Compras Líquidas</p>
+                <p className="text-sm font-extrabold text-blue-700 tabular-nums">
                   {formatBRL(modalData.total_liquido)}
                 </p>
               </div>

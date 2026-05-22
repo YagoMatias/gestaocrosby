@@ -432,48 +432,60 @@ const RankingComprasFranquias = () => {
       {/* DASHBOARD */}
       {!loading && franquiasFiltradas.length > 0 && (
         <>
-          {/* Cards de Resumo: Compras / Credev / Líquido / Sellout */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 mb-4">
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 rounded-xl bg-white overflow-hidden">
-              <CardHeader className="pb-1 pt-2.5 px-3 bg-gradient-to-br from-orange-50 to-orange-50/30 border-b border-orange-100">
+          {/* ═══ SEÇÃO 1 — COMPRAS DAS FRANQUIAS (sellin) ═══════════════════
+              Equação visual: COMPRAS BRUTO  −  CREDEV/DEVOL  =  LÍQUIDO
+              Antes: 5 cards soltos misturando sellin/sellout. Confuso.
+              Agora: cards 1-2-3 são a EQUAÇÃO; card 3 destacado em verde. */}
+          <div className="mb-2 flex items-center gap-2">
+            <ShoppingCart size={14} weight="bold" className="text-orange-600" />
+            <h2 className="text-[11px] sm:text-xs font-black uppercase tracking-widest text-gray-700 font-barlow">
+              Compras das Franquias
+            </h2>
+            <span className="text-[10px] text-gray-400 font-barlow hidden sm:inline">
+              · o que a franquia compra da Crosby
+            </span>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr_auto_1.15fr] gap-2 items-stretch mb-5">
+            {/* Compras (Bruto) */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl rounded-xl bg-white border-l-4 border-l-orange-500">
+              <CardHeader className="pb-1 pt-2.5 px-3">
                 <div className="flex items-center gap-1.5">
                   <ShoppingCart size={14} weight="bold" className="text-orange-600" />
                   <CardTitle className="text-[10px] sm:text-xs font-bold text-orange-700 font-barlow">
-                    Compras (Sellin)
+                    Compras (Bruto)
                   </CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-2 px-3 pb-3">
-                {/* Grid 2 colunas: 2025 | 2026 lado a lado */}
                 <div className="grid grid-cols-2 gap-2 mb-1">
                   <div>
-                    <p className="text-[9px] uppercase tracking-wider font-bold text-gray-500 mb-0.5">
-                      2025
-                    </p>
+                    <p className="text-[9px] uppercase tracking-wider font-bold text-gray-500 mb-0.5">2025</p>
                     <p className="text-xs font-bold text-gray-600 font-mono tabular-nums leading-none">
                       R$ {formatBRL(totaisApi.total_compras_ly || 0)}
                     </p>
                   </div>
                   <div className="border-l border-orange-200 pl-2">
-                    <p className="text-[9px] uppercase tracking-wider font-bold text-orange-700 mb-0.5">
-                      2026
-                    </p>
-                    <p className="text-sm sm:text-base font-extrabold text-orange-700 font-barlow tabular-nums leading-none">
+                    <p className="text-[9px] uppercase tracking-wider font-bold text-orange-700 mb-0.5">2026</p>
+                    <p className="text-base sm:text-lg font-extrabold text-orange-700 font-barlow tabular-nums leading-none">
                       R$ {formatBRL(totais.totalCompras)}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 pt-1.5 border-t border-orange-50">
                   <GrowthBadge value={totaisApi.crescimento_compras_pct} size="lg" />
-                  <span className="text-[10px] text-gray-500 font-barlow hidden sm:inline">
-                    {totais.totalNFs} NFs
-                  </span>
+                  <span className="text-[10px] text-gray-500 font-barlow">{totais.totalNFs} NFs</span>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 rounded-xl bg-white">
-              <CardHeader className="pb-1 pt-2.5 px-2.5 sm:px-3">
+            {/* Operador − */}
+            <div className="hidden lg:flex items-center justify-center text-3xl font-black text-gray-400 select-none">
+              −
+            </div>
+
+            {/* Credev / Devolução */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl rounded-xl bg-white border-l-4 border-l-rose-500">
+              <CardHeader className="pb-1 pt-2.5 px-3">
                 <div className="flex items-center gap-1.5">
                   <Package size={14} weight="bold" className="text-rose-600" />
                   <CardTitle className="text-[10px] sm:text-xs font-bold text-rose-700 font-barlow">
@@ -481,86 +493,109 @@ const RankingComprasFranquias = () => {
                   </CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-2.5 sm:px-3 pb-2.5">
-                <div className="text-sm sm:text-base font-extrabold text-rose-600 break-words font-barlow">
+              <CardContent className="pt-2 px-3 pb-3">
+                <div className="text-base sm:text-lg font-extrabold text-rose-600 break-words font-barlow tabular-nums">
                   − R$ {formatBRL(totais.totalCredev)}
                 </div>
-                <CardDescription className="text-[10px] sm:text-xs text-gray-500 font-barlow hidden sm:block">
-                  desconsiderado do total
+                <CardDescription className="text-[10px] text-gray-500 font-barlow mt-1">
+                  Saldo devolvido / vale-troca usado
                 </CardDescription>
               </CardContent>
             </Card>
 
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200">
-              <CardHeader className="pb-1 pt-2.5 px-2.5 sm:px-3">
-                <div className="flex items-center gap-1.5">
-                  <CurrencyDollar size={14} weight="bold" className="text-emerald-700" />
-                  <CardTitle className="text-[10px] sm:text-xs font-bold text-emerald-800 font-barlow">
-                    Total Líquido
-                  </CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 px-2.5 sm:px-3 pb-2.5">
-                <div className="text-sm sm:text-base font-extrabold text-emerald-700 break-words font-barlow">
-                  R$ {formatBRL(totais.total)}
-                </div>
-                <CardDescription className="text-[10px] sm:text-xs text-emerald-700 font-barlow hidden sm:block">
-                  compras − credev
-                </CardDescription>
-              </CardContent>
-            </Card>
+            {/* Operador = */}
+            <div className="hidden lg:flex items-center justify-center text-3xl font-black text-gray-400 select-none">
+              =
+            </div>
 
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 rounded-xl bg-white overflow-hidden">
-              <CardHeader className="pb-1 pt-2.5 px-3 bg-gradient-to-br from-blue-50 to-blue-50/30 border-b border-blue-100">
+            {/* Compras Líquido (destaque) */}
+            <Card className="shadow-xl transition-all duration-200 hover:shadow-2xl rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-300">
+              <CardHeader className="pb-1 pt-2.5 px-3">
                 <div className="flex items-center gap-1.5">
-                  <Storefront size={14} weight="bold" className="text-blue-600" />
-                  <CardTitle className="text-[10px] sm:text-xs font-bold text-blue-700 font-barlow">
-                    Vendas (Sellout)
+                  <CurrencyDollar size={16} weight="bold" className="text-emerald-700" />
+                  <CardTitle className="text-xs sm:text-sm font-extrabold text-emerald-800 font-barlow">
+                    Compras Líquido
                   </CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-2 px-3 pb-3">
-                <div className="grid grid-cols-2 gap-2 mb-1">
+                <div className="text-xl sm:text-2xl font-black text-emerald-700 break-words font-barlow tabular-nums leading-none">
+                  R$ {formatBRL(totais.total)}
+                </div>
+                <CardDescription className="text-[10px] text-emerald-700/70 font-medium font-barlow mt-1.5">
+                  Compras efetivas (Bruto − Credev)
+                </CardDescription>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Linha mobile com operadores */}
+          <div className="lg:hidden text-center text-xs text-gray-500 -mt-3 mb-4">
+            <span className="font-bold text-orange-700">Compras</span>
+            {' − '}
+            <span className="font-bold text-rose-700">Credev</span>
+            {' = '}
+            <span className="font-bold text-emerald-700">Líquido</span>
+          </div>
+
+          {/* ═══ SEÇÃO 2 — VENDAS DAS FRANQUIAS (sellout) + FRANQUIAS ATIVAS ═══ */}
+          <div className="mb-2 flex items-center gap-2">
+            <Storefront size={14} weight="bold" className="text-blue-600" />
+            <h2 className="text-[11px] sm:text-xs font-black uppercase tracking-widest text-gray-700 font-barlow">
+              Vendas das Franquias
+            </h2>
+            <span className="text-[10px] text-gray-400 font-barlow hidden sm:inline">
+              · o que a franquia vende ao consumidor final
+            </span>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-2 mb-4">
+            {/* Vendas (Sellout) */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl rounded-xl bg-white border-l-4 border-l-blue-500 overflow-hidden">
+              <CardHeader className="pb-1 pt-2.5 px-3">
+                <div className="flex items-center gap-1.5">
+                  <Storefront size={14} weight="bold" className="text-blue-600" />
+                  <CardTitle className="text-[10px] sm:text-xs font-bold text-blue-700 font-barlow">
+                    Vendas ao Consumidor
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-2 px-3 pb-3">
+                <div className="grid grid-cols-2 gap-3 mb-1">
                   <div>
-                    <p className="text-[9px] uppercase tracking-wider font-bold text-gray-500 mb-0.5">
-                      2025
-                    </p>
+                    <p className="text-[9px] uppercase tracking-wider font-bold text-gray-500 mb-0.5">2025</p>
                     <p className="text-xs font-bold text-gray-600 font-mono tabular-nums leading-none">
                       R$ {formatBRL(totaisApi.total_sellout_ly || 0)}
                     </p>
                   </div>
-                  <div className="border-l border-blue-200 pl-2">
-                    <p className="text-[9px] uppercase tracking-wider font-bold text-blue-700 mb-0.5">
-                      2026
-                    </p>
-                    <p className="text-sm sm:text-base font-extrabold text-blue-700 font-barlow tabular-nums leading-none">
+                  <div className="border-l border-blue-200 pl-3">
+                    <p className="text-[9px] uppercase tracking-wider font-bold text-blue-700 mb-0.5">2026</p>
+                    <p className="text-base sm:text-lg font-extrabold text-blue-700 font-barlow tabular-nums leading-none">
                       R$ {formatBRL(totais.totalSellout)}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 pt-1.5 border-t border-blue-50">
                   <GrowthBadge value={totaisApi.crescimento_sellout_pct} size="lg" />
-                  <span className="text-[10px] text-gray-500 font-barlow hidden sm:inline">
-                    → cliente
-                  </span>
+                  <span className="text-[10px] text-gray-500 font-barlow">crescimento vs ano passado</span>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 rounded-xl bg-white">
-              <CardHeader className="pb-1 pt-2.5 px-2.5 sm:px-3">
+            {/* Franquias Ativas */}
+            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl rounded-xl bg-white border-l-4 border-l-slate-500">
+              <CardHeader className="pb-1 pt-2.5 px-3">
                 <div className="flex items-center gap-1.5">
                   <Buildings size={14} weight="bold" className="text-slate-600" />
                   <CardTitle className="text-[10px] sm:text-xs font-bold text-slate-700 font-barlow">
-                    Franquias
+                    Franquias Ativas
                   </CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0 px-2.5 sm:px-3 pb-2.5">
-                <div className="text-sm sm:text-base font-extrabold text-slate-600 break-words font-barlow">
+              <CardContent className="pt-2 px-3 pb-3 flex flex-col justify-center h-full">
+                <div className="text-2xl sm:text-3xl font-extrabold text-slate-700 font-barlow leading-none">
                   {totais.qtdFranquias}
                 </div>
-                <CardDescription className="text-[10px] sm:text-xs text-gray-500 font-barlow hidden sm:block">
+                <CardDescription className="text-[10px] text-gray-500 font-barlow mt-1">
                   com compras no período
                 </CardDescription>
               </CardContent>

@@ -135,7 +135,7 @@ export default function PromessaMensal() {
       label: '% Atingido',
       valor: `${Number(total.percentual || 0).toFixed(0)}%`,
       icon: ChartBar,
-      color: (total.percentual || 0) >= 100 ? 'emerald' : (total.percentual || 0) >= 70 ? 'amber' : 'rose',
+      color: Math.round(total.percentual || 0) >= 100 ? 'emerald' : Math.round(total.percentual || 0) >= 70 ? 'amber' : 'rose',
       sub: 'Real / Qnt Deveria',
     },
   ] : [];

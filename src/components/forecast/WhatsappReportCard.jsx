@@ -16,24 +16,30 @@ const fmtVal = (canal, v) => {
   return `R$ ${formatBRL(v)}`;
 };
 
+// Threshold consistente com o display arredondado (.toFixed(0)) — evita
+// "100%" visual ficar amarelo quando o valor real é 99,6%.
 const pctBarColor = (pct) => {
-  if (pct >= 100) return 'bg-emerald-500';
-  if (pct >= 70) return 'bg-amber-400';
+  const r = Math.round(Number(pct) || 0);
+  if (r >= 100) return 'bg-emerald-500';
+  if (r >= 70) return 'bg-amber-400';
   return 'bg-rose-500';
 };
 const pctTextColor = (pct) => {
-  if (pct >= 100) return 'text-emerald-700';
-  if (pct >= 70) return 'text-amber-700';
+  const r = Math.round(Number(pct) || 0);
+  if (r >= 100) return 'text-emerald-700';
+  if (r >= 70) return 'text-amber-700';
   return 'text-rose-700';
 };
 const pctBg = (pct) => {
-  if (pct >= 100) return 'bg-emerald-50 border-emerald-200';
-  if (pct >= 70) return 'bg-amber-50 border-amber-200';
+  const r = Math.round(Number(pct) || 0);
+  if (r >= 100) return 'bg-emerald-50 border-emerald-200';
+  if (r >= 70) return 'bg-amber-50 border-amber-200';
   return 'bg-rose-50 border-rose-200';
 };
 const statusEmoji = (pct) => {
-  if (pct >= 100) return '🟢';
-  if (pct >= 70) return '🟡';
+  const r = Math.round(Number(pct) || 0);
+  if (r >= 100) return '🟢';
+  if (r >= 70) return '🟡';
   return '🔴';
 };
 
@@ -172,7 +178,7 @@ function BodyVendedores({ data }) {
           <div key={card.code} className="bg-white border-2 border-gray-300 rounded-xl overflow-hidden shadow-sm">
             <div className="bg-[#000638] text-white px-4 py-2 flex items-center justify-between">
               <div className="font-bold text-sm tracking-wide">{card.label}</div>
-              <div className={`text-xs font-extrabold tabular-nums px-2 py-0.5 rounded ${pct >= 100 ? 'bg-emerald-400/30 text-emerald-100' : pct >= 70 ? 'bg-amber-400/30 text-amber-100' : 'bg-rose-400/30 text-rose-100'}`}>
+              <div className={`text-xs font-extrabold tabular-nums px-2 py-0.5 rounded ${Math.round(pct) >= 100 ? 'bg-emerald-400/30 text-emerald-100' : Math.round(pct) >= 70 ? 'bg-amber-400/30 text-amber-100' : 'bg-rose-400/30 text-rose-100'}`}>
                 {statusEmoji(pct)} {pct.toFixed(0)}%
               </div>
             </div>

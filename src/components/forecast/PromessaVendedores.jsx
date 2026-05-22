@@ -60,9 +60,9 @@ function CardVendedores({ card, loading, cardRef, onSendWhats }) {
           {!loading && total.meta > 0 && (
             <div className="text-right">
               <div className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold tabular-nums ${
-                totalPct >= 100
+                Math.round(totalPct) >= 100
                   ? 'bg-emerald-400/30 text-emerald-100'
-                  : totalPct >= 70
+                  : Math.round(totalPct) >= 70
                     ? 'bg-amber-400/30 text-amber-100'
                     : 'bg-rose-400/30 text-rose-100'
               }`}>

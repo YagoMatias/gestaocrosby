@@ -5,6 +5,7 @@ import {
   Trophy,
   Package,
   TShirt,
+  Storefront,
   ArrowsOut,
   ArrowsIn,
   ArrowsClockwise,
@@ -99,11 +100,32 @@ const CANAIS = [
     ring: 'ring-purple-400',
     shadow: 'shadow-purple-500/50',
   },
+  {
+    key: 'franquia',
+    label: 'B2L',
+    nome: 'FRANQUIA',
+    icon: Storefront,
+    primary: '#3b82f6',    // blue-500
+    primaryDark: '#1d4ed8', // blue-700
+    glow: 'rgba(59, 130, 246, 0.6)',
+    gradient: 'from-blue-400 via-blue-500 to-blue-700',
+    gradientLight: 'from-blue-50 to-blue-100',
+    bg: 'bg-blue-500',
+    bgSoft: 'bg-blue-50',
+    text: 'text-blue-600',
+    textLight: 'text-blue-300',
+    border: 'border-blue-400',
+    ring: 'ring-blue-400',
+    shadow: 'shadow-blue-500/50',
+  },
 ];
 
-// Intervalo de auto-refresh — sincronizado com cache TTL do backend (30min realtime)
-// pra não bater TOTVS na frente do cache. 1h = boa margem.
-const AUTO_REFRESH_SECS = 3600; // 1h
+// Intervalo de auto-refresh — sincronizado com cache TTL do backend (1h realtime).
+// 2h dá margem confortável: cache do canal-totals expira em 1h, então o 2º
+// refresh recompila uma vez; depois fica em cache de novo. Reduz 50% das
+// chamadas TOTVS comparado ao refresh de 1h.
+// IMPORTANTE: a página é exibida em TVs de loja — 2h é aceitável visualmente.
+const AUTO_REFRESH_SECS = 7200; // 2h (era 1h)
 // Circuit-breaker: após N erros consecutivos, para de tentar até user clicar atualizar
 const MAX_ERROS_CONSECUTIVOS = 3;
 
@@ -125,35 +147,39 @@ export default function PainelCompeticao() {
   const semanaInicio = ymd(startOfIsoWeek(refDate));
 
   const carregar = useCallback(async ({ manual = false } = {}) => {
+    // Lê a data NO momento da chamada — evita usar valor stale do closure
+    // (importante na virada de meia-noite, onde hojeIso/semanaInicio do state
+    // ainda estão um instante atrás)
+    const agora = new Date();
+    const hojeNow = ymd(agora);
+    const semanaInicioNow = ymd(startOfIsoWeek(agora));
     setLoading(true);
     setErro('');
-    // Atualiza data de referência (importante após meia-noite)
-    setRefDate(new Date());
+    setRefDate(agora); // sincroniza display do header
     try {
-      const fetchCanal = async (modulo, datemin, datemax) => {
-        const r = await fetch(`${API_BASE_URL}/api/crm/canal-totals`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ modulo, datemin, datemax }),
-        });
-        const j = await r.json();
-        if (!r.ok || !j?.success) throw new Error(j?.message || 'Erro');
-        return j.data;
-      };
+      // Endpoint consolidado: 1 HTTP roundtrip → backend faz 8 canal-totals
+      // cached e combina os 3 canais B2M (multimarcas+inbound_david+inbound_rafael)
+      // server-side. Reduz drasticamente o tráfego HTTP do frontend e mantém
+      // a TOTVS API protegida pelo cache.
+      const r = await fetch(`${API_BASE_URL}/api/crm/competicao-totais`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          datemin_dia: hojeNow,
+          datemax_dia: hojeNow,
+          datemin_sem: semanaInicioNow,
+          datemax_sem: hojeNow,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j?.success) throw new Error(j?.message || 'Erro');
+      const { dia, semana } = j.data || {};
 
-      // Tempo real: DIA = hoje (HH:00 → agora); SEMANA = segunda → hoje
-      const [revDia, mmDia, revSem, mmSem] = await Promise.all([
-        fetchCanal('revenda', hojeIso, hojeIso),
-        fetchCanal('multimarcas', hojeIso, hojeIso),
-        fetchCanal('revenda', semanaInicio, hojeIso),
-        fetchCanal('multimarcas', semanaInicio, hojeIso),
-      ]);
-
-      setDadosDia({ revenda: revDia, multimarcas: mmDia });
-      setDadosSemana({ revenda: revSem, multimarcas: mmSem });
+      setDadosDia(dia || {});
+      setDadosSemana(semana || {});
       setLastUpdate(new Date());
       setNextRefreshIn(AUTO_REFRESH_SECS);
-      errosRef.current = 0; // reset circuit-breaker em sucesso
+      errosRef.current = 0; // reset circuit-breaker SÓ em sucesso
     } catch (e) {
       errosRef.current += 1;
       const breaker = errosRef.current >= MAX_ERROS_CONSECUTIVOS;
@@ -161,12 +187,13 @@ export default function PainelCompeticao() {
         ? `${e.message} — auto-refresh PAUSADO após ${errosRef.current} erros consecutivos. Clique em "Atualizar" pra tentar de novo.`
         : `${e.message} (tentativa ${errosRef.current}/${MAX_ERROS_CONSECUTIVOS})`;
       setErro(msg);
-      // Se foi manual e deu erro, reseta contador (user pediu)
-      if (manual) errosRef.current = 0;
+      // NÃO resetar o contador em refresh manual com erro — proteção
+      // anti-overload: se o user fica clicando enquanto TOTVS está fora,
+      // não devemos abrir caminho. O contador só zera no sucesso.
     } finally {
       setLoading(false);
     }
-  }, [hojeIso, semanaInicio]);
+  }, []);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -202,38 +229,146 @@ export default function PainelCompeticao() {
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
-  // ─── Determina líderes (usa gross — vendas brutas, sem devoluções) ─────
-  const liderDia = useMemo(() => {
-    const r = Number(dadosDia.revenda?.invoice_value ?? 0);
-    const m = Number(dadosDia.multimarcas?.invoice_value ?? 0);
-    if (r === m) return null;
-    return r > m ? 'revenda' : 'multimarcas';
-  }, [dadosDia]);
+  // ─── LÍQUIDOS por canal ──────────────────────────────────────────────
+  // Regra: credev NUNCA conta como faturamento.
+  // Cálculo: usa `invoice_value` do canal-totals (já é líquido bruto −
+  // credev_in_payments − SaleReturns) clamped a 0 quando negativo. Esse
+  // valor é a fonte ÚNICA da verdade — bate com Forecast e demais consumidores.
+  // Caso o backend exponha `liquid_floored: true` (líquido seria ≤ 0 com
+  // bruto > 0), o invoice_value já vem como bruto — comportamento atual.
+  const liqCanal = (canalData) => {
+    if (!canalData) return 0;
+    return Math.max(0, Number(canalData.invoice_value || 0));
+  };
 
-  const liderSemana = useMemo(() => {
-    const r = Number(dadosSemana.revenda?.invoice_value ?? 0);
-    const m = Number(dadosSemana.multimarcas?.invoice_value ?? 0);
-    if (r === m) return null;
-    return r > m ? 'revenda' : 'multimarcas';
-  }, [dadosSemana]);
+  const liqDia = useMemo(
+    () => ({
+      revenda: liqCanal(dadosDia.revenda),
+      multimarcas: liqCanal(dadosDia.multimarcas),
+      franquia: liqCanal(dadosDia.franquia),
+    }),
+    [dadosDia],
+  );
+  const liqSemana = useMemo(
+    () => ({
+      revenda: liqCanal(dadosSemana.revenda),
+      multimarcas: liqCanal(dadosSemana.multimarcas),
+      franquia: liqCanal(dadosSemana.franquia),
+    }),
+    [dadosSemana],
+  );
+
+  // ─── Determina líder = canal com maior líquido ──────────────────
+  const acharLider = (q) => {
+    const arr = [
+      ['revenda', q.revenda || 0],
+      ['multimarcas', q.multimarcas || 0],
+      ['franquia', q.franquia || 0],
+    ].sort((a, b) => b[1] - a[1]);
+    if (arr[0][1] === 0) return null;
+    if (arr[0][1] === arr[1][1]) return null; // empate
+    return arr[0][0];
+  };
+  const liderDia = useMemo(() => acharLider(liqDia), [liqDia]);
+  const liderSemana = useMemo(() => acharLider(liqSemana), [liqSemana]);
 
   // ─── RENDER ─────────────────────────────────────────────────────
+  // Tema CROSBY · CURLING: rock-on-ice (esporte do curling).
+  // Elementos visuais: pedra de curling (curling stone) com handle vermelho,
+  // alvo do curling ("house" — círculos concêntricos vermelho/branco/azul/branco)
+  // como decoração no fundo, "sheets" (linhas paralelas no gelo) sutis.
+  // Paleta: vermelho Crosby (cabo/pedra), branco (gelo), azul (pista glacial).
   return (
     <div
       ref={containerRef}
       className={`${
         fullscreen
-          ? 'fixed inset-0 bg-gradient-to-br from-[#0a0e27] via-[#0f1635] to-[#0a0e27] overflow-hidden flex flex-col'
+          ? 'fixed inset-0 bg-gradient-to-br from-[#08152a] via-[#0a1f3d] to-[#08152a] overflow-hidden flex flex-col'
           : 'w-full max-w-7xl mx-auto py-3 px-2 sm:px-4'
       } font-barlow`}
     >
-      {/* Decoração de fundo no fullscreen */}
+      {/* Decoração de fundo no fullscreen — TEMA CURLING */}
       {fullscreen && (
         <>
           <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-            <div className="absolute -top-40 -left-40 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl" />
-            <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
-            <div className="absolute top-1/2 left-1/2 w-[600px] h-[600px] -translate-x-1/2 -translate-y-1/2 bg-amber-500/5 rounded-full blur-3xl" />
+            {/* Brilho glacial */}
+            <div className="absolute -top-40 -left-40 w-[28rem] h-[28rem] bg-sky-400/15 rounded-full blur-3xl" />
+            <div className="absolute -bottom-40 -right-40 w-[28rem] h-[28rem] bg-cyan-300/10 rounded-full blur-3xl" />
+            <div className="absolute top-1/3 -left-32 w-96 h-96 bg-[#fe0000]/8 rounded-full blur-3xl" />
+            <div className="absolute bottom-1/3 -right-32 w-96 h-96 bg-[#fe0000]/8 rounded-full blur-3xl" />
+            <div className="absolute top-1/2 left-1/2 w-[700px] h-[700px] -translate-x-1/2 -translate-y-1/2 bg-white/3 rounded-full blur-3xl" />
+
+            {/* "House" do curling — alvo de aros concêntricos no canto */}
+            <svg className="absolute top-6 right-6 w-40 h-40 opacity-[0.08]" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="48" fill="#fe0000" />
+              <circle cx="50" cy="50" r="36" fill="#ffffff" />
+              <circle cx="50" cy="50" r="24" fill="#1e88e5" />
+              <circle cx="50" cy="50" r="12" fill="#ffffff" />
+              <circle cx="50" cy="50" r="3" fill="#fe0000" />
+            </svg>
+            <svg className="absolute bottom-6 left-6 w-32 h-32 opacity-[0.06]" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="48" fill="#fe0000" />
+              <circle cx="50" cy="50" r="36" fill="#ffffff" />
+              <circle cx="50" cy="50" r="24" fill="#1e88e5" />
+              <circle cx="50" cy="50" r="12" fill="#ffffff" />
+              <circle cx="50" cy="50" r="3" fill="#fe0000" />
+            </svg>
+
+            {/* Linhas paralelas (sheets do gelo de curling) — sutis no fundo */}
+            <div className="absolute inset-0 opacity-[0.04]" style={{
+              backgroundImage: 'repeating-linear-gradient(180deg, transparent 0, transparent 80px, rgba(255,255,255,0.5) 80px, rgba(255,255,255,0.5) 81px)',
+            }} />
+
+            {/* Pedras de curling deslizando — sweep horizontal */}
+            <div className="curl-stone-container absolute inset-0">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="curling-stone"
+                  style={{
+                    top: `${20 + i * 18}%`,
+                    animationDelay: `${i * 4}s`,
+                    animationDuration: `${16 + (i % 2) * 4}s`,
+                  }}
+                >
+                  <svg viewBox="0 0 60 60" className="w-10 h-10">
+                    {/* Granito (base da pedra) */}
+                    <ellipse cx="30" cy="42" rx="26" ry="8" fill="#2d3748" />
+                    <ellipse cx="30" cy="40" rx="26" ry="8" fill="url(#stoneGrad)" />
+                    {/* Cabo (handle vermelho) */}
+                    <rect x="20" y="20" width="20" height="14" rx="3" fill="#fe0000" stroke="#8b0000" strokeWidth="0.5" />
+                    <rect x="24" y="14" width="12" height="8" rx="2" fill="#fe0000" stroke="#8b0000" strokeWidth="0.5" />
+                    <rect x="28" y="10" width="4" height="6" fill="#8b0000" />
+                    <defs>
+                      <linearGradient id="stoneGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#4a5568" />
+                        <stop offset="50%" stopColor="#718096" />
+                        <stop offset="100%" stopColor="#2d3748" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                </div>
+              ))}
+            </div>
+
+            {/* Snowflakes (mais sutis agora — tema é curling, não neve) */}
+            <div className="snowflake-container absolute inset-0">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <span
+                  key={i}
+                  className="snowflake"
+                  style={{
+                    left: `${(i * 12.5) % 100}%`,
+                    animationDelay: `${(i * 1.5) % 14}s`,
+                    animationDuration: `${14 + (i % 3) * 3}s`,
+                    fontSize: `${8 + (i % 3) * 3}px`,
+                    opacity: 0.12 + (i % 3) * 0.05,
+                  }}
+                >
+                  ❄
+                </span>
+              ))}
+            </div>
           </div>
           <style>{`
             @keyframes glow-pulse {
@@ -248,6 +383,23 @@ export default function PainelCompeticao() {
               0%, 100% { transform: translateY(0px); }
               50% { transform: translateY(-6px); }
             }
+            @keyframes ice-shimmer {
+              0%, 100% { opacity: 0.3; }
+              50% { opacity: 0.6; }
+            }
+            @keyframes snowfall {
+              0%   { transform: translateY(-20px) translateX(0px); opacity: 0; }
+              10%  { opacity: 1; }
+              90%  { opacity: 1; }
+              100% { transform: translateY(110vh) translateX(40px); opacity: 0; }
+            }
+            @keyframes curl-slide {
+              0%   { transform: translateX(-15vw) rotate(0deg); opacity: 0; }
+              5%   { opacity: 0.5; }
+              50%  { opacity: 0.6; }
+              95%  { opacity: 0.5; }
+              100% { transform: translateX(115vw) rotate(720deg); opacity: 0; }
+            }
             .leader-glow { animation: glow-pulse 2s ease-in-out infinite; }
             .shimmer-bar::after {
               content: '';
@@ -257,6 +409,45 @@ export default function PainelCompeticao() {
               animation: shimmer 2s infinite;
             }
             .float { animation: float 3s ease-in-out infinite; }
+            .ice-border {
+              border: 1px solid rgba(255, 255, 255, 0.15);
+              box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.15),
+                0 8px 32px rgba(8, 21, 42, 0.6);
+            }
+            .canada-stripe {
+              background: linear-gradient(90deg,
+                #fe0000 0%, #fe0000 18%,
+                #ffffff 18%, #ffffff 82%,
+                #fe0000 82%, #fe0000 100%);
+            }
+            .ice-glow {
+              background: linear-gradient(135deg,
+                rgba(56, 189, 248, 0.08) 0%,
+                rgba(255, 255, 255, 0.04) 50%,
+                rgba(56, 189, 248, 0.08) 100%);
+              backdrop-filter: blur(20px);
+            }
+            .snowflake {
+              position: absolute;
+              top: -20px;
+              color: rgba(255, 255, 255, 0.6);
+              animation: snowfall linear infinite;
+              pointer-events: none;
+              user-select: none;
+              text-shadow: 0 0 4px rgba(255, 255, 255, 0.6);
+            }
+            .red-glow-text {
+              text-shadow: 0 0 12px rgba(254, 0, 0, 0.5),
+                           0 0 24px rgba(254, 0, 0, 0.3);
+            }
+            .curling-stone {
+              position: absolute;
+              left: -15vw;
+              animation: curl-slide linear infinite;
+              pointer-events: none;
+              filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4));
+            }
           `}</style>
         </>
       )}
@@ -282,16 +473,16 @@ export default function PainelCompeticao() {
 
         {/* ═════ HERO SCOREBOARD ═════ */}
         <VsHero
-          dadosDia={dadosDia}
-          dadosSemana={dadosSemana}
+          liqDia={liqDia}
+          liqSemana={liqSemana}
           liderDia={liderDia}
           liderSemana={liderSemana}
           loading={loading}
           fullscreen={fullscreen}
         />
 
-        {/* ═════ PODIUM DE VENDEDORES ═════ */}
-        <div className={`grid grid-cols-1 lg:grid-cols-2 ${fullscreen ? 'gap-6 mt-5 flex-1 min-h-0' : 'gap-4 mt-5'}`}>
+        {/* ═════ PODIUM DE VENDEDORES — 3 colunas (B2R / B2M / B2L) ═════ */}
+        <div className={`grid grid-cols-1 lg:grid-cols-3 ${fullscreen ? 'gap-4 mt-5 flex-1 min-h-0' : 'gap-3 mt-5'}`}>
           {CANAIS.map((c) => (
             <PodiumCanal
               key={c.key}
@@ -321,45 +512,71 @@ export default function PainelCompeticao() {
 function Header({ fullscreen, toggleFullscreen, loading, lastUpdate, nextRefreshIn, onRefresh, hojeIso, semanaInicio }) {
   return (
     <div className={`flex items-center justify-between ${fullscreen ? 'mb-4 flex-shrink-0' : 'mb-4'}`}>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <div
-          className={`relative ${fullscreen ? 'w-10 h-10' : 'w-12 h-12'} rounded-xl flex items-center justify-center ${
+          className={`relative ${fullscreen ? 'w-14 h-14' : 'w-12 h-12'} rounded-xl flex items-center justify-center ${
             fullscreen
-              ? 'bg-gradient-to-br from-amber-300 via-amber-500 to-amber-700 shadow-lg shadow-amber-500/50'
-              : 'bg-gradient-to-br from-amber-400 to-amber-600'
+              ? 'bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900 shadow-lg shadow-[#fe0000]/30 ring-2 ring-white/20'
+              : 'bg-gradient-to-br from-[#fe0000] to-[#8b0000]'
           }`}
         >
-          <Trophy size={fullscreen ? 22 : 26} weight="fill" className="text-white drop-shadow-lg" />
+          {/* Pedra de curling com cabo vermelho — esporte rock-on-ice */}
+          {fullscreen ? (
+            <svg viewBox="0 0 60 60" className="w-11 h-11 drop-shadow-lg">
+              {/* Corpo da pedra (granito) */}
+              <ellipse cx="30" cy="42" rx="22" ry="6" fill="#1a202c" />
+              <ellipse cx="30" cy="40" rx="22" ry="6" fill="url(#stoneGradHdr)" />
+              {/* Cabo (handle) vermelho — Crosby */}
+              <rect x="22" y="22" width="16" height="12" rx="2" fill="#fe0000" stroke="#8b0000" strokeWidth="0.5" />
+              <rect x="25" y="16" width="10" height="8" rx="1.5" fill="#fe0000" stroke="#8b0000" strokeWidth="0.5" />
+              <rect x="28" y="12" width="4" height="6" fill="#8b0000" />
+              {/* Reflexo brilho gelo */}
+              <ellipse cx="22" cy="38" rx="6" ry="1.5" fill="rgba(255,255,255,0.2)" />
+              <defs>
+                <linearGradient id="stoneGradHdr" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#4a5568" />
+                  <stop offset="50%" stopColor="#718096" />
+                  <stop offset="100%" stopColor="#1a202c" />
+                </linearGradient>
+              </defs>
+            </svg>
+          ) : (
+            <Trophy size={26} weight="fill" className="text-white drop-shadow-lg" />
+          )}
           {fullscreen && (
-            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-400 rounded-full animate-pulse ring-2 ring-emerald-300/50" />
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-sky-400 rounded-full animate-pulse ring-2 ring-sky-200/50" />
           )}
         </div>
         <div className="leading-tight">
           <h1 className={`${fullscreen ? 'text-xl lg:text-2xl' : 'text-2xl'} font-black tracking-tight ${fullscreen ? 'text-white' : 'text-[#000638]'}`}>
             {fullscreen ? (
-              <span className="bg-gradient-to-r from-emerald-400 via-amber-300 to-purple-400 bg-clip-text text-transparent">
-                COMPETIÇÃO B2R × B2M
+              <span className="inline-flex items-center gap-2">
+                <span className="text-[#fe0000] red-glow-text">CROSBY</span>
+                <span className="text-white/80">·</span>
+                <span className="bg-gradient-to-r from-emerald-300 via-white to-blue-300 bg-clip-text text-transparent">
+                  B2R × B2M × B2L
+                </span>
               </span>
             ) : (
               'Painel Competição'
             )}
           </h1>
-          <p className={`${fullscreen ? 'text-[10px] text-slate-400 tracking-wider uppercase' : 'text-sm text-gray-600'}`}>
+          <p className={`${fullscreen ? 'text-[10px] text-sky-200/70 tracking-[0.2em] uppercase' : 'text-sm text-gray-600'}`}>
             {fullscreen
-              ? `⚡ HOJE ${fmtDataBr(hojeIso)} · Semana desde ${fmtDataBr(semanaInicio)}`
-              : `B2R × B2M · HOJE (${fmtDataBr(hojeIso)}) · Semana desde ${fmtDataBr(semanaInicio)} · tempo real`}
+              ? `🥌 CURLING · A PEDRA NO GELO · HOJE ${fmtDataBr(hojeIso)} · Semana desde ${fmtDataBr(semanaInicio)}`
+              : `B2R × B2M × B2L · HOJE (${fmtDataBr(hojeIso)}) · Semana desde ${fmtDataBr(semanaInicio)} · tempo real`}
           </p>
         </div>
       </div>
 
-      <div className={`flex items-center ${fullscreen ? 'gap-1' : 'gap-2'}`}>
+      <div className={`flex items-center ${fullscreen ? 'gap-1.5' : 'gap-2'}`}>
         {!loading && lastUpdate && (
-          <div className={`hidden md:flex items-center gap-1.5 ${fullscreen ? 'px-2 py-1' : 'px-3 py-2'} rounded-lg ${fullscreen ? 'bg-white/5 border border-white/10' : 'bg-gray-100'}`}>
+          <div className={`hidden md:flex items-center gap-1.5 ${fullscreen ? 'px-2.5 py-1' : 'px-3 py-2'} rounded-lg ${fullscreen ? 'bg-white/8 border border-sky-300/20 backdrop-blur' : 'bg-gray-100'}`}>
             <span className="relative flex w-2 h-2">
-              <span className="animate-ping absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex w-2 h-2 rounded-full bg-emerald-500" />
+              <span className="animate-ping absolute inline-flex w-full h-full rounded-full bg-sky-300 opacity-75" />
+              <span className="relative inline-flex w-2 h-2 rounded-full bg-sky-400" />
             </span>
-            <span className={`${fullscreen ? 'text-[10px]' : 'text-xs'} font-semibold ${fullscreen ? 'text-slate-300' : 'text-gray-700'}`}>
+            <span className={`${fullscreen ? 'text-[10px]' : 'text-xs'} font-semibold tracking-wider ${fullscreen ? 'text-sky-100' : 'text-gray-700'}`}>
               AO VIVO · {formatRefreshCountdown(nextRefreshIn)}
             </span>
           </div>
@@ -367,8 +584,8 @@ function Header({ fullscreen, toggleFullscreen, loading, lastUpdate, nextRefresh
         <button
           onClick={onRefresh}
           disabled={loading}
-          className={`${fullscreen ? 'p-1.5' : 'p-2.5'} rounded-lg transition disabled:opacity-50 ${
-            fullscreen ? 'bg-white/10 hover:bg-white/20 text-white border border-white/10' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+          className={`${fullscreen ? 'p-2' : 'p-2.5'} rounded-lg transition disabled:opacity-50 ${
+            fullscreen ? 'bg-white/8 hover:bg-white/15 text-white border border-sky-300/20 backdrop-blur' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
           }`}
           title="Atualizar agora"
         >
@@ -376,9 +593,9 @@ function Header({ fullscreen, toggleFullscreen, loading, lastUpdate, nextRefresh
         </button>
         <button
           onClick={toggleFullscreen}
-          className={`${fullscreen ? 'p-1.5' : 'p-2.5'} rounded-lg transition ${
+          className={`${fullscreen ? 'p-2' : 'p-2.5'} rounded-lg transition ${
             fullscreen
-              ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/50'
+              ? 'bg-gradient-to-br from-[#fe0000] to-[#8b0000] hover:from-[#ff1818] hover:to-[#a30000] text-white shadow-lg shadow-[#fe0000]/40 ring-1 ring-white/20'
               : 'bg-gradient-to-br from-[#000638] to-[#0a1450] hover:from-[#0a1450] hover:to-[#1a2570] text-white shadow-md'
           }`}
           title={fullscreen ? 'Sair de tela cheia' : 'Tela cheia (modo TV)'}
@@ -393,14 +610,14 @@ function Header({ fullscreen, toggleFullscreen, loading, lastUpdate, nextRefresh
 // ═══════════════════════════════════════════════════════════════════
 // HERO: 2 placar grandes (Dia + Semana) lado-a-lado, com canal vs canal
 // ═══════════════════════════════════════════════════════════════════
-function VsHero({ dadosDia, dadosSemana, liderDia, liderSemana, loading, fullscreen }) {
+function VsHero({ liqDia, liqSemana, liderDia, liderSemana, loading, fullscreen }) {
   return (
     <div className={`grid grid-cols-1 lg:grid-cols-2 ${fullscreen ? 'gap-6 flex-shrink-0' : 'gap-4'}`}>
       <PlacarPeriodo
         titulo="DIA"
         icon={Fire}
         iconColor="text-orange-400"
-        dados={dadosDia}
+        valores={liqDia}
         lider={liderDia}
         loading={loading}
         fullscreen={fullscreen}
@@ -409,7 +626,7 @@ function VsHero({ dadosDia, dadosSemana, liderDia, liderSemana, loading, fullscr
         titulo="SEMANA"
         icon={Lightning}
         iconColor="text-amber-400"
-        dados={dadosSemana}
+        valores={liqSemana}
         lider={liderSemana}
         loading={loading}
         fullscreen={fullscreen}
@@ -418,25 +635,35 @@ function VsHero({ dadosDia, dadosSemana, liderDia, liderSemana, loading, fullscr
   );
 }
 
-function PlacarPeriodo({ titulo, icon: TitleIcon, iconColor, dados, lider, loading, fullscreen }) {
-  // LÍQUIDO = vendas reais com credev/devolução já subtraídos.
-  const r = Number(dados.revenda?.invoice_value ?? 0);
-  const m = Number(dados.multimarcas?.invoice_value ?? 0);
-  const diff = Math.abs(r - m);
-  const total = r + m || 1;
+function PlacarPeriodo({ titulo, icon: TitleIcon, iconColor, valores, lider, loading, fullscreen }) {
+  // LÍQUIDO = soma dos per_seller (bruto − credev_value). Credev não conta.
+  const r = Number(valores?.revenda ?? 0);
+  const m = Number(valores?.multimarcas ?? 0);
+  const f = Number(valores?.franquia ?? 0);
+  const valoresArr = [
+    ['revenda', r],
+    ['multimarcas', m],
+    ['franquia', f],
+  ].sort((a, b) => b[1] - a[1]);
+  const maior = valoresArr[0][1];
+  const segundo = valoresArr[1][1];
+  const diff = Math.abs(maior - segundo);
+  const total = r + m + f || 1;
   const pctR = (r / total) * 100;
   const pctM = (m / total) * 100;
+  const pctF = (f / total) * 100;
+  const liderLabel = lider === 'revenda' ? 'B2R' : lider === 'multimarcas' ? 'B2M' : lider === 'franquia' ? 'B2L' : '';
 
   return (
     <div
       className={`relative rounded-3xl overflow-hidden ${
         fullscreen
-          ? 'bg-slate-900/80 backdrop-blur-xl border border-white/10 shadow-2xl'
+          ? 'ice-glow ice-border'
           : 'bg-white border border-gray-200 shadow-md'
       }`}
     >
-      {/* Faixa decorativa superior */}
-      <div className="h-1 bg-gradient-to-r from-emerald-500 via-amber-400 to-purple-500" />
+      {/* Faixa decorativa superior — VERMELHO·BRANCO·VERMELHO (Canadá) */}
+      <div className="h-1.5 canada-stripe" />
 
       <div className={`${fullscreen ? 'p-5' : 'p-5'}`}>
         {/* Cabeçalho do placar */}
@@ -452,13 +679,13 @@ function PlacarPeriodo({ titulo, icon: TitleIcon, iconColor, dados, lider, loadi
               className={`inline-flex items-center gap-1 ${fullscreen ? 'px-2 py-0.5' : 'px-2 py-0.5'} rounded-full bg-gradient-to-r from-amber-400 to-amber-600 text-amber-900 ${fullscreen ? 'text-[10px]' : 'text-[10px]'} font-black uppercase tracking-widest shadow-lg`}
             >
               <Crown size={fullscreen ? 11 : 11} weight="fill" />
-              LÍDER {lider === 'revenda' ? 'B2R' : 'B2M'}
+              LÍDER {liderLabel}
             </div>
           )}
         </div>
 
-        {/* Cards vs */}
-        <div className={`grid grid-cols-2 ${fullscreen ? 'gap-3' : 'gap-3'} relative`}>
+        {/* Cards 3 canais (B2R / B2M / B2L) */}
+        <div className={`grid grid-cols-3 ${fullscreen ? 'gap-2' : 'gap-2'} relative`}>
           <CanalScoreCard
             canal={CANAIS[0]}
             valor={r}
@@ -466,18 +693,6 @@ function PlacarPeriodo({ titulo, icon: TitleIcon, iconColor, dados, lider, loadi
             loading={loading}
             fullscreen={fullscreen}
           />
-          {/* VS no centro */}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none">
-            <div
-              className={`${fullscreen ? 'w-9 h-9 text-sm' : 'w-10 h-10 text-sm'} rounded-full flex items-center justify-center font-black ${
-                fullscreen
-                  ? 'bg-slate-900 text-amber-300 border-2 border-amber-500 shadow-xl shadow-amber-500/50'
-                  : 'bg-[#000638] text-amber-300 border-2 border-amber-400 shadow-lg'
-              }`}
-            >
-              VS
-            </div>
-          </div>
           <CanalScoreCard
             canal={CANAIS[1]}
             valor={m}
@@ -485,9 +700,16 @@ function PlacarPeriodo({ titulo, icon: TitleIcon, iconColor, dados, lider, loadi
             loading={loading}
             fullscreen={fullscreen}
           />
+          <CanalScoreCard
+            canal={CANAIS[2]}
+            valor={f}
+            isLider={lider === 'franquia'}
+            loading={loading}
+            fullscreen={fullscreen}
+          />
         </div>
 
-        {/* Barra de proporção */}
+        {/* Barra de proporção — 3 segmentos (B2R / B2M / B2L) */}
         <div className={`${fullscreen ? 'mt-3' : 'mt-4'} relative`}>
           <div className={`flex ${fullscreen ? 'h-2.5' : 'h-3'} rounded-full overflow-hidden ${fullscreen ? 'bg-slate-800' : 'bg-gray-200'}`}>
             <div
@@ -498,21 +720,26 @@ function PlacarPeriodo({ titulo, icon: TitleIcon, iconColor, dados, lider, loadi
               className="bg-gradient-to-r from-purple-400 to-purple-600 transition-all duration-700 ease-out"
               style={{ width: `${pctM}%` }}
             />
+            <div
+              className="bg-gradient-to-r from-blue-400 to-blue-600 transition-all duration-700 ease-out"
+              style={{ width: `${pctF}%` }}
+            />
           </div>
-          <div className={`flex justify-between mt-1.5 ${fullscreen ? 'text-xs' : 'text-xs'} font-bold`}>
-            <span className={fullscreen ? 'text-emerald-300' : 'text-emerald-600'}>{pctR.toFixed(0)}%</span>
-            <span className={fullscreen ? 'text-purple-300' : 'text-purple-600'}>{pctM.toFixed(0)}%</span>
+          <div className={`grid grid-cols-3 mt-1.5 ${fullscreen ? 'text-xs' : 'text-xs'} font-bold`}>
+            <span className={fullscreen ? 'text-emerald-300' : 'text-emerald-600'}>B2R {pctR.toFixed(0)}%</span>
+            <span className={`text-center ${fullscreen ? 'text-purple-300' : 'text-purple-600'}`}>B2M {pctM.toFixed(0)}%</span>
+            <span className={`text-right ${fullscreen ? 'text-blue-300' : 'text-blue-600'}`}>B2L {pctF.toFixed(0)}%</span>
           </div>
         </div>
 
-        {/* Diferença */}
-        {(r > 0 || m > 0) && (
+        {/* Diferença líder vs segundo */}
+        {(r > 0 || m > 0 || f > 0) && (
           <div className={`${fullscreen ? 'mt-3' : 'mt-3'} text-center`}>
             {lider ? (
               <div className={`inline-flex items-center gap-1.5 ${fullscreen ? 'text-sm' : 'text-sm'} ${fullscreen ? 'text-amber-300' : 'text-amber-700'}`}>
                 <Star size={fullscreen ? 11 : 12} weight="fill" />
                 <span className="font-semibold">
-                  Diferença: <strong>{fmtBRL(diff)}</strong>
+                  Vantagem: <strong>{fmtBRL(diff)}</strong>
                 </span>
               </div>
             ) : (
@@ -533,18 +760,31 @@ function CanalScoreCard({ canal, valor, isLider, loading, fullscreen }) {
     <div
       className={`relative rounded-2xl overflow-hidden transition-all duration-500 ${
         isLider
-          ? `bg-gradient-to-br ${canal.gradient} text-white scale-105 ${fullscreen ? 'leader-glow' : `shadow-2xl ${canal.shadow}`}`
+          ? `bg-gradient-to-br ${canal.gradient} text-white scale-105 ${fullscreen ? 'leader-glow ring-2 ring-[#fe0000]/40' : `shadow-2xl ${canal.shadow}`}`
           : fullscreen
-            ? 'bg-slate-800/50 border border-white/5 text-slate-300'
+            ? 'bg-slate-900/40 backdrop-blur border border-sky-300/15 text-slate-300'
             : 'bg-gray-50 border border-gray-200 text-gray-700'
       } ${fullscreen ? 'p-4' : 'p-3'}`}
       style={isLider && fullscreen ? { ['--glow-color']: canal.glow } : undefined}
     >
-      {/* Sparkle decorativo do líder */}
+      {/* Pedra de curling decorativa no líder + alvo do curling no canto */}
       {isLider && fullscreen && (
-        <div className="absolute top-2 right-2 float">
-          <Crown size={16} weight="fill" className="text-amber-300 drop-shadow-lg" />
-        </div>
+        <>
+          <div className="absolute top-2 right-2 float">
+            <Crown size={16} weight="fill" className="text-amber-300 drop-shadow-lg" />
+          </div>
+          {/* "House" do curling (alvo concêntrico) no canto */}
+          <svg
+            viewBox="0 0 100 100"
+            className="absolute -bottom-4 -right-4 w-20 h-20 opacity-25"
+          >
+            <circle cx="50" cy="50" r="48" fill="#fe0000" />
+            <circle cx="50" cy="50" r="36" fill="#ffffff" />
+            <circle cx="50" cy="50" r="24" fill="#1e88e5" />
+            <circle cx="50" cy="50" r="12" fill="#ffffff" />
+            <circle cx="50" cy="50" r="3" fill="#fe0000" />
+          </svg>
+        </>
       )}
 
       <div className={`flex items-center gap-2 ${fullscreen ? 'mb-2' : 'mb-2'}`}>
@@ -574,10 +814,13 @@ function CanalScoreCard({ canal, valor, isLider, loading, fullscreen }) {
 function PodiumCanal({ canal, dadosDia, dadosSemana, isLiderSemana, loading, fullscreen }) {
   const Icon = canal.icon;
 
-  // Usa LÍQUIDO por vendedor (invoice_value já tem credev subtraído)
-  const liqSeller = (s) => Number(s.invoice_value || 0);
+  // LÍQUIDO por vendedor = invoice_value (bruto) − credev_value.
+  // Credev é pagamento com saldo anterior do cliente, NÃO entra caixa novo.
+  // Regra do negócio: credev nunca conta como faturamento.
+  const liqSeller = (s) =>
+    Math.max(0, Number(s.invoice_value || 0) - Number(s.credev_value || 0));
 
-  // Indexa por seller_code combinando dia+semana (usando LÍQUIDO)
+  // Indexa por seller_code combinando dia+semana (sempre LÍQUIDO)
   const sellers = useMemo(() => {
     const map = new Map();
     for (const s of dadosSemana?.per_seller || []) {
@@ -602,6 +845,18 @@ function PodiumCanal({ canal, dadosDia, dadosSemana, isLiderSemana, loading, ful
     return Array.from(map.values()).sort((a, b) => b.semana - a.semana);
   }, [dadosDia, dadosSemana]);
 
+  // Total = SOMA dos líquidos dos vendedores (não usa invoice_value do canal,
+  // que pode incluir SaleReturns adicional não atribuível a vendedor).
+  // Assim a soma dos vendedores SEMPRE bate com o total exibido.
+  const totalLiqDia = useMemo(
+    () => sellers.reduce((s, x) => s + (Number(x.dia) || 0), 0),
+    [sellers],
+  );
+  const totalLiqSemana = useMemo(
+    () => sellers.reduce((s, x) => s + (Number(x.semana) || 0), 0),
+    [sellers],
+  );
+
   const medalhas = ['🥇', '🥈', '🥉'];
 
   return (
@@ -610,11 +865,12 @@ function PodiumCanal({ canal, dadosDia, dadosSemana, isLiderSemana, loading, ful
         fullscreen ? 'h-full flex flex-col min-h-0' : ''
       } ${
         fullscreen
-          ? `bg-slate-900/80 backdrop-blur-xl border ${isLiderSemana ? 'border-amber-400/50' : 'border-white/10'} ${isLiderSemana ? 'shadow-2xl shadow-amber-500/20' : 'shadow-xl'}`
+          ? `ice-glow ice-border ${isLiderSemana ? 'ring-2 ring-[#fe0000]/40 shadow-2xl shadow-[#fe0000]/20' : ''}`
           : `bg-white border ${isLiderSemana ? canal.border + ' border-2' : 'border-gray-200'} shadow-md ${isLiderSemana ? canal.shadow + ' shadow-xl' : ''}`
       }`}
     >
-      {/* Header colorido */}
+      {/* Header colorido com faixa Canadá no topo */}
+      {fullscreen && <div className="h-1 canada-stripe" />}
       <div
         className={`relative ${fullscreen ? 'px-5 py-3 flex-shrink-0' : 'px-4 py-3'} bg-gradient-to-r ${canal.gradient} text-white overflow-hidden`}
       >
@@ -637,7 +893,7 @@ function PodiumCanal({ canal, dadosDia, dadosSemana, isLiderSemana, loading, ful
             </div>
           </div>
           {isLiderSemana && (
-            <div className={`inline-flex items-center gap-1 ${fullscreen ? 'px-2 py-0.5' : 'px-2 py-0.5'} rounded-full bg-amber-400 text-amber-900 ${fullscreen ? 'text-[9px]' : 'text-[10px]'} font-black uppercase tracking-widest shadow-lg animate-pulse`}>
+            <div className={`inline-flex items-center gap-1 ${fullscreen ? 'px-2 py-0.5' : 'px-2 py-0.5'} rounded-full bg-[#fe0000] text-white ${fullscreen ? 'text-[9px]' : 'text-[10px]'} font-black uppercase tracking-widest shadow-lg animate-pulse ring-1 ring-white/30`}>
               <Crown size={fullscreen ? 10 : 10} weight="fill" /> Campeão
             </div>
           )}
@@ -647,22 +903,22 @@ function PodiumCanal({ canal, dadosDia, dadosSemana, isLiderSemana, loading, ful
       {/* Tabela vendedores */}
       <div className={`${fullscreen ? 'bg-slate-900/50 flex-1 flex flex-col min-h-0' : 'bg-white'}`}>
         <div className={`grid grid-cols-12 ${fullscreen ? 'px-5 py-2 flex-shrink-0 text-[10px]' : 'px-4 py-2 text-[9px]'} font-black uppercase tracking-widest ${fullscreen ? 'text-slate-400 bg-slate-900/40 border-b border-white/5' : 'text-gray-500 bg-gray-50 border-b border-gray-200'}`}>
-          <div className="col-span-7">Vendedor</div>
-          <div className="col-span-2 text-right">Dia</div>
-          <div className="col-span-3 text-right">Semana</div>
+          <div className="col-span-5">Vendedor</div>
+          <div className="col-span-3 text-right">Dia</div>
+          <div className="col-span-4 text-right">Semana</div>
         </div>
 
         <div className={fullscreen ? 'flex-1 overflow-y-auto min-h-0' : ''}>
         {loading && sellers.length === 0 ? (
           [1, 2, 3].map((i) => (
             <div key={i} className={`grid grid-cols-12 ${fullscreen ? 'px-5 py-2.5' : 'px-4 py-2.5'} ${fullscreen ? 'border-b border-white/5' : 'border-b border-gray-100'}`}>
-              <div className="col-span-7">
+              <div className="col-span-5">
                 <div className={`h-3 ${fullscreen ? 'bg-slate-700' : 'bg-gray-200'} rounded animate-pulse w-3/4`} />
               </div>
-              <div className="col-span-2 text-right">
+              <div className="col-span-3 text-right">
                 <div className={`h-3 ${fullscreen ? 'bg-slate-700' : 'bg-gray-200'} rounded animate-pulse ml-auto w-2/3`} />
               </div>
-              <div className="col-span-3 text-right">
+              <div className="col-span-4 text-right">
                 <div className={`h-3 ${fullscreen ? 'bg-slate-700' : 'bg-gray-200'} rounded animate-pulse ml-auto w-3/4`} />
               </div>
             </div>
@@ -682,11 +938,11 @@ function PodiumCanal({ canal, dadosDia, dadosSemana, isLiderSemana, loading, ful
                 } ${top3 && idx === 0 ? (fullscreen ? 'bg-amber-500/5' : canal.bgSoft) : ''} transition-colors`}
               >
                 {/* Vendedor */}
-                <div className="col-span-7 flex items-center gap-3">
+                <div className="col-span-5 flex items-center gap-2 min-w-0">
                   {top3 ? (
-                    <span className={`${fullscreen ? 'text-lg' : 'text-lg'} leading-none`}>{medalhas[idx]}</span>
+                    <span className={`${fullscreen ? 'text-lg' : 'text-lg'} leading-none flex-shrink-0`}>{medalhas[idx]}</span>
                   ) : (
-                    <span className={`${fullscreen ? 'w-6 text-xs' : 'w-5 text-xs'} text-center font-bold ${fullscreen ? 'text-slate-500' : 'text-gray-400'}`}>
+                    <span className={`${fullscreen ? 'w-6 text-xs' : 'w-5 text-xs'} text-center font-bold ${fullscreen ? 'text-slate-500' : 'text-gray-400'} flex-shrink-0`}>
                       #{idx + 1}
                     </span>
                   )}
@@ -696,17 +952,17 @@ function PodiumCanal({ canal, dadosDia, dadosSemana, isLiderSemana, loading, ful
                 </div>
 
                 {/* Dia */}
-                <div className={`col-span-2 text-right tabular-nums ${fullscreen ? 'text-xs' : 'text-xs'} font-semibold ${
+                <div className={`col-span-3 text-right tabular-nums ${fullscreen ? 'text-xs' : 'text-xs'} font-semibold ${
                   s.dia > 0
                     ? fullscreen ? 'text-emerald-300' : canal.text
                     : fullscreen ? 'text-slate-700' : 'text-gray-300'
                 }`}>
-                  {s.dia > 0 ? fmtBRLcompacto(s.dia) : '—'}
+                  {s.dia > 0 ? fmtBRL(s.dia) : '—'}
                 </div>
 
                 {/* Semana */}
-                <div className={`col-span-3 text-right tabular-nums ${fullscreen ? 'text-sm' : 'text-sm'} font-black ${fullscreen ? 'text-white' : 'text-gray-900'}`}>
-                  {s.semana > 0 ? fmtBRLcompacto(s.semana) : <span className={fullscreen ? 'text-slate-700' : 'text-gray-300'}>—</span>}
+                <div className={`col-span-4 text-right tabular-nums ${fullscreen ? 'text-sm' : 'text-sm'} font-black ${fullscreen ? 'text-white' : 'text-gray-900'}`}>
+                  {s.semana > 0 ? fmtBRL(s.semana) : <span className={fullscreen ? 'text-slate-700' : 'text-gray-300'}>—</span>}
                 </div>
               </div>
             );
@@ -714,21 +970,21 @@ function PodiumCanal({ canal, dadosDia, dadosSemana, isLiderSemana, loading, ful
         )}
         </div>
 
-        {/* Total final */}
+        {/* Total final — SOMA dos vendedores líquidos (sempre bate com a tabela) */}
         {sellers.length > 0 && (
           <div
             className={`grid grid-cols-12 items-center ${fullscreen ? 'px-5 py-3 flex-shrink-0' : 'px-4 py-3'} border-t-2 ${
               fullscreen ? 'border-white/10 bg-slate-900/80' : `${canal.border} ${canal.bgSoft}`
             }`}
           >
-            <div className={`col-span-7 ${fullscreen ? 'text-sm text-white' : 'text-base text-gray-900'} font-black tracking-wide uppercase`}>
+            <div className={`col-span-5 ${fullscreen ? 'text-sm text-white' : 'text-base text-gray-900'} font-black tracking-wide uppercase`}>
               Total
             </div>
-            <div className={`col-span-2 text-right tabular-nums ${fullscreen ? 'text-sm text-emerald-300' : 'text-sm ' + canal.text} font-black`}>
-              {fmtBRL(dadosDia?.invoice_value ?? 0)}
+            <div className={`col-span-3 text-right tabular-nums ${fullscreen ? 'text-sm text-emerald-300' : 'text-sm ' + canal.text} font-black`}>
+              {fmtBRL(totalLiqDia)}
             </div>
-            <div className={`col-span-3 text-right tabular-nums ${fullscreen ? 'text-base text-white' : 'text-base text-gray-900'} font-black`}>
-              {fmtBRL(dadosSemana?.invoice_value ?? 0)}
+            <div className={`col-span-4 text-right tabular-nums ${fullscreen ? 'text-base text-white' : 'text-base text-gray-900'} font-black`}>
+              {fmtBRL(totalLiqSemana)}
             </div>
           </div>
         )}

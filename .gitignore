@@ -15,6 +15,9 @@ planilhas/
 backend/.wwebjs_auth/
 backend/.wwebjs_cache/
 
+# Logs
+*.log
+
 # Build output
 dist/
 # ... outras regras existentes ...
