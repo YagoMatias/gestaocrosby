@@ -168,14 +168,12 @@ export const checkProfileNameExists = async (name, excludeId = null) => {
 // Função para obter perfil do usuário autenticado
 export const getUserProfile = async (userRole) => {
   try {
-    console.log('🔍 getUserProfile: Buscando perfil para role:', userRole);
 
     if (!userRole) {
       console.warn('⚠️ getUserProfile: userRole é undefined ou null');
       throw new Error('userRole é obrigatório');
     }
 
-    console.log('🔍 getUserProfile: Fazendo query na tabela user_profiles...');
 
     // Adicionar timeout para evitar travamento
     const timeoutPromise = new Promise((_, reject) => {
@@ -198,7 +196,6 @@ export const getUserProfile = async (userRole) => {
 
       // Se for erro de "no rows returned", tenta com supabaseAdmin
       if (error.code === 'PGRST116') {
-        console.log('🔄 getUserProfile: Tentando com supabaseAdmin...');
         const { data: data2, error: error2 } = await supabaseAdmin
           .from('user_profiles')
           .select('*')
@@ -213,17 +210,12 @@ export const getUserProfile = async (userRole) => {
           throw error2;
         }
 
-        console.log(
-          '✅ getUserProfile: Perfil encontrado com supabaseAdmin:',
-          data2,
-        );
         return data2;
       }
 
       throw error;
     }
 
-    console.log('✅ getUserProfile: Perfil encontrado:', data);
     return data;
   } catch (error) {
     console.error('❌ getUserProfile: Erro geral:', error);
@@ -248,7 +240,6 @@ export const testCreateUserProfile = async () => {
     };
 
     const result = await createUserProfile(testProfileData);
-    console.log('Teste de criação de perfil bem-sucedido:', result);
     return { success: true, data: result };
   } catch (error) {
     console.error('Erro no teste de criação de perfil:', error);
@@ -534,7 +525,6 @@ export const changePassword = async (userId, currentPassword, newPassword) => {
 // Função para verificar se a tabela user_profiles existe e criar perfis padrão
 export const ensureDefaultProfiles = async () => {
   try {
-    console.log('🔍 Verificando se a tabela user_profiles existe...');
 
     // Tentar buscar um perfil para ver se a tabela existe
     const { data, error } = await supabase
@@ -550,7 +540,6 @@ export const ensureDefaultProfiles = async () => {
       return false;
     }
 
-    console.log('✅ Tabela user_profiles existe');
 
     // Verificar se existem perfis
     const { data: profiles, error: profilesError } = await supabase
@@ -563,11 +552,9 @@ export const ensureDefaultProfiles = async () => {
       return false;
     }
 
-    console.log('📊 Perfis encontrados:', profiles?.length || 0);
 
     // Se não há perfis, criar os padrão
     if (!profiles || profiles.length === 0) {
-      console.log('🔄 Nenhum perfil encontrado, criando perfis padrão...');
 
       const defaultProfiles = [
         {
@@ -603,7 +590,6 @@ export const ensureDefaultProfiles = async () => {
       for (const profile of defaultProfiles) {
         try {
           await createUserProfile(profile);
-          console.log(`✅ Perfil ${profile.name} criado`);
         } catch (error) {
           console.error(`❌ Erro ao criar perfil ${profile.name}:`, error);
         }

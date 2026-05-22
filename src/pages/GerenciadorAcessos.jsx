@@ -52,6 +52,11 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro',
   },
   {
+    path: '/despesas-fixas',
+    name: 'Despesas Fixas',
+    category: 'Financeiro',
+  },
+  {
     path: '/liberacao-pagamento',
     name: 'Liberação de Pagamento',
     category: 'Financeiro',

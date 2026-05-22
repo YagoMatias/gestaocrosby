@@ -81,14 +81,6 @@ export const useMetasSemanais = () => {
       const primeiroDia = new Date(parseInt(ano), parseInt(mesNum) - 1, 1);
       const ultimoDia = new Date(parseInt(ano), parseInt(mesNum), 0);
 
-      console.log(
-        `🔍 [useMetasSemanais] Gerando semanas ISO 8601 para ${mes}:`,
-        {
-          primeiroDia: primeiroDia.toISOString().split('T')[0],
-          ultimoDia: ultimoDia.toISOString().split('T')[0],
-          mesNum,
-        },
-      );
 
       const semanas = [];
 
@@ -147,21 +139,12 @@ export const useMetasSemanais = () => {
 
         semanas.push(semana);
 
-        console.log(
-          `📅 [useMetasSemanais] Semana ${semanaAtual} (${semanaAno}) gerada:`,
-          semana,
-        );
 
         // Próxima semana começa na segunda-feira seguinte
         dataInicio.setDate(dataInicio.getDate() + 7);
         semanaAtual++;
       }
 
-      console.log(
-        `✅ [useMetasSemanais] Total de semanas geradas para ${mes}:`,
-        semanas.length,
-        semanas,
-      );
       return semanas;
     },
     [obterInicioSemana, obterFimSemana, obterSemanaAnoISO],
@@ -224,7 +207,6 @@ export const useMetasSemanais = () => {
       setError(null);
 
       try {
-        console.log('🔍 Salvando meta semanal individual:', metaData);
 
         const { tipo, nome, mes, semana, nivel, valor, usuario } = metaData;
 
@@ -249,7 +231,6 @@ export const useMetasSemanais = () => {
           data_alteracao: new Date().toISOString(),
         };
 
-        console.log('🔍 Dados formatados para inserção:', metaParaInserir);
 
         // Verificar conectividade antes de tentar salvar
         try {
@@ -281,7 +262,6 @@ export const useMetasSemanais = () => {
           throw upsertError;
         }
 
-        console.log('🔍 Meta semanal salva com sucesso:', data);
 
         return {
           success: true,
@@ -321,13 +301,6 @@ export const useMetasSemanais = () => {
       setError(null);
 
       try {
-        console.log('🔍 Salvando meta mensal e calculando metas semanais:', {
-          tipo,
-          nome,
-          mes,
-          nivel,
-          valor,
-        });
 
         // Gerar semanas do mês
         const semanasDoMes = gerarSemanasDoMes(mes);
@@ -339,7 +312,6 @@ export const useMetasSemanais = () => {
           numeroSemanas,
         );
 
-        console.log('🔍 Metas semanais calculadas:', metasSemanais);
 
         // Preparar dados para inserção das metas semanais
         const metasParaInserir = [];
@@ -359,7 +331,6 @@ export const useMetasSemanais = () => {
           });
         });
 
-        console.log('🔍 Dados para inserção:', metasParaInserir);
 
         // Inserir todas as metas semanais
         const { data, error: upsertError } = await supabase
@@ -374,7 +345,6 @@ export const useMetasSemanais = () => {
           throw upsertError;
         }
 
-        console.log('🔍 Metas semanais salvas com sucesso:', data);
 
         return {
           success: true,
@@ -629,10 +599,6 @@ export const useMetasSemanais = () => {
     setError(null);
 
     try {
-      console.log(
-        '🗑️ Excluindo metas mensais calculadas com critérios:',
-        criterios,
-      );
 
       let query = supabase.from('metas_mensais_calculadas').delete();
 
@@ -671,10 +637,6 @@ export const useMetasSemanais = () => {
     setError(null);
 
     try {
-      console.log(
-        '🗑️ Tentando excluir metas semanais com critérios:',
-        criterios,
-      );
 
       // Verificar se temos os critérios mínimos necessários
       if (!criterios.mes) {
@@ -706,11 +668,6 @@ export const useMetasSemanais = () => {
         throw deleteError;
       }
 
-      console.log('✅ Metas semanais excluídas com sucesso:', {
-        criterios,
-        registrosExcluidos: data?.length || 0,
-        data,
-      });
       return { success: true, data };
     } catch (err) {
       console.error('❌ Erro ao excluir metas semanais:', err);

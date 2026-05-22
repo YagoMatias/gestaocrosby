@@ -51,7 +51,6 @@ export const useWidgets = (dashboardId = null) => {
     setError(null);
 
     try {
-      console.log('🔍 [useWidgets] Buscando dashboards para userId:', userId);
 
       // Buscar dashboards do usuário usando RLS
       // As políticas RLS já filtram automaticamente baseado em auth.uid()
@@ -60,26 +59,19 @@ export const useWidgets = (dashboardId = null) => {
         .select('id, nome, usuarios, created_by')
         .eq('is_active', true);
 
-      console.log('📊 [useWidgets] Dashboards retornados:', dashboards);
       if (dashError) {
         console.error('❌ [useWidgets] Erro ao buscar dashboards:', dashError);
         throw dashError;
       }
 
       const dashboardIds = dashboards.map((d) => d.id);
-      console.log('🎯 [useWidgets] Dashboard IDs:', dashboardIds);
 
       if (dashboardIds.length === 0) {
-        console.log('⚠️ [useWidgets] Nenhum dashboard encontrado');
         setWidgets([]);
         return [];
       }
 
       // Buscar widgets desses dashboards
-      console.log(
-        '🔍 [useWidgets] Buscando widgets para dashboards:',
-        dashboardIds,
-      );
       const { data: widgetsData, error: widgetsError } = await supabase
         .from('widgets')
         .select(
@@ -92,7 +84,6 @@ export const useWidgets = (dashboardId = null) => {
         .eq('is_active', true)
         .order('created_at', { ascending: false });
 
-      console.log('📦 [useWidgets] Widgets retornados:', widgetsData);
       if (widgetsError) {
         console.error('❌ [useWidgets] Erro ao buscar widgets:', widgetsError);
         throw widgetsError;
@@ -104,10 +95,6 @@ export const useWidgets = (dashboardId = null) => {
         dashboardName: widget.dashboard?.nome || 'Dashboard',
       }));
 
-      console.log(
-        '✅ [useWidgets] Widgets formatados:',
-        formattedWidgets.length,
-      );
       setWidgets(formattedWidgets);
       return formattedWidgets;
     } catch (err) {

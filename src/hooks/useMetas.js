@@ -149,7 +149,6 @@ export const useMetas = () => {
     setError(null);
 
     try {
-      console.log('🗑️ Excluindo metas mensais com critérios:', criterios);
 
       let query = supabase.from('metas_varejo').delete();
 

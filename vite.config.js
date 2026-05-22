@@ -28,5 +28,27 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    target: 'es2020',
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        // Vendor splitting reduz invalidação de cache: mudanças no app não
+        // invalidam chunks de libs. Cada grupo abaixo vira um arquivo .js.
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-supabase': ['@supabase/supabase-js'],
+          'vendor-charts': ['recharts'],
+          'vendor-chartjs': [
+            'chart.js',
+            'react-chartjs-2',
+            'chartjs-plugin-annotation',
+            'chartjs-plugin-datalabels',
+          ],
+          'vendor-pdf': ['jspdf', 'jspdf-autotable', 'html2canvas'],
+          'vendor-xlsx': ['xlsx'],
+          'vendor-icons': ['phosphor-react', '@phosphor-icons/react'],
+        },
+      },
+    },
   },
 });

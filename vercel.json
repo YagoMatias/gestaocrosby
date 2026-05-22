@@ -1,6 +1,9 @@
 {
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "https://apigestaocrosby-bw2v.onrender.com/api/$1" },
+    {
+      "source": "/api/(.*)",
+      "destination": "https://apigestaocrosby-bw2v.onrender.com/api/$1"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

@@ -72,7 +72,6 @@ export const useWidgetAPI = () => {
     setError(null);
 
     try {
-      console.log('📤 Enviando query:', queryConfig);
 
       const response = await fetch(`${API_BASE_URL}/api/widgets/query`, {
         method: 'POST',
@@ -84,12 +83,6 @@ export const useWidgetAPI = () => {
 
       const data = await response.json();
 
-      console.log(
-        '📥 Resposta do servidor (status:',
-        response.status,
-        '):',
-        data,
-      );
 
       if (!response.ok || !data.success) {
         const errorMsg = data.message || data.error || 'Erro ao executar query';
