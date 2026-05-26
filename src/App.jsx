@@ -34,7 +34,9 @@ const ExtratoCredito = lazy(() => import('./pages/ExtratoCredito'));
 const MetasVarejo = lazy(() => import('./pages/MetasVarejo'));
 
 const RankingFaturamento = lazy(() => import('./pages/RankingFaturamento'));
-const RankingComprasFranquias = lazy(() => import('./pages/RankingComprasFranquias'));
+const RankingComprasFranquias = lazy(
+  () => import('./pages/RankingComprasFranquias'),
+);
 const ComprasFranquias = lazy(() => import('./pages/ComprasFranquias'));
 const Credev = lazy(() => import('./pages/Credev'));
 const CreditoFranquia = lazy(() => import('./pages/CreditoFranquia'));
@@ -94,6 +96,9 @@ const LicitacaoTitulos = lazy(() => import('./pages/LicitacaoTitulos'));
 const SolicitacoesRemessa = lazy(() => import('./pages/SolicitacoesRemessa'));
 const MinhasRemessas = lazy(() => import('./pages/MinhasRemessas'));
 const ClientesMTM = lazy(() => import('./pages/ClientesMTM'));
+const AnaliseCreditoMultimarcas = lazy(
+  () => import('./pages/AnaliseCreditoMultimarcas'),
+);
 const DownloadNotificacao = lazy(() => import('./pages/DownloadNotificacao'));
 const FilaDaVez = lazy(() => import('./pages/FilaDaVez'));
 const PrintForecast = lazy(() => import('./pages/PrintForecast'));
@@ -115,6 +120,7 @@ const ConsultaNFs = lazy(() => import('./pages/ConsultaNFs'));
 const FaturamentoPanel = lazy(() => import('./components/FaturamentoPanel'));
 const AtividadeClientes = lazy(() => import('./pages/AtividadeClientes'));
 const SolicitacoesCrosby = lazy(() => import('./pages/SolicitacoesCrosby'));
+const CadastrarCliente = lazy(() => import('./pages/CadastrarCliente'));
 const FormularioSolicitacoes = lazy(
   () => import('./pages/FormularioSolicitacoes'),
 );
@@ -209,6 +215,7 @@ const protectedRoutes = [
   { path: '/solicitacoes-remessa', component: SolicitacoesRemessa },
   { path: '/minhas-remessas', component: MinhasRemessas },
   { path: '/clientes-mtm', component: ClientesMTM },
+  { path: '/analise-credito-mtm', component: AnaliseCreditoMultimarcas },
   { path: '/api-claude', component: ApiClaude },
   { path: '/estoque', component: Estoque },
   { path: '/painel-vendas', component: PainelVendas },
@@ -221,6 +228,7 @@ const protectedRoutes = [
   { path: '/crosby-manage', component: CrosbyManage },
   { path: '/extrato-totvs', component: ExtratoTotvs },
   { path: '/solicitacoes-crosby', component: SolicitacoesCrosby },
+  { path: '/cadastrar-cliente', component: CadastrarCliente },
 ];
 
 // Layout compartilhado - estável, preserva estado das páginas ao interagir com sidebar

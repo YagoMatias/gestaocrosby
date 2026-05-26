@@ -7233,6 +7233,7 @@ router.post(
 import authRouter from './totvsrouter/auth.js';
 import fiscalRouter from './totvsrouter/fiscal.js';
 import clientesRouter from './totvsrouter/clientes.js';
+import cadastroClienteRouter from './totvsrouter/cadastroCliente.js';
 import filiaisRouter from './totvsrouter/filiais.js';
 import financeiroRouter from './totvsrouter/financeiro.js';
 import estoqueRouter from './totvsrouter/estoque.js';
@@ -7336,6 +7337,7 @@ app.get(
 app.use('/api/totvs', authRouter); // GET /token, POST /auth
 app.use('/api/totvs', fiscalRouter); // boleto, DANFE, XML, NFs, movimentos fiscais
 app.use('/api/totvs', clientesRouter); // legal-entity, individual, clientes, sync
+app.use('/api/totvs', cadastroClienteRouter); // cliente/individual-customer, cliente/legal-customer
 app.use('/api/totvs', filiaisRouter); // branches, franchise, multibrand
 app.use('/api/totvs', financeiroRouter); // accounts-receivable, accounts-payable
 app.use('/api/totvs', estoqueRouter); // best-selling-products, product-balances

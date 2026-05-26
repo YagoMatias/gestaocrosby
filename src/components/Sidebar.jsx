@@ -345,6 +345,12 @@ const multimarcas = [
     icon: Users,
     color: 'text-purple-600',
   },
+  {
+    name: 'Análise de Crédito',
+    href: '/analise-credito-mtm',
+    icon: ChartLineUp,
+    color: 'text-emerald-600',
+  },
 ];
 
 const revenda = [
@@ -847,6 +853,18 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           isActive={pathname === '/solicitacoes-crosby'}
         />
 
+        {/* Cadastrar Cliente */}
+        <MenuItem
+          {...menuProps}
+          item={{
+            name: 'Cadastrar Cliente',
+            href: '/cadastrar-cliente',
+            icon: IdentificationCard,
+            color: 'text-teal-600',
+          }}
+          isActive={pathname === '/cadastrar-cliente'}
+        />
+
         {/* Crosby Bot */}
         <MenuItem
           {...menuProps}
@@ -1059,7 +1077,6 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             />
           </div>
         )}
-
 
         {/* Seção Tecnologia */}
         <div className="pt-6 border-t border-gray-200">

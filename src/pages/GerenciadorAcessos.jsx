@@ -34,6 +34,11 @@ const AVAILABLE_PAGES = [
     category: 'Principal',
   },
   {
+    path: '/cadastrar-cliente',
+    name: 'Cadastrar Cliente',
+    category: 'Principal',
+  },
+  {
     path: '/solicitacoes-crosby-rh',
     name: 'Solicitações Crosby RH (dados sensíveis)',
     category: 'Principal',
@@ -161,6 +166,11 @@ const AVAILABLE_PAGES = [
   {
     path: '/clientes-mtm',
     name: 'Clientes MTM',
+    category: 'Multimarcas',
+  },
+  {
+    path: '/analise-credito-mtm',
+    name: 'Análise de Crédito (MTM)',
     category: 'Multimarcas',
   },
 

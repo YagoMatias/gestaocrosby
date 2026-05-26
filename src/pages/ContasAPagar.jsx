@@ -550,7 +550,7 @@ const ContasAPagar = (props) => {
     }));
 
     try {
-      // Verificar duplicatas já enviadas (mesma nr_duplicata + cd_empresa + status não cancelado)
+      // Verificar duplicatas já enviadas (mesma nr_duplicata + cd_empresa + cd_fornecedor + nr_parcela + dt_vencimento + status não cancelado)
       const chaves = registros
         .filter((r) => r.nr_duplicata && r.cd_empresa)
         .map((r) => ({
@@ -558,12 +558,15 @@ const ContasAPagar = (props) => {
           cd_empresa: r.cd_empresa,
           nr_parcela: r.nr_parcela,
           cd_fornecedor: r.cd_fornecedor,
+          dt_vencimento: r.dt_vencimento,
         }));
 
       if (chaves.length > 0) {
         const { data: jaExistentes } = await supabase
           .from('pagamentos_liberacao')
-          .select('nr_duplicata, cd_empresa, nr_parcela, status,cd_fornecedor')
+          .select(
+            'nr_duplicata, cd_empresa, nr_parcela, status, cd_fornecedor, dt_vencimento',
+          )
           .in(
             'nr_duplicata',
             chaves.map((c) => c.nr_duplicata),
@@ -577,7 +580,11 @@ const ContasAPagar = (props) => {
                 c.nr_duplicata === ex.nr_duplicata &&
                 c.cd_fornecedor === ex.cd_fornecedor &&
                 c.cd_empresa === ex.cd_empresa &&
-                (c.nr_parcela || null) === (ex.nr_parcela || null),
+                (c.nr_parcela || null) === (ex.nr_parcela || null) &&
+                (c.dt_vencimento || null) ===
+                  (ex.dt_vencimento
+                    ? String(ex.dt_vencimento).split('T')[0]
+                    : null),
             ),
           );
 
@@ -585,7 +592,7 @@ const ContasAPagar = (props) => {
             const msgs = conflitos
               .map(
                 (c) =>
-                  `Fornecedor ${c.cd_fornecedor} • Duplicata ${c.nr_duplicata}${c.nr_parcela ? `/${c.nr_parcela}` : ''} — já enviada (${c.status})`,
+                  `Fornecedor ${c.cd_fornecedor} • Duplicata ${c.nr_duplicata}${c.nr_parcela ? `/${c.nr_parcela}` : ''}${c.dt_vencimento ? ` • Venc. ${String(c.dt_vencimento).split('T')[0].split('-').reverse().join('/')}` : ''} — já enviada (${c.status})`,
               )
               .join('\n');
             alert(
