@@ -80,7 +80,14 @@ const fmtDataBr = (iso) => {
 };
 
 export default function PromessaSemanal() {
-  const cur = isoWeek(new Date());
+  // Recomputa "agora" a cada minuto pra cobrir virada de dia/semana em
+  // wall-displays abertos por dias.
+  const [nowKey, setNowKey] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowKey(Date.now()), 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+  const cur = isoWeek(new Date(nowKey));
   const [ano, setAno] = useState(cur.ano);
   const [semana, setSemana] = useState(cur.semana);
   const [data, setData] = useState(null);

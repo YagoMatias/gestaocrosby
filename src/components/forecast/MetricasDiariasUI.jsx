@@ -70,6 +70,8 @@ export function MetricaHeader({
   onToday,
   untilToday,
   setUntilToday,
+  mode,        // NOVO: 'ontem' | 'hoje' | 'sabado' (3-estado, opcional)
+  setMode,     // NOVO: setter do mode (opcional)
   onRefresh,
   loading,
   onWhatsapp,
@@ -123,7 +125,39 @@ export function MetricaHeader({
             <CaretRight size={12} weight="bold" />
           </button>
         )}
-        {setUntilToday && (
+        {setMode && (
+          <div
+            className="inline-flex items-center bg-white/5 border border-white/20 rounded p-0.5 ml-1"
+            role="group"
+            aria-label="Período de exibição"
+          >
+            {[
+              { key: 'hoje',   label: 'Hoje',         title: 'Dados até HOJE (parcial)' },
+              { key: 'ontem',  label: 'Até ontem',    title: 'Dados da semana atual até ONTEM (D-1)' },
+              { key: 'sabado', label: 'Sem. passada', title: 'Semana passada completa (Mon→Sun) — pra apresentar na segunda' },
+            ].map((opt) => {
+              const active = mode === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => setMode(opt.key)}
+                  title={opt.title}
+                  className={`text-[10px] px-2 py-1 rounded transition font-medium inline-flex items-center gap-1 ${
+                    active
+                      ? 'bg-emerald-500/40 text-white shadow-sm'
+                      : 'text-white/70 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  {active && opt.key === 'hoje' && (
+                    <span className="w-1 h-1 rounded-full bg-emerald-200 animate-pulse" />
+                  )}
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {!setMode && setUntilToday && (
           <button
             onClick={() => setUntilToday((v) => !v)}
             className={`text-[11px] px-2.5 py-1.5 rounded border inline-flex items-center gap-1.5 ml-1 transition font-medium ${

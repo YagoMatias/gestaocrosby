@@ -487,6 +487,18 @@ const tecnologiaItems = [
     icon: DeviceMobile,
     color: 'text-cyan-600',
   },
+  {
+    name: 'Inventário de Patrimônio',
+    href: '/tecnologia/inventario-patrimonio',
+    icon: Package,
+    color: 'text-indigo-600',
+  },
+  {
+    name: 'Monitoramento TOTVS',
+    href: '/tecnologia/monitoramento-totvs',
+    icon: ChartLineUp,
+    color: 'text-emerald-600',
+  },
 ];
 
 const adminItems = [

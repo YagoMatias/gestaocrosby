@@ -124,13 +124,32 @@ export default function PromessaMensal() {
       color: 'amber',
       sub: 'Ritmo esperado',
     },
-    {
-      label: 'Faturado Hoje',
-      valor: `R$ ${formatBRL(total.faturado_do_dia || 0)}`,
-      icon: Lightning,
-      color: 'purple',
-      sub: untilToday ? 'Até agora' : 'Ontem',
-    },
+    (() => {
+      // Decide label e subtitle do KPI "Faturado Hoje" baseado em qual mês está
+      // sendo visualizado (corrente, passado ou futuro)
+      const hoje = new Date();
+      const isMesCorrente =
+        hoje.getFullYear() === ano && hoje.getMonth() + 1 === mes;
+      const isMesPassado =
+        hoje.getFullYear() > ano ||
+        (hoje.getFullYear() === ano && hoje.getMonth() + 1 > mes);
+      let label = 'Faturado Hoje';
+      let sub = untilToday ? 'Até agora' : 'Ontem (D-1)';
+      if (isMesPassado) {
+        label = 'Último dia';
+        sub = `Fim de ${MESES[mes - 1]}`;
+      } else if (!isMesCorrente) {
+        label = 'Faturado';
+        sub = 'Mês futuro';
+      }
+      return {
+        label,
+        valor: `R$ ${formatBRL(total.faturado_do_dia || 0)}`,
+        icon: Lightning,
+        color: 'purple',
+        sub,
+      };
+    })(),
     {
       label: '% Atingido',
       valor: `${Number(total.percentual || 0).toFixed(0)}%`,

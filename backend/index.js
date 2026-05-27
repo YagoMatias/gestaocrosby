@@ -19,9 +19,14 @@ import filaRoutes from './routes/fila.routes.js';
 import forecastRoutes from './routes/forecast.routes.js';
 import techRoutes from './routes/tech.routes.js';
 import uazapiSyncRoutes from './routes/uazapiSync.routes.js';
+import monitoringRoutes from './routes/monitoring.routes.js';
 import { iniciarCronUazapiSync } from './services/uazapiSync.js';
 import { iniciarUazapiMonitor } from './services/uazapiMonitor.js';
 import { initializeWhatsApp } from './config/whatsapp.js';
+import { installTotvsTracker } from './services/totvsAxiosInterceptor.js';
+
+// Instala interceptor que rastreia chamadas TOTVS (antes de qualquer rota)
+installTotvsTracker();
 
 import {
   asyncHandler,
@@ -7358,6 +7363,7 @@ app.use('/api/crm', crmRoutes); // CRM: leads (ClickUp), inst-check-bulk, msgs, 
 app.use('/api/fila', filaRoutes); // Fila da Vez (varejo) — admin + público (PIN)
 app.use('/api/forecast', forecastRoutes); // Forecast — Promessa Semanal por Canal
 app.use('/api/tech', techRoutes); // Tecnologia — Controle de chips, etc
+app.use('/api/monitoring', monitoringRoutes); // Monitoramento consumo TOTVS
 app.use('/api/uazapi-sync', uazapiSyncRoutes); // sync diário UAzapi → Postgres
 
 // Error handling middleware

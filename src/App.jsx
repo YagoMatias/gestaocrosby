@@ -103,6 +103,8 @@ const DownloadNotificacao = lazy(() => import('./pages/DownloadNotificacao'));
 const FilaDaVez = lazy(() => import('./pages/FilaDaVez'));
 const PrintForecast = lazy(() => import('./pages/PrintForecast'));
 const ControleChips = lazy(() => import('./pages/ControleChips'));
+const MonitoramentoTotvs = lazy(() => import('./pages/MonitoramentoTotvs'));
+const InventarioPatrimonio = lazy(() => import('./pages/InventarioPatrimonio'));
 const ApiClaude = lazy(() => import('./pages/ApiClaude'));
 const Estoque = lazy(() => import('./pages/Estoque'));
 const PainelVendas = lazy(() => import('./pages/PainelVendas'));
@@ -137,6 +139,8 @@ PageLoadingFallback.displayName = 'PageLoadingFallback';
 // Lista de rotas protegidas (constante estática no módulo)
 const protectedRoutes = [
   { path: '/tecnologia/controle-chip', component: ControleChips },
+  { path: '/tecnologia/monitoramento-totvs', component: MonitoramentoTotvs },
+  { path: '/tecnologia/inventario-patrimonio', component: InventarioPatrimonio },
   { path: '/gerenciador-dashboards', component: GerenciadorDashboards },
   { path: '/widgets', component: Widgets },
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   MagnifyingGlass,
   Spinner,
@@ -404,6 +404,90 @@ export default function DocumentoBluecred() {
   const [solicitarResult, setSolicitarResult] = useState(null);
   const [solicitarErro, setSolicitarErro] = useState('');
 
+  // ─── Contas WhatsApp Meta (whatsapp_accounts) ────────────────────────────
+  const [whatsappAccounts, setWhatsappAccounts] = useState([]);
+  const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [templateName, setTemplateName] = useState('');
+
+  // Fetch lista de contas WhatsApp na montagem
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/meta/accounts`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.success && Array.isArray(j.data)) {
+          setWhatsappAccounts(j.data);
+          // Pré-seleciona a primeira conta (se houver)
+          if (j.data.length > 0 && !selectedAccountId) {
+            setSelectedAccountId(j.data[0].id);
+          }
+        }
+      })
+      .catch((err) =>
+        console.warn('[DocumentoBluecred] falha ao carregar contas WhatsApp:', err.message),
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ─── Criar template Meta WhatsApp (precisa aprovação ~24h) ───────────────
+  const [criandoTemplate, setCriandoTemplate] = useState(false);
+  const [templateMsg, setTemplateMsg] = useState('');
+  const criarTemplate = async () => {
+    if (!selectedAccountId) {
+      setTemplateMsg('Selecione uma conta WhatsApp antes.');
+      return;
+    }
+    const nomeTemplate = templateName?.trim() || 'crosby_termo_credito';
+    setCriandoTemplate(true);
+    setTemplateMsg('');
+    try {
+      const body = {
+        name: nomeTemplate,
+        category: 'UTILITY',  // transacional — aprovação mais rápida
+        language: 'pt_BR',
+        allow_category_change: true,
+        components: [
+          {
+            type: 'HEADER',
+            format: 'TEXT',
+            text: 'Termo de Crédito Crosby 📄',
+          },
+          {
+            type: 'BODY',
+            text: 'Olá {{1}}! 👋\n\nSegue o *Termo de Crédito Crosby* pra sua assinatura eletrônica.\n\n🔗 Clique no link abaixo para assinar:\n{{2}}\n\nQualquer dúvida estamos à disposição.',
+            example: {
+              body_text: [['João', 'https://app.autentique.com.br/assinar/exemplo']],
+            },
+          },
+          {
+            type: 'FOOTER',
+            text: 'Crosby Confecções',
+          },
+        ],
+      };
+      const res = await fetch(
+        `${API_BASE_URL}/api/meta/templates/${selectedAccountId}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+      );
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        const errMsg = json?.message || `Erro ${res.status}`;
+        throw new Error(errMsg);
+      }
+      setTemplateName(nomeTemplate);
+      setTemplateMsg(
+        `✅ Template "${nomeTemplate}" criado e enviado para aprovação Meta. Status: ${json.data?.status || 'PENDING'}. Aguarde até 24h.`,
+      );
+    } catch (err) {
+      setTemplateMsg(`❌ ${err.message}`);
+    } finally {
+      setCriandoTemplate(false);
+    }
+  };
+
   const handleInput = (e) => setInputValue(maskInput(e.target.value));
 
   const handleBuscar = async (e) => {
@@ -454,6 +538,8 @@ export default function DocumentoBluecred() {
         '';
       const body = { fiscalNumber };
       if (telPrimario) body.phone = telPrimario;
+      if (selectedAccountId) body.accountId = selectedAccountId;
+      if (templateName?.trim()) body.templateName = templateName.trim();
 
       const res = await fetch(`${API_BASE_URL}/api/autentique/termo-credito`, {
         method: 'POST',
@@ -520,6 +606,98 @@ export default function DocumentoBluecred() {
             </button>
           </div>
         </form>
+
+        {/* ─── Configuração de envio WhatsApp (Meta Cloud API oficial) ───── */}
+        {whatsappAccounts.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-gray-200">
+            <div className="flex items-center gap-2 mb-2">
+              <WhatsappLogo size={14} weight="fill" className="text-green-600" />
+              <span className="text-xs font-semibold text-[#000638]">
+                Envio via WhatsApp oficial
+              </span>
+              <span className="text-[10px] text-gray-500">
+                (escolha qual número Crosby enviará)
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-semibold mb-0.5 text-gray-700">
+                  Conta WhatsApp
+                </label>
+                <select
+                  value={selectedAccountId}
+                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-white text-[#000638] text-xs"
+                >
+                  <option value="">— Não enviar (Autentique envia)</option>
+                  {whatsappAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                      {a.nr_telefone ? ` (${a.nr_telefone})` : ''}
+                      {a.canal_venda ? ` · ${a.canal_venda}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold mb-0.5 text-gray-700">
+                  Template aprovado
+                  <span className="text-[9px] text-gray-400 font-normal ml-1">
+                    (opcional — texto simples se vazio)
+                  </span>
+                </label>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={templateName}
+                    onChange={(e) => setTemplateName(e.target.value)}
+                    placeholder="Ex: crosby_termo_credito"
+                    className="border border-[#000638]/30 rounded-lg px-2 py-1.5 flex-1 focus:outline-none focus:ring-2 focus:ring-[#000638] bg-white text-[#000638] text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={criarTemplate}
+                    disabled={!selectedAccountId || criandoTemplate}
+                    title="Cria o template no Meta WhatsApp (precisa aprovação ~24h)"
+                    className="flex items-center gap-1 bg-green-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-[10px] font-bold uppercase tracking-wide shadow-sm whitespace-nowrap"
+                  >
+                    {criandoTemplate ? (
+                      <>
+                        <Spinner size={11} className="animate-spin" />
+                        Criando...
+                      </>
+                    ) : (
+                      <>
+                        <ClipboardText size={11} />
+                        Criar template
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+            {templateMsg && (
+              <div
+                className={`mt-2 px-3 py-2 rounded-lg text-[11px] font-medium ${
+                  templateMsg.startsWith('✅')
+                    ? 'bg-green-50 text-green-700 border border-green-200'
+                    : 'bg-red-50 text-red-700 border border-red-200'
+                }`}
+              >
+                {templateMsg}
+              </div>
+            )}
+            <p className="text-[10px] text-gray-500 mt-1.5">
+              💡 <strong>Sem template:</strong> envia mensagem de texto (cliente
+              precisa ter conversado nas últimas 24h). <strong>Com template:</strong>{' '}
+              envia template aprovado pelo Meta (funciona sempre). Template deve ter 2
+              variáveis: <code>{`{{1}}`}</code> = nome,{' '}
+              <code>{`{{2}}`}</code> = link assinatura. Clique em{' '}
+              <strong>Criar template</strong> para gerar automaticamente
+              (Meta aprova em até 24h).
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Erro */}

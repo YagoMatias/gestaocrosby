@@ -53,7 +53,16 @@ function CardVendedores({ card, loading, cardRef, onSendWhats }) {
           </div>
           <div>
             <h4 className="font-bold text-sm tracking-wide">{label}</h4>
-            <p className="text-[10px] text-white/70 mt-0.5">{vendedores.length} vendedor{vendedores.length !== 1 ? 'es' : ''}</p>
+            <p className="text-[10px] text-white/70 mt-0.5">
+              {(() => {
+                const titulares = vendedores.filter((v) => !v.convidado).length;
+                const convidados = vendedores.filter((v) => v.convidado).length;
+                if (convidados === 0) {
+                  return `${titulares} vendedor${titulares !== 1 ? 'es' : ''}`;
+                }
+                return `${titulares} titular${titulares !== 1 ? 'es' : ''} + ${convidados} convidado${convidados !== 1 ? 's' : ''}`;
+              })()}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -203,10 +212,25 @@ function CardVendedores({ card, loading, cardRef, onSendWhats }) {
   );
 }
 
+// ─── Anti-sobrecarga TOTVS ─────────────────────────────────────────────────
+// /promessa-vendedores chama /canal-totals para 4 canais (revenda, multimarcas,
+// inbound_david, inbound_rafael). Cada toggle de modo dispararia 4 calls TOTVS
+// — então cacheamos no FRONTEND com TTL 90s e coalescemos requests in-flight
+// para a mesma chave. (O backend já tem cache 24h passado / 1h realtime +
+// INFLIGHT coalescing, mas isso evita até bater no servidor.)
+const PV_CACHE = new Map();      // key → { data, ts }
+const PV_INFLIGHT = new Map();   // key → Promise
+const PV_TTL_MS = 90 * 1000;
+
 export default function PromessaVendedores() {
-  const cur = isoWeek(new Date());
-  const [ano] = useState(cur.ano);
-  const [semana] = useState(cur.semana);
+  // Recomputa "agora" a cada minuto pra cobrir virada de dia/semana
+  // (importante pra wall-displays que ficam abertos por dias).
+  const [nowKey, setNowKey] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowKey(Date.now()), 60 * 1000); // 1min
+    return () => clearInterval(id);
+  }, []);
+  const cur = isoWeek(new Date(nowKey));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
@@ -214,25 +238,71 @@ export default function PromessaVendedores() {
   // que será enviado. 'all' captura o bloco inteiro; um code captura só o
   // card individual.
   const [whatsTarget, setWhatsTarget] = useState(null);
-  const [untilToday, setUntilToday] = useState(false);
+  // mode: 'ontem' (semana atual até ontem) | 'hoje' (semana atual até hoje) |
+  //       'sabado' (semana passada inteira — pra apresentar na segunda)
+  const [mode, setMode] = useState('ontem');
   const cardRef = useRef(null);           // bloco inteiro (envia tudo)
   const cardRefsByCode = useRef({});      // refs individuais por card
 
-  const carregar = useCallback(async () => {
-    setLoading(true);
+  // Calcula ano/semana/until_today a partir do mode
+  const queryParams = (() => {
+    if (mode === 'sabado') {
+      // Semana ISO da última semana (going 7d atrás)
+      const lastWeek = new Date();
+      lastWeek.setDate(lastWeek.getDate() - 7);
+      const prev = isoWeek(lastWeek);
+      return { ano: prev.ano, semana: prev.semana, untilToday: true };
+    }
+    return {
+      ano: cur.ano,
+      semana: cur.semana,
+      untilToday: mode === 'hoje',
+    };
+  })();
+  const { ano, semana, untilToday } = queryParams;
+
+  const carregar = useCallback(async (forceRefresh = false) => {
     setErro('');
-    try {
+    const cacheKey = `${ano}|${semana}|${untilToday}`;
+
+    // 1. Hit cache se válido e não está forçando refresh
+    if (!forceRefresh) {
+      const cached = PV_CACHE.get(cacheKey);
+      if (cached && Date.now() - cached.ts < PV_TTL_MS) {
+        setData(cached.data);
+        setLoading(false);
+        return;
+      }
+    }
+
+    // 2. Coalesce: se já tem fetch em andamento pra mesma key, aguarda ele
+    let promise = PV_INFLIGHT.get(cacheKey);
+    if (!promise) {
       const qs = `?ano=${ano}&semana=${semana}${untilToday ? '&until_today=true' : ''}`;
-      const r = await fetch(`${API_BASE_URL}/api/forecast/promessa-vendedores${qs}`);
-      const j = await r.json();
-      if (!r.ok || !j?.success) throw new Error(j?.message || 'Erro');
-      setData(j.data);
+      promise = fetch(`${API_BASE_URL}/api/forecast/promessa-vendedores${qs}`)
+        .then((r) => r.json())
+        .then((j) => {
+          if (!j?.success) throw new Error(j?.message || 'Erro');
+          PV_CACHE.set(cacheKey, { data: j.data, ts: Date.now() });
+          return j.data;
+        })
+        .finally(() => PV_INFLIGHT.delete(cacheKey));
+      PV_INFLIGHT.set(cacheKey, promise);
+    }
+
+    setLoading(true);
+    try {
+      const fresh = await promise;
+      setData(fresh);
     } catch (e) {
       setErro(e.message);
     } finally {
       setLoading(false);
     }
   }, [ano, semana, untilToday]);
+
+  // Wrapper para o botão Refresh (força bypass do cache)
+  const refresh = useCallback(() => carregar(true), [carregar]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -263,9 +333,9 @@ export default function PromessaVendedores() {
               subtitle="Carregando…"
               icon={Users}
               color="emerald"
-              untilToday={untilToday}
-              setUntilToday={setUntilToday}
-              onRefresh={carregar}
+              mode={mode}
+              setMode={setMode}
+              onRefresh={refresh}
               loading={loading}
             />
           </div>
@@ -319,16 +389,22 @@ export default function PromessaVendedores() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-3">
         <MetricaHeader
           title="Detalhe por Vendedor"
-          subtitle={`Semana ${data.semana_iso}/${data.ano || ano} · envie B2R ou B2M separadamente`}
+          subtitle={`Semana ${data.semana_iso}/${data.ano || ano}${mode === 'sabado' ? ' (semana passada — ideal pra apresentar na segunda)' : ' · envie B2R ou B2M separadamente'}`}
           icon={Users}
           color="emerald"
-          untilToday={untilToday}
-          setUntilToday={setUntilToday}
-          onRefresh={carregar}
+          mode={mode}
+          setMode={setMode}
+          onRefresh={refresh}
           loading={loading}
           onWhatsapp={() => setWhatsTarget('all')}
         />
       </div>
+      {mode === 'sabado' && data && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium px-3 py-2 rounded-lg mb-3 flex items-center gap-2">
+          <Trophy size={14} weight="duotone" className="text-amber-600" />
+          Exibindo <b>semana passada completa</b> (Sem. {data.semana_iso}/{data.ano || ano}) — ideal pra apresentar na segunda
+        </div>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {data.cards.map((card) => (
           <CardVendedores

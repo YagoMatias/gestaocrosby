@@ -196,7 +196,9 @@ export default function ComparativoAnual() {
                   const cfg = CANAL_CFG[c.canal_key] || { icon: ChartBar, text: 'text-gray-600', bg: 'bg-gray-50' };
                   const Icon = cfg.icon;
                   const label = c.nome;
-                  const cpct = Number(c.comparativo_pct || 0);
+                  // comparativo_pct === null indica canal NOVO (sem referência ano anterior)
+                  const isNewCanal = c.is_new === true || c.comparativo_pct === null;
+                  const cpct = isNewCanal ? 0 : Number(c.comparativo_pct || 0);
                   const up = cpct >= 0;
                   const Arrow = up ? CaretDoubleUp : CaretDoubleDown;
                   const arrowColor = up ? 'text-emerald-600' : 'text-rose-600';
@@ -241,6 +243,13 @@ export default function ComparativoAnual() {
                         <div className="flex justify-center">
                           {loading ? (
                             <LoadingValue width={50} />
+                          ) : isNewCanal ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold tabular-nums bg-cyan-50 border-cyan-200 text-cyan-700"
+                              title="Canal novo (sem faturamento no mesmo período do ano anterior)"
+                            >
+                              ⚡ NOVO
+                            </span>
                           ) : hasData ? (
                             <span
                               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-bold tabular-nums ${pctColorDelta(cpct)}`}

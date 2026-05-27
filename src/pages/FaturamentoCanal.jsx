@@ -30,6 +30,8 @@ import {
   Receipt,
   CaretRight,
   Trophy,
+  WhatsappLogo,
+  Phone,
 } from 'phosphor-react';
 import { Pencil, Target } from 'phosphor-react';
 import PageTitle from '../components/ui/PageTitle';
@@ -1364,6 +1366,288 @@ const CanalCard = React.memo(function CanalCard({
   );
 });
 
+// ─── Componente: card BlueCred (envios via Autentique / bluecred_contratos) ──
+const BlueCredCard = React.memo(function BlueCredCard({ stats }) {
+  const total = stats?.total ?? null;
+  const porStatus = stats?.por_status || {};
+  const concluidos = porStatus.concluido || 0;
+  const pendentes =
+    (porStatus.pendente || 0) + (porStatus.parcialmente_assinado || 0);
+  const recusados = porStatus.recusado || 0;
+  const taxa =
+    total && total > 0 ? ((concluidos / total) * 100).toFixed(0) : 0;
+
+  return (
+    <div className="rounded-xl border border-cyan-200 bg-gradient-to-br from-cyan-50 to-sky-50 p-4 flex flex-col gap-2 hover:shadow-md transition-shadow relative overflow-hidden">
+      <div className="absolute -top-6 -right-6 w-20 h-20 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none" />
+      <div className="flex items-center justify-between relative">
+        <div className="flex items-center gap-2 text-cyan-700 font-semibold text-sm">
+          <CreditCard size={18} weight="duotone" />
+          BlueCred
+        </div>
+        <span className="text-[9px] text-cyan-700 bg-cyan-100 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide">
+          enviados
+        </span>
+      </div>
+      {total === null ? (
+        <div className="text-2xl font-bold text-gray-300 leading-tight">
+          —
+        </div>
+      ) : (
+        <>
+          <div className="text-2xl font-bold text-gray-800 leading-tight">
+            {Number(total).toLocaleString('pt-BR')}
+          </div>
+          <div className="text-xs text-gray-500">
+            {total === 1 ? 'crédito enviado' : 'créditos enviados'}
+          </div>
+          {total > 0 && (
+            <>
+              <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-cyan-500"
+                  style={{ width: `${Math.min(taxa, 100)}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-cyan-700 font-semibold">
+                <span>{taxa}% concluídos</span>
+                <span className="text-gray-400 font-normal">
+                  {concluidos}✓ · {pendentes}⏳
+                  {recusados > 0 ? ` · ${recusados}✗` : ''}
+                </span>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+});
+
+// ─── Componente: card BlueCard (envios via ClickUp) ─────────────────────────
+const BlueCardCard = React.memo(function BlueCardCard({ count }) {
+  return (
+    <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50 p-4 flex flex-col gap-2 hover:shadow-md transition-shadow relative overflow-hidden">
+      <div className="absolute -top-6 -right-6 w-20 h-20 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+      <div className="flex items-center justify-between relative">
+        <div className="flex items-center gap-2 text-indigo-700 font-semibold text-sm">
+          <CreditCard size={18} weight="duotone" />
+          BlueCard
+        </div>
+        <span className="text-[9px] text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide">
+          enviados
+        </span>
+      </div>
+      {count === null ? (
+        <div className="text-2xl font-bold text-gray-300 leading-tight">
+          —
+        </div>
+      ) : (
+        <>
+          <div className="text-2xl font-bold text-gray-800 leading-tight">
+            {Number(count).toLocaleString('pt-BR')}
+          </div>
+          <div className="text-xs text-gray-500">
+            {count === 1 ? 'cartão enviado' : 'cartões enviados'}
+          </div>
+          <div className="text-[10px] text-indigo-600/70 font-medium mt-1">
+            via ClickUp
+          </div>
+        </>
+      )}
+    </div>
+  );
+});
+
+// ─── Modal: gasto WhatsApp por número/conta ─────────────────────────────────
+const ModalWhatsappPorNumero = React.memo(function ModalWhatsappPorNumero({
+  custoWpp,
+  dataInicio,
+  dataFim,
+  onClose,
+}) {
+  const accounts = Array.isArray(custoWpp?.accounts) ? custoWpp.accounts : [];
+  const wabas = Array.isArray(custoWpp?.wabas) ? custoWpp.wabas : [];
+
+  // Como uma WABA pode ter múltiplos phone_ids, o custo é por WABA.
+  // Agrupamos accounts por waba_id, mostramos cada conta com o custo da WABA
+  // dividido (informativo) ou rateado.
+  // Mostra: nome da conta, telefone, canal, custo da WABA, % do total, volume.
+  const totalCost = wabas.reduce((s, w) => s + (w.totalCostBRL || 0), 0);
+  const totalVol = wabas.reduce((s, w) => s + (w.totalVolume || 0), 0);
+
+  // Constrói linhas: 1 linha por (waba) com os phones agrupados
+  const rows = wabas
+    .map((w) => {
+      const phones = accounts.filter((a) => a.waba_id === w.waba_id);
+      return {
+        waba_id: w.waba_id,
+        name: w.name,
+        phones,
+        cost: w.totalCostBRL || 0,
+        volume: w.totalVolume || 0,
+        pct: totalCost > 0 ? ((w.totalCostBRL || 0) / totalCost) * 100 : 0,
+        byPricingCategory: w.byPricingCategory || {},
+        error: w.error || null,
+      };
+    })
+    .sort((a, b) => b.cost - a.cost);
+
+  const canalLabel = {
+    varejo: 'Varejo',
+    multimarcas: 'Multimarcas',
+    revenda: 'Revenda',
+    franquia: 'Franquia',
+    financeiro: 'Financeiro',
+    business: 'Business',
+    bazar: 'Bazar',
+    showroom: 'Showroom',
+    novidadesfranquia: 'Novidades Franquia',
+    ricardoeletro: 'Ricardo Eletro',
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-3 border-b">
+          <div className="flex items-center gap-2">
+            <div className="p-2 rounded-lg bg-yellow-50">
+              <WhatsappLogo size={18} weight="fill" className="text-yellow-600" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-[#000638]">
+                Gasto WhatsApp API por número
+              </h2>
+              <p className="text-[10px] text-gray-500">
+                {dataInicio} → {dataFim} • {rows.length} conta
+                {rows.length !== 1 ? 's' : ''} • Total:{' '}
+                <b>R$ {formatBRL(totalCost)}</b> ·{' '}
+                {Number(totalVol).toLocaleString('pt-BR')} conversas
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            <X size={18} className="text-gray-500" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto px-5 py-3">
+          {rows.length === 0 ? (
+            <p className="text-center text-sm text-gray-400 py-10">
+              Nenhuma conta com dados no período.
+            </p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-[10px] uppercase tracking-wide text-gray-500">
+                  <th className="py-2 px-2 text-left">#</th>
+                  <th className="py-2 px-2 text-left">Conta / Telefone</th>
+                  <th className="py-2 px-2 text-left">Canal</th>
+                  <th className="py-2 px-2 text-right">Conversas</th>
+                  <th className="py-2 px-2 text-right">Custo (R$)</th>
+                  <th className="py-2 px-2 text-right">% Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, idx) => (
+                  <tr
+                    key={row.waba_id}
+                    className="border-b border-gray-100 hover:bg-gray-50"
+                  >
+                    <td className="py-2 px-2 text-gray-400 font-medium tabular-nums align-top">
+                      {idx + 1}
+                    </td>
+                    <td className="py-2 px-2 align-top">
+                      <div className="font-semibold text-[#000638] text-xs">
+                        {row.name}
+                      </div>
+                      {row.phones.map((p) => (
+                        <div
+                          key={p.accountId}
+                          className="flex items-center gap-1 text-[11px] text-gray-500"
+                        >
+                          <Phone size={10} />
+                          {p.nr_telefone || '—'}
+                        </div>
+                      ))}
+                      {row.error && (
+                        <div className="text-[10px] text-red-500 mt-0.5">
+                          ⚠ {row.error}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-2 px-2 align-top">
+                      {(() => {
+                        const canais = [
+                          ...new Set(
+                            row.phones
+                              .map((p) => p.canal_venda)
+                              .filter(Boolean),
+                          ),
+                        ];
+                        if (canais.length === 0)
+                          return (
+                            <span className="text-[10px] text-gray-400 italic">
+                              sem canal
+                            </span>
+                          );
+                        return canais.map((c) => (
+                          <span
+                            key={c}
+                            className="inline-block bg-blue-50 text-blue-700 text-[10px] font-semibold px-1.5 py-0.5 rounded mr-1"
+                          >
+                            {canalLabel[c] || c}
+                          </span>
+                        ));
+                      })()}
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums align-top">
+                      {Number(row.volume).toLocaleString('pt-BR')}
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums font-bold text-yellow-700 align-top">
+                      R$ {formatBRL(row.cost)}
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums text-gray-600 align-top">
+                      {row.pct.toFixed(1)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="font-bold text-[#000638] bg-gray-50">
+                  <td className="py-2 px-2" colSpan={3}>
+                    TOTAL
+                  </td>
+                  <td className="py-2 px-2 text-right tabular-nums">
+                    {Number(totalVol).toLocaleString('pt-BR')}
+                  </td>
+                  <td className="py-2 px-2 text-right tabular-nums text-yellow-700">
+                    R$ {formatBRL(totalCost)}
+                  </td>
+                  <td className="py-2 px-2 text-right tabular-nums">100%</td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+          <p className="text-[10px] text-gray-400 mt-3 italic">
+            💡 Custo é cobrado <strong>por WABA</strong> (não por número). Quando
+            há vários números na mesma WABA, eles compartilham o custo total.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 // â”€â”€â”€ Componente: barra horizontal do gráfico â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function BarChart({ canais, total }) {
   if (!canais || canais.length === 0) return null;
@@ -1674,6 +1958,9 @@ export default function FaturamentoCanal() {
   const [custoWpp, setCustoWpp] = useState(null); // { cost (USD), conversations }
   const [custoAds, setCustoAds] = useState(null); // { spend (USD) }
   const [erroMeta, setErroMeta] = useState(null); // erros das APIs de custo (WhatsApp/Ads)
+  const [bluecredStats, setBluecredStats] = useState(null); // BlueCred (Autentique): { total, por_status }
+  const [bluecardCount, setBluecardCount] = useState(null); // BlueCard (ClickUp): número de enviados
+  const [modalWppDetail, setModalWppDetail] = useState(false); // modal gasto WhatsApp por número
   const [vendedores, setVendedores] = useState(null);
   const [loadingVend, setLoadingVend] = useState(false);
   const [rankingFat, setRankingFat] = useState(null);
@@ -1707,6 +1994,10 @@ export default function FaturamentoCanal() {
   const [canalExpandido, setCanalExpandido] = useState(null);
   // Cache do breakdown por canal+período: { 'varejo|semanal': { per_branch, per_seller, loading } }
   const [breakdownCache, setBreakdownCache] = useState({});
+  // Coalescing: in-flight Promise per cacheKey → evita fetches duplicados quando
+  // usuário troca rapidamente entre semana/mês no drill-down. Sem isso, vários
+  // setState concorrentes podem deixar o "Carregando…" travado.
+  const breakdownInflightRef = useRef(new Map());
   // AbortController refs — cancela fetches anteriores quando muda período
   const loadMetaAbortRef = useRef(null);
   const loadAcumAbortRef = useRef(null);
@@ -1727,6 +2018,34 @@ export default function FaturamentoCanal() {
     setErroMeta(null);
     setCustoWpp(null);
     setCustoAds(null);
+    setBluecredStats(null);
+    setBluecardCount(null);
+
+    // BlueCred count (Autentique / bluecred_contratos) em background — não bloqueia
+    fetch(
+      `${API_BASE_URL}/api/autentique/bluecred/count?dataInicio=${dataInicio}&dataFim=${dataFim}`,
+    )
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.success && j?.data) setBluecredStats(j.data);
+      })
+      .catch((err) =>
+        console.warn('[FaturamentoCanal] BlueCred count falhou:', err.message),
+      );
+
+    // BlueCard count (ClickUp) em background — não bloqueia
+    fetch(
+      `${API_BASE_URL}/api/forecast/bluecard-count?datemin=${dataInicio}&datemax=${dataFim}`,
+    )
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.success && typeof j.data?.count === 'number') {
+          setBluecardCount(j.data.count);
+        }
+      })
+      .catch((err) =>
+        console.warn('[FaturamentoCanal] BlueCard count falhou:', err.message),
+      );
 
     // Stale-while-revalidate: mostra cache local imediatamente, busca fresco em background
     // v8: bumped após correção do bug de credev franquia (cache cacheava bruto)
@@ -1803,10 +2122,15 @@ export default function FaturamentoCanal() {
     ]).then(([wpp, ads]) => {
       const metaErros = [];
       if (wpp.status === 'fulfilled') {
-        // Inclui by_canal pra mostrar quebra por canal no header
+        // Inclui by_canal pra mostrar quebra por canal + accounts/wabas pro modal de detalhe
         const t = wpp.value?.totals ?? null;
         if (t) {
-          setCustoWpp({ ...t, by_canal: wpp.value?.by_canal || {} });
+          setCustoWpp({
+            ...t,
+            by_canal: wpp.value?.by_canal || {},
+            accounts: wpp.value?.accounts || [],
+            wabas: wpp.value?.wabas || [],
+          });
         } else {
           setCustoWpp(null);
         }
@@ -1929,10 +2253,25 @@ export default function FaturamentoCanal() {
         0,
       );
 
+      // Adiantamento por canal (credev em payments) — usado para tag visual nos
+      // canais que contabilizam credev como adiantamento (showroom, novidades,
+      // fábrica, bazar). NÃO é subtraído do faturamento.
+      const adiantMensal = { ...(fatM?.credev_por_segmento || {}) };
+      const adiantSemanal = { ...(fatS?.credev_por_segmento || {}) };
+      adiantMensal.fabrica = FABRICA_SOURCES.reduce(
+        (s, c) => s + Number(adiantMensal[c] || 0),
+        0,
+      );
+      adiantSemanal.fabrica = FABRICA_SOURCES.reduce(
+        (s, c) => s + Number(adiantSemanal[c] || 0),
+        0,
+      );
+
       setMetaData({
         metas: { mensal: metasMensal, semanal: metasSemanal },
         justificativas: { mensal: justifMensal, semanal: justifSemanal },
         fat: { mensal: fatMensal, semanal: fatSemanal },
+        adiantamento: { mensal: adiantMensal, semanal: adiantSemanal },
         loading,
         loaded: true,
         monthKey,
@@ -2040,42 +2379,50 @@ export default function FaturamentoCanal() {
     setLoadingAcumulado(true);
     try {
       const todayIso = new Date().toISOString().slice(0, 10);
-      const results = await Promise.all(
-        previousWeeks.map(async (w) => {
-          // Limita o datemax a hoje (caso semana ainda esteja no futuro)
-          const dmax = w.datemax > todayIso ? todayIso : w.datemax;
-          if (dmax < w.datemin) {
-            return { weekKey: w.key, metas: {}, fat: {} };
+      // ── Anti-sobrecarga TOTVS ──
+      // Antes: Promise.all(previousWeeks) → 4+ fat-seg em paralelo, cada um
+      // chamando canal-totals internamente. Combinado com loadMetaData
+      // (mais 2 fat-seg) e buscarVendedores (11 canal-totals), gerava pico
+      // de ~17 queries TOTVS pesadas paralelas → estourava timeout/rate.
+      // Agora SEQUENCIAL: uma semana de cada vez, com pequeno delay.
+      const results = [];
+      for (const w of previousWeeks) {
+        if (isStale()) return; // outra requisição foi disparada
+        const dmax = w.datemax > todayIso ? todayIso : w.datemax;
+        if (dmax < w.datemin) {
+          results.push({ weekKey: w.key, metas: {}, fat: {} });
+          continue;
+        }
+        try {
+          const [metasRes, fatRes] = await Promise.all([
+            fetch(
+              `${API_BASE_URL}/api/crm/canal-metas?period_type=semanal&period_key=${w.key}`,
+              { headers: { 'x-api-key': API_KEY } },
+            ).then((r) => r.json()),
+            apiPost('/api/crm/faturamento-por-segmento', {
+              datemin: w.datemin,
+              datemax: dmax,
+            }),
+          ]);
+          const metas = {};
+          for (const m of metasRes?.data?.metas || []) {
+            metas[m.canal] = Number(m.valor_meta || 0);
           }
-          try {
-            const [metasRes, fatRes] = await Promise.all([
-              fetch(
-                `${API_BASE_URL}/api/crm/canal-metas?period_type=semanal&period_key=${w.key}`,
-                { headers: { 'x-api-key': API_KEY } },
-              ).then((r) => r.json()),
-              apiPost('/api/crm/faturamento-por-segmento', {
-                datemin: w.datemin,
-                datemax: dmax,
-              }),
-            ]);
-            const metas = {};
-            for (const m of metasRes?.data?.metas || []) {
-              metas[m.canal] = Number(m.valor_meta || 0);
-            }
-            const fat = { ...(fatRes?.segmentos || {}) };
-            fat.fabrica = FABRICA_SOURCES.reduce(
-              (s, c) => s + Number(fat[c] || 0),
-              0,
-            );
-            return { weekKey: w.key, datemin: w.datemin, datemax: dmax, metas, fat };
-          } catch (err) {
-            console.warn(
-              `[Forecast/acumulado] semana ${w.key} falhou: ${err.message}`,
-            );
-            return { weekKey: w.key, metas: {}, fat: {} };
-          }
-        }),
-      );
+          const fat = { ...(fatRes?.segmentos || {}) };
+          fat.fabrica = FABRICA_SOURCES.reduce(
+            (s, c) => s + Number(fat[c] || 0),
+            0,
+          );
+          results.push({ weekKey: w.key, datemin: w.datemin, datemax: dmax, metas, fat });
+          // Pequena pausa entre semanas pra dar respiro ao TOTVS
+          await new Promise((r) => setTimeout(r, 500));
+        } catch (err) {
+          console.warn(
+            `[Forecast/acumulado] semana ${w.key} falhou: ${err.message}`,
+          );
+          results.push({ weekKey: w.key, metas: {}, fat: {} });
+        }
+      }
       // Agrega faltante por canal
       const accByCanal = {};
       for (const { weekKey: wk, datemin, datemax, metas, fat } of results) {
@@ -2109,10 +2456,18 @@ export default function FaturamentoCanal() {
     }
   }, [selectedWeekKey, selectedMonthKey]);
 
-  // Carrega acumulado quando entra na aba 'vendedores' ou muda período
+  // Carrega acumulado quando entra na aba 'vendedores' ou muda período.
+  // ATRASA 3s: deixa loadMetaData + buscarVendedores carregarem primeiro
+  // (ambos chamam fat-seg/canal-totals). Sem o delay, 4 semanas × fat-seg
+  // disputavam com 11 canais × canal-totals → ~17 queries TOTVS simultâneas
+  // → timeout em cascata. Com delay, o acumulado começa quando a UI já tem
+  // dados primários, e o cache TOTVS já cobre algumas chamadas.
   useEffect(() => {
     if (aba !== 'vendedores') return;
-    loadAcumuladoFaltante();
+    const id = setTimeout(() => {
+      loadAcumuladoFaltante();
+    }, 3000);
+    return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aba, selectedWeekKey, selectedMonthKey]);
 
@@ -2139,6 +2494,15 @@ export default function FaturamentoCanal() {
       }
       // Se já temos cache válido, pula
       if (breakdownCache[cacheKey] && !breakdownCache[cacheKey].loading) return;
+      // Coalescing: se já tem fetch em andamento pra essa chave, aguarda ele
+      if (breakdownInflightRef.current.has(cacheKey)) {
+        try {
+          await breakdownInflightRef.current.get(cacheKey);
+        } catch {
+          // Se a inflight anterior falhou, prossegue pra retry
+        }
+        return;
+      }
       setBreakdownCache((s) => ({
         ...s,
         [cacheKey]: { loading: true, per_branch: [], per_seller: [] },
@@ -2146,7 +2510,7 @@ export default function FaturamentoCanal() {
 
       // Canal virtual "fabrica" = soma de showroom + novidadesfranquia
       const fontes = canal === 'fabrica' ? FABRICA_SOURCES : [canal];
-      try {
+      const inflightPromise = (async () => {
         const results = await Promise.all(
           fontes.map((mod) =>
             apiPost('/api/crm/canal-totals', {
@@ -2156,6 +2520,12 @@ export default function FaturamentoCanal() {
             }).catch(() => null),
           ),
         );
+        return results;
+      })();
+      breakdownInflightRef.current.set(cacheKey, inflightPromise);
+      try {
+        const results = await inflightPromise;
+        if (!results || !Array.isArray(results)) throw new Error('no results');
         // Merge per_branch e per_seller dos múltiplos canais
         const mergedBranch = new Map();
         const mergedSeller = new Map();
@@ -2214,6 +2584,9 @@ export default function FaturamentoCanal() {
           ...s,
           [cacheKey]: { loading: false, per_branch: [], per_seller: [] },
         }));
+      } finally {
+        // Cleanup do inflight (importante pra próximo fetch funcionar)
+        breakdownInflightRef.current.delete(cacheKey);
       }
     },
     [selectedWeekKey, selectedMonthKey, breakdownCache],
@@ -2290,18 +2663,66 @@ export default function FaturamentoCanal() {
 
   const buscarVendedores = useCallback(async () => {
     if (!dataInicio || !dataFim) return;
-    setLoadingVend(true);
-    setErro('');
+
+    // ─── Stale-while-revalidate ──────────────────────────────────────────
+    // Salva último resultado em localStorage. Próxima abertura mostra dados
+    // antigos INSTANTANEAMENTE enquanto busca fresco em background.
+    //   - TTL stale: 24h pra datas passadas, 1h pra mês corrente
+    //   - Mostra indicador "atualizando..." quando exibe stale
+    const cacheKey = `canais-totals-all:v1:${dataInicio}:${dataFim}`;
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const isRealtime = dataFim >= todayIso;
+    const staleTtlMs = isRealtime ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+
+    // 1) Tenta usar cache stale
+    let hasStale = false;
     try {
-      // Usa o mesmo endpoint TOTVS para todos os canais (sem Supabase)
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        const age = Date.now() - (cached?.ts || 0);
+        if (age < staleTtlMs && cached?.data) {
+          setVendedores([]);
+          setRankingFat({ ...cached.data, _stale: true, _staleAge: age });
+          hasStale = true;
+        }
+      }
+    } catch {}
+
+    // 2) Busca fresh — sempre, mas com loading só se não tem stale
+    if (!hasStale) {
+      setLoadingVend(true);
+    }
+    setErro('');
+
+    try {
       const res = await apiPost('/api/crm/canais-totals-all', {
         datemin: dataInicio,
         datemax: dataFim,
       });
-      setVendedores([]); // não precisa mais de dados por vendedor individual
+      setVendedores([]);
       setRankingFat(res ?? null);
+      // Salva no cache pra próxima visita
+      try {
+        localStorage.setItem(
+          cacheKey,
+          JSON.stringify({ ts: Date.now(), data: res }),
+        );
+        // Limpeza: mantém máx 6 entradas
+        const keys = Object.keys(localStorage).filter((k) =>
+          k.startsWith('canais-totals-all:v1:'),
+        );
+        if (keys.length > 6) {
+          keys.slice(0, keys.length - 6).forEach((k) => localStorage.removeItem(k));
+        }
+      } catch {}
     } catch (e) {
-      setErro('Erro ao buscar dados: ' + e.message);
+      // Se temos stale e falhou o refresh, mantém stale (apenas remove flag)
+      if (!hasStale) {
+        setErro('Erro ao buscar dados: ' + e.message);
+      } else {
+        console.warn('[buscarVendedores] refresh falhou, mantendo stale:', e.message);
+      }
     } finally {
       setLoadingVend(false);
     }
@@ -2682,9 +3103,28 @@ export default function FaturamentoCanal() {
                   {(custoWpp || custoAds || erroMeta) && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-2 lg:gap-3 min-w-0 lg:min-w-[440px]">
                       {custoWpp && (
-                        <div className="bg-yellow-500/10 backdrop-blur-sm border border-yellow-400/20 rounded-lg p-3 text-left">
-                          <p className="text-[10px] text-yellow-200/80 uppercase tracking-wider font-medium mb-1">
-                            WhatsApp API
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            // Não abre o modal quando o clique foi em um <details>/<summary>
+                            if (e.target.closest('details, summary')) return;
+                            setModalWppDetail(true);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setModalWppDetail(true);
+                            }
+                          }}
+                          className="bg-yellow-500/10 hover:bg-yellow-500/20 backdrop-blur-sm border border-yellow-400/20 hover:border-yellow-400/40 rounded-lg p-3 text-left transition-colors cursor-pointer group"
+                          title="Clique para ver o gasto por número"
+                        >
+                          <p className="text-[10px] text-yellow-200/80 uppercase tracking-wider font-medium mb-1 flex items-center justify-between gap-2">
+                            <span>WhatsApp API</span>
+                            <span className="text-[9px] text-yellow-300/60 group-hover:text-yellow-200 normal-case tracking-normal font-normal">
+                              ver por número →
+                            </span>
                           </p>
                           <p className="text-base font-bold text-yellow-200">
                             R${' '}
@@ -2900,30 +3340,31 @@ export default function FaturamentoCanal() {
                     </div>
                   )}
 
-                  {resultado.credev_total > 0 && (
-                    <div className="grid grid-cols-2 gap-2 lg:gap-3">
-                      <div className="bg-rose-500/10 backdrop-blur-sm border border-rose-400/20 rounded-lg p-3">
-                        <p className="text-[10px] text-rose-200/80 uppercase tracking-wider font-medium mb-1">
-                          Devoluções (Credev)
-                        </p>
-                        <p className="text-xl font-bold text-rose-300">
-                          — R$ {formatBRL(resultado.credev_total)}
-                        </p>
+                  {resultado.credev_total > 0 && (() => {
+                    const liquido =
+                      resultado.total_liquido ??
+                      resultado.total - resultado.credev_total;
+                    return (
+                      <div className="flex flex-col gap-2 min-w-0">
+                        <div className="bg-rose-500/10 backdrop-blur-sm border border-rose-400/20 rounded-lg px-3 py-2 min-w-0">
+                          <p className="text-[10px] text-rose-200/80 uppercase tracking-wider font-medium mb-0.5">
+                            Devoluções (Credev)
+                          </p>
+                          <p className="text-lg font-bold text-rose-300 tabular-nums leading-tight whitespace-nowrap">
+                            − R$ {formatBRL(resultado.credev_total)}
+                          </p>
+                        </div>
+                        <div className="bg-emerald-500/10 backdrop-blur-sm border border-emerald-400/20 rounded-lg px-3 py-2 min-w-0">
+                          <p className="text-[10px] text-emerald-200/80 uppercase tracking-wider font-medium mb-0.5">
+                            Faturamento Líquido
+                          </p>
+                          <p className="text-lg font-bold text-emerald-300 tabular-nums leading-tight whitespace-nowrap">
+                            R$ {formatBRL(liquido)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="bg-emerald-500/10 backdrop-blur-sm border border-emerald-400/20 rounded-lg p-3">
-                        <p className="text-[10px] text-emerald-200/80 uppercase tracking-wider font-medium mb-1">
-                          Faturamento Líquido
-                        </p>
-                        <p className="text-xl font-bold text-emerald-300">
-                          R${' '}
-                          {formatBRL(
-                            resultado.total_liquido ??
-                              resultado.total - resultado.credev_total,
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               </CardContent>
             </Card>
@@ -2938,6 +3379,10 @@ export default function FaturamentoCanal() {
                       onClick={() => setModalCanal(item.canal)}
                     />
                   ))}
+                  {/* Card BlueCard — cartões enviados via ClickUp no período */}
+                  <BlueCardCard count={bluecardCount} />
+                  {/* Card BlueCred — créditos enviados via Autentique no período */}
+                  <BlueCredCard stats={bluecredStats} />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -3334,9 +3779,10 @@ export default function FaturamentoCanal() {
         )}
 
         {/* ══════════════════ ABA: MÉTRICAS POR CANAL ══════════════════ */}
+        {/* Renderiza se temos rankingFat (mesmo que stale + carregando em background) */}
         {aba === 'vendedores' &&
           rankingFat &&
-          !loadingVend &&
+          (!loadingVend || rankingFat?._stale) &&
           (() => {
             // Dados 100% TOTVS: rankingFat = { segmentos, segmentosQty, segmentosItens, total }
             const segs = rankingFat.segmentos || {};
@@ -3392,17 +3838,23 @@ export default function FaturamentoCanal() {
               }
               orderWithFabrica.push(c);
             }
-            const canaisMeta = orderWithFabrica.filter(
-              (c) =>
-                canaisMetaSet.has(c) ||
-                c === 'fabrica' ||
-                (metaData.fat?.mensal?.[c] ?? 0) > 0 ||
-                (metaData.fat?.semanal?.[c] ?? 0) > 0,
-            );
+            const canaisMeta = orderWithFabrica.filter((c) => {
+              // Inclui se tem meta cadastrada (semanal ou mensal)
+              if (canaisMetaSet.has(c)) return true;
+              // Inclui se tem fat real no período (mensal ou semanal)
+              if ((metaData.fat?.mensal?.[c] ?? 0) > 0) return true;
+              if ((metaData.fat?.semanal?.[c] ?? 0) > 0) return true;
+              // 'fabrica' (virtual) só aparece se tem fat consolidado
+              // (showroom+novidadesfranquia) — evita linha órfã com tudo "—"
+              return false;
+            });
 
             const pctColor = (pct) => {
-              if (pct >= 100) return 'text-emerald-600 bg-emerald-50';
-              if (pct >= 70) return 'text-amber-600 bg-amber-50';
+              // Usa o mesmo arredondamento do label (toFixed(1)) pra evitar
+              // "100.0% amarelo" quando o valor real é 99.95
+              const p = Math.round((pct || 0) * 10) / 10;
+              if (p >= 100) return 'text-emerald-600 bg-emerald-50';
+              if (p >= 70) return 'text-amber-600 bg-amber-50';
               return 'text-rose-600 bg-rose-50';
             };
 
@@ -3475,13 +3927,27 @@ export default function FaturamentoCanal() {
                               />
                             </div>
                             <div>
-                              <div className="flex items-center gap-2 mb-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
                                 <p className="text-[11px] text-blue-200 font-semibold uppercase tracking-wider">
                                   Métricas por Canal
                                 </p>
                                 <span className="text-[10px] text-blue-300/70 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-400/20">
                                   TOTVS
                                 </span>
+                                {rankingFat?._stale && loadingVend && (
+                                  <span className="text-[10px] inline-flex items-center gap-1 text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-400/20">
+                                    <Spinner size={9} className="animate-spin" />
+                                    atualizando…
+                                  </span>
+                                )}
+                                {rankingFat?._stale && !loadingVend && (
+                                  <span
+                                    className="text-[10px] inline-flex items-center gap-1 text-amber-200 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-400/20 cursor-help"
+                                    title={`Dados de cache local (${Math.floor((rankingFat._staleAge || 0) / 1000 / 60)}min atrás). Atualização em background falhou — clique em Buscar pra tentar de novo.`}
+                                  >
+                                    cache local
+                                  </span>
+                                )}
                               </div>
                               <p className="text-3xl font-bold tracking-tight bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent">
                                 R$ {formatBRL(totalGeral)}
@@ -3801,6 +4267,31 @@ export default function FaturamentoCanal() {
                                         />
                                       </div>
                                       <span className="font-semibold text-gray-800">{cfg.label || canal}</span>
+                                      {/* Tag ADIANTAMENTO: canais bruto (showroom/novidades/fabrica/bazar) que
+                                          tiveram credev em payments — credev aqui é entendido como adiantamento
+                                          de cliente (já incluso no faturamento, não subtraído). */}
+                                      {(() => {
+                                        const CANAIS_ADIANTAMENTO = new Set([
+                                          'showroom',
+                                          'novidadesfranquia',
+                                          'fabrica',
+                                          'bazar',
+                                        ]);
+                                        if (!CANAIS_ADIANTAMENTO.has(canal)) return null;
+                                        const adiantM = Number(metaData.adiantamento?.mensal?.[canal] || 0);
+                                        const adiantS = Number(metaData.adiantamento?.semanal?.[canal] || 0);
+                                        const adiantTotal = Math.max(adiantM, adiantS);
+                                        if (adiantTotal <= 0) return null;
+                                        return (
+                                          <span
+                                            className="ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-purple-100 text-purple-700 ring-1 ring-purple-200 cursor-help"
+                                            title={`Adiantamento de cliente (credev em pagamentos) — incluído no faturamento, não subtraído.\n\nMensal: R$ ${formatBRL(adiantM)}\nSemanal: R$ ${formatBRL(adiantS)}`}
+                                          >
+                                            <CurrencyDollar size={9} weight="fill" />
+                                            Adiantamento
+                                          </span>
+                                        );
+                                      })()}
                                     </div>
                                   </td>
                                   <td className="py-2.5 px-3 text-right tabular-nums text-gray-700">
@@ -3944,28 +4435,66 @@ export default function FaturamentoCanal() {
                                   s + Number(acumuladoFaltante[c]?.faltante || 0),
                                 0,
                               );
+                              const metaSTotal = sum('semanal', 'metas');
+                              const fatSTotal = sum('semanal', 'fat');
+                              const metaMTotal = sum('mensal', 'metas');
+                              const fatMTotal = sum('mensal', 'fat');
+                              // % considera o acumulado faltante somado à meta semana (mesma
+                              // lógica das linhas individuais, que usam metaSAjustada)
+                              const metaSAjustadaTotal = metaSTotal + totalAcum;
+                              const pctSTotal =
+                                metaSAjustadaTotal > 0
+                                  ? (fatSTotal / metaSAjustadaTotal) * 100
+                                  : 0;
+                              const pctMTotal =
+                                metaMTotal > 0
+                                  ? (fatMTotal / metaMTotal) * 100
+                                  : 0;
+                              const PctBadge = ({ pct }) => (
+                                <div className="inline-flex flex-col items-end gap-0.5">
+                                  <span
+                                    className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${pctColor(pct)}`}
+                                  >
+                                    {pct.toFixed(1)}%
+                                  </span>
+                                  <div className="w-20 h-1 bg-gray-200 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full transition-all ${
+                                        pct >= 100 ? 'bg-emerald-500'
+                                        : pct >= 70 ? 'bg-amber-500'
+                                        : 'bg-rose-500'
+                                      }`}
+                                      style={{ width: `${Math.min(100, pct)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              );
                               return (
                                 <tr className="border-t-2 border-gray-300 bg-gradient-to-r from-slate-50 to-gray-50">
                                   <td className="py-3 px-3 font-bold text-gray-800 uppercase text-xs tracking-wider">
                                     Total
                                   </td>
                                   <td className="py-3 px-3 text-right tabular-nums font-bold text-gray-800">
-                                    R$ {formatBRL(sum('semanal', 'metas'))}
+                                    R$ {formatBRL(metaSTotal)}
                                   </td>
                                   <td className="py-3 px-3 text-right tabular-nums font-bold text-amber-700">
                                     {totalAcum > 0 ? `+ R$ ${formatBRL(totalAcum)}` : '—'}
                                   </td>
                                   <td className="py-3 px-3 text-right tabular-nums font-bold text-gray-800">
-                                    R$ {formatBRL(sum('semanal', 'fat'))}
+                                    R$ {formatBRL(fatSTotal)}
                                   </td>
-                                  <td />
+                                  <td className="py-2.5 px-3 text-right tabular-nums">
+                                    {metaSAjustadaTotal > 0 ? <PctBadge pct={pctSTotal} /> : <span className="text-gray-300 text-xs">—</span>}
+                                  </td>
                                   <td className="py-3 px-3 text-right tabular-nums font-bold text-gray-800">
-                                    R$ {formatBRL(sum('mensal', 'metas'))}
+                                    R$ {formatBRL(metaMTotal)}
                                   </td>
                                   <td className="py-3 px-3 text-right tabular-nums font-bold text-gray-800">
-                                    R$ {formatBRL(sum('mensal', 'fat'))}
+                                    R$ {formatBRL(fatMTotal)}
                                   </td>
-                                  <td />
+                                  <td className="py-2.5 px-3 text-right tabular-nums">
+                                    {metaMTotal > 0 ? <PctBadge pct={pctMTotal} /> : <span className="text-gray-300 text-xs">—</span>}
+                                  </td>
                                   {isAdmin && <td />}
                                 </tr>
                               );
@@ -4217,6 +4746,16 @@ export default function FaturamentoCanal() {
           onClose={() => setModalCanal(null)}
           custoAds={custoAds}
           custoWpp={custoWpp}
+        />
+      )}
+
+      {/* Modal: gasto WhatsApp por número/conta */}
+      {modalWppDetail && custoWpp && (
+        <ModalWhatsappPorNumero
+          custoWpp={custoWpp}
+          dataInicio={dataInicio}
+          dataFim={dataFim}
+          onClose={() => setModalWppDetail(false)}
         />
       )}
 
