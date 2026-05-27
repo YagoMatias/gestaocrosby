@@ -28,6 +28,22 @@ import { installTotvsTracker } from './services/totvsAxiosInterceptor.js';
 // Instala interceptor que rastreia chamadas TOTVS (antes de qualquer rota)
 installTotvsTracker();
 
+// ─── Safety net global ─────────────────────────────────────────────────
+// Evita que erros não-tratados (ex: pg.Pool 'error', websocket reconnect,
+// timer rejeitado) DERRUBEM o processo Node inteiro. Em produção, queremos
+// log + continuar — não crashar e perder todas as requests em vôo.
+process.on('uncaughtException', (err, origin) => {
+  console.error(
+    `🚨 [uncaughtException] ${origin}:`,
+    err?.message || err,
+    err?.stack?.split('\n').slice(0, 3).join('\n') || '',
+  );
+});
+process.on('unhandledRejection', (reason, promise) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  console.error(`🚨 [unhandledRejection]`, msg);
+});
+
 import {
   asyncHandler,
   successResponse,
