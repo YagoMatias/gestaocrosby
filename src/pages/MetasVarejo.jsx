@@ -3014,18 +3014,12 @@ const MetasVarejo = () => {
     if (rankingTipo === 'lojas') {
       dados = dados.filter((item) => {
         const nomeFantasia = item.nome_fantasia?.toUpperCase() || '';
+        // Franquia = nome começa/contém "FRANQUIA" (ex: "FRANQUIA MANGABEIRA").
+        // Próprias = todo o resto (lojas CROSBY próprias).
+        const isFranquia = nomeFantasia.includes('FRANQUIA');
 
-        if (tipoLoja === 'Franquias') {
-          const isFranquia = nomeFantasia.includes('F0');
-          return isFranquia;
-        }
-
-        if (tipoLoja === 'Proprias') {
-          const isFranquia =
-            nomeFantasia.includes('-') || nomeFantasia.includes('- CROSBY');
-          return !isFranquia;
-        }
-
+        if (tipoLoja === 'Franquias') return isFranquia;
+        if (tipoLoja === 'Proprias') return !isFranquia;
         return true; // 'Todos'
       });
     }
@@ -4796,24 +4790,11 @@ const MetasVarejo = () => {
                         })
                         // Filtrar por tipo de loja
                         .filter((loja) => {
-                          const nomeLoja = loja.nome;
-
-                          if (tipoLoja === 'Franquias') {
-                            // Considerar franquia se o nome contém "F0" (padrão de código de franquia)
-                            const isFranquia = nomeLoja.includes('F0');
-                            console.log('É franquia?', isFranquia);
-                            return isFranquia;
-                          }
-
-                          if (tipoLoja === 'Proprias') {
-                            // Considerar própria se o nome NÃO contém "F0"
-                            const isFranquia =
-                              nomeLoja.includes('-') ||
-                              nomeLoja.includes('- CROSBY');
-                            console.log('É própria?', !isFranquia);
-                            return !isFranquia;
-                          }
-
+                          const nomeLoja = (loja.nome || '').toUpperCase();
+                          // Franquia = nome contém "FRANQUIA". Própria = resto.
+                          const isFranquia = nomeLoja.includes('FRANQUIA');
+                          if (tipoLoja === 'Franquias') return isFranquia;
+                          if (tipoLoja === 'Proprias') return !isFranquia;
                           return true; // 'Todos'
                         })
                         .sort((a, b) => b.faturamento - a.faturamento); // Ordenar por faturamento
@@ -5592,24 +5573,11 @@ const MetasVarejo = () => {
                               })
                               // Filtrar por tipo de loja
                               .filter((loja) => {
-                                const nomeLoja = loja.nome;
-
-                                if (tipoLoja === 'Franquias') {
-                                  // Considerar franquia se o nome contém "F0" (padrão de código de franquia)
-                                  const isFranquia = nomeLoja.includes('F0');
-                                  console.log('É franquia?', isFranquia);
-                                  return isFranquia;
-                                }
-
-                                if (tipoLoja === 'Proprias') {
-                                  // Considerar própria se o nome NÃO contém "F0"
-                                  const isFranquia =
-                                    nomeLoja.includes('-') ||
-                                    nomeLoja.includes('- CROSBY');
-                                  console.log('É própria?', !isFranquia);
-                                  return !isFranquia;
-                                }
-
+                                const nomeLoja = (loja.nome || '').toUpperCase();
+                                // Franquia = nome contém "FRANQUIA". Própria = resto.
+                                const isFranquia = nomeLoja.includes('FRANQUIA');
+                                if (tipoLoja === 'Franquias') return isFranquia;
+                                if (tipoLoja === 'Proprias') return !isFranquia;
                                 return true; // 'Todos'
                               })
                               .sort((a, b) => b.faturamento - a.faturamento) // Ordenar por faturamento
