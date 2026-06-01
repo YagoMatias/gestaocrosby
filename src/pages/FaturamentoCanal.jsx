@@ -49,6 +49,9 @@ import PromessaSemanal from '../components/forecast/PromessaSemanal';
 import PromessaMensal from '../components/forecast/PromessaMensal';
 import PromessaVendedores from '../components/forecast/PromessaVendedores';
 import ComparativoAnual from '../components/forecast/ComparativoAnual';
+import FaturamentoOntemCanal from '../components/forecast/FaturamentoOntemCanal';
+import { supabase } from '../lib/supabase';
+import VendedoresMensal from '../components/forecast/VendedoresMensal';
 import PlanejamentoMensalModal from '../components/forecast/PlanejamentoMensalModal';
 import HistoricoMetasModal from '../components/forecast/HistoricoMetasModal';
 
@@ -206,14 +209,28 @@ function weekOptions({ before = 6, after = 1 } = {}) {
 
 // Gera opções de meses
 function monthOptions({ before = 11, after = 1 } = {}) {
+  const MESES_CURTOS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const out = [];
   const now = new Date();
+  const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
   for (let i = before; i >= -after; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    out.push({ key, label: key });
+    let label = `${MESES_CURTOS[d.getMonth()]}/${d.getFullYear()}`;
+    if (key === curKey) label += ' (atual)';
+    else if (key === lastKey) label += ' (passado)';
+    out.push({ key, label });
   }
   return out;
+}
+
+// Calcula a key do mês anterior ao atual (YYYY-MM).
+function lastMonthKey() {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 function formatBRLCompact(value) {
@@ -1078,10 +1095,78 @@ function ModalTransacoes({
 // Drill-down do canal: mostra per_branch (varejo) ou per_seller (outros)
 // dentro da tabela Faturamento × Meta quando o usuário clica na linha.
 // ═══════════════════════════════════════════════════════════════════
-function CanalDrillDown({ canal, cfg, periodo, setPeriodo, data, formatBRL }) {
+function CanalDrillDown({ canal, cfg, periodo, setPeriodo, data, formatBRL, monthKey }) {
   const Icon = cfg?.icon || ChartBar;
   const isVarejo = canal === 'varejo';
   const lista = isVarejo ? data?.per_branch : data?.per_seller;
+
+  // Metas por loja — puxa de metas_mensais_calculadas (cada linha tem
+  // bronze/prata/ouro/diamante já como números). Fallback: se monthKey atual
+  // não tiver, usa o mais recente disponível (≤ monthKey). Tier OURO é o
+  // padrão para o cálculo de % Meta.
+  const [metasLojas, setMetasLojas] = React.useState({});
+  const [metasMesUsado, setMetasMesUsado] = React.useState(null);
+  React.useEffect(() => {
+    if (!isVarejo || !monthKey) return;
+    let cancelado = false;
+    (async () => {
+      // Primeiro tenta o mês exato
+      let { data: rows } = await supabase
+        .from('metas_mensais_calculadas')
+        .select('nome, bronze, prata, ouro, diamante, mes')
+        .eq('tipo', 'lojas')
+        .eq('mes', monthKey);
+
+      // Fallback: pega o mais recente ≤ monthKey
+      if (!rows || rows.length === 0) {
+        const { data: maisRecente } = await supabase
+          .from('metas_mensais_calculadas')
+          .select('mes')
+          .eq('tipo', 'lojas')
+          .lte('mes', monthKey)
+          .order('mes', { ascending: false })
+          .limit(1);
+        const mesFb = maisRecente?.[0]?.mes;
+        if (mesFb) {
+          const r = await supabase
+            .from('metas_mensais_calculadas')
+            .select('nome, bronze, prata, ouro, diamante, mes')
+            .eq('tipo', 'lojas')
+            .eq('mes', mesFb);
+          rows = r.data || [];
+        }
+      }
+      if (cancelado) return;
+
+      const map = {};
+      let mesEfetivo = null;
+      for (const r of rows || []) {
+        const k = String(r.nome || '').toUpperCase().trim();
+        map[k] = {
+          bronze: Number(r.bronze || 0),
+          prata: Number(r.prata || 0),
+          ouro: Number(r.ouro || 0),
+          diamante: Number(r.diamante || 0),
+        };
+        mesEfetivo = r.mes;
+      }
+      setMetasLojas(map);
+      setMetasMesUsado(mesEfetivo);
+    })();
+    return () => { cancelado = true; };
+  }, [isVarejo, monthKey]);
+  const getMetaLoja = (nome) => {
+    const k = String(nome || '').toUpperCase().trim();
+    return metasLojas[k] || null;
+  };
+  const tierAtingido = (valor, m) => {
+    if (!m) return null;
+    if (m.diamante > 0 && valor >= m.diamante) return { nome: 'Diamante', cor: 'text-cyan-700 bg-cyan-50 ring-cyan-200' };
+    if (m.ouro > 0 && valor >= m.ouro)         return { nome: 'Ouro',     cor: 'text-amber-700 bg-amber-50 ring-amber-200' };
+    if (m.prata > 0 && valor >= m.prata)       return { nome: 'Prata',    cor: 'text-slate-600 bg-slate-50 ring-slate-200' };
+    if (m.bronze > 0 && valor >= m.bronze)     return { nome: 'Bronze',   cor: 'text-orange-700 bg-orange-50 ring-orange-200' };
+    return null;
+  };
   const totalValor = (lista || []).reduce((s, x) => s + Number(x.invoice_value || 0), 0);
   const ticketTotal = (lista || []).reduce((s, x) => s + Number(x.invoice_qty || 0), 0);
   const top1 = lista?.[0];
@@ -1144,6 +1229,16 @@ function CanalDrillDown({ canal, cfg, periodo, setPeriodo, data, formatBRL }) {
               }`}
             >
               Mês
+            </button>
+            <button
+              onClick={() => setPeriodo('anual')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                periodo === 'anual'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              Ano
             </button>
           </div>
         </div>
@@ -1234,6 +1329,26 @@ function CanalDrillDown({ canal, cfg, periodo, setPeriodo, data, formatBRL }) {
                   <th className="py-2 px-2 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider hidden lg:table-cell">
                     PA
                   </th>
+                  {isVarejo && (
+                    <>
+                      <th
+                        className="py-2 px-2 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider hidden md:table-cell"
+                        title={metasMesUsado && metasMesUsado !== monthKey
+                          ? `Meta de ${metasMesUsado} (mês atual ${monthKey} sem cadastro — fallback)`
+                          : `Meta de ${monthKey || 'mês atual'}`}
+                      >
+                        Meta Ouro
+                        {metasMesUsado && metasMesUsado !== monthKey && (
+                          <span className="ml-1 text-[8px] font-normal text-amber-600 normal-case">
+                            ({metasMesUsado})
+                          </span>
+                        )}
+                      </th>
+                      <th className="py-2 px-2 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider min-w-[90px]">
+                        % Meta
+                      </th>
+                    </>
+                  )}
                   <th className="py-2 px-2 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider min-w-[110px]">
                     Distribuição
                   </th>
@@ -1293,6 +1408,38 @@ function CanalDrillDown({ canal, cfg, periodo, setPeriodo, data, formatBRL }) {
                           {(row.pa || 0).toFixed(2)}
                         </span>
                       </td>
+                      {isVarejo && (() => {
+                        const m = getMetaLoja(row.branch_name);
+                        const metaOuro = m?.ouro || 0;
+                        const pctMeta = metaOuro > 0 ? (valor / metaOuro) * 100 : 0;
+                        const tier = tierAtingido(valor, m);
+                        const corPct =
+                          pctMeta >= 100 ? 'text-emerald-700 bg-emerald-50' :
+                          pctMeta >= 70  ? 'text-amber-700 bg-amber-50' :
+                          pctMeta > 0    ? 'text-rose-700 bg-rose-50' :
+                          'text-gray-400 bg-gray-50';
+                        return (
+                          <>
+                            <td className="py-2 px-2 text-right tabular-nums hidden md:table-cell">
+                              {metaOuro > 0
+                                ? <span className="text-amber-700 font-medium">R$ {formatBRL(metaOuro)}</span>
+                                : <span className="text-gray-300">—</span>}
+                            </td>
+                            <td className="py-2 px-2">
+                              <div className="flex flex-col items-end gap-0.5">
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold tabular-nums ${corPct}`}>
+                                  {metaOuro > 0 ? `${pctMeta.toFixed(1)}%` : '—'}
+                                </span>
+                                {tier && (
+                                  <span className={`inline-flex items-center text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ring-1 ${tier.cor}`}>
+                                    {tier.nome}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </>
+                        );
+                      })()}
                       <td className="py-2 px-2">
                         <div className="flex items-center gap-2 justify-end">
                           <span className="text-gray-700 font-bold tabular-nums w-10 text-right text-xs">
@@ -2210,7 +2357,7 @@ export default function FaturamentoCanal() {
       datemax: weekRangeRaw.datemax < todayIso ? weekRangeRaw.datemax : todayIso,
     };
 
-    const fatCacheKey = `fmetas-fat:v2:${monthKey}:${weekKey}`;
+    const fatCacheKey = `fmetas-fat:v4-rev:${monthKey}:${weekKey}`;
     const FAT_CACHE_TTL = 5 * 60 * 1000; // 5 min
 
     // ── PASSO 1: tenta usar cache local de FAT (stale-while-revalidate) ──
@@ -2324,9 +2471,13 @@ export default function FaturamentoCanal() {
 
     // ── PASSO 5: busca FAT fresh em background ──
     try {
+      // lite=true → pula PASS 0 (credev em payments, full FIS_NFITEMPROD scan).
+      // Anti-sobrecarga TOTVS: o card de Faturamento × Meta carrega em segundos
+      // sem disparar o full scan. Líquido fica levemente inflado mas o ganho
+      // de não bloquear o usuário vale a pena.
       const [fatM, fatS] = await Promise.all([
-        apiPost('/api/crm/faturamento-por-segmento', monthRange),
-        apiPost('/api/crm/faturamento-por-segmento', weekRange),
+        apiPost('/api/crm/faturamento-por-segmento?lite=true', { ...monthRange, lite: true }),
+        apiPost('/api/crm/faturamento-por-segmento?lite=true', { ...weekRange, lite: true }),
       ]);
       if (isStale()) return;
       composeAndSet(metasMRes, metasSRes, fatM, fatS, false);
@@ -2338,11 +2489,11 @@ export default function FaturamentoCanal() {
         );
         // Limpa caches de versões antigas (mantém só v2)
         Object.keys(localStorage)
-          .filter((k) => k.startsWith('fmetas-fat:') && !k.startsWith('fmetas-fat:v2:'))
+          .filter((k) => k.startsWith('fmetas-fat:') && !k.startsWith('fmetas-fat:v4-rev:'))
           .forEach((k) => localStorage.removeItem(k));
         // Limpa entradas v2 antigas (mantém só 4)
         const keys = Object.keys(localStorage).filter((k) =>
-          k.startsWith('fmetas-fat:v2:'),
+          k.startsWith('fmetas-fat:v4-rev:'),
         );
         if (keys.length > 4) {
           keys.slice(0, keys.length - 4).forEach((k) =>
@@ -2399,9 +2550,10 @@ export default function FaturamentoCanal() {
               `${API_BASE_URL}/api/crm/canal-metas?period_type=semanal&period_key=${w.key}`,
               { headers: { 'x-api-key': API_KEY } },
             ).then((r) => r.json()),
-            apiPost('/api/crm/faturamento-por-segmento', {
+            apiPost('/api/crm/faturamento-por-segmento?lite=true', {
               datemin: w.datemin,
               datemax: dmax,
+              lite: true,
             }),
           ]);
           const metas = {};
@@ -2463,7 +2615,8 @@ export default function FaturamentoCanal() {
   // → timeout em cascata. Com delay, o acumulado começa quando a UI já tem
   // dados primários, e o cache TOTVS já cobre algumas chamadas.
   useEffect(() => {
-    if (aba !== 'vendedores') return;
+    // Carrega acumulado em qualquer aba (Faturamento × Meta pode renderizar
+    // em outras tabs). Atrasa 3s pra deixar metas/fat primários carregarem.
     const id = setTimeout(() => {
       loadAcumuladoFaltante();
     }, 3000);
@@ -2474,16 +2627,24 @@ export default function FaturamentoCanal() {
   // Carrega breakdown (per_branch ou per_seller) de um canal para o período
   // selecionado. Cacheia para evitar refetch ao alternar canais.
   const loadCanalBreakdown = useCallback(
-    async (canal, periodo /* 'semanal' | 'mensal' */) => {
+    async (canal, periodo /* 'semanal' | 'mensal' | 'anual' */) => {
       const cacheKey = `${canal}|${periodo}|${selectedWeekKey}|${selectedMonthKey}`;
-      // Range = semana ou mês selecionado
+      // Range = semana, mês ou ano selecionado
       let range;
+      const todayIso = new Date().toISOString().slice(0, 10);
       if (periodo === 'semanal') {
         range = weekKeyRange(selectedWeekKey) || currentWeekRange();
+      } else if (periodo === 'anual') {
+        // Ano atual: 01/jan/(ano corrente) → hoje. Sempre usa o ano do
+        // calendário (não do mês filtrado), pra refletir a visão YTD real.
+        const anoAtual = new Date().getFullYear();
+        range = {
+          datemin: `${anoAtual}-01-01`,
+          datemax: todayIso,
+        };
       } else {
         const monthKey = selectedMonthKey || currentMonthKey();
         const [mY, mM] = monthKey.split('-').map(Number);
-        const todayIso = new Date().toISOString().slice(0, 10);
         const monthFirst = `${mY}-${String(mM).padStart(2, '0')}-01`;
         const lastDay = new Date(mY, mM, 0).getDate();
         const monthLast = `${mY}-${String(mM).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
@@ -2511,12 +2672,17 @@ export default function FaturamentoCanal() {
       // Canal virtual "fabrica" = soma de showroom + novidadesfranquia
       const fontes = canal === 'fabrica' ? FABRICA_SOURCES : [canal];
       const inflightPromise = (async () => {
+        // lite=true → pula PASS 0 (credev em payments, FIS_NFITEMPROD scan).
+        // Drill-down precisa ser rápido (clique do usuário). Líquido fica
+        // levemente inflado mas a tabela mostra "% do canal" relativo (não
+        // afeta a distribuição entre lojas/vendedores).
         const results = await Promise.all(
           fontes.map((mod) =>
-            apiPost('/api/crm/canal-totals', {
+            apiPost('/api/crm/canal-totals?lite=true', {
               datemin: range.datemin,
               datemax: range.datemax,
               modulo: mod,
+              lite: true,
             }).catch(() => null),
           ),
         );
@@ -2567,6 +2733,43 @@ export default function FaturamentoCanal() {
             pa: b.invoice_qty > 0 ? b.itens_qty / b.invoice_qty : 0,
           }))
           .sort((a, b) => b.invoice_value - a.invoice_value);
+        // ─── Subtrai credev por vendedor ─────────────────────────────────
+        // Como o canal-totals está em modo lite (pula credev em payments
+        // pra não bloquear), aqui chamamos /credev-por-vendedor que é mais
+        // leve que o full canal-totals. Resultado: per_seller fica LÍQUIDO.
+        // Canais sem vendedores (showroom/fabrica/etc) não tem credev por
+        // dealer, então pulamos.
+        const canaisComVendedor = new Set(['revenda', 'multimarcas', 'inbound_david', 'inbound_rafael', 'varejo']);
+        const fontesComVendedor = fontes.filter((m) => canaisComVendedor.has(m));
+        const credevByDealer = {};
+        if (fontesComVendedor.length > 0) {
+          try {
+            const credevResults = await Promise.all(
+              fontesComVendedor.map((mod) =>
+                apiPost('/api/crm/credev-por-vendedor', {
+                  datemin: range.datemin,
+                  datemax: range.datemax,
+                  modulo: mod,
+                }).catch(() => null),
+              ),
+            );
+            for (const cr of credevResults) {
+              for (const [code, v] of Object.entries(cr?.credev || {})) {
+                credevByDealer[String(code)] = (credevByDealer[String(code)] || 0) + Number(v || 0);
+              }
+            }
+          } catch {}
+        }
+        // payments-mode atribui credev ao dealer correto (vendedor real),
+        // diferente do returns-mode que bucketa tudo em GERAL=50. Confirmado
+        // com relatório TOTVS 0326 (Vl. Faturado por vendedor).
+        for (const [k, s] of mergedSeller.entries()) {
+          const cr = credevByDealer[String(s.seller_code)] || 0;
+          s.credev_value = cr;
+          s.invoice_value_gross = s.invoice_value;
+          s.invoice_value = Math.max(0, s.invoice_value - cr);
+        }
+
         const per_seller = [...mergedSeller.values()]
           .map((s) => ({
             ...s,
@@ -2653,11 +2856,11 @@ export default function FaturamentoCanal() {
     [isAdmin, userRole, userLogin, selectedWeekKey, selectedMonthKey],
   );
 
-  // Carrega meta quando a aba 'vendedores' é aberta OU quando muda período
+  // Carrega meta sempre que o período muda. Era condicionado ao aba===vendedores,
+  // mas o card "Faturamento × Meta" pode ficar visível em outras abas e precisa
+  // dos dados atualizados. Sem isso, clicar "Mês passado" deixava Meta Mês em "—".
   useEffect(() => {
-    if (aba === 'vendedores') {
-      loadMetaData();
-    }
+    loadMetaData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aba, selectedWeekKey, selectedMonthKey]);
 
@@ -2669,7 +2872,7 @@ export default function FaturamentoCanal() {
     // antigos INSTANTANEAMENTE enquanto busca fresco em background.
     //   - TTL stale: 24h pra datas passadas, 1h pra mês corrente
     //   - Mostra indicador "atualizando..." quando exibe stale
-    const cacheKey = `canais-totals-all:v1:${dataInicio}:${dataFim}`;
+    const cacheKey = `canais-totals-all:v3-rev:${dataInicio}:${dataFim}`;
     const todayIso = new Date().toISOString().slice(0, 10);
     const isRealtime = dataFim >= todayIso;
     const staleTtlMs = isRealtime ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
@@ -2696,9 +2899,14 @@ export default function FaturamentoCanal() {
     setErro('');
 
     try {
-      const res = await apiPost('/api/crm/canais-totals-all', {
+      // lite=true → pula a query mais pesada (credev em payments). Ganho
+      // gigante de performance e zero risco de bloqueio TOTVS. O líquido fica
+      // levemente inflado (sem subtrair credev em payments), mas continua
+      // descontando devolução real (SaleReturns) e exclusões (Recife Mall).
+      const res = await apiPost('/api/crm/canais-totals-all?lite=true', {
         datemin: dataInicio,
         datemax: dataFim,
+        lite: true,
       });
       setVendedores([]);
       setRankingFat(res ?? null);
@@ -2710,7 +2918,7 @@ export default function FaturamentoCanal() {
         );
         // Limpeza: mantém máx 6 entradas
         const keys = Object.keys(localStorage).filter((k) =>
-          k.startsWith('canais-totals-all:v1:'),
+          k.startsWith('canais-totals-all:v3-rev:'),
         );
         if (keys.length > 6) {
           keys.slice(0, keys.length - 6).forEach((k) => localStorage.removeItem(k));
@@ -2814,6 +3022,27 @@ export default function FaturamentoCanal() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aba]);
+
+  // Quando o range geral (dataInicio/dataFim) muda (ex: ao clicar "Mês passado"),
+  // refaz a busca dos cards principais. Pula a chamada inicial (já feita pelo
+  // effect de mount). Inclui um pequeno debounce pra evitar re-fetch em cascata.
+  const isFirstRangeChangeRef = React.useRef(true);
+  React.useEffect(() => {
+    if (isFirstRangeChangeRef.current) {
+      isFirstRangeChangeRef.current = false;
+      return;
+    }
+    if (!dataInicio || !dataFim) return;
+    const id = setTimeout(() => {
+      // Re-fetch o canal principal (top card) e o vendedores (Métricas por Canal)
+      buscar();
+      if (aba === 'vendedores') buscarVendedores();
+      if (aba === 'comparativo') buscarComparativo();
+      if (aba === 'pagamento') buscarPagamento();
+    }, 250);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataInicio, dataFim]);
 
   const canaisOrdenados = useMemo(() => {
     if (!resultado?.segmentos) return [];
@@ -4094,11 +4323,39 @@ export default function FaturamentoCanal() {
                             ))}
                           </select>
                         </label>
+                        <button
+                          onClick={() => {
+                            const lm = lastMonthKey();
+                            setSelectedMonthKey(lm);
+                            // Atualiza também o range geral (top "Métricas por
+                            // Canal" / Faturamento) pra refletir o mês passado.
+                            const [y, m] = lm.split('-').map(Number);
+                            const inicio = `${y}-${String(m).padStart(2, '0')}-01`;
+                            const fim = new Date(y, m, 0)
+                              .toISOString()
+                              .split('T')[0]; // último dia do mês
+                            setDataInicio(inicio);
+                            setDataFim(fim);
+                          }}
+                          disabled={selectedMonthKey === lastMonthKey()}
+                          className="text-xs px-2 py-1 rounded border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Filtrar pelo mês passado (atualiza tudo: top, faturamento, métricas)"
+                        >
+                          Mês passado
+                        </button>
                         {(selectedWeekKey !== currentWeekKey() || selectedMonthKey !== currentMonthKey()) && (
                           <button
                             onClick={() => {
                               setSelectedWeekKey(currentWeekKey());
                               setSelectedMonthKey(currentMonthKey());
+                              // Reseta o range geral (top card) pra mês corrente
+                              const h = new Date();
+                              setDataInicio(
+                                new Date(h.getFullYear(), h.getMonth(), 1)
+                                  .toISOString()
+                                  .split('T')[0],
+                              );
+                              setDataFim(h.toISOString().split('T')[0]);
                             }}
                             className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50 text-gray-600"
                             title="Voltar para o período padrão (última semana completa / mês corrente)"
@@ -4141,6 +4398,15 @@ export default function FaturamentoCanal() {
                             ? 'Carregando...'
                             : 'Atualizar'}
                         </button>
+                        <a
+                          href="/apresentacao/forecast"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs px-3 py-1.5 rounded bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-semibold inline-flex items-center gap-1 shadow-sm"
+                          title="Abre versão tela cheia pra apresentação (TV/projetor)"
+                        >
+                          🖥️ Apresentação
+                        </a>
                       </div>
                     </div>
                     {!metaData.loaded && metaData.loading ? (
@@ -4152,47 +4418,62 @@ export default function FaturamentoCanal() {
                         Nenhum canal com meta ou faturamento atual.
                       </p>
                     ) : (
-                      <div className="overflow-x-auto rounded-lg border border-gray-100">
-                        <table className="w-full text-sm">
+                      <div className="rounded-lg border border-gray-100 overflow-hidden">
+                        <table className="w-full text-xs table-fixed">
+                          <colgroup>
+                            <col style={{ width: '18%' }} /> {/* Canal */}
+                            <col style={{ width: '10%' }} /> {/* Meta Sem */}
+                            <col style={{ width: '9%' }} />  {/* +Acum */}
+                            <col style={{ width: '10%' }} /> {/* Atingido S */}
+                            <col style={{ width: '8%' }} />  {/* % Sem */}
+                            <col style={{ width: '8%' }} />  {/* % Acum */}
+                            <col style={{ width: '11%' }} /> {/* Meta Mês */}
+                            <col style={{ width: '11%' }} /> {/* Atingido M */}
+                            <col style={{ width: '8%' }} />  {/* % Mês */}
+                            {isAdmin && <col style={{ width: '7%' }} />}
+                          </colgroup>
                           <thead>
-                            <tr className="bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-200">
-                              <th className="py-3 px-3 text-left text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+                            <tr className="border-b-2 border-gray-300">
+                              <th className="py-2 px-2 text-left text-[10px] font-bold text-white uppercase tracking-wider bg-slate-700">
                                 Canal
                               </th>
-                              <th className="py-3 px-3 text-right text-[11px] font-bold text-gray-600 uppercase tracking-wider" colSpan={4}>
-                                <span className="text-blue-700">Semana</span>{' '}
-                                <span className="text-gray-400 font-normal normal-case">({selectedWeekKey})</span>
+                              <th className="py-2 px-1 text-center text-[10px] font-bold text-white uppercase tracking-wider bg-blue-600" colSpan={5}>
+                                Sem{' '}
+                                <span className="text-blue-100 font-normal normal-case">({selectedWeekKey})</span>
                               </th>
-                              <th className="py-3 px-3 text-right text-[11px] font-bold text-gray-600 uppercase tracking-wider" colSpan={3}>
-                                <span className="text-indigo-700">Mês</span>{' '}
-                                <span className="text-gray-400 font-normal normal-case">({selectedMonthKey})</span>
+                              <th className="py-2 px-1 text-center text-[10px] font-bold text-white uppercase tracking-wider bg-indigo-600" colSpan={3}>
+                                Mês{' '}
+                                <span className="text-indigo-100 font-normal normal-case">({selectedMonthKey})</span>
                               </th>
-                              {isAdmin && <th className="py-3 px-3 w-12" />}
+                              {isAdmin && <th className="py-2 px-1 bg-slate-700" />}
                             </tr>
-                            <tr className="bg-gray-50 border-b border-gray-200">
-                              <th className="py-2 px-3"></th>
-                              <th className="py-2 px-3 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" title="Meta original da semana">
-                                Meta
+                            <tr className="border-b border-gray-200">
+                              <th className="py-1.5 px-2 bg-slate-100"></th>
+                              <th className="py-1.5 px-1 text-right text-[9px] font-semibold text-blue-800 uppercase tracking-wide whitespace-nowrap bg-blue-50" title="Meta original da semana">
+                                Meta Sem
                               </th>
-                              <th className="py-2 px-3 text-right text-[10px] font-semibold text-amber-700 uppercase tracking-wide whitespace-nowrap" title="Faltante acumulado das semanas anteriores no mês">
-                                + Faltante
+                              <th className="py-1.5 px-1 text-right text-[9px] font-semibold text-amber-800 uppercase tracking-wide whitespace-nowrap bg-amber-50" title="Acumulado das semanas anteriores no mês">
+                                + Acum
                               </th>
-                              <th className="py-2 px-3 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" title="Faturamento da semana">
+                              <th className="py-1.5 px-1 text-right text-[9px] font-semibold text-blue-800 uppercase tracking-wide whitespace-nowrap bg-blue-50" title="Faturamento da semana">
                                 Atingido
                               </th>
-                              <th className="py-2 px-3 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                              <th className="py-1.5 px-1 text-right text-[9px] font-semibold text-blue-800 uppercase tracking-wide bg-blue-50" title="Atingido / Meta original da semana">
                                 % Sem
                               </th>
-                              <th className="py-2 px-3 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                                Meta
+                              <th className="py-1.5 px-1 text-right text-[9px] font-semibold text-amber-800 uppercase tracking-wide bg-amber-50" title="Atingido / (Meta + Acumulado)">
+                                % Acum
                               </th>
-                              <th className="py-2 px-3 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                              <th className="py-1.5 px-1 text-right text-[9px] font-semibold text-indigo-800 uppercase tracking-wide whitespace-nowrap bg-indigo-50" title="Meta do mês">
+                                Meta Mês
+                              </th>
+                              <th className="py-1.5 px-1 text-right text-[9px] font-semibold text-indigo-800 uppercase tracking-wide bg-indigo-50">
                                 Atingido
                               </th>
-                              <th className="py-2 px-3 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                              <th className="py-1.5 px-1 text-right text-[9px] font-semibold text-indigo-800 uppercase tracking-wide bg-indigo-50">
                                 % Mês
                               </th>
-                              {isAdmin && <th className="py-2 px-3" />}
+                              {isAdmin && <th className="py-1.5 px-1 bg-slate-100" />}
                             </tr>
                           </thead>
                           <tbody>
@@ -4206,6 +4487,9 @@ export default function FaturamentoCanal() {
                               const acumInfo = acumuladoFaltante[canal];
                               const acumValor = acumInfo?.faltante || 0;
                               const metaSAjustada = metaS + acumValor;
+                              // % vs meta original da semana (sem somar acumulado)
+                              const pctSOriginal = metaS > 0 ? (fatS / metaS) * 100 : 0;
+                              // % vs meta + acumulado (meta ajustada)
                               const pctS = metaSAjustada > 0 ? (fatS / metaSAjustada) * 100 : 0;
                               const pctM = metaM > 0 ? (fatM / metaM) * 100 : 0;
                               const justifS =
@@ -4247,26 +4531,26 @@ export default function FaturamentoCanal() {
                                     }
                                   }}
                                 >
-                                  <td className="py-3 px-3 font-medium text-gray-800 relative">
+                                  <td className="py-2 px-2 font-medium text-gray-800 relative">
                                     {/* Faixa lateral colorida do canal */}
                                     <span
                                       className="absolute left-0 top-1 bottom-1 w-1 rounded-r"
                                       style={{ backgroundColor: cfg.color || '#94a3b8', opacity: isExpanded ? 1 : 0.6 }}
                                     />
-                                    <div className="inline-flex items-center gap-2 pl-2">
+                                    <div className="inline-flex items-center gap-1.5 pl-2 min-w-0">
                                       <CaretRight
-                                        size={12}
+                                        size={10}
                                         weight="bold"
-                                        className={`text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-90 text-blue-600' : 'group-hover:text-gray-600'}`}
+                                        className={`text-gray-400 transition-transform duration-200 flex-shrink-0 ${isExpanded ? 'rotate-90 text-blue-600' : 'group-hover:text-gray-600'}`}
                                       />
-                                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${cfg.bg || 'bg-gray-100'} ring-1 ring-inset ring-black/5`}>
+                                      <div className={`w-6 h-6 rounded-md flex items-center justify-center ${cfg.bg || 'bg-gray-100'} ring-1 ring-inset ring-black/5 flex-shrink-0`}>
                                         <Icon
-                                          size={15}
+                                          size={12}
                                           weight="duotone"
                                           className={cfg.text || 'text-gray-600'}
                                         />
                                       </div>
-                                      <span className="font-semibold text-gray-800">{cfg.label || canal}</span>
+                                      <span className="font-semibold text-gray-800 text-[12px] truncate">{cfg.label || canal}</span>
                                       {/* Tag ADIANTAMENTO: canais bruto (showroom/novidades/fabrica/bazar) que
                                           tiveram credev em payments — credev aqui é entendido como adiantamento
                                           de cliente (já incluso no faturamento, não subtraído). */}
@@ -4294,35 +4578,68 @@ export default function FaturamentoCanal() {
                                       })()}
                                     </div>
                                   </td>
-                                  <td className="py-2.5 px-3 text-right tabular-nums text-gray-700">
-                                    {metaS > 0 ? `R$ ${formatBRL(metaS)}` : <span className="text-gray-300">—</span>}
+                                  <td className="py-2 px-1 text-right tabular-nums text-gray-700 text-[11px]" title={metaS > 0 ? `R$ ${formatBRL(metaS)}` : ''}>
+                                    {metaS > 0 ? `R$ ${formatBRLCompact(metaS)}` : <span className="text-gray-300">—</span>}
                                   </td>
-                                  <td className="py-2.5 px-3 text-right tabular-nums">
+                                  <td className="py-2 px-1 text-right tabular-nums">
                                     {loadingAcumulado ? (
                                       <span className="text-gray-300 text-xs animate-pulse">...</span>
                                     ) : acumValor > 0 ? (
                                       <span
-                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 font-semibold text-xs cursor-help"
+                                        className="inline-flex items-center px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 font-semibold text-[10px] cursor-help"
                                         title={`Faltante acumulado de semanas anteriores no mês:\n${breakdownTooltip}\n\nMeta ajustada: R$ ${formatBRL(metaSAjustada)}`}
                                       >
-                                        + R$ {formatBRL(acumValor)}
+                                        +R$ {formatBRLCompact(acumValor)}
                                       </span>
                                     ) : (
                                       <span className="text-gray-300 text-xs">—</span>
                                     )}
                                   </td>
-                                  <td className="py-2.5 px-3 text-right tabular-nums text-gray-800 font-semibold">
-                                    {fatCell(fatS)}
+                                  <td className="py-2 px-1 text-right tabular-nums text-gray-800 font-semibold text-[11px]" title={`R$ ${formatBRL(fatS)}`}>
+                                    {isLoadingFat ? (
+                                      <span className="inline-block w-12 h-3 bg-gray-200 rounded animate-pulse" />
+                                    ) : (
+                                      <>R$ {formatBRLCompact(fatS)}</>
+                                    )}
                                   </td>
-                                  <td className="py-2.5 px-3 text-right tabular-nums">
+                                  {/* % Sem — vs meta ORIGINAL da semana */}
+                                  <td className="py-2 px-1 text-right tabular-nums">
+                                    {metaS > 0 ? (
+                                      <div className="inline-flex flex-col items-end gap-0.5">
+                                        <span
+                                          className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${pctColor(pctSOriginal)}`}
+                                          title={`Atingido R$ ${formatBRL(fatS)} / Meta R$ ${formatBRL(metaS)}`}
+                                        >
+                                          {pctSOriginal.toFixed(1)}%
+                                        </span>
+                                        <div className="w-10 h-0.5 bg-gray-200 rounded-full overflow-hidden">
+                                          <div
+                                            className={`h-full transition-all ${
+                                              pctSOriginal >= 100 ? 'bg-emerald-500'
+                                              : pctSOriginal >= 70 ? 'bg-amber-500'
+                                              : 'bg-rose-500'
+                                            }`}
+                                            style={{ width: `${Math.min(100, pctSOriginal)}%` }}
+                                          />
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <span className="text-gray-300 text-xs">—</span>
+                                    )}
+                                  </td>
+                                  {/* % Acum — vs meta + acumulado das semanas anteriores */}
+                                  <td className="py-2 px-1 text-right tabular-nums">
                                     {metaSAjustada > 0 ? (
                                       <div className="inline-flex flex-col items-end gap-0.5">
                                         <span
-                                          className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${pctColor(pctS)}`}
+                                          className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${pctColor(pctS)}`}
+                                          title={acumValor > 0
+                                            ? `Atingido R$ ${formatBRL(fatS)} / Meta+Acum R$ ${formatBRL(metaSAjustada)} (meta R$ ${formatBRL(metaS)} + acum R$ ${formatBRL(acumValor)})`
+                                            : `Igual ao % Sem (sem acumulado anterior)`}
                                         >
                                           {pctS.toFixed(1)}%
                                         </span>
-                                        <div className="w-20 h-1 bg-gray-200 rounded-full overflow-hidden">
+                                        <div className="w-10 h-0.5 bg-gray-200 rounded-full overflow-hidden">
                                           <div
                                             className={`h-full transition-all ${
                                               pctS >= 100 ? 'bg-emerald-500'
@@ -4334,10 +4651,10 @@ export default function FaturamentoCanal() {
                                         </div>
                                         {pctS < 100 && justifS && (
                                           <span
-                                            className="cursor-help text-amber-600 text-[10px]"
+                                            className="cursor-help text-amber-600 text-[9px]"
                                             title={`Justificativa: ${justifS}`}
                                           >
-                                            ℹ️ justif.
+                                            ℹ️
                                           </span>
                                         )}
                                       </div>
@@ -4345,21 +4662,21 @@ export default function FaturamentoCanal() {
                                       <span className="text-gray-300 text-xs">—</span>
                                     )}
                                   </td>
-                                  <td className="py-2.5 px-3 text-right tabular-nums text-gray-700">
-                                    {metaM > 0 ? `R$ ${formatBRL(metaM)}` : <span className="text-gray-300">—</span>}
+                                  <td className="py-2 px-1 text-right tabular-nums text-gray-700 text-[11px]" title={metaM > 0 ? `R$ ${formatBRL(metaM)}` : ''}>
+                                    {metaM > 0 ? `R$ ${formatBRLCompact(metaM)}` : <span className="text-gray-300">—</span>}
                                   </td>
-                                  <td className="py-2.5 px-3 text-right tabular-nums text-gray-800 font-semibold">
-                                    R$ {formatBRL(fatM)}
+                                  <td className="py-2 px-1 text-right tabular-nums text-gray-800 font-semibold text-[11px]" title={`R$ ${formatBRL(fatM)}`}>
+                                    R$ {formatBRLCompact(fatM)}
                                   </td>
-                                  <td className="py-2.5 px-3 text-right tabular-nums">
+                                  <td className="py-2 px-1 text-right tabular-nums">
                                     {metaM > 0 ? (
                                       <div className="inline-flex flex-col items-end gap-0.5">
                                         <span
-                                          className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${pctColor(pctM)}`}
+                                          className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${pctColor(pctM)}`}
                                         >
                                           {pctM.toFixed(1)}%
                                         </span>
-                                        <div className="w-20 h-1 bg-gray-200 rounded-full overflow-hidden">
+                                        <div className="w-10 h-0.5 bg-gray-200 rounded-full overflow-hidden">
                                           <div
                                             className={`h-full transition-all ${
                                               pctM >= 100 ? 'bg-emerald-500'
@@ -4371,7 +4688,7 @@ export default function FaturamentoCanal() {
                                         </div>
                                         {pctM < 100 && justifM && (
                                           <span
-                                            className="cursor-help text-amber-600 text-[10px]"
+                                            className="cursor-help text-amber-600 text-[9px]"
                                             title={`Justificativa: ${justifM}`}
                                           >
                                             ℹ️ justif.
@@ -4383,7 +4700,7 @@ export default function FaturamentoCanal() {
                                     )}
                                   </td>
                                   {isAdmin && (
-                                    <td className="py-2.5 px-3 text-right">
+                                    <td className="py-2 px-1 text-right">
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
@@ -4392,10 +4709,10 @@ export default function FaturamentoCanal() {
                                             label: cfg.label || canal,
                                           });
                                         }}
-                                        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                                        className="inline-flex items-center text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity"
                                         title="Editar metas"
                                       >
-                                        <Pencil size={12} />
+                                        <Pencil size={11} />
                                       </button>
                                     </td>
                                   )}
@@ -4412,6 +4729,7 @@ export default function FaturamentoCanal() {
                                         }
                                         data={breakdownData}
                                         formatBRL={formatBRL}
+                                        monthKey={selectedMonthKey || currentMonthKey()}
                                       />
                                     </td>
                                   </tr>
@@ -4450,14 +4768,17 @@ export default function FaturamentoCanal() {
                                 metaMTotal > 0
                                   ? (fatMTotal / metaMTotal) * 100
                                   : 0;
+                              // % Sem TOTAL — vs meta original (sem acumulado)
+                              const pctSOriginalTotal =
+                                metaSTotal > 0 ? (fatSTotal / metaSTotal) * 100 : 0;
                               const PctBadge = ({ pct }) => (
                                 <div className="inline-flex flex-col items-end gap-0.5">
                                   <span
-                                    className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${pctColor(pct)}`}
+                                    className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${pctColor(pct)}`}
                                   >
                                     {pct.toFixed(1)}%
                                   </span>
-                                  <div className="w-20 h-1 bg-gray-200 rounded-full overflow-hidden">
+                                  <div className="w-10 h-0.5 bg-gray-200 rounded-full overflow-hidden">
                                     <div
                                       className={`h-full transition-all ${
                                         pct >= 100 ? 'bg-emerald-500'
@@ -4471,28 +4792,31 @@ export default function FaturamentoCanal() {
                               );
                               return (
                                 <tr className="border-t-2 border-gray-300 bg-gradient-to-r from-slate-50 to-gray-50">
-                                  <td className="py-3 px-3 font-bold text-gray-800 uppercase text-xs tracking-wider">
+                                  <td className="py-2 px-2 font-bold text-gray-800 uppercase text-[10px] tracking-wider">
                                     Total
                                   </td>
-                                  <td className="py-3 px-3 text-right tabular-nums font-bold text-gray-800">
-                                    R$ {formatBRL(metaSTotal)}
+                                  <td className="py-2 px-1 text-right tabular-nums font-bold text-gray-800 text-[11px]" title={`R$ ${formatBRL(metaSTotal)}`}>
+                                    R$ {formatBRLCompact(metaSTotal)}
                                   </td>
-                                  <td className="py-3 px-3 text-right tabular-nums font-bold text-amber-700">
-                                    {totalAcum > 0 ? `+ R$ ${formatBRL(totalAcum)}` : '—'}
+                                  <td className="py-2 px-1 text-right tabular-nums font-bold text-amber-700 text-[11px]" title={totalAcum > 0 ? `R$ ${formatBRL(totalAcum)}` : ''}>
+                                    {totalAcum > 0 ? `+R$ ${formatBRLCompact(totalAcum)}` : '—'}
                                   </td>
-                                  <td className="py-3 px-3 text-right tabular-nums font-bold text-gray-800">
-                                    R$ {formatBRL(fatSTotal)}
+                                  <td className="py-2 px-1 text-right tabular-nums font-bold text-gray-800 text-[11px]" title={`R$ ${formatBRL(fatSTotal)}`}>
+                                    R$ {formatBRLCompact(fatSTotal)}
                                   </td>
-                                  <td className="py-2.5 px-3 text-right tabular-nums">
+                                  <td className="py-2 px-1 text-right tabular-nums">
+                                    {metaSTotal > 0 ? <PctBadge pct={pctSOriginalTotal} /> : <span className="text-gray-300 text-xs">—</span>}
+                                  </td>
+                                  <td className="py-2 px-1 text-right tabular-nums">
                                     {metaSAjustadaTotal > 0 ? <PctBadge pct={pctSTotal} /> : <span className="text-gray-300 text-xs">—</span>}
                                   </td>
-                                  <td className="py-3 px-3 text-right tabular-nums font-bold text-gray-800">
-                                    R$ {formatBRL(metaMTotal)}
+                                  <td className="py-2 px-1 text-right tabular-nums font-bold text-gray-800 text-[11px]" title={`R$ ${formatBRL(metaMTotal)}`}>
+                                    R$ {formatBRLCompact(metaMTotal)}
                                   </td>
-                                  <td className="py-3 px-3 text-right tabular-nums font-bold text-gray-800">
-                                    R$ {formatBRL(fatMTotal)}
+                                  <td className="py-2 px-1 text-right tabular-nums font-bold text-gray-800 text-[11px]" title={`R$ ${formatBRL(fatMTotal)}`}>
+                                    R$ {formatBRLCompact(fatMTotal)}
                                   </td>
-                                  <td className="py-2.5 px-3 text-right tabular-nums">
+                                  <td className="py-2 px-1 text-right tabular-nums">
                                     {metaMTotal > 0 ? <PctBadge pct={pctMTotal} /> : <span className="text-gray-300 text-xs">—</span>}
                                   </td>
                                   {isAdmin && <td />}
@@ -4723,7 +5047,9 @@ export default function FaturamentoCanal() {
             </div>
             <PromessaMensal />
             <PromessaSemanal />
+            <FaturamentoOntemCanal />
             <PromessaVendedores />
+            <VendedoresMensal />
             <ComparativoAnual />
           </div>
         )}

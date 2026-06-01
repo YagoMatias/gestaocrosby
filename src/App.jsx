@@ -102,6 +102,7 @@ const AnaliseCreditoMultimarcas = lazy(
 const DownloadNotificacao = lazy(() => import('./pages/DownloadNotificacao'));
 const FilaDaVez = lazy(() => import('./pages/FilaDaVez'));
 const PrintForecast = lazy(() => import('./pages/PrintForecast'));
+const ApresentacaoForecast = lazy(() => import('./pages/ApresentacaoForecast'));
 const ControleChips = lazy(() => import('./pages/ControleChips'));
 const MonitoramentoTotvs = lazy(() => import('./pages/MonitoramentoTotvs'));
 const InventarioPatrimonio = lazy(() => import('./pages/InventarioPatrimonio'));
@@ -306,6 +307,15 @@ function App() {
           element={
             <Suspense fallback={<PageLoadingFallback />}>
               <PrintForecast />
+            </Suspense>
+          }
+        />
+        {/* Pública: modo apresentação — TV/projetor, auto-refresh */}
+        <Route
+          path="/apresentacao/forecast"
+          element={
+            <Suspense fallback={<PageLoadingFallback />}>
+              <ApresentacaoForecast />
             </Suspense>
           }
         />

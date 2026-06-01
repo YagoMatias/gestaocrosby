@@ -240,7 +240,9 @@ export default function PromessaVendedores() {
   const [whatsTarget, setWhatsTarget] = useState(null);
   // mode: 'ontem' (semana atual até ontem) | 'hoje' (semana atual até hoje) |
   //       'sabado' (semana passada inteira — pra apresentar na segunda)
-  const [mode, setMode] = useState('ontem');
+  // Default 'hoje': o realizado por vendedor deve incluir as vendas de hoje
+  // (líquido até hoje) — é o valor que o gestor acompanha em tempo real.
+  const [mode, setMode] = useState('hoje');
   const cardRef = useRef(null);           // bloco inteiro (envia tudo)
   const cardRefsByCode = useRef({});      // refs individuais por card
 
