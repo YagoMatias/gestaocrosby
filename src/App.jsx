@@ -103,6 +103,10 @@ const DownloadNotificacao = lazy(() => import('./pages/DownloadNotificacao'));
 const FilaDaVez = lazy(() => import('./pages/FilaDaVez'));
 const PrintForecast = lazy(() => import('./pages/PrintForecast'));
 const ApresentacaoForecast = lazy(() => import('./pages/ApresentacaoForecast'));
+const CrosbyForm = lazy(() => import('./crosby/CrosbyForm'));
+const CrosbyObrigado = lazy(() => import('./crosby/CrosbyObrigado'));
+const BluecardLeads = lazy(() => import('./pages/BluecardLeads'));
+const ExpedicaoShowroom = lazy(() => import('./pages/ExpedicaoShowroom'));
 const ControleChips = lazy(() => import('./pages/ControleChips'));
 const MonitoramentoTotvs = lazy(() => import('./pages/MonitoramentoTotvs'));
 const InventarioPatrimonio = lazy(() => import('./pages/InventarioPatrimonio'));
@@ -139,6 +143,8 @@ PageLoadingFallback.displayName = 'PageLoadingFallback';
 
 // Lista de rotas protegidas (constante estática no módulo)
 const protectedRoutes = [
+  { path: '/bluecard/leads', component: BluecardLeads },
+  { path: '/estoque/expedicao-showroom', component: ExpedicaoShowroom },
   { path: '/tecnologia/controle-chip', component: ControleChips },
   { path: '/tecnologia/monitoramento-totvs', component: MonitoramentoTotvs },
   { path: '/tecnologia/inventario-patrimonio', component: InventarioPatrimonio },
@@ -316,6 +322,24 @@ function App() {
           element={
             <Suspense fallback={<PageLoadingFallback />}>
               <ApresentacaoForecast />
+            </Suspense>
+          }
+        />
+        {/* Pública: LP BlueCard (form de captura de leads) */}
+        <Route
+          path="/lp/bluecard"
+          element={
+            <Suspense fallback={<PageLoadingFallback />}>
+              <CrosbyForm />
+            </Suspense>
+          }
+        />
+        {/* Pública: BlueCard — página de agradecimento pós-envio */}
+        <Route
+          path="/lp/bluecard/obrigado"
+          element={
+            <Suspense fallback={<PageLoadingFallback />}>
+              <CrosbyObrigado />
             </Suspense>
           }
         />

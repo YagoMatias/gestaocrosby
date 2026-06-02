@@ -11,6 +11,8 @@ import {
   ChartLineUp,
   CheckCircle,
   Megaphone,
+  CreditCard,
+  Truck,
   Storefront,
   Buildings,
   TrendUp,
@@ -222,6 +224,12 @@ const estoqueItems = [
     icon: Package,
     color: 'text-teal-600',
   },
+  {
+    name: 'Expedição Showroom',
+    href: '/estoque/expedicao-showroom',
+    icon: Truck,
+    color: 'text-blue-700',
+  },
 ];
 
 const painelVendasItems = [
@@ -305,6 +313,36 @@ const varejo = [
     href: '/clientes-bluecred',
     icon: ClipboardText,
     color: 'text-blue-700',
+  },
+];
+
+// ── MARKETING ──
+// Marketing > BlueCard
+//   - LP pública (form de cadastro de leads): /lp/bluecard
+//   - Leads (gerenciamento): /bluecard/leads
+const marketing = [
+  {
+    name: 'BlueCard',
+    href: '#',
+    icon: CreditCard,
+    color: 'text-sky-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+    children: [
+      {
+        name: 'Leads',
+        href: '/bluecard/leads',
+        icon: ClipboardText,
+        color: 'text-sky-700',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Página Pública',
+        href: '/lp/bluecard',
+        icon: Megaphone,
+        color: 'text-pink-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+    ],
   },
 ];
 
@@ -999,6 +1037,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           onToggle={() => handleSectionToggle('franquias')}
           icon={Users}
           color="text-amber-600"
+        />
+
+        {/* Seção Marketing */}
+        <MenuSection
+          {...menuProps}
+          title="Marketing"
+          items={marketing}
+          isOpen={openSection === 'marketing'}
+          onToggle={() => handleSectionToggle('marketing')}
+          icon={Megaphone}
+          color="text-pink-600"
         />
 
         {/* Seção Recuperação de Crédito */}

@@ -137,6 +137,25 @@ const AVAILABLE_PAGES = [
     category: 'Varejo',
   },
 
+  // Estoque
+  {
+    path: '/estoque/expedicao-showroom',
+    name: 'Expedição Showroom',
+    category: 'Estoque',
+  },
+
+  // Marketing
+  {
+    path: '/bluecard/leads',
+    name: 'BlueCard — Leads',
+    category: 'Marketing',
+  },
+  {
+    path: '/lp/bluecard',
+    name: 'BlueCard — Página Pública (LP)',
+    category: 'Marketing',
+  },
+
   // Multimarcas
   {
     path: '/dashboard-multimarcas',

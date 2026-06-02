@@ -24,6 +24,7 @@ import {
   CardDescription,
 } from '../ui/cards';
 import { API_BASE_URL } from '../../config/constants';
+import { supabase } from '../../lib/supabase';
 
 const formatBRL = (v) =>
   typeof v === 'number'
@@ -151,22 +152,62 @@ export default function VarejoDesempenho() {
       // - Desconta credev, exclui canceladas, separa inbound/franquia/revenda
       // - Garante que os números batem com a tela Performance
       const monthKey = startDate.slice(0, 7); // YYYY-MM
-      const [sellersResp, metaResp] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/crm/sellers-totals`, {
+
+      // ─── Metas vêm de MetasVarejo (per LOJA, tier OURO) ───────────────
+      const [sellersResp, mLojasResp, sLojasResp] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/crm/sellers-totals?nocache=true`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             datemin: startDate,
             datemax: endDate,
             modulo: 'varejo',
+            nocache: true,
           }),
         }).then((r) => r.json()),
-        fetch(`${API_BASE_URL}/api/crm/canal-metas?period_type=mensal&period_key=${monthKey}&canal=varejo`)
-          .then((r) => r.json())
-          .catch(() => ({ success: false })),
+        // Meta MENSAL por loja (tier ouro principal)
+        supabase
+          .from('metas_mensais_calculadas')
+          .select('nome, ouro')
+          .eq('tipo', 'lojas')
+          .eq('mes', monthKey)
+          .then((r) => r.data || []),
+        // Meta SEMANAL por loja (tier ouro) — agrega semanas que tocam o
+        // período do filtro: somar valor das semanas dentro do range.
+        supabase
+          .from('metas_semanais_varejo')
+          .select('nome, valor, campo, semana_inicio, semana_fim')
+          .eq('tipo', 'lojas')
+          .eq('campo', 'ouro')
+          .gte('semana_fim', startDate)
+          .lte('semana_inicio', endDate)
+          .then((r) => r.data || []),
       ]);
       if (!sellersResp?.success) throw new Error(sellersResp?.message || 'Erro');
-      const metaVarejo = (metaResp?.data?.metas || []).find((m) => m.canal === 'varejo');
+
+      // Normaliza nome de loja pra match com branch_name
+      const norm = (s) => String(s || '')
+        .toUpperCase()
+        .replace(/^CROSBY\s+/i, '')
+        .replace(/SHOPPING\s+/i, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const metaMensalPorLoja = new Map();
+      for (const r of mLojasResp) {
+        metaMensalPorLoja.set(norm(r.nome), Number(r.ouro || 0));
+      }
+      // Semana: pega a 1ª semana que toca o período (se houver mais de uma, pega
+      // a mais recente — geralmente um filtro de "semana atual" ou "última semana"
+      // só vai pegar 1 mesmo).
+      const metaSemanalPorLoja = new Map();
+      for (const r of sLojasResp.sort((a, b) =>
+        String(b.semana_inicio).localeCompare(String(a.semana_inicio)),
+      )) {
+        const k = norm(r.nome);
+        if (!metaSemanalPorLoja.has(k)) {
+          metaSemanalPorLoja.set(k, Number(r.valor || 0));
+        }
+      }
 
       // sellers-totals não retorna `totals` agregado — calcula no front
       const rows = sellersResp.data?.dataRow || [];
@@ -191,7 +232,8 @@ export default function VarejoDesempenho() {
       setData({
         dataRow: rows,
         totals,
-        meta_mensal_varejo: Number(metaVarejo?.valor_meta || 0),
+        meta_mensal_por_loja: Array.from(metaMensalPorLoja.entries()),
+        meta_semanal_por_loja: Array.from(metaSemanalPorLoja.entries()),
         month_key: monthKey,
       });
     } catch (e) {
@@ -221,18 +263,62 @@ export default function VarejoDesempenho() {
     return metaPeriodo / ps.length;
   }, [data, startDate, endDate]);
 
-  // Enriquece dataRow com meta_estimada + %_meta + comissao
+  // Normalizador de nome de loja pra match com branch_name
+  const normLoja = (s) => String(s || '')
+    .toUpperCase()
+    .replace(/^CROSBY\s+/i, '')
+    .replace(/SHOPPING\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Enriquece dataRow com meta_semana + meta_mes (puxados da metas_varejo
+  // por LOJA tier OURO, divididos pelo Nº de vendedoras da mesma loja)
   const todasVendedoras = useMemo(() => {
     const ps = data?.dataRow || [];
     const taxa = Math.max(0, Number(comissaoPct) || 0) / 100;
+    const mensalPorLoja = new Map(data?.meta_mensal_por_loja || []);
+    const semanalPorLoja = new Map(data?.meta_semanal_por_loja || []);
+    // Conta vendedoras por loja (chave normalizada)
+    const countPorLoja = {};
+    for (const v of ps) {
+      const k = normLoja(v.branch_name || v.branch_short || '');
+      countPorLoja[k] = (countPorLoja[k] || 0) + 1;
+    }
+    // Função que acha meta da loja com tolerância (substring)
+    const findMetaLoja = (map, branchKey) => {
+      if (map.has(branchKey)) return map.get(branchKey);
+      // Tenta match por substring (ex: "MIDWAY" ∈ "SHOPPING MIDWAY")
+      for (const [k, v] of map.entries()) {
+        if (k.includes(branchKey) || branchKey.includes(k)) return v;
+      }
+      return 0;
+    };
+
     return ps.map((v) => {
-      const meta = metaEstimadaPorVendedora;
+      const branchKey = normLoja(v.branch_name || v.branch_short || '');
+      const nVendsLoja = Math.max(1, countPorLoja[branchKey] || 1);
+      const metaLojaMes = findMetaLoja(mensalPorLoja, branchKey);
+      const metaLojaSem = findMetaLoja(semanalPorLoja, branchKey);
+      const metaMes = metaLojaMes / nVendsLoja;
+      const metaSem = metaLojaSem / nVendsLoja;
       const fat = Number(v.invoice_value || 0);
-      const pct = meta > 0 ? (fat / meta) * 100 : 0;
       const comissao = fat * taxa;
-      return { ...v, meta_estimada: meta, pct_meta: pct, comissao };
+      return {
+        ...v,
+        meta_semana: metaSem,
+        meta_mes: metaMes,
+        meta_loja_semana: metaLojaSem,
+        meta_loja_mes: metaLojaMes,
+        n_vendedoras_loja: nVendsLoja,
+        pct_meta_semana: metaSem > 0 ? (fat / metaSem) * 100 : 0,
+        pct_meta_mes: metaMes > 0 ? (fat / metaMes) * 100 : 0,
+        // Mantém pct_meta antigo apontando pra meta_mes (compatibilidade)
+        meta_estimada: metaMes,
+        pct_meta: metaMes > 0 ? (fat / metaMes) * 100 : 0,
+        comissao,
+      };
     });
-  }, [data, metaEstimadaPorVendedora, comissaoPct]);
+  }, [data, comissaoPct]);
 
   const vendedoras = useMemo(() => {
     const sorted = [...todasVendedoras].sort((a, b) => Number(b[ordenarPor] || 0) - Number(a[ordenarPor] || 0));
@@ -502,13 +588,22 @@ export default function VarejoDesempenho() {
             </div>
 
             {/* Header desktop */}
-            <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-2 bg-[#000638] text-white text-[10px] font-bold uppercase tracking-wider font-barlow">
+            <div className="hidden md:grid grid-cols-[repeat(14,minmax(0,1fr))] gap-2 px-4 py-2 bg-[#000638] text-white text-[10px] font-bold uppercase tracking-wider font-barlow">
               <div className="col-span-1 text-center">#</div>
               <div className="col-span-2">Vendedora</div>
               <div className="col-span-1">Loja</div>
               <div className="col-span-2 text-right">Faturamento</div>
-              <div className="col-span-2 text-right" title="Meta estimada proporcional ao período (mensal varejo ÷ N vendedoras)">
-                Meta / %
+              <div
+                className="col-span-2 text-right"
+                title={`Meta SEMANAL da loja (tier OURO, cadastrada em Metas Varejo) ÷ Nº de vendedoras da mesma loja`}
+              >
+                Meta Semana / %
+              </div>
+              <div
+                className="col-span-2 text-right"
+                title={`Meta MENSAL da loja (tier OURO, cadastrada em Metas Varejo) ÷ Nº de vendedoras da mesma loja`}
+              >
+                Meta Mês / %
               </div>
               <div className="col-span-1 text-right" title={`Comissão = ${comissaoPct}% do faturamento`}>Comissão</div>
               <div className="col-span-1 text-right">TM</div>
@@ -564,7 +659,7 @@ export default function VarejoDesempenho() {
                 </div>
 
                 {/* Desktop row */}
-                <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-2.5 items-center text-sm">
+                <div className="hidden md:grid grid-cols-[repeat(14,minmax(0,1fr))] gap-2 px-4 py-2.5 items-center text-sm">
                   <div className="col-span-1 text-center">
                     {getPositionBadge(idx)}
                   </div>
@@ -582,17 +677,47 @@ export default function VarejoDesempenho() {
                       R$ {formatBRL(v.invoice_value)}
                     </span>
                   </div>
-                  <div className="col-span-2 text-right">
-                    <div className="font-mono text-xs text-gray-700">
-                      {v.meta_estimada > 0 ? `R$ ${formatBRL(v.meta_estimada)}` : <span className="text-gray-400">—</span>}
+                  {/* META SEMANA */}
+                  <div
+                    className="col-span-2 text-right"
+                    title={
+                      v.meta_loja_semana > 0
+                        ? `Meta Loja: R$ ${formatBRL(v.meta_loja_semana)} ÷ ${v.n_vendedoras_loja} vend. = R$ ${formatBRL(v.meta_semana)}`
+                        : 'Sem meta cadastrada pra essa loja'
+                    }
+                  >
+                    <div className="font-mono text-xs text-blue-700">
+                      {v.meta_semana > 0 ? `R$ ${formatBRL(v.meta_semana)}` : <span className="text-gray-400">—</span>}
                     </div>
-                    {v.meta_estimada > 0 && (
+                    {v.meta_semana > 0 && (
                       <div className={`inline-block px-1.5 py-0.5 mt-0.5 rounded text-[10px] font-bold ${
-                        v.pct_meta >= 100 ? 'bg-emerald-100 text-emerald-700'
-                        : v.pct_meta >= 70 ? 'bg-amber-100 text-amber-700'
+                        v.pct_meta_semana >= 100 ? 'bg-emerald-100 text-emerald-700'
+                        : v.pct_meta_semana >= 70 ? 'bg-amber-100 text-amber-700'
                         : 'bg-rose-100 text-rose-700'
                       }`}>
-                        {v.pct_meta.toFixed(0)}%
+                        {v.pct_meta_semana.toFixed(0)}%
+                      </div>
+                    )}
+                  </div>
+                  {/* META MÊS */}
+                  <div
+                    className="col-span-2 text-right"
+                    title={
+                      v.meta_loja_mes > 0
+                        ? `Meta Loja: R$ ${formatBRL(v.meta_loja_mes)} ÷ ${v.n_vendedoras_loja} vend. = R$ ${formatBRL(v.meta_mes)}`
+                        : 'Sem meta cadastrada pra essa loja'
+                    }
+                  >
+                    <div className="font-mono text-xs text-indigo-700">
+                      {v.meta_mes > 0 ? `R$ ${formatBRL(v.meta_mes)}` : <span className="text-gray-400">—</span>}
+                    </div>
+                    {v.meta_mes > 0 && (
+                      <div className={`inline-block px-1.5 py-0.5 mt-0.5 rounded text-[10px] font-bold ${
+                        v.pct_meta_mes >= 100 ? 'bg-emerald-100 text-emerald-700'
+                        : v.pct_meta_mes >= 70 ? 'bg-amber-100 text-amber-700'
+                        : 'bg-rose-100 text-rose-700'
+                      }`}>
+                        {v.pct_meta_mes.toFixed(0)}%
                       </div>
                     )}
                   </div>

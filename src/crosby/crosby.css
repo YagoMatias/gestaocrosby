@@ -1,0 +1,274 @@
+/* =====================================================================
+   Estilos da landing Crosby — TODOS escopados em .crosby-page
+   para não vazar/conflitar com o restante do seu app.
+   Imagem de fundo e logo são lidas de /card.png e /logo-crosby.png
+   (coloque esses arquivos na pasta public/ do seu projeto).
+   ===================================================================== */
+
+.crosby-page,
+.crosby-page * { box-sizing: border-box; }
+
+.crosby-page {
+  --navy: #0a1a4f;
+  --red: #d6122a;
+  --red-hover: #b50f23;
+  --input-border: #d6d6d6;
+  --placeholder: #9aa0ab;
+  --muted: #c7cee0;
+
+  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+  background: linear-gradient(rgba(8, 12, 24, 0.55), rgba(8, 12, 24, 0.55)),
+              url('/card.png') center center / cover no-repeat fixed,
+              var(--navy);
+  color: #fff;
+  line-height: 1.5;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.crosby-page h1,
+.crosby-page h2,
+.crosby-page p { margin: 0; }
+
+/* ---------- Logo ---------- */
+.crosby-page .cb-brand { height: 34px; width: auto; display: block; }
+.crosby-page .cb-brand--footer { height: 30px; }
+
+/* ---------- Header ---------- */
+.crosby-page .cb-header {
+  background: var(--navy);
+  padding: 26px 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* ---------- Container (form page) ---------- */
+.crosby-page .cb-container {
+  max-width: 1280px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 70px 40px 90px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: center;
+}
+
+.crosby-page .cb-intro h1 {
+  font-size: 52px;
+  line-height: 1.08;
+  font-weight: 800;
+  margin-bottom: 34px;
+  color: #fff;
+}
+.crosby-page .cb-intro p {
+  font-size: 21px;
+  color: #eef1f7;
+  margin-bottom: 22px;
+}
+.crosby-page .cb-intro p strong { font-weight: 800; }
+
+/* ---------- Form ---------- */
+.crosby-page .cb-form-card {
+  background: var(--navy) !important;
+  background-color: var(--navy) !important;
+  border-radius: 16px !important;
+  padding: 34px 32px !important;
+}
+.crosby-page .cb-form-card form,
+.crosby-page form {
+  /* Neutraliza index.css global: form { @apply bg-white p-6 rounded shadow-md; } */
+  display: block !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+.crosby-page .cb-field { margin-bottom: 18px !important; }
+.crosby-page .cb-field label {
+  display: block !important;
+  font-size: 16px !important;
+  color: #fff !important;
+  margin-bottom: 8px !important;
+  font-weight: 500 !important;
+  line-height: 24px !important;
+  font-family: "Segoe UI", Arial, Helvetica, sans-serif !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+.crosby-page .cb-field input,
+.crosby-page .cb-field input[type] {
+  /* reset agressivo pra sobrepor Tailwind preflight + estilos globais do app */
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  box-shadow: none !important;
+  background-image: none !important;
+  margin: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  background-color: #fff !important;
+  background: #fff !important;
+  border: 1px solid var(--input-border) !important;
+  border-radius: 8px !important;
+  padding: 14px 16px !important;
+  color: #333 !important;
+  font-size: 16px !important;
+  line-height: normal !important;
+  font-family: "Segoe UI", Arial, Helvetica, sans-serif !important;
+  font-weight: 400 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  outline: none;
+  letter-spacing: 0 !important;
+}
+.crosby-page .cb-field input::placeholder {
+  color: var(--placeholder) !important;
+  opacity: 1 !important;
+}
+.crosby-page .cb-field input:focus {
+  outline: 2px solid #4f74d6 !important;
+  outline-offset: 0 !important;
+  border-color: var(--input-border) !important;
+}
+
+.crosby-page .cb-submit {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  display: block !important;
+  width: 100% !important;
+  background: var(--red) !important;
+  background-color: var(--red) !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 17px !important;
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  font-family: inherit !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  cursor: pointer !important;
+  margin-top: 10px !important;
+  transition: background .15s ease !important;
+  box-shadow: none !important;
+}
+.crosby-page .cb-submit:hover { background: var(--red-hover) !important; }
+.crosby-page .cb-submit:disabled { opacity: 0.6 !important; cursor: not-allowed !important; }
+
+/* ---------- Footer ---------- */
+.crosby-page .cb-footer {
+  background: var(--navy);
+  padding: 40px 40px 28px;
+}
+.crosby-page .cb-footer--thanks { padding: 48px 40px; }
+
+.crosby-page .cb-footer-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+.crosby-page .cb-footer-inner--thanks { align-items: center; gap: 28px; }
+
+.crosby-page .cb-copy {
+  color: #c9d2e8;
+  font-size: 14px;
+  margin-top: 16px;
+}
+.crosby-page .cb-footer-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 40px;
+}
+.crosby-page .cb-socials { display: flex; gap: 22px; }
+.crosby-page .cb-socials a { color: #fff; opacity: .9; }
+.crosby-page .cb-socials a:hover { opacity: 1; }
+.crosby-page .cb-socials svg { width: 24px; height: 24px; fill: currentColor; }
+
+/* ---------- Página de obrigado ---------- */
+.crosby-page .cb-thanks-container {
+  flex: 1;
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 70px 40px 90px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.crosby-page .cb-thanks h1 {
+  font-size: clamp(40px, 8vw, 110px);
+  line-height: 1.02;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #fff;
+  margin-bottom: 40px;
+}
+.crosby-page .cb-thanks p {
+  font-size: clamp(16px, 1.6vw, 22px);
+  color: var(--muted);
+  max-width: 1050px;
+  margin: 0 auto 26px;
+}
+.crosby-page .cb-thanks p strong { color: #fff; font-weight: 700; }
+.crosby-page .cb-thanks .cb-big {
+  font-size: clamp(24px, 3.4vw, 42px);
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 14px;
+}
+.crosby-page .cb-thanks .cb-big strong { color: #fff; }
+
+.crosby-page .cb-footer-inner--thanks h2 {
+  color: #fff;
+  font-size: clamp(24px, 3vw, 38px);
+  font-weight: 800;
+  line-height: 1.15;
+  max-width: 520px;
+}
+.crosby-page .cb-follow {
+  display: inline-block;
+  background: var(--red);
+  color: #fff;
+  text-decoration: none;
+  border-radius: 8px;
+  padding: 22px 130px;
+  font-size: 20px;
+  font-weight: 700;
+  box-shadow: 0 0 28px rgba(214, 18, 42, 0.55);
+  transition: background .15s ease, box-shadow .15s ease;
+}
+.crosby-page .cb-follow:hover {
+  background: var(--red-hover);
+  box-shadow: 0 0 36px rgba(214, 18, 42, 0.75);
+}
+
+/* ---------- Responsivo ---------- */
+@media (max-width: 900px) {
+  .crosby-page .cb-container {
+    grid-template-columns: 1fr;
+    gap: 44px;
+    padding: 44px 22px 60px;
+  }
+  .crosby-page .cb-intro h1 { font-size: 36px; }
+  .crosby-page .cb-intro p { font-size: 18px; }
+  .crosby-page .cb-footer-inner { flex-direction: column; align-items: flex-start; }
+  .crosby-page .cb-footer-right { align-items: flex-start; }
+}
+@media (max-width: 760px) {
+  .crosby-page .cb-thanks-container { padding: 44px 22px 60px; }
+  .crosby-page .cb-footer-inner--thanks { flex-direction: column; align-items: stretch; text-align: center; }
+  .crosby-page .cb-follow { padding: 20px; text-align: center; }
+}

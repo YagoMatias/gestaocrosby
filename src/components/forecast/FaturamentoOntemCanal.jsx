@@ -50,9 +50,9 @@ export default function FaturamentoOntemCanal() {
     setLoading(true);
     setErro('');
     try {
-      // Sem until_today: o fat_dia_anterior é o faturamento do dia anterior
-      // (ontem em dia útil; ou sábado quando referência é a semana passada).
-      const r = await fetch(`${API_BASE_URL}/api/forecast/promessa-semanal`);
+      // Usa o endpoint dedicado /ontem-canal que puxa DIRETO do TOTVS
+      // (sale-panel, sem Supabase). Sem cache: dado sempre fresh.
+      const r = await fetch(`${API_BASE_URL}/api/forecast/ontem-canal`);
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j?.success) throw new Error(j?.message || `HTTP ${r.status}`);
       setData(j.data);
