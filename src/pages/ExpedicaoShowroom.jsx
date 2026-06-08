@@ -15,6 +15,7 @@ import {
   Car,
   User,
   WhatsappLogo,
+  CurrencyDollar,
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../config/constants';
 
@@ -173,64 +174,162 @@ export default function ExpedicaoShowroom() {
     link.click();
   };
 
-  // KPIs por status
-  const kpis = STATUS_OPTIONS.slice(1).map((s) => ({
-    ...s,
-    count: items.filter((i) => i.status === s.v).length,
-    caixas: items.filter((i) => i.status === s.v).reduce((a, i) => a + (i.volume_caixas || 0), 0),
-    pecas: items.filter((i) => i.status === s.v).reduce((a, i) => a + (i.volume_qty || 0), 0),
-  }));
+  // KPIs por status (incluindo "Sem status")
+  const STATUS_CONHECIDOS = new Set(STATUS_OPTIONS.slice(1).map((s) => s.v));
+  const semStatusItems = items.filter((i) => !i.status || !STATUS_CONHECIDOS.has(i.status));
+  const kpis = [
+    ...STATUS_OPTIONS.slice(1).map((s) => ({
+      ...s,
+      count: items.filter((i) => i.status === s.v).length,
+      caixas: items.filter((i) => i.status === s.v).reduce((a, i) => a + (i.volume_caixas || 0), 0),
+      pecas: items.filter((i) => i.status === s.v).reduce((a, i) => a + (i.volume_qty || 0), 0),
+      valor: items.filter((i) => i.status === s.v).reduce((a, i) => a + Number(i.total_value || 0), 0),
+    })),
+    // 4º card: Sem status (NFs que ainda não foram classificadas)
+    {
+      v: '__sem_status__',
+      label: 'Sem Status',
+      cor: 'bg-gray-100 text-gray-700 ring-gray-200',
+      row: '',
+      dot: 'bg-gray-400',
+      border: 'border-gray-400',
+      count: semStatusItems.length,
+      caixas: semStatusItems.reduce((a, i) => a + (i.volume_caixas || 0), 0),
+      pecas: semStatusItems.reduce((a, i) => a + (i.volume_qty || 0), 0),
+      valor: semStatusItems.reduce((a, i) => a + Number(i.total_value || 0), 0),
+    },
+  ];
+
+  // Total faturado (soma de total_value de todas as NFs do filtro)
+  const totalFaturado = items.reduce((a, i) => a + Number(i.total_value || 0), 0);
+
+  // Cor do dot baseado no status (pra usar no select inline)
+  const k_dot = (st) => {
+    if (st === 'enviado_blue') return 'bg-blue-500';
+    if (st === 'recebido_blue') return 'bg-amber-500';
+    if (st === 'enviado_cliente') return 'bg-emerald-500';
+    return 'bg-gray-400';
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 py-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-indigo-50/30 py-6">
       <div className="max-w-[1600px] mx-auto px-6">
         {/* Hero header */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#000638] via-[#0a1a5c] to-[#001a8a] shadow-xl mb-6">
-          <div className="absolute -right-20 -top-20 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="relative px-6 py-6 flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center shadow-lg">
-                <Package size={28} weight="duotone" className="text-blue-200" />
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#000638] via-[#0a1a5c] to-[#001a8a] shadow-2xl mb-6 ring-1 ring-blue-900/40">
+          {/* Glow effects */}
+          <div className="absolute -right-32 -top-32 w-96 h-96 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -left-20 -bottom-20 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_45%,rgba(255,255,255,0.03)_50%,transparent_55%)] pointer-events-none" />
+
+          <div className="relative px-7 py-7 flex items-center justify-between flex-wrap gap-6">
+            <div className="flex items-center gap-5">
+              <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-white/15 to-white/5 backdrop-blur-md border border-white/25 flex items-center justify-center shadow-xl">
+                <Package size={32} weight="duotone" className="text-blue-200 drop-shadow" />
+                <div className="absolute -inset-px rounded-2xl bg-gradient-to-br from-blue-400/20 to-transparent pointer-events-none" />
               </div>
               <div>
-                <h1 className="text-2xl lg:text-3xl font-black text-white tracking-tight">
+                <h1 className="text-2xl lg:text-3xl font-black text-white tracking-tight drop-shadow">
                   Expedição Showroom
                 </h1>
-                <p className="text-sm text-blue-200/80 mt-1">
-                  Controle de envios — Showroom + Novidades Franquia · ops 7254, 7007, 7255
+                <p className="text-sm text-blue-200/80 mt-1.5 flex items-center gap-2">
+                  <span>Controle de envios</span>
+                  <span className="w-1 h-1 rounded-full bg-blue-400/60" />
+                  <span>Showroom + Novidades Franquia</span>
+                  <span className="w-1 h-1 rounded-full bg-blue-400/60" />
+                  <span className="font-mono text-blue-300/70">ops 7254 · 7007 · 7255</span>
                 </p>
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-[10px] uppercase tracking-widest text-blue-300/80 font-bold">Total NFs</p>
-              <p className="text-4xl font-black text-white tabular-nums leading-none mt-1">{total}</p>
+            <div className="flex items-stretch gap-5">
+              <div className="text-right border-r border-white/15 pr-5 flex flex-col justify-center">
+                <p className="text-[10px] uppercase tracking-widest text-blue-300/80 font-bold">Total NFs</p>
+                <p className="text-4xl font-black text-white tabular-nums leading-none mt-1.5">{total}</p>
+              </div>
+              <div className="text-right flex flex-col justify-center">
+                <p className="text-[10px] uppercase tracking-widest text-emerald-300/80 font-bold flex items-center justify-end gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Total Faturado
+                </p>
+                <p className="text-3xl lg:text-4xl font-black text-emerald-300 tabular-nums leading-none mt-1.5 drop-shadow">
+                  R$ {fmtBRL(totalFaturado)}
+                </p>
+                <p className="text-[10px] text-blue-300/70 mt-1.5">
+                  {items.length} {items.length === 1 ? 'pedido faturado' : 'pedidos faturados'}
+                </p>
+              </div>
             </div>
           </div>
         </div>
 
         {/* KPIs */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
           {kpis.map((k) => {
-            const ativo = filtros.status === k.v;
+            const isSemStatus = k.v === '__sem_status__';
+            const ativo = !isSemStatus && filtros.status === k.v;
+            const colorGradient = isSemStatus
+              ? 'from-gray-100 to-gray-50'
+              : k.v === 'enviado_blue'
+                ? 'from-blue-50 to-white'
+                : k.v === 'recebido_blue'
+                  ? 'from-amber-50 to-white'
+                  : 'from-emerald-50 to-white';
+            const accentColor = isSemStatus
+              ? 'text-gray-500'
+              : k.v === 'enviado_blue'
+                ? 'text-blue-600'
+                : k.v === 'recebido_blue'
+                  ? 'text-amber-600'
+                  : 'text-emerald-600';
             return (
               <button
                 key={k.v}
-                onClick={() => setFiltros((s) => ({ ...s, status: ativo ? '' : k.v }))}
-                className={`text-left p-4 rounded-xl border transition-all ${
+                onClick={() => {
+                  if (isSemStatus) return;
+                  setFiltros((s) => ({ ...s, status: ativo ? '' : k.v }));
+                }}
+                disabled={isSemStatus}
+                className={`group relative overflow-hidden text-left p-4 rounded-2xl border transition-all duration-200 ${
                   ativo
-                    ? 'bg-white border-blue-300 shadow-md ring-2 ring-blue-200'
-                    : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-md'
+                    ? 'bg-gradient-to-br from-blue-50 to-white border-blue-300 shadow-lg ring-2 ring-blue-200/60 scale-[1.02]'
+                    : isSemStatus
+                      ? 'bg-gradient-to-br from-gray-100 to-gray-50 border-gray-200 cursor-default opacity-90'
+                      : `bg-gradient-to-br ${colorGradient} border-gray-200 hover:border-gray-300 hover:shadow-md hover:-translate-y-0.5`
                 }`}
               >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`inline-block w-2 h-2 rounded-full ${k.dot}`} />
-                  <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
-                    {k.label}
-                  </p>
-                </div>
-                <div className="flex items-baseline gap-2 flex-wrap">
-                  <p className="text-3xl font-black text-gray-900 tabular-nums">{k.count}</p>
-                  <p className="text-xs text-gray-500">NFs · {k.caixas} cx · {k.pecas} pç</p>
+                {/* glow decoration */}
+                {!isSemStatus && (
+                  <div className={`absolute -top-12 -right-12 w-32 h-32 rounded-full bg-current opacity-5 ${accentColor}`} />
+                )}
+                <div className="relative">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-block w-2 h-2 rounded-full ${k.dot} ${ativo ? 'ring-2 ring-current ring-offset-1' : ''}`} />
+                      <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+                        {k.label}
+                      </p>
+                    </div>
+                    {ativo && (
+                      <span className="text-[9px] uppercase tracking-wider font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">
+                        Filtrado
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <p className={`text-3xl font-black tabular-nums ${ativo ? 'text-blue-700' : 'text-gray-900'}`}>
+                      {k.count}
+                    </p>
+                    <p className="text-xs text-gray-500 font-medium">
+                      NFs · <span className="text-gray-700">{k.caixas}</span> cx · <span className="text-gray-700">{k.pecas}</span> pç
+                    </p>
+                  </div>
+                  <div className={`flex items-center gap-1.5 mt-2 pt-2 border-t border-gray-200/60`}>
+                    <span className={`text-[10px] uppercase tracking-wider font-bold ${accentColor}`}>
+                      Faturado
+                    </span>
+                    <span className={`text-base font-black tabular-nums ${accentColor}`}>
+                      R$ {fmtBRL(k.valor)}
+                    </span>
+                  </div>
                 </div>
               </button>
             );
@@ -238,47 +337,51 @@ export default function ExpedicaoShowroom() {
         </div>
 
         {/* Toolbar */}
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-3 flex items-center gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-[260px]">
-            <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <div className="bg-white/80 backdrop-blur-sm border border-gray-200/80 rounded-2xl shadow-sm mb-4 p-3 flex items-center gap-2.5 flex-wrap">
+          <div className="relative flex-1 min-w-[280px]">
+            <MagnifyingGlass size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Buscar (loja, transação, rastreio)…"
+              placeholder="Buscar por loja, transação ou rastreio…"
               value={filtros.busca}
               onChange={(e) => setFiltros((s) => ({ ...s, busca: e.target.value }))}
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-300 transition"
             />
           </div>
-          <select
-            value={filtros.transportadora}
-            onChange={(e) => setFiltros((s) => ({ ...s, transportadora: e.target.value }))}
-            className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white"
-          >
-            <option value="">Todas transportadoras</option>
-            {TRANSPORTADORAS.slice(1).map((t) => (
-              <option key={t.v} value={t.v}>{t.label}</option>
-            ))}
-          </select>
+          <div className="relative">
+            <Truck size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <select
+              value={filtros.transportadora}
+              onChange={(e) => setFiltros((s) => ({ ...s, transportadora: e.target.value }))}
+              className="text-sm border border-gray-200 rounded-xl pl-9 pr-8 py-2.5 bg-gray-50/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer"
+            >
+              <option value="">Todas transportadoras</option>
+              {TRANSPORTADORAS.slice(1).map((t) => (
+                <option key={t.v} value={t.v}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+          <span className="h-8 w-px bg-gray-200 mx-1" />
           <button
             onClick={carregar}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50 font-medium text-gray-700"
+            className="inline-flex items-center gap-1.5 text-sm px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 font-medium text-gray-700 transition"
           >
-            <ArrowsClockwise size={14} className={loading ? 'animate-spin' : ''} />
+            <ArrowsClockwise size={14} className={loading ? 'animate-spin' : ''} weight="bold" />
             Atualizar
           </button>
           <button
             onClick={syncTotvs}
             disabled={syncing}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 text-sm px-3.5 py-2.5 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold shadow-md shadow-blue-500/20 disabled:opacity-50 transition"
           >
-            <Truck size={14} weight="bold" />
+            <Truck size={14} weight="fill" />
             {syncing ? 'Sincronizando…' : 'Puxar TOTVS'}
           </button>
           <button
             onClick={exportarCsv}
             disabled={!items.length}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 text-sm px-3.5 py-2.5 rounded-xl bg-gradient-to-br from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-semibold shadow-md shadow-emerald-500/20 disabled:opacity-50 transition"
           >
             <Download size={14} weight="bold" />
             CSV
@@ -292,19 +395,19 @@ export default function ExpedicaoShowroom() {
         )}
 
         {/* Tabela */}
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="bg-white border border-gray-200/80 rounded-2xl overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-200">
-                  <th className="py-3 px-3 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Loja</th>
-                  <th className="py-3 px-3 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Transação</th>
-                  <th className="py-3 px-3 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Data</th>
-                  <th className="py-3 px-3 text-right text-[10px] font-black text-gray-600 uppercase tracking-wider">Valor</th>
-                  <th className="py-3 px-3 text-right text-[10px] font-black text-gray-600 uppercase tracking-wider">Volume</th>
-                  <th className="py-3 px-3 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Status</th>
-                  <th className="py-3 px-3 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Transportadora</th>
-                  <th className="py-3 px-3 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Rastreio</th>
+                <tr className="bg-gradient-to-b from-slate-50 via-slate-50 to-white border-b-2 border-gray-200">
+                  <th className="py-3.5 px-3 text-left text-[10px] font-black text-gray-500 uppercase tracking-widest w-[210px]">Loja</th>
+                  <th className="py-3.5 px-3 text-left text-[10px] font-black text-gray-500 uppercase tracking-widest w-[150px]">Transação</th>
+                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest w-[85px]">Data</th>
+                  <th className="py-3.5 px-3 text-right text-[10px] font-black text-gray-500 uppercase tracking-widest w-[105px]">Valor</th>
+                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest w-[95px]">Volume</th>
+                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest w-[185px]">Status</th>
+                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest w-[140px]">Transportadora</th>
+                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest min-w-[240px]">Rastreio</th>
                 </tr>
               </thead>
               <tbody>
@@ -323,7 +426,12 @@ export default function ExpedicaoShowroom() {
                     </div>
                   </td></tr>
                 ) : items.map((i) => {
-                  const s = STATUS_MAP[i.status] || STATUS_MAP['enviado_blue'];
+                  const semStatus = !i.status;
+                  const s = STATUS_MAP[i.status] || {
+                    cor: 'bg-gray-100 text-gray-500 ring-gray-200',
+                    row: 'bg-gray-50/40 hover:bg-gray-50',
+                    border: 'border-gray-300',
+                  };
                   const t = TRANSP_MAP[i.transportadora];
                   const Ticon = t?.icon;
                   const temRastreio = !!(i.codigo_rastreio && String(i.codigo_rastreio).trim());
@@ -331,9 +439,9 @@ export default function ExpedicaoShowroom() {
                   return (
                     <tr
                       key={i.id}
-                      className={`border-b border-gray-100 transition-colors ${s.row || 'hover:bg-blue-50/40 bg-white'}`}
+                      className={`border-b border-gray-100 transition-all duration-150 group ${s.row || 'hover:bg-blue-50/40 bg-white'}`}
                     >
-                      <td className={`py-3 px-3 max-w-[260px] border-l-4 ${borderClass}`}>
+                      <td className={`py-2.5 px-3 align-middle border-l-4 ${borderClass}`}>
                         <p className="font-semibold text-gray-900 text-sm leading-tight truncate" title={i.person_name || ''}>
                           {i.person_fantasy_name || i.person_name || '—'}
                         </p>
@@ -344,83 +452,187 @@ export default function ExpedicaoShowroom() {
                         )}
                         <p className="text-[10px] text-gray-400 mt-0.5">Filial #{i.branch_code}{i.person_code ? ` · PC ${i.person_code}` : ''}</p>
                       </td>
-                      <td className="py-3 px-3 text-xs">
-                        <p className="font-mono text-gray-700">{i.transaction_code || i.invoice_code}</p>
-                        <p className="text-[10px] text-gray-400">{i.operation_name || `op ${i.operation_code}`}</p>
+                      <td className="py-2.5 px-3 text-xs align-middle">
+                        <p className="font-mono text-gray-700 leading-tight">{i.transaction_code || i.invoice_code}</p>
+                        <p className="text-[10px] text-gray-400 truncate leading-tight mt-0.5" title={i.operation_name || `op ${i.operation_code}`}>
+                          {i.operation_name || `op ${i.operation_code}`}
+                        </p>
                       </td>
-                      <td className="py-3 px-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(i.issue_date)}</td>
-                      <td className="py-3 px-3 text-right tabular-nums font-semibold text-gray-800">R$ {fmtBRL(i.total_value)}</td>
-                      <td className="py-3 px-3 text-right">
-                        <input
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={i.volume_caixas ?? 0}
-                          onChange={(e) => {
-                            const v = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0);
-                            setItems((arr) => arr.map((x) => x.id === i.id ? { ...x, volume_caixas: v } : x));
-                          }}
-                          onBlur={(e) => {
-                            const v = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0);
-                            if (v !== (i.volume_caixas ?? 0)) atualizar(i, { volume_caixas: v });
-                          }}
-                          title="Qtd. caixas enviadas"
-                          className="w-16 text-right tabular-nums font-bold text-blue-700 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
-                        />
-                        <p className="text-[9px] text-gray-400 mt-0.5">{i.volume_qty || 0} pç</p>
+                      <td className="py-2.5 px-3 text-xs text-gray-600 text-center whitespace-nowrap align-middle font-mono">{fmtDate(i.issue_date)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums font-bold text-gray-800 whitespace-nowrap align-middle">R$&nbsp;{fmtBRL(i.total_value)}</td>
+                      <td className="py-2.5 px-3 text-center align-middle">
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="inline-flex items-center bg-white border border-gray-300 rounded-lg overflow-hidden shadow-sm">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const v = Math.max(0, (i.volume_caixas ?? 0) - 1);
+                                setItems((arr) => arr.map((x) => x.id === i.id ? { ...x, volume_caixas: v } : x));
+                                atualizar(i, { volume_caixas: v });
+                              }}
+                              className="px-1.5 py-1 text-gray-500 hover:bg-gray-100 hover:text-blue-700 transition disabled:opacity-30"
+                              disabled={(i.volume_caixas ?? 0) <= 0}
+                              title="Diminuir"
+                            >
+                              <span className="text-xs font-black">−</span>
+                            </button>
+                            <input
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={i.volume_caixas ?? 0}
+                              onFocus={(e) => { e.target.dataset.orig = String(e.target.value); e.target.select(); }}
+                              onChange={(e) => {
+                                const v = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0);
+                                setItems((arr) => arr.map((x) => x.id === i.id ? { ...x, volume_caixas: v } : x));
+                              }}
+                              onBlur={(e) => {
+                                const v = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0);
+                                const orig = Number(e.target.dataset.orig || 0);
+                                if (v !== orig) atualizar(i, { volume_caixas: v });
+                              }}
+                              title="Qtd. caixas enviadas"
+                              className="w-10 text-center tabular-nums font-bold text-blue-700 border-x border-gray-200 px-1 py-1.5 text-sm focus:outline-none focus:bg-blue-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const v = (i.volume_caixas ?? 0) + 1;
+                                setItems((arr) => arr.map((x) => x.id === i.id ? { ...x, volume_caixas: v } : x));
+                                atualizar(i, { volume_caixas: v });
+                              }}
+                              className="px-1.5 py-1 text-gray-500 hover:bg-gray-100 hover:text-blue-700 transition"
+                              title="Adicionar"
+                            >
+                              <span className="text-xs font-black">+</span>
+                            </button>
+                          </div>
+                          <p className="text-[9px] text-gray-400">{i.volume_qty || 0} pç</p>
+                        </div>
                       </td>
-                      <td className="py-3 px-3">
-                        <select
-                          value={i.status}
-                          onChange={(e) => atualizar(i, { status: e.target.value })}
-                          className={`text-[11px] font-bold rounded-md px-2 py-1 ring-1 ${s.cor} cursor-pointer focus:outline-none`}
-                        >
-                          {STATUS_OPTIONS.slice(1).map((o) => (
-                            <option key={o.v} value={o.v}>{o.label}</option>
-                          ))}
-                        </select>
+                      <td className="py-2.5 px-2 align-middle">
+                        <div className="relative">
+                          {/* Badge visual (sempre visível) */}
+                          <div
+                            className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg ring-1 ring-inset cursor-pointer transition-all hover:brightness-95"
+                            style={{
+                              backgroundColor: semStatus
+                                ? '#f3f4f6'
+                                : i.status === 'enviado_blue'
+                                  ? '#dbeafe'
+                                  : i.status === 'recebido_blue'
+                                    ? '#fef3c7'
+                                    : '#d1fae5',
+                              color: semStatus
+                                ? '#4b5563'
+                                : i.status === 'enviado_blue'
+                                  ? '#1d4ed8'
+                                  : i.status === 'recebido_blue'
+                                    ? '#b45309'
+                                    : '#047857',
+                            }}
+                          >
+                            <span className={`shrink-0 w-2 h-2 rounded-full ${k_dot(i.status)}`} />
+                            <span className="flex-1 text-[11px] font-bold whitespace-nowrap">
+                              {semStatus
+                                ? 'Sem status'
+                                : i.status === 'enviado_blue'
+                                  ? 'Enviado p/ Blue'
+                                  : i.status === 'recebido_blue'
+                                    ? 'Recebido na Blue'
+                                    : 'Enviado p/ Cliente'}
+                            </span>
+                            <svg className="shrink-0 w-3 h-3 opacity-70" viewBox="0 0 12 12">
+                              <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                          {/* Select transparente por cima pra interação nativa */}
+                          <select
+                            value={i.status || ''}
+                            onChange={(e) => atualizar(i, { status: e.target.value || null })}
+                            className="absolute inset-0 opacity-0 cursor-pointer focus:outline-none"
+                            title="Trocar status"
+                          >
+                            <option value="">— Sem status —</option>
+                            {STATUS_OPTIONS.slice(1).map((o) => (
+                              <option key={o.v} value={o.v}>{o.label}</option>
+                            ))}
+                          </select>
+                        </div>
                       </td>
-                      <td className="py-3 px-3">
-                        <select
-                          value={i.transportadora || ''}
-                          onChange={(e) => atualizar(i, { transportadora: e.target.value || null })}
-                          className="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-                        >
-                          {TRANSPORTADORAS.map((o) => (
-                            <option key={o.v} value={o.v}>{o.label}</option>
-                          ))}
-                        </select>
-                        {Ticon && (
-                          <Ticon size={12} weight="duotone" className={`inline ml-1 ${t.cor}`} />
-                        )}
+                      <td className="py-2.5 px-2 align-middle">
+                        <div className="relative">
+                          {/* Display visível */}
+                          <div className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 cursor-pointer transition">
+                            {Ticon ? (
+                              <Ticon size={14} weight="duotone" className={`shrink-0 ${t?.cor || ''}`} />
+                            ) : (
+                              <span className="shrink-0 w-2 h-2 rounded-full bg-gray-300" />
+                            )}
+                            <span className="flex-1 text-xs font-semibold whitespace-nowrap text-gray-700">
+                              {t?.label && t.label !== '—' ? t.label : 'Selecionar'}
+                            </span>
+                            <svg className="shrink-0 w-3 h-3 text-gray-400" viewBox="0 0 12 12">
+                              <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                          <select
+                            value={i.transportadora || ''}
+                            onChange={(e) => atualizar(i, { transportadora: e.target.value || null })}
+                            className="absolute inset-0 opacity-0 cursor-pointer focus:outline-none"
+                            title="Trocar transportadora"
+                          >
+                            {TRANSPORTADORAS.map((o) => (
+                              <option key={o.v} value={o.v}>{o.label}</option>
+                            ))}
+                          </select>
+                        </div>
                       </td>
-                      <td className="py-3 px-3">
+                      <td className="py-2.5 px-3 align-middle">
                         <div className="flex items-center gap-1.5">
-                          <input
-                            type="text"
-                            value={i.codigo_rastreio || ''}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              setItems((arr) => arr.map((x) => x.id === i.id ? { ...x, codigo_rastreio: v } : x));
-                            }}
-                            placeholder="Código…"
-                            className="text-xs font-mono border border-gray-300 rounded px-2 py-1 w-32 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
-                            onBlur={(e) => {
-                              if (e.target.value !== (i.codigo_rastreio || '')) {
-                                atualizar(i, { codigo_rastreio: e.target.value || null });
-                              }
-                            }}
-                          />
-                          {temRastreio && (
+                          <div className="flex-1 min-w-[160px] relative">
+                            <input
+                              type="text"
+                              value={i.codigo_rastreio || ''}
+                              onFocus={(e) => { e.target.dataset.orig = e.target.value; }}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setItems((arr) => arr.map((x) => x.id === i.id ? { ...x, codigo_rastreio: v } : x));
+                              }}
+                              placeholder="Cole o código aqui…"
+                              className={`w-full text-sm font-mono border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-300 transition placeholder:text-gray-400 placeholder:font-sans placeholder:text-xs ${
+                                temRastreio
+                                  ? 'border-emerald-300 bg-emerald-50/40 text-emerald-900 font-semibold'
+                                  : 'border-gray-300 bg-white text-gray-800'
+                              }`}
+                              onBlur={(e) => {
+                                const orig = e.target.dataset.orig || '';
+                                if (e.target.value !== orig) {
+                                  atualizar(i, { codigo_rastreio: e.target.value || null });
+                                }
+                              }}
+                            />
+                            {temRastreio && (
+                              <CheckCircle size={14} weight="fill" className="absolute right-2 top-1/2 -translate-y-1/2 text-emerald-500 pointer-events-none" />
+                            )}
+                          </div>
+                          {temRastreio ? (
                             <a
                               href={buildWhatsappUrl(i)}
                               target="_blank"
                               rel="noopener noreferrer"
                               title="Enviar atualização para a franquia via WhatsApp"
-                              className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm transition-colors"
+                              className="inline-flex items-center justify-center w-10 h-10 shrink-0 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-md shadow-emerald-500/40 transition-all hover:scale-105"
                             >
-                              <WhatsappLogo size={15} weight="fill" />
+                              <WhatsappLogo size={18} weight="fill" />
                             </a>
+                          ) : (
+                            <span
+                              className="inline-flex items-center justify-center w-10 h-10 shrink-0 rounded-lg bg-gray-100 text-gray-300 cursor-not-allowed"
+                              title="Adicione um código de rastreio pra liberar o WhatsApp"
+                            >
+                              <WhatsappLogo size={18} weight="fill" />
+                            </span>
                           )}
                         </div>
                       </td>
@@ -431,8 +643,23 @@ export default function ExpedicaoShowroom() {
             </table>
           </div>
           {items.length > 0 && (
-            <div className="bg-gray-50 px-4 py-2 border-t border-gray-200 text-xs text-gray-500 text-center">
-              {items.length} {items.length === 1 ? 'NF exibida' : 'NFs exibidas'}
+            <div className="bg-gradient-to-b from-white to-gray-50 px-5 py-3 border-t border-gray-200 flex items-center justify-between flex-wrap gap-3 text-xs">
+              <div className="flex items-center gap-4 text-gray-500">
+                <span className="font-semibold text-gray-700">{items.length}</span>
+                <span>{items.length === 1 ? 'NF exibida' : 'NFs exibidas'}</span>
+                <span className="text-gray-300">·</span>
+                <span>
+                  <span className="font-semibold text-gray-700 tabular-nums">{items.reduce((a, i) => a + (i.volume_caixas || 0), 0)}</span> caixas
+                </span>
+                <span className="text-gray-300">·</span>
+                <span>
+                  <span className="font-semibold text-gray-700 tabular-nums">{items.reduce((a, i) => a + (i.volume_qty || 0), 0)}</span> peças
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 font-bold text-emerald-700">
+                <CurrencyDollar size={14} weight="fill" />
+                <span className="tabular-nums">R$ {fmtBRL(totalFaturado)}</span>
+              </div>
             </div>
           )}
         </div>
