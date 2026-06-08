@@ -322,7 +322,17 @@ const AVAILABLE_PAGES = [
     name: 'Painel Competição (B2R × B2M)',
     category: 'CRM',
   },
-  { path: '/faturamento-canal', name: 'Forecast', category: 'CRM' },
+  { path: '/forecast', name: 'Forecast (Hub)', category: 'CRM' },
+  {
+    path: '/forecast/faturamento-historico',
+    name: 'Forecast — Faturamento Detalhado',
+    category: 'CRM',
+  },
+  {
+    path: '/dashboard-vendas',
+    name: 'Forecast — Dashboard Vendas',
+    category: 'CRM',
+  },
   {
     path: '/ranking-compras-franquias',
     name: 'Compras Franquias (Sellin)',
