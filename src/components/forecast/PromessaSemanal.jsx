@@ -25,6 +25,7 @@ import {
   LoadingRow,
   LoadingValue,
   InfoBanner,
+  PeriodoToolbar,
   formatBRL,
   formatBRLCompact,
   pctColor,
@@ -182,6 +183,14 @@ export default function PromessaSemanal() {
         onRefresh={carregar}
         loading={loading}
         onWhatsapp={() => setShowWhats(true)}
+      />
+
+      <PeriodoToolbar
+        tipo="semanal"
+        ano={ano}
+        setAno={setAno}
+        semana={semana}
+        setSemana={setSemana}
       />
 
       {data && <KpiStripe items={kpis} loading={loading && canais.length === 0} />}

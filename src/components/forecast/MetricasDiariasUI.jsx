@@ -197,6 +197,169 @@ export function MetricaHeader({
   );
 }
 
+// ─── Period picker (mês/ano ou semana/ano) ───────────────────────────────────
+// Sub-toolbar abaixo do header com dropdowns rápidos, atalhos e
+// indicador de histórico salvo (snapshot).
+//
+// tipo: 'mensal' | 'semanal'
+// historicoSet: Set<string> com period_keys que têm snapshot ('2025-06', '2025-W22'…)
+const MESES_NOMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
+function periodKeyMensal(ano, mes) {
+  return `${ano}-${String(mes).padStart(2, '0')}`;
+}
+function periodKeySemanal(ano, semana) {
+  return `${ano}-W${String(semana).padStart(2, '0')}`;
+}
+function isoSemanaInicio(ano, semana) {
+  // Segunda da semana ISO `ano-W{semana}`.
+  const simple = new Date(Date.UTC(ano, 0, 1 + (semana - 1) * 7));
+  const dow = simple.getUTCDay();
+  const monday = new Date(simple);
+  if (dow <= 4) monday.setUTCDate(simple.getUTCDate() - simple.getUTCDay() + 1);
+  else          monday.setUTCDate(simple.getUTCDate() + 8 - simple.getUTCDay());
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  const fmt = (d) =>
+    `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+  return `${fmt(monday)} – ${fmt(sunday)}`;
+}
+
+export function PeriodoToolbar({
+  tipo,                  // 'mensal' | 'semanal'
+  ano, setAno,
+  mes, setMes,           // só mensal
+  semana, setSemana,     // só semanal
+}) {
+  const anoAtual = new Date().getFullYear();
+  const anos = [];
+  for (let a = anoAtual + 1; a >= 2023; a--) anos.push(a);
+
+  // Geração de semanas: 1..53
+  const semanas = [];
+  if (tipo === 'semanal') {
+    for (let w = 1; w <= 53; w++) semanas.push(w);
+  }
+
+  // Atalhos
+  const atalhos = [];
+  if (tipo === 'mensal') {
+    atalhos.push({
+      label: 'Mês passado',
+      onClick: () => {
+        const d = new Date(ano, mes - 1, 1);
+        d.setMonth(d.getMonth() - 1);
+        setAno(d.getFullYear());
+        setMes(d.getMonth() + 1);
+      },
+    });
+    atalhos.push({
+      label: '3 meses atrás',
+      onClick: () => {
+        const d = new Date(ano, mes - 1, 1);
+        d.setMonth(d.getMonth() - 3);
+        setAno(d.getFullYear());
+        setMes(d.getMonth() + 1);
+      },
+    });
+    atalhos.push({
+      label: 'Mesmo mês ano passado',
+      onClick: () => setAno(ano - 1),
+    });
+  } else {
+    atalhos.push({
+      label: 'Semana passada',
+      onClick: () => {
+        if (semana <= 1) { setAno(ano - 1); setSemana(52); }
+        else setSemana(semana - 1);
+      },
+    });
+    atalhos.push({
+      label: 'Há 4 semanas',
+      onClick: () => {
+        let s = semana - 4;
+        let a = ano;
+        while (s <= 0) { s += 52; a -= 1; }
+        setAno(a);
+        setSemana(s);
+      },
+    });
+    atalhos.push({
+      label: 'Mesma semana ano passado',
+      onClick: () => setAno(ano - 1),
+    });
+  }
+
+  return (
+    <div className="bg-gradient-to-b from-gray-50 to-white border-b border-gray-200 px-3 py-2 flex items-center gap-2 flex-wrap text-xs">
+      <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mr-1">
+        Pesquisar período
+      </span>
+      {tipo === 'mensal' ? (
+        <>
+          <select
+            value={mes}
+            onChange={(e) => setMes(Number(e.target.value))}
+            className="text-xs border border-gray-300 rounded px-2 py-1 bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            title="Mês"
+          >
+            {MESES_NOMES.map((nome, idx) => (
+              <option key={idx + 1} value={idx + 1}>{nome}</option>
+            ))}
+          </select>
+          <select
+            value={ano}
+            onChange={(e) => setAno(Number(e.target.value))}
+            className="text-xs border border-gray-300 rounded px-2 py-1 bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            title="Ano"
+          >
+            {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </>
+      ) : (
+        <>
+          <select
+            value={semana}
+            onChange={(e) => setSemana(Number(e.target.value))}
+            className="text-xs border border-gray-300 rounded px-2 py-1 bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-400 min-w-[180px]"
+            title="Semana ISO"
+          >
+            {semanas.map((w) => (
+              <option key={w} value={w}>
+                S{String(w).padStart(2,'0')} · {isoSemanaInicio(ano, w)}
+              </option>
+            ))}
+          </select>
+          <select
+            value={ano}
+            onChange={(e) => setAno(Number(e.target.value))}
+            className="text-xs border border-gray-300 rounded px-2 py-1 bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            title="Ano"
+          >
+            {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </>
+      )}
+
+      <span className="text-gray-300 mx-1">|</span>
+
+      {atalhos.map((a) => (
+        <button
+          key={a.label}
+          onClick={a.onClick}
+          className="text-[11px] px-2 py-1 rounded border border-gray-200 hover:border-amber-300 hover:bg-amber-50 text-gray-600 hover:text-amber-700 font-medium transition"
+        >
+          {a.label}
+        </button>
+      ))}
+
+    </div>
+  );
+}
+
 // ─── KPI bar (4-5 cards de resumo no topo) ───────────────────────────────────
 // items: [{ label, valor, sub, color, icon }]
 export function KpiStripe({ items, loading }) {

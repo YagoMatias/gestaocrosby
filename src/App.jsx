@@ -107,6 +107,9 @@ const CrosbyForm = lazy(() => import('./crosby/CrosbyForm'));
 const CrosbyObrigado = lazy(() => import('./crosby/CrosbyObrigado'));
 const BluecardLeads = lazy(() => import('./pages/BluecardLeads'));
 const ExpedicaoShowroom = lazy(() => import('./pages/ExpedicaoShowroom'));
+const FaturamentoHistorico = lazy(() => import('./pages/FaturamentoHistorico'));
+const DashboardVendas = lazy(() => import('./pages/DashboardVendas'));
+const Forecast = lazy(() => import('./pages/Forecast'));
 const ControleChips = lazy(() => import('./pages/ControleChips'));
 const MonitoramentoTotvs = lazy(() => import('./pages/MonitoramentoTotvs'));
 const InventarioPatrimonio = lazy(() => import('./pages/InventarioPatrimonio'));
@@ -145,6 +148,8 @@ PageLoadingFallback.displayName = 'PageLoadingFallback';
 const protectedRoutes = [
   { path: '/bluecard/leads', component: BluecardLeads },
   { path: '/estoque/expedicao-showroom', component: ExpedicaoShowroom },
+  { path: '/forecast/faturamento-historico', component: Forecast },
+  { path: '/dashboard-vendas', component: Forecast },
   { path: '/tecnologia/controle-chip', component: ControleChips },
   { path: '/tecnologia/monitoramento-totvs', component: MonitoramentoTotvs },
   { path: '/tecnologia/inventario-patrimonio', component: InventarioPatrimonio },
@@ -231,7 +236,9 @@ const protectedRoutes = [
   { path: '/estoque', component: Estoque },
   { path: '/painel-vendas', component: PainelVendas },
   { path: '/crm-vendas', component: CRMVendas },
-  { path: '/faturamento-canal', component: FaturamentoCanal },
+  { path: '/forecast', component: Forecast },
+  // URLs antigas — caem na mesma página (hub) mas abrem aba correta via query
+  { path: '/faturamento-canal', component: Forecast },
   { path: '/crm/competicao', component: PainelCompeticao },
   { path: '/totvs', component: FaturamentoPanel },
   { path: '/voucher-usage', component: VoucherUsage },

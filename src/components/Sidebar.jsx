@@ -42,6 +42,7 @@ import {
   WhatsappLogo,
   DeviceMobile,
   Cpu,
+  ChartPieSlice,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -247,7 +248,7 @@ const painelVendasItems = [
   },
   {
     name: 'Forecast',
-    href: '/faturamento-canal',
+    href: '/forecast',
     icon: ChartBar,
     color: 'text-violet-600',
   },

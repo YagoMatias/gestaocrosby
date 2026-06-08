@@ -20,48 +20,38 @@ const parseNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// ISO week helpers
-function isoWeekKeyOf(date) {
-  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = target.getUTCDay() || 7;
-  target.setUTCDate(target.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
-  const weekNum = Math.ceil(((target - yearStart) / 86400000 + 1) / 7);
-  return `${target.getUTCFullYear()}-W${String(weekNum).padStart(2, '0')}`;
-}
-function weekKeyRange(key) {
-  const m = String(key).match(/^(\d{4})-W(\d{1,2})$/);
-  if (!m) return null;
-  const ano = Number(m[1]);
-  const week = Number(m[2]);
-  const jan4 = new Date(Date.UTC(ano, 0, 4));
-  const dayOfWeek = jan4.getUTCDay() || 7;
-  const week1Monday = new Date(jan4);
-  week1Monday.setUTCDate(jan4.getUTCDate() - (dayOfWeek - 1));
-  const monday = new Date(week1Monday);
-  monday.setUTCDate(week1Monday.getUTCDate() + (week - 1) * 7);
-  const sunday = new Date(monday);
-  sunday.setUTCDate(monday.getUTCDate() + 6);
-  return { datemin: monday.toISOString().slice(0, 10), datemax: sunday.toISOString().slice(0, 10) };
-}
+// Semanas fixas do mês — 7 em 7 dias, todas dentro do mês.
+//   S1: dia 1-7
+//   S2: dia 8-14
+//   S3: dia 15-21
+//   S4: dia 22-28
+//   S5: dia 29-fim (existe só se o mês tem 29+ dias)
+//
+// Chave usada em forecast_canal_metas.period_key = `YYYY-MM-Sn`.
+// Não pega dias de mês vizinho (ao contrário das ISO weeks).
+function semanasFixasDoMes(monthKey) {
+  const [ano, mes] = String(monthKey).split('-').map(Number);
+  if (!ano || !mes) return [];
+  const ultimoDia = new Date(ano, mes, 0).getDate();
+  const pad = (n) => String(n).padStart(2, '0');
+  const ymd = (d) => `${ano}-${pad(mes)}-${pad(d)}`;
 
-// Retorna ISO weeks que intersectam um mês (YYYY-MM)
-function isoWeeksInMonth(monthKey) {
-  const [ano, mes] = monthKey.split('-').map(Number);
-  const first = new Date(Date.UTC(ano, mes - 1, 1));
-  const last = new Date(Date.UTC(ano, mes, 0));
-  const set = new Set();
-  const out = [];
-  const cur = new Date(first);
-  while (cur <= last) {
-    const k = isoWeekKeyOf(cur);
-    if (!set.has(k)) {
-      set.add(k);
-      out.push(k);
-    }
-    cur.setUTCDate(cur.getUTCDate() + 1);
-  }
-  return out; // ordenadas (vão crescentes)
+  const blocos = [
+    { n: 1, ini: 1,  fim: 7 },
+    { n: 2, ini: 8,  fim: 14 },
+    { n: 3, ini: 15, fim: 21 },
+    { n: 4, ini: 22, fim: 28 },
+    { n: 5, ini: 29, fim: ultimoDia },
+  ];
+  return blocos
+    .filter((b) => b.ini <= ultimoDia)
+    .map((b) => ({
+      key: `${ano}-${pad(mes)}-S${b.n}`,
+      label: `S${b.n}`,
+      numero: b.n,
+      datemin: ymd(b.ini),
+      datemax: ymd(Math.min(b.fim, ultimoDia)),
+    }));
 }
 
 const fmtDataBr = (iso) => {
@@ -100,24 +90,16 @@ export default function PlanejamentoMensalModal({
   onClose,
   onSaved,
 }) {
-  const semanas = useMemo(() => isoWeeksInMonth(monthKey), [monthKey]);
-  const semanasInfo = useMemo(
-    () =>
-      semanas.map((k) => {
-        const r = weekKeyRange(k);
-        return { key: k, label: k.split('-W')[1].replace(/^0/, ''), range: r };
-      }),
-    [semanas],
-  );
+  const semanas = useMemo(() => semanasFixasDoMes(monthKey), [monthKey]);
 
   const canais = CANAIS_PADRAO;
 
-  // valores[canal] = { mensal: '', sem: { 'YYYY-Www': '' } }
+  // valores[canal] = { mensal: '', sem: { 'YYYY-MM-Sn': '' } }
   const [valores, setValores] = useState(() => {
     const init = {};
     for (const c of canais) {
       init[c] = { mensal: '', sem: {} };
-      for (const s of semanas) init[c].sem[s] = '';
+      for (const s of semanas) init[c].sem[s.key] = '';
     }
     return init;
   });
@@ -136,8 +118,8 @@ export default function PlanejamentoMensalModal({
 
       const reqs = [
         fetchJson(`${API_BASE_URL}/api/crm/canal-metas?period_type=mensal&period_key=${monthKey}`),
-        ...semanas.map((wk) =>
-          fetchJson(`${API_BASE_URL}/api/crm/canal-metas?period_type=semanal&period_key=${wk}`),
+        ...semanas.map((s) =>
+          fetchJson(`${API_BASE_URL}/api/crm/canal-metas?period_type=semanal&period_key=${s.key}`),
         ),
       ];
       const results = await Promise.all(reqs);
@@ -147,15 +129,23 @@ export default function PlanejamentoMensalModal({
       const next = {};
       for (const c of canais) {
         next[c] = { mensal: '', sem: {} };
-        for (const s of semanas) next[c].sem[s] = '';
+        for (const s of semanas) next[c].sem[s.key] = '';
       }
+      // Formata pra BR (vírgula decimal) — senão o parseNum BR remove o ponto
+      // pensando que é separador de milhar e infla 100x o valor.
+      const fmtBR = (n) => {
+        const v = Number(n || 0);
+        if (!Number.isFinite(v) || v === 0) return '0';
+        // só usa decimal se não for inteiro
+        return Number.isInteger(v) ? String(v) : v.toFixed(2).replace('.', ',');
+      };
       for (const m of mensal) {
-        if (next[m.canal]) next[m.canal].mensal = String(Number(m.valor_meta) || 0);
+        if (next[m.canal]) next[m.canal].mensal = fmtBR(m.valor_meta);
       }
       semanais.forEach((arr, idx) => {
-        const wk = semanas[idx];
+        const s = semanas[idx];
         for (const m of arr) {
-          if (next[m.canal]) next[m.canal].sem[wk] = String(Number(m.valor_meta) || 0);
+          if (next[m.canal]) next[m.canal].sem[s.key] = fmtBR(m.valor_meta);
         }
       });
       setValores(next);
@@ -170,32 +160,68 @@ export default function PlanejamentoMensalModal({
 
   const setMensal = (canal, val) =>
     setValores((v) => ({ ...v, [canal]: { ...v[canal], mensal: val } }));
-  const setSemanal = (canal, wk, val) =>
+  const setSemanal = (canal, key, val) =>
     setValores((v) => ({
       ...v,
-      [canal]: { ...v[canal], sem: { ...v[canal].sem, [wk]: val } },
+      [canal]: { ...v[canal], sem: { ...v[canal].sem, [key]: val } },
     }));
 
-  // Distribui Prometido igualmente entre N semanas
+  // ─── Distribuições ─────────────────────────────────────────────────────────
+  // Após qualquer distribuição os valores ficam editáveis. Pode ter semanas
+  // com mais e outras com menos — o usuário ajusta o que quiser; o Σ semanas
+  // mostra o quanto desvia do mensal.
+
+  // helper: calcula dias de uma semana
+  const diasDaSemana = (w) => {
+    const d1 = new Date(w.datemin + 'T00:00:00Z');
+    const d2 = new Date(w.datemax + 'T00:00:00Z');
+    return Math.round((d2 - d1) / 86400000) + 1;
+  };
+
+  // Formata número em string PT-BR ("83333.33" vira "83333,33") — evita que o
+  // parseNum BR (que remove pontos como separador de milhar) interprete errado
+  // e infle o valor 100x.
+  const toBR2 = (n) =>
+    (Number.isFinite(n) ? n : 0).toFixed(2).replace('.', ',');
+
+  // (1) IGUAL — mensal / N semanas (default; mais previsível)
   const distribuirIgual = (canal) => {
     const mensal = parseNum(valores[canal]?.mensal);
     if (!mensal || !semanas.length) return;
-    const fatia = mensal / semanas.length;
-    const fatiaStr = fatia.toFixed(2);
-    setValores((v) => ({
-      ...v,
-      [canal]: { ...v[canal], sem: Object.fromEntries(semanas.map((s) => [s, fatiaStr])) },
-    }));
+    const fatia = toBR2(mensal / semanas.length);
+    const sem = Object.fromEntries(semanas.map((w) => [w.key, fatia]));
+    setValores((v) => ({ ...v, [canal]: { ...v[canal], sem } }));
   };
 
-  const distribuirTodos = () => {
+  // (2) POR DIAS — proporcional aos dias de cada semana (S5 leva menos se for curta)
+  const distribuirPorDias = (canal) => {
+    const mensal = parseNum(valores[canal]?.mensal);
+    if (!mensal || !semanas.length) return;
+    const totDias = semanas.reduce((s, w) => s + diasDaSemana(w), 0);
+    const sem = {};
+    for (const w of semanas) {
+      sem[w.key] = toBR2((mensal * diasDaSemana(w)) / totDias);
+    }
+    setValores((v) => ({ ...v, [canal]: { ...v[canal], sem } }));
+  };
+
+  // (3) Atalhos: distribuir TODOS canais — modo `igual` ou `dias`
+  const distribuirTodos = (modo = 'igual') => {
     setValores((v) => {
       const next = { ...v };
+      const totDias = semanas.reduce((s, w) => s + diasDaSemana(w), 0);
       for (const c of canais) {
         const mensal = parseNum(next[c]?.mensal);
         if (!mensal || !semanas.length) continue;
-        const fatia = (mensal / semanas.length).toFixed(2);
-        next[c] = { ...next[c], sem: Object.fromEntries(semanas.map((s) => [s, fatia])) };
+        const sem = {};
+        for (const w of semanas) {
+          if (modo === 'dias') {
+            sem[w.key] = toBR2((mensal * diasDaSemana(w)) / totDias);
+          } else {
+            sem[w.key] = toBR2(mensal / semanas.length);
+          }
+        }
+        next[c] = { ...next[c], sem };
       }
       return next;
     });
@@ -203,7 +229,7 @@ export default function PlanejamentoMensalModal({
 
   // Soma das semanas por canal (validação visual)
   const somaSemanas = (canal) =>
-    semanas.reduce((s, wk) => s + parseNum(valores[canal]?.sem[wk]), 0);
+    semanas.reduce((s, w) => s + parseNum(valores[canal]?.sem[w.key]), 0);
 
   const salvar = async () => {
     setSaving(true);
@@ -235,8 +261,8 @@ export default function PlanejamentoMensalModal({
             }),
           }),
         );
-        for (const wk of semanas) {
-          const sem = parseNum(valores[c]?.sem[wk]);
+        for (const w of semanas) {
+          const sem = parseNum(valores[c]?.sem[w.key]);
           reqs.push(
             fetch(`${API_BASE_URL}/api/crm/canal-metas`, {
               method: 'POST',
@@ -244,7 +270,7 @@ export default function PlanejamentoMensalModal({
               body: JSON.stringify({
                 canal: c,
                 period_type: 'semanal',
-                period_key: wk,
+                period_key: w.key,
                 valor_meta: sem,
                 user_login: userLogin || null,
                 user_role: userRole || null,
@@ -269,8 +295,8 @@ export default function PlanejamentoMensalModal({
   };
 
   const totalPrometido = canais.reduce((s, c) => s + parseNum(valores[c]?.mensal), 0);
-  const totalsPorSemana = semanas.map((wk) =>
-    canais.reduce((s, c) => s + parseNum(valores[c]?.sem[wk]), 0),
+  const totalsPorSemana = semanas.map((w) =>
+    canais.reduce((s, c) => s + parseNum(valores[c]?.sem[w.key]), 0),
   );
 
   return (
@@ -282,7 +308,7 @@ export default function PlanejamentoMensalModal({
               Planejamento Mensal — {monthKey}
             </h3>
             <p className="text-xs text-gray-500">
-              {semanas.length} semanas ISO no mês. Defina o "Prometido" mensal e a meta de cada semana.
+              {semanas.length} semanas do mês (7 em 7 dias, todas dentro de {monthKey}). Defina o "Prometido" mensal e a meta de cada semana.
             </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700">
@@ -291,13 +317,24 @@ export default function PlanejamentoMensalModal({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 mb-3">
+          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mr-1">
+            Distribuir Prometido (todos canais):
+          </span>
           <button
-            onClick={distribuirTodos}
-            className="text-xs px-3 py-1.5 rounded border border-blue-300 text-blue-700 hover:bg-blue-50 inline-flex items-center gap-1"
-            title="Distribui o Prometido igualmente entre as semanas (todos os canais)"
+            onClick={() => distribuirTodos('igual')}
+            className="text-xs px-3 py-1.5 rounded border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 inline-flex items-center gap-1 font-semibold"
+            title="Divide o Prometido mensal igualmente entre as semanas (mensal ÷ N)"
           >
-            <CurrencyDollar size={12} /> Distribuir Prometido por semanas
+            <CurrencyDollar size={12} /> Igual entre semanas
           </button>
+          <button
+            onClick={() => distribuirTodos('dias')}
+            className="text-xs px-3 py-1.5 rounded border border-indigo-300 text-indigo-700 hover:bg-indigo-50 inline-flex items-center gap-1 font-semibold"
+            title="Distribui proporcionalmente aos dias de cada semana — S5 com 1-3 dias recebe menos"
+          >
+            ÷ Por dias da semana
+          </button>
+          <span className="text-gray-300 mx-1">|</span>
           <button
             onClick={carregar}
             disabled={loading}
@@ -305,6 +342,9 @@ export default function PlanejamentoMensalModal({
           >
             <ArrowsClockwise size={12} className={loading ? 'animate-spin' : ''} /> Recarregar
           </button>
+          <span className="ml-auto text-[10px] text-gray-400">
+            Dica: após distribuir, edite qualquer célula pra ajustar manualmente. Σ semanas mostra o desvio.
+          </span>
         </div>
 
         {erro && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm mb-3">{erro}</div>}
@@ -319,11 +359,11 @@ export default function PlanejamentoMensalModal({
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Canal</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-blue-700 uppercase">Prometido (Mês)</th>
-                  {semanasInfo.map((s, idx) => (
+                  {semanas.map((s) => (
                     <th key={s.key} className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">
-                      Sem {idx + 1}
+                      Sem {s.numero}
                       <span className="block text-[10px] font-normal text-gray-400 normal-case">
-                        {fmtDataBr(s.range.datemin)}–{fmtDataBr(s.range.datemax)}
+                        {fmtDataBr(s.datemin)}–{fmtDataBr(s.datemax)}
                       </span>
                     </th>
                   ))}
@@ -361,13 +401,13 @@ export default function PlanejamentoMensalModal({
                           className="w-32 px-2 py-1 border border-blue-200 rounded text-right tabular-nums focus:ring-1 focus:ring-blue-400 outline-none"
                         />
                       </td>
-                      {semanas.map((wk) => (
-                        <td key={wk} className="px-2 py-1 text-right">
+                      {semanas.map((w) => (
+                        <td key={w.key} className="px-2 py-1 text-right">
                           <input
                             type="text"
                             inputMode="decimal"
-                            value={valores[c]?.sem[wk] ?? ''}
-                            onChange={(e) => setSemanal(c, wk, e.target.value)}
+                            value={valores[c]?.sem[w.key] ?? ''}
+                            onChange={(e) => setSemanal(c, w.key, e.target.value)}
                             placeholder="0"
                             className="w-28 px-2 py-1 border border-gray-300 rounded text-right tabular-nums focus:ring-1 focus:ring-gray-400 outline-none"
                           />
@@ -383,14 +423,22 @@ export default function PlanejamentoMensalModal({
                           </span>
                         )}
                       </td>
-                      <td className="px-2 py-1 text-right">
+                      <td className="px-2 py-1 text-right whitespace-nowrap">
                         <button
                           onClick={() => distribuirIgual(c)}
                           disabled={!mensalNum}
-                          className="text-[11px] px-2 py-1 rounded text-blue-700 hover:bg-blue-50 disabled:opacity-40"
-                          title="Distribui Prometido / N semanas"
+                          className="text-[11px] px-1.5 py-1 rounded text-blue-700 hover:bg-blue-100 bg-blue-50 disabled:opacity-40 mr-0.5 font-bold"
+                          title="Distribui Prometido igualmente: mensal ÷ N semanas"
                         >
-                          ÷N
+                          =
+                        </button>
+                        <button
+                          onClick={() => distribuirPorDias(c)}
+                          disabled={!mensalNum}
+                          className="text-[11px] px-1.5 py-1 rounded text-indigo-700 hover:bg-indigo-100 disabled:opacity-40 font-bold"
+                          title="Distribui proporcional aos dias de cada semana"
+                        >
+                          ÷d
                         </button>
                       </td>
                     </tr>

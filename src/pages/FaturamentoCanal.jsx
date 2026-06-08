@@ -141,6 +141,33 @@ function weekKeyRange(weekKey) {
 
 // Lista todas as ISO weeks que têm ao menos 1 dia no mês informado (YYYY-MM).
 // Retorna array de { key, datemin, datemax, ordemNoMes } ordenado cronologicamente.
+// Converte chave ISO week (`2026-W23`) → chave de semana do mês (`2026-06-S1`)
+// que é o formato usado no Planejamento Mensal Modal (semanas fixas 7 em 7 dias).
+// Permite que a busca de meta semanal funcione mesmo com a nova classificação.
+function isoWeekToMonthSemKey(weekKey) {
+  const m = String(weekKey).match(/^(\d{4})-W(\d{1,2})$/);
+  if (!m) return weekKey; // já não é ISO — devolve sem mudar
+  const ano = Number(m[1]);
+  const semana = Number(m[2]);
+  // Segunda-feira da semana ISO `ano-Wsemana`
+  const jan4 = new Date(Date.UTC(ano, 0, 4));
+  const dow = jan4.getUTCDay() || 7;
+  const w1Mon = new Date(jan4);
+  w1Mon.setUTCDate(jan4.getUTCDate() - (dow - 1));
+  const monday = new Date(w1Mon);
+  monday.setUTCDate(w1Mon.getUTCDate() + (semana - 1) * 7);
+  const y = monday.getUTCFullYear();
+  const mo = monday.getUTCMonth() + 1;
+  const d = monday.getUTCDate();
+  let s;
+  if (d <= 7) s = 1;
+  else if (d <= 14) s = 2;
+  else if (d <= 21) s = 3;
+  else if (d <= 28) s = 4;
+  else s = 5;
+  return `${y}-${String(mo).padStart(2, '0')}-S${s}`;
+}
+
 function weeksInMonth(monthKey) {
   const m = String(monthKey).match(/^(\d{4})-(\d{1,2})$/);
   if (!m) return [];
@@ -2168,18 +2195,25 @@ export default function FaturamentoCanal() {
     setBluecredStats(null);
     setBluecardCount(null);
 
-    // BlueCred count (Autentique / bluecred_contratos) em background — não bloqueia
+    // BlueCred count — clientes classificados como BLUE CRED no TOTVS
+    // (typeCode=55 / code='8'). Lê de pessoas_bluecred (Supabase).
     fetch(
-      `${API_BASE_URL}/api/autentique/bluecred/count?dataInicio=${dataInicio}&dataFim=${dataFim}`,
+      `${API_BASE_URL}/api/forecast/bluecred-count?datemin=${dataInicio}&datemax=${dataFim}`,
     )
       .then((r) => r.json())
       .then((j) => {
-        if (j?.success && j?.data) setBluecredStats(j.data);
+        if (j?.success && j.data) {
+          // Estrutura compatível com BlueCredCard: usa 'total' como contagem global
+          setBluecredStats({
+            total: j.data.total,
+            no_periodo: j.data.no_periodo,
+            por_status: { classificados: j.data.total },
+          });
+        }
       })
       .catch((err) =>
-        console.warn('[FaturamentoCanal] BlueCred count falhou:', err.message),
+        console.warn('[FaturamentoCanal] BlueCred classification count falhou:', err.message),
       );
-
     // BlueCard count (ClickUp) em background — não bloqueia
     fetch(
       `${API_BASE_URL}/api/forecast/bluecard-count?datemin=${dataInicio}&datemax=${dataFim}`,
@@ -2435,7 +2469,7 @@ export default function FaturamentoCanal() {
           `${API_BASE_URL}/api/crm/canal-metas?period_type=mensal&period_key=${monthKey}`,
         ),
         fetchJson(
-          `${API_BASE_URL}/api/crm/canal-metas?period_type=semanal&period_key=${weekKey}`,
+          `${API_BASE_URL}/api/crm/canal-metas?period_type=semanal&period_key=${isoWeekToMonthSemKey(weekKey)}`,
         ),
       ]);
     } catch (err) {
@@ -2547,7 +2581,7 @@ export default function FaturamentoCanal() {
         try {
           const [metasRes, fatRes] = await Promise.all([
             fetch(
-              `${API_BASE_URL}/api/crm/canal-metas?period_type=semanal&period_key=${w.key}`,
+              `${API_BASE_URL}/api/crm/canal-metas?period_type=semanal&period_key=${isoWeekToMonthSemKey(w.key)}`,
               { headers: { 'x-api-key': API_KEY } },
             ).then((r) => r.json()),
             apiPost('/api/crm/faturamento-por-segmento?lite=true', {
@@ -3183,7 +3217,7 @@ export default function FaturamentoCanal() {
         {/* â”€â”€ Filtros â”€â”€ */}
         <Card className="mb-6">
           <CardContent className="pt-4">
-            <div className="flex flex-wrap items-end gap-4">
+            <div className="flex flex-wrap items-end gap-4 justify-center">
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-gray-500">
                   Data início
@@ -3220,7 +3254,7 @@ export default function FaturamentoCanal() {
               <button
                 onClick={handleBuscar}
                 disabled={isLoading || !dataInicio || !dataFim}
-                className="flex items-center gap-2 px-4 py-2 bg-[#000638] text-white rounded-lg text-sm font-medium hover:bg-[#000638]/90 disabled:opacity-50 transition-colors ml-auto"
+                className="flex items-center gap-2 px-4 py-2 bg-[#000638] text-white rounded-lg text-sm font-medium hover:bg-[#000638]/90 disabled:opacity-50 transition-colors"
               >
                 {isLoading ? (
                   <Spinner size={16} className="animate-spin" />
@@ -3234,7 +3268,7 @@ export default function FaturamentoCanal() {
         </Card>
 
         {/* â”€â”€ Abas â”€â”€ */}
-        <div className="flex gap-1 mb-6 bg-white border border-gray-200 rounded-xl p-1 w-fit">
+        <div className="flex gap-1 mb-6 bg-white border border-gray-200 rounded-xl p-1 w-fit mx-auto">
           {[
             { id: 'canal', label: 'Por Canal', icon: ChartPieSlice },
             // Comparativo × Ano Anterior e Forma de Pagamento ocultos temporariamente

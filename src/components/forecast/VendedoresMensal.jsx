@@ -2,7 +2,7 @@
 // Backend calcula somando as semanas do mês (leve e confiável), endpoint
 // /forecast/vendedores-mensal. Mostra B2R e B2M com TODOS os vendedores.
 import React, { useState, useEffect, useCallback } from 'react';
-import { UsersThree } from '@phosphor-icons/react';
+import { UsersThree, CloudArrowDown } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../../config/constants';
 import {
   MetricaHeader,
@@ -20,25 +20,54 @@ export default function VendedoresMensal() {
   const now = new Date();
   const [ano, setAno] = useState(now.getUTCFullYear());
   const [mes, setMes] = useState(now.getUTCMonth() + 1);
-  const [untilToday, setUntilToday] = useState(false);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [carregandoLive, setCarregandoLive] = useState(false);
   const [erro, setErro] = useState('');
-  // Sob demanda: só carrega quando o usuário pedir (evita disparar a consulta
+
+  // Lê do Supabase (rápido, com base no sync). NÃO usa o fallback do backend
+  // (que pulava pro último período disponível) — agora exibimos exatamente o
+  // mês escolhido e oferecemos botão de "Puxar do TOTVS ao vivo" se vazio.
   const carregar = useCallback(async () => {
     setLoading(true);
     setErro('');
     try {
       const periodoKey = `${ano}-${String(mes).padStart(2, '0')}`;
-      const qs = `?periodo_tipo=mensal&periodo_key=${periodoKey}`;
+      const qs = `?periodo_tipo=mensal&periodo_key=${periodoKey}&no_fallback=1`;
       const r = await fetch(`${API_BASE_URL}/api/forecast/vendedores-db${qs}`);
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j?.success) throw new Error(j?.message || `HTTP ${r.status}`);
-      setData(j.data);
+      // Mesmo se backend ignorar no_fallback, descartamos fallback aqui no front
+      // verificando se periodo_key bate com o pedido.
+      const periodoEsperado = `${ano}-${String(mes).padStart(2, '0')}`;
+      if (j.data?.fallback_aplicado || (j.data?.periodo_key && j.data.periodo_key !== periodoEsperado)) {
+        setData({ ...j.data, cards: [], fallback_aplicado: true });
+      } else {
+        setData(j.data);
+      }
     } catch (e) {
       setErro(e.message);
     } finally {
       setLoading(false);
+    }
+  }, [ano, mes]);
+
+  // Calcula AO VIVO do TOTVS via /vendedores-mensal. Mais lento (1-3 min) mas
+  // funciona mesmo sem sync. Usado quando vazio ou pra atualizar manualmente.
+  const carregarLive = useCallback(async () => {
+    setCarregandoLive(true);
+    setErro('');
+    try {
+      const qs = `?ano=${ano}&mes=${mes}&until_today=true`;
+      const r = await fetch(`${API_BASE_URL}/api/forecast/vendedores-mensal${qs}`);
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j?.success) throw new Error(j?.message || `HTTP ${r.status}`);
+      // Estrutura do /vendedores-mensal é { cards: [...] } compatível
+      setData({ ...j.data, fallback_aplicado: false, live: true });
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setCarregandoLive(false);
     }
   }, [ano, mes]);
 
@@ -53,9 +82,13 @@ export default function VendedoresMensal() {
   const irAtual = () => { setAno(now.getUTCFullYear()); setMes(now.getUTCMonth() + 1); };
 
   const cards = data?.cards || [];
-  const fallback = data?.fallback_aplicado;
-  const subt = fallback
-    ? `${MESES[(mes || 1) - 1]}/${ano} sem dados · exibindo ${data?.periodo_key} · líquido · empresa 99`
+  const vazio = !loading && !carregandoLive && (cards.length === 0 || cards.every((c) => (c?.vendedores || []).length === 0));
+  const isLive = !!data?.live;
+  const anos = [];
+  for (let a = now.getUTCFullYear() + 1; a >= 2023; a--) anos.push(a);
+
+  const subt = isLive
+    ? `${MESES[(mes || 1) - 1]}/${ano} · ao vivo do TOTVS · líquido (bruto − credev)`
     : `${MESES[(mes || 1) - 1]}/${ano} · líquido (bruto − credev) · empresa 99`;
 
   return (
@@ -72,17 +105,78 @@ export default function VendedoresMensal() {
         loading={loading}
       />
 
+      {/* ── Sub-toolbar com filtros e botão TOTVS ── */}
+      <div className="bg-gradient-to-b from-gray-50 to-white border-b border-gray-200 px-3 py-2 flex items-center gap-2 flex-wrap text-xs">
+        <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mr-1">
+          Pesquisar período
+        </span>
+        <select
+          value={mes}
+          onChange={(e) => setMes(Number(e.target.value))}
+          className="text-xs border border-gray-300 rounded px-2 py-1 bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-400"
+        >
+          {MESES.map((nome, idx) => (
+            <option key={idx + 1} value={idx + 1}>{nome}</option>
+          ))}
+        </select>
+        <select
+          value={ano}
+          onChange={(e) => setAno(Number(e.target.value))}
+          className="text-xs border border-gray-300 rounded px-2 py-1 bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-400"
+        >
+          {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <span className="text-gray-300 mx-1">|</span>
+        <button
+          onClick={carregarLive}
+          disabled={carregandoLive || loading}
+          className="text-[11px] px-2.5 py-1.5 rounded border border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold inline-flex items-center gap-1.5 disabled:opacity-50 transition"
+          title="Recalcula direto do TOTVS (1-3 min). Use quando o mês escolhido não tem dados ou quer atualização ao vivo."
+        >
+          <CloudArrowDown size={12} weight="bold" />
+          {carregandoLive ? 'Puxando do TOTVS…' : 'Puxar do TOTVS'}
+        </button>
+        {isLive && (
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold ring-1 ring-emerald-200">
+            ● Ao vivo
+          </span>
+        )}
+        {data?.fallback_aplicado && !isLive && (
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold ring-1 ring-amber-200">
+            Sem dados pré-sincronizados
+          </span>
+        )}
+      </div>
+
       {erro && (
         <div className="px-5 py-3 text-xs text-rose-700 bg-rose-50 border-b border-rose-200">
           Erro ao carregar: {erro}
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 p-3">
-        {(loading && !data ? [{ code: 'B2R' }, { code: 'B2M' }] : cards).map((card) => (
-          <CardVendedores key={card.code} card={card} loading={loading && !data} />
-        ))}
-      </div>
+      {vazio && !erro && (
+        <div className="px-5 py-8 text-center">
+          <p className="text-sm text-gray-600 mb-3">
+            Sem dados pra <b>{MESES[mes - 1]}/{ano}</b> na base sincronizada.
+          </p>
+          <button
+            onClick={carregarLive}
+            disabled={carregandoLive}
+            className="inline-flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold shadow-sm disabled:opacity-50"
+          >
+            <CloudArrowDown size={14} weight="bold" />
+            {carregandoLive ? 'Puxando do TOTVS…' : 'Puxar do TOTVS ao vivo'}
+          </button>
+        </div>
+      )}
+
+      {!vazio && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 p-3">
+          {(loading && !data ? [{ code: 'B2R' }, { code: 'B2M' }] : cards).map((card) => (
+            <CardVendedores key={card.code} card={card} loading={loading && !data} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

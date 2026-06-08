@@ -25,6 +25,7 @@ import {
   LoadingRow,
   LoadingValue,
   InfoBanner,
+  PeriodoToolbar,
   formatBRL,
 } from './MetricasDiariasUI';
 
@@ -174,6 +175,14 @@ export default function PromessaMensal() {
         onRefresh={carregar}
         loading={loading}
         onWhatsapp={() => setShowWhats(true)}
+      />
+
+      <PeriodoToolbar
+        tipo="mensal"
+        ano={ano}
+        setAno={setAno}
+        mes={mes}
+        setMes={setMes}
       />
 
       {data && <KpiStripe items={kpis} loading={loading && canais.length === 0} />}
