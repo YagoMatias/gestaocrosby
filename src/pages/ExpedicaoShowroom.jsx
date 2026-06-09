@@ -234,9 +234,9 @@ export default function ExpedicaoShowroom() {
                 <p className="text-sm text-blue-200/80 mt-1.5 flex items-center gap-2">
                   <span>Controle de envios</span>
                   <span className="w-1 h-1 rounded-full bg-blue-400/60" />
-                  <span>Showroom + Novidades Franquia</span>
+                  <span>Showroom + Novidades + Venda/Promo/Suframa</span>
                   <span className="w-1 h-1 rounded-full bg-blue-400/60" />
-                  <span className="font-mono text-blue-300/70">ops 7254 · 7007 · 7255</span>
+                  <span className="font-mono text-blue-300/70">ops 7254 · 7007 · 7255 · 7234 · 7240 · 7259</span>
                 </p>
               </div>
             </div>
