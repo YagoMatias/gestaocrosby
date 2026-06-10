@@ -53,6 +53,7 @@ const BANCOS = [
   'STONE NOVA CRUZ',
   'STONE PARNAMIRIM',
   'ITAU FLAVIO',
+  'ITAU RECIFE',
   'CAIXA IRMAOS',
   'MENTORE',
 ];
@@ -136,6 +137,7 @@ const BANCOS_SALDO = [
   'SICREDI FÁBIO',
   'STONE',
   'ITAU FLAVIO',
+  'ITAU RECIFE',
   'CAIXA IRMAOS',
   'MENTORE',
 ];
@@ -2812,9 +2814,14 @@ const LiberacaoPagamento = () => {
 
   const { totalSaldo, bancosSaldoCount } = useMemo(
     () => ({
-      totalSaldo: saldos.reduce((s, r) => s + parseFloat(r.valor || 0), 0),
-      bancosSaldoCount: saldos.filter((r) => parseFloat(r.valor || 0) > 0)
-        .length,
+      totalSaldo: BANCOS_SALDO.reduce((s, b) => {
+        const row = saldos.find((r) => r.banco === b);
+        return s + parseFloat(row?.valor || 0);
+      }, 0),
+      bancosSaldoCount: BANCOS_SALDO.filter((b) => {
+        const row = saldos.find((r) => r.banco === b);
+        return parseFloat(row?.valor || 0) > 0;
+      }).length,
     }),
     [saldos],
   );
@@ -2968,37 +2975,6 @@ const LiberacaoPagamento = () => {
     [user],
   );
 
-  // Helper: ajusta saldo bancário em + ou - delta
-  const ajustarSaldoBanco = useCallback(
-    async (banco, delta, now) => {
-      if (!banco || !delta) return;
-      const { data: row } = await supabase
-        .from('saldo_bancario')
-        .select('valor')
-        .eq('banco', banco)
-        .maybeSingle();
-      const novoSaldo = parseFloat(row?.valor || 0) + delta;
-      await supabase.from('saldo_bancario').upsert(
-        {
-          banco,
-          valor: novoSaldo,
-          updated_at: now,
-          updated_by: user?.email || null,
-        },
-        { onConflict: 'banco' },
-      );
-      setSaldos((prev) => {
-        const existe = prev.some((r) => r.banco === banco);
-        if (existe)
-          return prev.map((r) =>
-            r.banco === banco ? { ...r, valor: novoSaldo } : r,
-          );
-        return [...prev, { banco, valor: novoSaldo }];
-      });
-    },
-    [user],
-  );
-
   // Mudança de status (forward ou backward) com ajuste de saldo automático.
   // novoStatus: 'PENDENTE' | 'APROVADO' | 'PAGO'
   // extra pode incluir: dt_pagamento, banco_pagamento, forma_pagamento, etc.
@@ -3057,25 +3033,12 @@ const LiberacaoPagamento = () => {
         return;
       }
 
-      // Ajuste de saldo bancário
-      const banco = patch.banco_pagamento ?? titulo.banco_pagamento;
-      const valorBase = parseFloat(
-        patch.vl_real ?? titulo.vl_real ?? titulo.vl_duplicata ?? 0,
-      );
-      if (banco && valorBase) {
-        if (oldStatus === 'PAGO' && novoStatus !== 'PAGO') {
-          await ajustarSaldoBanco(banco, +valorBase, now);
-        } else if (oldStatus !== 'PAGO' && novoStatus === 'PAGO') {
-          await ajustarSaldoBanco(banco, -valorBase, now);
-        }
-      }
-
       setProcessandoId(null);
       setTitulos((prev) =>
         prev.map((t) => (t.id === id ? { ...t, ...patch } : t)),
       );
     },
-    [titulos, user, ajustarSaldoBanco],
+    [titulos, user],
   );
 
   // Mudança de status em lote
@@ -3139,17 +3102,6 @@ const LiberacaoPagamento = () => {
           );
           continue;
         }
-        const banco = titulo.banco_pagamento;
-        const valorBase = parseFloat(
-          titulo.vl_real != null ? titulo.vl_real : titulo.vl_duplicata || 0,
-        );
-        if (banco && valorBase) {
-          if (oldStatus === 'PAGO' && novoStatus !== 'PAGO') {
-            await ajustarSaldoBanco(banco, +valorBase, now);
-          } else if (oldStatus !== 'PAGO' && novoStatus === 'PAGO') {
-            await ajustarSaldoBanco(banco, -valorBase, now);
-          }
-        }
         setTitulos((prev) =>
           prev.map((t) => (t.id === id ? { ...t, ...patch } : t)),
         );
@@ -3157,7 +3109,7 @@ const LiberacaoPagamento = () => {
       setProcessando(false);
       setSelecionados(new Set());
     },
-    [selecionados, titulos, user, ajustarSaldoBanco],
+    [selecionados, titulos, user],
   );
 
   const aprovarSelecionados = useCallback(async () => {
@@ -3233,21 +3185,10 @@ const LiberacaoPagamento = () => {
           prev.map((x) => (x.id === id ? { ...x, ...patch } : x)),
         );
       }
-      // Deduzir saldo por banco
-      const porBanco = {};
-      ids.forEach((id) => {
-        const t = titulos.find((x) => x.id === id);
-        if (!t?.banco_pagamento) return;
-        const v = parseFloat(t.vl_real ?? t.vl_duplicata ?? 0);
-        porBanco[t.banco_pagamento] = (porBanco[t.banco_pagamento] || 0) + v;
-      });
-      for (const [banco, vlPago] of Object.entries(porBanco)) {
-        await ajustarSaldoBanco(banco, -vlPago, now);
-      }
       setProcessando(false);
       setSelecionados(new Set());
     },
-    [selecionados, titulos, user, ajustarSaldoBanco],
+    [selecionados, titulos, user],
   );
 
   const toggleBaixado = useCallback(
@@ -3797,7 +3738,7 @@ const LiberacaoPagamento = () => {
               className="border border-gray-300 rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#000638] h-[30px]"
             >
               <option value="">Todos</option>
-              {BANCOS_SALDO.map((b) => (
+              {BANCOS.map((b) => (
                 <option key={b} value={b}>
                   {b}
                 </option>

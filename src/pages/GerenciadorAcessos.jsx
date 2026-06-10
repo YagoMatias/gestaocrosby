@@ -62,6 +62,11 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro',
   },
   {
+    path: '/despesas-industria',
+    name: 'Despesas de Indústria',
+    category: 'Financeiro',
+  },
+  {
     path: '/liberacao-pagamento',
     name: 'Liberação de Pagamento',
     category: 'Financeiro',

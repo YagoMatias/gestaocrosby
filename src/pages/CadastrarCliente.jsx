@@ -26,6 +26,8 @@ import {
   FileText,
   FolderOpen,
   Truck,
+  MagnifyingGlass,
+  Spinner,
 } from '@phosphor-icons/react';
 
 const BUCKET_DOCS = 'clientes-confianca';
@@ -597,6 +599,8 @@ export default function CadastrarCliente() {
   const [documentosPendentes, setDocumentosPendentes] = useState({});
   const [uploadStatus, setUploadStatus] = useState({}); // { [categoria]: 'ok'|'err'|'enviando' }
   const [uploadingDocs, setUploadingDocs] = useState(false);
+  const [buscandoCnpj, setBuscandoCnpj] = useState(false);
+  const [cnpjBuscaErro, setCnpjBuscaErro] = useState(null);
 
   const state = tipoPessoa === 'PF' ? pf : pj;
   const setState = tipoPessoa === 'PF' ? setPf : setPj;
@@ -648,6 +652,76 @@ export default function CadastrarCliente() {
     },
     [setState],
   );
+
+  // ─── Busca dados da empresa via CNPJ (BrasilAPI) e preenche o form (PJ) ─────
+  const buscarDadosCnpj = useCallback(async () => {
+    const digits = String(pj.cnpj || '').replace(/\D/g, '');
+    if (digits.length !== 14) {
+      setCnpjBuscaErro('Informe um CNPJ válido com 14 dígitos.');
+      return;
+    }
+    setCnpjBuscaErro(null);
+    setBuscandoCnpj(true);
+    try {
+      const resp = await fetch(`${TotvsURL}cnpj/${digits}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const json = await resp.json();
+      const d = json?.data;
+      if (!d) throw new Error('CNPJ não encontrado na base pública.');
+
+      const cep = String(d.cep || '').replace(/\D/g, '');
+      const endereco = [d.descricao_tipo_de_logradouro, d.logradouro]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      const novoEndereco =
+        endereco || cep
+          ? {
+              ...emptyAddress(),
+              addressType: 'Commercial',
+              address: endereco,
+              number: d.numero || '',
+              complement: d.complemento || '',
+              neighborhood: d.bairro || '',
+              cityName: d.municipio || '',
+              stateAbbreviation: d.uf || '',
+              zipCode: cep,
+            }
+          : null;
+
+      const tel = String(d.ddd_telefone_1 || '').replace(/\D/g, '');
+      const novoTelefone =
+        tel.length >= 10
+          ? { ...emptyPhone(), number: tel, isDefault: true }
+          : null;
+      const novoEmail = d.email
+        ? { ...emptyEmail(), email: d.email, isDefault: true }
+        : null;
+
+      setPj((prev) => ({
+        ...prev,
+        name: prev.name || d.razao_social || '',
+        fantasyName: prev.fantasyName || d.nome_fantasia || '',
+        uf: prev.uf || d.uf || '',
+        dateFoundation: prev.dateFoundation || d.data_inicio_atividade || '',
+        initialDateActivity:
+          prev.initialDateActivity || d.data_inicio_atividade || '',
+        shareCapital:
+          prev.shareCapital ||
+          (d.capital_social != null ? String(d.capital_social) : ''),
+        codeActivityCnae:
+          prev.codeActivityCnae ||
+          (d.cnae_fiscal != null ? String(d.cnae_fiscal) : ''),
+        addresses: novoEndereco ? [novoEndereco] : prev.addresses,
+        phones: novoTelefone ? [novoTelefone] : prev.phones,
+        emails: novoEmail ? [novoEmail] : prev.emails,
+      }));
+    } catch (err) {
+      setCnpjBuscaErro(`Não foi possível consultar o CNPJ: ${err.message}`);
+    } finally {
+      setBuscandoCnpj(false);
+    }
+  }, [pj.cnpj]);
 
   // ─── Construção do payload final ───────────────────────────────────────────
   const buildPayload = useCallback(() => {
@@ -1160,14 +1234,39 @@ export default function CadastrarCliente() {
               ) : (
                 <>
                   <Field label="CNPJ" required>
-                    <input
-                      type="text"
-                      className={inputCls}
-                      value={state.cnpj}
-                      onChange={(e) => updateField('cnpj', e.target.value)}
-                      placeholder="00.000.000/0000-00"
-                      maxLength={18}
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        className={inputCls}
+                        value={state.cnpj}
+                        onChange={(e) => updateField('cnpj', e.target.value)}
+                        placeholder="00.000.000/0000-00"
+                        maxLength={18}
+                      />
+                      <button
+                        type="button"
+                        onClick={buscarDadosCnpj}
+                        disabled={
+                          buscandoCnpj ||
+                          String(state.cnpj || '').replace(/\D/g, '').length !==
+                            14
+                        }
+                        className="shrink-0 flex items-center gap-1.5 px-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold"
+                        title="Preencher dados automaticamente pela Receita (BrasilAPI)"
+                      >
+                        {buscandoCnpj ? (
+                          <Spinner size={14} className="animate-spin" />
+                        ) : (
+                          <MagnifyingGlass size={14} weight="bold" />
+                        )}
+                        Buscar
+                      </button>
+                    </div>
+                    {cnpjBuscaErro && (
+                      <p className="mt-1 text-[10px] text-red-600 font-semibold">
+                        {cnpjBuscaErro}
+                      </p>
+                    )}
                   </Field>
                   <Field label="Nome fantasia">
                     <input

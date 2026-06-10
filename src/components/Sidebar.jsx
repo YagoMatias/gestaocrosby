@@ -96,6 +96,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'Despesas de Indústria',
+        href: '/despesas-industria',
+        icon: Receipt,
+        color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
         name: 'Liberação de Pagamento',
         href: '/liberacao-pagamento',
         icon: CheckCircle,

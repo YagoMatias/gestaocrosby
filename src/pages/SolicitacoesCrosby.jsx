@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { supabaseAdmin } from '../lib/supabase';
 import { API_BASE_URL } from '../config/constants';
+import CadastrarFornecedorModal from '../components/CadastrarFornecedorModal';
 import PageTitle from '../components/ui/PageTitle';
 import Notification from '../components/ui/Notification';
 import {
@@ -178,6 +179,13 @@ const formatarDataHora = (data) => {
 
 const formatarData = (data) => {
   if (!data) return '--';
+  // Se vier no formato YYYY-MM-DD ou com T..., extrai só a parte da data
+  // e interpreta como local (sem conversão UTC→local que causaria regressão de dia).
+  const datePart = typeof data === 'string' ? data.slice(0, 10) : null;
+  if (datePart && /^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    const [y, m, d] = datePart.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('pt-BR');
+  }
   const d = new Date(data);
   if (isNaN(d.getTime())) return '--';
   return d.toLocaleDateString('pt-BR');
@@ -203,6 +211,106 @@ const formatCnpjCpf = (v) => {
     .replace(/^(\d{2}\.\d{3})(\d)/, '$1.$2')
     .replace(/\.(\d{3})(\d)/, '.$1/$2')
     .replace(/(\d{4})(\d{1,2})$/, '$1-$2');
+};
+
+// =====================================================================
+// TRADUÇÃO DE ERROS TOTVS → mensagens amigáveis para o usuário
+// =====================================================================
+const traduzirMensagemTotvs = (raw) => {
+  if (!raw) return null;
+  const msg = String(raw);
+
+  // SupplierCpfCnpj not found
+  if (/SupplierCpfCnpj\s+not\s+found/i.test(msg)) {
+    const m = msg.match(/(\d{11,14})/);
+    const doc = m ? ` (${formatCnpjCpf(m[1])})` : '';
+    return `CPF/CNPJ${doc} NÃO CADASTRADO NO TOTVS, OU CLIENTE NÃO MARCADO COMO FORNECEDOR.`;
+  }
+  // BranchCnpj not found
+  if (/BranchCnpj\s+not\s+found/i.test(msg)) {
+    return 'CNPJ da filial não cadastrado no TOTVS.';
+  }
+  // BearerCode
+  if (/BearerCode/i.test(msg) && /not\s+found/i.test(msg)) {
+    return 'Portador não cadastrado no TOTVS.';
+  }
+  // ExpenseCode
+  if (/ExpenseCode/i.test(msg) && /not\s+found/i.test(msg)) {
+    return 'Código de despesa não cadastrado no TOTVS.';
+  }
+  // CostCenterCode
+  if (/CostCenterCode/i.test(msg) && /not\s+found/i.test(msg)) {
+    return 'Centro de custo não cadastrado no TOTVS.';
+  }
+  // DuplicateCode tamanho
+  if (/DuplicateCode/i.test(msg) && /exceed/i.test(msg)) {
+    return 'O CÓDIGO DA DUPLICATA excede o limite de 10 caracteres. Edite a solicitação e diminua o código.';
+  }
+  // DuplicateCode duplicado
+  if (/DuplicateCode/i.test(msg) && /(already|duplicate|exists)/i.test(msg)) {
+    return 'Já existe uma duplicata com este código no TOTVS. Edite a solicitação e gere um novo código.';
+  }
+  // FieldSizeExceed genérico
+  if (/FieldSizeExceed/i.test(msg) || /exceed the limit size/i.test(msg)) {
+    const m = msg.match(/field\s+(\w+)\s+exceed.*?(\d+)\s+characters/i);
+    if (m) return `O campo ${m[1]} excede o limite de ${m[2]} caracteres.`;
+    return 'Um dos campos excedeu o limite de caracteres permitido.';
+  }
+  // Invalid field
+  if (/InvalidField/i.test(msg)) {
+    const m = msg.match(/InvalidField\s+([\w.]+)/i);
+    if (m) return `Campo inválido enviado ao TOTVS: ${m[1]}.`;
+    return 'Um dos campos enviados ao TOTVS está inválido.';
+  }
+  // Required field
+  if (/required/i.test(msg) && /field/i.test(msg)) {
+    return 'Um campo obrigatório não foi preenchido.';
+  }
+  // KeyNotFound genérico
+  if (/KeyNotFound/i.test(msg)) {
+    return 'Registro não encontrado no TOTVS. Verifique se todos os códigos estão cadastrados.';
+  }
+  // Timeout
+  if (/timeout/i.test(msg)) {
+    return 'O TOTVS demorou muito para responder. Tente reenviar.';
+  }
+  // Token / auth
+  if (/401|unauthorized|token/i.test(msg)) {
+    return 'Falha de autenticação com o TOTVS. Avise o suporte técnico.';
+  }
+  return null;
+};
+
+// Extrai todas as mensagens amigáveis a partir do totvs_erro + totvs_response
+const extrairErrosAmigaveis = (sol) => {
+  const msgs = [];
+  const addUnique = (m) => {
+    if (m && !msgs.includes(m)) msgs.push(m);
+  };
+
+  if (Array.isArray(sol.totvs_response)) {
+    sol.totvs_response.forEach((d) => {
+      const t = traduzirMensagemTotvs(d?.message);
+      if (t) addUnique(t);
+    });
+  } else if (
+    sol.totvs_response?.details &&
+    Array.isArray(sol.totvs_response.details)
+  ) {
+    sol.totvs_response.details.forEach((d) => {
+      const t = traduzirMensagemTotvs(d?.message);
+      if (t) addUnique(t);
+    });
+  } else if (sol.totvs_response?.message) {
+    const t = traduzirMensagemTotvs(sol.totvs_response.message);
+    if (t) addUnique(t);
+  }
+
+  if (msgs.length === 0) {
+    const t = traduzirMensagemTotvs(sol.totvs_erro);
+    if (t) addUnique(t);
+  }
+  return msgs;
 };
 
 // =====================================================================
@@ -279,6 +387,16 @@ const SolicitacoesCrosby = () => {
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 3500);
   };
+
+  // Garante que o duplicateCode no payload use o valor editado pelo usuário
+  // (sol.duplicate_code) em vez do valor possivelmente desatualizado dentro de payload_totvs
+  const mergePayloadTotvs = (sol) => ({
+    ...sol.payload_totvs,
+    duplicateCode:
+      sol.duplicate_code != null
+        ? parseInt(sol.duplicate_code)
+        : sol.payload_totvs?.duplicateCode,
+  });
 
   // ----- filtros -----
   const solicitacoesFiltradas = useMemo(() => {
@@ -390,14 +508,14 @@ const SolicitacoesCrosby = () => {
       // 2) Envia para TOTVS
       console.log(
         '📤 Enviando payload TOTVS:',
-        JSON.stringify(sol.payload_totvs, null, 2),
+        JSON.stringify(mergePayloadTotvs(sol), null, 2),
       );
       const resp = await fetch(
         `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sol.payload_totvs),
+          body: JSON.stringify(mergePayloadTotvs(sol)),
         },
       );
       const result = await resp.json().catch(() => ({}));
@@ -450,14 +568,14 @@ const SolicitacoesCrosby = () => {
     try {
       console.log(
         '📤 Reenviando payload TOTVS:',
-        JSON.stringify(sol.payload_totvs, null, 2),
+        JSON.stringify(mergePayloadTotvs(sol), null, 2),
       );
       const resp = await fetch(
         `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sol.payload_totvs),
+          body: JSON.stringify(mergePayloadTotvs(sol)),
         },
       );
       const result = await resp.json().catch(() => ({}));
@@ -770,7 +888,7 @@ const SolicitacoesCrosby = () => {
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(sol.payload_totvs),
+              body: JSON.stringify(mergePayloadTotvs(sol)),
             },
           );
           const result = await resp.json().catch(() => ({}));
@@ -1488,7 +1606,8 @@ const ModalDetalhe = ({
     (sol.status === 'aprovado_gestor' && isFinanceiro);
   const podeEditar =
     (sol.status === 'pendente' && isGestor) ||
-    (sol.status === 'aprovado_gestor' && isFinanceiro);
+    (sol.status === 'aprovado_gestor' && isFinanceiro) ||
+    (sol.status === 'erro_envio' && isFinanceiro);
   const podeDevolver = sol.status === 'aprovado_gestor' && isFinanceiro;
 
   if (editando) {
@@ -1534,27 +1653,41 @@ const ModalDetalhe = ({
           {/* ── DOCUMENTO DUPLICATA ── */}
           <div className="p-5 space-y-4">
             {/* Erro TOTVS */}
-            {sol.totvs_erro && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-                <div className="flex items-center gap-1.5 font-bold mb-1">
-                  <WarningCircle size={16} weight="bold" />
-                  Erro no envio ao TOTVS
-                </div>
-                <p className="whitespace-pre-wrap text-xs font-bold">
-                  {sol.totvs_erro}
-                </p>
-                {sol.totvs_response && (
-                  <details className="mt-2">
-                    <summary className="text-xs cursor-pointer text-red-600 hover:text-red-800 font-bold">
-                      Ver detalhes técnicos
-                    </summary>
-                    <pre className="mt-1 text-[10px] bg-red-100 rounded p-2 overflow-x-auto max-h-40 whitespace-pre-wrap">
-                      {JSON.stringify(sol.totvs_response, null, 2)}
-                    </pre>
-                  </details>
-                )}
-              </div>
-            )}
+            {sol.totvs_erro &&
+              (() => {
+                const amigaveis = extrairErrosAmigaveis(sol);
+                return (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                    <div className="flex items-center gap-1.5 font-bold mb-2">
+                      <WarningCircle size={16} weight="bold" />
+                      Erro no envio ao TOTVS
+                    </div>
+                    {amigaveis.length > 0 ? (
+                      <ul className="list-disc list-inside space-y-1 text-xs font-bold">
+                        {amigaveis.map((m, i) => (
+                          <li key={i} className="uppercase">
+                            {m}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="whitespace-pre-wrap text-xs font-bold">
+                        {sol.totvs_erro}
+                      </p>
+                    )}
+                    {sol.totvs_response && (
+                      <details className="mt-2">
+                        <summary className="text-xs cursor-pointer text-red-600 hover:text-red-800 font-bold">
+                          Ver detalhes técnicos
+                        </summary>
+                        <pre className="mt-1 text-[10px] bg-red-100 rounded p-2 overflow-x-auto max-h-40 whitespace-pre-wrap">
+                          {JSON.stringify(sol.totvs_response, null, 2)}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                );
+              })()}
 
             {/* ── CABEÇALHO DO DOCUMENTO ── */}
             <div className="border-2 border-[#000638] rounded-xl overflow-hidden">
@@ -1844,8 +1977,161 @@ const ModalDetalhe = ({
                 );
               })()}
 
+            {/* ── INFORMAÇÕES DO TIPO ── campos específicos por tipo */}
+            {/* Pagamento / Reembolso: chave pix, código de barras, despesa, vencimento, valor, rateio */}
+            {(sol.tipo_solicitacao === 'pagamento' ||
+              sol.tipo_solicitacao === 'reembolso') &&
+              (sol.chave_pix ||
+                sol.codigo_barras ||
+                sol.despesa_code ||
+                sol.cost_center_code ||
+                sol.dt_vencimento ||
+                sol.valor_total) && (
+                <div className="border-2 border-[#000638] rounded-xl overflow-hidden">
+                  <div className="bg-[#000638] px-4 py-2">
+                    <span className="text-white font-extrabold text-xs tracking-widest uppercase">
+                      Detalhes do{' '}
+                      {sol.tipo_solicitacao === 'reembolso'
+                        ? 'Reembolso'
+                        : 'Pagamento'}
+                    </span>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {(sol.dt_vencimento || sol.valor_total) && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 divide-x divide-gray-100">
+                        {sol.dt_vencimento && (
+                          <DocField label="Vencimento">
+                            <span className="font-semibold text-sm font-mono">
+                              {formatarData(sol.dt_vencimento)}
+                            </span>
+                          </DocField>
+                        )}
+                        {sol.valor_total && (
+                          <DocField label="Valor">
+                            <span className="font-extrabold text-lg text-[#000638]">
+                              {formatarMoeda(sol.valor_total)}
+                            </span>
+                          </DocField>
+                        )}
+                      </div>
+                    )}
+                    {(sol.despesa_code ||
+                      sol.cost_center_code ||
+                      sol.rateio_percentual) && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 divide-x divide-gray-100">
+                        {sol.despesa_code && (
+                          <DocField label="Despesa">
+                            <span className="font-semibold text-sm">
+                              {getDespesaNome(sol.despesa_code)}
+                            </span>
+                          </DocField>
+                        )}
+                        {sol.cost_center_code && (
+                          <DocField label="Centro de Custo">
+                            <span className="font-mono font-bold text-sm">
+                              {sol.cost_center_code}
+                            </span>
+                          </DocField>
+                        )}
+                        {sol.rateio_percentual != null && (
+                          <DocField label="Rateio">
+                            <span className="font-semibold text-sm">
+                              {sol.rateio_percentual}%
+                            </span>
+                          </DocField>
+                        )}
+                      </div>
+                    )}
+                    {sol.chave_pix && (
+                      <div className="grid grid-cols-1">
+                        <DocField label="Chave PIX">
+                          <span className="font-mono text-sm break-all select-all bg-yellow-50 px-2 py-0.5 rounded border border-yellow-200">
+                            {sol.chave_pix}
+                          </span>
+                        </DocField>
+                      </div>
+                    )}
+                    {sol.codigo_barras && (
+                      <div className="grid grid-cols-1">
+                        <DocField label="Código de Barras / Linha Digitável">
+                          <span className="font-mono text-sm break-all select-all bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                            {sol.codigo_barras}
+                          </span>
+                        </DocField>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+            {/* Compra: lista de produtos e marca/modelo */}
+            {sol.tipo_solicitacao === 'compra' &&
+              (sol.descricao || sol.marca_modelo) && (
+                <div className="border-2 border-[#000638] rounded-xl overflow-hidden">
+                  <div className="bg-[#000638] px-4 py-2">
+                    <span className="text-white font-extrabold text-xs tracking-widest uppercase">
+                      Detalhes da Compra
+                    </span>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {sol.descricao && (
+                      <div className="grid grid-cols-1">
+                        <DocField label="Produtos que deseja comprar">
+                          <p className="text-sm whitespace-pre-wrap text-gray-700">
+                            {sol.descricao}
+                          </p>
+                        </DocField>
+                      </div>
+                    )}
+                    {sol.marca_modelo && (
+                      <div className="grid grid-cols-1">
+                        <DocField label="Marca / Modelo">
+                          <p className="text-sm text-gray-700">
+                            {sol.marca_modelo}
+                          </p>
+                        </DocField>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+            {/* Manutenção: serviço e recomendação de fornecedores */}
+            {sol.tipo_solicitacao === 'manutencao' &&
+              (sol.descricao || sol.recomendacao_fornecedores) && (
+                <div className="border-2 border-[#000638] rounded-xl overflow-hidden">
+                  <div className="bg-[#000638] px-4 py-2">
+                    <span className="text-white font-extrabold text-xs tracking-widest uppercase">
+                      Detalhes da Manutenção
+                    </span>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {sol.descricao && (
+                      <div className="grid grid-cols-1">
+                        <DocField label="Serviço a ser contratado">
+                          <p className="text-sm whitespace-pre-wrap text-gray-700">
+                            {sol.descricao}
+                          </p>
+                        </DocField>
+                      </div>
+                    )}
+                    {sol.recomendacao_fornecedores && (
+                      <div className="grid grid-cols-1">
+                        <DocField label="Recomendação de Fornecedores">
+                          <p className="text-sm whitespace-pre-wrap text-gray-700">
+                            {sol.recomendacao_fornecedores}
+                          </p>
+                        </DocField>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
             {/* ── ANEXOS / REFERÊNCIAS ── */}
-            {(sol.comprovante_url ||
+            {(sol.comprovante_gestor_url ||
+              sol.comprovante_fabio_url ||
+              sol.comprovante_url ||
               sol.link_exemplo ||
               (Array.isArray(sol.imagens_exemplo_urls) &&
                 sol.imagens_exemplo_urls.length > 0) ||
@@ -1860,7 +2146,65 @@ const ModalDetalhe = ({
                   </span>
                 </div>
                 <div className="p-4 space-y-4">
-                  {/* Comprovante */}
+                  {/* Comprovante aprovação Gestor */}
+                  {sol.comprovante_gestor_url && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase text-gray-400 tracking-wider mb-2">
+                        Comprovante — Aprovação do Gestor
+                      </p>
+                      <a
+                        href={sol.comprovante_gestor_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block"
+                      >
+                        {/\.(jpe?g|png|gif|webp)$/i.test(
+                          sol.comprovante_gestor_url,
+                        ) ? (
+                          <img
+                            src={sol.comprovante_gestor_url}
+                            alt="Aprovação Gestor"
+                            className="max-h-72 rounded-lg border object-contain bg-gray-50 w-full hover:opacity-90 transition-opacity"
+                          />
+                        ) : (
+                          <div className="flex items-center gap-2 text-sm text-blue-700 underline">
+                            <LinkIcon size={14} weight="bold" /> Ver arquivo
+                          </div>
+                        )}
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Comprovante aprovação Fábio */}
+                  {sol.comprovante_fabio_url && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase text-gray-400 tracking-wider mb-2">
+                        Comprovante — Aprovação do Fábio
+                      </p>
+                      <a
+                        href={sol.comprovante_fabio_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block"
+                      >
+                        {/\.(jpe?g|png|gif|webp)$/i.test(
+                          sol.comprovante_fabio_url,
+                        ) ? (
+                          <img
+                            src={sol.comprovante_fabio_url}
+                            alt="Aprovação Fábio"
+                            className="max-h-72 rounded-lg border object-contain bg-gray-50 w-full hover:opacity-90 transition-opacity"
+                          />
+                        ) : (
+                          <div className="flex items-center gap-2 text-sm text-blue-700 underline">
+                            <LinkIcon size={14} weight="bold" /> Ver arquivo
+                          </div>
+                        )}
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Comprovante de pagamento (reembolso) */}
                   {sol.comprovante_url && (
                     <div>
                       <p className="text-[10px] font-bold uppercase text-gray-400 tracking-wider mb-2">
@@ -2347,6 +2691,7 @@ const ModalEdicao = ({
     sol.supplier_name || '',
   );
   const [buscandoFornecedor, setBuscandoFornecedor] = React.useState(false);
+  const [modalCadastroForn, setModalCadastroForn] = React.useState(false);
   const [duplicateCode, setDuplicateCode] = React.useState(
     sol.duplicate_code || '',
   );
@@ -2451,6 +2796,7 @@ const ModalEdicao = ({
       );
       if (resp.status === 404) {
         setSupplierName('');
+        setModalCadastroForn(true);
         return;
       }
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -2569,6 +2915,7 @@ const ModalEdicao = ({
     return {
       ...payload,
       supplierCpfCnpj: onlyDigits(supplierCpfCnpj) || payload.supplierCpfCnpj,
+      duplicateCode: parseInt(duplicateCode) || payload.duplicateCode,
       installments: newInst,
     };
   };
@@ -2590,7 +2937,13 @@ const ModalEdicao = ({
         novasImagensUrls.push(url);
       }
       const newPayload =
-        instOrig.length > 0 ? buildPayload() : sol.payload_totvs;
+        instOrig.length > 0
+          ? buildPayload()
+          : {
+              ...(sol.payload_totvs || {}),
+              duplicateCode:
+                parseInt(duplicateCode) || sol.payload_totvs?.duplicateCode,
+            };
       const valorTotal = parcelas.reduce(
         (s, p) => s + (parseFloat(p.duplicateValue) || 0),
         0,
@@ -2636,6 +2989,17 @@ const ModalEdicao = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+      {modalCadastroForn && (
+        <CadastrarFornecedorModal
+          cpfCnpj={onlyDigits(supplierCpfCnpj)}
+          onClose={() => setModalCadastroForn(false)}
+          onSuccess={({ name, cpfCnpj }) => {
+            if (cpfCnpj) setSupplierCpfCnpj(cpfCnpj);
+            setSupplierName(name || '');
+            setModalCadastroForn(false);
+          }}
+        />
+      )}
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[94vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-[#000638] text-white px-5 py-3.5 rounded-t-xl flex justify-between items-center z-10">

@@ -711,6 +711,9 @@ const useApiClient = () => {
     accountsPayableSearch: (body) =>
       apiMutate('/api/totvs/accounts-payable/search', 'POST', body),
 
+    supplierDetails: (supplierCode) =>
+      apiMutate('/api/totvs/supplier-details', 'POST', { supplierCode }),
+
     franchiseClients: (params) =>
       apiCall('/api/totvs/franchise-clients', params),
 
@@ -749,11 +752,7 @@ const useApiClient = () => {
       apiMutate('/api/totvs/sale-panel/compras-franquias', 'POST', body),
 
     salePanelComprasFranquiaDetalhe: (body) =>
-      apiMutate(
-        '/api/totvs/sale-panel/compras-franquia-detalhe',
-        'POST',
-        body,
-      ),
+      apiMutate('/api/totvs/sale-panel/compras-franquia-detalhe', 'POST', body),
 
     salePanelSellers: (body) =>
       apiMutate('/api/totvs/sale-panel/sellers', 'POST', body),

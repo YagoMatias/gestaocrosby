@@ -31,6 +31,7 @@ import {
 } from '@phosphor-icons/react';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { API_BASE_URL } from '../config/constants';
+import CadastrarFornecedorModal from '../components/CadastrarFornecedorModal';
 import CENTROS_CUSTO from '../config/centrosCusto.json';
 import DESPESAS_JSON from '../config/despesas.json';
 import PORTADORES_JSON from '../config/portadores.json';
@@ -169,7 +170,9 @@ const todayISO = () => {
 
 const toIsoDateTime = (yyyymmdd) => {
   if (!yyyymmdd) return null;
-  return new Date(`${yyyymmdd}T00:00:00.000Z`).toISOString();
+  // Usa meio-dia UTC-3 (15:00 UTC) para evitar regressão de dia ao converter
+  // de ISO para local em fusos negativos (Brasil UTC-3).
+  return `${yyyymmdd}T15:00:00.000Z`;
 };
 
 // =====================================================================
@@ -406,6 +409,7 @@ const FormularioSolicitacoes = () => {
   const [fornecedorNome, setFornecedorNome] = useState('');
   const [fornecedorBuscando, setFornecedorBuscando] = useState(false);
   const [fornecedorModal, setFornecedorModal] = useState(false);
+  const [fornecedorVerificado, setFornecedorVerificado] = useState(false);
   const [duplicateCode, setDuplicateCode] = useState('');
 
   const [parcelas, setParcelas] = useState([novaParcela(1)]);
@@ -421,8 +425,10 @@ const FormularioSolicitacoes = () => {
   const [enviado, setEnviado] = useState(false);
   const [erro, setErro] = useState(null);
 
-  // Forma de pagamento (pagamento + reembolso)
+  // Forma de pagamento (pagamento + reembolso + rh)
   const [formaPagamento, setFormaPagamento] = useState('');
+  const [chavePix, setChavePix] = useState('');
+  const [codigoBarras, setCodigoBarras] = useState('');
 
   // Reembolso: comprovante (1 arquivo)
   const [comprovanteFile, setComprovanteFile] = useState(null);
@@ -432,10 +438,25 @@ const FormularioSolicitacoes = () => {
   const [linkExemplo, setLinkExemplo] = useState('');
   const [imagensExemploFiles, setImagensExemploFiles] = useState([]);
 
-  // Manuten\u00e7\u00e3o: contatos de prestadores
+  // Manuten\u00e7\u00e3o: contatos de prestadores (mantido para compatibilidade)
   const [contatosPrestadores, setContatosPrestadores] = useState([
     { nome: '', telefone: '', observacao: '' },
   ]);
+
+  // === Pagamento / Reembolso (fluxo simplificado) ===
+  const [dtVencimentoUnica, setDtVencimentoUnica] = useState('');
+  const [despesaUnicaCode, setDespesaUnicaCode] = useState('');
+  const [centroCustoUnico, setCentroCustoUnico] = useState('');
+  const [rateioUnico, setRateioUnico] = useState('100');
+  const [valorUnico, setValorUnico] = useState('');
+  const [comprovanteGestorFile, setComprovanteGestorFile] = useState(null);
+  const [comprovanteGestorPreview, setComprovanteGestorPreview] = useState('');
+  const [comprovanteFabioFile, setComprovanteFabioFile] = useState(null);
+  const [comprovanteFabioPreview, setComprovanteFabioPreview] = useState('');
+
+  // === Compra / Manuten\u00e7\u00e3o (fluxo simplificado) ===
+  const [marcaModelo, setMarcaModelo] = useState('');
+  const [recomendacaoFornecedores, setRecomendacaoFornecedores] = useState('');
 
   const [uploading, setUploading] = useState(false);
 
@@ -512,6 +533,19 @@ const FormularioSolicitacoes = () => {
     () => TIPOS.find((t) => t.id === tipo),
     [tipo],
   );
+
+  // ====== Flags derivadas por tipo (regras dos formulários) ======
+  // RH mantém o fluxo antigo completo (parcelas/duplicata).
+  // Pagamento/Reembolso usam fluxo simplificado (vencimento + despesa + comprovantes).
+  // Compra/Manutenção não exigem fornecedor TOTVS nem dados financeiros.
+  const exigeFornecedor =
+    tipo === 'pagamento' || tipo === 'reembolso' || tipo === 'rh';
+  const exigeFormaPagamento = exigeFornecedor;
+  const exigeParcelasRH = tipo === 'rh';
+  const exigeFluxoPagamentoSimples =
+    tipo === 'pagamento' || tipo === 'reembolso';
+  const exigeProdutosServicos = tipo === 'compra' || tipo === 'manutencao';
+  const exigeRecomendacao = tipo === 'manutencao';
 
   const updateParcela = (idx, patch) => {
     setParcelas((prev) =>
@@ -606,12 +640,15 @@ const FormularioSolicitacoes = () => {
       );
       if (resp.status === 404) {
         setFornecedorNome('');
+        setFornecedorVerificado(false);
         setFornecedorModal(true);
         return;
       }
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
-      setFornecedorNome(data?.data?.name || '');
+      const nome = data?.data?.name || '';
+      setFornecedorNome(nome);
+      setFornecedorVerificado(!!nome);
     } catch (err) {
       console.error('Erro ao buscar fornecedor:', err);
     } finally {
@@ -629,6 +666,7 @@ const FormularioSolicitacoes = () => {
     setFornecedorCpfCnpj('');
     setFornecedorNome('');
     setFornecedorModal(false);
+    setFornecedorVerificado(false);
     setDuplicateCode('');
     setParcelas([novaParcela(1)]);
     setDescricao('');
@@ -638,11 +676,24 @@ const FormularioSolicitacoes = () => {
     setNumParcelasInput('');
     setShowParcelasPopover(false);
     setFormaPagamento('');
+    setChavePix('');
+    setCodigoBarras('');
     setComprovanteFile(null);
     setComprovantePreview('');
     setLinkExemplo('');
     setImagensExemploFiles([]);
     setContatosPrestadores([{ nome: '', telefone: '', observacao: '' }]);
+    setDtVencimentoUnica('');
+    setDespesaUnicaCode('');
+    setCentroCustoUnico('');
+    setRateioUnico('100');
+    setValorUnico('');
+    setComprovanteGestorFile(null);
+    setComprovanteGestorPreview('');
+    setComprovanteFabioFile(null);
+    setComprovanteFabioPreview('');
+    setMarcaModelo('');
+    setRecomendacaoFornecedores('');
   };
 
   // Upload de arquivo \u00fanico (comprovante reembolso)
@@ -658,6 +709,38 @@ const FormularioSolicitacoes = () => {
       setComprovantePreview(URL.createObjectURL(file));
     } else {
       setComprovantePreview('');
+    }
+  };
+
+  // Upload do comprovante de aprova\u00e7\u00e3o do gestor (pagamento/reembolso)
+  const handleComprovanteGestorChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setErro('Comprovante do gestor muito grande (m\u00e1x. 10MB).');
+      return;
+    }
+    setComprovanteGestorFile(file);
+    if (file.type.startsWith('image/')) {
+      setComprovanteGestorPreview(URL.createObjectURL(file));
+    } else {
+      setComprovanteGestorPreview('');
+    }
+  };
+
+  // Upload do comprovante de aprova\u00e7\u00e3o do F\u00e1bio (pagamento/reembolso)
+  const handleComprovanteFabioChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setErro('Comprovante do F\u00e1bio muito grande (m\u00e1x. 10MB).');
+      return;
+    }
+    setComprovanteFabioFile(file);
+    if (file.type.startsWith('image/')) {
+      setComprovanteFabioPreview(URL.createObjectURL(file));
+    } else {
+      setComprovanteFabioPreview('');
     }
   };
 
@@ -714,39 +797,60 @@ const FormularioSolicitacoes = () => {
       return 'A loja selecionada não possui CNPJ cadastrado.';
     if (!solicitante.trim()) return 'Informe o nome do solicitante.';
     if (!setor) return 'Selecione o setor do solicitante.';
-    if (!descricao.trim())
+    if (!descricao.trim()) {
+      if (tipo === 'compra') return 'Descreva os produtos que deseja comprar.';
+      if (tipo === 'manutencao') return 'Descreva o serviço a ser contratado.';
       return 'Descreva brevemente a solicitação (descrição).';
-
-    const exigeFornecedor = !!tipo;
-    const exigeParcelas = !!tipo;
-    const exigeFormaPagamento = !!tipo;
+    }
 
     if (exigeFornecedor) {
       if (onlyDigits(fornecedorCpfCnpj).length < 11)
         return 'Informe um CPF/CNPJ válido para o fornecedor.';
       if (!fornecedorNome.trim()) return 'Informe o nome do fornecedor.';
+      if (!fornecedorVerificado)
+        return 'O fornecedor precisa estar cadastrado no TOTVS. Clique em "Buscar" para validar o CPF/CNPJ.';
     }
 
     if (exigeFormaPagamento && !formaPagamento)
       return 'Selecione a forma de pagamento.';
+    if (exigeFormaPagamento && formaPagamento === 'pix' && !chavePix.trim())
+      return 'Informe a chave PIX.';
+    if (
+      exigeFormaPagamento &&
+      formaPagamento === 'boleto' &&
+      !codigoBarras.trim()
+    )
+      return 'Informe o código de barras do boleto.';
 
-    if (tipo === 'reembolso' && !comprovanteFile)
-      return 'Anexe o comprovante (foto ou PDF).';
-
-    if (tipo === 'compra') {
-      if (!linkExemplo.trim() || !/^https?:\/\//i.test(linkExemplo.trim()))
-        return 'Informe um link de exemplo válido (começando com http/https).';
+    // ====== Fluxo simplificado: pagamento / reembolso ======
+    if (exigeFluxoPagamentoSimples) {
+      if (!dtVencimentoUnica) return 'Informe a data de vencimento.';
+      if (dtVencimentoUnica <= todayISO())
+        return 'A data de vencimento deve ser posterior a hoje.';
+      if (!despesaUnicaCode || isNaN(parseInt(despesaUnicaCode)))
+        return 'Selecione a despesa.';
+      if (!centroCustoUnico || isNaN(parseInt(centroCustoUnico)))
+        return 'Selecione o centro de custo.';
+      const rateioNum = parseFloat(rateioUnico);
+      if (isNaN(rateioNum) || rateioNum <= 0 || rateioNum > 100)
+        return 'Informe o rateio (1–100%).';
+      if (!valorUnico || parseFloat(valorUnico) <= 0)
+        return 'Informe o valor da solicitação.';
+      if (!comprovanteGestorFile)
+        return 'Anexe o comprovante de aprovação do gestor.';
+      if (!comprovanteFabioFile)
+        return 'Anexe o comprovante de aprovação do Fábio.';
+      if (tipo === 'reembolso' && !comprovanteFile)
+        return 'Anexe o comprovante de pagamento do reembolso.';
     }
 
-    if (tipo === 'manutencao') {
-      const algumPreenchido = contatosPrestadores.some(
-        (c) => c.nome.trim() || c.telefone.trim(),
-      );
-      if (!algumPreenchido)
-        return 'Informe ao menos um contato de prestador (nome ou telefone).';
-    }
+    // ====== Fluxo simplificado: compra / manutenção ======
+    // Não exige fornecedor, formaPagamento, parcelas, etc.
+    // descricao já foi validada acima com label adaptado.
+    // Marca/modelo é opcional e recomendacaoFornecedores é opcional.
 
-    if (exigeParcelas) {
+    // ====== Fluxo antigo (parcelas) — apenas RH ======
+    if (exigeParcelasRH) {
       if (!duplicateCode || isNaN(parseInt(duplicateCode)))
         return 'Informe o código da duplicata.';
 
@@ -830,23 +934,37 @@ const FormularioSolicitacoes = () => {
     setErro(null);
     setEnviando(true);
     try {
-      const exigeParcelas = !!tipo;
-      const exigeFornecedor = !!tipo;
-      const exigeFormaPagamento = !!tipo;
-
-      // Uploads pr\u00e9vios para Supabase Storage
+      // ============ Uploads para Supabase Storage ============
       let comprovanteUrl = null;
+      let comprovanteGestorUrl = null;
+      let comprovanteFabioUrl = null;
       let imagensUrls = [];
-      if (
+
+      const temAlgumUpload =
         comprovanteFile ||
-        (tipo === 'compra' && imagensExemploFiles.length > 0)
-      ) {
+        comprovanteGestorFile ||
+        comprovanteFabioFile ||
+        (tipo === 'compra' && imagensExemploFiles.length > 0);
+
+      if (temAlgumUpload) {
         setUploading(true);
         try {
           if (comprovanteFile) {
             comprovanteUrl = await uploadArquivo(
               comprovanteFile,
               'comprovantes',
+            );
+          }
+          if (comprovanteGestorFile) {
+            comprovanteGestorUrl = await uploadArquivo(
+              comprovanteGestorFile,
+              'comprovantes-gestor',
+            );
+          }
+          if (comprovanteFabioFile) {
+            comprovanteFabioUrl = await uploadArquivo(
+              comprovanteFabioFile,
+              'comprovantes-fabio',
             );
           }
           if (tipo === 'compra' && imagensExemploFiles.length > 0) {
@@ -859,9 +977,7 @@ const FormularioSolicitacoes = () => {
         }
       }
 
-      const payloadTotvs = exigeParcelas ? buildTotvsPayload() : null;
-      const primeira = exigeParcelas ? parcelas[0] : null;
-
+      // ============ Dados básicos comuns a todos os tipos ============
       const insertData = {
         cd_empresa: parseInt(empresaSelecionada.cd_empresa),
         nm_empresa: empresaSelecionada.nm_grupoempresa || null,
@@ -874,26 +990,52 @@ const FormularioSolicitacoes = () => {
         observacao: observacao.trim() || null,
         status: 'pendente',
         data_solicitacao: new Date().toISOString(),
-
         branch_cnpj: onlyDigits(empresaSelecionada.cnpj),
         supplier_cpf_cnpj: exigeFornecedor
           ? onlyDigits(fornecedorCpfCnpj)
-          : onlyDigits(fornecedorCpfCnpj) || null,
-        supplier_name: fornecedorNome.trim() || null,
-
+          : null,
+        supplier_name: exigeFornecedor ? fornecedorNome.trim() || null : null,
         forma_pagamento: exigeFormaPagamento ? formaPagamento : null,
         comprovante_url: comprovanteUrl,
-        link_exemplo: tipo === 'compra' ? linkExemplo.trim() : null,
+        link_exemplo: null,
         imagens_exemplo_urls: imagensUrls.length ? imagensUrls : [],
-        contatos_prestadores:
-          tipo === 'manutencao'
-            ? contatosPrestadores.filter(
-                (c) => c.nome.trim() || c.telefone.trim(),
-              )
-            : [],
+        contatos_prestadores: [],
+        comprovante_gestor_url: comprovanteGestorUrl,
+        comprovante_fabio_url: comprovanteFabioUrl,
+        chave_pix: formaPagamento === 'pix' ? chavePix.trim() || null : null,
+        codigo_barras:
+          formaPagamento === 'boleto' ? codigoBarras.trim() || null : null,
+        despesa_code: null,
+        marca_modelo: null,
+        recomendacao_fornecedores: null,
       };
 
-      if (exigeParcelas && payloadTotvs) {
+      // ============ Pagamento / Reembolso (fluxo simplificado) ============
+      if (exigeFluxoPagamentoSimples) {
+        insertData.dt_vencimento = dtVencimentoUnica
+          ? toIsoDateTime(dtVencimentoUnica)
+          : null;
+        insertData.despesa_code = parseInt(despesaUnicaCode) || null;
+        insertData.cost_center_code = parseInt(centroCustoUnico) || null;
+        insertData.rateio_percentual = parseFloat(rateioUnico) || null;
+        insertData.valor_total = parseFloat(valorUnico) || null;
+        // O financeiro completará payload_totvs (parcelas, portador, código duplicata)
+        // antes do envio definitivo ao TOTVS, ao editar a solicitação.
+      }
+
+      // ============ Compra / Manutenção ============
+      if (exigeProdutosServicos) {
+        insertData.marca_modelo = marcaModelo.trim() || null;
+        if (exigeRecomendacao) {
+          insertData.recomendacao_fornecedores =
+            recomendacaoFornecedores.trim() || null;
+        }
+      }
+
+      // ============ RH (fluxo antigo com parcelas/duplicata) ============
+      if (exigeParcelasRH) {
+        const payloadTotvs = buildTotvsPayload();
+        const primeira = parcelas[0];
         insertData.duplicate_code = payloadTotvs.duplicateCode;
         insertData.valor_total = valorTotal;
         insertData.dt_emissao = primeira.issueDate || null;
@@ -1159,36 +1301,25 @@ const FormularioSolicitacoes = () => {
             </div>
           </section>
 
-          {/* MODAL FORNECEDOR NÃO ENCONTRADO */}
+          {/* MODAL CADASTRO DE FORNECEDOR (PF/PJ) */}
           {fornecedorModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-              <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center border">
-                <div className="mx-auto w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mb-4">
-                  <Warning size={32} weight="fill" className="text-red-600" />
-                </div>
-                <h3 className="text-lg font-bold text-[#000638] mb-2">
-                  FORNECEDOR NÃO CADASTRADO
-                </h3>
-                <p className="text-sm text-gray-600 mb-5">
-                  Realize o cadastro do fornecedor no TOTVS e pesquise
-                  novamente.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setFornecedorModal(false)}
-                  className="w-full px-4 py-2.5 bg-[#000638] text-white rounded-lg font-bold hover:bg-[#fe0000] transition-colors text-sm"
-                >
-                  Entendi
-                </button>
-              </div>
-            </div>
+            <CadastrarFornecedorModal
+              cpfCnpj={onlyDigits(fornecedorCpfCnpj)}
+              onClose={() => setFornecedorModal(false)}
+              onSuccess={({ name, cpfCnpj }) => {
+                if (cpfCnpj) setFornecedorCpfCnpj(cpfCnpj);
+                setFornecedorNome(name || '');
+                setFornecedorVerificado(true);
+                setFornecedorModal(false);
+              }}
+            />
           )}
 
-          {/* FORNECEDOR / DUPLICATA — todos os tipos */}
-          {!!tipo && (
+          {/* FORNECEDOR / DUPLICATA — pagamento, reembolso e RH */}
+          {exigeFornecedor && (
             <section className="space-y-4">
               <h2 className="text-xs font-bold text-[#000638] uppercase tracking-wide">
-                3 · Fornecedor e Duplicata
+                3 · Fornecedor{exigeParcelasRH ? ' e Duplicata' : ''}
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -1203,6 +1334,7 @@ const FormularioSolicitacoes = () => {
                       onChange={(e) => {
                         setFornecedorCpfCnpj(e.target.value);
                         setFornecedorNome('');
+                        setFornecedorVerificado(false);
                       }}
                       maxLength={18}
                       placeholder="00.000.000/0000-00"
@@ -1235,32 +1367,39 @@ const FormularioSolicitacoes = () => {
                   <input
                     type="text"
                     value={fornecedorNome}
-                    onChange={(e) => setFornecedorNome(e.target.value)}
-                    maxLength={120}
-                    placeholder="Preenchido ao buscar ou manualmente"
+                    readOnly
+                    placeholder="Preenchido ao buscar o CPF/CNPJ"
                     className={`w-full border-2 rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors ${
-                      fornecedorNome
+                      fornecedorVerificado
                         ? 'border-green-400 bg-green-50'
-                        : 'border-gray-200'
+                        : 'border-gray-200 bg-gray-50'
                     } focus:border-[#000638]`}
                   />
+                  {!fornecedorVerificado &&
+                    onlyDigits(fornecedorCpfCnpj).length >= 11 && (
+                      <p className="mt-1 text-[10px] text-amber-600 font-semibold">
+                        Clique em "Buscar" para validar o fornecedor no TOTVS.
+                      </p>
+                    )}
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
-                    <Hash size={14} weight="bold" />
-                    Código da Duplicata *
-                  </label>
-                  <input
-                    type="number"
-                    value={duplicateCode}
-                    onChange={(e) => setDuplicateCode(e.target.value)}
-                    placeholder="Ex.: 12345"
-                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
-                  />
-                  <p className="mt-1 text-[10px] text-gray-500">
-                    Campo "Duplicata" do componente FCPFM004 — máx. 10 dígitos
-                  </p>
-                </div>
+                {exigeParcelasRH && (
+                  <div>
+                    <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                      <Hash size={14} weight="bold" />
+                      Código da Duplicata *
+                    </label>
+                    <input
+                      type="number"
+                      value={duplicateCode}
+                      onChange={(e) => setDuplicateCode(e.target.value)}
+                      placeholder="Ex.: 12345"
+                      className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
+                    />
+                    <p className="mt-1 text-[10px] text-gray-500">
+                      Campo "Duplicata" do componente FCPFM004 — máx. 10 dígitos
+                    </p>
+                  </div>
+                )}
                 <div>
                   <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
                     <CreditCard size={14} weight="bold" />
@@ -1280,203 +1419,306 @@ const FormularioSolicitacoes = () => {
                   </select>
                 </div>
               </div>
-            </section>
-          )}
 
-          {/* REEMBOLSO — comprovante */}
-          {tipo === 'reembolso' && (
-            <section className="space-y-3">
-              <h2 className="text-xs font-bold text-[#000638] uppercase tracking-wide">
-                4 · Comprovante de Pagamento *
-              </h2>
-              <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-6 cursor-pointer hover:border-[#000638] transition-colors bg-gray-50/40">
-                <UploadSimple size={28} className="text-gray-400 mb-2" />
-                <span className="text-sm font-bold text-[#000638]">
-                  {comprovanteFile
-                    ? comprovanteFile.name
-                    : 'Clique para anexar foto ou PDF'}
-                </span>
-                <span className="text-[11px] text-gray-500 mt-1">
-                  Tamanho máximo 10MB · JPG, PNG, PDF
-                </span>
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={handleComprovanteChange}
-                  className="hidden"
-                />
-              </label>
-              {comprovantePreview && (
-                <div className="flex justify-center">
-                  <img
-                    src={comprovantePreview}
-                    alt="Pré-visualização"
-                    className="max-h-48 rounded-lg border"
-                  />
-                </div>
-              )}
-              {comprovanteFile && !comprovantePreview && (
-                <div className="text-center text-[11px] text-gray-500 font-mono">
-                  {(comprovanteFile.size / 1024).toFixed(0)} KB ·{' '}
-                  {comprovanteFile.type}
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* COMPRA — link e imagens de exemplo */}
-          {tipo === 'compra' && (
-            <section className="space-y-4">
-              <h2 className="text-xs font-bold text-[#000638] uppercase tracking-wide">
-                4 · Detalhes da Compra
-              </h2>
-              <div>
-                <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
-                  <LinkIcon size={14} weight="bold" />
-                  Link de exemplo *
-                </label>
-                <input
-                  type="url"
-                  value={linkExemplo}
-                  onChange={(e) => setLinkExemplo(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
-                />
-                <p className="mt-1 text-[10px] text-gray-500">
-                  Onde encontrar o produto — site da loja, marketplace etc.
-                </p>
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
-                  <ImageIcon size={14} weight="bold" />
-                  Imagens de exemplo (opcional, até 8)
-                </label>
-                <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer hover:border-[#000638] transition-colors bg-gray-50/40">
-                  <UploadSimple size={20} className="text-gray-400 mb-1" />
-                  <span className="text-xs text-gray-600">
-                    Clique para adicionar imagens
-                  </span>
+              {/* Chave PIX ou código de barras — condicional à forma de pagamento */}
+              {formaPagamento === 'pix' && (
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <Hash size={14} weight="bold" />
+                    Chave PIX *
+                  </label>
                   <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleImagensChange}
-                    className="hidden"
+                    type="text"
+                    value={chavePix}
+                    onChange={(e) => setChavePix(e.target.value)}
+                    maxLength={140}
+                    placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
                   />
-                </label>
-                {imagensExemploFiles.length > 0 && (
-                  <div className="grid grid-cols-4 gap-2 mt-2">
-                    {imagensExemploFiles.map((file, idx) => (
-                      <div
-                        key={idx}
-                        className="relative group rounded-lg overflow-hidden border"
-                      >
-                        <img
-                          src={URL.createObjectURL(file)}
-                          alt=""
-                          className="w-full h-20 object-cover"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeImagem(idx)}
-                          className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <XCircle size={14} weight="bold" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
+              {formaPagamento === 'boleto' && (
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <Hash size={14} weight="bold" />
+                    Código de Barras *
+                  </label>
+                  <input
+                    type="text"
+                    value={codigoBarras}
+                    onChange={(e) => setCodigoBarras(e.target.value)}
+                    maxLength={200}
+                    placeholder="Linha digitável ou código de barras do boleto"
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-[#000638] transition-colors"
+                  />
+                </div>
+              )}
             </section>
           )}
 
-          {/* MANUTENÇÃO — contatos de prestadores */}
-          {tipo === 'manutencao' && (
+          {/* PAGAMENTO / REEMBOLSO — Vencimento, Despesa e Comprovantes */}
+          {exigeFluxoPagamentoSimples && (
             <section className="space-y-4">
               <h2 className="text-xs font-bold text-[#000638] uppercase tracking-wide">
-                4 · Contatos de Prestadores *
+                4 · Detalhes do{' '}
+                {tipo === 'reembolso' ? 'Reembolso' : 'Pagamento'}
               </h2>
-              <p className="text-[11px] text-gray-500 -mt-2">
-                Liste prestadores de serviço da região que possam atender.
-              </p>
-              <div className="space-y-2">
-                {contatosPrestadores.map((c, idx) => (
-                  <div
-                    key={idx}
-                    className="grid grid-cols-1 sm:grid-cols-[1fr_140px_1fr_auto] gap-2 items-end border border-gray-200 rounded-lg p-2 bg-gray-50/40"
-                  >
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-500 mb-0.5 block">
-                        Nome
-                      </label>
-                      <input
-                        type="text"
-                        value={c.nome}
-                        onChange={(e) =>
-                          updateContatoPrestador(idx, { nome: e.target.value })
-                        }
-                        placeholder="Ex.: João da Silva"
-                        className="w-full border-2 border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#000638]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-500 mb-0.5 block">
-                        Telefone
-                      </label>
-                      <input
-                        type="tel"
-                        value={c.telefone}
-                        onChange={(e) =>
-                          updateContatoPrestador(idx, {
-                            telefone: e.target.value,
-                          })
-                        }
-                        placeholder="(00) 00000-0000"
-                        className="w-full border-2 border-gray-200 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-[#000638]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-500 mb-0.5 block">
-                        Observação
-                      </label>
-                      <input
-                        type="text"
-                        value={c.observacao}
-                        onChange={(e) =>
-                          updateContatoPrestador(idx, {
-                            observacao: e.target.value,
-                          })
-                        }
-                        placeholder="Especialidade, indicação..."
-                        className="w-full border-2 border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#000638]"
-                      />
-                    </div>
-                    {contatosPrestadores.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeContatoPrestador(idx)}
-                        className="text-red-500 hover:text-red-700 p-1.5"
-                      >
-                        <Trash size={16} weight="bold" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={addContatoPrestador}
-                  className="flex items-center gap-1 text-xs font-bold text-[#000638] hover:text-[#fe0000] transition-colors"
-                >
-                  <Plus size={14} weight="bold" /> Adicionar contato
-                </button>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <CalendarBlank size={14} weight="bold" />
+                    Data de Vencimento *
+                  </label>
+                  <input
+                    type="date"
+                    value={dtVencimentoUnica}
+                    min={todayISO()}
+                    onChange={(e) => setDtVencimentoUnica(e.target.value)}
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <Hash size={14} weight="bold" />
+                    Despesa *
+                  </label>
+                  <DespesaCombobox
+                    value={despesaUnicaCode}
+                    onChange={(code) => setDespesaUnicaCode(code)}
+                  />
+                </div>
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="text-xs font-bold text-[#000638] mb-1.5 block">
+                    Centro de Custo *
+                  </label>
+                  <select
+                    value={centroCustoUnico}
+                    onChange={(e) => setCentroCustoUnico(e.target.value)}
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors bg-white"
+                  >
+                    <option value="">Selecione...</option>
+                    {CENTROS_CUSTO_OPTIONS.map(([code, name]) => (
+                      <option key={code} value={code}>
+                        {code} — {name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-[#000638] mb-1.5 block">
+                    Rateio (%) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max="100"
+                    value={rateioUnico}
+                    onChange={(e) => setRateioUnico(e.target.value)}
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <Money size={14} weight="bold" />
+                    Valor (R$) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={valorUnico}
+                    onChange={(e) => setValorUnico(e.target.value)}
+                    placeholder="0,00"
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Comprovantes de aprovação obrigatórios */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <UploadSimple size={14} weight="bold" />
+                    Aprovação do Gestor *
+                  </label>
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer hover:border-[#000638] transition-colors bg-gray-50/40">
+                    <UploadSimple size={22} className="text-gray-400 mb-1" />
+                    <span className="text-xs font-bold text-[#000638] text-center">
+                      {comprovanteGestorFile
+                        ? comprovanteGestorFile.name
+                        : 'Anexar foto ou PDF'}
+                    </span>
+                    <span className="text-[10px] text-gray-500 mt-0.5">
+                      máx. 10MB · JPG, PNG, PDF
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={handleComprovanteGestorChange}
+                      className="hidden"
+                    />
+                  </label>
+                  {comprovanteGestorPreview && (
+                    <img
+                      src={comprovanteGestorPreview}
+                      alt="Pré-visualização"
+                      className="mt-2 max-h-32 rounded-lg border mx-auto"
+                    />
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <UploadSimple size={14} weight="bold" />
+                    Aprovação do Fábio *
+                  </label>
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer hover:border-[#000638] transition-colors bg-gray-50/40">
+                    <UploadSimple size={22} className="text-gray-400 mb-1" />
+                    <span className="text-xs font-bold text-[#000638] text-center">
+                      {comprovanteFabioFile
+                        ? comprovanteFabioFile.name
+                        : 'Anexar foto ou PDF'}
+                    </span>
+                    <span className="text-[10px] text-gray-500 mt-0.5">
+                      máx. 10MB · JPG, PNG, PDF
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={handleComprovanteFabioChange}
+                      className="hidden"
+                    />
+                  </label>
+                  {comprovanteFabioPreview && (
+                    <img
+                      src={comprovanteFabioPreview}
+                      alt="Pré-visualização"
+                      className="mt-2 max-h-32 rounded-lg border mx-auto"
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Reembolso: comprovante de pagamento adicional */}
+              {tipo === 'reembolso' && (
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <Receipt size={14} weight="bold" />
+                    Comprovante de Pagamento *
+                  </label>
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer hover:border-[#000638] transition-colors bg-gray-50/40">
+                    <UploadSimple size={22} className="text-gray-400 mb-1" />
+                    <span className="text-xs font-bold text-[#000638]">
+                      {comprovanteFile
+                        ? comprovanteFile.name
+                        : 'Anexar foto ou PDF do pagamento'}
+                    </span>
+                    <span className="text-[10px] text-gray-500 mt-0.5">
+                      máx. 10MB · JPG, PNG, PDF
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={handleComprovanteChange}
+                      className="hidden"
+                    />
+                  </label>
+                  {comprovantePreview && (
+                    <img
+                      src={comprovantePreview}
+                      alt="Pré-visualização"
+                      className="mt-2 max-h-40 rounded-lg border mx-auto"
+                    />
+                  )}
+                </div>
+              )}
             </section>
           )}
 
-          {/* PARCELAS — todos os tipos */}
-          {!!tipo && (
+          {/* COMPRA / MANUTENÇÃO — Marca/Modelo e (manutenção) Recomendação */}
+          {exigeProdutosServicos && (
+            <section className="space-y-4">
+              <h2 className="text-xs font-bold text-[#000638] uppercase tracking-wide">
+                4 ·{' '}
+                {tipo === 'compra'
+                  ? 'Detalhes da Compra'
+                  : 'Detalhes da Manutenção'}
+              </h2>
+
+              {/* Descrição — produtos (compra) ou serviço (manutenção) — vem primeiro */}
+              <div>
+                <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                  <FileText size={14} weight="bold" />
+                  {tipo === 'compra'
+                    ? 'Produtos que deseja comprar *'
+                    : 'Serviço a ser contratado *'}
+                </label>
+                <textarea
+                  rows={3}
+                  value={descricao}
+                  onChange={(e) => setDescricao(e.target.value)}
+                  placeholder={
+                    tipo === 'compra'
+                      ? 'Liste os produtos / itens que deseja comprar.'
+                      : 'Descreva o serviço de manutenção que precisa ser feito.'
+                  }
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors resize-y"
+                />
+              </div>
+
+              {/* Marca / Modelo — apenas compra */}
+              {tipo === 'compra' && (
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <Hash size={14} weight="bold" />
+                    Marca / Modelo (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={marcaModelo}
+                    onChange={(e) => setMarcaModelo(e.target.value)}
+                    maxLength={120}
+                    placeholder="Ex.: Geladeira Brastemp BRM44, Notebook Dell Inspiron 15..."
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
+                  />
+                  <p className="mt-1 text-[10px] text-gray-500">
+                    Indique a marca/modelo desejado para o produto, se houver
+                    preferência.
+                  </p>
+                </div>
+              )}
+
+              {/* Recomendação de fornecedores — apenas manutenção */}
+              {exigeRecomendacao && (
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <Phone size={14} weight="bold" />
+                    Recomendar Fornecedores (opcional)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={recomendacaoFornecedores}
+                    onChange={(e) =>
+                      setRecomendacaoFornecedores(e.target.value)
+                    }
+                    placeholder="Liste contatos / nomes / telefones de prestadores que possam atender."
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors resize-y"
+                  />
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* PARCELAS — apenas RH */}
+          {exigeParcelasRH && (
             <section className="space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-xs font-bold text-[#000638] uppercase tracking-wide">
@@ -1821,60 +2063,79 @@ const FormularioSolicitacoes = () => {
             </section>
           )}
 
-          {/* DESCRIÇÃO */}
-          <section className="space-y-3">
-            <h2 className="text-xs font-bold text-[#000638] uppercase tracking-wide">
-              6 · Descrição da Solicitação
-            </h2>
-            <div>
-              <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
-                <FileText size={14} weight="bold" />
-                Descrição *
-              </label>
-              <textarea
-                rows={3}
-                value={descricao}
-                onChange={(e) => setDescricao(e.target.value)}
-                placeholder="Descreva o motivo / o que está sendo solicitado"
-                className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors resize-y"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-[#000638] mb-1.5 block">
-                Observação interna (opcional)
-              </label>
-              <textarea
-                rows={2}
-                value={observacao}
-                onChange={(e) => setObservacao(e.target.value)}
-                placeholder="Informações adicionais para gestor / financeiro"
-                className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors resize-y"
-              />
-            </div>
-          </section>
+          {/* DESCRIÇÃO — apenas para tipos que não usam a seção 4 expandida (compra/manutenção já a incluem acima) */}
+          {!exigeProdutosServicos && (
+            <section className="space-y-3">
+              <h2 className="text-xs font-bold text-[#000638] uppercase tracking-wide">
+                {exigeParcelasRH ? '6 · ' : '5 · '}
+                {tipo === 'compra'
+                  ? 'Produtos que deseja comprar'
+                  : tipo === 'manutencao'
+                    ? 'Serviço a ser contratado'
+                    : 'Descrição da Solicitação'}
+              </h2>
+              <div>
+                <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                  <FileText size={14} weight="bold" />
+                  {tipo === 'compra'
+                    ? 'Produtos *'
+                    : tipo === 'manutencao'
+                      ? 'Serviço *'
+                      : 'Descrição *'}
+                </label>
+                <textarea
+                  rows={3}
+                  value={descricao}
+                  onChange={(e) => setDescricao(e.target.value)}
+                  placeholder={
+                    tipo === 'compra'
+                      ? 'Liste os produtos / itens que deseja comprar.'
+                      : tipo === 'manutencao'
+                        ? 'Descreva o serviço de manutenção que precisa ser feito.'
+                        : 'Descreva o motivo / o que está sendo solicitado'
+                  }
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors resize-y"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-[#000638] mb-1.5 block">
+                  Observação interna (opcional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={observacao}
+                  onChange={(e) => setObservacao(e.target.value)}
+                  placeholder="Informações adicionais para gestor / financeiro"
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors resize-y"
+                />
+              </div>
+            </section>
+          )}
 
-          <section>
-            <button
-              type="button"
-              onClick={() => setMostrarAvancado((v) => !v)}
-              className="text-xs font-bold text-gray-500 hover:text-[#000638] flex items-center gap-1"
-            >
-              {mostrarAvancado ? (
-                <CaretUp size={12} weight="bold" />
-              ) : (
-                <CaretDown size={12} weight="bold" />
+          {exigeParcelasRH && (
+            <section>
+              <button
+                type="button"
+                onClick={() => setMostrarAvancado((v) => !v)}
+                className="text-xs font-bold text-gray-500 hover:text-[#000638] flex items-center gap-1"
+              >
+                {mostrarAvancado ? (
+                  <CaretUp size={12} weight="bold" />
+                ) : (
+                  <CaretDown size={12} weight="bold" />
+                )}
+                Campos avançados (descontos, multa, mora, código de barras)
+              </button>
+              {mostrarAvancado && (
+                <p className="mt-2 text-[11px] text-gray-500 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                  Campos avançados (desconto pontual, antecipação 1/2, multa,
+                  mora, juros, despesa financeira, código de barras,
+                  classificações e impostos) podem ser preenchidos pelo
+                  financeiro antes do envio definitivo ao TOTVS.
+                </p>
               )}
-              Campos avançados (descontos, multa, mora, código de barras)
-            </button>
-            {mostrarAvancado && (
-              <p className="mt-2 text-[11px] text-gray-500 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                Campos avançados (desconto pontual, antecipação 1/2, multa,
-                mora, juros, despesa financeira, código de barras,
-                classificações e impostos) podem ser preenchidos pelo financeiro
-                antes do envio definitivo ao TOTVS.
-              </p>
-            )}
-          </section>
+            </section>
+          )}
 
           <button
             type="submit"

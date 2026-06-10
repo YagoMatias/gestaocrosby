@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import FiltroEmpresa from '../components/FiltroEmpresa';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseAdmin } from '../lib/supabase';
 import { useAuth } from '../components/AuthContext';
 import {
   Card,
@@ -50,7 +50,7 @@ export default function AnaliseCredito() {
   const buscarSolicitacoes = async () => {
     setLoadingSolicitacoes(true);
     try {
-      let query = supabase
+      let query = supabaseAdmin
         .from('solicitacoes_credito')
         .select('*')
         .order('dt_solicitacao', { ascending: false });
@@ -128,7 +128,7 @@ export default function AnaliseCredito() {
 
     setProcessando(true);
     try {
-      const { error } = await supabase
+      const { error } = await supabaseAdmin
         .from('solicitacoes_credito')
         .update({
           status: 'APROVADO',
@@ -168,7 +168,7 @@ export default function AnaliseCredito() {
 
     setProcessando(true);
     try {
-      const { error } = await supabase
+      const { error } = await supabaseAdmin
         .from('solicitacoes_credito')
         .update({
           status: 'REPROVADO',
@@ -265,7 +265,7 @@ export default function AnaliseCredito() {
         },
       ];
 
-      const { error } = await supabase
+      const { error } = await supabaseAdmin
         .from('solicitacoes_credito')
         .update({
           status: 'CONTRAPROPOSTA',

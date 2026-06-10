@@ -5,6 +5,7 @@ import compression from 'compression';
 import morgan from 'morgan';
 import https from 'https';
 import http from 'http';
+import axios from 'axios';
 
 // ─── Rotas existentes ────────────────────────────────────────────────────────────────────
 import chatRoutes from './routes/chat.routes.js';
@@ -6345,12 +6346,12 @@ router.get(
 router.get(
   '/clientes/search-name',
   asyncHandler(async (req, res) => {
-    const { nome, fantasia, cnpj } = req.query;
+    const { nome, fantasia, cnpj, code } = req.query;
 
-    if (!nome && !fantasia && !cnpj) {
+    if (!nome && !fantasia && !cnpj && !code) {
       return errorResponse(
         res,
-        'Informe pelo menos um dos campos: nome, fantasia ou cnpj',
+        'Informe pelo menos um dos campos: nome, fantasia, cnpj ou code',
         400,
         'MISSING_SEARCH_TERM',
       );
@@ -6365,8 +6366,9 @@ router.get(
         .order('nm_pessoa', { ascending: true })
         .limit(50);
 
-      if (cnpj) {
-        // Busca por CPF/CNPJ (campo cpf na tabela)
+      if (code) {
+        query = query.eq('code', parseInt(code, 10));
+      } else if (cnpj) {
         const cnpjLimpo = cnpj.replace(/[^\d]/g, '');
         query = query.ilike('cpf', `%${cnpjLimpo}%`);
       } else if (nome && fantasia) {
@@ -6391,18 +6393,69 @@ router.get(
         );
       }
 
-      // Deduplicar por code (pode ter mesmo cliente em várias empresas)
+      // Deduplicar por code
       const uniqueMap = new Map();
       for (const row of data || []) {
-        const existing = uniqueMap.get(row.code);
-        if (!existing) {
-          uniqueMap.set(row.code, row);
+        if (!uniqueMap.has(row.code)) uniqueMap.set(row.code, row);
+      }
+      let clientes = Array.from(uniqueMap.values());
+
+      // Fallback: se busca por code não achou no cache, tenta direto no TOTVS
+      if (code && clientes.length === 0) {
+        console.log(`⚠️ Código ${code} não encontrado no cache. Buscando no TOTVS...`);
+        try {
+          const codeInt = parseInt(code, 10);
+          const tokenData = await getToken();
+          const totvsFilter = { filter: { personCodeList: [codeInt] }, page: 1, pageSize: 10 };
+          const totvsHeaders = {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Bearer ${tokenData.access_token}`,
+          };
+          const totvsOpts = { headers: totvsHeaders, timeout: 15000 };
+
+          const [pjResp, pfResp] = await Promise.allSettled([
+            axios.post(`${TOTVS_BASE_URL}/person/v2/legal-entities/search`, totvsFilter, totvsOpts),
+            axios.post(`${TOTVS_BASE_URL}/person/v2/individuals/search`, totvsFilter, totvsOpts),
+          ]);
+
+          const { mapPersonToRow, upsertBatch } = await import('./utils/syncPesPessoa.js');
+
+          const totvsRows = [];
+          if (pjResp.status === 'fulfilled') {
+            (pjResp.value.data?.items || []).forEach((item) => totvsRows.push(mapPersonToRow(item, 'PJ')));
+          }
+          if (pfResp.status === 'fulfilled') {
+            (pfResp.value.data?.items || []).forEach((item) => totvsRows.push(mapPersonToRow(item, 'PF')));
+          }
+
+          const found = totvsRows.filter((r) => r.code === codeInt);
+          if (found.length > 0) {
+            await upsertBatch(found).catch(() => {});
+            clientes = found.map((r) => ({
+              code: r.code,
+              cd_empresacad: r.cd_empresacad,
+              nm_pessoa: r.nm_pessoa,
+              fantasy_name: r.fantasy_name,
+              cpf: r.cpf,
+              tipo_pessoa: r.tipo_pessoa,
+              telefone: r.telefone,
+              email: r.email,
+              is_customer: r.is_customer,
+              customer_status: r.customer_status,
+              person_status: r.person_status,
+            }));
+            console.log(`✅ TOTVS fallback: código ${code} encontrado (${clientes.length} registro(s))`);
+          } else {
+            console.log(`❌ TOTVS fallback: código ${code} não encontrado`);
+          }
+        } catch (fallbackErr) {
+          console.warn(`⚠️ Fallback TOTVS falhou para code ${code}: ${fallbackErr.message}`);
         }
       }
-      const clientes = Array.from(uniqueMap.values());
 
       console.log(
-        `🔍 Busca por nome: "${nome || ''}" / fantasia: "${fantasia || ''}" → ${clientes.length} resultados`,
+        `🔍 Busca por: code: "${code || ''}" nome: "${nome || ''}" / fantasia: "${fantasia || ''}" → ${clientes.length} resultados`,
       );
 
       successResponse(
