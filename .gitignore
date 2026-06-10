@@ -8,6 +8,7 @@ backend/.env
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 planilhas/
+database/
 
 # WhatsApp auth/cache (runtime, não deve ser versionado)
 .wwebjs_auth/

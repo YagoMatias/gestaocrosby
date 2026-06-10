@@ -1986,6 +1986,7 @@ const ModalDetalhe = ({
                 sol.despesa_code ||
                 sol.cost_center_code ||
                 sol.dt_vencimento ||
+                sol.dt_emissao ||
                 sol.valor_total) && (
                 <div className="border-2 border-[#000638] rounded-xl overflow-hidden">
                   <div className="bg-[#000638] px-4 py-2">
@@ -1997,8 +1998,17 @@ const ModalDetalhe = ({
                     </span>
                   </div>
                   <div className="divide-y divide-gray-100">
-                    {(sol.dt_vencimento || sol.valor_total) && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 divide-x divide-gray-100">
+                    {(sol.dt_emissao ||
+                      sol.dt_vencimento ||
+                      sol.valor_total) && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 divide-x divide-gray-100">
+                        {sol.dt_emissao && (
+                          <DocField label="Emissão">
+                            <span className="font-semibold text-sm font-mono">
+                              {formatarData(sol.dt_emissao)}
+                            </span>
+                          </DocField>
+                        )}
                         {sol.dt_vencimento && (
                           <DocField label="Vencimento">
                             <span className="font-semibold text-sm font-mono">

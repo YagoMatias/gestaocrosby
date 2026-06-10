@@ -445,6 +445,7 @@ const FormularioSolicitacoes = () => {
 
   // === Pagamento / Reembolso (fluxo simplificado) ===
   const [dtVencimentoUnica, setDtVencimentoUnica] = useState('');
+  const [dtEmissaoUnica, setDtEmissaoUnica] = useState('');
   const [despesaUnicaCode, setDespesaUnicaCode] = useState('');
   const [centroCustoUnico, setCentroCustoUnico] = useState('');
   const [rateioUnico, setRateioUnico] = useState('100');
@@ -453,6 +454,7 @@ const FormularioSolicitacoes = () => {
   const [comprovanteGestorPreview, setComprovanteGestorPreview] = useState('');
   const [comprovanteFabioFile, setComprovanteFabioFile] = useState(null);
   const [comprovanteFabioPreview, setComprovanteFabioPreview] = useState('');
+  const [notasFiscaisFiles, setNotasFiscaisFiles] = useState([]);
 
   // === Compra / Manuten\u00e7\u00e3o (fluxo simplificado) ===
   const [marcaModelo, setMarcaModelo] = useState('');
@@ -684,6 +686,7 @@ const FormularioSolicitacoes = () => {
     setImagensExemploFiles([]);
     setContatosPrestadores([{ nome: '', telefone: '', observacao: '' }]);
     setDtVencimentoUnica('');
+    setDtEmissaoUnica('');
     setDespesaUnicaCode('');
     setCentroCustoUnico('');
     setRateioUnico('100');
@@ -692,6 +695,7 @@ const FormularioSolicitacoes = () => {
     setComprovanteGestorPreview('');
     setComprovanteFabioFile(null);
     setComprovanteFabioPreview('');
+    setNotasFiscaisFiles([]);
     setMarcaModelo('');
     setRecomendacaoFornecedores('');
   };
@@ -744,7 +748,22 @@ const FormularioSolicitacoes = () => {
     }
   };
 
-  // Upload de m\u00faltiplas imagens (compra)
+  // Upload de múltiplas notas fiscais (pagamento, opcional)
+  const handleNotasFiscaisChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    const valid = files.filter((f) => f.size <= 10 * 1024 * 1024);
+    if (valid.length < files.length) {
+      setErro('Algum arquivo de nota fiscal excede 10MB e foi ignorado.');
+    }
+    setNotasFiscaisFiles((prev) => [...prev, ...valid].slice(0, 10));
+    e.target.value = '';
+  };
+
+  const removeNotaFiscal = (idx) => {
+    setNotasFiscaisFiles((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  // Upload de múltiplas imagens (compra)
   const handleImagensChange = (e) => {
     const files = Array.from(e.target.files || []);
     const validFiles = files.filter((f) => {
@@ -944,7 +963,8 @@ const FormularioSolicitacoes = () => {
         comprovanteFile ||
         comprovanteGestorFile ||
         comprovanteFabioFile ||
-        (tipo === 'compra' && imagensExemploFiles.length > 0);
+        (tipo === 'compra' && imagensExemploFiles.length > 0) ||
+        (tipo === 'pagamento' && notasFiscaisFiles.length > 0);
 
       if (temAlgumUpload) {
         setUploading(true);
@@ -971,6 +991,12 @@ const FormularioSolicitacoes = () => {
             imagensUrls = await Promise.all(
               imagensExemploFiles.map((f) => uploadArquivo(f, 'compras')),
             );
+          }
+          if (tipo === 'pagamento' && notasFiscaisFiles.length > 0) {
+            const nfUrls = await Promise.all(
+              notasFiscaisFiles.map((f) => uploadArquivo(f, 'notas-fiscais')),
+            );
+            imagensUrls = [...imagensUrls, ...nfUrls];
           }
         } finally {
           setUploading(false);
@@ -1015,12 +1041,16 @@ const FormularioSolicitacoes = () => {
         insertData.dt_vencimento = dtVencimentoUnica
           ? toIsoDateTime(dtVencimentoUnica)
           : null;
+        insertData.dt_emissao = dtEmissaoUnica
+          ? toIsoDateTime(dtEmissaoUnica)
+          : null;
         insertData.despesa_code = parseInt(despesaUnicaCode) || null;
         insertData.cost_center_code = parseInt(centroCustoUnico) || null;
         insertData.rateio_percentual = parseFloat(rateioUnico) || null;
         insertData.valor_total = parseFloat(valorUnico) || null;
-        // O financeiro completará payload_totvs (parcelas, portador, código duplicata)
-        // antes do envio definitivo ao TOTVS, ao editar a solicitação.
+        if (tipo === 'pagamento' && imagensUrls.length) {
+          insertData.imagens_exemplo_urls = imagensUrls; // reusa coluna para NFs
+        }
       }
 
       // ============ Compra / Manutenção ============
@@ -1468,6 +1498,19 @@ const FormularioSolicitacoes = () => {
                 <div>
                   <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
                     <CalendarBlank size={14} weight="bold" />
+                    Data de Emissão *
+                  </label>
+                  <input
+                    type="date"
+                    value={dtEmissaoUnica}
+                    max={todayISO()}
+                    onChange={(e) => setDtEmissaoUnica(e.target.value)}
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <CalendarBlank size={14} weight="bold" />
                     Data de Vencimento *
                   </label>
                   <input
@@ -1637,6 +1680,53 @@ const FormularioSolicitacoes = () => {
                       alt="Pré-visualização"
                       className="mt-2 max-h-40 rounded-lg border mx-auto"
                     />
+                  )}
+                </div>
+              )}
+
+              {/* Pagamento: notas fiscais (opcional, até 10 arquivos) */}
+              {tipo === 'pagamento' && (
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <FileText size={14} weight="bold" />
+                    Notas Fiscais (opcional, até 10)
+                  </label>
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer hover:border-[#000638] transition-colors bg-gray-50/40">
+                    <UploadSimple size={22} className="text-gray-400 mb-1" />
+                    <span className="text-xs text-gray-600">
+                      Clique para adicionar arquivos
+                    </span>
+                    <span className="text-[10px] text-gray-500 mt-0.5">
+                      máx. 10MB por arquivo · JPG, PNG, PDF
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      multiple
+                      onChange={handleNotasFiscaisChange}
+                      className="hidden"
+                    />
+                  </label>
+                  {notasFiscaisFiles.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {notasFiscaisFiles.map((f, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between bg-gray-50 border rounded-lg px-3 py-1.5 text-xs"
+                        >
+                          <span className="truncate text-gray-700 font-mono">
+                            {f.name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeNotaFiscal(idx)}
+                            className="ml-2 text-red-400 hover:text-red-600 shrink-0"
+                          >
+                            <XCircle size={14} weight="bold" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}

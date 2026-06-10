@@ -18,7 +18,8 @@ ALTER TABLE solicitacoes_crosby
   ADD COLUMN IF NOT EXISTS marca_modelo              TEXT,
   ADD COLUMN IF NOT EXISTS recomendacao_fornecedores TEXT,
   ADD COLUMN IF NOT EXISTS chave_pix                 TEXT,
-  ADD COLUMN IF NOT EXISTS codigo_barras             TEXT;
+  ADD COLUMN IF NOT EXISTS codigo_barras             TEXT,
+  ADD COLUMN IF NOT EXISTS dt_emissao                TIMESTAMPTZ;
 
 COMMENT ON COLUMN solicitacoes_crosby.comprovante_gestor_url IS
   'URL pública do comprovante de aprovação do gestor (pagamento/reembolso).';
