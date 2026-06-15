@@ -449,7 +449,10 @@ const SolicitacoesCrosby = () => {
   // — por isso, são excluídas da listagem geral por padrão.
   const TIPOS_OCULTOS_GERAL = ['compra', 'manutencao'];
   const solicitacoesGerais = useMemo(
-    () => solicitacoes.filter((s) => !TIPOS_OCULTOS_GERAL.includes(s.tipo_solicitacao)),
+    () =>
+      solicitacoes.filter(
+        (s) => !TIPOS_OCULTOS_GERAL.includes(s.tipo_solicitacao),
+      ),
     [solicitacoes],
   );
 
@@ -487,17 +490,21 @@ const SolicitacoesCrosby = () => {
   const totais = useMemo(
     () => ({
       total: solicitacoesGerais.length,
-      pendente: solicitacoesGerais.filter((s) => s.status === 'pendente').length,
+      pendente: solicitacoesGerais.filter((s) => s.status === 'pendente')
+        .length,
       aprovado_gestor: solicitacoesGerais.filter(
         (s) => s.status === 'aprovado_gestor',
       ).length,
       aprovado_financeiro: solicitacoesGerais.filter(
         (s) => s.status === 'aprovado_financeiro',
       ).length,
-      enviado_totvs: solicitacoesGerais.filter((s) => s.status === 'enviado_totvs')
+      enviado_totvs: solicitacoesGerais.filter(
+        (s) => s.status === 'enviado_totvs',
+      ).length,
+      erro_envio: solicitacoesGerais.filter((s) => s.status === 'erro_envio')
         .length,
-      erro_envio: solicitacoesGerais.filter((s) => s.status === 'erro_envio').length,
-      rejeitado: solicitacoesGerais.filter((s) => s.status === 'rejeitado').length,
+      rejeitado: solicitacoesGerais.filter((s) => s.status === 'rejeitado')
+        .length,
     }),
     [solicitacoesGerais],
   );
@@ -807,9 +814,7 @@ const SolicitacoesCrosby = () => {
         nm_fornecedor: sol.supplier_name || null,
         cd_fornecedor: null,
         nr_duplicata: sol.duplicate_code ? String(sol.duplicate_code) : null,
-        dt_emissao: sol.dt_emissao
-          ? String(sol.dt_emissao).slice(0, 10)
-          : null,
+        dt_emissao: sol.dt_emissao ? String(sol.dt_emissao).slice(0, 10) : null,
         dt_vencimento: sol.dt_vencimento
           ? String(sol.dt_vencimento).slice(0, 10)
           : null,
@@ -3438,6 +3443,15 @@ const ModalEdicao = ({
                   ))}
                 </select>
               </div>
+              <div>
+                <ELabel>Data de Emissão</ELabel>
+                <input
+                  type="date"
+                  className={inpCls}
+                  value={dtEmissao}
+                  onChange={(e) => setDtEmissao(e.target.value)}
+                />
+              </div>
             </div>
             <div>
               <ELabel>Descrição</ELabel>
@@ -3500,8 +3514,8 @@ const ModalEdicao = ({
                 />
               </div>
 
-              {/* Centro de Custo + Rateio */}
-              <div className="grid grid-cols-1 sm:grid-cols-[1fr_100px] gap-3">
+              {/* Centro de Custo + Rateio + Valor */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <ELabel>Centro de Custo *</ELabel>
                   <select
@@ -3518,30 +3532,120 @@ const ModalEdicao = ({
                   </select>
                 </div>
                 <div>
-                  <ELabel>Rateio %</ELabel>
+                  <ELabel>Valor (R$) *</ELabel>
                   <input
                     type="number"
                     className={inpCls}
-                    value={rateioPercentual}
-                    min="1"
-                    max="100"
-                    onChange={(e) => setRateioPercentual(e.target.value)}
+                    value={valorUnico}
+                    min="0"
+                    step="0.01"
+                    placeholder="0,00"
+                    onChange={(e) => {
+                      setValorUnico(e.target.value);
+                      const v = parseFloat(e.target.value);
+                      const pct = parseFloat(rateioPercentual);
+                      if (
+                        !isNaN(v) &&
+                        v > 0 &&
+                        !isNaN(pct) &&
+                        pct > 0 &&
+                        pct < 100
+                      ) {
+                        // valor rateado = total * pct / 100; se o usuário edita o total, mantemos o %
+                      }
+                    }}
                   />
                 </div>
               </div>
 
-              {/* Valor */}
+              {/* Rateio: % e Valor Rateado sincronizados */}
               <div>
-                <ELabel>Valor (R$) *</ELabel>
-                <input
-                  type="number"
-                  className={inpCls}
-                  value={valorUnico}
-                  min="0"
-                  step="0.01"
-                  placeholder="0,00"
-                  onChange={(e) => setValorUnico(e.target.value)}
-                />
+                <ELabel>Rateio</ELabel>
+                <div className="flex gap-2 items-center">
+                  <div className="flex-1">
+                    <p className="text-[10px] text-gray-500 mb-0.5">
+                      Percentual (%)
+                    </p>
+                    <input
+                      type="number"
+                      className={inpCls}
+                      value={rateioPercentual}
+                      min="1"
+                      max="100"
+                      step="0.01"
+                      placeholder="100"
+                      onChange={(e) => {
+                        const pct = e.target.value;
+                        setRateioPercentual(pct);
+                        const pctNum = parseFloat(pct);
+                        const totalNum = parseFloat(valorUnico);
+                        if (
+                          !isNaN(pctNum) &&
+                          !isNaN(totalNum) &&
+                          totalNum > 0
+                        ) {
+                          // Calcula valor rateado = total * pct / 100 — apenas exibição
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="text-gray-400 text-sm mt-5">↔</div>
+                  <div className="flex-1">
+                    <p className="text-[10px] text-gray-500 mb-0.5">
+                      Valor rateado (R$)
+                    </p>
+                    <input
+                      type="number"
+                      className={inpCls}
+                      step="0.01"
+                      min="0"
+                      placeholder="auto"
+                      value={(() => {
+                        const pct = parseFloat(rateioPercentual);
+                        const total = parseFloat(valorUnico);
+                        if (!isNaN(pct) && !isNaN(total) && total > 0)
+                          return ((total * pct) / 100).toFixed(2);
+                        return '';
+                      })()}
+                      onChange={(e) => {
+                        const valorRateado = parseFloat(e.target.value);
+                        const total = parseFloat(valorUnico);
+                        if (
+                          !isNaN(valorRateado) &&
+                          !isNaN(total) &&
+                          total > 0
+                        ) {
+                          setRateioPercentual(
+                            ((valorRateado / total) * 100).toFixed(4),
+                          );
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+                {(() => {
+                  const pct = parseFloat(rateioPercentual);
+                  const total = parseFloat(valorUnico);
+                  if (!isNaN(pct) && !isNaN(total) && total > 0) {
+                    return (
+                      <p className="text-[10px] text-gray-500 mt-1">
+                        {pct.toFixed(2)}% de{' '}
+                        {total.toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        })}{' '}
+                        ={' '}
+                        <strong className="text-[#000638]">
+                          {((total * pct) / 100).toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })}
+                        </strong>
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
 
               {/* Chave PIX */}
@@ -3836,7 +3940,7 @@ const ModalEdicao = ({
                   {p.expenses.map((exp, ei) => (
                     <div
                       key={ei}
-                      className="grid grid-cols-[1fr_1fr_80px_auto] gap-2 mb-2 items-end"
+                      className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 mb-2 items-end"
                     >
                       <div>
                         {ei === 0 && <ELabel>Despesa *</ELabel>}
@@ -3866,21 +3970,73 @@ const ModalEdicao = ({
                           ))}
                         </select>
                       </div>
+                      {/* Rateio % ↔ Valor sincronizados */}
                       <div>
-                        {ei === 0 && <ELabel>Rateio %</ELabel>}
-                        <input
-                          className={inpCls}
-                          type="number"
-                          min="1"
-                          max="100"
-                          value={exp.proratedPercentage}
-                          onChange={(e) =>
-                            updateExpense(parcelaIdx, ei, {
-                              proratedPercentage: e.target.value,
-                            })
-                          }
-                          placeholder="100"
-                        />
+                        {ei === 0 && <ELabel>Rateio % / R$</ELabel>}
+                        <div className="flex gap-1 items-center">
+                          <input
+                            className={inpCls}
+                            type="number"
+                            min="0.01"
+                            max="100"
+                            step="0.01"
+                            value={exp.proratedPercentage}
+                            onChange={(e) =>
+                              updateExpense(parcelaIdx, ei, {
+                                proratedPercentage: e.target.value,
+                              })
+                            }
+                            placeholder="%"
+                          />
+                          <span className="text-gray-400 text-xs shrink-0">
+                            ↔
+                          </span>
+                          <input
+                            className={inpCls}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="R$"
+                            value={(() => {
+                              const pct = parseFloat(exp.proratedPercentage);
+                              const total = parseFloat(p.duplicateValue);
+                              if (!isNaN(pct) && !isNaN(total) && total > 0)
+                                return ((total * pct) / 100).toFixed(2);
+                              return '';
+                            })()}
+                            onChange={(e) => {
+                              const valorRateado = parseFloat(e.target.value);
+                              const total = parseFloat(p.duplicateValue);
+                              if (
+                                !isNaN(valorRateado) &&
+                                !isNaN(total) &&
+                                total > 0
+                              ) {
+                                updateExpense(parcelaIdx, ei, {
+                                  proratedPercentage: (
+                                    (valorRateado / total) *
+                                    100
+                                  ).toFixed(4),
+                                });
+                              }
+                            }}
+                          />
+                        </div>
+                        {(() => {
+                          const pct = parseFloat(exp.proratedPercentage);
+                          const total = parseFloat(p.duplicateValue);
+                          if (!isNaN(pct) && !isNaN(total) && total > 0)
+                            return (
+                              <p className="text-[9px] text-gray-500 mt-0.5">
+                                ={' '}
+                                {((total * pct) / 100).toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                })}
+                              </p>
+                            );
+                          return null;
+                        })()}
                       </div>
                       <div className="flex items-end pb-0.5">
                         {p.expenses.length > 1 && (
