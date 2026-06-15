@@ -34,6 +34,11 @@ const AVAILABLE_PAGES = [
     category: 'Principal',
   },
   {
+    path: '/solicitacoes-crosby/compras-manutencao',
+    name: 'Compras & Manutenção',
+    category: 'Principal',
+  },
+  {
     path: '/cadastrar-cliente',
     name: 'Cadastrar Cliente',
     category: 'Principal',
@@ -375,10 +380,26 @@ const AVAILABLE_PAGES = [
     category: 'Administração',
   },
   // ─── Tecnologia ─────────────────────────────────────────────
-  { path: '/tecnologia/controle-chip', name: 'Controle de Chips', category: 'Tecnologia' },
-  { path: '/tecnologia/inventario-patrimonio', name: 'Inventário de Patrimônio', category: 'Tecnologia' },
-  { path: '/tecnologia/cotacao-compras', name: 'Cotação de Compras', category: 'Tecnologia' },
-  { path: '/tecnologia/monitoramento-totvs', name: 'Monitoramento TOTVS', category: 'Tecnologia' },
+  {
+    path: '/tecnologia/controle-chip',
+    name: 'Controle de Chips',
+    category: 'Tecnologia',
+  },
+  {
+    path: '/tecnologia/inventario-patrimonio',
+    name: 'Inventário de Patrimônio',
+    category: 'Tecnologia',
+  },
+  {
+    path: '/tecnologia/cotacao-compras',
+    name: 'Cotação de Compras',
+    category: 'Tecnologia',
+  },
+  {
+    path: '/tecnologia/monitoramento-totvs',
+    name: 'Monitoramento TOTVS',
+    category: 'Tecnologia',
+  },
 ];
 
 const GerenciadorAcessos = () => {
