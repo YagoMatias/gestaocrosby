@@ -917,6 +917,18 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           isActive={pathname === '/solicitacoes-crosby'}
         />
 
+        {/* Compras & Manutenção (controle de etapas) */}
+        <MenuItem
+          {...menuProps}
+          item={{
+            name: 'Compras & Manutenção',
+            href: '/solicitacoes-crosby/compras-manutencao',
+            icon: ShoppingCart,
+            color: 'text-blue-600',
+          }}
+          isActive={pathname === '/solicitacoes-crosby/compras-manutencao'}
+        />
+
         {/* Cadastrar Cliente */}
         <MenuItem
           {...menuProps}

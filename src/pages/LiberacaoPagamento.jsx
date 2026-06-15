@@ -1273,6 +1273,9 @@ const ModalDetalheDuplicata = ({
   );
   const [obs, setObs] = useState(item.observacao || '');
   const [dtPagamento, setDtPagamento] = useState(item.dt_pagamento || '');
+  const [dtEmissao, setDtEmissao] = useState(
+    item.dt_emissao ? String(item.dt_emissao).slice(0, 10) : '',
+  );
   const [saving, setSaving] = useState(false);
 
   const formaCfg = FORMAS_PAGAMENTO.find((f) => f.value === forma);
@@ -1302,10 +1305,6 @@ const ModalDetalheDuplicata = ({
     { label: 'Despesa Item', value: item.ds_despesaitem || dc.ds_despesaitem },
     { label: 'Cód. Despesa', value: item.cd_despesaitem || dc.cd_despesaitem },
     {
-      label: 'Emissão',
-      value: item.dt_emissao ? fmtDate(item.dt_emissao) : null,
-    },
-    {
       label: 'Vencimento',
       value: item.dt_vencimento ? fmtDate(item.dt_vencimento) : null,
     },
@@ -1334,6 +1333,7 @@ const ModalDetalheDuplicata = ({
       codigo_barras: null,
       link_pagamento: null,
       observacao: obs.trim() || null,
+      dt_emissao: dtEmissao || null,
       vl_duplicata:
         vlDuplicata !== '' && !isNaN(parseFloat(vlDuplicata))
           ? parseFloat(vlDuplicata)
@@ -1440,6 +1440,16 @@ const ModalDetalheDuplicata = ({
                   </select>
                 </div>
               )}
+
+              <div>
+                <label className={labelCls}>Data de Emissão</label>
+                <input
+                  className={inputCls}
+                  type="date"
+                  value={dtEmissao}
+                  onChange={(e) => setDtEmissao(e.target.value)}
+                />
+              </div>
 
               <div>
                 <label className={labelCls}>Data de Pagamento</label>

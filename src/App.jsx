@@ -132,6 +132,9 @@ const ConsultaNFs = lazy(() => import('./pages/ConsultaNFs'));
 const FaturamentoPanel = lazy(() => import('./components/FaturamentoPanel'));
 const AtividadeClientes = lazy(() => import('./pages/AtividadeClientes'));
 const SolicitacoesCrosby = lazy(() => import('./pages/SolicitacoesCrosby'));
+const SolicitacoesCrosbyComprasManutencao = lazy(
+  () => import('./pages/SolicitacoesCrosbyComprasManutencao'),
+);
 const CadastrarCliente = lazy(() => import('./pages/CadastrarCliente'));
 const FormularioSolicitacoes = lazy(
   () => import('./pages/FormularioSolicitacoes'),
@@ -154,7 +157,10 @@ const protectedRoutes = [
   { path: '/dashboard-vendas', component: Forecast },
   { path: '/tecnologia/controle-chip', component: ControleChips },
   { path: '/tecnologia/monitoramento-totvs', component: MonitoramentoTotvs },
-  { path: '/tecnologia/inventario-patrimonio', component: InventarioPatrimonio },
+  {
+    path: '/tecnologia/inventario-patrimonio',
+    component: InventarioPatrimonio,
+  },
   { path: '/tecnologia/cotacao-compras', component: CotacaoCompras },
   { path: '/gerenciador-dashboards', component: GerenciadorDashboards },
   { path: '/widgets', component: Widgets },
@@ -250,6 +256,10 @@ const protectedRoutes = [
   { path: '/crosby-manage', component: CrosbyManage },
   { path: '/extrato-totvs', component: ExtratoTotvs },
   { path: '/solicitacoes-crosby', component: SolicitacoesCrosby },
+  {
+    path: '/solicitacoes-crosby/compras-manutencao',
+    component: SolicitacoesCrosbyComprasManutencao,
+  },
   { path: '/cadastrar-cliente', component: CadastrarCliente },
 ];
 

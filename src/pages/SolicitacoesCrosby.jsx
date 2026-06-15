@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { supabaseAdmin } from '../lib/supabase';
 import { API_BASE_URL } from '../config/constants';
@@ -22,6 +23,7 @@ import {
   Copy,
   CheckSquare,
   PaperPlaneTilt,
+  HandCoins,
   ShieldCheck,
   WarningCircle,
   CloudArrowUp,
@@ -390,17 +392,69 @@ const SolicitacoesCrosby = () => {
 
   // Garante que o duplicateCode no payload use o valor editado pelo usuário
   // (sol.duplicate_code) em vez do valor possivelmente desatualizado dentro de payload_totvs
-  const mergePayloadTotvs = (sol) => ({
-    ...sol.payload_totvs,
-    duplicateCode:
-      sol.duplicate_code != null
-        ? parseInt(sol.duplicate_code)
-        : sol.payload_totvs?.duplicateCode,
-  });
+  const onlyDig = (v) => String(v ?? '').replace(/\D+/g, '');
+
+  const mergePayloadTotvs = (sol) => {
+    const tipo = sol.tipo_solicitacao;
+    // RH e outros: usa payload_totvs como está
+    if (tipo !== 'pagamento' && tipo !== 'reembolso') {
+      return {
+        ...sol.payload_totvs,
+        duplicateCode:
+          sol.duplicate_code != null
+            ? parseInt(sol.duplicate_code)
+            : sol.payload_totvs?.duplicateCode,
+      };
+    }
+    // Pagamento/Reembolso: constrói a partir das colunas da solicitação.
+    // Dados extras do financeiro (bearerCode etc.) ficam em payload_totvs.installments
+    const saved = sol.payload_totvs || {};
+    const savedInst = Array.isArray(saved.installments)
+      ? saved.installments[0]
+      : {};
+    return {
+      branchCnpj: onlyDig(sol.branch_cnpj) || saved.branchCnpj || '',
+      supplierCpfCnpj:
+        onlyDig(sol.supplier_cpf_cnpj) || saved.supplierCpfCnpj || '',
+      duplicateCode:
+        sol.duplicate_code != null
+          ? parseInt(sol.duplicate_code)
+          : (saved.duplicateCode ?? null),
+      installments: [
+        {
+          installmentCode: savedInst?.installmentCode ?? 1,
+          bearerCode: savedInst?.bearerCode ?? null,
+          issueDate: sol.dt_emissao || savedInst?.issueDate || null,
+          dueDate: sol.dt_vencimento || savedInst?.dueDate || null,
+          arrivalDate: savedInst?.arrivalDate || null,
+          duplicateValue: sol.valor_total ?? savedInst?.duplicateValue ?? null,
+          expenses: savedInst?.expenses?.length
+            ? savedInst.expenses
+            : sol.despesa_code
+              ? [
+                  {
+                    expenseCode: sol.despesa_code,
+                    costCenterCode: sol.cost_center_code ?? null,
+                    proratedPercentage: sol.rateio_percentual ?? 100,
+                  },
+                ]
+              : [],
+        },
+      ],
+    };
+  };
 
   // ----- filtros -----
+  // Compra/Manutenção têm controle dedicado em /solicitacoes-crosby/compras-manutencao
+  // — por isso, são excluídas da listagem geral por padrão.
+  const TIPOS_OCULTOS_GERAL = ['compra', 'manutencao'];
+  const solicitacoesGerais = useMemo(
+    () => solicitacoes.filter((s) => !TIPOS_OCULTOS_GERAL.includes(s.tipo_solicitacao)),
+    [solicitacoes],
+  );
+
   const solicitacoesFiltradas = useMemo(() => {
-    let lista = solicitacoes;
+    let lista = solicitacoesGerais;
     if (!canVerRH) lista = lista.filter((s) => s.tipo_solicitacao !== 'rh');
     if (filtroStatus !== 'TODOS')
       lista = lista.filter((s) => s.status === filtroStatus);
@@ -420,7 +474,7 @@ const SolicitacoesCrosby = () => {
     }
     return lista;
   }, [
-    solicitacoes,
+    solicitacoesGerais,
     canVerRH,
     filtroStatus,
     filtroTipo,
@@ -432,20 +486,20 @@ const SolicitacoesCrosby = () => {
 
   const totais = useMemo(
     () => ({
-      total: solicitacoes.length,
-      pendente: solicitacoes.filter((s) => s.status === 'pendente').length,
-      aprovado_gestor: solicitacoes.filter(
+      total: solicitacoesGerais.length,
+      pendente: solicitacoesGerais.filter((s) => s.status === 'pendente').length,
+      aprovado_gestor: solicitacoesGerais.filter(
         (s) => s.status === 'aprovado_gestor',
       ).length,
-      aprovado_financeiro: solicitacoes.filter(
+      aprovado_financeiro: solicitacoesGerais.filter(
         (s) => s.status === 'aprovado_financeiro',
       ).length,
-      enviado_totvs: solicitacoes.filter((s) => s.status === 'enviado_totvs')
+      enviado_totvs: solicitacoesGerais.filter((s) => s.status === 'enviado_totvs')
         .length,
-      erro_envio: solicitacoes.filter((s) => s.status === 'erro_envio').length,
-      rejeitado: solicitacoes.filter((s) => s.status === 'rejeitado').length,
+      erro_envio: solicitacoesGerais.filter((s) => s.status === 'erro_envio').length,
+      rejeitado: solicitacoesGerais.filter((s) => s.status === 'rejeitado').length,
     }),
-    [solicitacoes],
+    [solicitacoesGerais],
   );
 
   // ----- ações -----
@@ -707,6 +761,108 @@ const SolicitacoesCrosby = () => {
     }
   };
 
+  const liberarParaPagamento = async (sol) => {
+    if (!isFinanceiro) {
+      notify('error', 'Apenas o financeiro pode liberar para pagamento.');
+      return;
+    }
+    if (sol.pagamento_liberacao_id) {
+      notify('error', 'Esta solicitação já foi liberada para pagamento.');
+      return;
+    }
+    if (sol.status !== 'enviado_totvs') {
+      notify('error', 'Só é possível liberar após o envio ao TOTVS.');
+      return;
+    }
+    if (
+      !window.confirm(
+        `Liberar a solicitação ${sol.duplicate_code || ''} (${sol.supplier_name || ''}) para pagamento?`,
+      )
+    )
+      return;
+
+    try {
+      // mapear forma de pagamento (lowercase no formulário → uppercase em pagamentos_liberacao)
+      const fp = (sol.forma_pagamento || '').toLowerCase();
+      const formaUpper =
+        fp === 'pix'
+          ? 'PIX'
+          : fp === 'boleto'
+            ? 'BOLETO'
+            : fp === 'debito'
+              ? 'DEBITO'
+              : fp.startsWith('credito')
+                ? 'CREDITO'
+                : null;
+
+      const linkPgto =
+        sol.dados_completos?.pix_qrcode_payload ||
+        sol.dados_completos?.link_pagamento ||
+        null;
+
+      const row = {
+        status: 'PENDENTE',
+        nm_empresa: sol.nm_empresa || null,
+        cd_empresa: sol.cd_empresa || null,
+        nm_fornecedor: sol.supplier_name || null,
+        cd_fornecedor: null,
+        nr_duplicata: sol.duplicate_code ? String(sol.duplicate_code) : null,
+        dt_emissao: sol.dt_emissao
+          ? String(sol.dt_emissao).slice(0, 10)
+          : null,
+        dt_vencimento: sol.dt_vencimento
+          ? String(sol.dt_vencimento).slice(0, 10)
+          : null,
+        vl_duplicata: Number(sol.valor_total || 0),
+        ds_despesaitem: sol.despesa_code
+          ? getDespesaNome(sol.despesa_code)
+          : null,
+        cd_ccusto: sol.cost_center_code ? String(sol.cost_center_code) : null,
+        forma_pagamento: formaUpper,
+        chave_pix: formaUpper === 'PIX' ? sol.chave_pix || null : null,
+        codigo_barras:
+          formaUpper === 'BOLETO' ? sol.codigo_barras || null : null,
+        link_pagamento: linkPgto,
+        observacao: sol.descricao || null,
+        enviado_por: user?.email || null,
+        enviado_em: new Date().toISOString(),
+        dados_completos: {
+          origem: 'solicitacao_crosby',
+          solicitacao_id: sol.id,
+          duplicate_code: sol.duplicate_code || null,
+          supplier_cpf_cnpj: sol.supplier_cpf_cnpj || null,
+          tipo_solicitacao: sol.tipo_solicitacao || null,
+          setor: sol.setor || null,
+        },
+      };
+
+      const { data: novoPg, error: insErr } = await supabaseAdmin
+        .from('pagamentos_liberacao')
+        .insert([row])
+        .select('id')
+        .single();
+      if (insErr) throw insErr;
+
+      const { error: updErr } = await supabaseAdmin
+        .from('solicitacoes_crosby')
+        .update({
+          liberado_pagamento_em: new Date().toISOString(),
+          liberado_pagamento_por: user?.id || null,
+          liberado_pagamento_por_nome: userNome,
+          pagamento_liberacao_id: novoPg.id,
+        })
+        .eq('id', sol.id);
+      if (updErr) throw updErr;
+
+      await carregarSolicitacoes();
+      setModalDetalhe(null);
+      notify('success', 'Solicitação liberada para pagamento!');
+    } catch (err) {
+      console.error(err);
+      notify('error', 'Erro ao liberar para pagamento: ' + (err.message || ''));
+    }
+  };
+
   const excluirSolicitacao = async (sol) => {
     if (!isAdmin) {
       notify('error', 'Apenas administradores podem excluir.');
@@ -939,10 +1095,32 @@ const SolicitacoesCrosby = () => {
     <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
       <PageTitle
         title="Solicitações Crosby"
-        subtitle="Aprovação de solicitações de pagamento, compra e manutenção · Envio de duplicatas ao TOTVS"
+        subtitle="Aprovação de solicitações de pagamento e reembolso · Envio de duplicatas ao TOTVS"
         icon={ClipboardText}
         iconColor="text-[#000638]"
       />
+
+      {/* Navegação para Compras & Manutenção */}
+      <RouterLink
+        to="/solicitacoes-crosby/compras-manutencao"
+        className="mb-3 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-3 flex items-center gap-3 hover:from-blue-100 hover:to-cyan-100 transition-colors group"
+      >
+        <span className="bg-blue-600 text-white p-2 rounded-lg group-hover:bg-blue-700 transition-colors">
+          <ShoppingCart size={18} weight="bold" />
+        </span>
+        <div className="flex-1">
+          <p className="text-xs font-bold text-[#000638]">
+            Compras &amp; Manutenção
+          </p>
+          <p className="text-[11px] text-gray-600">
+            Controle de etapas dedicado (em processo, orçado, contratado,
+            finalizado) — acesse a página separada.
+          </p>
+        </div>
+        <span className="text-[11px] font-bold text-blue-700 group-hover:text-blue-900">
+          Abrir →
+        </span>
+      </RouterLink>
 
       {/* Link público */}
       <div className="mb-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
@@ -1050,8 +1228,6 @@ const SolicitacoesCrosby = () => {
             <option value="TODOS">Todos</option>
             <option value="pagamento">Pagamento</option>
             <option value="reembolso">Reembolso</option>
-            <option value="compra">Compra</option>
-            <option value="manutencao">Manutenção</option>
             {canVerRH && <option value="rh">RH</option>}
           </select>
         </div>
@@ -1097,23 +1273,6 @@ const SolicitacoesCrosby = () => {
             ].map((s) => (
               <option key={s} value={s}>
                 {s}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col">
-          <label className="text-[10px] font-bold text-gray-500 uppercase">
-            Etapa (compra/manut.)
-          </label>
-          <select
-            value={filtroStatusSec}
-            onChange={(e) => setFiltroStatusSec(e.target.value)}
-            className="border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638] min-w-[170px] mb-4"
-          >
-            <option value="TODOS">Todas</option>
-            {STATUS_SECUNDARIO.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
               </option>
             ))}
           </select>
@@ -1405,6 +1564,7 @@ const SolicitacoesCrosby = () => {
           onSalvarEdicao={salvarEdicao}
           onDevolverParaGestor={devolverParaGestor}
           onAtualizarStatusSecundario={atualizarStatusSecundario}
+          onLiberarPagamento={liberarParaPagamento}
           onRecarregar={carregarSolicitacoes}
         />
       )}
@@ -1435,8 +1595,6 @@ const SolicitacoesCrosby = () => {
                 <option value="">Selecione o tipo...</option>
                 <option value="pagamento">Pagamento</option>
                 <option value="reembolso">Reembolso</option>
-                <option value="compra">Compra</option>
-                <option value="manutencao">Manutenção</option>
                 {canVerRH && <option value="rh">RH</option>}
               </select>
               <div className="flex gap-2 justify-end">
@@ -1587,6 +1745,7 @@ const ModalDetalhe = ({
   onSalvarEdicao,
   onDevolverParaGestor,
   onAtualizarStatusSecundario,
+  onLiberarPagamento,
   onRecarregar,
 }) => {
   const tipoCfg = TIPO_CONFIG[sol.tipo_solicitacao] || TIPO_CONFIG.compra;
@@ -1609,6 +1768,11 @@ const ModalDetalhe = ({
     (sol.status === 'aprovado_gestor' && isFinanceiro) ||
     (sol.status === 'erro_envio' && isFinanceiro);
   const podeDevolver = sol.status === 'aprovado_gestor' && isFinanceiro;
+  const podeLiberarPagamento =
+    sol.status === 'enviado_totvs' &&
+    !sol.pagamento_liberacao_id &&
+    isFinanceiro;
+  const jaLiberadoPagamento = !!sol.pagamento_liberacao_id;
 
   if (editando) {
     return (
@@ -2498,6 +2662,30 @@ const ModalDetalhe = ({
                 Reenviar ao TOTVS
               </button>
             )}
+            {podeLiberarPagamento && (
+              <button
+                onClick={() => onLiberarPagamento(sol)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                title="Cria um registro na Liberação de Pagamentos e vincula esta solicitação"
+              >
+                <HandCoins size={14} weight="bold" />
+                Liberar para Pagamento
+              </button>
+            )}
+            {jaLiberadoPagamento && (
+              <span className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <CheckCircle size={14} weight="fill" />
+                Liberado p/ pagamento
+                {sol.liberado_pagamento_em && (
+                  <span className="font-normal text-emerald-600 ml-1">
+                    em{' '}
+                    {new Date(sol.liberado_pagamento_em).toLocaleDateString(
+                      'pt-BR',
+                    )}
+                  </span>
+                )}
+              </span>
+            )}
             {podeRejeitar && (
               <button
                 onClick={() => onRejeitar(sol)}
@@ -2511,7 +2699,9 @@ const ModalDetalhe = ({
               !podeAprovarFinanceiro &&
               !podeReenviar &&
               !podeRejeitar &&
-              !podeDevolver && (
+              !podeDevolver &&
+              !podeLiberarPagamento &&
+              !jaLiberadoPagamento && (
                 <p className="text-xs text-gray-400 italic">
                   Nenhuma ação disponível para o status atual ou para o seu
                   perfil.
@@ -2758,6 +2948,30 @@ const ModalEdicao = ({
   const [salvando, setSalvando] = React.useState(false);
   const [parcelaIdx, setParcelaIdx] = React.useState(0);
 
+  // Pagamento / Reembolso — fluxo simplificado
+  const [dtEmissao, setDtEmissao] = React.useState(
+    sol.dt_emissao ? sol.dt_emissao.slice(0, 10) : '',
+  );
+  const [dtVencimento, setDtVencimento] = React.useState(
+    sol.dt_vencimento ? sol.dt_vencimento.slice(0, 10) : '',
+  );
+  const [despesaCode, setDespesaCode] = React.useState(
+    sol.despesa_code ? String(sol.despesa_code) : '',
+  );
+  const [costCenterCode, setCostCenterCode] = React.useState(
+    sol.cost_center_code ? String(sol.cost_center_code) : '',
+  );
+  const [rateioPercentual, setRateioPercentual] = React.useState(
+    sol.rateio_percentual != null ? String(sol.rateio_percentual) : '100',
+  );
+  const [valorUnico, setValorUnico] = React.useState(
+    sol.valor_total ? String(sol.valor_total) : '',
+  );
+  const [chavePix, setChavePix] = React.useState(sol.chave_pix || '');
+  const [codigoBarras, setCodigoBarras] = React.useState(
+    sol.codigo_barras || '',
+  );
+
   const SETORES = [
     'VAREJO',
     'FINANCEIRO',
@@ -2946,8 +3160,52 @@ const ModalEdicao = ({
         const url = await uploadArquivo(file, 'imagens-compra');
         novasImagensUrls.push(url);
       }
-      const newPayload =
-        instOrig.length > 0
+      const exigeFluxoSimplesLocal =
+        (tipo || sol.tipo_solicitacao) === 'pagamento' ||
+        (tipo || sol.tipo_solicitacao) === 'reembolso';
+      // Para pagamento/reembolso: sempre constrói installments a partir dos
+      // estados editáveis (dtVencimento, despesaCode, etc.) + bearerCode da
+      // primeira parcela se preenchido pelo financeiro.
+      const buildPayloadPagSimples = () => {
+        const bearerRaw = parcelas[0]?.bearerCode;
+        const bearer = bearerRaw ? parseInt(bearerRaw) : null;
+        return {
+          branchCnpj: onlyDigits(sol.branch_cnpj) || '',
+          supplierCpfCnpj:
+            onlyDigits(supplierCpfCnpj) ||
+            onlyDigits(sol.supplier_cpf_cnpj) ||
+            '',
+          duplicateCode: duplicateCode
+            ? parseInt(duplicateCode)
+            : sol.duplicate_code
+              ? parseInt(sol.duplicate_code)
+              : null,
+          installments: [
+            {
+              installmentCode: 1,
+              bearerCode: bearer,
+              issueDate: dtEmissao ? `${dtEmissao}T15:00:00.000Z` : null,
+              dueDate: dtVencimento ? `${dtVencimento}T15:00:00.000Z` : null,
+              arrivalDate: null,
+              duplicateValue: parseFloat(valorUnico) || null,
+              expenses: despesaCode
+                ? [
+                    {
+                      expenseCode: parseInt(despesaCode),
+                      costCenterCode: costCenterCode
+                        ? parseInt(costCenterCode)
+                        : null,
+                      proratedPercentage: parseFloat(rateioPercentual) || 100,
+                    },
+                  ]
+                : [],
+            },
+          ],
+        };
+      };
+      const newPayload = exigeFluxoSimplesLocal
+        ? buildPayloadPagSimples()
+        : instOrig.length > 0
           ? buildPayload()
           : {
               ...(sol.payload_totvs || {}),
@@ -2958,6 +3216,9 @@ const ModalEdicao = ({
         (s, p) => s + (parseFloat(p.duplicateValue) || 0),
         0,
       );
+      const exigeFluxoSimples = tipo === 'pagamento' || tipo === 'reembolso';
+      const toIso = (yyyymmdd) =>
+        yyyymmdd ? `${yyyymmdd}T15:00:00.000Z` : null;
       const dados = {
         tipo_solicitacao: tipo || sol.tipo_solicitacao,
         solicitante: solicitante.trim() || sol.solicitante,
@@ -2969,7 +3230,9 @@ const ModalEdicao = ({
         supplier_cpf_cnpj: onlyDigits(supplierCpfCnpj) || sol.supplier_cpf_cnpj,
         supplier_name: supplierName.trim() || sol.supplier_name,
         duplicate_code: duplicateCode || sol.duplicate_code,
-        valor_total: valorTotal || sol.valor_total,
+        valor_total: exigeFluxoSimples
+          ? parseFloat(valorUnico) || null
+          : valorTotal || sol.valor_total,
         payload_totvs: newPayload,
         comprovante_url: tipo === 'reembolso' ? novoComprovanteUrl : null,
         link_exemplo: tipo === 'compra' ? linkExemplo.trim() : null,
@@ -2980,6 +3243,18 @@ const ModalEdicao = ({
                 (c) => c.nome.trim() || c.telefone.trim(),
               )
             : [],
+        ...(exigeFluxoSimples && {
+          dt_emissao: toIso(dtEmissao),
+          dt_vencimento: toIso(dtVencimento),
+          despesa_code: despesaCode ? parseInt(despesaCode) : null,
+          cost_center_code: costCenterCode ? parseInt(costCenterCode) : null,
+          rateio_percentual: rateioPercentual
+            ? parseFloat(rateioPercentual)
+            : null,
+          chave_pix: formaPagamento === 'pix' ? chavePix.trim() || null : null,
+          codigo_barras:
+            formaPagamento === 'boleto' ? codigoBarras.trim() || null : null,
+        }),
       };
       const ok = await onSalvar(sol, dados);
       if (ok) onClose();
@@ -3185,6 +3460,117 @@ const ModalEdicao = ({
               />
             </div>
           </div>
+
+          {/* 4b · PAGAMENTO / REEMBOLSO — campos específicos */}
+          {(tipo === 'pagamento' || tipo === 'reembolso') && (
+            <div className="border-2 border-gray-200 rounded-xl p-4 space-y-3">
+              <p className="text-xs font-bold uppercase text-gray-500 tracking-widest">
+                Detalhes Financeiros
+              </p>
+
+              {/* Emissão + Vencimento */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <ELabel>Data de Emissão</ELabel>
+                  <input
+                    type="date"
+                    className={inpCls}
+                    value={dtEmissao}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => setDtEmissao(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <ELabel>Data de Vencimento *</ELabel>
+                  <input
+                    type="date"
+                    className={inpCls}
+                    value={dtVencimento}
+                    onChange={(e) => setDtVencimento(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Despesa */}
+              <div>
+                <ELabel>Despesa *</ELabel>
+                <DespesaComboCrosby
+                  value={despesaCode}
+                  onChange={setDespesaCode}
+                />
+              </div>
+
+              {/* Centro de Custo + Rateio */}
+              <div className="grid grid-cols-1 sm:grid-cols-[1fr_100px] gap-3">
+                <div>
+                  <ELabel>Centro de Custo *</ELabel>
+                  <select
+                    className={inpCls}
+                    value={costCenterCode}
+                    onChange={(e) => setCostCenterCode(e.target.value)}
+                  >
+                    <option value="">Selecione...</option>
+                    {CENTROS_CUSTO_OPTIONS.map(([code, name]) => (
+                      <option key={code} value={code}>
+                        {code} — {name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <ELabel>Rateio %</ELabel>
+                  <input
+                    type="number"
+                    className={inpCls}
+                    value={rateioPercentual}
+                    min="1"
+                    max="100"
+                    onChange={(e) => setRateioPercentual(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Valor */}
+              <div>
+                <ELabel>Valor (R$) *</ELabel>
+                <input
+                  type="number"
+                  className={inpCls}
+                  value={valorUnico}
+                  min="0"
+                  step="0.01"
+                  placeholder="0,00"
+                  onChange={(e) => setValorUnico(e.target.value)}
+                />
+              </div>
+
+              {/* Chave PIX */}
+              {formaPagamento === 'pix' && (
+                <div>
+                  <ELabel>Chave PIX *</ELabel>
+                  <input
+                    className={inpCls}
+                    value={chavePix}
+                    onChange={(e) => setChavePix(e.target.value)}
+                    placeholder="CPF, e-mail, telefone ou chave aleatória"
+                  />
+                </div>
+              )}
+
+              {/* Código de Barras */}
+              {formaPagamento === 'boleto' && (
+                <div>
+                  <ELabel>Código de Barras / Linha Digitável *</ELabel>
+                  <input
+                    className={inpCls}
+                    value={codigoBarras}
+                    onChange={(e) => setCodigoBarras(e.target.value)}
+                    placeholder="Digite o código de barras"
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 5 · TIPO-ESPECÍFICO */}
           {tipo === 'reembolso' && (

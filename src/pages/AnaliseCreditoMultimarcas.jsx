@@ -22,6 +22,7 @@ import {
   PaperPlaneTilt,
   ListChecks,
   FileText,
+  Trash,
 } from '@phosphor-icons/react';
 
 const BUCKET_DOCS = 'clientes-confianca';
@@ -120,7 +121,7 @@ function TotvsSyncBadge({ status, message }) {
 
 export default function AnaliseCreditoMultimarcas() {
   const { user } = useAuth();
-  const userRole = user?.user_metadata?.role || 'guest';
+  const userRole = user?.role || user?.user_metadata?.role || 'guest';
   const podeAnalisar = ROLES_PODE_ANALISAR.includes(userRole);
 
   const [tabAtiva, setTabAtiva] = useState('solicitar');
@@ -425,7 +426,7 @@ export default function AnaliseCreditoMultimarcas() {
       }
       setSalvandoAnalise(true);
 
-      // 1) Atualiza no TOTVS (apenas se aprovação)
+      // 1) Atualiza limite no TOTVS (apenas se aprovação)
       let totvsStatus = null;
       let totvsMsg = null;
       if (decisao === 'aprovada') {
@@ -439,26 +440,20 @@ export default function AnaliseCreditoMultimarcas() {
           totvsStatus = 'erro';
           totvsMsg = 'CPF/CNPJ inválido para sincronizar com TOTVS';
         } else {
-          const endpoint = isPJ
-            ? `${TotvsURL}cliente/legal-customer`
-            : `${TotvsURL}cliente/individual-customer`;
-          const totvsPayload = {
-            [isPJ ? 'cnpj' : 'cpf']: cpfCnpjDigits,
-            name: analiseAberta.cliente_nome,
-            branchInsertCode: branchCode,
-            limits: [
-              {
+          try {
+            const resp = await fetch(`${TotvsURL}cliente/update-limit`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                personType: isPJ ? 'PJ' : 'PF',
+                [isPJ ? 'cnpj' : 'cpf']: cpfCnpjDigits,
+                name: analiseAberta.cliente_nome,
+                branchInsertCode: branchCode,
                 branchCode: branchCode,
                 saleLimitValue: limite,
                 monthlyLimitValue: limite,
-              },
-            ],
-          };
-          try {
-            const resp = await fetch(endpoint, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(totvsPayload),
+                financialLimitValue: limite,
+              }),
             });
             const data = await resp.json().catch(() => ({}));
             if (!resp.ok) {
@@ -467,6 +462,9 @@ export default function AnaliseCreditoMultimarcas() {
                 data?.message ||
                 data?.error ||
                 `HTTP ${resp.status} ao atualizar TOTVS`;
+            } else if (data?.limitePendente) {
+              totvsStatus = 'sincronizado';
+              totvsMsg = data.message;
             } else {
               totvsStatus = 'sincronizado';
               totvsMsg = data?.message || 'Limite atualizado no TOTVS';
@@ -536,6 +534,128 @@ export default function AnaliseCreditoMultimarcas() {
   );
 
   // ──────────────────────────────────────────────────────────────────────────
+  // Reenviar sync TOTVS para análise aprovada
+  // ──────────────────────────────────────────────────────────────────────────
+  const reenviarTotvs = useCallback(
+    async (analise) => {
+      let cpfCnpjDigits = (analise.cliente_cpf_cnpj || '').replace(/\D/g, '');
+
+      // Se não tiver CPF/CNPJ no registro, busca pelo person_code
+      if (cpfCnpjDigits.length !== 11 && cpfCnpjDigits.length !== 14) {
+        try {
+          const resp = await fetch(
+            `${TotvsURL}clientes/search-name?code=${analise.person_code}`,
+          );
+          if (resp.ok) {
+            const result = await resp.json();
+            const rows = result?.data?.clientes || result?.clientes || [];
+            const found = rows.find(
+              (r) => String(r.code) === String(analise.person_code),
+            );
+            if (found?.cpf) {
+              cpfCnpjDigits = String(found.cpf).replace(/\D/g, '');
+              // Atualiza o campo no Supabase para não precisar buscar novamente
+              await supabase
+                .from('analises_credito')
+                .update({ cliente_cpf_cnpj: found.cpf })
+                .eq('id', analise.id);
+            }
+          }
+        } catch (_) {}
+      }
+
+      const isPJ = cpfCnpjDigits.length === 14;
+      const isPF = cpfCnpjDigits.length === 11;
+      if (!isPJ && !isPF) {
+        alert(
+          'Não foi possível encontrar o CPF/CNPJ deste cliente. Verifique o cadastro no TOTVS.',
+        );
+        return;
+      }
+      const branchCode = analise.branch_code || 2;
+      const limite = parseFloat(analise.limite_aprovado) || 0;
+      let totvsStatus = null;
+      let totvsMsg = null;
+      try {
+        const resp = await fetch(`${TotvsURL}cliente/update-limit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            personType: isPJ ? 'PJ' : 'PF',
+            [isPJ ? 'cnpj' : 'cpf']: cpfCnpjDigits,
+            name: analise.cliente_nome,
+            branchInsertCode: branchCode,
+            branchCode: branchCode,
+            saleLimitValue: limite,
+            monthlyLimitValue: limite,
+            financialLimitValue: limite,
+          }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          totvsStatus = 'erro';
+          totvsMsg = data?.message || data?.error || `HTTP ${resp.status}`;
+        } else if (data?.limitePendente) {
+          totvsStatus = 'sincronizado';
+          totvsMsg = data.message;
+        } else {
+          totvsStatus = 'sincronizado';
+          totvsMsg = data?.message || 'Sincronizado com sucesso';
+        }
+      } catch (e) {
+        totvsStatus = 'erro';
+        totvsMsg = `Falha: ${e.message}`;
+      }
+      const { error } = await supabase
+        .from('analises_credito')
+        .update({
+          totvs_sync_status: totvsStatus,
+          totvs_sync_message: totvsMsg,
+          totvs_sync_em: new Date().toISOString(),
+        })
+        .eq('id', analise.id);
+      if (error) {
+        alert(`Erro ao salvar status: ${error.message}`);
+        return;
+      }
+      await carregarAnalisadas();
+      if (totvsStatus === 'sincronizado') {
+        alert(totvsMsg || 'Sincronizado com o TOTVS com sucesso!');
+      } else {
+        alert(`Falha ao sincronizar: ${totvsMsg}`);
+      }
+    },
+    [carregarAnalisadas],
+  );
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Excluir análise da fila
+  // ──────────────────────────────────────────────────────────────────────────
+  const excluirAnalise = useCallback(
+    async (id, nome) => {
+      if (
+        !confirm(
+          `Excluir a solicitação de análise de "${nome}"? Essa ação não pode ser desfeita.`,
+        )
+      )
+        return;
+      try {
+        const { error } = await supabase
+          .from('analises_credito')
+          .delete()
+          .eq('id', id);
+        if (error) throw error;
+        fecharAnalise();
+        await carregarPendentes();
+        await carregarSolicitadosMap();
+      } catch (e) {
+        alert(`Erro ao excluir: ${e.message}`);
+      }
+    },
+    [fecharAnalise, carregarPendentes, carregarSolicitadosMap],
+  );
+
+  // ──────────────────────────────────────────────────────────────────────────
   // Lista (aba Solicitar) — backend já filtra/limita
   // ──────────────────────────────────────────────────────────────────────────
   const clientesFiltrados = clientes;
@@ -600,7 +720,7 @@ export default function AnaliseCreditoMultimarcas() {
       {/* ─── Aba SOLICITAR ─────────────────────────────────────────────── */}
       {tabAtiva === 'solicitar' && (
         <div className="space-y-3">
-          <div className="bg-white border border-gray-200 rounded-lg p-3 flex flex-col md:flex-row gap-2 items-start md:items-end">
+          <div className="bg-white border border-gray-200 rounded-lg p-3 flex flex-col md:flex-row gap-2 items-center justify-between md:items-end">
             <div className="w-full md:w-44">
               <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wide">
                 Buscar por
@@ -834,6 +954,7 @@ export default function AnaliseCreditoMultimarcas() {
               podeAnalisar={podeAnalisar}
               onConcluir={concluirAnalise}
               onFechar={fecharAnalise}
+              onExcluir={(id, nome) => excluirAnalise(id, nome)}
               onVerPerfilCompleto={() => {
                 setClientePerfilData({
                   code: analiseAberta.person_code,
@@ -848,6 +969,7 @@ export default function AnaliseCreditoMultimarcas() {
               loading={loadingPendentes}
               pendentes={solicitacoesPendentes}
               onAbrir={abrirAnalise}
+              onExcluir={excluirAnalise}
               onRefresh={carregarPendentes}
             />
           )}
@@ -860,6 +982,8 @@ export default function AnaliseCreditoMultimarcas() {
           loading={loadingAnalisadas}
           analisadas={analisadas}
           onRefresh={carregarAnalisadas}
+          podeReenviar={podeAnalisar}
+          onReenviarTotvs={reenviarTotvs}
           onAbrirPerfil={(a) => {
             setClientePerfilData({
               code: a.person_code,
@@ -890,7 +1014,7 @@ export default function AnaliseCreditoMultimarcas() {
 // Subcomponentes
 // ════════════════════════════════════════════════════════════════════════════
 
-function ListaPendentes({ loading, pendentes, onAbrir, onRefresh }) {
+function ListaPendentes({ loading, pendentes, onAbrir, onExcluir, onRefresh }) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg">
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 bg-gray-50">
@@ -965,12 +1089,21 @@ function ListaPendentes({ loading, pendentes, onAbrir, onRefresh }) {
                     {p.observacoes_solicitacao || '—'}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <button
-                      onClick={() => onAbrir(p)}
-                      className="bg-[#000638] text-white px-2 py-1 rounded text-[10px] font-semibold hover:bg-[#001A6B] flex items-center gap-1 ml-auto"
-                    >
-                      <Eye size={12} /> Analisar
-                    </button>
+                    <div className="flex justify-end gap-1">
+                      <button
+                        onClick={() => onAbrir(p)}
+                        className="bg-[#000638] text-white px-2 py-1 rounded text-[10px] font-semibold hover:bg-[#001A6B] flex items-center gap-1"
+                      >
+                        <Eye size={12} /> Analisar
+                      </button>
+                      <button
+                        onClick={() => onExcluir(p.id, p.cliente_nome)}
+                        className="bg-red-100 text-red-700 hover:bg-red-200 px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1"
+                        title="Excluir da fila"
+                      >
+                        <Trash size={12} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -998,6 +1131,7 @@ function DetalheAnalise({
   podeAnalisar,
   onConcluir,
   onFechar,
+  onExcluir,
   onVerPerfilCompleto,
 }) {
   return (
@@ -1330,6 +1464,13 @@ function DetalheAnalise({
               >
                 Voltar
               </button>
+              <button
+                onClick={() => onExcluir(s.id, s.cliente_nome)}
+                disabled={salvando}
+                className="w-full bg-red-50 border border-red-200 hover:bg-red-100 text-red-700 font-semibold text-xs py-1.5 rounded flex items-center justify-center gap-1"
+              >
+                <Trash size={12} weight="bold" /> Excluir da fila
+              </button>
             </div>
             {!podeAnalisar && (
               <p className="text-[10px] text-amber-700 mt-2 flex items-center gap-1">
@@ -1343,7 +1484,15 @@ function DetalheAnalise({
   );
 }
 
-function ListaAnalisadas({ loading, analisadas, onRefresh, onAbrirPerfil }) {
+function ListaAnalisadas({
+  loading,
+  analisadas,
+  onRefresh,
+  onAbrirPerfil,
+  podeReenviar,
+  onReenviarTotvs,
+}) {
+  const [reenviando, setReenviando] = React.useState({});
   const aprovadas = analisadas.filter((a) => a.status === 'aprovada');
   const rejeitadas = analisadas.filter((a) => a.status === 'rejeitada');
   const totalLimite = aprovadas.reduce(
@@ -1474,12 +1623,41 @@ function ListaAnalisadas({ loading, analisadas, onRefresh, onAbrirPerfil }) {
                       {fmtData(a.aprovado_em)}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <button
-                        onClick={() => onAbrirPerfil(a)}
-                        className="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1 ml-auto"
-                      >
-                        <Eye size={12} /> Perfil
-                      </button>
+                      <div className="flex justify-end gap-1">
+                        {podeReenviar &&
+                          a.status === 'aprovada' &&
+                          a.totvs_sync_status !== 'sincronizado' && (
+                            <button
+                              onClick={async () => {
+                                setReenviando((prev) => ({
+                                  ...prev,
+                                  [a.id]: true,
+                                }));
+                                await onReenviarTotvs(a);
+                                setReenviando((prev) => ({
+                                  ...prev,
+                                  [a.id]: false,
+                                }));
+                              }}
+                              disabled={reenviando[a.id]}
+                              className="bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:opacity-50 px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1"
+                              title="Reenviar ao TOTVS"
+                            >
+                              {reenviando[a.id] ? (
+                                <span className="inline-block w-2.5 h-2.5 border-2 border-amber-800 border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <ArrowClockwise size={11} weight="bold" />
+                              )}
+                              TOTVS
+                            </button>
+                          )}
+                        <button
+                          onClick={() => onAbrirPerfil(a)}
+                          className="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1"
+                        >
+                          <Eye size={12} /> Perfil
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
