@@ -21,6 +21,7 @@ import {
   CardDescription,
 } from '../components/ui/cards';
 import useApiClient from '../hooks/useApiClient';
+import useFreshFetch from '../hooks/useFreshFetch';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatBRL = (v) =>
@@ -106,6 +107,7 @@ function RawDataCard({ data }) {
 // ─── componente principal ─────────────────────────────────────────────────────
 export default function PainelVendas() {
   const apiClient = useApiClient();
+  const { run, isStale } = useFreshFetch();
 
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
   const [dataInicio, setDataInicio] = useState('');
@@ -129,6 +131,7 @@ export default function PainelVendas() {
       setErro('Informe as datas de início e fim.');
       return;
     }
+    const tok = run();
     setLoading(true);
     setErro('');
     setTotals(null);
@@ -149,6 +152,8 @@ export default function PainelVendas() {
         apiClient.totvs.salePanelTotals(body),
         apiClient.totvs.salePanelSellers(body),
       ]);
+
+      if (isStale(tok)) return;
 
       if (totalsResult && totalsResult.success !== false) {
         const payload = totalsResult.data ?? totalsResult;
@@ -171,9 +176,10 @@ export default function PainelVendas() {
         );
       }
     } catch (err) {
+      if (isStale(tok)) return;
       setErro(err.message || 'Erro ao conectar com a API.');
     } finally {
-      setLoading(false);
+      if (!isStale(tok)) setLoading(false);
     }
   };
 

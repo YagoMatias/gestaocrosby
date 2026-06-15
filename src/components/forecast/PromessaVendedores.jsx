@@ -262,8 +262,12 @@ export default function PromessaVendedores() {
     };
   })();
   const { ano, semana, untilToday } = queryParams;
+  // Token anti-race: descarta resposta obsoleta quando filtros mudam rápido
+  // (mode/semana mudam → nova request inicia → resposta antiga não deve aplicar)
+  const reqIdRef = useRef(0);
 
   const carregar = useCallback(async (forceRefresh = false) => {
+    const myId = ++reqIdRef.current;
     setErro('');
     const cacheKey = `${ano}|${semana}|${untilToday}`;
 
@@ -271,6 +275,7 @@ export default function PromessaVendedores() {
     if (!forceRefresh) {
       const cached = PV_CACHE.get(cacheKey);
       if (cached && Date.now() - cached.ts < PV_TTL_MS) {
+        if (myId !== reqIdRef.current) return;
         setData(cached.data);
         setLoading(false);
         return;
@@ -295,11 +300,13 @@ export default function PromessaVendedores() {
     setLoading(true);
     try {
       const fresh = await promise;
+      if (myId !== reqIdRef.current) return;
       setData(fresh);
     } catch (e) {
+      if (myId !== reqIdRef.current) return;
       setErro(e.message);
     } finally {
-      setLoading(false);
+      if (myId === reqIdRef.current) setLoading(false);
     }
   }, [ano, semana, untilToday]);
 

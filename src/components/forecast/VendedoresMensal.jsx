@@ -1,7 +1,7 @@
 // Faturamento por Vendedor — MENSAL (todos os vendedores de revenda/multimarcas).
 // Backend calcula somando as semanas do mês (leve e confiável), endpoint
 // /forecast/vendedores-mensal. Mostra B2R e B2M com TODOS os vendedores.
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { UsersThree, CloudArrowDown } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../../config/constants';
 import {
@@ -24,11 +24,16 @@ export default function VendedoresMensal() {
   const [loading, setLoading] = useState(false);
   const [carregandoLive, setCarregandoLive] = useState(false);
   const [erro, setErro] = useState('');
+  // Token anti-race COMPARTILHADO entre carregar() (Supabase) e carregarLive()
+  // (TOTVS). Se usuário trocar mês ou disparar live durante uma request em
+  // andamento, a resposta antiga não sobrescreve mais o estado novo.
+  const reqIdRef = useRef(0);
 
   // Lê do Supabase (rápido, com base no sync). NÃO usa o fallback do backend
   // (que pulava pro último período disponível) — agora exibimos exatamente o
   // mês escolhido e oferecemos botão de "Puxar do TOTVS ao vivo" se vazio.
   const carregar = useCallback(async () => {
+    const myId = ++reqIdRef.current;
     setLoading(true);
     setErro('');
     try {
@@ -36,6 +41,7 @@ export default function VendedoresMensal() {
       const qs = `?periodo_tipo=mensal&periodo_key=${periodoKey}&no_fallback=1`;
       const r = await fetch(`${API_BASE_URL}/api/forecast/vendedores-db${qs}`);
       const j = await r.json().catch(() => ({}));
+      if (myId !== reqIdRef.current) return;
       if (!r.ok || !j?.success) throw new Error(j?.message || `HTTP ${r.status}`);
       // Mesmo se backend ignorar no_fallback, descartamos fallback aqui no front
       // verificando se periodo_key bate com o pedido.
@@ -46,28 +52,32 @@ export default function VendedoresMensal() {
         setData(j.data);
       }
     } catch (e) {
+      if (myId !== reqIdRef.current) return;
       setErro(e.message);
     } finally {
-      setLoading(false);
+      if (myId === reqIdRef.current) setLoading(false);
     }
   }, [ano, mes]);
 
   // Calcula AO VIVO do TOTVS via /vendedores-mensal. Mais lento (1-3 min) mas
   // funciona mesmo sem sync. Usado quando vazio ou pra atualizar manualmente.
   const carregarLive = useCallback(async () => {
+    const myId = ++reqIdRef.current;
     setCarregandoLive(true);
     setErro('');
     try {
       const qs = `?ano=${ano}&mes=${mes}&until_today=true`;
       const r = await fetch(`${API_BASE_URL}/api/forecast/vendedores-mensal${qs}`);
       const j = await r.json().catch(() => ({}));
+      if (myId !== reqIdRef.current) return;
       if (!r.ok || !j?.success) throw new Error(j?.message || `HTTP ${r.status}`);
       // Estrutura do /vendedores-mensal é { cards: [...] } compatível
       setData({ ...j.data, fallback_aplicado: false, live: true });
     } catch (e) {
+      if (myId !== reqIdRef.current) return;
       setErro(e.message);
     } finally {
-      setCarregandoLive(false);
+      if (myId === reqIdRef.current) setCarregandoLive(false);
     }
   }, [ano, mes]);
 

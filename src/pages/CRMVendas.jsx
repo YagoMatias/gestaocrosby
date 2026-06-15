@@ -15,6 +15,7 @@ import {
   ChartBar,
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../config/constants';
+import useFreshFetch from '../hooks/useFreshFetch';
 import {
   MODULOS,
   TABS,
@@ -135,6 +136,11 @@ export default function CRMVendas() {
 
   const autoLoadedRef = useRef(false);
 
+  // Anti-race tokens — cada estado independente tem seu próprio token
+  const fetchLeads = useFreshFetch();          // setData (carregarLeads)
+  const fetchPhones = useFreshFetch();         // setPhoneStatus
+  const fetchSellers = useFreshFetch();        // setSellersTotals/setCanalTotals/setFatSegmentos/setBranchesTotals
+
   useEffect(() => {
     const hoje = new Date();
     const seteDiasAtras = new Date(hoje);
@@ -161,18 +167,21 @@ export default function CRMVendas() {
       setPhoneStatus(phonesCacheRef.current.data);
       return;
     }
+    const tok = fetchPhones.run();
     try {
       const ps = await apiPost('/api/crm/inst-check-bulk', { phones: unique });
+      if (fetchPhones.isStale(tok)) return;
       phonesCacheRef.current = { key: cacheKey, data: ps || {} };
       setPhoneStatus(ps || {});
       setLastUpdate((p) => ({ ...p, evo: new Date() }));
     } catch (e) {
       console.error('inst-check-bulk falhou:', e);
     }
-  }, []);
+  }, [fetchPhones]);
 
   const carregarLeads = useCallback(async () => {
     if (!dataInicio || !dataFim) return;
+    const tok = fetchLeads.run();
     setLoading(true);
     setErro('');
     try {
@@ -180,16 +189,18 @@ export default function CRMVendas() {
         de: dataInicio,
         ate: dataFim,
       });
+      if (fetchLeads.isStale(tok)) return;
       setData(result);
       setLastUpdate((p) => ({ ...p, clickup: new Date() }));
       setLoading(false);
       // Busca status WhatsApp em background (não bloqueia exibição dos leads)
       carregarPhoneStatus(result?.canais);
     } catch (err) {
+      if (fetchLeads.isStale(tok)) return;
       setErro(err.message || 'Erro ao carregar leads');
       setLoading(false);
     }
-  }, [dataInicio, dataFim, carregarPhoneStatus]);
+  }, [dataInicio, dataFim, carregarPhoneStatus, fetchLeads]);
 
   // Carrega leads automaticamente ao abrir a página
   useEffect(() => {
@@ -353,6 +364,7 @@ export default function CRMVendas() {
   // Carrega faturamento TOTVS por vendedor para 3 períodos (filtro, mês, semana)
   const carregarSellersTotals = useCallback(async () => {
     if (!dataInicio || !dataFim) return;
+    const tok = fetchSellers.run();
     setSellersTotalsLoading(true);
     try {
       const hoje = new Date();
@@ -390,6 +402,7 @@ export default function CRMVendas() {
             datemin: inicioSemana, datemax: hojeStr, modulo,
           }),
         ]);
+        if (fetchSellers.isStale(tok)) return;
         sellersTotalsDatesRef.current = `${dataInicio}|${dataFim}|${modulo}`;
         setSellersTotals({
           periodo: ctPeriodo?.per_seller || [],
@@ -403,6 +416,7 @@ export default function CRMVendas() {
           apiPost('/api/crm/sellers-totals', buildPayload(inicioMes, hojeStr)),
           apiPost('/api/crm/sellers-totals', buildPayload(inicioSemana, hojeStr)),
         ]);
+        if (fetchSellers.isStale(tok)) return;
         sellersTotalsDatesRef.current = `${dataInicio}|${dataFim}|${modulo}`;
         setSellersTotals({
           periodo: periodo?.dataRow || periodo || [],
@@ -414,16 +428,23 @@ export default function CRMVendas() {
         apiPost('/api/crm/canal-totals', {
           datemin: dataInicio, datemax: dataFim, modulo,
         })
-          .then((ct) => setCanalTotals(ct || null))
+          .then((ct) => {
+            if (fetchSellers.isStale(tok)) return;
+            setCanalTotals(ct || null);
+          })
           .catch((e) => {
             console.warn('[canal-totals] Erro:', e.message);
+            if (fetchSellers.isStale(tok)) return;
             setCanalTotals(null);
           });
       }
 
       // Fetch de segmentos independente — não bloqueia sellers-totals
       apiPost('/api/crm/faturamento-por-segmento', { datemin: dataInicio, datemax: dataFim })
-        .then((seg) => setFatSegmentos(seg?.segmentos || null))
+        .then((seg) => {
+          if (fetchSellers.isStale(tok)) return;
+          setFatSegmentos(seg?.segmentos || null);
+        })
         .catch((e) => console.warn('[fat-segmentos] Erro:', e.message));
 
       // Varejo: também busca faturamento por LOJA (branches) — não toca multimarcas/revenda
@@ -446,6 +467,7 @@ export default function CRMVendas() {
           }),
         ])
           .then(([bp, bm, bs]) => {
+            if (fetchSellers.isStale(tok)) return;
             setBranchesTotals({
               periodo: bp?.dataRow || bp || [],
               mes: bm?.dataRow || bm || [],
@@ -471,9 +493,9 @@ export default function CRMVendas() {
     } catch (e) {
       console.error('sellers-totals erro:', e);
     } finally {
-      setSellersTotalsLoading(false);
+      if (!fetchSellers.isStale(tok)) setSellersTotalsLoading(false);
     }
-  }, [dataInicio, dataFim, modulo]);
+  }, [dataInicio, dataFim, modulo, fetchSellers]);
 
   // Sincroniza NFs de HOJE do TOTVS → Supabase, e em seguida refaz sellers-totals.
   // Use para varejo: Supabase só sincroniza às 01:30, então vendas do dia ficam

@@ -8,6 +8,7 @@ import {
   CurrencyDollar,
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../config/constants';
+import useFreshFetch from '../hooks/useFreshFetch';
 
 const CANAIS = {
   varejo:         { label: 'VAREJO',         color: '#3b82f6' },
@@ -64,7 +65,7 @@ const ATALHOS = [
 ];
 
 // ─── Pie chart SVG ───────────────────────────────────────────────────────────
-function PieDonut({ items, total }) {
+function PieDonut({ items, total, canalAtivo, onToggle }) {
   if (!items.length) return null;
   const cx = 120, cy = 120, r = 95, ir = 55;
   let cum = -Math.PI / 2;
@@ -87,21 +88,30 @@ function PieDonut({ items, total }) {
       `A ${ir} ${ir} 0 ${largeArc} 0 ${xi1} ${yi1} Z`;
     const cfg = CANAIS[it.canal] || { color: '#9ca3af', label: it.canal.toUpperCase() };
     cum += angle;
-    return { path, color: cfg.color, label: cfg.label, percentual: it.percentual, valor: it.valor };
+    return { path, color: cfg.color, label: cfg.label, percentual: it.percentual, valor: it.valor, canal: it.canal };
   });
 
   return (
     <div className="flex items-center justify-center gap-8 flex-wrap">
       <svg width="240" height="240" viewBox="0 0 240 240">
-        {arcs.map((a, i) => (
-          <path
-            key={i}
-            d={a.path}
-            fill={a.color}
-            stroke="#0f172a"
-            strokeWidth={1.5}
-          />
-        ))}
+        {arcs.map((a, i) => {
+          const ativo = canalAtivo === a.canal;
+          const opacity = !canalAtivo || ativo ? 1 : 0.25;
+          return (
+            <path
+              key={i}
+              d={a.path}
+              fill={a.color}
+              stroke={ativo ? '#fff' : '#0f172a'}
+              strokeWidth={ativo ? 2.5 : 1.5}
+              opacity={opacity}
+              className="cursor-pointer transition-opacity"
+              onClick={() => onToggle?.(a.canal)}
+            >
+              <title>{a.label} · R$ {fmtBRL(a.valor)} · {a.percentual.toFixed(1)}%</title>
+            </path>
+          );
+        })}
         <text
           x={cx} y={cy - 6}
           textAnchor="middle"
@@ -120,20 +130,31 @@ function PieDonut({ items, total }) {
         </text>
       </svg>
       <div className="flex flex-col gap-1.5 min-w-[160px]">
-        {arcs.map((a, i) => (
-          <div key={i} className="flex items-center gap-2 text-xs">
-            <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: a.color }} />
-            <span className="text-slate-300 flex-1 truncate">{a.label}</span>
-            <span className="text-white font-bold tabular-nums">{a.percentual.toFixed(1)}%</span>
-          </div>
-        ))}
+        {arcs.map((a, i) => {
+          const ativo = canalAtivo === a.canal;
+          const dim = canalAtivo && !ativo;
+          return (
+            <button
+              type="button"
+              key={i}
+              onClick={() => onToggle?.(a.canal)}
+              className={`flex items-center gap-2 text-xs px-1.5 py-1 rounded transition ${
+                ativo ? 'bg-slate-700/60 ring-1 ring-emerald-500/40' : 'hover:bg-slate-800/60'
+              } ${dim ? 'opacity-40' : ''}`}
+            >
+              <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: a.color }} />
+              <span className="text-slate-300 flex-1 truncate text-left">{a.label}</span>
+              <span className="text-white font-bold tabular-nums">{a.percentual.toFixed(1)}%</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
 }
 
 // ─── Tabela canais (com % e barra de gradient) ───────────────────────────────
-function TabelaCanais({ items }) {
+function TabelaCanais({ items, canalAtivo, onToggle }) {
   const max = Math.max(...items.map((i) => i.percentual), 1);
   return (
     <div className="overflow-x-auto">
@@ -152,8 +173,16 @@ function TabelaCanais({ items }) {
           ) : items.map((it, idx) => {
             const cfg = CANAIS[it.canal] || { label: it.canal.toUpperCase(), color: '#9ca3af' };
             const barPct = (it.percentual / max) * 100;
+            const ativo = canalAtivo === it.canal;
+            const dim = canalAtivo && !ativo;
             return (
-              <tr key={it.canal} className="border-b border-slate-800/50 hover:bg-slate-800/50">
+              <tr
+                key={it.canal}
+                onClick={() => onToggle?.(it.canal)}
+                className={`border-b border-slate-800/50 cursor-pointer transition ${
+                  ativo ? 'bg-emerald-500/10 ring-1 ring-emerald-500/40' : 'hover:bg-slate-800/50'
+                } ${dim ? 'opacity-40' : ''}`}
+              >
                 <td className="py-2 px-2 text-slate-400 text-xs tabular-nums">{idx + 1}.</td>
                 <td className="py-2 px-2 text-white font-semibold text-xs">{cfg.label}</td>
                 <td className="py-2 px-2 text-right relative">
@@ -181,7 +210,7 @@ function TabelaCanais({ items }) {
 }
 
 // ─── Mini-tabela compacta ────────────────────────────────────────────────────
-function MiniTabela({ items }) {
+function MiniTabela({ items, canalAtivo, onToggle }) {
   return (
     <div className="overflow-hidden">
       <table className="w-full text-xs">
@@ -197,8 +226,16 @@ function MiniTabela({ items }) {
             <tr><td colSpan={3} className="py-6 text-center text-slate-500">Sem dados</td></tr>
           ) : items.map((it) => {
             const cfg = CANAIS[it.canal] || { label: it.canal.toUpperCase(), color: '#9ca3af' };
+            const ativo = canalAtivo === it.canal;
+            const dim = canalAtivo && !ativo;
             return (
-              <tr key={it.canal} className="border-b border-slate-800/50">
+              <tr
+                key={it.canal}
+                onClick={() => onToggle?.(it.canal)}
+                className={`border-b border-slate-800/50 cursor-pointer transition ${
+                  ativo ? 'bg-emerald-500/10 ring-1 ring-emerald-500/40' : 'hover:bg-slate-800/50'
+                } ${dim ? 'opacity-40' : ''}`}
+              >
                 <td className="py-1.5 px-2 text-white font-medium">{cfg.label}</td>
                 <td className="py-1.5 px-2 text-right text-white tabular-nums font-mono">{fmtBRL(it.valor)}</td>
                 <td className="py-1.5 px-2 text-right">
@@ -215,29 +252,52 @@ function MiniTabela({ items }) {
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 export default function DashboardVendas() {
-  // Default: todo o histórico disponível (2024-01-01 → hoje, inclui 2026 já)
-  const [datemin, setDatemin] = useState('2024-01-01');
+  // Default: ESTE MÊS (1º dia do mês corrente → hoje)
+  const inicioMesIso = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), 1))
+    .toISOString().slice(0, 10);
+  const [datemin, setDatemin] = useState(inicioMesIso);
   const [datemax, setDatemax] = useState(hojeIso);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
+  // Filtro interativo: clicar em pizza/ranking/mini-cards filtra os KPIs e
+  // destaca os outros componentes pelo canal selecionado.
+  const [canalAtivo, setCanalAtivo] = useState(null);
+  const toggleCanal = useCallback((c) => {
+    setCanalAtivo((cur) => (cur === c ? null : c));
+  }, []);
+  const { run, isStale } = useFreshFetch();
 
   const carregar = useCallback(async () => {
+    const tok = run();
     setLoading(true);
     setErro('');
     try {
       const r = await fetch(
         `${API_BASE_URL}/api/faturamento-historico/dashboard?datemin=${datemin}&datemax=${datemax}`,
       );
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.error || 'Erro');
+      // Lê body como text antes pra evitar "Unexpected end of JSON input" se vier vazio
+      const txt = await r.text();
+      if (isStale(tok)) return;
+      if (!r.ok) {
+        let msg = `HTTP ${r.status}`;
+        try { msg = JSON.parse(txt)?.error || msg; } catch (_) {}
+        throw new Error(msg);
+      }
+      if (!txt || txt.trim() === '') {
+        throw new Error('Servidor retornou resposta vazia. Tente reduzir o período.');
+      }
+      let j;
+      try { j = JSON.parse(txt); }
+      catch (_) { throw new Error('Resposta inválida do servidor (não-JSON).'); }
       setData(j);
     } catch (e) {
+      if (isStale(tok)) return;
       setErro(e.message);
     } finally {
-      setLoading(false);
+      if (!isStale(tok)) setLoading(false);
     }
-  }, [datemin, datemax]);
+  }, [datemin, datemax, run, isStale]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -246,6 +306,18 @@ export default function DashboardVendas() {
     setDatemin(d1);
     setDatemax(d2);
   };
+
+  // KPIs visíveis: quando há canal ativo, mostra apenas valor desse canal
+  const canalSelecionado = canalAtivo
+    ? (data?.por_canal || []).find((c) => c.canal === canalAtivo)
+    : null;
+  const kpisVisiveis = canalSelecionado
+    ? {
+        vl_fat: canalSelecionado.valor_bruto || (canalSelecionado.valor + (canalSelecionado.credev || 0)),
+        credev: canalSelecionado.credev || 0,
+        total: canalSelecionado.valor,
+      }
+    : data?.kpis || {};
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4">
@@ -347,10 +419,20 @@ export default function DashboardVendas() {
 
           {/* KPIs lateral esquerda */}
           <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 flex flex-col gap-4">
-            <KpiBox label="VL.FAT." valor={data?.kpis?.vl_fat} color="text-white" />
-            <KpiBox label="CREDEV"  valor={data?.kpis?.credev}  color="text-rose-400" />
+            {canalAtivo && (
+              <button
+                onClick={() => setCanalAtivo(null)}
+                className="text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40 hover:bg-emerald-500/30 transition flex items-center justify-between"
+                title="Clique pra limpar o filtro"
+              >
+                <span>Filtrado: {(CANAIS[canalAtivo] || {}).label || canalAtivo}</span>
+                <span className="ml-2">×</span>
+              </button>
+            )}
+            <KpiBox label="VL.FAT." valor={kpisVisiveis.vl_fat} color="text-white" />
+            <KpiBox label="CREDEV"  valor={kpisVisiveis.credev}  color="text-rose-400" />
             <div className="border-t border-slate-800 pt-3">
-              <KpiBox label="Total" valor={data?.kpis?.total} color="text-emerald-400" big />
+              <KpiBox label="Total" valor={kpisVisiveis.total} color="text-emerald-400" big />
             </div>
           </div>
 
@@ -359,9 +441,10 @@ export default function DashboardVendas() {
             <div className="flex items-center gap-2 mb-3">
               <ChartPieSlice size={16} className="text-emerald-400" />
               <h3 className="text-sm font-bold text-slate-200">Distribuição por canal</h3>
+              <span className="text-[10px] text-slate-500 ml-auto">Clique pra filtrar</span>
             </div>
             {data?.por_canal?.length
-              ? <PieDonut items={data.por_canal} total={data.kpis?.total || 0} />
+              ? <PieDonut items={data.por_canal} total={data.kpis?.total || 0} canalAtivo={canalAtivo} onToggle={toggleCanal} />
               : <div className="py-12 text-center text-slate-500 text-sm">Sem dados no período</div>}
           </div>
 
@@ -370,16 +453,17 @@ export default function DashboardVendas() {
             <div className="flex items-center gap-2 mb-3">
               <span className="w-1 h-4 bg-emerald-400 rounded" />
               <h3 className="text-sm font-bold text-slate-200">Ranking por canal</h3>
+              <span className="text-[10px] text-slate-500 ml-auto">Clique pra filtrar</span>
             </div>
-            <TabelaCanais items={data?.por_canal || []} />
+            <TabelaCanais items={data?.por_canal || []} canalAtivo={canalAtivo} onToggle={toggleCanal} />
           </div>
         </div>
 
         {/* ── Mini-tabelas: Este Mês / 7 dias / Ontem ── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <MiniCard titulo="Este Mês" items={data?.este_mes || []} />
-          <MiniCard titulo="Últimos 7 Dias" items={data?.ultimos_7 || []} />
-          <MiniCard titulo="Ontem" items={data?.ontem || []} />
+          <MiniCard titulo="Este Mês"        items={data?.este_mes || []}   canalAtivo={canalAtivo} onToggle={toggleCanal} />
+          <MiniCard titulo="Últimos 7 Dias"  items={data?.ultimos_7 || []}  canalAtivo={canalAtivo} onToggle={toggleCanal} />
+          <MiniCard titulo="Ontem"           items={data?.ontem || []}      canalAtivo={canalAtivo} onToggle={toggleCanal} />
         </div>
 
       </div>
@@ -398,11 +482,11 @@ function KpiBox({ label, valor, color = 'text-white', big = false }) {
   );
 }
 
-function MiniCard({ titulo, items }) {
+function MiniCard({ titulo, items, canalAtivo, onToggle }) {
   return (
     <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
       <h4 className="text-sm font-bold text-slate-200 mb-2 text-center">{titulo}</h4>
-      <MiniTabela items={items} />
+      <MiniTabela items={items} canalAtivo={canalAtivo} onToggle={onToggle} />
     </div>
   );
 }

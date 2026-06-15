@@ -73,20 +73,26 @@ export default function ComparativoAnual() {
   const [showWhats, setShowWhats] = useState(false);
   const [untilToday, setUntilToday] = useState(false);
   const cardRef = useRef(null);
+  // Token anti-race: cada nova chamada incrementa, só aplica state se ainda
+  // for a mais recente. Evita "pisca de valor" quando filtros mudam rápido.
+  const reqIdRef = useRef(0);
 
   const carregar = useCallback(async () => {
+    const myId = ++reqIdRef.current;
     setLoading(true);
     setErro('');
     try {
       const qs = `?ano=${ano}&mes=${mes}${untilToday ? '&until_today=true' : ''}`;
       const r = await fetch(`${API_BASE_URL}/api/forecast/comparativo-anual${qs}`);
       const j = await r.json();
+      if (myId !== reqIdRef.current) return; // resposta obsoleta — descarta
       if (!r.ok || !j?.success) throw new Error(j?.message || 'Erro');
       setData(j.data);
     } catch (e) {
+      if (myId !== reqIdRef.current) return;
       setErro(e.message);
     } finally {
-      setLoading(false);
+      if (myId === reqIdRef.current) setLoading(false);
     }
   }, [ano, mes, untilToday]);
 

@@ -3,7 +3,7 @@
 // quando este componente e o PromessaSemanal carregam juntos, as duas
 // requisições colapsam em UM único processamento no TOTVS (FATSEG_INFLIGHT).
 // Mostra apenas o fat_dia_anterior (faturamento do dia anterior) por canal.
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   CalendarCheck,
   Storefront,
@@ -45,8 +45,11 @@ export default function FaturamentoOntemCanal() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
+  // Token anti-race: protege contra StrictMode remount e cliques rápidos.
+  const reqIdRef = useRef(0);
 
   const carregar = useCallback(async () => {
+    const myId = ++reqIdRef.current;
     setLoading(true);
     setErro('');
     try {
@@ -54,12 +57,14 @@ export default function FaturamentoOntemCanal() {
       // (sale-panel, sem Supabase). Sem cache: dado sempre fresh.
       const r = await fetch(`${API_BASE_URL}/api/forecast/ontem-canal`);
       const j = await r.json().catch(() => ({}));
+      if (myId !== reqIdRef.current) return;
       if (!r.ok || !j?.success) throw new Error(j?.message || `HTTP ${r.status}`);
       setData(j.data);
     } catch (e) {
+      if (myId !== reqIdRef.current) return;
       setErro(e.message);
     } finally {
-      setLoading(false);
+      if (myId === reqIdRef.current) setLoading(false);
     }
   }, []);
 

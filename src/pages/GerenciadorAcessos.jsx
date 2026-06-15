@@ -145,7 +145,7 @@ const AVAILABLE_PAGES = [
   // Estoque
   {
     path: '/estoque/expedicao-showroom',
-    name: 'Expedição Showroom',
+    name: 'Expedição Franquias',
     category: 'Estoque',
   },
 
@@ -374,6 +374,11 @@ const AVAILABLE_PAGES = [
     name: 'API Claude',
     category: 'Administração',
   },
+  // ─── Tecnologia ─────────────────────────────────────────────
+  { path: '/tecnologia/controle-chip', name: 'Controle de Chips', category: 'Tecnologia' },
+  { path: '/tecnologia/inventario-patrimonio', name: 'Inventário de Patrimônio', category: 'Tecnologia' },
+  { path: '/tecnologia/cotacao-compras', name: 'Cotação de Compras', category: 'Tecnologia' },
+  { path: '/tecnologia/monitoramento-totvs', name: 'Monitoramento TOTVS', category: 'Tecnologia' },
 ];
 
 const GerenciadorAcessos = () => {

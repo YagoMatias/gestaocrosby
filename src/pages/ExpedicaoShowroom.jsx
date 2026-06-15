@@ -1,5 +1,5 @@
 // Expedição Showroom — controle de envio das NFs showroom/novidades
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Package,
   MagnifyingGlass,
@@ -13,11 +13,14 @@ import {
   HandHeart,
   Storefront,
   Car,
+  Motorcycle,
   User,
   WhatsappLogo,
   CurrencyDollar,
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../config/constants';
+import useFreshFetch from '../hooks/useFreshFetch';
+import PageTitle from '../components/ui/PageTitle';
 
 const STATUS_OPTIONS = [
   { v: '', label: 'Todos', cor: 'bg-slate-100 text-slate-700 ring-slate-200', row: '', dot: 'bg-slate-400', border: 'border-slate-300' },
@@ -35,6 +38,8 @@ const TRANSPORTADORAS = [
   { v: 'retirada',  label: 'Retirada',  icon: Storefront,   cor: 'text-purple-700' },
   { v: 'taxista',   label: 'Taxista',   icon: Car,          cor: 'text-orange-700' },
   { v: 'paulao',    label: 'Paulão',    icon: User,         cor: 'text-emerald-700' },
+  { v: 'bee',       label: 'Bee',       icon: Motorcycle,   cor: 'text-amber-600' },
+  { v: 'uber',      label: 'Uber',      icon: Car,          cor: 'text-gray-800' },
 ];
 const TRANSP_MAP = Object.fromEntries(TRANSPORTADORAS.map((t) => [t.v, t]));
 
@@ -46,6 +51,17 @@ function fmtBRL(n) {
 function fmtDate(iso) {
   if (!iso) return '—';
   return iso.slice(0, 10).split('-').reverse().join('/');
+}
+// Formata timestamp pra "DD/MM HH:mm" em BRT
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString('pt-BR', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+    });
+  } catch { return '—'; }
 }
 
 // Monta a URL do WhatsApp com mensagem pré-preenchida pra franquia.
@@ -82,37 +98,105 @@ Qualquer dúvida estamos à disposição.
 }
 
 export default function ExpedicaoShowroom() {
-  const [items, setItems] = useState([]);
+  // itemsAll = NFs SEM filtro de status (alimenta os KPIs). O status é
+  // filtrado APENAS no frontend pra evitar bug: quando filtrado no backend,
+  // os outros KPIs zeravam (porque eram derivados de items já filtrado).
+  const [itemsAll, setItemsAll] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [erro, setErro] = useState('');
-  const [filtros, setFiltros] = useState({ status: '', transportadora: '', busca: '' });
+  // Filtros — data_inicio/data_fim defaultam pro mês corrente
+  const [filtros, setFiltros] = useState(() => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    return {
+      status: '', transportadora: '', busca: '',
+      dataInicio: `${yyyy}-${mm}-01`,
+      dataFim: `${yyyy}-${mm}-${dd}`,
+    };
+  });
+  const { run, isStale } = useFreshFetch();
 
   const carregar = useCallback(async () => {
+    const tok = run();
     setLoading(true);
     setErro('');
     try {
+      // NÃO manda filtro de status pro backend — frontend aplica abaixo.
       const qs = new URLSearchParams();
-      if (filtros.status) qs.set('status', filtros.status);
       if (filtros.transportadora) qs.set('transportadora', filtros.transportadora);
       if (filtros.busca) qs.set('busca', filtros.busca);
+      if (filtros.dataInicio) qs.set('data_inicio', filtros.dataInicio);
+      if (filtros.dataFim) qs.set('data_fim', filtros.dataFim);
       const r = await fetch(`${API_BASE_URL}/api/expedicao-showroom?${qs}`);
       const j = await r.json();
+      if (isStale(tok)) return;
       if (!r.ok) throw new Error(j?.error || 'Erro');
-      setItems(j.items || []);
+      setItemsAll(j.items || []);
       setTotal(j.total || 0);
     } catch (e) {
+      if (isStale(tok)) return;
       setErro(e.message);
     } finally {
-      setLoading(false);
+      if (!isStale(tok)) setLoading(false);
     }
-  }, [filtros.status, filtros.transportadora, filtros.busca]);
+    // Dep só busca/transportadora/datas — status filtra no frontend.
+  }, [filtros.transportadora, filtros.busca, filtros.dataInicio, filtros.dataFim, run, isStale]);
 
   useEffect(() => {
     const id = setTimeout(carregar, 300);
     return () => clearTimeout(id);
   }, [carregar]);
+
+  // ─── Credev de franquia do mês corrente ───────────────────────────────
+  // Busca em /faturamento-por-segmento que retorna `credev_por_segmento.franquia`.
+  const [credevFranquia, setCredevFranquia] = useState(null);
+  const [credevLoading, setCredevLoading] = useState(true);
+  const credevFetch = useFreshFetch();
+  const carregarCredev = useCallback(async () => {
+    if (!filtros.dataInicio || !filtros.dataFim) return;
+    const tok = credevFetch.run();
+    setCredevLoading(true);
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/crm/faturamento-por-segmento`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ datemin: filtros.dataInicio, datemax: filtros.dataFim }),
+      });
+      const j = await r.json();
+      if (credevFetch.isStale(tok)) return;
+      if (!r.ok || !j?.success) throw new Error(j?.message || 'Erro');
+      const val = Number(
+        j?.data?.credev_por_segmento?.franquia ??
+        j?.credev_por_segmento?.franquia ??
+        0,
+      );
+      setCredevFranquia(val);
+    } catch (_) {
+      if (credevFetch.isStale(tok)) return;
+      setCredevFranquia(0);
+    } finally {
+      if (!credevFetch.isStale(tok)) setCredevLoading(false);
+    }
+  }, [filtros.dataInicio, filtros.dataFim, credevFetch]);
+  useEffect(() => { carregarCredev(); }, [carregarCredev]);
+
+  // items = itemsAll filtrado por status no frontend.
+  // KPIs continuam usando itemsAll (sem zerar quando troca status).
+  const STATUS_CONHECIDOS_SET = useMemo(
+    () => new Set(STATUS_OPTIONS.slice(1).map((s) => s.v)),
+    [],
+  );
+  const items = useMemo(() => {
+    if (!filtros.status) return itemsAll;
+    if (filtros.status === '__sem_status__') {
+      return itemsAll.filter((i) => !i.status || !STATUS_CONHECIDOS_SET.has(i.status));
+    }
+    return itemsAll.filter((i) => i.status === filtros.status);
+  }, [itemsAll, filtros.status, STATUS_CONHECIDOS_SET]);
 
   const syncTotvs = async () => {
     if (!window.confirm('Puxar novas NFs de showroom/novidades do TOTVS dos últimos 60 dias?')) return;
@@ -143,7 +227,7 @@ export default function ExpedicaoShowroom() {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || 'Erro');
-      setItems((arr) => arr.map((x) => (x.id === item.id ? j.item : x)));
+      setItemsAll((arr) => arr.map((x) => (x.id === item.id ? j.item : x)));
     } catch (e) {
       alert('Falha: ' + e.message);
     }
@@ -174,16 +258,17 @@ export default function ExpedicaoShowroom() {
     link.click();
   };
 
-  // KPIs por status (incluindo "Sem status")
-  const STATUS_CONHECIDOS = new Set(STATUS_OPTIONS.slice(1).map((s) => s.v));
-  const semStatusItems = items.filter((i) => !i.status || !STATUS_CONHECIDOS.has(i.status));
+  // KPIs por status (incluindo "Sem status").
+  // Derivam de `itemsAll` (sem filtro de status no front) — assim, ao clicar
+  // num card pra filtrar a tabela, os outros KPIs NÃO zeram.
+  const semStatusItems = itemsAll.filter((i) => !i.status || !STATUS_CONHECIDOS_SET.has(i.status));
   const kpis = [
     ...STATUS_OPTIONS.slice(1).map((s) => ({
       ...s,
-      count: items.filter((i) => i.status === s.v).length,
-      caixas: items.filter((i) => i.status === s.v).reduce((a, i) => a + (i.volume_caixas || 0), 0),
-      pecas: items.filter((i) => i.status === s.v).reduce((a, i) => a + (i.volume_qty || 0), 0),
-      valor: items.filter((i) => i.status === s.v).reduce((a, i) => a + Number(i.total_value || 0), 0),
+      count: itemsAll.filter((i) => i.status === s.v).length,
+      caixas: itemsAll.filter((i) => i.status === s.v).reduce((a, i) => a + (i.volume_caixas || 0), 0),
+      pecas: itemsAll.filter((i) => i.status === s.v).reduce((a, i) => a + (i.volume_qty || 0), 0),
+      valor: itemsAll.filter((i) => i.status === s.v).reduce((a, i) => a + Number(i.total_value || 0), 0),
     })),
     // 4º card: Sem status (NFs que ainda não foram classificadas)
     {
@@ -200,8 +285,8 @@ export default function ExpedicaoShowroom() {
     },
   ];
 
-  // Total faturado (soma de total_value de todas as NFs do filtro)
-  const totalFaturado = items.reduce((a, i) => a + Number(i.total_value || 0), 0);
+  // Total faturado (soma de TODAS as NFs — não muda ao clicar nos KPIs)
+  const totalFaturado = itemsAll.reduce((a, i) => a + Number(i.total_value || 0), 0);
 
   // Cor do dot baseado no status (pra usar no select inline)
   const k_dot = (st) => {
@@ -212,52 +297,45 @@ export default function ExpedicaoShowroom() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-indigo-50/30 py-6">
-      <div className="max-w-[1600px] mx-auto px-6">
-        {/* Hero header */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#000638] via-[#0a1a5c] to-[#001a8a] shadow-2xl mb-6 ring-1 ring-blue-900/40">
-          {/* Glow effects */}
-          <div className="absolute -right-32 -top-32 w-96 h-96 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute -left-20 -bottom-20 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_45%,rgba(255,255,255,0.03)_50%,transparent_55%)] pointer-events-none" />
+    <div className="w-full max-w-[1600px] mx-auto flex flex-col items-stretch justify-start py-3 px-2 sm:px-4 font-barlow">
+      <div>
+        {/* Título centralizado (padrão das outras páginas) */}
+        <PageTitle
+          title="Expedição Franquias"
+          subtitle="Controle de envios — Showroom + Novidades + Venda/Promo/Suframa · ops 7254 · 7007 · 7255 · 7234 · 7240 · 7259"
+          icon={Package}
+          iconColor="text-blue-600"
+        />
 
-          <div className="relative px-7 py-7 flex items-center justify-between flex-wrap gap-6">
-            <div className="flex items-center gap-5">
-              <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-white/15 to-white/5 backdrop-blur-md border border-white/25 flex items-center justify-center shadow-xl">
-                <Package size={32} weight="duotone" className="text-blue-200 drop-shadow" />
-                <div className="absolute -inset-px rounded-2xl bg-gradient-to-br from-blue-400/20 to-transparent pointer-events-none" />
-              </div>
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-black text-white tracking-tight drop-shadow">
-                  Expedição Showroom
-                </h1>
-                <p className="text-sm text-blue-200/80 mt-1.5 flex items-center gap-2">
-                  <span>Controle de envios</span>
-                  <span className="w-1 h-1 rounded-full bg-blue-400/60" />
-                  <span>Showroom + Novidades + Venda/Promo/Suframa</span>
-                  <span className="w-1 h-1 rounded-full bg-blue-400/60" />
-                  <span className="font-mono text-blue-300/70">ops 7254 · 7007 · 7255 · 7234 · 7240 · 7259</span>
-                </p>
-              </div>
-            </div>
-            <div className="flex items-stretch gap-5">
-              <div className="text-right border-r border-white/15 pr-5 flex flex-col justify-center">
-                <p className="text-[10px] uppercase tracking-widest text-blue-300/80 font-bold">Total NFs</p>
-                <p className="text-4xl font-black text-white tabular-nums leading-none mt-1.5">{total}</p>
-              </div>
-              <div className="text-right flex flex-col justify-center">
-                <p className="text-[10px] uppercase tracking-widest text-emerald-300/80 font-bold flex items-center justify-end gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Total Faturado
-                </p>
-                <p className="text-3xl lg:text-4xl font-black text-emerald-300 tabular-nums leading-none mt-1.5 drop-shadow">
-                  R$ {fmtBRL(totalFaturado)}
-                </p>
-                <p className="text-[10px] text-blue-300/70 mt-1.5">
-                  {items.length} {items.length === 1 ? 'pedido faturado' : 'pedidos faturados'}
-                </p>
-              </div>
-            </div>
+        {/* Totais — Total NFs + Total Faturado + Credev Franquia (mês corrente) */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+            <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Total NFs</p>
+            <p className="text-3xl font-black text-[#000638] tabular-nums leading-none mt-1.5">{total}</p>
+          </div>
+          <div className="bg-white rounded-2xl border border-emerald-200 p-4 shadow-sm">
+            <p className="text-[10px] uppercase tracking-widest text-emerald-700 font-bold flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Total Faturado
+            </p>
+            <p className="text-3xl font-black text-emerald-600 tabular-nums leading-none mt-1.5">R$ {fmtBRL(totalFaturado)}</p>
+            <p className="text-[10px] text-gray-500 mt-1.5">
+              {items.length} {items.length === 1 ? 'pedido faturado' : 'pedidos faturados'}
+            </p>
+          </div>
+          <div className="bg-white rounded-2xl border border-rose-200 p-4 shadow-sm">
+            <p className="text-[10px] uppercase tracking-widest text-rose-700 font-bold flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Credev Franquia
+            </p>
+            <p className="text-3xl font-black text-rose-600 tabular-nums leading-none mt-1.5">
+              {credevLoading ? (
+                <span className="inline-block w-32 h-7 bg-rose-100 rounded animate-pulse" />
+              ) : (
+                <>R$ {fmtBRL(credevFranquia || 0)}</>
+              )}
+            </p>
+            <p className="text-[10px] text-gray-500 mt-1.5">
+              Devoluções/credev do mês corrente
+            </p>
           </div>
         </div>
 
@@ -265,7 +343,7 @@ export default function ExpedicaoShowroom() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
           {kpis.map((k) => {
             const isSemStatus = k.v === '__sem_status__';
-            const ativo = !isSemStatus && filtros.status === k.v;
+            const ativo = filtros.status === k.v;
             const colorGradient = isSemStatus
               ? 'from-gray-100 to-gray-50'
               : k.v === 'enviado_blue'
@@ -283,23 +361,15 @@ export default function ExpedicaoShowroom() {
             return (
               <button
                 key={k.v}
-                onClick={() => {
-                  if (isSemStatus) return;
-                  setFiltros((s) => ({ ...s, status: ativo ? '' : k.v }));
-                }}
-                disabled={isSemStatus}
+                onClick={() => setFiltros((s) => ({ ...s, status: ativo ? '' : k.v }))}
                 className={`group relative overflow-hidden text-left p-4 rounded-2xl border transition-all duration-200 ${
                   ativo
                     ? 'bg-gradient-to-br from-blue-50 to-white border-blue-300 shadow-lg ring-2 ring-blue-200/60 scale-[1.02]'
-                    : isSemStatus
-                      ? 'bg-gradient-to-br from-gray-100 to-gray-50 border-gray-200 cursor-default opacity-90'
-                      : `bg-gradient-to-br ${colorGradient} border-gray-200 hover:border-gray-300 hover:shadow-md hover:-translate-y-0.5`
+                    : `bg-gradient-to-br ${colorGradient} border-gray-200 hover:border-gray-300 hover:shadow-md hover:-translate-y-0.5`
                 }`}
               >
                 {/* glow decoration */}
-                {!isSemStatus && (
-                  <div className={`absolute -top-12 -right-12 w-32 h-32 rounded-full bg-current opacity-5 ${accentColor}`} />
-                )}
+                <div className={`absolute -top-12 -right-12 w-32 h-32 rounded-full bg-current opacity-5 ${accentColor}`} />
                 <div className="relative">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
@@ -338,7 +408,7 @@ export default function ExpedicaoShowroom() {
 
         {/* Toolbar */}
         <div className="bg-white/80 backdrop-blur-sm border border-gray-200/80 rounded-2xl shadow-sm mb-4 p-3 flex items-center gap-2.5 flex-wrap">
-          <div className="relative flex-1 min-w-[280px]">
+          <div className="relative flex-1 min-w-[240px]">
             <MagnifyingGlass size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
@@ -346,6 +416,27 @@ export default function ExpedicaoShowroom() {
               value={filtros.busca}
               onChange={(e) => setFiltros((s) => ({ ...s, busca: e.target.value }))}
               className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-300 transition"
+            />
+          </div>
+          {/* Filtro de data (faturamento) */}
+          <div className="flex items-center gap-1.5">
+            <label className="text-[10px] uppercase tracking-wider font-bold text-gray-500">Faturamento</label>
+            <input
+              type="date"
+              value={filtros.dataInicio}
+              onChange={(e) => setFiltros((s) => ({ ...s, dataInicio: e.target.value }))}
+              max={filtros.dataFim || undefined}
+              className="text-sm border border-gray-200 rounded-xl px-2.5 py-2.5 bg-gray-50/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer tabular-nums"
+              title="Data inicial (issue_date)"
+            />
+            <span className="text-gray-400 text-sm">→</span>
+            <input
+              type="date"
+              value={filtros.dataFim}
+              onChange={(e) => setFiltros((s) => ({ ...s, dataFim: e.target.value }))}
+              min={filtros.dataInicio || undefined}
+              className="text-sm border border-gray-200 rounded-xl px-2.5 py-2.5 bg-gray-50/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer tabular-nums"
+              title="Data final (issue_date)"
             />
           </div>
           <div className="relative">
@@ -394,20 +485,20 @@ export default function ExpedicaoShowroom() {
           </div>
         )}
 
-        {/* Tabela */}
+        {/* Tabela — table-fixed pra evitar scroll horizontal */}
         <div className="bg-white border border-gray-200/80 rounded-2xl overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div>
+            <table className="w-full text-sm table-fixed">
               <thead>
                 <tr className="bg-gradient-to-b from-slate-50 via-slate-50 to-white border-b-2 border-gray-200">
-                  <th className="py-3.5 px-3 text-left text-[10px] font-black text-gray-500 uppercase tracking-widest w-[210px]">Loja</th>
-                  <th className="py-3.5 px-3 text-left text-[10px] font-black text-gray-500 uppercase tracking-widest w-[150px]">Transação</th>
-                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest w-[85px]">Data</th>
-                  <th className="py-3.5 px-3 text-right text-[10px] font-black text-gray-500 uppercase tracking-widest w-[105px]">Valor</th>
-                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest w-[95px]">Volume</th>
-                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest w-[185px]">Status</th>
-                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest w-[140px]">Transportadora</th>
-                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest min-w-[240px]">Rastreio</th>
+                  <th className="py-3.5 px-3 text-left text-[10px] font-black text-gray-500 uppercase tracking-widest w-[18%]">Loja</th>
+                  <th className="py-3.5 px-3 text-left text-[10px] font-black text-gray-500 uppercase tracking-widest w-[11%]">Transação</th>
+                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest w-[8%]">Datas</th>
+                  <th className="py-3.5 px-3 text-right text-[10px] font-black text-gray-500 uppercase tracking-widest w-[8%]">Valor</th>
+                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest w-[8%]">Volume</th>
+                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest w-[13%]">Status</th>
+                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest w-[11%]">Transportadora</th>
+                  <th className="py-3.5 px-3 text-center text-[10px] font-black text-gray-500 uppercase tracking-widest w-[23%]">Rastreio</th>
                 </tr>
               </thead>
               <tbody>
@@ -458,24 +549,30 @@ export default function ExpedicaoShowroom() {
                           {i.operation_name || `op ${i.operation_code}`}
                         </p>
                       </td>
-                      <td className="py-2.5 px-3 text-xs text-gray-600 text-center whitespace-nowrap align-middle font-mono">{fmtDate(i.issue_date)}</td>
+                      <td className="py-2.5 px-3 text-center align-middle">
+                        <div className="font-mono text-xs text-gray-700 leading-tight" title="Data de faturamento">
+                          {fmtDate(i.issue_date)}
+                        </div>
+                        <div className="font-mono text-[9px] text-gray-400 leading-tight mt-0.5" title={`Última atualização: ${i.atualizado_em || ''}`}>
+                          atu. {fmtDateTime(i.atualizado_em)}
+                        </div>
+                      </td>
                       <td className="py-2.5 px-3 text-right tabular-nums font-bold text-gray-800 whitespace-nowrap align-middle">R$&nbsp;{fmtBRL(i.total_value)}</td>
                       <td className="py-2.5 px-3 text-center align-middle">
-                        <div className="flex flex-col items-center gap-1">
-                          <div className="inline-flex items-center bg-white border border-gray-300 rounded-lg overflow-hidden shadow-sm">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const v = Math.max(0, (i.volume_caixas ?? 0) - 1);
-                                setItems((arr) => arr.map((x) => x.id === i.id ? { ...x, volume_caixas: v } : x));
-                                atualizar(i, { volume_caixas: v });
-                              }}
-                              className="px-1.5 py-1 text-gray-500 hover:bg-gray-100 hover:text-blue-700 transition disabled:opacity-30"
-                              disabled={(i.volume_caixas ?? 0) <= 0}
-                              title="Diminuir"
-                            >
-                              <span className="text-xs font-black">−</span>
-                            </button>
+                        <div className="inline-flex items-center gap-1.5 group/vol">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const v = Math.max(0, (i.volume_caixas ?? 0) - 1);
+                              setItemsAll((arr) => arr.map((x) => x.id === i.id ? { ...x, volume_caixas: v } : x));
+                              atualizar(i, { volume_caixas: v });
+                            }}
+                            disabled={(i.volume_caixas ?? 0) <= 0}
+                            className="w-5 h-5 rounded-full text-gray-400 hover:bg-blue-100 hover:text-blue-700 transition flex items-center justify-center text-xs font-black disabled:opacity-20 disabled:hover:bg-transparent"
+                            title="Diminuir"
+                          >−</button>
+
+                          <div className="flex flex-col items-center min-w-[44px]">
                             <input
                               type="number"
                               min={0}
@@ -484,7 +581,7 @@ export default function ExpedicaoShowroom() {
                               onFocus={(e) => { e.target.dataset.orig = String(e.target.value); e.target.select(); }}
                               onChange={(e) => {
                                 const v = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0);
-                                setItems((arr) => arr.map((x) => x.id === i.id ? { ...x, volume_caixas: v } : x));
+                                setItemsAll((arr) => arr.map((x) => x.id === i.id ? { ...x, volume_caixas: v } : x));
                               }}
                               onBlur={(e) => {
                                 const v = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0);
@@ -492,22 +589,23 @@ export default function ExpedicaoShowroom() {
                                 if (v !== orig) atualizar(i, { volume_caixas: v });
                               }}
                               title="Qtd. caixas enviadas"
-                              className="w-10 text-center tabular-nums font-bold text-blue-700 border-x border-gray-200 px-1 py-1.5 text-sm focus:outline-none focus:bg-blue-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              className="w-12 text-center tabular-nums font-extrabold text-blue-700 text-base leading-none px-1 py-0.5 rounded bg-transparent hover:bg-blue-50 focus:bg-blue-50 focus:outline-none focus:ring-1 focus:ring-blue-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const v = (i.volume_caixas ?? 0) + 1;
-                                setItems((arr) => arr.map((x) => x.id === i.id ? { ...x, volume_caixas: v } : x));
-                                atualizar(i, { volume_caixas: v });
-                              }}
-                              className="px-1.5 py-1 text-gray-500 hover:bg-gray-100 hover:text-blue-700 transition"
-                              title="Adicionar"
-                            >
-                              <span className="text-xs font-black">+</span>
-                            </button>
+                            <p className="text-[9px] uppercase tracking-wider text-gray-400 font-bold leading-none mt-0.5">
+                              cx · <span className="text-gray-500">{i.volume_qty || 0}</span> pç
+                            </p>
                           </div>
-                          <p className="text-[9px] text-gray-400">{i.volume_qty || 0} pç</p>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const v = (i.volume_caixas ?? 0) + 1;
+                              setItemsAll((arr) => arr.map((x) => x.id === i.id ? { ...x, volume_caixas: v } : x));
+                              atualizar(i, { volume_caixas: v });
+                            }}
+                            className="w-5 h-5 rounded-full text-gray-400 hover:bg-blue-100 hover:text-blue-700 transition flex items-center justify-center text-xs font-black"
+                            title="Adicionar"
+                          >+</button>
                         </div>
                       </td>
                       <td className="py-2.5 px-2 align-middle">
@@ -597,7 +695,7 @@ export default function ExpedicaoShowroom() {
                               onFocus={(e) => { e.target.dataset.orig = e.target.value; }}
                               onChange={(e) => {
                                 const v = e.target.value;
-                                setItems((arr) => arr.map((x) => x.id === i.id ? { ...x, codigo_rastreio: v } : x));
+                                setItemsAll((arr) => arr.map((x) => x.id === i.id ? { ...x, codigo_rastreio: v } : x));
                               }}
                               placeholder="Cole o código aqui…"
                               className={`w-full text-sm font-mono border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-300 transition placeholder:text-gray-400 placeholder:font-sans placeholder:text-xs ${

@@ -44,6 +44,7 @@ import {
   CardContent,
 } from '../components/ui/cards';
 import { API_BASE_URL } from '../config/constants';
+import useFreshFetch from '../hooks/useFreshFetch';
 import { useAuth } from '../components/AuthContext';
 import PromessaSemanal from '../components/forecast/PromessaSemanal';
 import PromessaMensal from '../components/forecast/PromessaMensal';
@@ -453,9 +454,11 @@ function ModalTransacoes({
   const [credevModal, setCredevModal] = useState(null); // { tx } — NF para confirmar
   const [credevMotivo, setCredevMotivo] = useState('');
   const [credevSaving, setCredevSaving] = useState(false);
+  const { run: runDados, isStale: isStaleDados } = useFreshFetch();
 
   useEffect(() => {
     const API_KEY = import.meta.env.VITE_API_KEY || '';
+    const tok = runDados();
     setLoadingTx(true);
     fetch(API_BASE_URL + '/api/crm/transacoes-canal', {
       method: 'POST',
@@ -463,10 +466,18 @@ function ModalTransacoes({
       body: JSON.stringify({ canal, datemin, datemax }),
     })
       .then((r) => r.json())
-      .then((j) => setDados(j.data ?? j))
-      .catch(() => setDados(null))
-      .finally(() => setLoadingTx(false));
-  }, [canal, datemin, datemax]);
+      .then((j) => {
+        if (isStaleDados(tok)) return;
+        setDados(j.data ?? j);
+      })
+      .catch(() => {
+        if (isStaleDados(tok)) return;
+        setDados(null);
+      })
+      .finally(() => {
+        if (!isStaleDados(tok)) setLoadingTx(false);
+      });
+  }, [canal, datemin, datemax, runDados, isStaleDados]);
 
   // Carrega overrides ativos do canal atual
   const carregarOverrides = useCallback(() => {
@@ -2186,8 +2197,16 @@ export default function FaturamentoCanal() {
     : hoje.getFullYear();
   const anoAnterior = anoAtual - 1;
 
+  // Anti-race tokens — cada função async com setState próprio recebe um token.
+  // loadMetaData/loadAcumuladoFaltante já têm proteção manual via refs próprios.
+  const fetchBuscar = useFreshFetch();           // setResultado/setCustoWpp/setCustoAds/setBluecredStats/setBluecardCount
+  const fetchVendedores = useFreshFetch();       // setRankingFat/setVendedores
+  const fetchPagamento = useFreshFetch();        // setPagamento
+  const fetchComparativo = useFreshFetch();      // setComp
+
   const buscar = useCallback(async () => {
     if (!dataInicio || !dataFim) return;
+    const tok = fetchBuscar.run();
     setErro('');
     setErroMeta(null);
     setCustoWpp(null);
@@ -2202,6 +2221,7 @@ export default function FaturamentoCanal() {
     )
       .then((r) => r.json())
       .then((j) => {
+        if (fetchBuscar.isStale(tok)) return;
         if (j?.success && j.data) {
           // Estrutura compatível com BlueCredCard: usa 'total' como contagem global
           setBluecredStats({
@@ -2220,6 +2240,7 @@ export default function FaturamentoCanal() {
     )
       .then((r) => r.json())
       .then((j) => {
+        if (fetchBuscar.isStale(tok)) return;
         if (j?.success && typeof j.data?.count === 'number') {
           setBluecardCount(j.data.count);
         }
@@ -2251,6 +2272,7 @@ export default function FaturamentoCanal() {
         datemin: dataInicio,
         datemax: dataFim,
       });
+      if (fetchBuscar.isStale(tok)) return;
       const resultadoFinal = {
         ...res,
         segmentos: res.segmentos ?? res.segmentos_bruto,
@@ -2276,6 +2298,7 @@ export default function FaturamentoCanal() {
         }
       } catch {}
     } catch (e) {
+      if (fetchBuscar.isStale(tok)) return;
       if (!hasStale) {
         let msg =
           'Erro ao buscar faturamento: ' + (e?.message || 'Erro desconhecido');
@@ -2286,8 +2309,10 @@ export default function FaturamentoCanal() {
         setErro(msg);
       }
     } finally {
-      setLoading(false);
-      setRevalidating(false);
+      if (!fetchBuscar.isStale(tok)) {
+        setLoading(false);
+        setRevalidating(false);
+      }
     }
 
     // Custos de mídia em background — não bloqueiam a exibição do faturamento
@@ -2301,6 +2326,7 @@ export default function FaturamentoCanal() {
         endDate: dataFim,
       }),
     ]).then(([wpp, ads]) => {
+      if (fetchBuscar.isStale(tok)) return;
       const metaErros = [];
       if (wpp.status === 'fulfilled') {
         // Inclui by_canal pra mostrar quebra por canal + accounts/wabas pro modal de detalhe
@@ -2356,7 +2382,7 @@ export default function FaturamentoCanal() {
       }
       if (metaErros.length > 0) setErroMeta(metaErros.join(' | '));
     });
-  }, [dataInicio, dataFim]);
+  }, [dataInicio, dataFim, fetchBuscar]);
 
   // ─── Carrega metas + faturamento atual (semana + mês corrente) ────────
   // Estratégia: stale-while-revalidate. Cache local de FAT (parte pesada) com
@@ -2900,6 +2926,7 @@ export default function FaturamentoCanal() {
 
   const buscarVendedores = useCallback(async () => {
     if (!dataInicio || !dataFim) return;
+    const tok = fetchVendedores.run();
 
     // ─── Stale-while-revalidate ──────────────────────────────────────────
     // Salva último resultado em localStorage. Próxima abertura mostra dados
@@ -2942,6 +2969,7 @@ export default function FaturamentoCanal() {
         datemax: dataFim,
         lite: true,
       });
+      if (fetchVendedores.isStale(tok)) return;
       setVendedores([]);
       setRankingFat(res ?? null);
       // Salva no cache pra próxima visita
@@ -2959,6 +2987,7 @@ export default function FaturamentoCanal() {
         }
       } catch {}
     } catch (e) {
+      if (fetchVendedores.isStale(tok)) return;
       // Se temos stale e falhou o refresh, mantém stale (apenas remove flag)
       if (!hasStale) {
         setErro('Erro ao buscar dados: ' + e.message);
@@ -2966,12 +2995,13 @@ export default function FaturamentoCanal() {
         console.warn('[buscarVendedores] refresh falhou, mantendo stale:', e.message);
       }
     } finally {
-      setLoadingVend(false);
+      if (!fetchVendedores.isStale(tok)) setLoadingVend(false);
     }
-  }, [dataInicio, dataFim]);
+  }, [dataInicio, dataFim, fetchVendedores]);
 
   const buscarPagamento = useCallback(async () => {
     if (!dataInicio || !dataFim) return;
+    const tok = fetchPagamento.run();
     setLoadingPag(true);
     setErro('');
     try {
@@ -2979,16 +3009,19 @@ export default function FaturamentoCanal() {
         datemin: dataInicio,
         datemax: dataFim,
       });
+      if (fetchPagamento.isStale(tok)) return;
       setPagamento(res);
     } catch (e) {
+      if (fetchPagamento.isStale(tok)) return;
       setErro('Erro ao buscar formas de pagamento: ' + e.message);
     } finally {
-      setLoadingPag(false);
+      if (!fetchPagamento.isStale(tok)) setLoadingPag(false);
     }
-  }, [dataInicio, dataFim]);
+  }, [dataInicio, dataFim, fetchPagamento]);
 
   const buscarComparativo = useCallback(async () => {
     if (!dataInicio || !dataFim) return;
+    const tok = fetchComparativo.run();
     setLoadingComp(true);
     setErro('');
     try {
@@ -3012,13 +3045,15 @@ export default function FaturamentoCanal() {
         }),
       ]);
 
+      if (fetchComparativo.isStale(tok)) return;
       setComp({ atual, acumulado, anoCompleto, acumInicio, acumFim });
     } catch (e) {
+      if (fetchComparativo.isStale(tok)) return;
       setErro('Erro ao buscar comparativo: ' + e.message);
     } finally {
-      setLoadingComp(false);
+      if (!fetchComparativo.isStale(tok)) setLoadingComp(false);
     }
-  }, [dataInicio, dataFim, anoAnterior]);
+  }, [dataInicio, dataFim, anoAnterior, fetchComparativo]);
 
   React.useEffect(() => {
     buscar();

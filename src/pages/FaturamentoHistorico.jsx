@@ -15,6 +15,7 @@ import {
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { API_BASE_URL } from '../config/constants';
+import useFreshFetch from '../hooks/useFreshFetch';
 
 const CANAIS = [
   { v: '',              label: 'Todos canais',          color: '#64748b' },
@@ -70,8 +71,13 @@ export default function FaturamentoHistorico() {
   const [sincronizando, setSincronizando] = useState(false);
   const [erro, setErro] = useState('');
 
+  // Tokens separados: carregar e carregarResumo escrevem em estados diferentes
+  const fetchListagem = useFreshFetch();
+  const fetchResumo = useFreshFetch();
+
   // ── Carregar listagem ──
   const carregar = useCallback(async () => {
+    const tok = fetchListagem.run();
     setLoading(true);
     setErro('');
     try {
@@ -86,19 +92,22 @@ export default function FaturamentoHistorico() {
       qs.set('pageSize', pageSize);
       const r = await fetch(`${API_BASE_URL}/api/faturamento-transacao?${qs}`);
       const j = await r.json();
+      if (fetchListagem.isStale(tok)) return;
       if (!r.ok) throw new Error(j?.error || 'Erro');
       setItems(j.items || []);
       setTotal(j.total || 0);
       setTotalPages(j.totalPages || 1);
     } catch (e) {
+      if (fetchListagem.isStale(tok)) return;
       setErro(e.message);
     } finally {
-      setLoading(false);
+      if (!fetchListagem.isStale(tok)) setLoading(false);
     }
-  }, [datemin, datemax, canal, busca, loja, order, page, pageSize]);
+  }, [datemin, datemax, canal, busca, loja, order, page, pageSize, fetchListagem]);
 
   // ── Carregar resumo (totais reais do range filtrado) ──
   const carregarResumo = useCallback(async () => {
+    const tok = fetchResumo.run();
     setLoadingResumo(true);
     try {
       const qs = new URLSearchParams();
@@ -109,13 +118,14 @@ export default function FaturamentoHistorico() {
       if (loja) qs.set('loja', loja);
       const r = await fetch(`${API_BASE_URL}/api/faturamento-transacao/resumo?${qs}`);
       const j = await r.json();
+      if (fetchResumo.isStale(tok)) return;
       if (r.ok) setResumo(j);
     } catch (e) {
       // resumo é opcional
     } finally {
-      setLoadingResumo(false);
+      if (!fetchResumo.isStale(tok)) setLoadingResumo(false);
     }
-  }, [datemin, datemax, canal, busca, loja]);
+  }, [datemin, datemax, canal, busca, loja, fetchResumo]);
 
   // Debounce de busca/filtros
   useEffect(() => {

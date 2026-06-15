@@ -233,7 +233,7 @@ const estoqueItems = [
     color: 'text-teal-600',
   },
   {
-    name: 'Expedição Showroom',
+    name: 'Expedição Franquias',
     href: '/estoque/expedicao-showroom',
     icon: Truck,
     color: 'text-blue-700',
@@ -538,6 +538,12 @@ const tecnologiaItems = [
     href: '/tecnologia/inventario-patrimonio',
     icon: Package,
     color: 'text-indigo-600',
+  },
+  {
+    name: 'Cotação de Compras',
+    href: '/tecnologia/cotacao-compras',
+    icon: ShoppingCart,
+    color: 'text-amber-600',
   },
   {
     name: 'Monitoramento TOTVS',

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import useApiClient from '../hooks/useApiClient';
+import useFreshFetch from '../hooks/useFreshFetch';
 import { useAuth } from '../components/AuthContext';
 import PageTitle from '../components/ui/PageTitle';
 import { TotvsURL } from '../config/constants';
@@ -40,6 +41,7 @@ const formatBRL = (value) =>
 const RankingFaturamento = () => {
   const apiClient = useApiClient();
   const { user } = useAuth();
+  const { run, isStale } = useFreshFetch();
 
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -58,10 +60,12 @@ const RankingFaturamento = () => {
   // ==========================================
   useEffect(() => {
     const fetchBranches = async () => {
+      const tok = run();
       try {
         const response = await fetch(`${TotvsURL}branches`);
         if (response.ok) {
           const result = await response.json();
+          if (isStale(tok)) return;
           let empresas = [];
           if (result.success && result.data) {
             empresas = result.data.data || result.data;
@@ -79,6 +83,7 @@ const RankingFaturamento = () => {
             nameMap[code] = nome;
             groupMap[code] = nome;
           });
+          if (isStale(tok)) return;
           setBranchNames(nameMap);
           setBranchGroupMap(groupMap);
         }
@@ -98,6 +103,7 @@ const RankingFaturamento = () => {
       return;
     }
 
+    const tok = run();
     setLoading(true);
     setError('');
     setBranchTotals([]);
@@ -108,6 +114,8 @@ const RankingFaturamento = () => {
         datemin: startDate,
         datemax: endDate,
       });
+
+      if (isStale(tok)) return;
 
       const raw = result?.data ?? result;
       const items = Array.isArray(raw)
@@ -121,9 +129,10 @@ const RankingFaturamento = () => {
         setError('Nenhum dado encontrado para o período informado.');
       }
     } catch (err) {
+      if (isStale(tok)) return;
       setError(err.message || 'Erro desconhecido.');
     } finally {
-      setLoading(false);
+      if (!isStale(tok)) setLoading(false);
     }
   };
 
