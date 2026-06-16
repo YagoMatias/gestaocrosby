@@ -154,6 +154,13 @@ const AVAILABLE_PAGES = [
     category: 'Estoque',
   },
 
+  // Showroom
+  {
+    path: '/showroom',
+    name: 'Showroom — Pedidos (Wix)',
+    category: 'Showroom',
+  },
+
   // Marketing
   {
     path: '/bluecard/leads',

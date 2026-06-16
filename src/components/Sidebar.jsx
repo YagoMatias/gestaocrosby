@@ -977,6 +977,18 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           isActive={pathname === '/dashboard'}
         />
 
+        {/* SHOWROOM */}
+        <MenuItem
+          {...menuProps}
+          item={{
+            name: 'Showroom',
+            href: '/showroom',
+            icon: Storefront,
+            color: 'text-emerald-600',
+          }}
+          isActive={pathname.startsWith('/showroom')}
+        />
+
         {/* Seção Financeiro */}
         <MenuSection
           {...menuProps}

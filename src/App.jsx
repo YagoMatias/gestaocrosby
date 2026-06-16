@@ -108,6 +108,7 @@ const CrosbyForm = lazy(() => import('./crosby/CrosbyForm'));
 const CrosbyFormIndicacao = lazy(() => import('./crosby/CrosbyFormIndicacao'));
 const CrosbyObrigado = lazy(() => import('./crosby/CrosbyObrigado'));
 const BluecardLeads = lazy(() => import('./pages/BluecardLeads'));
+const Showroom = lazy(() => import('./pages/Showroom'));
 const ExpedicaoShowroom = lazy(() => import('./pages/ExpedicaoShowroom'));
 const FaturamentoHistorico = lazy(() => import('./pages/FaturamentoHistorico'));
 const DashboardVendas = lazy(() => import('./pages/DashboardVendas'));
@@ -153,6 +154,7 @@ PageLoadingFallback.displayName = 'PageLoadingFallback';
 // Lista de rotas protegidas (constante estática no módulo)
 const protectedRoutes = [
   { path: '/bluecard/leads', component: BluecardLeads },
+  { path: '/showroom', component: Showroom },
   { path: '/estoque/expedicao-showroom', component: ExpedicaoShowroom },
   { path: '/forecast/faturamento-historico', component: Forecast },
   { path: '/dashboard-vendas', component: Forecast },

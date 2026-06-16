@@ -533,14 +533,23 @@ function fmtNasc(s) {
   if (d.length === 8) return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
   return raw;
 }
-// Checkbox custom — branco/azul, com estado indeterminate visual
+// Checkbox custom — branco/azul, com estado indeterminate visual.
+// Quando onChange é fornecido, intercepta o click e para a propagação (linha
+// inteira ficaria selecionável). Sem onChange, deixa o click passar pro pai
+// (caso o checkbox esteja DENTRO de outro botão que faz a ação).
 function CheckSquareInput({ checked, indeterminate, onChange }) {
+  const interativo = typeof onChange === 'function';
+  const handleClick = interativo
+    ? (e) => { e.stopPropagation(); onChange(e); }
+    : undefined;
   return (
     <span
       role="checkbox"
       aria-checked={indeterminate ? 'mixed' : checked}
-      onClick={(e) => { e.stopPropagation(); onChange?.(e); }}
-      className={`inline-flex items-center justify-center w-4 h-4 rounded border transition-all cursor-pointer ${
+      onClick={handleClick}
+      className={`inline-flex items-center justify-center w-4 h-4 rounded border transition-all ${
+        interativo ? 'cursor-pointer' : ''
+      } ${
         checked || indeterminate
           ? 'bg-blue-600 border-blue-600 text-white'
           : 'bg-white border-gray-300 hover:border-blue-400'
@@ -936,182 +945,321 @@ function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, 
   );
 }
 
+// Reusable input com label
+function CampoEdit({ label, value, onChange, placeholder, type = 'text', mono, icon: Icon, helper }) {
+  return (
+    <div>
+      <label className="block text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1.5">
+        {label}
+      </label>
+      <div className="relative">
+        {Icon && (
+          <Icon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        )}
+        <input
+          type={type}
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className={`w-full ${Icon ? 'pl-9' : 'pl-3'} pr-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 placeholder:text-gray-300 ${mono ? 'font-mono tabular-nums' : ''}`}
+        />
+      </div>
+      {helper && <p className="text-[11px] text-gray-400 mt-1">{helper}</p>}
+    </div>
+  );
+}
+
 function DetalhesModal({ lead, onClose, onSaved, onSyncTotvs }) {
-  const [observacao, setObs] = useState(lead.observacao || '');
+  // Estado de edição — começa com os valores atuais do lead
+  const [form, setForm] = useState({
+    nome: lead.nome || '',
+    email: lead.email || '',
+    whatsapp: lead.whatsapp || '',
+    cpf: lead.cpf || '',
+    empresa: lead.empresa || '',
+    instagram: lead.instagram || '',
+    data_nasc: lead.data_nasc || '',
+    cep: lead.cep || '',
+    endereco: lead.endereco || '',
+    numero: lead.numero || '',
+    complemento: lead.complemento || '',
+    indicado_por: lead.indicado_por || '',
+    cvv: lead.cvv || '',
+    observacao: lead.observacao || '',
+  });
   const [salvando, setSalv] = useState(false);
 
+  const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  // Detecta o que mudou em relação ao lead original
+  const camposAlterados = useMemo(() => {
+    const diff = {};
+    for (const k of Object.keys(form)) {
+      const original = lead[k] ?? '';
+      if (String(form[k]).trim() !== String(original).trim()) diff[k] = form[k];
+    }
+    return diff;
+  }, [form, lead]);
+  const temAlteracao = Object.keys(camposAlterados).length > 0;
+
   const salvar = async () => {
+    if (!temAlteracao) { onClose(); return; }
     setSalv(true);
     try {
       const r = await fetch(`${API_BASE_URL}/api/bluecard/leads/${lead.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ observacao }),
+        body: JSON.stringify(camposAlterados),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || 'Erro');
       onSaved(j.lead);
     } catch (e) {
-      alert('Falha: ' + e.message);
+      alert('Falha ao salvar: ' + e.message);
     } finally {
       setSalv(false);
     }
   };
 
-  const s = STATUS_MAP[lead.status] || STATUS_MAP['novo'];
+  const s = STATUS_MAP[lead.status] || STATUS_MAP['1_msg_enviada'];
   const StatusIcon = s.icon;
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-150" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-auto"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header do modal */}
-        <div className="relative bg-gradient-to-br from-[#000638] to-[#001a8a] p-6 text-white">
-          <div className="absolute -right-10 -top-10 w-40 h-40 bg-blue-400/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="relative flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center">
-                <CreditCard size={24} weight="duotone" className="text-blue-200" />
-              </div>
-              <div>
-                <h3 className="text-xl font-black tracking-tight">{lead.nome}</h3>
-                <p className="text-xs text-blue-200/80 mt-0.5 flex items-center gap-2">
-                  <Calendar size={11} /> {fmtDate(lead.criado_em)} · ID #{lead.id}
-                </p>
+        {/* Header — compacto, com indicador de mudanças */}
+        <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0">
+              <CreditCard size={20} weight="duotone" className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-gray-900 truncate">
+                {form.nome || 'Editar lead'}
+              </h3>
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${s.cor}`}>
+                  <StatusIcon size={9} weight="duotone" /> {s.label}
+                </span>
+                <span className="text-[11px] text-gray-400">#{lead.id} · {fmtDate(lead.criado_em)}</span>
+                {temAlteracao && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                    ● {Object.keys(camposAlterados).length} alteração(ões)
+                  </span>
+                )}
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="text-3xl text-white/60 hover:text-white leading-none w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 transition"
-              aria-label="Fechar"
-            >
-              ×
-            </button>
           </div>
-          <div className="mt-4">
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md ring-1 ${s.cor} text-xs font-bold`}>
-              <StatusIcon size={12} weight="duotone" /> {s.label}
-            </span>
-          </div>
+          <button
+            onClick={onClose}
+            className="text-2xl text-gray-400 hover:text-gray-700 leading-none w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition shrink-0"
+          >
+            ×
+          </button>
         </div>
 
-        {/* Body */}
+        {/* Body — formulário de edição */}
         <div className="p-6 space-y-5">
-          {/* Cards de contato */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <InfoCard icon={At} label="Email" value={lead.email} color="blue" />
-            <InfoCard icon={WhatsappLogo} label="WhatsApp" value={fmtPhone(lead.whatsapp)} color="emerald" />
-            <InfoCard icon={CreditCard} label="CPF" value={fmtCPF(lead.cpf)} color="slate" mono />
-            <InfoCard icon={Calendar} label="Data nasc." value={lead.data_nasc || '—'} color="purple" />
-            {lead.cvv && (
-              <InfoCard
+          {/* Seção: identificação */}
+          <fieldset className="space-y-3">
+            <legend className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1">Identificação</legend>
+            <CampoEdit
+              label="Nome completo"
+              value={form.nome}
+              onChange={(v) => setField('nome', v)}
+              placeholder="Nome do lead"
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <CampoEdit
+                label="CPF"
+                value={form.cpf}
+                onChange={(v) => setField('cpf', v)}
+                placeholder="000.000.000-00"
+                mono
                 icon={CreditCard}
-                label="CVV BlueCard"
-                value={lead.cvv}
-                color="indigo"
+              />
+              <CampoEdit
+                label="Data de nascimento"
+                value={form.data_nasc}
+                onChange={(v) => setField('data_nasc', v)}
+                placeholder="DD/MM/AAAA"
+                icon={Calendar}
+              />
+            </div>
+          </fieldset>
+
+          {/* Seção: contato */}
+          <fieldset className="space-y-3">
+            <legend className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1">Contato</legend>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <CampoEdit
+                label="WhatsApp"
+                value={form.whatsapp}
+                onChange={(v) => setField('whatsapp', v)}
+                placeholder="83998888777"
+                mono
+                icon={WhatsappLogo}
+                helper="Só dígitos. DDI 55 opcional."
+              />
+              <CampoEdit
+                label="Email"
+                value={form.email}
+                onChange={(v) => setField('email', v)}
+                placeholder="email@exemplo.com"
+                type="email"
+                icon={At}
+              />
+            </div>
+            <CampoEdit
+              label="Instagram"
+              value={form.instagram}
+              onChange={(v) => setField('instagram', v)}
+              placeholder="@usuario"
+              icon={InstagramLogo}
+            />
+          </fieldset>
+
+          {/* Seção: profissional */}
+          <fieldset className="space-y-3">
+            <legend className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1">Profissional</legend>
+            <CampoEdit
+              label="Empresa / Profissão"
+              value={form.empresa}
+              onChange={(v) => setField('empresa', v)}
+              placeholder="Nome da empresa ou profissão"
+              icon={Buildings}
+            />
+          </fieldset>
+
+          {/* Seção: endereço */}
+          <fieldset className="space-y-3">
+            <legend className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1">Endereço</legend>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <CampoEdit
+                label="CEP"
+                value={form.cep}
+                onChange={(v) => setField('cep', v)}
+                placeholder="00000000"
                 mono
               />
-            )}
-          </div>
+              <div className="sm:col-span-2">
+                <CampoEdit
+                  label="Endereço"
+                  value={form.endereco}
+                  onChange={(v) => setField('endereco', v)}
+                  placeholder="Rua, avenida…"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <CampoEdit
+                label="Número"
+                value={form.numero}
+                onChange={(v) => setField('numero', v)}
+                placeholder="123"
+              />
+              <div className="sm:col-span-2">
+                <CampoEdit
+                  label="Complemento"
+                  value={form.complemento}
+                  onChange={(v) => setField('complemento', v)}
+                  placeholder="Apto, bloco, bairro…"
+                />
+              </div>
+            </div>
+          </fieldset>
 
-          {/* Empresa + Instagram */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <InfoCard icon={Buildings} label="Empresa / Profissão" value={lead.empresa || '—'} color="amber" />
-            <InfoCard
-              icon={InstagramLogo}
-              label="Instagram"
-              value={lead.instagram || '—'}
-              link={lead.instagram ? `https://instagram.com/${lead.instagram.replace(/[@\s]/g, '')}` : null}
-              color="pink"
-            />
-          </div>
+          {/* Seção: rastreamento BlueCard */}
+          <fieldset className="space-y-3">
+            <legend className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1">BlueCard</legend>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <CampoEdit
+                label="Indicado por"
+                value={form.indicado_por}
+                onChange={(v) => setField('indicado_por', v)}
+                placeholder="Nome de quem indicou"
+              />
+              <CampoEdit
+                label="CVV (código)"
+                value={form.cvv}
+                onChange={(v) => setField('cvv', v)}
+                placeholder="000"
+                mono
+              />
+            </div>
+          </fieldset>
 
-          {/* Endereço */}
-          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-            <p className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-2">📍 Endereço</p>
-            <p className="text-sm text-gray-700">
-              <b>CEP:</b> {lead.cep || '—'} <br />
-              <b>Endereço:</b> {lead.endereco || '—'}, Nº {lead.numero || '—'} <br />
-              <b>Complemento:</b> {lead.complemento || '—'}
-            </p>
-          </div>
-
-          {/* Integração TOTVS */}
-          <div className={`rounded-xl p-4 border ${lead.totvs_person_code ? 'bg-emerald-50 border-emerald-200' : lead.totvs_sync_error ? 'bg-rose-50 border-rose-200' : 'bg-blue-50 border-blue-200'}`}>
-            <div className="flex items-start justify-between gap-3 mb-2">
-              <p className="text-[10px] uppercase tracking-wider font-bold text-gray-600">
-                💼 Cadastro TOTVS
-              </p>
+          {/* Integração TOTVS — apenas leitura */}
+          <div className={`rounded-xl p-3 border ${lead.totvs_person_code ? 'bg-emerald-50 border-emerald-200' : lead.totvs_sync_error ? 'bg-rose-50 border-rose-200' : 'bg-gray-50 border-gray-200'}`}>
+            <div className="flex items-start justify-between gap-3 mb-1">
+              <p className="text-[10px] uppercase tracking-widest font-bold text-gray-600">Cadastro TOTVS</p>
               {lead.totvs_synced_at && (
-                <p className="text-[10px] text-gray-500">
-                  {fmtDate(lead.totvs_synced_at)}
-                </p>
+                <p className="text-[10px] text-gray-500">{fmtDate(lead.totvs_synced_at)}</p>
               )}
             </div>
             {lead.totvs_person_code ? (
               <p className="text-sm text-emerald-800 font-semibold flex items-center gap-1.5">
-                <CheckCircle size={16} weight="fill" />
-                PersonCode TOTVS:{' '}
-                <span className="font-mono bg-white px-2 py-0.5 rounded">{lead.totvs_person_code}</span>
+                <CheckCircle size={15} weight="fill" />
+                PersonCode: <span className="font-mono bg-white px-1.5 py-0.5 rounded">{lead.totvs_person_code}</span>
               </p>
             ) : lead.totvs_sync_error ? (
               <>
-                <p className="text-sm text-rose-800 font-medium mb-2">
-                  ❌ Falha no cadastro: <span className="font-mono text-xs">{lead.totvs_sync_error}</span>
+                <p className="text-xs text-rose-800 mb-2">
+                  ❌ {lead.totvs_sync_error}
                 </p>
                 <button
                   onClick={() => onSyncTotvs?.()}
-                  className="text-xs px-3 py-1.5 rounded bg-rose-600 hover:bg-rose-700 text-white font-semibold"
+                  className="text-xs px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white font-semibold"
                 >
-                  🔄 Tentar de novo
+                  Tentar sincronizar de novo
                 </button>
               </>
             ) : (
-              <p className="text-sm text-gray-600">
-                Ainda não cadastrado. Será cadastrado automaticamente ao mover pra <b>Informações Completas</b>.
+              <p className="text-xs text-gray-600">
+                Será cadastrado automaticamente ao mover pra <b>Informações Completas</b>.
               </p>
             )}
           </div>
 
-          {/* Metadata */}
-          <div className="grid grid-cols-2 gap-3 text-xs text-gray-500">
-            <div>
-              <span className="font-bold text-gray-600">Origem:</span> {lead.origem}
-            </div>
-            <div>
-              <span className="font-bold text-gray-600">IP:</span>{' '}
-              <span className="font-mono text-[11px]">{lead.ip || '—'}</span>
-            </div>
-          </div>
-
           {/* Observação */}
           <div>
-            <label className="block text-xs font-bold text-gray-600 uppercase mb-2 tracking-wider">
-              📝 Observações internas
+            <label className="block text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1.5">
+              Observações internas
             </label>
             <textarea
-              value={observacao}
-              onChange={(e) => setObs(e.target.value)}
-              rows={4}
-              className="w-full text-sm border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
-              placeholder="Anotações sobre o lead, próximos passos…"
+              value={form.observacao}
+              onChange={(e) => setField('observacao', e.target.value)}
+              rows={3}
+              className="w-full text-sm border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 placeholder:text-gray-300"
+              placeholder="Anotações, próximos passos…"
             />
+          </div>
+
+          {/* Metadata read-only */}
+          <div className="text-[11px] text-gray-400 flex items-center gap-3 flex-wrap pt-1">
+            <span>Origem: <span className="text-gray-600 font-medium">{lead.origem}</span></span>
+            <span className="text-gray-300">·</span>
+            <span>IP: <span className="font-mono">{lead.ip || '—'}</span></span>
           </div>
         </div>
 
-        {/* Footer do modal */}
-        <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-2 rounded-b-2xl">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg font-medium">
+        {/* Footer */}
+        <div className="sticky bottom-0 bg-white p-4 border-t border-gray-200 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg font-medium transition-colors"
+          >
             Cancelar
           </button>
           <button
             onClick={salvar}
-            disabled={salvando}
-            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50 shadow-sm"
+            disabled={salvando || !temAlteracao}
+            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-colors"
           >
-            {salvando ? 'Salvando…' : 'Salvar observação'}
+            {salvando ? 'Salvando…' : temAlteracao ? `Salvar (${Object.keys(camposAlterados).length})` : 'Sem alterações'}
           </button>
         </div>
       </div>
