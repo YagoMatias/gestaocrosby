@@ -52,8 +52,12 @@ const ATALHOS = [
 
 export default function FaturamentoHistorico() {
   // ── Filtros ──
-  const [datemin, setDatemin] = useState('2024-01-01');
-  const [datemax, setDatemax] = useState('2025-12-31');
+  // Default: mês atual. Range maior pesa muito (varre milhões de linhas).
+  const [datemin, setDatemin] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+  });
+  const [datemax, setDatemax] = useState(HOJE_ISO);
   const [canal, setCanal] = useState('');
   const [busca, setBusca] = useState('');
   const [loja, setLoja] = useState('');
@@ -358,231 +362,257 @@ export default function FaturamentoHistorico() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 py-6">
-      <div className="max-w-[1700px] mx-auto px-6">
+    <div className="min-h-screen bg-slate-950 text-white p-4">
+      <div className="max-w-[1700px] mx-auto">
 
-        {/* Header */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#000638] via-[#0a1a5c] to-[#001a8a] shadow-xl mb-4">
-          <div className="absolute -right-20 -top-20 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="relative px-6 py-5 flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center shadow-lg">
-                <CurrencyDollar size={28} weight="duotone" className="text-blue-200" />
+        {/* ── Header + KPIs inline ── */}
+        <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-slate-900/80 rounded-lg border border-slate-800 mb-3 overflow-hidden">
+          <div className="flex flex-wrap items-stretch">
+            {/* Título */}
+            <div className="flex items-center gap-4 px-5 py-4 flex-1 min-w-[280px]">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-500/5 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                <CurrencyDollar size={26} weight="duotone" className="text-emerald-400" />
               </div>
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-black text-white tracking-tight">
+              <div className="min-w-0">
+                <h1 className="text-xl lg:text-2xl font-black tracking-tight leading-tight">
                   Faturamento Detalhado
                 </h1>
-                <p className="text-sm text-blue-200/80 mt-1">
-                  Browser de transações (NF por NF) · base importada de planilha + sync TOTVS
+                <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
+                  <span>Browser de transações NF por NF</span>
+                  <span className="text-slate-700">·</span>
+                  <span className="inline-flex items-center gap-1 text-emerald-400/80">
+                    <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" />
+                    sync TOTVS ativo
+                  </span>
                 </p>
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-[10px] uppercase tracking-widest text-blue-300/80 font-bold">Total filtrado</p>
-              <p className="text-3xl font-black text-white tabular-nums leading-none mt-1">
-                {resumo ? `R$ ${fmtBRL(resumo.total_liquido)}` : '—'}
-              </p>
-              <p className="text-[10px] text-blue-300/80 mt-1">
-                {resumo ? `${resumo.n_transacoes.toLocaleString('pt-BR')} NFs` : `${total.toLocaleString('pt-BR')} resultados`}
-              </p>
+
+            {/* KPIs inline */}
+            <div className="flex items-stretch border-l border-slate-800">
+              <div className="px-5 py-4 border-r border-slate-800 min-w-[140px]">
+                <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Bruto</p>
+                <p className="text-lg font-black text-slate-200 tabular-nums leading-tight mt-0.5">
+                  {resumo?.total_vl_fat != null ? (
+                    `R$ ${fmtBRL(resumo.total_vl_fat)}`
+                  ) : loadingResumo ? (
+                    <span className="inline-block w-20 h-5 bg-slate-800 rounded animate-pulse" />
+                  ) : (
+                    <span className="text-slate-600">—</span>
+                  )}
+                </p>
+              </div>
+              <div className="px-5 py-4 border-r border-slate-800 min-w-[140px]">
+                <p className="text-[9px] uppercase tracking-widest text-rose-400/70 font-bold">Credev</p>
+                <p className="text-lg font-black text-rose-400 tabular-nums leading-tight mt-0.5">
+                  {resumo?.total_credev != null ? (
+                    Number(resumo.total_credev) > 0
+                      ? `− R$ ${fmtBRL(resumo.total_credev)}`
+                      : 'R$ 0,00'
+                  ) : loadingResumo ? (
+                    <span className="inline-block w-20 h-5 bg-slate-800 rounded animate-pulse" />
+                  ) : (
+                    <span className="text-slate-600">—</span>
+                  )}
+                </p>
+              </div>
+              <div className="px-5 py-4 bg-emerald-500/5 min-w-[160px]">
+                <p className="text-[9px] uppercase tracking-widest text-emerald-400 font-bold">Líquido</p>
+                <p className="text-lg font-black text-emerald-400 tabular-nums leading-tight mt-0.5">
+                  {resumo?.total_liquido != null ? (
+                    `R$ ${fmtBRL(resumo.total_liquido)}`
+                  ) : loadingResumo ? (
+                    <span className="inline-block w-24 h-5 bg-emerald-500/10 rounded animate-pulse" />
+                  ) : (
+                    <span className="text-slate-600">—</span>
+                  )}
+                </p>
+                <p className="text-[10px] text-emerald-400/60 mt-0.5 tabular-nums">
+                  {(resumo?.n_transacoes ?? total).toLocaleString('pt-BR')} NFs
+                </p>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* KPIs detalhados (VL.FAT, CREDEV, Total) */}
-        {resumo && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-            <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-              <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">VL.FAT (bruto)</p>
-              <p className="text-2xl font-black text-gray-800 tabular-nums mt-1">R$ {fmtBRL(resumo.total_vl_fat)}</p>
+        {/* ── Filtros ── */}
+        <div className="bg-slate-900 rounded-lg border border-slate-800 px-4 py-3 mb-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <Funnel size={16} className="text-emerald-400 shrink-0" weight="duotone" />
+            {/* Datas */}
+            <div className="flex items-center gap-2 bg-slate-800/60 ring-1 ring-slate-700 rounded-lg px-3 py-1.5">
+              <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mr-1">Período</span>
+              <input
+                type="date"
+                value={datemin}
+                onChange={(e) => setDatemin(e.target.value)}
+                className="text-sm bg-transparent text-white font-semibold tabular-nums focus:outline-none w-[120px] [color-scheme:dark]"
+                title="Data inicial"
+              />
+              <span className="text-slate-600 font-bold">—</span>
+              <input
+                type="date"
+                value={datemax}
+                onChange={(e) => setDatemax(e.target.value)}
+                className="text-sm bg-transparent text-white font-semibold tabular-nums focus:outline-none w-[120px] [color-scheme:dark]"
+                title="Data final"
+              />
             </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-              <p className="text-[10px] uppercase tracking-widest text-rose-500 font-bold">CREDEV</p>
-              <p className="text-2xl font-black text-rose-600 tabular-nums mt-1">− R$ {fmtBRL(resumo.total_credev)}</p>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-              <p className="text-[10px] uppercase tracking-widest text-emerald-600 font-bold">Total Líquido</p>
-              <p className="text-2xl font-black text-emerald-700 tabular-nums mt-1">R$ {fmtBRL(resumo.total_liquido)}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Filtros */}
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm mb-3 p-3 flex items-center gap-3 flex-wrap">
-          <Funnel size={16} className="text-gray-400" />
-          {/* Datas */}
-          <div className="flex items-center gap-2 bg-slate-50 ring-1 ring-slate-200 rounded-lg px-2 py-1">
-            <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Período</span>
-            <input
-              type="date"
-              value={datemin}
-              onChange={(e) => setDatemin(e.target.value)}
-              className="text-xs border-0 bg-transparent focus:outline-none w-[110px] tabular-nums"
-            />
-            <span className="text-gray-400">→</span>
-            <input
-              type="date"
-              value={datemax}
-              onChange={(e) => setDatemax(e.target.value)}
-              className="text-xs border-0 bg-transparent focus:outline-none w-[110px] tabular-nums"
-            />
-          </div>
-          {/* Atalhos */}
-          {ATALHOS.map((a) => (
-            <button
-              key={a.label}
-              onClick={() => aplicarAtalho(a)}
-              className="text-[11px] px-2 py-1 rounded border border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-gray-600 hover:text-blue-700 font-medium transition"
+            {/* Atalhos */}
+            {ATALHOS.map((a) => (
+              <button
+                key={a.label}
+                onClick={() => aplicarAtalho(a)}
+                className="text-[11px] px-2.5 py-1.5 rounded-md font-semibold bg-slate-800/60 ring-1 ring-slate-700 text-slate-300 hover:bg-slate-800 hover:text-emerald-300 transition-colors"
+              >
+                {a.label}
+              </button>
+            ))}
+            <span className="text-slate-700 mx-1">|</span>
+            {/* Canal */}
+            <select
+              value={canal}
+              onChange={(e) => setCanal(e.target.value)}
+              className="text-sm bg-slate-800/60 ring-1 ring-slate-700 rounded-md px-2.5 py-1.5 text-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/50 [color-scheme:dark]"
             >
-              {a.label}
-            </button>
-          ))}
-          <span className="text-gray-300 mx-1">|</span>
-          {/* Canal */}
-          <select
-            value={canal}
-            onChange={(e) => setCanal(e.target.value)}
-            className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
-          >
-            {CANAIS.map((c) => <option key={c.v} value={c.v}>{c.label}</option>)}
-          </select>
-          {/* Loja */}
-          <input
-            type="text"
-            value={loja}
-            onChange={(e) => setLoja(e.target.value)}
-            placeholder="Loja…"
-            className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 w-32 focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
-          {/* Busca cliente */}
-          <div className="relative flex-1 min-w-[200px]">
-            <MagnifyingGlass size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              {CANAIS.map((c) => <option key={c.v} value={c.v} className="bg-slate-900">{c.label}</option>)}
+            </select>
+            {/* Loja */}
             <input
               type="text"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="Buscar cliente ou loja…"
-              className="text-sm pl-8 pr-2 py-1.5 border border-gray-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-blue-400"
+              value={loja}
+              onChange={(e) => setLoja(e.target.value)}
+              placeholder="Loja…"
+              className="text-sm bg-slate-800/60 ring-1 ring-slate-700 rounded-md px-2.5 py-1.5 w-32 text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
             />
-          </div>
-          {(canal || busca || loja) && (
+            {/* Busca cliente */}
+            <div className="relative flex-1 min-w-[200px]">
+              <MagnifyingGlass size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Buscar cliente ou loja…"
+                className="text-sm pl-8 pr-2 py-1.5 bg-slate-800/60 ring-1 ring-slate-700 rounded-md w-full text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              />
+            </div>
+            {(canal || busca || loja) && (
+              <button
+                onClick={limparFiltros}
+                className="text-[11px] px-2.5 py-1.5 rounded-md bg-rose-500/10 ring-1 ring-rose-500/30 text-rose-300 hover:bg-rose-500/20 font-semibold inline-flex items-center gap-1"
+              >
+                <X size={11} weight="bold" /> Limpar
+              </button>
+            )}
             <button
-              onClick={limparFiltros}
-              className="text-[11px] px-2 py-1 rounded border border-rose-200 text-rose-600 hover:bg-rose-50 font-medium inline-flex items-center gap-1"
+              onClick={() => { carregar(); carregarResumo(); }}
+              className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-slate-700 hover:bg-slate-800 text-slate-300 font-medium transition-colors"
             >
-              <X size={11} weight="bold" /> Limpar
+              <ArrowsClockwise size={14} />
+              Atualizar
             </button>
-          )}
-          <button
-            onClick={() => { carregar(); carregarResumo(); }}
-            disabled={loading}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50 font-medium text-gray-700"
-          >
-            <ArrowsClockwise size={14} className={loading ? 'animate-spin' : ''} />
-            Atualizar
-          </button>
-          <button
-            onClick={sincronizarTotvs}
-            disabled={sincronizando}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-bold shadow-sm disabled:opacity-50"
-            title="Copia NFs já baixadas (notas_fiscais) → histórico. NÃO usa usuário TOTVS."
-          >
-            <CloudArrowDown size={14} weight="bold" className={sincronizando ? 'animate-pulse' : ''} />
-            {sincronizando ? 'Sincronizando…' : 'Sincronizar TOTVS'}
-          </button>
-          <button
-            onClick={exportarExcel}
-            disabled={!total || loading}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm disabled:opacity-50"
-            title="Baixa relatório completo em Excel (3 abas: Resumo · Transações · Filtros)"
-          >
-            <FileXls size={14} weight="bold" />
-            Excel
-          </button>
-          <button
-            onClick={exportarCsv}
-            disabled={!total || loading}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium"
-            title="CSV simples"
-          >
-            <Download size={14} weight="bold" />
-            CSV
-          </button>
+            <button
+              onClick={sincronizarTotvs}
+              disabled={sincronizando}
+              className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-500 text-white font-bold disabled:opacity-60 transition-colors"
+              title="Copia NFs já baixadas (notas_fiscais) → histórico. NÃO usa usuário TOTVS."
+            >
+              <CloudArrowDown size={14} weight="bold" />
+              {sincronizando ? 'Sincronizando…' : 'Sincronizar TOTVS'}
+            </button>
+            <button
+              onClick={exportarExcel}
+              disabled={!total}
+              className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold disabled:opacity-60 transition-colors"
+              title="Baixa relatório completo em Excel (3 abas: Resumo · Transações · Filtros)"
+            >
+              <FileXls size={14} weight="bold" />
+              Excel
+            </button>
+            <button
+              onClick={exportarCsv}
+              disabled={!total}
+              className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-slate-700 hover:bg-slate-800 text-slate-300 font-medium disabled:opacity-60 transition-colors"
+              title="CSV simples"
+            >
+              <Download size={14} weight="bold" />
+              CSV
+            </button>
+          </div>
         </div>
 
         {erro && (
-          <div className="mb-3 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">
+          <div className="mb-3 p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-300 text-sm">
             Erro: {erro}
           </div>
         )}
 
         {/* Tabela de transações */}
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="bg-gradient-to-b from-slate-100 to-slate-50 border-b border-gray-200">
-                  <th className="py-2 px-2 text-left text-[10px] font-black text-gray-700 uppercase tracking-wider">Loja</th>
+                <tr className="bg-slate-800/50 border-b border-slate-800">
+                  <th className="py-2 px-2 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Loja</th>
                   <th onClick={() => setOrder(order === 'data_desc' ? 'data_asc' : 'data_desc')}
-                      className="py-2 px-2 text-left text-[10px] font-black text-gray-700 uppercase tracking-wider cursor-pointer hover:text-blue-700 whitespace-nowrap">
+                      className="py-2 px-2 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider cursor-pointer hover:text-emerald-400 whitespace-nowrap">
                     Data {order === 'data_desc' ? '↓' : order === 'data_asc' ? '↑' : ''}
                   </th>
-                  <th className="py-2 px-2 text-left text-[10px] font-black text-gray-700 uppercase tracking-wider w-20">Cod</th>
+                  <th className="py-2 px-2 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider w-20">Cod</th>
                   <th onClick={() => setOrder(order === 'cliente_asc' ? 'data_desc' : 'cliente_asc')}
-                      className="py-2 px-2 text-left text-[10px] font-black text-gray-700 uppercase tracking-wider cursor-pointer hover:text-blue-700">
+                      className="py-2 px-2 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider cursor-pointer hover:text-emerald-400">
                     Cliente {order === 'cliente_asc' ? '↑' : ''}
                   </th>
-                  <th className="py-2 px-2 text-left text-[10px] font-black text-gray-700 uppercase tracking-wider">Canal</th>
-                  <th className="py-2 px-2 text-right text-[10px] font-black text-gray-700 uppercase tracking-wider">VL.FAT.</th>
-                  <th className="py-2 px-2 text-right text-[10px] font-black text-rose-600 uppercase tracking-wider">Credev</th>
+                  <th className="py-2 px-2 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Canal</th>
+                  <th className="py-2 px-2 text-right text-[10px] font-black text-slate-400 uppercase tracking-wider">VL.FAT.</th>
+                  <th className="py-2 px-2 text-right text-[10px] font-black text-rose-400 uppercase tracking-wider">Credev</th>
                   <th onClick={() => setOrder(order === 'valor_desc' ? 'valor_asc' : 'valor_desc')}
-                      className="py-2 px-2 text-right text-[10px] font-black text-emerald-700 uppercase tracking-wider cursor-pointer hover:text-blue-700">
+                      className="py-2 px-2 text-right text-[10px] font-black text-emerald-400 uppercase tracking-wider cursor-pointer hover:text-emerald-300">
                     Total {order === 'valor_desc' ? '↓' : order === 'valor_asc' ? '↑' : ''}
                   </th>
-                  <th className="py-2 px-2 text-left text-[10px] font-black text-gray-700 uppercase tracking-wider">Cidade/UF</th>
+                  <th className="py-2 px-2 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Cidade/UF</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && items.length === 0 ? (
-                  <tr><td colSpan={9} className="py-16 text-center text-gray-400">
+                  <tr><td colSpan={9} className="py-16 text-center text-slate-500">
                     <div className="inline-flex items-center gap-2">
                       <ArrowsClockwise size={18} className="animate-spin" />
                       Carregando…
                     </div>
                   </td></tr>
                 ) : items.length === 0 ? (
-                  <tr><td colSpan={9} className="py-16 text-center text-gray-400 text-sm">
+                  <tr><td colSpan={9} className="py-16 text-center text-slate-500 text-sm">
                     Nenhuma transação encontrada nos filtros.
                   </td></tr>
                 ) : items.map((i) => {
                   const cfg = CANAL_MAP[i.canal] || { label: (i.canal || '').toUpperCase(), color: '#94a3b8' };
                   return (
-                    <tr key={i.id} className="border-b border-gray-100 hover:bg-blue-50/30">
-                      <td className="py-1 px-2 text-gray-600 whitespace-nowrap max-w-[180px] truncate" title={i.loja || ''}>
+                    <tr key={i.id} className="border-b border-slate-800/50 hover:bg-slate-800/40">
+                      <td className="py-1 px-2 text-slate-400 whitespace-nowrap max-w-[180px] truncate" title={i.loja || ''}>
                         {i.loja || '—'}
                       </td>
-                      <td className="py-1 px-2 text-gray-700 font-mono whitespace-nowrap">
+                      <td className="py-1 px-2 text-slate-300 font-mono whitespace-nowrap">
                         {fmtDate(i.data_transacao)}
                       </td>
-                      <td className="py-1 px-2 text-gray-500 font-mono">{i.cod_cliente || '—'}</td>
-                      <td className="py-1 px-2 text-gray-800 max-w-[200px] truncate" title={i.cliente_nome || ''}>
+                      <td className="py-1 px-2 text-slate-500 font-mono">{i.cod_cliente || '—'}</td>
+                      <td className="py-1 px-2 text-slate-200 max-w-[200px] truncate" title={i.cliente_nome || ''}>
                         {i.cliente_nome || '—'}
                       </td>
                       <td className="py-1 px-2">
                         <span
                           className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap"
-                          style={{ backgroundColor: cfg.color + '20', color: cfg.color }}
+                          style={{ backgroundColor: cfg.color + '25', color: cfg.color }}
                         >
                           {cfg.label}
                         </span>
                       </td>
-                      <td className="py-1 px-2 text-right tabular-nums text-gray-700">R$ {fmtBRL(i.vl_fat)}</td>
-                      <td className="py-1 px-2 text-right tabular-nums text-rose-600">
-                        {Number(i.credev) > 0 ? `R$ ${fmtBRL(i.credev)}` : <span className="text-gray-300">—</span>}
+                      <td className="py-1 px-2 text-right tabular-nums text-slate-300">R$ {fmtBRL(i.vl_fat)}</td>
+                      <td className="py-1 px-2 text-right tabular-nums text-rose-400">
+                        {Number(i.credev) > 0 ? `R$ ${fmtBRL(i.credev)}` : <span className="text-slate-600">—</span>}
                       </td>
-                      <td className="py-1 px-2 text-right tabular-nums font-bold text-emerald-700">R$ {fmtBRL(i.total)}</td>
-                      <td className="py-1 px-2 text-gray-500 whitespace-nowrap text-[11px]">{i.cidade_uf || '—'}</td>
+                      <td className="py-1 px-2 text-right tabular-nums font-bold text-emerald-400">R$ {fmtBRL(i.total)}</td>
+                      <td className="py-1 px-2 text-slate-500 whitespace-nowrap text-[11px]">{i.cidade_uf || '—'}</td>
                     </tr>
                   );
                 })}
@@ -591,15 +621,15 @@ export default function FaturamentoHistorico() {
           </div>
 
           {/* Paginação */}
-          <div className="bg-gray-50 border-t border-gray-200 px-4 py-2 flex items-center gap-3 flex-wrap text-xs">
-            <span className="text-gray-600">
-              Página <b>{page}</b> de <b>{totalPages.toLocaleString('pt-BR')}</b> · {total.toLocaleString('pt-BR')} NFs no filtro
+          <div className="bg-slate-900/60 border-t border-slate-800 px-4 py-2 flex items-center gap-3 flex-wrap text-xs">
+            <span className="text-slate-400">
+              Página <b className="text-white">{page}</b> de <b className="text-white">{totalPages.toLocaleString('pt-BR')}</b> · {total.toLocaleString('pt-BR')} NFs no filtro
             </span>
-            <span className="text-gray-300">|</span>
+            <span className="text-slate-700">|</span>
             <select
               value={pageSize}
               onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-              className="text-xs border border-gray-300 rounded px-2 py-1 bg-white"
+              className="text-xs bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 [color-scheme:dark]"
             >
               <option value={50}>50/pg</option>
               <option value={100}>100/pg</option>
@@ -609,15 +639,15 @@ export default function FaturamentoHistorico() {
             <div className="ml-auto flex items-center gap-1">
               <button
                 onClick={() => setPage(1)}
-                disabled={page <= 1 || loading}
-                className="text-[11px] px-2 py-1 rounded border border-gray-200 hover:bg-gray-100 disabled:opacity-40 font-bold"
+                disabled={page <= 1}
+                className="text-[11px] px-2 py-1 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-40 font-bold text-slate-300 transition-colors"
               >
                 ⏮
               </button>
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page <= 1 || loading}
-                className="text-[11px] px-2 py-1 rounded border border-gray-200 hover:bg-gray-100 disabled:opacity-40 inline-flex items-center gap-1"
+                disabled={page <= 1}
+                className="text-[11px] px-2 py-1 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-40 inline-flex items-center gap-1 text-slate-300 transition-colors"
               >
                 <CaretLeft size={11} weight="bold" /> Anterior
               </button>
@@ -630,19 +660,19 @@ export default function FaturamentoHistorico() {
                   const n = Math.max(1, Math.min(totalPages, parseInt(e.target.value, 10) || 1));
                   setPage(n);
                 }}
-                className="text-xs border border-gray-300 rounded px-2 py-1 w-16 text-center tabular-nums"
+                className="text-xs bg-slate-800 border border-slate-700 rounded px-2 py-1 w-16 text-center tabular-nums text-slate-200"
               />
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages || loading}
-                className="text-[11px] px-2 py-1 rounded border border-gray-200 hover:bg-gray-100 disabled:opacity-40 inline-flex items-center gap-1"
+                disabled={page >= totalPages}
+                className="text-[11px] px-2 py-1 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-40 inline-flex items-center gap-1 text-slate-300 transition-colors"
               >
                 Próxima <CaretRight size={11} weight="bold" />
               </button>
               <button
                 onClick={() => setPage(totalPages)}
-                disabled={page >= totalPages || loading}
-                className="text-[11px] px-2 py-1 rounded border border-gray-200 hover:bg-gray-100 disabled:opacity-40 font-bold"
+                disabled={page >= totalPages}
+                className="text-[11px] px-2 py-1 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-40 font-bold text-slate-300 transition-colors"
               >
                 ⏭
               </button>
@@ -652,15 +682,15 @@ export default function FaturamentoHistorico() {
 
         {/* Resumo por canal */}
         {resumo?.por_canal && Object.keys(resumo.por_canal).length > 0 && (
-          <div className="mt-4 bg-white border border-gray-200 rounded-xl shadow-sm p-3">
+          <div className="mt-3 bg-slate-900 rounded-lg border border-slate-800 p-3">
             <div className="flex items-center gap-2 mb-2">
-              <span className="w-1 h-4 bg-blue-500 rounded" />
-              <h3 className="text-sm font-bold text-gray-800">Resumo por canal (no período filtrado)</h3>
+              <span className="w-1 h-4 bg-emerald-400 rounded" />
+              <h3 className="text-sm font-bold text-white">Resumo por canal (no período filtrado)</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-[10px] uppercase tracking-wider text-gray-500 border-b border-gray-200">
+                  <tr className="text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
                     <th className="text-left py-1.5 px-2 font-black">Canal</th>
                     <th className="text-right py-1.5 px-2 font-black">NFs</th>
                     <th className="text-right py-1.5 px-2 font-black">VL.FAT.</th>
@@ -676,17 +706,17 @@ export default function FaturamentoHistorico() {
                       const cfg = CANAL_MAP[k] || { label: k.toUpperCase(), color: '#94a3b8' };
                       const pct = resumo.total_liquido > 0 ? (v.total / resumo.total_liquido * 100) : 0;
                       return (
-                        <tr key={k} className="border-b border-gray-100 hover:bg-blue-50/30">
+                        <tr key={k} className="border-b border-slate-800/50 hover:bg-slate-800/40">
                           <td className="py-1.5 px-2">
                             <span style={{ color: cfg.color }} className="font-bold">{cfg.label}</span>
                           </td>
-                          <td className="py-1.5 px-2 text-right tabular-nums text-gray-600">{v.count.toLocaleString('pt-BR')}</td>
-                          <td className="py-1.5 px-2 text-right tabular-nums text-gray-700">R$ {fmtBRL(v.vl_fat)}</td>
-                          <td className="py-1.5 px-2 text-right tabular-nums text-rose-600">
-                            {v.credev > 0 ? `R$ ${fmtBRL(v.credev)}` : '—'}
+                          <td className="py-1.5 px-2 text-right tabular-nums text-slate-400">{v.count.toLocaleString('pt-BR')}</td>
+                          <td className="py-1.5 px-2 text-right tabular-nums text-slate-300">R$ {fmtBRL(v.vl_fat)}</td>
+                          <td className="py-1.5 px-2 text-right tabular-nums text-rose-400">
+                            {v.credev > 0 ? `R$ ${fmtBRL(v.credev)}` : <span className="text-slate-600">—</span>}
                           </td>
-                          <td className="py-1.5 px-2 text-right tabular-nums font-bold text-emerald-700">R$ {fmtBRL(v.total)}</td>
-                          <td className="py-1.5 px-2 text-right tabular-nums font-bold text-gray-600">{pct.toFixed(1)}%</td>
+                          <td className="py-1.5 px-2 text-right tabular-nums font-bold text-emerald-400">R$ {fmtBRL(v.total)}</td>
+                          <td className="py-1.5 px-2 text-right tabular-nums font-bold text-slate-300">{pct.toFixed(1)}%</td>
                         </tr>
                       );
                     })}

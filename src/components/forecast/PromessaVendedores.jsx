@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Users, Trophy, UserCircle, WhatsappLogo } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../../config/constants';
 import EnviarWhatsappModal from './EnviarWhatsappModal';
+import ClientesAtendidosModal from './ClientesAtendidosModal';
 import {
   MetricaHeader,
   PctPill,
@@ -26,7 +27,8 @@ function isoWeek(date) {
 // Card de UM canal (B2R ou B2M) com lista de vendedores
 // `cardRef` é a ref pra captura via html2canvas (passada do parent).
 // `onSendWhats` ativa o modal de envio só desse card (opcional).
-function CardVendedores({ card, loading, cardRef, onSendWhats }) {
+function CardVendedores({ card, loading, cardRef, onSendWhats, ano, semana, rangeLabel }) {
+  const [drilldown, setDrilldown] = useState(null);
   const { vendedores = [], extras = [], total = {}, label, code } = card;
   // Identifica líder do card (maior valor)
   const liderNome = vendedores
@@ -106,6 +108,12 @@ function CardVendedores({ card, loading, cardRef, onSendWhats }) {
               <th className="py-2.5 px-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">Vendedor</th>
               <th className="py-2.5 px-3 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider">Promessa</th>
               <th className="py-2.5 px-3 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider">Realizado</th>
+              <th
+                className="py-2.5 px-3 text-center text-[10px] font-bold text-gray-500 uppercase tracking-wider w-[80px]"
+                title="Clientes distintos atendidos / NFs emitidas no período"
+              >
+                Cli / NFs
+              </th>
               <th className="py-2.5 px-3 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider w-[90px]">%</th>
             </tr>
           </thead>
@@ -119,7 +127,17 @@ function CardVendedores({ card, loading, cardRef, onSendWhats }) {
                   ? 'bg-white'
                   : 'bg-gray-50/40';
               return (
-                <tr key={v.nome} className={`border-b border-gray-100 transition-colors hover:bg-emerald-50/40 ${zebraBg}`}>
+                <tr
+                  key={v.nome}
+                  className={`border-b border-gray-100 transition-colors hover:bg-emerald-50/40 cursor-pointer ${zebraBg}`}
+                  onClick={() =>
+                    setDrilldown({
+                      sellerCode: v.seller_code,
+                      sellerNome: v.nome,
+                    })
+                  }
+                  title="Ver clientes atendidos"
+                >
                   <td className="py-2.5 px-3">
                     <div className="inline-flex items-center gap-2">
                       {isLider ? (
@@ -131,7 +149,9 @@ function CardVendedores({ card, loading, cardRef, onSendWhats }) {
                           <UserCircle size={11} weight="fill" className="text-gray-500" />
                         </div>
                       )}
-                      <span className="font-semibold text-gray-800 text-[12px]">{v.nome}</span>
+                      <span className="font-semibold text-gray-800 text-[12px] underline decoration-dotted decoration-gray-300 underline-offset-2">
+                        {v.nome}
+                      </span>
                       {v.convidado && (
                         <span
                           className="text-[9px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded normal-case"
@@ -147,6 +167,19 @@ function CardVendedores({ card, loading, cardRef, onSendWhats }) {
                   </td>
                   <td className="py-2.5 px-3 text-right tabular-nums text-gray-900 font-semibold">
                     {loading ? <LoadingValue /> : `R$ ${formatBRL(v.real)}`}
+                  </td>
+                  <td className="py-2.5 px-3 text-center tabular-nums">
+                    {loading ? (
+                      <LoadingValue width={50} />
+                    ) : (v.clientes || v.nfs) ? (
+                      <div className="inline-flex items-baseline gap-1 text-[12px]">
+                        <span className="font-semibold text-purple-700">{v.clientes || 0}</span>
+                        <span className="text-gray-300">/</span>
+                        <span className="text-gray-500">{v.nfs || 0}</span>
+                      </div>
+                    ) : (
+                      <span className="text-gray-300 text-xs">—</span>
+                    )}
                   </td>
                   <td className="py-2.5 px-3">
                     <div className="flex flex-col items-end gap-1">
@@ -184,6 +217,17 @@ function CardVendedores({ card, loading, cardRef, onSendWhats }) {
                 <td className="py-2 px-3 text-right tabular-nums text-gray-700 text-[12px]">
                   {loading ? <LoadingValue /> : `R$ ${formatBRL(v.real)}`}
                 </td>
+                <td className="py-2 px-3 text-center tabular-nums">
+                  {(v.clientes || v.nfs) ? (
+                    <div className="inline-flex items-baseline gap-1 text-[11px]">
+                      <span className="font-semibold text-gray-700">{v.clientes || 0}</span>
+                      <span className="text-gray-300">/</span>
+                      <span className="text-gray-500">{v.nfs || 0}</span>
+                    </div>
+                  ) : (
+                    <span className="text-gray-300 text-xs">—</span>
+                  )}
+                </td>
                 <td className="py-2 px-3 text-right text-gray-300 text-xs">—</td>
               </tr>
             ))}
@@ -192,6 +236,21 @@ function CardVendedores({ card, loading, cardRef, onSendWhats }) {
               <td className="py-3 px-3 text-right tabular-nums text-gray-800">R$ {formatBRL(total.meta)}</td>
               <td className="py-3 px-3 text-right tabular-nums text-gray-900 font-extrabold">
                 {loading ? <LoadingValue /> : `R$ ${formatBRL(total.real)}`}
+              </td>
+              <td className="py-3 px-3 text-center tabular-nums">
+                {(() => {
+                  const tc = vendedores.reduce((s, v) => s + (v.clientes || 0), 0);
+                  const tn = vendedores.reduce((s, v) => s + (v.nfs || 0), 0);
+                  return tc || tn ? (
+                    <div className="inline-flex items-baseline gap-1 text-[12px]">
+                      <span className="font-extrabold text-gray-800">{tc}</span>
+                      <span className="text-gray-400">/</span>
+                      <span className="text-gray-600">{tn}</span>
+                    </div>
+                  ) : (
+                    <span className="text-gray-300 text-xs">—</span>
+                  );
+                })()}
               </td>
               <td className="py-3 px-3">
                 <div className="flex justify-end">
@@ -208,6 +267,16 @@ function CardVendedores({ card, loading, cardRef, onSendWhats }) {
           </tbody>
         </table>
       </div>
+      <ClientesAtendidosModal
+        open={!!drilldown}
+        onClose={() => setDrilldown(null)}
+        canal={code}
+        sellerCode={drilldown?.sellerCode}
+        sellerNome={drilldown?.sellerNome}
+        ano={ano}
+        semana={semana}
+        rangeLabel={rangeLabel || (semana ? `Sem. ${semana}/${ano}` : '—')}
+      />
     </div>
   );
 }
@@ -420,6 +489,9 @@ export default function PromessaVendedores() {
             key={card.code}
             card={card}
             loading={loading}
+            ano={data.ano || ano}
+            semana={data.semana_iso || semana}
+            rangeLabel={`Sem. ${data.semana_iso || semana}/${data.ano || ano}`}
             cardRef={(el) => {
               if (el) cardRefsByCode.current[card.code] = el;
             }}

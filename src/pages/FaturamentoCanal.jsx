@@ -1551,16 +1551,10 @@ const CanalCard = React.memo(function CanalCard({
   );
 });
 
-// ─── Componente: card BlueCred (envios via Autentique / bluecred_contratos) ──
+// ─── Componente: card BlueCred (clientes classificados como BLUE CRED no TOTVS) ──
 const BlueCredCard = React.memo(function BlueCredCard({ stats }) {
   const total = stats?.total ?? null;
-  const porStatus = stats?.por_status || {};
-  const concluidos = porStatus.concluido || 0;
-  const pendentes =
-    (porStatus.pendente || 0) + (porStatus.parcialmente_assinado || 0);
-  const recusados = porStatus.recusado || 0;
-  const taxa =
-    total && total > 0 ? ((concluidos / total) * 100).toFixed(0) : 0;
+  const noPeriodo = stats?.no_periodo ?? null;
 
   return (
     <div className="rounded-xl border border-cyan-200 bg-gradient-to-br from-cyan-50 to-sky-50 p-4 flex flex-col gap-2 hover:shadow-md transition-shadow relative overflow-hidden">
@@ -1571,7 +1565,7 @@ const BlueCredCard = React.memo(function BlueCredCard({ stats }) {
           BlueCred
         </div>
         <span className="text-[9px] text-cyan-700 bg-cyan-100 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide">
-          enviados
+          classificados
         </span>
       </div>
       {total === null ? (
@@ -1584,24 +1578,12 @@ const BlueCredCard = React.memo(function BlueCredCard({ stats }) {
             {Number(total).toLocaleString('pt-BR')}
           </div>
           <div className="text-xs text-gray-500">
-            {total === 1 ? 'crédito enviado' : 'créditos enviados'}
+            {total === 1 ? 'cliente classificado' : 'clientes classificados'}
           </div>
-          {total > 0 && (
-            <>
-              <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-cyan-500"
-                  style={{ width: `${Math.min(taxa, 100)}%` }}
-                />
-              </div>
-              <div className="flex items-center justify-between text-[10px] text-cyan-700 font-semibold">
-                <span>{taxa}% concluídos</span>
-                <span className="text-gray-400 font-normal">
-                  {concluidos}✓ · {pendentes}⏳
-                  {recusados > 0 ? ` · ${recusados}✗` : ''}
-                </span>
-              </div>
-            </>
+          {noPeriodo != null && noPeriodo > 0 && (
+            <div className="text-[10px] text-cyan-700 font-medium mt-1">
+              +{noPeriodo} no período
+            </div>
           )}
         </>
       )}
@@ -2214,7 +2196,7 @@ export default function FaturamentoCanal() {
     setBluecredStats(null);
     setBluecardCount(null);
 
-    // BlueCred count — clientes classificados como BLUE CRED no TOTVS
+    // BlueCred — clientes classificados como BLUE CRED no TOTVS
     // (typeCode=55 / code='8'). Lê de pessoas_bluecred (Supabase).
     fetch(
       `${API_BASE_URL}/api/forecast/bluecred-count?datemin=${dataInicio}&datemax=${dataFim}`,
@@ -2223,16 +2205,14 @@ export default function FaturamentoCanal() {
       .then((j) => {
         if (fetchBuscar.isStale(tok)) return;
         if (j?.success && j.data) {
-          // Estrutura compatível com BlueCredCard: usa 'total' como contagem global
           setBluecredStats({
-            total: j.data.total,
+            total: j.data.total || 0,
             no_periodo: j.data.no_periodo,
-            por_status: { classificados: j.data.total },
           });
         }
       })
       .catch((err) =>
-        console.warn('[FaturamentoCanal] BlueCred classification count falhou:', err.message),
+        console.warn('[FaturamentoCanal] BlueCred classificação count falhou:', err.message),
       );
     // BlueCard count (ClickUp) em background — não bloqueia
     fetch(
@@ -2250,8 +2230,9 @@ export default function FaturamentoCanal() {
       );
 
     // Stale-while-revalidate: mostra cache local imediatamente, busca fresco em background
-    // v8: bumped após correção do bug de credev franquia (cache cacheava bruto)
-    const cacheKey = `fatseg:v8:${dataInicio}:${dataFim}`;
+    // v9: bumped pra invalidar caches stale que estavam mostrando só 6 canais
+    //     (faltava franquia/showroom/bazar/novidades — backend já retorna todos).
+    const cacheKey = `fatseg:v9:${dataInicio}:${dataFim}`;
     let hasStale = false;
     try {
       const raw = localStorage.getItem(cacheKey);
@@ -2288,10 +2269,10 @@ export default function FaturamentoCanal() {
         // Limpa entradas antigas — mantém no máximo 8 chaves fatseg:
         // Limpa caches de versões antigas — mantém só v8
         Object.keys(localStorage)
-          .filter((k) => k.startsWith('fatseg:') && !k.startsWith('fatseg:v8:'))
+          .filter((k) => k.startsWith('fatseg:') && !k.startsWith('fatseg:v9:'))
           .forEach((k) => localStorage.removeItem(k));
         const allKeys = Object.keys(localStorage).filter((k) =>
-          k.startsWith('fatseg:v8:'),
+          k.startsWith('fatseg:v9:'),
         );
         if (allKeys.length > 8) {
           allKeys.slice(0, allKeys.length - 8).forEach((k) => localStorage.removeItem(k));

@@ -1,5 +1,5 @@
 // Admin — gerenciamento dos leads capturados pela LP /lp/bluecard
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   CreditCard,
   MagnifyingGlass,
@@ -21,6 +21,13 @@ import {
   PaperPlaneRight,
   ShoppingCart,
   SealCheck,
+  CaretRight,
+  CaretDown,
+  CaretUp,
+  Share,
+  LinkSimple,
+  Copy,
+  Check,
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../config/constants';
 
@@ -64,13 +71,89 @@ export default function BluecardLeads() {
   const [erro, setErro] = useState('');
   const [filtros, setFiltros] = useState({ status: '', busca: '' });
   const [editLead, setEditLead] = useState(null);
+  const [gerarLinkAberto, setGerarLinkAberto] = useState(false);
+  // Multi-select: Set<leadId>
+  const [selecionados, setSelecionados] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
+  // Limpa seleção quando filtros mudam
+  useEffect(() => { setSelecionados(new Set()); }, [filtros.status, filtros.busca]);
+
+  const toggleSelecao = useCallback((leadId) => {
+    setSelecionados((prev) => {
+      const n = new Set(prev);
+      n.has(leadId) ? n.delete(leadId) : n.add(leadId);
+      return n;
+    });
+  }, []);
+
+  const selecionarTodos = useCallback((leadIds, marcar) => {
+    setSelecionados((prev) => {
+      const n = new Set(prev);
+      for (const id of leadIds) marcar ? n.add(id) : n.delete(id);
+      return n;
+    });
+  }, []);
+
+  const limparSelecao = useCallback(() => setSelecionados(new Set()), []);
+
+  // Bulk: trocar status de N leads selecionados de uma vez
+  const bulkTrocarStatus = useCallback(async (novoStatus) => {
+    const ids = [...selecionados];
+    if (ids.length === 0) return;
+    if (!window.confirm(`Trocar status de ${ids.length} lead${ids.length > 1 ? 's' : ''} para "${STATUS_MAP[novoStatus]?.label}"?`)) return;
+    setBulkBusy(true);
+    let ok = 0, falha = 0;
+    const atualizados = [];
+    await Promise.all(ids.map(async (id) => {
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/bluecard/leads/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: novoStatus }),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j?.error || 'Erro');
+        if (j.lead) atualizados.push(j.lead);
+        ok++;
+      } catch {
+        falha++;
+      }
+    }));
+    setLeads((arr) => arr.map((l) => atualizados.find((u) => u.id === l.id) || l));
+    setBulkBusy(false);
+    limparSelecao();
+    if (falha > 0) alert(`✓ ${ok} atualizados\n✗ ${falha} falharam`);
+  }, [selecionados, limparSelecao]);
+
+  // Bulk: deletar
+  const bulkDeletar = useCallback(async () => {
+    const ids = [...selecionados];
+    if (ids.length === 0) return;
+    if (!window.confirm(`Remover ${ids.length} lead${ids.length > 1 ? 's' : ''}? Esta ação NÃO pode ser desfeita.`)) return;
+    setBulkBusy(true);
+    let ok = 0, falha = 0;
+    await Promise.all(ids.map(async (id) => {
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/bluecard/leads/${id}`, { method: 'DELETE' });
+        if (!r.ok) throw new Error();
+        ok++;
+      } catch { falha++; }
+    }));
+    setLeads((arr) => arr.filter((l) => !ids.includes(l.id)));
+    setBulkBusy(false);
+    limparSelecao();
+    if (falha > 0) alert(`✓ ${ok} removidos\n✗ ${falha} falharam`);
+  }, [selecionados, limparSelecao]);
+
+  // Carrega TODOS os leads sem filtro de status (filtro aplicado client-side
+  // pra KPIs sempre verem o total real de cada status, mesmo com filtro ativo).
   const carregar = useCallback(async () => {
     setLoading(true);
     setErro('');
     try {
       const qs = new URLSearchParams();
-      if (filtros.status) qs.set('status', filtros.status);
+      // status NÃO vai pro backend — é client-side
       if (filtros.busca) qs.set('busca', filtros.busca);
       qs.set('limit', '500');
       const r = await fetch(`${API_BASE_URL}/api/bluecard/leads?${qs}`);
@@ -83,7 +166,13 @@ export default function BluecardLeads() {
     } finally {
       setLoading(false);
     }
-  }, [filtros.status, filtros.busca]);
+  }, [filtros.busca]);
+
+  // Lista efetivamente exibida (com filtro de status aplicado client-side)
+  const leadsExibidos = useMemo(() => {
+    if (!filtros.status) return leads;
+    return leads.filter((l) => l.status === filtros.status);
+  }, [leads, filtros.status]);
 
   useEffect(() => {
     const id = setTimeout(carregar, 300);
@@ -149,9 +238,9 @@ export default function BluecardLeads() {
 
   const exportarCsv = () => {
     if (!leads.length) return;
-    const headers = ['ID', 'Criado em', 'Status', 'Nome', 'Email', 'CPF', 'WhatsApp', 'Empresa', 'Instagram', 'Data Nasc.', 'CEP', 'Endereço', 'Nº', 'Complemento', 'Observação'];
+    const headers = ['ID', 'Criado em', 'Status', 'Indicado por', 'Nome', 'CVV', 'Email', 'CPF', 'WhatsApp', 'Empresa', 'Instagram', 'Data Nasc.', 'CEP', 'Endereço', 'Nº', 'Complemento', 'Observação'];
     const rows = leads.map((l) => [
-      l.id, fmtDate(l.criado_em), l.status, l.nome, l.email, fmtCPF(l.cpf), fmtPhone(l.whatsapp),
+      l.id, fmtDate(l.criado_em), l.status, l.indicado_por || '', l.nome, l.cvv || '', l.email, fmtCPF(l.cpf), fmtPhone(l.whatsapp),
       l.empresa || '', l.instagram || '', l.data_nasc || '', l.cep || '', l.endereco || '', l.numero || '', l.complemento || '', l.observacao || '',
     ]);
     const csv = [headers, ...rows]
@@ -173,98 +262,102 @@ export default function BluecardLeads() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 py-6">
       <div className="max-w-7xl mx-auto px-6">
-        {/* ─── Hero header ───────────────────────────────────────── */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#000638] via-[#0a1a5c] to-[#001a8a] shadow-xl mb-6">
-          {/* Decoração de fundo */}
-          <div className="absolute -right-20 -top-20 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute -left-10 -bottom-10 w-60 h-60 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="relative px-6 py-6 flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center shadow-lg">
-                <CreditCard size={28} weight="duotone" className="text-blue-200" />
-              </div>
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-black text-white tracking-tight">
-                  BlueCard — Leads
-                </h1>
-                <p className="text-sm text-blue-200/80 mt-1 flex items-center gap-2 flex-wrap">
-                  <span>Cadastros recebidos pela LP pública</span>
-                  <a
-                    href="/lp/bluecard"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-blue-100 font-mono text-[11px] transition"
-                  >
-                    /lp/bluecard ↗
-                  </a>
-                </p>
-              </div>
+        {/* ─── Header centralizado (estilo PageTitle das outras páginas) ─── */}
+        <div className="text-center mb-6">
+          <div className="flex justify-center gap-3 mb-2">
+            <div className="p-2 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 shadow-sm">
+              <CreditCard size={24} weight="light" className="text-[#000638]" />
             </div>
-            <div className="text-right">
-              <p className="text-[10px] uppercase tracking-widest text-blue-300/80 font-bold">Total geral</p>
-              <p className="text-4xl font-black text-white tabular-nums leading-none mt-1">
-                {total}
-              </p>
-            </div>
+            <h1 className="mt-1 text-2xl font-bold text-[#000638] tracking-tight">
+              BlueCard — Leads
+            </h1>
           </div>
+          <p className="text-sm text-gray-600 max-w-2xl mx-auto leading-relaxed inline-flex items-center gap-2 flex-wrap justify-center">
+            <span>Cadastros recebidos pela LP pública</span>
+            <a
+              href="/lp/bluecard"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-0.5 text-blue-600 hover:text-blue-700 font-mono text-[11px] px-1.5 py-0.5 rounded bg-blue-50 hover:bg-blue-100"
+            >
+              /lp/bluecard ↗
+            </a>
+          </p>
         </div>
 
         {/* ─── KPIs por status (pipeline ClickUp) ────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8 gap-3 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-2.5 mb-5">
           {kpis.map((k) => {
-            const Icon = k.icon;
+            const dot = STATUS_DOT[k.v] || STATUS_DOT['1_msg_enviada'];
             const ativo = filtros.status === k.v;
+            const pct = total > 0 ? (k.count / total) * 100 : 0;
+            const vazio = k.count === 0;
             return (
               <button
                 key={k.v}
                 onClick={() => setFiltros((s) => ({ ...s, status: ativo ? '' : k.v }))}
-                className={`relative overflow-hidden text-left p-4 rounded-xl border transition-all group ${
+                className={`relative overflow-hidden text-left p-3 rounded-xl transition-all group ${
                   ativo
-                    ? 'bg-white border-blue-300 shadow-md ring-2 ring-blue-200'
-                    : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-md'
+                    ? 'bg-white ring-2 ring-blue-400 shadow-md'
+                    : vazio
+                      ? 'bg-white/60 ring-1 ring-gray-200/70 hover:ring-gray-300 hover:bg-white'
+                      : 'bg-white ring-1 ring-gray-200 hover:ring-gray-300 hover:shadow-sm'
                 }`}
               >
-                {/* Barra colorida lateral */}
-                <span className={`absolute left-0 top-0 bottom-0 w-1 ${k.barra}`} />
-                <div className="flex items-start justify-between mb-2">
-                  <span className={`inline-flex items-center justify-center w-9 h-9 rounded-lg ${k.cor.split(' ').filter(c => c.startsWith('bg-') || c.startsWith('text-')).join(' ')}`}>
-                    <Icon size={18} weight="duotone" />
+                {/* Pill colorido do status */}
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full ${dot.bg} ${dot.text} mb-2`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-white/90" />
+                  <span className="text-[9px] font-bold uppercase tracking-wider whitespace-nowrap">
+                    {k.label.length > 16 ? k.label.split(' ')[0] : k.label}
                   </span>
-                  {ativo && (
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                      Filtrando
+                </span>
+
+                {/* Número + % */}
+                <div className="flex items-baseline gap-1.5">
+                  <span className={`text-2xl font-bold tabular-nums leading-none ${vazio ? 'text-gray-300' : 'text-gray-900'}`}>
+                    {k.count}
+                  </span>
+                  {!vazio && (
+                    <span className="text-[10px] text-gray-400 font-medium tabular-nums">
+                      {pct.toFixed(0)}%
                     </span>
                   )}
                 </div>
-                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1">
-                  {k.label}
-                </p>
-                <p className="text-3xl font-black text-gray-900 tabular-nums leading-none">
-                  {k.count}
-                </p>
+
+                {/* Barra de progresso sutil no rodapé */}
+                {!vazio && (
+                  <div className="mt-2 h-0.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${dot.bg} transition-all`}
+                      style={{ width: `${Math.min(pct, 100)}%` }}
+                    />
+                  </div>
+                )}
               </button>
             );
           })}
         </div>
 
         {/* ─── Toolbar (busca, refresh, export) ──────────────────── */}
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-3 flex items-center gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-[260px]">
-            <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <div className="flex items-center gap-2 flex-wrap mb-4">
+          <div className="relative flex-1 min-w-[280px]">
+            <MagnifyingGlass size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Buscar (nome, email, CPF, telefone, empresa)…"
+              placeholder="Buscar nome, email, CPF, telefone, empresa…"
               value={filtros.busca}
               onChange={(e) => setFiltros((s) => ({ ...s, busca: e.target.value }))}
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 placeholder:text-gray-400 transition-colors"
             />
           </div>
           {filtros.status && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold">
-              Filtrando: {STATUS_MAP[filtros.status]?.label}
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 text-xs font-medium border border-blue-200/60">
+              {STATUS_MAP[filtros.status]?.label}
               <button
                 onClick={() => setFiltros((s) => ({ ...s, status: '' }))}
-                className="text-blue-500 hover:text-blue-800 text-base leading-none"
+                className="text-blue-500 hover:text-blue-700 text-base leading-none"
                 title="Limpar filtro"
               >
                 ×
@@ -272,20 +365,30 @@ export default function BluecardLeads() {
             </span>
           )}
           <button
+            onClick={() => setGerarLinkAberto(true)}
+            className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm transition-colors"
+            title="Gerar link de indicação"
+          >
+            <Share size={14} weight="bold" />
+            <span className="hidden sm:inline">Gerar link</span>
+          </button>
+          <button
             onClick={carregar}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50 font-medium text-gray-700"
+            className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 text-gray-700 transition-colors"
+            title="Atualizar"
           >
             <ArrowsClockwise size={14} className={loading ? 'animate-spin' : ''} />
-            {loading ? 'Carregando…' : 'Atualizar'}
+            <span className="hidden sm:inline">Atualizar</span>
           </button>
           <button
             onClick={exportarCsv}
             disabled={!leads.length}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 hover:border-gray-300 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title="Exportar CSV"
           >
-            <Download size={14} weight="bold" />
-            Exportar CSV
+            <Download size={14} />
+            <span className="hidden sm:inline">CSV</span>
           </button>
         </div>
 
@@ -296,163 +399,56 @@ export default function BluecardLeads() {
           </div>
         )}
 
-        {/* ─── Tabela ────────────────────────────────────────────── */}
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-200">
-                  <th className="py-3 px-4 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Data</th>
-                  <th className="py-3 px-4 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Status</th>
-                  <th className="py-3 px-4 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Nome</th>
-                  <th className="py-3 px-4 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Contato</th>
-                  <th className="py-3 px-4 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">CPF</th>
-                  <th className="py-3 px-4 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Empresa</th>
-                  <th className="py-3 px-4 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Instagram</th>
-                  <th className="py-3 px-4 text-right text-[10px] font-black text-gray-600 uppercase tracking-wider">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && !leads.length ? (
-                  <tr>
-                    <td colSpan={8} className="py-16 text-center">
-                      <div className="inline-flex items-center gap-2 text-sm text-gray-400">
-                        <ArrowsClockwise size={18} className="animate-spin" />
-                        Carregando leads…
-                      </div>
-                    </td>
-                  </tr>
-                ) : leads.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="py-16 text-center">
-                      <div className="inline-flex flex-col items-center gap-3">
-                        <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center">
-                          <CreditCard size={28} weight="duotone" className="text-blue-300" />
-                        </div>
-                        <p className="text-sm text-gray-500 font-medium">
-                          {filtros.status || filtros.busca
-                            ? 'Nenhum lead encontrado com esse filtro.'
-                            : 'Ainda sem cadastros — compartilhe a LP em /lp/bluecard'}
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  leads.map((l, idx) => {
-                    const s = STATUS_MAP[l.status] || STATUS_MAP['novo'];
-                    return (
-                      <tr
-                        key={l.id}
-                        className={`border-b border-gray-100 last:border-0 transition-colors hover:bg-blue-50/40 ${
-                          idx % 2 === 1 ? 'bg-gray-50/40' : 'bg-white'
-                        }`}
-                      >
-                        <td className="py-3 px-4 text-xs text-gray-500 whitespace-nowrap tabular-nums">
-                          {fmtDate(l.criado_em)}
-                        </td>
-                        <td className="py-3 px-4">
-                          <select
-                            value={l.status}
-                            onChange={(e) => atualizarStatus(l, e.target.value)}
-                            className={`text-[11px] font-bold rounded-md px-2 py-1 ring-1 ${s.cor} cursor-pointer focus:outline-none`}
-                          >
-                            {STATUS_OPTIONS.slice(1).map((o) => (
-                              <option key={o.v} value={o.v}>{o.label}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-3 px-4">
-                          <p className="font-semibold text-gray-900 text-sm leading-tight">{l.nome}</p>
-                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                            <span className="text-[11px] text-gray-400">#{l.id}</span>
-                            {l.totvs_person_code ? (
-                              <span
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-                                title={`Cadastrado no TOTVS em ${fmtDate(l.totvs_synced_at)}`}
-                              >
-                                <CheckCircle size={9} weight="fill" />
-                                TOTVS #{l.totvs_person_code}
-                              </span>
-                            ) : l.totvs_sync_error ? (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); sincronizarTotvs(l); }}
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 ring-1 ring-rose-200 hover:bg-rose-100"
-                                title={`Falha: ${l.totvs_sync_error}\n\nClique pra tentar de novo.`}
-                              >
-                                <XCircle size={9} weight="fill" />
-                                Retry TOTVS
-                              </button>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-1.5 text-xs text-gray-700 mb-0.5">
-                            <At size={11} className="text-gray-400 flex-shrink-0" />
-                            <span className="truncate max-w-[200px]">{l.email}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-xs text-gray-500 font-mono">
-                            <WhatsappLogo size={11} className="text-emerald-500 flex-shrink-0" />
-                            {fmtPhone(l.whatsapp)}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-xs font-mono text-gray-700">
-                          {fmtCPF(l.cpf)}
-                        </td>
-                        <td className="py-3 px-4 text-xs text-gray-700">
-                          {l.empresa ? (
-                            <div className="inline-flex items-center gap-1.5">
-                              <Buildings size={11} className="text-gray-400" />
-                              <span className="truncate max-w-[140px]">{l.empresa}</span>
-                            </div>
-                          ) : '—'}
-                        </td>
-                        <td className="py-3 px-4">
-                          {l.instagram ? (
-                            <a
-                              href={`https://instagram.com/${(l.instagram || '').replace(/[@\s]/g, '')}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 text-xs text-pink-600 hover:text-pink-800 hover:underline"
-                            >
-                              <InstagramLogo size={12} weight="fill" />
-                              {l.instagram}
-                            </a>
-                          ) : (
-                            <span className="text-xs text-gray-300">—</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-right whitespace-nowrap">
-                          <button
-                            onClick={() => setEditLead(l)}
-                            className="inline-flex items-center gap-1 text-xs text-blue-700 hover:text-blue-900 hover:bg-blue-50 px-2 py-1.5 rounded mr-1 font-medium"
-                            title="Ver detalhes"
-                          >
-                            <Eye size={14} weight="duotone" />
-                            Ver
-                          </button>
-                          <button
-                            onClick={() => remover(l)}
-                            className="inline-flex items-center gap-1 text-xs text-rose-700 hover:text-rose-900 hover:bg-rose-50 px-2 py-1.5 rounded"
-                            title="Remover"
-                          >
-                            <Trash size={14} weight="duotone" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-          {leads.length > 0 && (
-            <div className="bg-gray-50 px-4 py-2 border-t border-gray-200 text-xs text-gray-500 text-center">
-              {leads.length} {leads.length === 1 ? 'lead' : 'leads'} exibidos
-              {filtros.status && ` · filtro: ${STATUS_MAP[filtros.status]?.label}`}
+        {/* ─── Lista agrupada por status (estilo ClickUp) ────────────────── */}
+        {loading && !leads.length ? (
+          <div className="bg-white border border-gray-200 rounded-xl p-16 text-center">
+            <div className="inline-flex items-center gap-2 text-sm text-gray-400">
+              <ArrowsClockwise size={18} className="animate-spin" />
+              Carregando leads…
             </div>
-          )}
-        </div>
+          </div>
+        ) : leadsExibidos.length === 0 ? (
+          <div className="bg-white border border-gray-200 rounded-xl p-16 text-center">
+            <div className="inline-flex flex-col items-center gap-3">
+              <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center">
+                <CreditCard size={28} weight="duotone" className="text-blue-300" />
+              </div>
+              <p className="text-sm text-gray-500 font-medium">
+                {filtros.status || filtros.busca
+                  ? 'Nenhum lead encontrado com esse filtro.'
+                  : 'Ainda sem cadastros — compartilhe a LP em /lp/bluecard'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <ListaAgrupada
+            leads={leadsExibidos}
+            atualizarStatus={atualizarStatus}
+            sincronizarTotvs={sincronizarTotvs}
+            setEditLead={setEditLead}
+            remover={remover}
+            selecionados={selecionados}
+            toggleSelecao={toggleSelecao}
+            selecionarTodos={selecionarTodos}
+          />
+        )}
       </div>
+
+      {/* Barra de ações em massa (flutuante no rodapé) */}
+      {selecionados.size > 0 && (
+        <BulkActionBar
+          count={selecionados.size}
+          busy={bulkBusy}
+          onTrocarStatus={bulkTrocarStatus}
+          onDeletar={bulkDeletar}
+          onCancelar={limparSelecao}
+        />
+      )}
+
+      {/* Modal: gerador de link de indicação */}
+      {gerarLinkAberto && (
+        <GerarLinkIndicacaoModal onClose={() => setGerarLinkAberto(false)} />
+      )}
 
       {/* Modal de detalhes */}
       {editLead && (
@@ -469,6 +465,473 @@ export default function BluecardLeads() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Lista agrupada por status (estilo ClickUp List View — dark theme)
+// ────────────────────────────────────────────────────────────────────────
+// Cor do "dot" + badge do header de cada grupo (estilo ClickUp List)
+const STATUS_DOT = {
+  '1_msg_enviada':     { bg: 'bg-gray-700',     text: 'text-gray-100',     ring: 'ring-gray-400' },
+  'info_completas':    { bg: 'bg-blue-600',     text: 'text-blue-50',      ring: 'ring-blue-400' },
+  'presskit_montado':  { bg: 'bg-indigo-600',   text: 'text-indigo-50',    ring: 'ring-indigo-400' },
+  'enviado':           { bg: 'bg-teal-600',     text: 'text-teal-50',      ring: 'ring-teal-400' },
+  'analise_compra':    { bg: 'bg-pink-600',     text: 'text-pink-50',      ring: 'ring-pink-400' },
+  'credito_utilizado': { bg: 'bg-emerald-600',  text: 'text-emerald-50',   ring: 'ring-emerald-400' },
+  'revisado':          { bg: 'bg-green-600',    text: 'text-green-50',     ring: 'ring-green-400' },
+  'descartado':        { bg: 'bg-rose-600',     text: 'text-rose-50',      ring: 'ring-rose-400' },
+};
+
+// Paleta para badges de "indicado_por" — cor estável por hash do nome.
+// Tons médios pra ficar legível sobre fundo branco (como no ClickUp light).
+const INDICACAO_PALETTE = [
+  { bg: 'bg-amber-300',   text: 'text-amber-950' },
+  { bg: 'bg-emerald-300', text: 'text-emerald-950' },
+  { bg: 'bg-sky-300',     text: 'text-sky-950' },
+  { bg: 'bg-pink-300',    text: 'text-pink-950' },
+  { bg: 'bg-violet-300',  text: 'text-violet-950' },
+  { bg: 'bg-lime-300',    text: 'text-lime-950' },
+  { bg: 'bg-orange-300',  text: 'text-orange-950' },
+  { bg: 'bg-cyan-300',    text: 'text-cyan-950' },
+];
+function corPorIndicacao(nome) {
+  if (!nome) return INDICACAO_PALETTE[0];
+  let hash = 0;
+  for (let i = 0; i < nome.length; i++) hash = (hash * 31 + nome.charCodeAt(i)) | 0;
+  return INDICACAO_PALETTE[Math.abs(hash) % INDICACAO_PALETTE.length];
+}
+
+// Slug pro badge (lowercase, sem espaço/acento) — ClickUp style ex: "collabluminova"
+function slugificarIndicacao(s) {
+  return String(s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function fmtWhatsappBR(n) {
+  const d = String(n || '').replace(/\D/g, '');
+  if (!d) return '—';
+  // tira DDI 55 se vier
+  const semDdi = d.startsWith('55') && d.length >= 12 ? d.slice(2) : d;
+  if (semDdi.length === 11)
+    return `+55(${semDdi.slice(0, 2)})${semDdi.slice(2, 7)}-${semDdi.slice(7)}`;
+  if (semDdi.length === 10)
+    return `+55(${semDdi.slice(0, 2)})${semDdi.slice(2, 6)}-${semDdi.slice(6)}`;
+  return d;
+}
+
+function fmtNasc(s) {
+  if (!s) return '—';
+  // Vem como string "DD/MM/YYYY" ou "DDMMYYYY" ou ISO
+  const raw = String(s).trim();
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
+  const d = raw.replace(/\D/g, '');
+  if (d.length === 8) return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+  return raw;
+}
+// Checkbox custom — branco/azul, com estado indeterminate visual
+function CheckSquareInput({ checked, indeterminate, onChange }) {
+  return (
+    <span
+      role="checkbox"
+      aria-checked={indeterminate ? 'mixed' : checked}
+      onClick={(e) => { e.stopPropagation(); onChange?.(e); }}
+      className={`inline-flex items-center justify-center w-4 h-4 rounded border transition-all cursor-pointer ${
+        checked || indeterminate
+          ? 'bg-blue-600 border-blue-600 text-white'
+          : 'bg-white border-gray-300 hover:border-blue-400'
+      }`}
+    >
+      {indeterminate ? (
+        <span className="w-2 h-[2px] bg-white rounded-full" />
+      ) : checked ? (
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="3 8 7 12 13 5" />
+        </svg>
+      ) : null}
+    </span>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Barra flutuante de ações em massa (aparece quando há seleção)
+// ────────────────────────────────────────────────────────────────────────
+function BulkActionBar({ count, busy, onTrocarStatus, onDeletar, onCancelar }) {
+  const [statusOpen, setStatusOpen] = useState(false);
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4">
+      <div className="bg-gray-900 text-white rounded-2xl shadow-2xl shadow-black/30 ring-1 ring-white/10 px-3 py-2 flex items-center gap-2">
+        {/* Counter */}
+        <div className="inline-flex items-center gap-2 pl-2 pr-1">
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-500 text-white text-[12px] font-bold">
+            {count}
+          </span>
+          <span className="text-[13px] font-medium">
+            {count === 1 ? 'lead selecionado' : 'leads selecionados'}
+          </span>
+        </div>
+
+        <div className="w-px h-6 bg-white/15" />
+
+        {/* Trocar status */}
+        <div className="relative">
+          <button
+            onClick={() => setStatusOpen((v) => !v)}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium hover:bg-white/10 transition-colors disabled:opacity-50"
+          >
+            Trocar status
+            <CaretDown size={11} weight="bold" className={`transition-transform ${statusOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {statusOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-10"
+                onClick={() => setStatusOpen(false)}
+              />
+              <div className="absolute bottom-full mb-2 left-0 z-20 bg-white text-gray-900 rounded-xl shadow-2xl ring-1 ring-gray-200 py-1.5 min-w-[220px]">
+                {STATUS_OPTIONS.slice(1).map((o) => {
+                  const dot = STATUS_DOT[o.v] || STATUS_DOT['1_msg_enviada'];
+                  return (
+                    <button
+                      key={o.v}
+                      onClick={() => { setStatusOpen(false); onTrocarStatus(o.v); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] hover:bg-gray-50 text-left transition-colors"
+                    >
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full ${dot.bg} ${dot.text}`}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/90" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider">{o.label}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Deletar */}
+        <button
+          onClick={onDeletar}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-rose-300 hover:bg-rose-500/15 transition-colors disabled:opacity-50"
+        >
+          <Trash size={13} weight="duotone" />
+          Remover
+        </button>
+
+        <div className="w-px h-6 bg-white/15" />
+
+        {/* Cancelar */}
+        <button
+          onClick={onCancelar}
+          disabled={busy}
+          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] text-gray-400 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50"
+          title="Limpar seleção"
+        >
+          <XCircle size={13} weight="bold" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Comparators por chave de ordenação. Retorna função (a,b) → -1/0/1.
+const SORT_COMPARATORS = {
+  nome:        (a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'),
+  cod_cliente: (a, b) => (Number(a.totvs_person_code) || 0) - (Number(b.totvs_person_code) || 0),
+  cpf:         (a, b) => String(a.cpf || '').localeCompare(String(b.cpf || '')),
+  whatsapp:    (a, b) => String(a.whatsapp || '').localeCompare(String(b.whatsapp || '')),
+  data_nasc:   (a, b) => {
+    // Normaliza "DD/MM/YYYY" → "YYYYMMDD" pra comparar como string
+    const norm = (s) => {
+      const d = String(s || '').replace(/\D/g, '');
+      if (d.length === 8) return d.slice(4) + d.slice(2, 4) + d.slice(0, 2);
+      return d;
+    };
+    return norm(a.data_nasc).localeCompare(norm(b.data_nasc));
+  },
+  empresa:     (a, b) => String(a.empresa || '').localeCompare(String(b.empresa || ''), 'pt-BR'),
+  instagram:   (a, b) => String(a.instagram || '').localeCompare(String(b.instagram || ''), 'pt-BR'),
+  cvv:         (a, b) => Number(a.cvv || 0) - Number(b.cvv || 0),
+  criado_em:   (a, b) => String(a.criado_em || '').localeCompare(String(b.criado_em || '')),
+};
+
+// Cabeçalho de coluna clicável c/ indicador de sort
+function SortHeader({ label, sortKey, sortBy, sortDir, onSort, align = 'left' }) {
+  const ativo = sortBy === sortKey;
+  return (
+    <button
+      onClick={() => onSort(sortKey)}
+      className={`inline-flex items-center gap-1 group hover:text-gray-700 transition-colors ${
+        align === 'center' ? 'justify-center w-full' : ''
+      } ${ativo ? 'text-gray-700' : ''}`}
+      title={`Ordenar por ${label}`}
+    >
+      <span>{label}</span>
+      <span className={`flex flex-col -space-y-1 ${ativo ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'} transition-opacity`}>
+        <CaretUp size={8} weight="bold" className={ativo && sortDir === 'asc' ? 'text-blue-600' : 'text-gray-400'} />
+        <CaretDown size={8} weight="bold" className={ativo && sortDir === 'desc' ? 'text-blue-600' : 'text-gray-400'} />
+      </span>
+    </button>
+  );
+}
+
+function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, remover, selecionados, toggleSelecao, selecionarTodos }) {
+  // Sort: key (coluna) + dir ('asc'|'desc'). null = ordem padrão (criado_em desc)
+  const [sortBy, setSortBy] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+  // Cycle: null → asc → desc → null
+  const onSort = useCallback((key) => {
+    if (sortBy !== key) {
+      setSortBy(key);
+      setSortDir('asc');
+    } else if (sortDir === 'asc') {
+      setSortDir('desc');
+    } else {
+      setSortBy(null);
+      setSortDir('asc');
+    }
+  }, [sortBy, sortDir]);
+  const [colapsados, setColapsados] = useState(() => new Set());
+  const toggle = (s) =>
+    setColapsados((prev) => {
+      const n = new Set(prev);
+      n.has(s) ? n.delete(s) : n.add(s);
+      return n;
+    });
+
+  // Agrupa leads por status, respeitando a ORDEM definida em STATUS_OPTIONS
+  const grupos = useMemo(() => {
+    const buckets = new Map();
+    STATUS_OPTIONS.slice(1).forEach((s) => buckets.set(s.v, []));
+    for (const l of leads) {
+      const key = STATUS_MAP[l.status] ? l.status : '1_msg_enviada';
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(l);
+    }
+    // Aplica ordenação dentro de cada grupo
+    const cmp = sortBy ? SORT_COMPARATORS[sortBy] : null;
+    return [...buckets.entries()].map(([statusKey, arr]) => {
+      let sorted = arr;
+      if (cmp) {
+        sorted = [...arr].sort((a, b) => {
+          const r = cmp(a, b);
+          return sortDir === 'desc' ? -r : r;
+        });
+      }
+      return { statusKey, leads: sorted };
+    });
+  }, [leads, sortBy, sortDir]);
+
+  return (
+    <div className="space-y-5">
+      {grupos.map(({ statusKey, leads: gLeads }) => {
+        const s = STATUS_MAP[statusKey];
+        const dot = STATUS_DOT[statusKey] || STATUS_DOT['1_msg_enviada'];
+        const colapsado = colapsados.has(statusKey);
+        // Cor textual suave do status pra header (sem fundo carregado)
+        const textKey = (dot.bg || 'bg-gray-500').replace('bg-', '').replace('-700', '-700').replace('-600', '-600');
+        return (
+          <section key={statusKey}>
+            {/* Header de grupo — balão colorido estilo ClickUp + master checkbox */}
+            {(() => {
+              const idsGrupo = gLeads.map((l) => l.id);
+              const todosSelecionados = idsGrupo.length > 0 && idsGrupo.every((id) => selecionados.has(id));
+              const algunsSelecionados = idsGrupo.some((id) => selecionados.has(id));
+              return (
+                <div className="flex items-center gap-2 mb-2">
+                  <button
+                    onClick={() => toggle(statusKey)}
+                    className="inline-flex items-center gap-2 group"
+                  >
+                    <CaretRight
+                      size={11}
+                      weight="bold"
+                      className={`text-gray-400 transition-transform duration-200 ${colapsado ? '' : 'rotate-90'}`}
+                    />
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ${dot.bg} ${dot.text} shadow-sm`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-white/90" />
+                      <span className="text-[10px] font-extrabold uppercase tracking-[0.06em]">
+                        {s.label}
+                      </span>
+                    </span>
+                    <span className="text-[12px] text-gray-500 font-semibold tabular-nums">
+                      {gLeads.length}
+                    </span>
+                  </button>
+                  {/* Master checkbox: marca/desmarca todos do grupo */}
+                  {!colapsado && (
+                    <button
+                      onClick={() => selecionarTodos(idsGrupo, !todosSelecionados)}
+                      className="ml-2 inline-flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-700 px-2 py-1 rounded-md hover:bg-gray-100 transition-colors"
+                      title={todosSelecionados ? 'Desmarcar todos' : 'Marcar todos'}
+                    >
+                      <CheckSquareInput checked={todosSelecionados} indeterminate={algunsSelecionados && !todosSelecionados} />
+                      <span>{todosSelecionados ? 'Desmarcar todos' : 'Marcar todos'}</span>
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+
+            {!colapsado && gLeads.length > 0 && (
+              <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 overflow-hidden">
+                {/* Header de colunas — cliques ordenam */}
+                <div className="grid grid-cols-[28px_1.7fr_120px_140px_160px_110px_1fr_120px_70px_70px] items-center gap-2 px-5 py-3 text-[10px] font-medium uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                  <div></div>
+                  <SortHeader label="Nome" sortKey="nome" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
+                  <SortHeader label="Cod. Cliente" sortKey="cod_cliente" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
+                  <SortHeader label="CPF" sortKey="cpf" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
+                  <SortHeader label="WhatsApp" sortKey="whatsapp" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
+                  <SortHeader label="Data Nasc." sortKey="data_nasc" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
+                  <SortHeader label="Empresa" sortKey="empresa" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
+                  <SortHeader label="Instagram" sortKey="instagram" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
+                  <SortHeader label="CVV" sortKey="cvv" sortBy={sortBy} sortDir={sortDir} onSort={onSort} align="center" />
+                  <div></div>
+                </div>
+
+                {gLeads.map((l, idx) => {
+                  const codCli = l.totvs_person_code
+                    ? `COD. ${String(l.totvs_person_code).padStart(4, '0')}`
+                    : null;
+                  const cor = corPorIndicacao(l.indicado_por);
+                  const slug = slugificarIndicacao(l.indicado_por);
+                  const isLast = idx === gLeads.length - 1;
+                  const isSel = selecionados.has(l.id);
+                  return (
+                    <div
+                      key={l.id}
+                      onClick={() => setEditLead(l)}
+                      className={`grid grid-cols-[28px_1.7fr_120px_140px_160px_110px_1fr_120px_70px_70px] items-center gap-2 px-5 py-3 transition-colors cursor-pointer ${
+                        isSel ? 'bg-blue-50/60' : 'hover:bg-blue-50/30'
+                      } ${!isLast ? 'border-b border-gray-50' : ''}`}
+                    >
+                      {/* Checkbox de seleção */}
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <CheckSquareInput
+                          checked={isSel}
+                          onChange={() => toggleSelecao(l.id)}
+                        />
+                      </div>
+
+                      {/* Nome */}
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span
+                          className={`w-2 h-2 rounded-full ${dot.bg} shrink-0`}
+                          title={s.label}
+                        />
+                        <span className="font-semibold text-gray-800 text-[13px] truncate">
+                          {l.nome}
+                        </span>
+                        {l.indicado_por && (
+                          <span
+                            className={`inline-flex items-center px-2 py-[1px] rounded-md text-[10px] font-bold ${cor.bg} ${cor.text} whitespace-nowrap shrink-0`}
+                            title={`Indicado por ${l.indicado_por}`}
+                          >
+                            {slug || l.indicado_por}
+                          </span>
+                        )}
+                        {l.totvs_sync_error && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); sincronizarTotvs(l); }}
+                            className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 shrink-0"
+                            title={l.totvs_sync_error}
+                          >
+                            retry
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Cod cliente */}
+                      <div className="text-[12px] text-gray-400 font-mono truncate" title={codCli || ''}>
+                        {codCli || <span className="text-gray-300">—</span>}
+                      </div>
+
+                      {/* CPF */}
+                      <div className="text-[12px] text-gray-600 font-mono tabular-nums">
+                        {fmtCPF(l.cpf)}
+                      </div>
+
+                      {/* WhatsApp */}
+                      <div className="text-[12px] text-gray-600 font-mono tabular-nums">
+                        {fmtWhatsappBR(l.whatsapp)}
+                      </div>
+
+                      {/* Data Nasc */}
+                      <div className="text-[12px] text-gray-600 tabular-nums">
+                        {fmtNasc(l.data_nasc)}
+                      </div>
+
+                      {/* Empresa */}
+                      <div className="text-[12px] text-gray-600 truncate" title={l.empresa || ''}>
+                        {l.empresa || <span className="text-gray-300">—</span>}
+                      </div>
+
+                      {/* Instagram */}
+                      <div className="text-[12px]">
+                        {l.instagram ? (
+                          <a
+                            href={`https://instagram.com/${(l.instagram || '').replace(/[@\s]/g, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-pink-600 hover:text-pink-700 hover:underline truncate block max-w-[110px]"
+                            title={l.instagram}
+                          >
+                            {l.instagram.startsWith('@') ? l.instagram : `@${l.instagram.replace(/\s/g, '')}`}
+                          </a>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </div>
+
+                      {/* CVV */}
+                      <div className="text-center">
+                        {l.cvv ? (
+                          <span className="inline-block px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono font-semibold text-[11px] tabular-nums">
+                            {l.cvv}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </div>
+
+                      {/* Ações — só aparecem no hover, mais discreto */}
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 hover:opacity-100">
+                        <select
+                          value={l.status}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => { e.stopPropagation(); atualizarStatus(l, e.target.value); }}
+                          className="text-[10px] rounded-md bg-transparent text-gray-500 hover:text-gray-700 px-1 py-0.5 cursor-pointer focus:outline-none w-[18px]"
+                          title="Trocar status"
+                        >
+                          {STATUS_OPTIONS.slice(1).map((o) => (
+                            <option key={o.v} value={o.v}>{o.label}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); remover(l); }}
+                          className="text-gray-400 hover:text-rose-600 p-1 rounded-md hover:bg-rose-50 transition-colors"
+                          title="Remover"
+                        >
+                          <Trash size={13} weight="duotone" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -542,6 +1005,15 @@ function DetalhesModal({ lead, onClose, onSaved, onSyncTotvs }) {
             <InfoCard icon={WhatsappLogo} label="WhatsApp" value={fmtPhone(lead.whatsapp)} color="emerald" />
             <InfoCard icon={CreditCard} label="CPF" value={fmtCPF(lead.cpf)} color="slate" mono />
             <InfoCard icon={Calendar} label="Data nasc." value={lead.data_nasc || '—'} color="purple" />
+            {lead.cvv && (
+              <InfoCard
+                icon={CreditCard}
+                label="CVV BlueCard"
+                value={lead.cvv}
+                color="indigo"
+                mono
+              />
+            )}
           </div>
 
           {/* Empresa + Instagram */}
@@ -676,4 +1148,176 @@ function InfoCard({ icon: Icon, label, value, color = 'blue', mono = false, link
     );
   }
   return <div className={className}>{content}</div>;
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Modal: gera link de indicação personalizado com nome do referrer
+// ────────────────────────────────────────────────────────────────────────
+function GerarLinkIndicacaoModal({ onClose }) {
+  const [nome, setNome] = useState('');
+  const [copiado, setCopiado] = useState(false);
+
+  // Capitaliza primeira letra de cada palavra (mesma lógica da LP)
+  const nomeFormatado = useMemo(() => {
+    return nome
+      .trim()
+      .replace(/\s+/g, ' ')
+      .split(' ')
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
+  }, [nome]);
+
+  // Encoded pra URL (espaços viram +)
+  const linkPath = useMemo(() => {
+    if (!nomeFormatado) return '/lp/bluecard/indicacao';
+    const encoded = encodeURIComponent(nomeFormatado).replace(/%20/g, '+');
+    return `/lp/bluecard/indicacao?indicado_por=${encoded}`;
+  }, [nomeFormatado]);
+
+  const linkCompleto = `${window.location.origin}${linkPath}`;
+
+  const mensagemWhatsapp = nomeFormatado
+    ? `Olá! Você foi indicado(a) por *${nomeFormatado}* pra receber o cartão *BlueCard* exclusivo da Crosby 🎁\n\nÉ um presente em reconhecimento ao seu trabalho. Cadastre-se aqui:\n\n${linkCompleto}`
+    : `Olá! Cadastre-se pra receber o cartão *BlueCard* exclusivo da Crosby 🎁\n\n${linkCompleto}`;
+
+  const whatsappShareUrl = `https://wa.me/?text=${encodeURIComponent(mensagemWhatsapp)}`;
+
+  const copiar = async () => {
+    try {
+      await navigator.clipboard.writeText(linkCompleto);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    } catch {
+      // fallback: seleciona o input
+      alert('Copia manualmente: ' + linkCompleto);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-5 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-100 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-500/20">
+            <Share size={18} weight="duotone" className="text-white" />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-base font-bold text-gray-900">
+              Gerar link de indicação
+            </h2>
+            <p className="text-[12px] text-gray-500 leading-tight">
+              Compartilhe pra rastrear quem indicou o lead
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-700 text-2xl leading-none p-1"
+            title="Fechar"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-5 space-y-4">
+          {/* Input nome */}
+          <div>
+            <label className="text-[11px] uppercase tracking-wider text-gray-500 font-bold block mb-1.5">
+              Nome de quem está indicando
+            </label>
+            <input
+              type="text"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              placeholder="Ex: João da Silva"
+              autoFocus
+              className="w-full px-3 py-2.5 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+            />
+            {nomeFormatado && nomeFormatado !== nome.trim() && (
+              <p className="text-[11px] text-gray-400 mt-1">
+                Aparecerá como: <strong className="text-gray-700">{nomeFormatado}</strong>
+              </p>
+            )}
+          </div>
+
+          {/* Link gerado */}
+          <div>
+            <label className="text-[11px] uppercase tracking-wider text-gray-500 font-bold block mb-1.5 flex items-center gap-1.5">
+              <LinkSimple size={12} weight="bold" />
+              Link gerado
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                readOnly
+                value={linkCompleto}
+                className="w-full px-3 py-2.5 pr-12 text-[12px] bg-gray-50 border border-gray-200 rounded-lg font-mono text-gray-700 focus:outline-none cursor-text"
+                onFocus={(e) => e.target.select()}
+              />
+              <button
+                onClick={copiar}
+                className={`absolute right-1.5 top-1/2 -translate-y-1/2 px-2 py-1.5 rounded-md text-[11px] font-bold transition-all ${
+                  copiado
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-white border border-gray-300 hover:bg-gray-100 text-gray-700'
+                }`}
+                title="Copiar link"
+              >
+                {copiado ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Check size={11} weight="bold" /> Copiado
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1">
+                    <Copy size={11} weight="bold" /> Copiar
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Preview da mensagem WhatsApp */}
+          {nomeFormatado && (
+            <div>
+              <label className="text-[11px] uppercase tracking-wider text-gray-500 font-bold block mb-1.5">
+                Mensagem pré-pronta
+              </label>
+              <div className="bg-emerald-50/50 border border-emerald-200/60 rounded-lg p-3 text-[12px] text-gray-700 whitespace-pre-line max-h-32 overflow-y-auto">
+                {mensagemWhatsapp}
+              </div>
+            </div>
+          )}
+
+          {/* Ações */}
+          <div className="flex flex-wrap gap-2 pt-1">
+            <a
+              href={whatsappShareUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm shadow-sm transition-colors min-w-[180px]"
+            >
+              <WhatsappLogo size={16} weight="fill" />
+              Abrir WhatsApp
+            </a>
+            <a
+              href={linkPath}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold text-sm transition-colors"
+              title="Abrir a LP em nova aba"
+            >
+              Visualizar LP ↗
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

@@ -10,6 +10,7 @@ import {
   LoadingValue,
   formatBRL,
 } from './MetricasDiariasUI';
+import ClientesAtendidosModal from './ClientesAtendidosModal';
 
 const MESES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -183,7 +184,13 @@ export default function VendedoresMensal() {
       {!vazio && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 p-3">
           {(loading && !data ? [{ code: 'B2R' }, { code: 'B2M' }] : cards).map((card) => (
-            <CardVendedores key={card.code} card={card} loading={loading && !data} />
+            <CardVendedores
+              key={card.code}
+              card={card}
+              loading={loading && !data}
+              ano={ano}
+              mes={mes}
+            />
           ))}
         </div>
       )}
@@ -191,7 +198,8 @@ export default function VendedoresMensal() {
   );
 }
 
-function CardVendedores({ card, loading }) {
+function CardVendedores({ card, loading, ano, mes }) {
+  const [drilldown, setDrilldown] = useState(null); // { sellerCode, sellerNome }
   const vendedores = card?.vendedores || [];
   const total = Number(card?.total || 0);
   const meta = Number(card?.meta || 0);
@@ -223,6 +231,12 @@ function CardVendedores({ card, loading }) {
           <tr className="text-[10px] uppercase tracking-wider text-gray-500 bg-gray-50 border-b border-gray-200">
             <th className="text-left py-1.5 px-3 font-bold">Vendedor</th>
             <th className="text-right py-1.5 px-3 font-bold">Realizado</th>
+            <th
+              className="text-center py-1.5 px-3 font-bold w-[80px]"
+              title="Clientes distintos atendidos / NFs emitidas no período"
+            >
+              Cli / NFs
+            </th>
             <th className="text-right py-1.5 px-3 font-bold">% do total</th>
           </tr>
         </thead>
@@ -232,12 +246,13 @@ function CardVendedores({ card, loading }) {
               <tr key={i} className="border-b border-gray-100">
                 <td className="py-2 px-3"><LoadingValue width={110} /></td>
                 <td className="py-2 px-3 text-right"><LoadingValue width={70} /></td>
+                <td className="py-2 px-3 text-center"><LoadingValue width={40} /></td>
                 <td className="py-2 px-3 text-right"><LoadingValue width={40} /></td>
               </tr>
             ))
           ) : vendedores.length === 0 ? (
             <tr>
-              <td colSpan={3} className="text-center text-xs text-gray-400 py-5">
+              <td colSpan={4} className="text-center text-xs text-gray-400 py-5">
                 Sem faturamento no período.
               </td>
             </tr>
@@ -245,12 +260,35 @@ function CardVendedores({ card, loading }) {
             vendedores.map((v) => {
               const pct = total > 0 ? (v.real / total) * 100 : 0;
               return (
-                <tr key={v.seller_code} className="border-b border-gray-100 hover:bg-gray-50">
+                <tr
+                  key={v.seller_code}
+                  className="border-b border-gray-100 hover:bg-purple-50/40 cursor-pointer"
+                  onClick={() =>
+                    setDrilldown({
+                      sellerCode: v.seller_code,
+                      sellerNome: v.nome,
+                    })
+                  }
+                  title="Ver clientes atendidos"
+                >
                   <td className="py-2 px-3 text-gray-800 truncate max-w-[160px]" title={v.nome}>
-                    {v.nome}
+                    <span className="underline decoration-dotted decoration-gray-300 underline-offset-2">
+                      {v.nome}
+                    </span>
                   </td>
                   <td className="py-2 px-3 text-right tabular-nums font-semibold text-gray-900 whitespace-nowrap">
                     R$ {formatBRL(v.real)}
+                  </td>
+                  <td className="py-2 px-3 text-center tabular-nums">
+                    {(v.clientes || v.nfs) ? (
+                      <div className="inline-flex items-baseline gap-1 text-[12px]">
+                        <span className="font-semibold text-purple-700">{v.clientes || 0}</span>
+                        <span className="text-gray-300">/</span>
+                        <span className="text-gray-500">{v.nfs || 0}</span>
+                      </div>
+                    ) : (
+                      <span className="text-gray-300 text-xs">—</span>
+                    )}
                   </td>
                   <td className="py-2 px-3 text-right tabular-nums text-gray-500">
                     {pct.toFixed(0)}%
@@ -267,6 +305,21 @@ function CardVendedores({ card, loading }) {
               <td className="py-2 px-3 text-right tabular-nums text-gray-900 whitespace-nowrap">
                 R$ {formatBRL(total)}
               </td>
+              <td className="py-2 px-3 text-center tabular-nums">
+                {(() => {
+                  const tc = vendedores.reduce((s, v) => s + (v.clientes || 0), 0);
+                  const tn = vendedores.reduce((s, v) => s + (v.nfs || 0), 0);
+                  return tc || tn ? (
+                    <div className="inline-flex items-baseline gap-1 text-[12px]">
+                      <span className="font-extrabold text-gray-800">{tc}</span>
+                      <span className="text-gray-400">/</span>
+                      <span className="text-gray-600">{tn}</span>
+                    </div>
+                  ) : (
+                    <span className="text-gray-300 text-xs">—</span>
+                  );
+                })()}
+              </td>
               <td className="py-2 px-3 text-right">
                 {meta > 0 ? <PctPill pct={card.percentual} size="sm" /> : <span className="text-gray-300">—</span>}
               </td>
@@ -274,6 +327,16 @@ function CardVendedores({ card, loading }) {
           </tfoot>
         )}
       </table>
+      <ClientesAtendidosModal
+        open={!!drilldown}
+        onClose={() => setDrilldown(null)}
+        canal={card?.code}
+        sellerCode={drilldown?.sellerCode}
+        sellerNome={drilldown?.sellerNome}
+        ano={ano}
+        mes={mes}
+        rangeLabel={mes && ano ? `${String(mes).padStart(2, '0')}/${ano}` : '—'}
+      />
     </div>
   );
 }

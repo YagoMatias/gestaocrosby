@@ -105,6 +105,7 @@ const FilaDaVez = lazy(() => import('./pages/FilaDaVez'));
 const PrintForecast = lazy(() => import('./pages/PrintForecast'));
 const ApresentacaoForecast = lazy(() => import('./pages/ApresentacaoForecast'));
 const CrosbyForm = lazy(() => import('./crosby/CrosbyForm'));
+const CrosbyFormIndicacao = lazy(() => import('./crosby/CrosbyFormIndicacao'));
 const CrosbyObrigado = lazy(() => import('./crosby/CrosbyObrigado'));
 const BluecardLeads = lazy(() => import('./pages/BluecardLeads'));
 const ExpedicaoShowroom = lazy(() => import('./pages/ExpedicaoShowroom'));
@@ -352,6 +353,15 @@ function App() {
           element={
             <Suspense fallback={<PageLoadingFallback />}>
               <CrosbyForm />
+            </Suspense>
+          }
+        />
+        {/* Pública: LP BlueCard com indicação (captura ?indicado_por=NOME) */}
+        <Route
+          path="/lp/bluecard/indicacao"
+          element={
+            <Suspense fallback={<PageLoadingFallback />}>
+              <CrosbyFormIndicacao />
             </Suspense>
           }
         />

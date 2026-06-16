@@ -56,7 +56,9 @@ export default function Forecast() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Detecta aba inicial: pathname > query ?aba=… > localStorage > default 'forecast'
+  // Detecta aba inicial: pathname > query ?aba=… > localStorage > default 'dashboard'
+  // Default = 'dashboard' (instantâneo, vem do banco) em vez de 'forecast'
+  // (FaturamentoCanal dispara 12+ fetches pesados TOTVS no mount).
   const PATH_MAP = {
     '/forecast/faturamento-historico': 'historico',
     '/dashboard-vendas': 'dashboard',
@@ -67,7 +69,7 @@ export default function Forecast() {
     if (qs && VALID_IDS.has(qs)) return qs;
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored && VALID_IDS.has(stored)) return stored;
-    return 'forecast';
+    return 'dashboard';
   };
   const [abaAtiva, setAbaAtiva] = useState(getInitial);
 
