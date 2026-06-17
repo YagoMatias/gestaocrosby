@@ -1,12 +1,14 @@
 // Showroom — página com tabs internas (Pedidos do Wix por enquanto;
 // futuras: agenda, expedição, etc).
 import React, { useState } from 'react';
-import { Storefront, Package } from '@phosphor-icons/react';
+import { Storefront, Package, ShoppingCart } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import ShowroomPedidos from './ShowroomPedidos';
+import ShowroomCarrinhos from './ShowroomCarrinhos';
 
 const TABS = [
-  { v: 'pedidos', label: 'Pedidos (Wix)', icon: Package },
+  { v: 'pedidos', label: 'Pedidos', icon: Package },
+  { v: 'carrinhos', label: 'Carrinhos Abandonados', icon: ShoppingCart },
 ];
 
 export default function Showroom() {
@@ -44,6 +46,7 @@ export default function Showroom() {
 
         {/* Conteúdo da aba */}
         {aba === 'pedidos' && <ShowroomPedidos />}
+        {aba === 'carrinhos' && <ShowroomCarrinhos />}
       </div>
     </div>
   );
