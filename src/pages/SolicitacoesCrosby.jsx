@@ -2221,24 +2221,57 @@ const ModalDetalhe = ({
                         )}
                       </div>
                     )}
-                    {sol.chave_pix && (
+                    {(sol.forma_pagamento || '').toLowerCase() === 'pix' && (
                       <div className="grid grid-cols-1">
                         <DocField label="Chave PIX">
-                          <span className="font-mono text-sm break-all select-all bg-yellow-50 px-2 py-0.5 rounded border border-yellow-200">
-                            {sol.chave_pix}
-                          </span>
+                          {sol.chave_pix ? (
+                            <span className="font-mono text-sm break-all select-all bg-yellow-50 px-2 py-0.5 rounded border border-yellow-200">
+                              {sol.chave_pix}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 text-xs italic">
+                              não informada
+                            </span>
+                          )}
                         </DocField>
                       </div>
                     )}
-                    {sol.codigo_barras && (
+                    {sol.chave_pix &&
+                      (sol.forma_pagamento || '').toLowerCase() !== 'pix' && (
+                        <div className="grid grid-cols-1">
+                          <DocField label="Chave PIX">
+                            <span className="font-mono text-sm break-all select-all bg-yellow-50 px-2 py-0.5 rounded border border-yellow-200">
+                              {sol.chave_pix}
+                            </span>
+                          </DocField>
+                        </div>
+                      )}
+                    {(sol.forma_pagamento || '').toLowerCase() === 'boleto' && (
                       <div className="grid grid-cols-1">
                         <DocField label="Código de Barras / Linha Digitável">
-                          <span className="font-mono text-sm break-all select-all bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                            {sol.codigo_barras}
-                          </span>
+                          {sol.codigo_barras ? (
+                            <span className="font-mono text-sm break-all select-all bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                              {sol.codigo_barras}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 text-xs italic">
+                              não informado
+                            </span>
+                          )}
                         </DocField>
                       </div>
                     )}
+                    {sol.codigo_barras &&
+                      (sol.forma_pagamento || '').toLowerCase() !==
+                        'boleto' && (
+                        <div className="grid grid-cols-1">
+                          <DocField label="Código de Barras / Linha Digitável">
+                            <span className="font-mono text-sm break-all select-all bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                              {sol.codigo_barras}
+                            </span>
+                          </DocField>
+                        </div>
+                      )}
                   </div>
                 </div>
               )}
@@ -2886,9 +2919,13 @@ const ModalEdicao = ({
   );
   const [descricao, setDescricao] = React.useState(sol.descricao || '');
   const [observacao, setObservacao] = React.useState(sol.observacao || '');
-  const [formaPagamento, setFormaPagamento] = React.useState(
-    sol.forma_pagamento || '',
-  );
+  const [formaPagamento, setFormaPagamento] = React.useState(() => {
+    const fp = (sol.forma_pagamento || '').toLowerCase();
+    if (fp === 'pix') return 'PIX';
+    if (fp === 'boleto') return 'Boleto';
+    if (fp === 'débito' || fp === 'debito') return 'Débito';
+    return sol.forma_pagamento || '';
+  });
   const [supplierCpfCnpj, setSupplierCpfCnpj] = React.useState(
     sol.supplier_cpf_cnpj || '',
   );
@@ -3256,9 +3293,14 @@ const ModalEdicao = ({
           rateio_percentual: rateioPercentual
             ? parseFloat(rateioPercentual)
             : null,
-          chave_pix: formaPagamento === 'pix' ? chavePix.trim() || null : null,
+          chave_pix:
+            formaPagamento.toLowerCase() === 'pix'
+              ? chavePix.trim() || null
+              : null,
           codigo_barras:
-            formaPagamento === 'boleto' ? codigoBarras.trim() || null : null,
+            formaPagamento.toLowerCase() === 'boleto'
+              ? codigoBarras.trim() || null
+              : null,
         }),
       };
       const ok = await onSalvar(sol, dados);
@@ -3649,7 +3691,7 @@ const ModalEdicao = ({
               </div>
 
               {/* Chave PIX */}
-              {formaPagamento === 'pix' && (
+              {formaPagamento.toLowerCase() === 'pix' && (
                 <div>
                   <ELabel>Chave PIX *</ELabel>
                   <input
@@ -3662,7 +3704,7 @@ const ModalEdicao = ({
               )}
 
               {/* Código de Barras */}
-              {formaPagamento === 'boleto' && (
+              {formaPagamento.toLowerCase() === 'boleto' && (
                 <div>
                   <ELabel>Código de Barras / Linha Digitável *</ELabel>
                   <input

@@ -441,6 +441,7 @@ const DespesasIndustria = () => {
         previsao: previsao === 'PREVISÃO' ? 'PREVISAO' : previsao || 'TODOS',
         filtroPagamento,
         expenseCodeList: CODIGOS_DESPESAS_INDUSTRIA,
+        portadorCodeList: [1020],
       };
 
       const result = await apiClient.totvs.accountsPayableSearch(payload);
@@ -467,6 +468,8 @@ const DespesasIndustria = () => {
           _categoria: getCategoriaDespesa(item.cd_despesaitem),
         }))
         .filter((item) => item._categoria !== null)
+        // Apenas portador 1020
+        .filter((item) => parseInt(item.nr_portador) === 1020)
         // Garantir apenas EM ABERTO
         .filter((item) => !item.dt_liq);
 
