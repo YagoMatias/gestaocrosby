@@ -51,6 +51,7 @@ import PromessaMensal from '../components/forecast/PromessaMensal';
 import PromessaVendedores from '../components/forecast/PromessaVendedores';
 import ComparativoAnual from '../components/forecast/ComparativoAnual';
 import FaturamentoOntemCanal from '../components/forecast/FaturamentoOntemCanal';
+import FaturamentoOntemVendedorLoja from '../components/forecast/FaturamentoOntemVendedorLoja';
 import { supabase } from '../lib/supabase';
 import VendedoresMensal from '../components/forecast/VendedoresMensal';
 import PlanejamentoMensalModal from '../components/forecast/PlanejamentoMensalModal';
@@ -5101,6 +5102,53 @@ export default function FaturamentoCanal() {
             <PromessaVendedores />
             <VendedoresMensal />
             <ComparativoAnual />
+
+            {/* Métricas Diretoria — Faturamento Detalhado por Canal (Mês / Semana / Ontem) */}
+            <div className="space-y-4 pt-4">
+              <div className="bg-gradient-to-r from-purple-700 via-purple-800 to-purple-700 text-white rounded-xl px-5 py-3 shadow-md">
+                <h2 className="text-base font-extrabold">Faturamento Detalhado por Canal</h2>
+                <p className="text-xs text-purple-200 mt-0.5">
+                  Visão executiva consolidada · faturamento por loja e por vendedor
+                </p>
+              </div>
+              {(() => {
+                const hoje = new Date();
+                const ontem = new Date(hoje);
+                ontem.setDate(ontem.getDate() - 1);
+                while (ontem.getDay() === 0) ontem.setDate(ontem.getDate() - 1);
+                const fim = ontem.toISOString().slice(0, 10);
+                const fimHoje = hoje.toISOString().slice(0, 10);
+                const segunda = new Date(hoje);
+                const dow = segunda.getDay() === 0 ? 7 : segunda.getDay();
+                segunda.setDate(segunda.getDate() - (dow - 1));
+                const iniSemana = segunda.toISOString().slice(0, 10);
+                const iniMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
+                return (
+                  <>
+                    <FaturamentoOntemVendedorLoja
+                      titulo="Faturamento Detalhado por Canal — Mês Atual"
+                      datemin={iniMes}
+                      datemax={fimHoje}
+                      periodo="mes"
+                      corHeader="amber"
+                    />
+                    <FaturamentoOntemVendedorLoja
+                      titulo="Faturamento Detalhado por Canal — Semana Atual"
+                      datemin={iniSemana}
+                      datemax={fim}
+                      periodo="semana"
+                      corHeader="blue"
+                      delayMs={1500}
+                    />
+                    <FaturamentoOntemVendedorLoja
+                      titulo="Faturamento Detalhado por Canal — Ontem"
+                      periodo="ontem"
+                      corHeader="emerald"
+                    />
+                  </>
+                );
+              })()}
+            </div>
           </div>
         )}
 

@@ -567,7 +567,14 @@ async function getFaturamentoPorSegmento(datemin, datemax) {
     const diasAtras = Math.round(
       (new Date(hojeIso) - new Date(df)) / (1000 * 60 * 60 * 24),
     );
-    const forcarFresh = eumDiaSo && diasAtras >= 0 && diasAtras <= 3;
+    // Força fresh quando:
+    //   - é 1 dia recente (até 3 dias atrás) — caso "Faturamento de Ontem"
+    //   - OU range termina HOJE/ONTEM (mês corrente) — caso Comparativo Anual.
+    //     Cache de mês corrente costuma ter canais B2R/B2M/Franquia zerados
+    //     intermitentemente até NF do dia ser sincronizada no TOTVS.
+    const dfTerminaRecente = diasAtras >= 0 && diasAtras <= 1;
+    const forcarFresh =
+      (eumDiaSo && diasAtras >= 0 && diasAtras <= 3) || dfTerminaRecente;
     const url = forcarFresh
       ? `${INTERNAL_API_BASE}/api/crm/faturamento-por-segmento?lite=true&nocache=true`
       : `${INTERNAL_API_BASE}/api/crm/faturamento-por-segmento?lite=true`;
@@ -612,22 +619,30 @@ const FAT_SEG_CANAIS = [
   { mod: 'ricardoeletro', useGross: true }, // skipDevolPass2 protege, gross é consistente
 ];
 
+// Helper: roda async iteratee em batches sequenciais (controla paralelismo)
+async function mapBatched(items, batchSize, iteratee) {
+  const out = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const r = await Promise.all(batch.map(iteratee));
+    out.push(...r);
+  }
+  return out;
+}
+
 async function getFaturamentoPorSegmentoViaCanalTotals(datemin, datemax) {
   const di = toYmd(datemin);
   const df = toYmd(datemax);
   try {
-    const calls = await Promise.all(
-      FAT_SEG_CANAIS.map(async ({ mod, useGross }) => {
+    // Antes era Promise.all de 11 canais simultâneos → bloqueava TOTVS.
+    // Agora 4 por vez: ~3x mais lento mas confiável (sem timeouts).
+    const calls = await mapBatched(FAT_SEG_CANAIS, 4,
+      async ({ mod, useGross }) => {
         try {
-          // lite=true → pula PASS 0 (credev em payments, full FIS_NFITEMPROD
-          // scan). Mantém bruto + returns + exclusão Recife Mall. Líquido fica
-          // levemente inflado (sem subtrair credev em payments, ~1-3% pra
-          // varejo/revenda/multimarcas), mas o ganho de performance evita
-          // bloqueio TOTVS e timeouts no /promessa-semanal|mensal e comparativo.
           const r = await axios.post(
             `${INTERNAL_API_BASE}/api/crm/canal-totals?lite=true`,
             { datemin: di, datemax: df, modulo: mod, lite: true },
-            { timeout: 120000 },
+            { timeout: 180000 },
           );
           const d = r.data?.data || r.data;
           // Usa gross pra canais sem allowedSellers (evita devol over-subtraction).
@@ -659,7 +674,7 @@ async function getFaturamentoPorSegmentoViaCanalTotals(datemin, datemax) {
           );
           return [mod, 0];
         }
-      }),
+      },
     );
     const seg = Object.fromEntries(calls);
     // Canal virtual "fabrica" = showroom + novidadesfranquia
@@ -785,6 +800,923 @@ router.get(
       total: { fat_dia_anterior: Math.round(total * 100) / 100 },
       source: 'totvs-sale-panel-direct',
     });
+  }),
+);
+
+// ═══════════════════════════════════════════════════════════════
+// GET /forecast/ontem-vendedor-loja
+// Faturamento de ONTEM por VENDEDOR (multimarcas) e por LOJA (varejo).
+// Pra render gráficos rápidos na aba Métricas Diárias.
+// Reusa canal-totals (per_seller) pra B2M e fetchBranchTotalsFromTotvs pra B2C.
+// ═══════════════════════════════════════════════════════════════
+const VAREJO_LOJAS = {
+  2:  { name: 'João Pessoa',     uf: 'PB' },
+  5:  { name: 'Nova Cruz',       uf: 'RN' },
+  55: { name: 'Parnamirim',      uf: 'RN' },
+  65: { name: 'Canguaretama',    uf: 'RN' },
+  87: { name: 'Cidade Jardim',   uf: 'PE' },
+  88: { name: 'Guararapes',      uf: 'PE' },
+  90: { name: 'Ayrton Senna',    uf: 'RN' },
+  93: { name: 'Imperatriz',      uf: 'MA' },
+  94: { name: 'Patos',           uf: 'PB' },
+  95: { name: 'Midway',          uf: 'RN' },
+  97: { name: 'Teresina',        uf: 'PI' },
+  98: { name: 'Shopping Recife', uf: 'PE' },
+};
+
+// ─── Helper: per_seller via NFs (transações reais) ───────────────────
+// Usado pra range pequeno (1 dia) onde canal-totals do TOTVS retorna credev
+// artificialmente inflado. Faz query NF-a-NF no Supabase Fiscal e classifica
+// canal + dealer da mesma forma que transacao-historico-sync.
+const OP_SEGMENTO_PARA_TRANSACAO = {
+  // Varejo
+  510:'varejo', 511:'varejo', 521:'varejo', 522:'varejo', 545:'varejo',
+  546:'varejo', 548:'varejo', 9009:'varejo', 9017:'varejo', 9027:'varejo',
+  9033:'varejo', 9400:'varejo', 9401:'varejo', 9420:'varejo', 9067:'varejo',
+  9404:'varejo', 5919:'varejo',
+  // Revenda
+  7236:'revenda', 9122:'revenda', 5102:'revenda', 5202:'revenda', 7242:'revenda',
+  9061:'revenda', 9001:'revenda', 9121:'revenda', 1407:'revenda', 7806:'revenda',
+  7809:'revenda', 512:'revenda',
+  // Franquia
+  7234:'franquia', 7240:'franquia', 7802:'franquia', 9124:'franquia', 7259:'franquia',
+  // Multimarcas
+  7235:'multimarcas', 7241:'multimarcas', 9127:'multimarcas',
+  // Bazar
+  887:'bazar',
+  // Business
+  7237:'business', 7269:'business', 7279:'business', 7277:'business',
+  // Showroom
+  7254:'showroom', 7007:'showroom',
+  // Novidades Franquia
+  7255:'novidadesfranquia',
+};
+const RE_BRANCH = new Set([11, 111]);
+const RE_OPS = new Set([512,5102,7236,200,510,521,545,548,7237,7269,7277,7279]);
+const INBOUND_DAVID = new Set([26, 69]);
+const INBOUND_RAFAEL = 21;
+const OP_7279_DEALER = new Map([
+  [40,'franquia'], [20,'business'], [161,'revenda'], [241,'revenda'], [165,'revenda'],
+]);
+// Filtros de Revenda (B2R) — mesma lógica do fat-seg em crm.routes.js
+const VAREJO_BRANCH_CODES_TR = new Set([2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97]);
+const REVENDA_BRANCH_CODES_TR = new Set([99]);
+const B2R_REVENDA_DEALERS_EMP2 = new Set([288, 251, 131]); // Jucelino, Felipe, Agenor
+const B2R_REVENDA_DEALERS_EMP99 = new Set([25, 15, 161, 165, 241, 779]); // Anderson, Heyridan, Cleiton, Michel, Yago, Aldo
+const FRANQUIA_DEALER = 40;
+const JUCELINO_DEALER = 288;
+
+function getDominantDealerFromNf(nf) {
+  const items = Array.isArray(nf?.items) ? nf.items : [];
+  if (!items.length) return null;
+  const cnt = new Map();
+  for (const it of items) {
+    const products = Array.isArray(it?.products) ? it.products : [];
+    for (const p of products) {
+      const dc = p?.dealerCode ?? p?.sellerCode;
+      if (dc == null) continue;
+      const n = Number(dc);
+      if (!Number.isFinite(n)) continue;
+      cnt.set(n, (cnt.get(n) || 0) + 1);
+    }
+  }
+  if (cnt.size === 0) return null;
+  let best = null, max = 0;
+  for (const [k, v] of cnt.entries()) {
+    if (v > max) { max = v; best = k; }
+  }
+  return best;
+}
+
+function classificarNfCanal(nf) {
+  const op = Number(nf.operation_code);
+  const bc = nf.branch_code != null ? Number(nf.branch_code) : null;
+  const isDevol = String(nf.operation_type || '').toLowerCase() === 'input';
+
+  // 1) Ricardo Eletro: filiais 11/111
+  if (bc != null && RE_BRANCH.has(bc) && (RE_OPS.has(op) || isDevol)) {
+    return { canal: 'ricardoeletro', dealer: getDominantDealerFromNf(nf) };
+  }
+
+  // 2) Op 7279: depende do dealer
+  let canal = null;
+  let dealer = getDominantDealerFromNf(nf);
+
+  if (op === 7279) {
+    canal = (dealer != null && OP_7279_DEALER.get(dealer)) || 'revenda';
+  } else {
+    // 3) Franquia/Inbound (override por dealer)
+    if (dealer === FRANQUIA_DEALER) canal = 'franquia';
+    else if (dealer === JUCELINO_DEALER) canal = 'franquia'; // sem checar personCanalMap
+    else if (dealer != null && INBOUND_DAVID.has(dealer)) canal = 'inbound_david';
+    else if (dealer === INBOUND_RAFAEL) canal = 'inbound_rafael';
+    if (!canal) canal = OP_SEGMENTO_PARA_TRANSACAO[op] || null;
+  }
+  if (!canal) return { canal: null, dealer };
+
+  // 4) Filtros específicos por canal (mesma lógica do fat-seg)
+  if (canal === 'varejo' && (bc == null || !VAREJO_BRANCH_CODES_TR.has(bc))) {
+    return { canal: null, dealer };
+  }
+  if (canal === 'revenda') {
+    if (bc === 99) {
+      if (!B2R_REVENDA_DEALERS_EMP99.has(dealer)) return { canal: null, dealer };
+    } else if (bc === 2 && B2R_REVENDA_DEALERS_EMP2.has(dealer)) {
+      // mantém revenda
+    } else if (bc === 2) {
+      canal = 'varejo';
+      if (!VAREJO_BRANCH_CODES_TR.has(bc)) return { canal: null, dealer };
+    } else if (!REVENDA_BRANCH_CODES_TR.has(bc)) {
+      return { canal: null, dealer };
+    }
+  }
+  return { canal, dealer };
+}
+
+// Per_seller via transações (NF a NF) — só Supabase Fiscal + mapping seller.
+// Retorna [{ seller_name, bruto, credev, liquido }]
+async function perSellerViaTransacoes(dmin, dmax, modulo) {
+  const { createClient } = await import('@supabase/supabase-js');
+  const supabaseFiscal = createClient(
+    process.env.SUPABASE_FISCAL_URL,
+    process.env.SUPABASE_FISCAL_KEY,
+  );
+
+  // 1) Lê NFs do range (output + input)
+  const PAGE = 1000;
+  const porDealer = new Map(); // dealer_code → { bruto, credev }
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseFiscal
+      .from('notas_fiscais')
+      .select('branch_code, operation_code, operation_type, invoice_status, total_value, items, person_code')
+      .gte('issue_date', dmin)
+      .lte('issue_date', dmax)
+      .range(from, from + PAGE - 1);
+    if (error) {
+      console.warn(`[perSellerViaTransacoes] supabaseFiscal: ${error.message}`);
+      break;
+    }
+    if (!data || data.length === 0) break;
+    for (const nf of data) {
+      const status = String(nf.invoice_status || '').toLowerCase();
+      if (status === 'canceled' || status === 'deleted') continue;
+      const { canal, dealer } = classificarNfCanal(nf);
+      if (canal !== modulo || dealer == null) continue;
+      const val = Number(nf.total_value || 0);
+      if (val <= 0) continue;
+      const isDevol = String(nf.operation_type || '').toLowerCase() === 'input';
+      const cur = porDealer.get(dealer) || { bruto: 0, credev: 0 };
+      if (isDevol) cur.credev += val;
+      else cur.bruto += val;
+      porDealer.set(dealer, cur);
+    }
+    if (data.length < PAGE) break;
+  }
+
+  // 2) Mapping dealer → seller_name (via Supabase main: v_vendedores_integracao)
+  const dealerNames = new Map();
+  try {
+    const { data: vendedores } = await supabase
+      .from('v_vendedores_integracao')
+      .select('totvs_id, nome_vendedor');
+    for (const v of vendedores || []) {
+      if (v.totvs_id != null) dealerNames.set(Number(v.totvs_id), v.nome_vendedor);
+    }
+  } catch (e) {
+    console.warn(`[perSellerViaTransacoes] vendedores map: ${e.message}`);
+  }
+
+  // 3) Monta lista [{seller_name, bruto, credev, liquido}]
+  const result = [];
+  for (const [dealer, v] of porDealer.entries()) {
+    const seller_name = dealerNames.get(dealer) || `Vendedor ${dealer}`;
+    const liquido = Math.max(0, v.bruto - v.credev);
+    if (liquido <= 0 && v.bruto <= 0) continue;
+    result.push({
+      seller_name,
+      invoice_value: v.bruto,
+      credev_value: v.credev,
+      liquido: Math.round(liquido * 100) / 100,
+    });
+  }
+  return result.sort((a, b) => b.liquido - a.liquido);
+}
+
+// Total líquido por canal via transações NF (1 query, todos os canais).
+// Usado pra single-sellers do card "Ontem".
+async function totalsPorCanalViaTransacoes(dmin, dmax) {
+  const { createClient } = await import('@supabase/supabase-js');
+  const supabaseFiscal = createClient(
+    process.env.SUPABASE_FISCAL_URL,
+    process.env.SUPABASE_FISCAL_KEY,
+  );
+  const PAGE = 1000;
+  const porCanal = {}; // canal → { bruto, credev }
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseFiscal
+      .from('notas_fiscais')
+      .select('branch_code, operation_code, operation_type, invoice_status, total_value, items, person_code')
+      .gte('issue_date', dmin)
+      .lte('issue_date', dmax)
+      .range(from, from + PAGE - 1);
+    if (error) {
+      console.warn(`[totalsPorCanalViaTransacoes] erro: ${error.message}`);
+      break;
+    }
+    if (!data || data.length === 0) break;
+    for (const nf of data) {
+      const status = String(nf.invoice_status || '').toLowerCase();
+      if (status === 'canceled' || status === 'deleted') continue;
+      const { canal } = classificarNfCanal(nf);
+      if (!canal) continue;
+      const val = Number(nf.total_value || 0);
+      if (val <= 0) continue;
+      const isDevol = String(nf.operation_type || '').toLowerCase() === 'input';
+      if (!porCanal[canal]) porCanal[canal] = { bruto: 0, credev: 0 };
+      if (isDevol) porCanal[canal].credev += val;
+      else porCanal[canal].bruto += val;
+    }
+    if (data.length < PAGE) break;
+  }
+  // Saída: canal → líquido
+  const out = {};
+  for (const [c, v] of Object.entries(porCanal)) {
+    out[c] = Math.max(0, v.bruto - v.credev);
+  }
+  return out;
+}
+
+// Mapa de `loja` (formato Supabase fat_transacao_historico) → {nome,uf}
+const VAREJO_LOJA_SUPABASE = {
+  'CROSBY JOAO PESSOA':            { name: 'João Pessoa',     uf: 'PB' },
+  'CROSBY NOVA CRUZ':              { name: 'Nova Cruz',       uf: 'RN' },
+  'CROSBY PARNAMIRIM':             { name: 'Parnamirim',      uf: 'RN' },
+  'CROSBY CANGUARETAMA':           { name: 'Canguaretama',    uf: 'RN' },
+  'CROSBY SHOPPING CIDADE JARDIM': { name: 'Cidade Jardim',   uf: 'PE' },
+  'CROSBY SHOPPING GUARARAPES':    { name: 'Guararapes',      uf: 'PE' },
+  'CROSBY AYRTON SENNA':           { name: 'Ayrton Senna',    uf: 'RN' },
+  'CROSBY IMPERATRIZ':             { name: 'Imperatriz',      uf: 'MA' },
+  'CROSBY SHOPPING PATOS':         { name: 'Patos',           uf: 'PB' },
+  'CROSBY SHOPPING MIDWAY':        { name: 'Midway',          uf: 'RN' },
+  'CROSBY SHOPPING TERESINA':      { name: 'Teresina',        uf: 'PI' },
+  'CROSBY SHOPPING RECIFE':        { name: 'Shopping Recife', uf: 'PE' },
+};
+
+// Cache + inflight pra rota /ontem-vendedor-loja — evita refazer 6+ chamadas
+// TOTVS quando os 3 cards (Mês/Semana/Dia) carregam simultaneamente ou o user
+// navega entre abas. TTL 5min (dados intra-dia mudam pouco).
+const OVL_CACHE = new Map(); // key: `${dmin}|${dmax}` → { ts, data }
+const OVL_INFLIGHT = new Map();
+const OVL_TTL_MS = 30 * 60 * 1000;
+// Dedup global: dias com fallback TOTVS em andamento (evita duplicar requests
+// quando vários cards do mesmo range chegam ao mesmo tempo).
+const FALLBACK_DIAS_INFLIGHT = new Set();
+
+// POST /api/forecast/per-seller-cache/refresh?dias=N
+// Dispara backfill manual da tabela forecast_per_seller_cache. Por default 35 dias.
+// IMPORTANTE: chamada longa — só usar quando TOTVS estiver descansado.
+router.post(
+  '/per-seller-cache/refresh',
+  asyncHandler(async (req, res) => {
+    const dias = parseInt(req.query.dias || req.body?.dias || '35', 10);
+    const { executarSyncPerSellerCache } = await import(
+      '../jobs/forecast-per-seller-cache.job.js'
+    );
+    // Roda em background — não bloqueia resposta
+    executarSyncPerSellerCache({ dias })
+      .then((r) => console.log('[psc-cron] backfill manual concluído:', r))
+      .catch((e) => console.error('[psc-cron] backfill manual falhou:', e.message));
+    return successResponse(res, {
+      ok: true,
+      message: `Backfill iniciado em background pra ${dias} dias. Acompanhe nos logs.`,
+    });
+  }),
+);
+
+router.get(
+  '/ontem-vendedor-loja',
+  asyncHandler(async (req, res) => {
+    console.log('🆕 [ovl] NOVA VERSÃO COM PROMESSA-VENDEDORES iniciada');
+    const hoje = new Date();
+    // Datas: usa ?datemin/?datemax se vier (mês/semana), senão ontem (D-1 útil).
+    let dmin, dmax, periodoLabel;
+    if (req.query.datemin && req.query.datemax) {
+      dmin = String(req.query.datemin);
+      dmax = String(req.query.datemax);
+      periodoLabel = req.query.periodo || 'custom';
+    } else {
+      // "Ontem" = 1 dia útil (D-1, pulando domingo)
+      const ontem = new Date(hoje);
+      ontem.setUTCDate(ontem.getUTCDate() - 1);
+      while (ontem.getUTCDay() === 0) ontem.setUTCDate(ontem.getUTCDate() - 1);
+      dmin = ontem.toISOString().slice(0, 10);
+      dmax = dmin;
+      periodoLabel = 'ontem';
+    }
+    // Alias antigo do código: diaIso. Mantém comportamento.
+    const diaIso = dmax; // pra single-seller usa o dia final do range
+
+    // Cache hit (TTL 30min). v11 = força refetch (per_seller veio vazio antes)
+    const cacheKey = `v11|${dmin}|${dmax}`;
+    const noCache = req.query.nocache === '1' || req.query.nocache === 'true';
+    if (!noCache) {
+      const cached = OVL_CACHE.get(cacheKey);
+      if (cached && Date.now() - cached.ts < OVL_TTL_MS) {
+        return successResponse(res, { ...cached.data, periodo: periodoLabel, cached: true });
+      }
+      // Inflight: se já tem fetch em andamento pra mesma key, aguarda ele
+      if (OVL_INFLIGHT.has(cacheKey)) {
+        try {
+          const data = await OVL_INFLIGHT.get(cacheKey);
+          return successResponse(res, { ...data, periodo: periodoLabel, coalesced: true });
+        } catch {
+          /* cai pro fetch normal abaixo */
+        }
+      }
+    }
+
+    // Registra promise pra outros callers aguardarem
+    let _resolveInflight, _rejectInflight;
+    const inflightPromise = new Promise((rr, rj) => {
+      _resolveInflight = rr;
+      _rejectInflight = rj;
+    });
+    if (!noCache) OVL_INFLIGHT.set(cacheKey, inflightPromise);
+    res.on('finish', () => {
+      if (OVL_INFLIGHT.get(cacheKey) === inflightPromise) {
+        OVL_INFLIGHT.delete(cacheKey);
+      }
+    });
+
+    // ─── VERSÃO UNIFICADA: canal-totals per_seller (bruto - credev) ────────
+    // Mesma lógica para Ontem / Semana / Mês — só muda o range dmin/dmax.
+    // Valores batem com relatório TOTVS "Vl. Faturado" (já subtrai devoluções).
+    try {
+      if (periodoLabel === 'ontem' || periodoLabel === 'mes' || periodoLabel === 'semana' || periodoLabel === 'custom') {
+        const capNome = (s) =>
+          String(s || '').trim().toLowerCase().split(/\s+/)
+            .map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+        // Helpers — sellers vêm de canal-totals per_seller (LÍQUIDO = bruto - credev).
+        const fetchSellersGrupo = async (grupoCode) => {
+          const moduloMap = { B2R: 'revenda', B2M: 'multimarcas' };
+          const modulo = moduloMap[grupoCode];
+          if (!modulo) return [];
+          // Tenta até 2x — em ranges longos o canal-totals pode falhar 1x antes
+          // do TOTVS responder. Sem retry o fallback agregado é exibido pra um
+          // canal e o outro tem detalhe (B2R agregado, B2M detalhado, ex.).
+          const tentar = async () => {
+            const r = await axios.post(
+              `${INTERNAL_API_BASE}/api/crm/canal-totals?lite=true`,
+              { datemin: dmin, datemax: dmax, modulo, lite: true },
+              { timeout: 180000 },
+            );
+            const d = r.data?.data || r.data || {};
+            return (d.per_seller || [])
+              .map((s) => {
+                const bruto = Number(s.invoice_value || 0);
+                const credev = Number(s.credev_value || 0);
+                return {
+                  nome: capNome(s.seller_name || s.name || ''),
+                  valor: Math.round(Math.max(0, bruto - credev) * 100) / 100,
+                };
+              })
+              .filter((v) => v.valor > 0)
+              .sort((a, b) => b.valor - a.valor);
+          };
+          try {
+            const r1 = await tentar();
+            if (r1.length > 0) return r1;
+            console.warn(`[ovl] fetchSellersGrupo(${grupoCode}) veio vazio, retry...`);
+            return await tentar();
+          } catch (e) {
+            console.warn(`[ovl] fetchSellersGrupo(${grupoCode}) falhou: ${e.message}, retry...`);
+            try { return await tentar(); }
+            catch (e2) {
+              console.warn(`[ovl] retry também falhou: ${e2.message}`);
+              return [];
+            }
+          }
+        };
+        const fetchVarejoRanking = async () => {
+          try {
+            const codes = Object.keys(VAREJO_LOJAS).map(Number);
+            const r = await axios.post(
+              `${INTERNAL_API_BASE}/api/totvs/sale-panel/ranking-faturamento`,
+              { datemin: dmin, datemax: dmax, branchs: codes },
+              { timeout: 180000 },
+            );
+            return r.data?.data || r.data || null;
+          } catch { return null; }
+        };
+        // Per_seller por canal — fast para ranges curtos, vira no-op rápido
+        // pra ranges longos (timeout 30s). Sempre temos `segs` como fallback.
+        // Retorna { total, per_seller } pra permitir fallback canal-level
+        // quando segs[canal] vier zerado (e.g. range curto sem cache).
+        const fetchCanalDireto = async (modulo) => {
+          try {
+            const r = await axios.post(
+              `${INTERNAL_API_BASE}/api/crm/canal-totals?lite=true`,
+              { datemin: dmin, datemax: dmax, modulo, lite: true },
+              { timeout: 30000 },
+            );
+            const d = r.data?.data || r.data || {};
+            return {
+              total: Number(d.invoice_value || 0),
+              per_seller: d.per_seller || [],
+            };
+          } catch {
+            return { total: 0, per_seller: [] };
+          }
+        };
+        // Wrapper backwards-compat: alguns callers só precisam do per_seller
+        const fetchPerSellerCanal = async (modulo) =>
+          (await fetchCanalDireto(modulo)).per_seller;
+        // PARALELIZA TUDO. Singles têm DUPLA fonte (segs + canal direto).
+        const [
+          vendedoresB2M_oficial, vendedoresB2R_oficial, segs, varejoFat,
+          psFranquia, psDavid, psRafael, psShowroom, psNovid,
+          ctBazar, ctRicardoEletro,
+        ] = await Promise.all([
+          fetchSellersGrupo('B2M'),
+          fetchSellersGrupo('B2R'),
+          axios.post(
+            `${INTERNAL_API_BASE}/api/crm/canais-totals-all?lite=true`,
+            { datemin: dmin, datemax: dmax, lite: true },
+            { timeout: 240000 },
+          ).then((r) => (r.data?.data || r.data || {}).segmentos || {}).catch(() => ({})),
+          fetchVarejoRanking(),
+          fetchPerSellerCanal('franquia'),
+          fetchPerSellerCanal('inbound_david'),
+          fetchPerSellerCanal('inbound_rafael'),
+          fetchPerSellerCanal('showroom'),
+          fetchPerSellerCanal('novidadesfranquia'),
+          fetchCanalDireto('bazar'),
+          fetchCanalDireto('ricardoeletro'),
+        ]);
+        // Varejo per loja (Ranking)
+        let lojasB2C = [];
+        if (varejoFat) {
+          const fatByCode = new Map();
+          for (const row of varejoFat?.dataRow || []) {
+            const code = Number(row.branch_code ?? row.branch ?? 0);
+            fatByCode.set(code, (fatByCode.get(code) || 0) + Number(row.invoice_value || 0));
+          }
+          lojasB2C = Object.entries(VAREJO_LOJAS)
+            .map(([code, loja]) => ({
+              nome: loja.name, uf: loja.uf,
+              valor: Math.round((fatByCode.get(Number(code)) || 0) * 100) / 100,
+            }))
+            .filter((l) => l.valor > 0)
+            .sort((a, b) => b.valor - a.valor);
+        }
+        // Fallback: se per_seller de revenda/multimarcas falhar (timeout/empty),
+        // exibe 1 linha agregada usando o total canal-level de canais-totals-all
+        // (segs). Garante que o canal nunca fica "sumido" da lista.
+        let vendedoresB2R = vendedoresB2R_oficial;
+        let vendedoresB2M = vendedoresB2M_oficial;
+        if (vendedoresB2R.length === 0 && Number(segs.revenda || 0) > 0) {
+          vendedoresB2R = [{ nome: 'Revenda', valor: Math.round(Number(segs.revenda) * 100) / 100 }];
+        }
+        if (vendedoresB2M.length === 0 && Number(segs.multimarcas || 0) > 0) {
+          vendedoresB2M = [{ nome: 'Multimarcas', valor: Math.round(Number(segs.multimarcas) * 100) / 100 }];
+        }
+        // Mesmo fallback pra varejo: se ranking-faturamento falhou mas o cache
+        // tem o total agregado, mostra 1 linha "Varejo (total)".
+        if (lojasB2C.length === 0 && Number(segs.varejo || 0) > 0) {
+          lojasB2C = [{ nome: 'Varejo (total)', uf: null, valor: Math.round(Number(segs.varejo) * 100) / 100 }];
+        }
+        // Singles — usam BRUTO direto (não subtrai credev) pra evitar o bug
+        // do TOTVS: certos pedidos de adiantamento (ex: "Piedade adiantamento"
+        // do Jhemyson/franquia) são erroneamente classificados como credev e
+        // inflavam o credev artificialmente, derrubando o valor real.
+        //
+        // Prioridade: segs (canal-level, fonte confiável do cache Supabase ou
+        // canais-totals-all) > per_seller (canal-totals direto). per_seller
+        // só é usado como fallback se segs for 0 (range curto sem cache).
+        const somaPerSellerBruto = (list) =>
+          (list || []).reduce((s, x) => s + Number(x.invoice_value || 0), 0);
+        const pickSingle = (psList, segKey) => {
+          const segVal = Number(segs[segKey] || 0);
+          if (segVal > 0) return segVal;
+          return somaPerSellerBruto(psList);
+        };
+        // Singles SEMPRE aparecem (mesmo zero) pra comparar Ontem×Semana×Mês.
+        const vendedoresSingles = [];
+        const addSingle = (canal, nome, valor) => {
+          vendedoresSingles.push({ nome, canal, valor: Math.round(valor * 100) / 100 });
+        };
+        addSingle('franquia', 'Jhemyson', pickSingle(psFranquia, 'franquia'));
+        addSingle('inbound_david', 'David', pickSingle(psDavid, 'inbound_david'));
+        addSingle('inbound_rafael', 'Rafael', pickSingle(psRafael, 'inbound_rafael'));
+        // Bazar e Ricardo Eletro: usa segs (cache Supabase confiável); se 0,
+        // fallback pro canal-totals direto (canal-level invoice_value).
+        addSingle('bazar', 'Bazar', Number(segs.bazar || 0) || ctBazar.total);
+        addSingle('ricardoeletro', 'Jesus', Number(segs.ricardoeletro || 0) || ctRicardoEletro.total);
+        const showroomV = Number(segs.showroom || 0) || somaPerSellerBruto(psShowroom);
+        const novidV = Number(segs.novidadesfranquia || 0) || somaPerSellerBruto(psNovid);
+        addSingle('fabrica', 'Kleiton', showroomV + novidV);
+        vendedoresSingles.sort((a, b) => b.valor - a.valor);
+
+        const responseData = {
+          dia_anterior: diaIso,
+          datemin: dmin, datemax: dmax, periodo: periodoLabel,
+          source: 'totvs-canal-totals + ranking-faturamento',
+          varejo: {
+            lojas: lojasB2C,
+            total: Math.round(lojasB2C.reduce((s, l) => s + l.valor, 0) * 100) / 100,
+          },
+          multimarcas: {
+            vendedores: vendedoresB2M,
+            total: Math.round(vendedoresB2M.reduce((s, v) => s + v.valor, 0) * 100) / 100,
+          },
+          revenda: {
+            vendedores: vendedoresB2R,
+            total: Math.round(vendedoresB2R.reduce((s, v) => s + v.valor, 0) * 100) / 100,
+          },
+          outros: {
+            vendedores: vendedoresSingles,
+            total: Math.round(vendedoresSingles.reduce((s, v) => s + v.valor, 0) * 100) / 100,
+          },
+        };
+        OVL_CACHE.set(cacheKey, { ts: Date.now(), data: responseData });
+        try { _resolveInflight(responseData); } catch {}
+        return successResponse(res, responseData);
+      }
+      const cap = (s) =>
+        String(s || '').trim().toLowerCase().split(/\s+/)
+          .map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+
+      // Variáveis que serão preenchidas conforme o período
+      let canalTotais = {};         // { varejo: X, revenda: Y, multimarcas: Z, ... }
+      let vendedoresB2R = [];       // [{ nome, valor }]
+      let vendedoresB2M = [];       // [{ nome, valor }]
+
+      // === FETCH PARALELO conforme o período ===
+      if (periodoLabel === 'mes') {
+        const ano = Number(dmin.slice(0, 4));
+        const mes = Number(dmin.slice(5, 7));
+        const [resMensal, resVendedores] = await Promise.all([
+          axios.get(`${INTERNAL_API_BASE}/api/forecast/promessa-mensal`,
+            { params: { ano, mes, until_today: 'false' }, timeout: 240000 }).catch(() => null),
+          axios.get(`${INTERNAL_API_BASE}/api/forecast/vendedores-mensal`,
+            { params: { ano, mes, until_today: 'false' }, timeout: 240000 }).catch(() => null),
+        ]);
+        // Canal totais do /promessa-mensal
+        const canaisMensal = resMensal?.data?.data?.canais || resMensal?.data?.canais || [];
+        for (const c of canaisMensal) {
+          const k = c.canal_key || c.canal;
+          if (k) canalTotais[k] = Number(c.fat_realizado || c.realizado || c.real || 0);
+        }
+        // Per-seller de /vendedores-mensal
+        const cards = resVendedores?.data?.data?.cards || resVendedores?.data?.cards || [];
+        for (const card of cards) {
+          const lista = [...(card.vendedores || []), ...(card.extras || [])]
+            .map((v) => ({
+              nome: cap(v.label || v.nome || v.nomeExibicao || '—'),
+              valor: Math.round(Number(v.real || v.realizado || 0) * 100) / 100,
+            }))
+            .filter((v) => v.valor > 0)
+            .sort((a, b) => b.valor - a.valor);
+          if (card.code === 'B2R') vendedoresB2R = lista;
+          else if (card.code === 'B2M') vendedoresB2M = lista;
+        }
+      } else if (periodoLabel === 'semana') {
+        const ano = new Date().getUTCFullYear();
+        const semana = (() => {
+          const d = new Date();
+          const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+          const dayNr = (target.getUTCDay() + 6) % 7;
+          target.setUTCDate(target.getUTCDate() - dayNr + 3);
+          const jan4 = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
+          return 1 + Math.round(((target - jan4) / 86400000 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7);
+        })();
+        const [resSemanal, resVendedores] = await Promise.all([
+          axios.get(`${INTERNAL_API_BASE}/api/forecast/promessa-semanal`,
+            { params: { ano, semana, until_today: 'false' }, timeout: 240000 }).catch(() => null),
+          axios.get(`${INTERNAL_API_BASE}/api/forecast/promessa-vendedores`,
+            { params: { ano, semana, until_today: 'false' }, timeout: 240000 }).catch(() => null),
+        ]);
+        const canaisSemanal = resSemanal?.data?.data?.canais || resSemanal?.data?.canais || [];
+        for (const c of canaisSemanal) {
+          const k = c.canal_key || c.canal;
+          if (k) canalTotais[k] = Number(c.fat_realizado || c.realizado || c.real || 0);
+        }
+        const cards = resVendedores?.data?.data?.cards || resVendedores?.data?.cards || [];
+        for (const card of cards) {
+          const lista = [...(card.vendedores || []), ...(card.extras || [])]
+            .map((v) => ({
+              nome: cap(v.label || v.nome || v.nomeExibicao || '—'),
+              valor: Math.round(Number(v.real || v.realizado || 0) * 100) / 100,
+            }))
+            .filter((v) => v.valor > 0)
+            .sort((a, b) => b.valor - a.valor);
+          if (card.code === 'B2R') vendedoresB2R = lista;
+          else if (card.code === 'B2M') vendedoresB2M = lista;
+        }
+      } else {
+        // periodoLabel === 'ontem' — usa /ontem-canal direto (TOTVS)
+        // 100% alinhado com "Faturamento de Ontem por Canal" das Métricas Diárias
+        const r = await axios.get(`${INTERNAL_API_BASE}/api/forecast/ontem-canal`,
+          { timeout: 180000 }).catch(() => null);
+        const canais = r?.data?.data?.canais || r?.data?.canais || [];
+        for (const c of canais) {
+          const k = c.canal_key || c.canal;
+          if (k) canalTotais[k] = Number(c.fat_dia_anterior || 0);
+        }
+        // 1 linha por canal (Revenda, Multimarcas, David, Rafael)
+        if ((canalTotais.revenda || 0) > 0) {
+          vendedoresB2R = [{ nome: 'Revenda', valor: canalTotais.revenda }];
+        }
+        vendedoresB2M = [];
+        if ((canalTotais.multimarcas || 0) > 0)
+          vendedoresB2M.push({ nome: 'Multimarcas', valor: canalTotais.multimarcas });
+        if ((canalTotais.inbound_david || 0) > 0)
+          vendedoresB2M.push({ nome: 'David', valor: canalTotais.inbound_david });
+        if ((canalTotais.inbound_rafael || 0) > 0)
+          vendedoresB2M.push({ nome: 'Rafael', valor: canalTotais.inbound_rafael });
+      }
+
+      // === Varejo: TEMPORÁRIO 1 linha "Varejo" do canalTotais ===
+      // (per-loja desativado até alinharmos fontes — ranking-faturamento
+      // estava demorando demais e dando timeout)
+      const lojasB2C = [];
+      const varejoTotal = Number(canalTotais.varejo || 0);
+      if (varejoTotal > 0) {
+        lojasB2C.push({ nome: 'Varejo', uf: null, valor: Math.round(varejoTotal * 100) / 100 });
+      }
+
+      // === Outros canais: usa canalTotais (já vem dos endpoints oficiais) ===
+      const vendedoresSingles = [];
+      const addSingle = (canalKey, nome) => {
+        const v = Number(canalTotais[canalKey] || 0);
+        if (v > 0) vendedoresSingles.push({ nome, canal: canalKey, valor: Math.round(v * 100) / 100 });
+      };
+      addSingle('franquia', 'Jhemyson');
+      addSingle('bazar', 'Bazar');
+      addSingle('ricardoeletro', 'Jesus');
+      // Kleiton = showroom + novidadesfranquia (ou "fabrica" agregado)
+      const kleitonV = Number(canalTotais.fabrica || 0)
+        || (Number(canalTotais.showroom || 0) + Number(canalTotais.novidadesfranquia || 0));
+      if (kleitonV > 0) {
+        vendedoresSingles.push({ nome: 'Kleiton', canal: 'fabrica', valor: Math.round(kleitonV * 100) / 100 });
+      }
+      vendedoresSingles.sort((a, b) => b.valor - a.valor);
+
+      const responseData = {
+        dia_anterior: diaIso,
+        datemin: dmin,
+        datemax: dmax,
+        periodo: periodoLabel,
+        source: 'official-metricas-diarias',
+        varejo: {
+          lojas: lojasB2C,
+          total: Math.round(lojasB2C.reduce((s, l) => s + l.valor, 0) * 100) / 100,
+        },
+        multimarcas: {
+          vendedores: vendedoresB2M,
+          total: Math.round(vendedoresB2M.reduce((s, v) => s + v.valor, 0) * 100) / 100,
+        },
+        revenda: {
+          vendedores: vendedoresB2R,
+          total: Math.round(vendedoresB2R.reduce((s, v) => s + v.valor, 0) * 100) / 100,
+        },
+        outros: {
+          vendedores: vendedoresSingles,
+          total: Math.round(vendedoresSingles.reduce((s, v) => s + v.valor, 0) * 100) / 100,
+        },
+      };
+
+      OVL_CACHE.set(cacheKey, { ts: Date.now(), data: responseData });
+      try { _resolveInflight(responseData); } catch {}
+      return successResponse(res, responseData);
+    } catch (e) {
+      console.error('[ontem-vendedor-loja] erro:', e.message);
+      try { _rejectInflight(e); } catch {}
+      return errorResponse(res, e.message, 500, 'OVL_ERROR');
+    }
+
+    // ─── CÓDIGO LEGADO ABAIXO (sem uso) ────────────────────────────────────
+    // Helper local: puxa per_seller de 1 canal e retorna lista [{nome, valor}]
+    async function perSellerCanal(modulo) {
+      try {
+        const r = await axios.post(
+          `${INTERNAL_API_BASE}/api/crm/canal-totals?lite=true`,
+          { datemin: dmin, datemax: dmax, modulo, lite: true },
+          { timeout: 30000 },
+        );
+        const d = r.data?.data || r.data || {};
+        const perSeller = d?.per_seller || d?.totals?.per_seller || [];
+        return perSeller
+          .map((s) => {
+            const bruto = Number(
+              s.invoice_value ?? s.faturamento_liquido ?? s.liquido ?? s.total ?? 0,
+            ) || 0;
+            const credev = Number(s.credev_value || 0);
+            const liquido = Math.max(0, bruto - credev);
+            const raw = String(s.seller_name || s.name || '—').trim();
+            const nome = raw
+              .toLowerCase()
+              .split(/\s+/)
+              .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+              .join(' ');
+            return { nome, valor: Math.round(liquido * 100) / 100 };
+          })
+          .filter((v) => v.valor > 0)
+          .sort((a, b) => b.valor - a.valor);
+      } catch (e) {
+        console.warn(`[ontem-vendedor-loja] per_seller(${modulo}) falhou: ${e.message}`);
+        return [];
+      }
+    }
+
+    // 1) Multimarcas + Revenda por vendedor (canal-totals per_seller)
+    let [vendedoresB2M, vendedoresB2R] = await Promise.all([
+      perSellerCanal('multimarcas'),
+      perSellerCanal('revenda'),
+    ]);
+
+    // 1a) Fallback se TOTVS deu timeout — usa /faturamento-transacao/resumo
+    // que tem totais por canal já líquido. Mostra 1 linha agregada por canal,
+    // sem detalhe por vendedor, mas pelo menos não fica zerado.
+    let resumoSupabase = null;
+    async function getResumoSupabase() {
+      if (resumoSupabase !== null) return resumoSupabase;
+      try {
+        const r = await axios.get(
+          `${INTERNAL_API_BASE}/api/faturamento-transacao/resumo`,
+          { params: { datemin: dmin, datemax: dmax }, timeout: 30000 },
+        );
+        resumoSupabase = r.data?.por_canal || {};
+      } catch (e) {
+        console.warn(`[ontem-vendedor-loja] resumo Supabase falhou: ${e.message}`);
+        resumoSupabase = {};
+      }
+      return resumoSupabase;
+    }
+
+    if (vendedoresB2M.length === 0) {
+      const resumo = await getResumoSupabase();
+      const valor = Number(resumo?.multimarcas?.total || 0);
+      if (valor > 0) vendedoresB2M = [{ nome: 'Multimarcas', valor: Math.round(valor * 100) / 100 }];
+    }
+    if (vendedoresB2R.length === 0) {
+      const resumo = await getResumoSupabase();
+      const valor = Number(resumo?.revenda?.total || 0);
+      if (valor > 0) vendedoresB2R = [{ nome: 'Revenda', valor: Math.round(valor * 100) / 100 }];
+    }
+
+    // 1b) Single-seller channels: cada canal tem 1 vendedor fixo.
+    //     Puxa de /faturamento-transacao/resumo (Supabase pré-agregado, líquido,
+    //     responde em segundos). Mesma fonte usada pelo Comparativo Anual.
+    //     - inbound_david   → David
+    //     - inbound_rafael  → Rafael
+    //     - franquia        → Jhemyson
+    //     - showroom + novidadesfranquia (fabrica) → Kleiton
+    const SINGLE_SELLER = [
+      { canal: 'inbound_david',  nome: 'David',          canalLabel: 'inbound_david'  },
+      { canal: 'inbound_rafael', nome: 'Rafael',         canalLabel: 'inbound_rafael' },
+      { canal: 'franquia',       nome: 'Jhemyson',       canalLabel: 'franquia'       },
+      { canal: 'fabrica',        nome: 'Kleiton',        canalLabel: 'fabrica',
+        somaDe: ['showroom', 'novidadesfranquia'] },
+      // Canais sem vendedor específico — usam o nome do canal como label
+      { canal: 'bazar',          nome: 'Bazar',          canalLabel: 'bazar'          },
+      { canal: 'ricardoeletro',  nome: 'Ricardo Eletro', canalLabel: 'ricardoeletro'  },
+    ];
+    // Pra single-seller usa canais-totals-all (1 chamada agregada). Valor é
+    // bruto neste modo lite, mas pra esses canais (franquia/showroom/novidades
+    // /inbound) o credev é mínimo — diferença <2% na prática.
+    // Pra single-seller tenta canais-totals-all (timeout curto), se falhar
+    // fallback pro resumo Supabase.
+    let vendedoresSingles = [];
+    let segs = null;
+    try {
+      const r = await axios.post(
+        `${INTERNAL_API_BASE}/api/crm/canais-totals-all?lite=true`,
+        { datemin: dmin, datemax: dmax, lite: true },
+        { timeout: 30000 },
+      );
+      segs = (r.data?.data || r.data || {}).segmentos || {};
+    } catch (e) {
+      console.warn(`[ontem-vendedor-loja] canais-totals-all falhou, usando resumo: ${e.message}`);
+    }
+
+    // Se canais-totals-all não trouxe os canais alvo, completa com Supabase
+    const canaisSemValor = SINGLE_SELLER.filter((s) => {
+      if (!segs) return true;
+      const total = s.somaDe
+        ? s.somaDe.reduce((a, k) => a + Number(segs[k] || 0), 0)
+        : Number(segs[s.canal] || 0);
+      return total <= 0;
+    });
+    if (canaisSemValor.length > 0) {
+      const resumo = await getResumoSupabase();
+      if (!segs) segs = {};
+      for (const c of canaisSemValor) {
+        if (c.somaDe) {
+          for (const k of c.somaDe) segs[k] = Number(resumo?.[k]?.total || 0);
+        } else {
+          segs[c.canal] = Number(resumo?.[c.canal]?.total || 0);
+        }
+      }
+    }
+
+    vendedoresSingles = SINGLE_SELLER.map((s) => {
+      const valor = s.somaDe
+        ? s.somaDe.reduce((acc, k) => acc + Number(segs?.[k] || 0), 0)
+        : Number(segs?.[s.canal] || 0);
+      return {
+        nome: s.nome,
+        canal: s.canalLabel,
+        valor: Math.round(valor * 100) / 100,
+      };
+    }).filter((v) => v.valor > 0);
+
+    // 2) Varejo por loja (fetchBranchTotalsFromTotvs).
+    // Retorna bruto por loja. Em 1 dia o credev é pequeno (<5%) — aceito.
+    let lojasB2C = [];
+    try {
+      const { getToken } = await import('../utils/totvsTokenManager.js');
+      const { fetchBranchTotalsFromTotvs } = await import(
+        '../totvsrouter/totvsHelper.js'
+      );
+      const tk = await getToken();
+      if (tk?.access_token) {
+        const codes = Object.keys(VAREJO_LOJAS).map(Number);
+        const fat = await fetchBranchTotalsFromTotvs({
+          initialToken: tk.access_token,
+          branchs: codes,
+          datemin: dmin,
+          datemax: dmax,
+          refreshToken: async () => (await getToken(true)).access_token,
+          logTag: `ontem-vendedor-loja:${periodoLabel}`,
+        });
+        const fatByCode = new Map();
+        for (const row of fat?.dataRow || []) {
+          const code = Number(row.branch_code ?? row.branch ?? 0);
+          fatByCode.set(
+            code,
+            (fatByCode.get(code) || 0) + Number(row.invoice_value || 0),
+          );
+        }
+        lojasB2C = Object.entries(VAREJO_LOJAS)
+          .map(([code, loja]) => ({
+            nome: loja.name,
+            uf: loja.uf,
+            valor: Math.round((fatByCode.get(Number(code)) || 0) * 100) / 100,
+          }))
+          .filter((l) => l.valor > 0)
+          .sort((a, b) => b.valor - a.valor);
+      }
+    } catch (e) {
+      console.warn(`[ontem-vendedor-loja] varejo falhou: ${e.message}`);
+    }
+
+    const responseData = {
+      dia_anterior: diaIso,
+      datemin: dmin,
+      datemax: dmax,
+      periodo: periodoLabel,
+      varejo: {
+        lojas: lojasB2C,
+        total: Math.round(lojasB2C.reduce((s, l) => s + l.valor, 0) * 100) / 100,
+      },
+      multimarcas: {
+        vendedores: vendedoresB2M,
+        total:
+          Math.round(vendedoresB2M.reduce((s, v) => s + v.valor, 0) * 100) /
+          100,
+      },
+      revenda: {
+        vendedores: vendedoresB2R,
+        total:
+          Math.round(vendedoresB2R.reduce((s, v) => s + v.valor, 0) * 100) /
+          100,
+      },
+      // Demais canais com 1 vendedor fixo cada
+      outros: {
+        vendedores: vendedoresSingles,
+        total:
+          Math.round(vendedoresSingles.reduce((s, v) => s + v.valor, 0) * 100) /
+          100,
+      },
+    };
+
+    // Cache poisoning guard: se SÓ varejo veio (TOTVS bloqueou canal-totals),
+    // não cacheia — senão prox req volta resposta parcial por 5min.
+    const canaisNaoVarejoVazios =
+      vendedoresB2M.length === 0 &&
+      vendedoresB2R.length === 0 &&
+      vendedoresSingles.length === 0;
+    if (!canaisNaoVarejoVazios) {
+      OVL_CACHE.set(cacheKey, { ts: Date.now(), data: responseData });
+    } else {
+      console.warn(
+        `[ontem-vendedor-loja] resposta parcial (só varejo) — NÃO cacheando ${cacheKey}`,
+      );
+    }
+    try { _resolveInflight(responseData); } catch {}
+
+    return successResponse(res, responseData);
   }),
 );
 
@@ -1903,13 +2835,45 @@ router.get(
 
     // Ano anterior vem da tabela de REFERÊNCIA (valores fixos cadastrados).
     // Ano atual vem do TOTVS (real do mês corrente).
+    // Pra mês corrente prefere /faturamento-transacao/resumo (Supabase pré-agregado
+    // + canal_totals_cache override) — retorna em ~2s e cobre TODOS os canais,
+    // diferente do fat-seg que pode ter B2R/B2M/Franquia zerados intermitentemente.
+    const ehMesCorrente =
+      hoje.getUTCFullYear() === anoAtual && hoje.getUTCMonth() + 1 === mes;
+    async function getSegViaTransacaoHistorico(dmin, dmax) {
+      try {
+        const r = await axios.get(
+          `${INTERNAL_API_BASE}/api/faturamento-transacao/resumo`,
+          { params: { datemin: dmin, datemax: dmax }, timeout: 60000 },
+        );
+        const porCanal = r.data?.por_canal || {};
+        const seg = {};
+        for (const k of Object.keys(porCanal)) {
+          // total = líquido (bruto − credev)
+          seg[k] = Number(porCanal[k].total || 0);
+        }
+        seg.fabrica = FABRICA_SOURCES.reduce(
+          (s, k) => s + Number(seg[k] || 0),
+          0,
+        );
+        return seg;
+      } catch (e) {
+        console.warn(`[comparativo-anual] resumo Supabase falhou: ${e.message}`);
+        return null;
+      }
+    }
     const [refAnt, segAtualReal] = await Promise.all([
       getRefValues(anoAnt, mes),
       periodAtualReal
-        ? getFaturamentoPorSegmento(
-            periodAtualReal.datemin,
-            periodAtualReal.datemax,
-          )
+        ? ehMesCorrente
+          ? getSegViaTransacaoHistorico(
+              periodAtualReal.datemin,
+              periodAtualReal.datemax,
+            )
+          : getFaturamentoPorSegmento(
+              periodAtualReal.datemin,
+              periodAtualReal.datemax,
+            )
         : Promise.resolve(null),
     ]);
 
