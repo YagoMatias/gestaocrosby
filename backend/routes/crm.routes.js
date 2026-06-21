@@ -8276,6 +8276,11 @@ const CANAL_CONFIG = {
     source: 'totvs-totals-allbranchs',
     operations: [7237, 7269, 7279, 7277],
     sellers: undefined,
+    // Op 7279 é COMPARTILHADA (franquia/business/revenda) — sem filtro de
+    // dealer, NFs de Jhemyson (40) e revendedores caem em business
+    // erroneamente. Restringe a vendas com dealer 20 (Marlon = business).
+    // Mesma regra do classifyNfCanal em /faturamento-por-segmento (linha 7389).
+    allowedSellers: [20],
   },
   bazar: {
     source: 'totvs-totals-allbranchs',
