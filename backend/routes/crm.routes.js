@@ -2714,15 +2714,37 @@ router.post(
       'novidadesfranquia',
       'ricardoeletro',
     ];
+    // 1º) Tenta cache canal_totals_cache (Supabase). Match exato OU fuzzy:
+    // mesmo datemin E datemax dentro de 2 dias de tolerância. Resposta instant.
+    const cacheSupabase = {};
+    try {
+      const { data: cacheRows } = await supabase
+        .from('canal_totals_cache')
+        .select('canal, datemin, datemax, valor_liquido')
+        .eq('datemin', datemin);
+      // Filtra cache rows com datemax dentro de 2 dias da query
+      const reqEnd = new Date(`${datemax}T00:00:00Z`).getTime();
+      for (const r of cacheRows || []) {
+        const rowEnd = new Date(`${r.datemax}T00:00:00Z`).getTime();
+        const diffDays = Math.abs(rowEnd - reqEnd) / (24 * 3600 * 1000);
+        if (diffDays <= 2) cacheSupabase[r.canal] = Number(r.valor_liquido || 0);
+      }
+      if (Object.keys(cacheSupabase).length > 0) {
+        console.log(`[canais-all] cache HIT (${datemin}~${datemax}): ${Object.keys(cacheSupabase).length} canais (fuzzy ≤2d)`);
+      }
+    } catch (e) { console.warn(`[canais-all] cache lookup falhou: ${e.message}`); }
+
     // Anti-sobrecarga TOTVS: processa em BATCHES de 4 (não 11 em paralelo).
-    // Cada canal-totals interno faz queries pesadas no Analytics — paralelismo
-    // alto provoca rate-limit/timeout e cache poisoning (resposta parcial).
     const BATCH_SIZE = 4;
     const results = [];
     for (let i = 0; i < canais.length; i += BATCH_SIZE) {
       const batch = canais.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.all(
         batch.map(async (modulo) => {
+          // Cache hit no Supabase? Retorna instant.
+          if (cacheSupabase[modulo] !== undefined && cacheSupabase[modulo] > 0) {
+            return { modulo, ct: { invoice_value: cacheSupabase[modulo], invoice_qty: 0, itens_qty: 0 } };
+          }
           try {
             const ct = await getCanalTotalsCached(modulo, datemin, datemax, { lite: liteMode });
             return { modulo, ct };

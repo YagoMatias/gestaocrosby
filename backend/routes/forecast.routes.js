@@ -1117,7 +1117,7 @@ router.get(
     const diaIso = dmax; // pra single-seller usa o dia final do range
 
     // Cache hit (TTL 30min). v11 = força refetch (per_seller veio vazio antes)
-    const cacheKey = `v12|${dmin}|${dmax}`;
+    const cacheKey = `v13|${dmin}|${dmax}`;
     const noCache = req.query.nocache === '1' || req.query.nocache === 'true';
     if (!noCache) {
       const cached = OVL_CACHE.get(cacheKey);
