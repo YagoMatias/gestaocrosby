@@ -33,7 +33,7 @@ import {
   WhatsappLogo,
   Phone,
 } from 'phosphor-react';
-import { Pencil, Target } from 'phosphor-react';
+import { Pencil, Target, Crown } from 'phosphor-react';
 import PageTitle from '../components/ui/PageTitle';
 import {
   Card,
@@ -3298,6 +3298,7 @@ export default function FaturamentoCanal() {
             // { id: 'pagamento', label: 'Forma de Pagamento', icon: CreditCard },
             { id: 'vendedores', label: 'Métricas por Canal', icon: ChartBar },
             { id: 'metricas-diarias', label: 'Métricas Diárias', icon: Target },
+            { id: 'metricas-diretoria', label: 'Métricas Diretoria', icon: Crown },
           ].map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -5102,53 +5103,61 @@ export default function FaturamentoCanal() {
             <PromessaVendedores />
             <VendedoresMensal />
             <ComparativoAnual />
+          </div>
+        )}
 
-            {/* Métricas Diretoria — Faturamento Detalhado por Canal (Mês / Semana / Ontem) */}
-            <div className="space-y-4 pt-4">
-              <div className="bg-gradient-to-r from-purple-700 via-purple-800 to-purple-700 text-white rounded-xl px-5 py-3 shadow-md">
-                <h2 className="text-base font-extrabold">Faturamento Detalhado por Canal</h2>
-                <p className="text-xs text-purple-200 mt-0.5">
-                  Visão executiva consolidada · faturamento por loja e por vendedor
-                </p>
+        {/* ─────────────── Aba: MÉTRICAS DIRETORIA ─────────────── */}
+        {aba === 'metricas-diretoria' && (
+          <div className="space-y-4">
+            <div className="bg-gradient-to-r from-[#1a0b3d] via-[#3b1d70] to-[#1a0b3d] text-white rounded-xl px-5 py-4 shadow-md flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/10 p-2.5 rounded-lg">
+                  <Crown size={20} weight="duotone" className="text-amber-300" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-extrabold">Métricas Diretoria</h2>
+                  <p className="text-xs text-purple-200 mt-0.5">
+                    Visão executiva consolidada · faturamento de ontem por loja e por vendedor
+                  </p>
+                </div>
               </div>
-              {(() => {
-                const hoje = new Date();
-                const ontem = new Date(hoje);
-                ontem.setDate(ontem.getDate() - 1);
-                while (ontem.getDay() === 0) ontem.setDate(ontem.getDate() - 1);
-                const fim = ontem.toISOString().slice(0, 10);
-                const fimHoje = hoje.toISOString().slice(0, 10);
-                const segunda = new Date(hoje);
-                const dow = segunda.getDay() === 0 ? 7 : segunda.getDay();
-                segunda.setDate(segunda.getDate() - (dow - 1));
-                const iniSemana = segunda.toISOString().slice(0, 10);
-                const iniMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
-                return (
-                  <>
-                    <FaturamentoOntemVendedorLoja
-                      titulo="Faturamento Detalhado por Canal — Mês Atual"
-                      datemin={iniMes}
-                      datemax={fimHoje}
-                      periodo="mes"
-                      corHeader="amber"
-                    />
-                    <FaturamentoOntemVendedorLoja
-                      titulo="Faturamento Detalhado por Canal — Semana Atual"
-                      datemin={iniSemana}
-                      datemax={fim}
-                      periodo="semana"
-                      corHeader="blue"
-                      delayMs={1500}
-                    />
-                    <FaturamentoOntemVendedorLoja
-                      titulo="Faturamento Detalhado por Canal — Ontem"
-                      periodo="ontem"
-                      corHeader="emerald"
-                    />
-                  </>
-                );
-              })()}
             </div>
+            {(() => {
+              const hoje = new Date();
+              const ontem = new Date(hoje);
+              ontem.setDate(ontem.getDate() - 1);
+              while (ontem.getDay() === 0) ontem.setDate(ontem.getDate() - 1);
+              const fimOntem = ontem.toISOString().slice(0, 10);
+              const segunda = new Date(hoje);
+              const dow = segunda.getDay() === 0 ? 7 : segunda.getDay();
+              segunda.setDate(segunda.getDate() - (dow - 1));
+              const iniSemana = segunda.toISOString().slice(0, 10);
+              const iniMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
+              return (
+                <>
+                  <FaturamentoOntemVendedorLoja
+                    titulo="Faturamento Detalhado por Canal — Mês Atual"
+                    datemin={iniMes}
+                    datemax={fimOntem}
+                    periodo="mes"
+                    corHeader="amber"
+                  />
+                  <FaturamentoOntemVendedorLoja
+                    titulo="Faturamento Detalhado por Canal — Semana Atual"
+                    datemin={iniSemana}
+                    datemax={fimOntem}
+                    periodo="semana"
+                    corHeader="blue"
+                    delayMs={1500}
+                  />
+                  <FaturamentoOntemVendedorLoja
+                    titulo="Faturamento Detalhado por Canal — Ontem"
+                    periodo="ontem"
+                    corHeader="emerald"
+                  />
+                </>
+              );
+            })()}
           </div>
         )}
 
