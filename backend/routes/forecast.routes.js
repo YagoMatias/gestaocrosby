@@ -1117,7 +1117,7 @@ router.get(
     const diaIso = dmax; // pra single-seller usa o dia final do range
 
     // Cache hit (TTL 30min). v11 = força refetch (per_seller veio vazio antes)
-    const cacheKey = `v11|${dmin}|${dmax}`;
+    const cacheKey = `v12|${dmin}|${dmax}`;
     const noCache = req.query.nocache === '1' || req.query.nocache === 'true';
     if (!noCache) {
       const cached = OVL_CACHE.get(cacheKey);
@@ -1274,11 +1274,13 @@ router.get(
         // (segs). Garante que o canal nunca fica "sumido" da lista.
         let vendedoresB2R = vendedoresB2R_oficial;
         let vendedoresB2M = vendedoresB2M_oficial;
-        if (vendedoresB2R.length === 0 && Number(segs.revenda || 0) > 0) {
-          vendedoresB2R = [{ nome: 'Revenda', valor: Math.round(Number(segs.revenda) * 100) / 100 }];
+        // SEMPRE exibe o canal (mesmo zerado) pra manter consistência visual:
+        // o frontend mostra zerados com opacidade reduzida.
+        if (vendedoresB2R.length === 0) {
+          vendedoresB2R = [{ nome: 'Revenda', valor: Math.round(Number(segs.revenda || 0) * 100) / 100 }];
         }
-        if (vendedoresB2M.length === 0 && Number(segs.multimarcas || 0) > 0) {
-          vendedoresB2M = [{ nome: 'Multimarcas', valor: Math.round(Number(segs.multimarcas) * 100) / 100 }];
+        if (vendedoresB2M.length === 0) {
+          vendedoresB2M = [{ nome: 'Multimarcas', valor: Math.round(Number(segs.multimarcas || 0) * 100) / 100 }];
         }
         // Mesmo fallback pra varejo: se ranking-faturamento falhou mas o cache
         // tem o total agregado, mostra 1 linha "Varejo (total)".

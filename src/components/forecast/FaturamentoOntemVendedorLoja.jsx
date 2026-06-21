@@ -17,7 +17,7 @@ const fmtDataBr = (iso) => {
 // Cache localStorage — exibe instantâneo no mount, atualiza em background.
 // TTL 30min (intra-dia muda pouco; cron canal_totals_cache também não é
 // mais frequente que isso).
-const LS_PREFIX = 'ovl-cache-v13:'; // v13 = força refetch fresh com per_seller
+const LS_PREFIX = 'ovl-cache-v14:'; // v14 = sempre mostra B2R/B2M (zerados ok)
 const LS_TTL_MS = 30 * 60 * 1000;
 const lsKey = (periodo, datemin, datemax) =>
   `${LS_PREFIX}${periodo || 'ontem'}|${datemin || ''}|${datemax || ''}`;
