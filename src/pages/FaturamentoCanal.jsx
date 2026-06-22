@@ -2129,6 +2129,8 @@ export default function FaturamentoCanal() {
   const [bluecredStats, setBluecredStats] = useState(null); // BlueCred (Autentique): { total, por_status }
   const [bluecardCount, setBluecardCount] = useState(null); // BlueCard (ClickUp): número de enviados
   const [modalWppDetail, setModalWppDetail] = useState(false); // modal gasto WhatsApp por número
+  const [clientesCanal, setClientesCanal] = useState(null); // { varejo: {ativos, novos}, ... }
+  const [modalClientesCanal, setModalClientesCanal] = useState(false);
   const [vendedores, setVendedores] = useState(null);
   const [loadingVend, setLoadingVend] = useState(false);
   const [rankingFat, setRankingFat] = useState(null);
@@ -2196,6 +2198,17 @@ export default function FaturamentoCanal() {
     setCustoAds(null);
     setBluecredStats(null);
     setBluecardCount(null);
+    setClientesCanal(null);
+
+    // Clientes ativos + novos por canal (paralelo, leve)
+    fetchBuscar(`${API_BASE_URL}/api/crm/clientes-por-canal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ datemin: dataInicio, datemax: dataFim }),
+    })
+      .then((r) => r.json())
+      .then((j) => { if (j?.success) setClientesCanal(j.data); })
+      .catch(() => setClientesCanal(null));
 
     // BlueCred — clientes classificados como BLUE CRED no TOTVS
     // (typeCode=55 / code='8'). Lê de pessoas_bluecred (Supabase).
@@ -3620,6 +3633,41 @@ export default function FaturamentoCanal() {
                       )}
                     </div>
                   )}
+
+                  {/* Card: Clientes Ativos / Novos (clicável → abre modal) */}
+                  {clientesCanal && (() => {
+                    const CANAIS_EXIBIR = ['varejo', 'revenda', 'multimarcas', 'inbound_david', 'inbound_rafael'];
+                    const filtrados = Object.entries(clientesCanal).filter(([c]) => CANAIS_EXIBIR.includes(c));
+                    const totAtivos = filtrados.reduce((s, [, v]) => s + Number(v?.ativos || 0), 0);
+                    const totNovos = filtrados.reduce((s, [, v]) => s + Number(v?.novos || 0), 0);
+                    return (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setModalClientesCanal(true)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setModalClientesCanal(true); } }}
+                        className="bg-emerald-500/10 hover:bg-emerald-500/20 backdrop-blur-sm border border-emerald-400/30 hover:border-emerald-400/50 rounded-lg px-3 py-2 min-w-0 cursor-pointer transition-colors group"
+                        title="Clique para ver clientes por canal"
+                      >
+                        <p className="text-[10px] text-emerald-200/80 uppercase tracking-wider font-medium flex items-center justify-between gap-2">
+                          <span>Clientes</span>
+                          <span className="text-[9px] text-emerald-300/60 group-hover:text-emerald-200 normal-case tracking-normal font-normal">
+                            ver por canal →
+                          </span>
+                        </p>
+                        <div className="flex items-baseline gap-3 mt-1">
+                          <div>
+                            <span className="text-[9px] text-emerald-300/70 uppercase tracking-wider">Ativos</span>
+                            <p className="text-base font-bold text-emerald-200 tabular-nums leading-tight">{totAtivos.toLocaleString('pt-BR')}</p>
+                          </div>
+                          <div>
+                            <span className="text-[9px] text-emerald-300/70 uppercase tracking-wider">Novos</span>
+                            <p className="text-base font-bold text-emerald-200 tabular-nums leading-tight">+{totNovos.toLocaleString('pt-BR')}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {resultado.credev_total > 0 && (() => {
                     const liquido =
@@ -5191,6 +5239,101 @@ export default function FaturamentoCanal() {
           onClose={() => setModalWppDetail(false)}
         />
       )}
+
+      {/* Modal: clientes ativos/novos por canal */}
+      {modalClientesCanal && clientesCanal && (() => {
+        const CANAIS_EXIBIR = ['varejo', 'revenda', 'multimarcas', 'inbound_david', 'inbound_rafael'];
+        const labelMap = {
+          varejo: 'Varejo',
+          revenda: 'Revenda',
+          multimarcas: 'Multimarcas',
+          inbound_david: 'MTM Inbound David',
+          inbound_rafael: 'MTM Inbound Rafael',
+        };
+        const corPorCanal = {
+          varejo: { bg: 'bg-blue-50', text: 'text-blue-700', ring: 'ring-blue-200' },
+          revenda: { bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-200' },
+          multimarcas: { bg: 'bg-purple-50', text: 'text-purple-700', ring: 'ring-purple-200' },
+          inbound_david: { bg: 'bg-pink-50', text: 'text-pink-700', ring: 'ring-pink-200' },
+          inbound_rafael: { bg: 'bg-fuchsia-50', text: 'text-fuchsia-700', ring: 'ring-fuchsia-200' },
+        };
+        const linhas = CANAIS_EXIBIR
+          .map((c) => ({ canal: c, ...(clientesCanal[c] || { ativos: 0, novos: 0, total_clientes_periodo: 0, janela_dias: 60 }) }))
+          .sort((a, b) => b.ativos - a.ativos);
+        const totAtivos = linhas.reduce((s, l) => s + l.ativos, 0);
+        const totNovos = linhas.reduce((s, l) => s + l.novos, 0);
+        return (
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setModalClientesCanal(false)}
+          >
+            <div
+              className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-gradient-to-r from-emerald-700 via-emerald-800 to-emerald-700 text-white px-6 py-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-extrabold">Clientes por Canal</h3>
+                  <p className="text-xs text-emerald-200 mt-0.5">
+                    {dataInicio} → {dataFim} · ativos = comprou na janela do canal
+                  </p>
+                </div>
+                <button
+                  onClick={() => setModalClientesCanal(false)}
+                  className="bg-white/10 hover:bg-white/20 rounded-lg p-2 transition"
+                  aria-label="Fechar"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+                {/* Totais */}
+                <div className="grid grid-cols-2 gap-3 mb-5">
+                  <div className="bg-emerald-50 rounded-xl p-4 ring-1 ring-emerald-200">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700">Total Ativos</p>
+                    <p className="text-2xl font-extrabold text-emerald-900 tabular-nums mt-1">{totAtivos.toLocaleString('pt-BR')}</p>
+                    <p className="text-[10px] text-emerald-600 mt-0.5">clientes com NF na janela do canal</p>
+                  </div>
+                  <div className="bg-amber-50 rounded-xl p-4 ring-1 ring-amber-200">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-amber-700">Total Novos</p>
+                    <p className="text-2xl font-extrabold text-amber-900 tabular-nums mt-1">+{totNovos.toLocaleString('pt-BR')}</p>
+                    <p className="text-[10px] text-amber-600 mt-0.5">1ª compra dentro do período</p>
+                  </div>
+                </div>
+                {/* Linhas por canal */}
+                <div className="space-y-2">
+                  {linhas.map((l) => {
+                    const cor = corPorCanal[l.canal] || { bg: 'bg-gray-50', text: 'text-gray-700', ring: 'ring-gray-200' };
+                    return (
+                      <div
+                        key={l.canal}
+                        className={`${cor.bg} ring-1 ${cor.ring} rounded-xl px-4 py-3 flex items-center justify-between gap-3`}
+                      >
+                        <div>
+                          <p className={`text-sm font-bold ${cor.text}`}>{labelMap[l.canal]}</p>
+                          <p className="text-[10px] text-gray-500 mt-0.5">
+                            Janela ativos: {l.janela_dias} dias · {l.total_clientes_periodo?.toLocaleString('pt-BR')} compraram no período
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <div className="text-right">
+                            <p className="text-[9px] uppercase tracking-wider font-bold text-gray-500">Ativos</p>
+                            <p className={`text-lg font-extrabold tabular-nums ${cor.text}`}>{l.ativos.toLocaleString('pt-BR')}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[9px] uppercase tracking-wider font-bold text-amber-600">Novos</p>
+                            <p className="text-lg font-extrabold tabular-nums text-amber-700">+{l.novos.toLocaleString('pt-BR')}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal de edição de metas (admin) */}
       {metaEdit && (

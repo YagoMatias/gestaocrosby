@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import cron from 'node-cron';
 import evolutionPool from '../config/evolution.js';
+import { createClient } from '@supabase/supabase-js';
 import {
   listUazapiInstances,
   listUazapiInstancesRaw,
@@ -2794,6 +2795,136 @@ router.post(
 //     Retorna clientes (is_customer=true) com aniversário no dia.
 //     Query opcional: ?date=YYYY-MM-DD (default: hoje em America/Sao_Paulo).
 // ---------------------------------------------------------------------------
+// ─── /api/crm/clientes-por-canal ────────────────────────────────────────────
+// Retorna, por canal, quantidade de clientes ATIVOS e NOVOS no período.
+//   • Ativos: clientes com NF no canal dentro do "janela de atividade":
+//       Varejo/Revenda/Franquia/Business: 60 dias antes de datemax
+//       Multimarcas/Inbound David/Rafael/Showroom/Novidades/Bazar/RE: 90 dias
+//   • Novos: clientes cuja PRIMEIRA NF no canal está em [datemin, datemax]
+//
+// Body: { datemin, datemax }
+// Resposta: { varejo: {ativos, novos, total_clientes}, revenda: {...}, ... }
+// ───────────────────────────────────────────────────────────────────────────
+router.post(
+  '/clientes-por-canal',
+  asyncHandler(async (req, res) => {
+    const { datemin, datemax } = req.body || {};
+    if (!datemin || !datemax) {
+      return errorResponse(res, 'datemin e datemax obrigatórios', 400, 'MISSING_DATES');
+    }
+
+    // Janela de atividade (dias) por canal — quanto tempo sem comprar conta como inativo
+    const JANELA_ATIVO = {
+      varejo: 60,
+      revenda: 60,
+      franquia: 60,
+      business: 60,
+      multimarcas: 90,
+      inbound_david: 90,
+      inbound_rafael: 90,
+      showroom: 90,
+      novidadesfranquia: 90,
+      bazar: 90,
+      ricardoeletro: 90,
+    };
+
+    // Mesmas configs de canais usadas em CANAL_CONFIG (filtros NF)
+    const CONFIGS = {
+      varejo:           { ops: [545,546,548,510,511,521,522,9001,9009,9017,9027,1], branchs: [2,5,55,65,87,88,90,93,94,95,97], sellers: null },
+      revenda:          { ops: [7236,9122,5102,7242,9061,9001,9121,512], branchs: [2,5,75,99,200], sellers: [25,15,161,165,241,779,288,251,131,94,1924,7044] },
+      multimarcas:      { ops: [7235,7241,9127,200], branchs: [99,2,95,87,88,90,94,97], excludeSellers: [21,26,69] },
+      inbound_david:    { ops: [7235,7241,9127], branchs: [99,2,95,87,88,90,94,97], sellers: [26,69] },
+      inbound_rafael:   { ops: [7235,7241,9127], branchs: [99], sellers: [21] },
+      franquia:         { ops: [7234,7240,7802,9124,7259], branchs: null, excludeSellers: [21,26,69] },
+      business:         { ops: [7237,7269,7279,7277], branchs: null, sellers: [20] },
+      bazar:            { ops: [7253], branchs: null, sellers: null },
+      showroom:         { ops: [7254,7007], branchs: null, sellers: null },
+      novidadesfranquia:{ ops: [7255], branchs: null, sellers: null },
+      ricardoeletro:    { ops: [5102], branchs: [11,111], sellers: null },
+    };
+
+    const getDominantDealer = (items) => {
+      const cnt = new Map();
+      for (const it of items || []) for (const p of it.products || []) {
+        if (p.dealerCode != null) cnt.set(Number(p.dealerCode), (cnt.get(Number(p.dealerCode)) || 0) + 1);
+      }
+      if (!cnt.size) return null;
+      return [...cnt.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    };
+
+    // Pra detectar NOVOS, precisamos olhar histórico completo do canal (pelo
+    // menos 2 anos pra trás), porque "primeira NF" do cliente pode ter sido
+    // antes do datemin. Buscar tudo desde 2024.
+    const HISTORY_START = '2024-01-01';
+    const ATIVO_INI = (dias) => new Date(new Date(`${datemax}T00:00:00Z`).getTime() - dias * 86400000).toISOString().slice(0, 10);
+
+    const supabaseFiscal = createClient(
+      process.env.SUPABASE_FISCAL_URL,
+      process.env.SUPABASE_FISCAL_KEY,
+    );
+
+    // Buscar TODAS NFs do canal com paginação Supabase (1000/página)
+    const buscarNFsCanal = async (cfg) => {
+      const PAGE = 1000;
+      const todasNFs = [];
+      for (let from = 0; ; from += PAGE) {
+        let q = supabaseFiscal
+          .from('notas_fiscais')
+          .select('person_code, issue_date, items, dealer_code')
+          .gte('issue_date', HISTORY_START)
+          .lte('issue_date', datemax)
+          .in('operation_code', cfg.ops)
+          .neq('invoice_status', 'Canceled')
+          .neq('invoice_status', 'Deleted')
+          .range(from, from + PAGE - 1);
+        if (cfg.branchs) q = q.in('branch_code', cfg.branchs);
+        const { data, error } = await q;
+        if (error) break;
+        if (!data?.length) break;
+        todasNFs.push(...data);
+        if (data.length < PAGE) break;
+      }
+      return todasNFs;
+    };
+
+    const result = {};
+    for (const [canal, cfg] of Object.entries(CONFIGS)) {
+      const dias = JANELA_ATIVO[canal] || 60;
+      const limiteAtivo = ATIVO_INI(dias);
+      const nfs = await buscarNFsCanal(cfg);
+      // Filtra por dealer (sellers/excludeSellers)
+      const porCliente = new Map(); // person_code → [datas]
+      for (const nf of nfs) {
+        const pc = Number(nf.person_code);
+        if (!pc || pc >= 100000000) continue; // exclui internas
+        const dealer = getDominantDealer(nf.items) ?? Number(nf.dealer_code);
+        if (cfg.sellers && !cfg.sellers.includes(dealer)) continue;
+        if (cfg.excludeSellers && cfg.excludeSellers.includes(dealer)) continue;
+        if (!porCliente.has(pc)) porCliente.set(pc, []);
+        porCliente.get(pc).push(nf.issue_date);
+      }
+      let ativos = 0, novos = 0;
+      for (const [, datas] of porCliente) {
+        datas.sort();
+        const primeira = datas[0];
+        const ultima = datas[datas.length - 1];
+        if (ultima >= limiteAtivo) ativos++;
+        if (primeira >= datemin && primeira <= datemax) novos++;
+      }
+      result[canal] = {
+        ativos,
+        novos,
+        total_clientes_periodo: Array.from(porCliente.entries()).filter(([, datas]) =>
+          datas.some((d) => d >= datemin && d <= datemax),
+        ).length,
+        janela_dias: dias,
+      };
+    }
+
+    successResponse(res, result, 'Clientes por canal');
+  }),
+);
+
 // ───────────────────────────────────────────────────────────────────────────
 // LEAD GENERATION
 // Endpoints de prospecção/ligação:
