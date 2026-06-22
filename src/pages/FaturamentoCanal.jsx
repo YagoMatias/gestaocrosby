@@ -2131,6 +2131,7 @@ export default function FaturamentoCanal() {
   const [modalWppDetail, setModalWppDetail] = useState(false); // modal gasto WhatsApp por número
   const [clientesCanal, setClientesCanal] = useState(null); // { varejo: {ativos, novos}, ... }
   const [modalClientesCanal, setModalClientesCanal] = useState(false);
+  const [modalROI, setModalROI] = useState(false);
   const [vendedores, setVendedores] = useState(null);
   const [loadingVend, setLoadingVend] = useState(false);
   const [rankingFat, setRankingFat] = useState(null);
@@ -3633,6 +3634,39 @@ export default function FaturamentoCanal() {
                       )}
                     </div>
                   )}
+
+                  {/* Card: ROI / ROAS (Marketing) — clicável → abre modal */}
+                  {(custoWpp || custoAds) && resultado && (() => {
+                    const wppBRL = Number(custoWpp?.costBRL ?? (custoWpp?.cost ?? 0) * 5.8 ?? 0);
+                    const adsBRL = Number(custoAds?.spend || 0);
+                    const totMkt = wppBRL + adsBRL;
+                    const receita = Number(resultado.total_liquido ?? resultado.total ?? 0);
+                    const roi = totMkt > 0 ? ((receita - totMkt) / totMkt) * 100 : 0;
+                    const roas = totMkt > 0 ? receita / totMkt : 0;
+                    return (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setModalROI(true)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setModalROI(true); } }}
+                        className="bg-cyan-500/10 hover:bg-cyan-500/20 backdrop-blur-sm border border-cyan-400/30 hover:border-cyan-400/50 rounded-lg px-3 py-2 min-w-0 cursor-pointer transition-colors group"
+                        title="Clique para ver ROI por canal"
+                      >
+                        <p className="text-[10px] text-cyan-200/80 uppercase tracking-wider font-medium flex items-center justify-between gap-2">
+                          <span>ROI Marketing</span>
+                          <span className="text-[9px] text-cyan-300/60 group-hover:text-cyan-200 normal-case tracking-normal font-normal">
+                            ver por canal →
+                          </span>
+                        </p>
+                        <p className="text-base font-bold text-cyan-200 mt-1 tabular-nums leading-tight">
+                          {roi.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%
+                        </p>
+                        <p className="text-[10px] text-cyan-300/80 mt-0.5">
+                          ROAS <b className="text-cyan-100 tabular-nums">{roas.toFixed(1)}x</b> · invest. R$ {formatBRL(totMkt)}
+                        </p>
+                      </div>
+                    );
+                  })()}
 
                   {/* Card: Clientes Ativos / Novos (clicável → abre modal) */}
                   {clientesCanal && (() => {
@@ -5239,6 +5273,145 @@ export default function FaturamentoCanal() {
           onClose={() => setModalWppDetail(false)}
         />
       )}
+
+      {/* Modal: ROI / ROAS por canal */}
+      {modalROI && resultado && (() => {
+        const CANAIS_EXIBIR = ['varejo', 'revenda', 'multimarcas', 'inbound_david', 'inbound_rafael'];
+        const labelMap = {
+          varejo: 'Varejo',
+          revenda: 'Revenda',
+          multimarcas: 'Multimarcas',
+          inbound_david: 'MTM Inbound David',
+          inbound_rafael: 'MTM Inbound Rafael',
+        };
+        const corPorCanal = {
+          varejo: { bg: 'bg-blue-50', text: 'text-blue-700', ring: 'ring-blue-200' },
+          revenda: { bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-200' },
+          multimarcas: { bg: 'bg-purple-50', text: 'text-purple-700', ring: 'ring-purple-200' },
+          inbound_david: { bg: 'bg-pink-50', text: 'text-pink-700', ring: 'ring-pink-200' },
+          inbound_rafael: { bg: 'bg-fuchsia-50', text: 'text-fuchsia-700', ring: 'ring-fuchsia-200' },
+        };
+        // Receita por canal (resultado.por_canal pode vir com diferentes shapes)
+        const receitaPorCanal = {};
+        const segs = resultado.segmentos || resultado.por_canal || {};
+        if (Array.isArray(resultado.canais)) {
+          for (const c of resultado.canais) {
+            const k = c.canal || c.canal_key || c.key;
+            if (k) receitaPorCanal[k] = Number(c.valor || c.fat_realizado || c.realizado || 0);
+          }
+        } else {
+          for (const [k, v] of Object.entries(segs)) {
+            receitaPorCanal[k] = Number(typeof v === 'object' ? (v.total || v.valor || 0) : v);
+          }
+        }
+        // Custo marketing por canal
+        const wppByCanal = custoWpp?.by_canal || {};
+        const adsByCanal = custoAds?.by_canal || {};
+        const linhas = CANAIS_EXIBIR.map((c) => {
+          const receita = Number(receitaPorCanal[c] || 0);
+          const wpp = Number(wppByCanal[c]?.costBRL || wppByCanal[c]?.cost * 5.8 || 0);
+          const ads = Number(adsByCanal[c]?.spend || 0);
+          const custo = wpp + ads;
+          const roi = custo > 0 ? ((receita - custo) / custo) * 100 : null;
+          const roas = custo > 0 ? receita / custo : null;
+          return { canal: c, receita, wpp, ads, custo, roi, roas };
+        }).sort((a, b) => (b.roi ?? -Infinity) - (a.roi ?? -Infinity));
+        const totReceita = linhas.reduce((s, l) => s + l.receita, 0);
+        const totWpp = linhas.reduce((s, l) => s + l.wpp, 0);
+        const totAds = linhas.reduce((s, l) => s + l.ads, 0);
+        const totCusto = totWpp + totAds;
+        const roiGeral = totCusto > 0 ? ((totReceita - totCusto) / totCusto) * 100 : 0;
+        const roasGeral = totCusto > 0 ? totReceita / totCusto : 0;
+        return (
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setModalROI(false)}
+          >
+            <div
+              className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-gradient-to-r from-cyan-700 via-cyan-800 to-cyan-700 text-white px-6 py-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-extrabold">ROI Marketing por Canal</h3>
+                  <p className="text-xs text-cyan-200 mt-0.5">
+                    {dataInicio} → {dataFim} · investimento = WhatsApp API + Tráfego Pago (Meta Ads)
+                  </p>
+                </div>
+                <button
+                  onClick={() => setModalROI(false)}
+                  className="bg-white/10 hover:bg-white/20 rounded-lg p-2 transition"
+                  aria-label="Fechar"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+                {/* Totais geral */}
+                <div className="grid grid-cols-3 gap-3 mb-5">
+                  <div className="bg-cyan-50 rounded-xl p-4 ring-1 ring-cyan-200">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-cyan-700">ROI</p>
+                    <p className="text-2xl font-extrabold text-cyan-900 tabular-nums mt-1">
+                      {roiGeral.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%
+                    </p>
+                    <p className="text-[10px] text-cyan-600 mt-0.5">(Receita − Custo) ÷ Custo</p>
+                  </div>
+                  <div className="bg-emerald-50 rounded-xl p-4 ring-1 ring-emerald-200">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700">ROAS</p>
+                    <p className="text-2xl font-extrabold text-emerald-900 tabular-nums mt-1">{roasGeral.toFixed(2)}x</p>
+                    <p className="text-[10px] text-emerald-600 mt-0.5">Receita ÷ Custo</p>
+                  </div>
+                  <div className="bg-amber-50 rounded-xl p-4 ring-1 ring-amber-200">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-amber-700">Investido</p>
+                    <p className="text-2xl font-extrabold text-amber-900 tabular-nums mt-1">R$ {formatBRL(totCusto)}</p>
+                    <p className="text-[10px] text-amber-600 mt-0.5">
+                      WhatsApp R$ {formatBRL(totWpp)} · Ads R$ {formatBRL(totAds)}
+                    </p>
+                  </div>
+                </div>
+                {/* Tabela por canal */}
+                <div className="space-y-2">
+                  {linhas.map((l) => {
+                    const cor = corPorCanal[l.canal] || { bg: 'bg-gray-50', text: 'text-gray-700', ring: 'ring-gray-200' };
+                    return (
+                      <div
+                        key={l.canal}
+                        className={`${cor.bg} ring-1 ${cor.ring} rounded-xl px-4 py-3`}
+                      >
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <div>
+                            <p className={`text-sm font-bold ${cor.text}`}>{labelMap[l.canal]}</p>
+                            <p className="text-[10px] text-gray-500 mt-0.5">
+                              Receita R$ {formatBRL(l.receita)} · Investido R$ {formatBRL(l.custo)} (Wpp R$ {formatBRL(l.wpp)} + Ads R$ {formatBRL(l.ads)})
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-5 shrink-0">
+                            <div className="text-right">
+                              <p className="text-[9px] uppercase tracking-wider font-bold text-gray-500">ROAS</p>
+                              <p className={`text-lg font-extrabold tabular-nums ${l.roas != null ? cor.text : 'text-gray-300'}`}>
+                                {l.roas != null ? `${l.roas.toFixed(2)}x` : '—'}
+                              </p>
+                            </div>
+                            <div className="text-right min-w-[80px]">
+                              <p className="text-[9px] uppercase tracking-wider font-bold text-gray-500">ROI</p>
+                              <p className={`text-lg font-extrabold tabular-nums ${l.roi != null ? (l.roi >= 0 ? 'text-emerald-700' : 'text-rose-700') : 'text-gray-300'}`}>
+                                {l.roi != null ? `${l.roi.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%` : '—'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-4 text-[11px] text-gray-500 bg-gray-50 rounded-lg p-3 border border-gray-200">
+                  <p><b>ROI</b> = (Receita − Custo) ÷ Custo · positivo = lucro. <b>ROAS</b> = Receita ÷ Custo · acima de 1x = receita maior que investimento. Canais sem investimento (—) não têm gasto rastreado de WhatsApp/Meta Ads atribuído.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal: clientes ativos/novos por canal */}
       {modalClientesCanal && clientesCanal && (() => {
