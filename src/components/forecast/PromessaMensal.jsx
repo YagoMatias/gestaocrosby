@@ -17,6 +17,7 @@ import {
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../../config/constants';
 import EnviarWhatsappModal from './EnviarWhatsappModal';
+import useDownloadAsImage from '../../hooks/useDownloadAsImage';
 import {
   MetricaHeader,
   KpiStripe,
@@ -73,6 +74,7 @@ export default function PromessaMensal() {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
   const [showWhats, setShowWhats] = useState(false);
+  const { ref: downloadRef, baixar: baixarImagem } = useDownloadAsImage(() => `promessa-mensal-${ano}-${String(mes).padStart(2,'0')}`);
   const [untilToday, setUntilToday] = useState(false);
   const cardRef = useRef(null);
   // Token anti-race: descarta resposta obsoleta quando filtros mudam rápido.
@@ -166,7 +168,7 @@ export default function PromessaMensal() {
   ] : [];
 
   return (
-    <div ref={cardRef} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+    <div ref={(el) => { cardRef.current = el; downloadRef.current = el; }} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
       <MetricaHeader
         title="Promessa Mensal por Canal"
         subtitle={`${MESES[mes - 1]} ${ano}${data ? ` · ${data.dias_uteis_decorridos}/${data.dias_uteis_total} dias úteis` : ''}`}
@@ -179,7 +181,7 @@ export default function PromessaMensal() {
         setUntilToday={setUntilToday}
         onRefresh={carregar}
         loading={loading}
-        onWhatsapp={() => setShowWhats(true)}
+        onDownload={baixarImagem}
       />
 
       <PeriodoToolbar

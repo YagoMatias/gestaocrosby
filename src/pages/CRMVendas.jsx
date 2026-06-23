@@ -47,6 +47,7 @@ const ChatPanel = lazy(() => import('../components/crm/ChatPanel'));
 const ConversaoView = lazy(() => import('../components/crm/ConversaoView'));
 const PainelGeral = lazy(() => import('../components/crm/PainelGeral'));
 const LeadGeneration = lazy(() => import('../components/crm/LeadGeneration'));
+const ContatosView = lazy(() => import('../components/crm/ContatosView'));
 
 const LazyFallback = () => (
   <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
@@ -1003,6 +1004,7 @@ export default function CRMVendas() {
               modulo={modulo}
             />
           )}
+          {tab === 'contatos' && <ContatosView modulo={modulo} />}
         </Suspense>
       </div>
 

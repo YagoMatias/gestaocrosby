@@ -17,6 +17,7 @@ import {
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../../config/constants';
 import EnviarWhatsappModal from './EnviarWhatsappModal';
+import useDownloadAsImage from '../../hooks/useDownloadAsImage';
 import {
   MetricaHeader,
   KpiStripe,
@@ -97,6 +98,7 @@ export default function PromessaSemanal() {
   const [showWhats, setShowWhats] = useState(false);
   const [untilToday, setUntilToday] = useState(false);
   const cardRef = useRef(null);
+  const { ref: downloadRef, baixar: baixarImagem } = useDownloadAsImage(() => `promessa-semanal-${ano}-W${String(semana).padStart(2,'0')}`);
   // Token anti-race: descarta resposta obsoleta quando filtros mudam rápido.
   const reqIdRef = useRef(0);
 
@@ -170,7 +172,7 @@ export default function PromessaSemanal() {
   ] : [];
 
   return (
-    <div ref={cardRef} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+    <div ref={(el) => { cardRef.current = el; downloadRef.current = el; }} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
       <MetricaHeader
         title="Promessa Semanal por Canal"
         subtitle={
@@ -187,7 +189,7 @@ export default function PromessaSemanal() {
         setUntilToday={setUntilToday}
         onRefresh={carregar}
         loading={loading}
-        onWhatsapp={() => setShowWhats(true)}
+        onDownload={baixarImagem}
       />
 
       <PeriodoToolbar

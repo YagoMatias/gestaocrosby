@@ -2680,6 +2680,119 @@ router.post(
   }),
 );
 
+// ─── /api/crm/canal-per-seller-fallback ─────────────────────────────────
+// Retorna per_seller agrupado por dealer_code do canal a partir de
+// notas_fiscais (Supabase fiscal). Usado como FALLBACK do drill-down
+// quando /canal-totals do TOTVS dá timeout e per_seller volta vazio.
+// Rápido (~1s) — query direta com filtros do CANAL_CONFIG.
+//   POST { datemin, datemax, modulo }
+// ───────────────────────────────────────────────────────────────────────────
+router.post(
+  '/canal-per-seller-fallback',
+  asyncHandler(async (req, res) => {
+    const { datemin, datemax, modulo } = req.body || {};
+    if (!datemin || !datemax || !modulo) {
+      return errorResponse(res, 'datemin, datemax e modulo obrigatórios', 400, 'MISSING_PARAMS');
+    }
+    const cfg = CANAL_CONFIG[modulo];
+    if (!cfg) return errorResponse(res, `Canal ${modulo} inválido`, 400, 'BAD_CANAL');
+
+    // Nomes via v_vendedores_integracao
+    const dealerNames = {};
+    try {
+      const { data: vends } = await supabase
+        .from('v_vendedores_integracao')
+        .select('totvs_id, nome_vendedor');
+      for (const v of vends || []) {
+        if (v.totvs_id != null && v.nome_vendedor) {
+          dealerNames[Number(v.totvs_id)] = String(v.nome_vendedor).trim();
+        }
+      }
+    } catch {}
+
+    // Mapa branch_code → nome (lojas varejo). Pra varejo retornar per_branch.
+    const VAREJO_LOJAS_NAMES = {
+      2:  'João Pessoa',     5:  'Nova Cruz',       55: 'Parnamirim',
+      65: 'Canguaretama',    87: 'Cidade Jardim',   88: 'Guararapes',
+      90: 'Ayrton Senna',    93: 'Imperatriz',      94: 'Patos',
+      95: 'Midway',          97: 'Teresina',        98: 'Shopping Recife',
+    };
+
+    // NFs do canal (Supabase fiscal)
+    try {
+      let allRows = [];
+      let from = 0;
+      while (true) {
+        let q = supabaseFiscal
+          .from('notas_fiscais')
+          .select('dealer_code, branch_code, total_value, invoice_status, operation_type')
+          .gte('issue_date', datemin).lte('issue_date', datemax)
+          .range(from, from + 999);
+        if (cfg.branchs?.length) q = q.in('branch_code', cfg.branchs);
+        if (cfg.operations?.length) q = q.in('operation_code', cfg.operations);
+        if (cfg.sellers?.length) q = q.in('dealer_code', cfg.sellers);
+        if (cfg.excludeSellers?.length) {
+          q = q.not('dealer_code', 'in', `(${cfg.excludeSellers.join(',')})`);
+        }
+        const { data, error } = await q;
+        if (error || !data?.length) break;
+        allRows.push(...data);
+        if (data.length < 1000) break;
+        from += 1000;
+      }
+      const valid = allRows.filter(
+        (n) => n.invoice_status !== 'Canceled' && n.invoice_status !== 'Deleted',
+      );
+      const porDealer = new Map();
+      const porBranch = new Map();
+      for (const n of valid) {
+        const sinal = n.operation_type === 'Input' ? -1 : 1;
+        const v = sinal * Number(n.total_value || 0);
+        // Per seller (dealer)
+        const dc = Number(n.dealer_code);
+        if (dc) {
+          if (!porDealer.has(dc)) porDealer.set(dc, { invoice_value: 0, invoice_qty: 0 });
+          const cur = porDealer.get(dc);
+          cur.invoice_value += v;
+          cur.invoice_qty += sinal;
+        }
+        // Per branch (loja) — útil para varejo
+        const bc = Number(n.branch_code);
+        if (bc) {
+          if (!porBranch.has(bc)) porBranch.set(bc, { invoice_value: 0, invoice_qty: 0 });
+          const cur = porBranch.get(bc);
+          cur.invoice_value += v;
+          cur.invoice_qty += sinal;
+        }
+      }
+      const per_seller = [...porDealer.entries()]
+        .map(([code, agg]) => ({
+          seller_code: code,
+          seller_name: dealerNames[code] || `Vend. ${code}`,
+          invoice_value: Math.round(Math.max(0, agg.invoice_value) * 100) / 100,
+          invoice_qty: Math.max(0, agg.invoice_qty),
+          itens_qty: 0,
+        }))
+        .filter((s) => s.invoice_value > 0)
+        .sort((a, b) => b.invoice_value - a.invoice_value);
+      const per_branch = [...porBranch.entries()]
+        .map(([code, agg]) => ({
+          branch_code: code,
+          branch_name: VAREJO_LOJAS_NAMES[code] || `Filial ${code}`,
+          invoice_value: Math.round(Math.max(0, agg.invoice_value) * 100) / 100,
+          invoice_qty: Math.max(0, agg.invoice_qty),
+          itens_qty: 0,
+        }))
+        .filter((b) => b.invoice_value > 0)
+        .sort((a, b) => b.invoice_value - a.invoice_value);
+      return successResponse(res, { modulo, per_seller, per_branch, source: 'notas_fiscais-fallback' });
+    } catch (e) {
+      console.warn(`[canal-per-seller-fallback ${modulo}] erro: ${e.message}`);
+      return errorResponse(res, e.message, 500, 'FALLBACK_ERROR');
+    }
+  }),
+);
+
 // ─── /api/crm/canais-totals-all ─────────────────────────────────────────
 // Retorna o faturamento de TODOS os canais usando a mesma lógica do
 // /api/crm/canal-totals (sale-panel + credev + franquia exclusion).
@@ -2715,25 +2828,42 @@ router.post(
       'novidadesfranquia',
       'ricardoeletro',
     ];
+    // ?nocache=true|1 → pula cache Supabase e força TOTVS direto.
+    // Usado por Métricas Diretoria pra garantir dado atualizado em tempo real.
+    const noCache =
+      req.query?.nocache === 'true' ||
+      req.query?.nocache === '1' ||
+      req.body?.nocache === true ||
+      req.body?.nocache === 1;
+
     // 1º) Tenta cache canal_totals_cache (Supabase). Match exato OU fuzzy:
     // mesmo datemin E datemax dentro de 2 dias de tolerância. Resposta instant.
     const cacheSupabase = {};
-    try {
-      const { data: cacheRows } = await supabase
-        .from('canal_totals_cache')
-        .select('canal, datemin, datemax, valor_liquido')
-        .eq('datemin', datemin);
-      // Filtra cache rows com datemax dentro de 2 dias da query
-      const reqEnd = new Date(`${datemax}T00:00:00Z`).getTime();
-      for (const r of cacheRows || []) {
-        const rowEnd = new Date(`${r.datemax}T00:00:00Z`).getTime();
-        const diffDays = Math.abs(rowEnd - reqEnd) / (24 * 3600 * 1000);
-        if (diffDays <= 2) cacheSupabase[r.canal] = Number(r.valor_liquido || 0);
-      }
-      if (Object.keys(cacheSupabase).length > 0) {
-        console.log(`[canais-all] cache HIT (${datemin}~${datemax}): ${Object.keys(cacheSupabase).length} canais (fuzzy ≤2d)`);
-      }
-    } catch (e) { console.warn(`[canais-all] cache lookup falhou: ${e.message}`); }
+    // Mapa paralelo de credev por canal — pra retornar credev_total agregado.
+    const credevSupabase = {};
+    if (!noCache) {
+      try {
+        const { data: cacheRows } = await supabase
+          .from('canal_totals_cache')
+          .select('canal, datemin, datemax, valor_liquido, credev')
+          .eq('datemin', datemin);
+        // Filtra cache rows com datemax dentro de 2 dias da query
+        const reqEnd = new Date(`${datemax}T00:00:00Z`).getTime();
+        for (const r of cacheRows || []) {
+          const rowEnd = new Date(`${r.datemax}T00:00:00Z`).getTime();
+          const diffDays = Math.abs(rowEnd - reqEnd) / (24 * 3600 * 1000);
+          if (diffDays <= 2) {
+            cacheSupabase[r.canal] = Number(r.valor_liquido || 0);
+            credevSupabase[r.canal] = Number(r.credev || 0);
+          }
+        }
+        if (Object.keys(cacheSupabase).length > 0) {
+          console.log(`[canais-all] cache HIT (${datemin}~${datemax}): ${Object.keys(cacheSupabase).length} canais (fuzzy ≤2d)`);
+        }
+      } catch (e) { console.warn(`[canais-all] cache lookup falhou: ${e.message}`); }
+    } else {
+      console.log(`[canais-all] nocache=true → pula cache Supabase, TOTVS direto`);
+    }
 
     // Anti-sobrecarga TOTVS: processa em BATCHES de 4 (não 11 em paralelo).
     const BATCH_SIZE = 4;
@@ -2747,7 +2877,7 @@ router.post(
             return { modulo, ct: { invoice_value: cacheSupabase[modulo], invoice_qty: 0, itens_qty: 0 } };
           }
           try {
-            const ct = await getCanalTotalsCached(modulo, datemin, datemax, { lite: liteMode });
+            const ct = await getCanalTotalsCached(modulo, datemin, datemax, { lite: liteMode, nocache: noCache });
             return { modulo, ct };
           } catch (err) {
             console.warn(`[canais-all ${modulo}] erro: ${err.message}`);
@@ -2760,26 +2890,68 @@ router.post(
     const segmentos = {};
     const segmentosQty = {};
     const segmentosItens = {};
+    const credevPorCanal = {};
     let total = 0;
     let totalQty = 0;
     let totalItens = 0;
+    let credev_total = 0;
     for (const { modulo, ct } of results) {
       const v = Number(ct?.invoice_value || 0);
       const q = Number(ct?.invoice_qty || 0);
       const i = Number(ct?.itens_qty || 0);
+      // credev: prefere o retornado pelo canal-totals; se vier do cache, usa o cache
+      const cr = Number(ct?.credev_total ?? ct?.credev_value ?? credevSupabase[modulo] ?? 0);
       segmentos[modulo] = v;
       segmentosQty[modulo] = q;
       segmentosItens[modulo] = i;
+      credevPorCanal[modulo] = cr;
       total += v;
       totalQty += q;
       totalItens += i;
+      credev_total += cr;
     }
+
+    // ─── Fallback credev via notas_fiscais Supabase ──────────────────────
+    // Se cache não tem credev preenchido, soma devoluções (Input) com ops
+    // de devolução conhecidas em qualquer canal. Query única, ~200ms.
+    if (credev_total <= 0) {
+      try {
+        const DEVOL_OPS = [
+          // varejo
+          66, 555, 1152, 360, 20,
+          // revenda/multimarcas/inbound
+          7244, 7245, 1214, 7790,
+          // ricardoeletro
+          5153, 5152,
+        ];
+        const sbf = createClient(process.env.SUPABASE_FISCAL_URL, process.env.SUPABASE_FISCAL_KEY);
+        let totDev = 0; let from = 0;
+        while (true) {
+          const { data, error } = await sbf
+            .from('notas_fiscais')
+            .select('total_value, operation_code, branch_code')
+            .gte('issue_date', datemin).lte('issue_date', datemax)
+            .eq('operation_type', 'Input')
+            .in('operation_code', DEVOL_OPS)
+            .neq('invoice_status', 'Canceled').neq('invoice_status', 'Deleted')
+            .range(from, from + 999);
+          if (error || !data?.length) break;
+          totDev += data.reduce((s, r) => s + Number(r.total_value || 0), 0);
+          if (data.length < 1000) break;
+          from += 1000;
+        }
+        credev_total = Math.round(totDev * 100) / 100;
+      } catch (e) { console.warn(`[canais-all credev-fb] ${e.message}`); }
+    }
+
     return successResponse(
       res,
       {
         segmentos,
         segmentosQty,
         segmentosItens,
+        credevPorCanal,
+        credev_total: Math.round(credev_total * 100) / 100,
         total,
         totalQty,
         totalItens,
@@ -2815,113 +2987,783 @@ router.post(
 
     // Janela de atividade (dias) por canal — quanto tempo sem comprar conta como inativo
     const JANELA_ATIVO = {
-      varejo: 60,
+      varejo: 365,
       revenda: 60,
       franquia: 60,
       business: 60,
-      multimarcas: 90,
-      inbound_david: 90,
-      inbound_rafael: 90,
-      showroom: 90,
-      novidadesfranquia: 90,
-      bazar: 90,
-      ricardoeletro: 90,
+      multimarcas: 180,
+      inbound_david: 180,
+      inbound_rafael: 180,
+      showroom: 180,
+      novidadesfranquia: 180,
+      bazar: 180,
+      ricardoeletro: 180,
     };
 
-    // Mesmas configs de canais usadas em CANAL_CONFIG (filtros NF)
+    // Mesmas configs de canais usadas em CANAL_CONFIG (filtros NF).
+    // devolucaoOps: ops de DEVOLUÇÃO (operation_type=Input) — subtraídas
+    // pra calcular receita LÍQUIDA por cliente.
     const CONFIGS = {
-      varejo:           { ops: [545,546,548,510,511,521,522,9001,9009,9017,9027,1], branchs: [2,5,55,65,87,88,90,93,94,95,97], sellers: null },
-      revenda:          { ops: [7236,9122,5102,7242,9061,9001,9121,512], branchs: [2,5,75,99,200], sellers: [25,15,161,165,241,779,288,251,131,94,1924,7044] },
-      multimarcas:      { ops: [7235,7241,9127,200], branchs: [99,2,95,87,88,90,94,97], excludeSellers: [21,26,69] },
-      inbound_david:    { ops: [7235,7241,9127], branchs: [99,2,95,87,88,90,94,97], sellers: [26,69] },
-      inbound_rafael:   { ops: [7235,7241,9127], branchs: [99], sellers: [21] },
-      franquia:         { ops: [7234,7240,7802,9124,7259], branchs: null, excludeSellers: [21,26,69] },
-      business:         { ops: [7237,7269,7279,7277], branchs: null, sellers: [20] },
-      bazar:            { ops: [7253], branchs: null, sellers: null },
-      showroom:         { ops: [7254,7007], branchs: null, sellers: null },
-      novidadesfranquia:{ ops: [7255], branchs: null, sellers: null },
-      ricardoeletro:    { ops: [5102], branchs: [11,111], sellers: null },
+      varejo:           { ops: [545,546,548,510,511,521,522,9001,9009,9017,9027,1], devolucaoOps: [66,555,1152,360,20], branchs: [2,5,55,65,87,88,90,93,94,95,97], sellers: null },
+      revenda:          { ops: [7236,9122,5102,7242,9061,9001,9121,512], devolucaoOps: [7245,20,1214,7790], branchs: [2,5,75,99,200], sellers: [25,15,161,165,241,779,288,251,131,94,1924,7044] },
+      multimarcas:      { ops: [7235,7241,9127,200], devolucaoOps: [7244,7245,1214], branchs: [99,2,95,87,88,90,94,97], excludeSellers: [21,26,69] },
+      inbound_david:    { ops: [7235,7241,9127], devolucaoOps: [7244,7245,1214], branchs: [99,2,95,87,88,90,94,97], sellers: [26,69] },
+      inbound_rafael:   { ops: [7235,7241,9127], devolucaoOps: [7244,7245,1214], branchs: [99], sellers: [21] },
+      franquia:         { ops: [7234,7240,7802,9124,7259], devolucaoOps: [7244,7245], branchs: null, excludeSellers: [21,26,69] },
+      business:         { ops: [7237,7269,7279,7277], devolucaoOps: [], branchs: null, sellers: [20] },
+      bazar:            { ops: [7253], devolucaoOps: [], branchs: null, sellers: null },
+      showroom:         { ops: [7254,7007], devolucaoOps: [], branchs: null, sellers: null },
+      novidadesfranquia:{ ops: [7255], devolucaoOps: [], branchs: null, sellers: null },
+      ricardoeletro:    { ops: [5102], devolucaoOps: [5153,5152], branchs: [11,111], sellers: null },
     };
 
-    const getDominantDealer = (items) => {
-      const cnt = new Map();
-      for (const it of items || []) for (const p of it.products || []) {
-        if (p.dealerCode != null) cnt.set(Number(p.dealerCode), (cnt.get(Number(p.dealerCode)) || 0) + 1);
-      }
-      if (!cnt.size) return null;
-      return [...cnt.entries()].sort((a, b) => b[1] - a[1])[0][0];
-    };
-
-    // Pra detectar NOVOS, precisamos olhar histórico completo do canal (pelo
-    // menos 2 anos pra trás), porque "primeira NF" do cliente pode ter sido
-    // antes do datemin. Buscar tudo desde 2024.
+    // Pra detectar NOVOS, precisamos olhar histórico completo do canal.
     const HISTORY_START = '2024-01-01';
     const ATIVO_INI = (dias) => new Date(new Date(`${datemax}T00:00:00Z`).getTime() - dias * 86400000).toISOString().slice(0, 10);
+    const prevDayIso = (iso) =>
+      new Date(new Date(`${iso}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10);
 
     const supabaseFiscal = createClient(
       process.env.SUPABASE_FISCAL_URL,
       process.env.SUPABASE_FISCAL_KEY,
     );
 
-    // Buscar TODAS NFs do canal com paginação Supabase (1000/página)
-    const buscarNFsCanal = async (cfg) => {
+    // Otimizado: 3 queries por canal (em vez de varrer TODAS NFs desde 2024)
+    //  Q1 — NFs do PERÍODO: pra somar receita LÍQUIDA (Output − Input)
+    //  Q2 — person_codes ATIVOS (NF entre janela_inicio e datemax)
+    //  Q3 — person_codes que tiveram NF ANTES de datemin (saber quem é novo)
+    const buscarPersonsRange = async (cfg, dateFrom, dateTo, selectCols = 'person_code', operationType = null) => {
       const PAGE = 1000;
-      const todasNFs = [];
+      const todas = [];
       for (let from = 0; ; from += PAGE) {
         let q = supabaseFiscal
           .from('notas_fiscais')
-          .select('person_code, issue_date, items, dealer_code')
-          .gte('issue_date', HISTORY_START)
-          .lte('issue_date', datemax)
+          .select(selectCols)
+          .gte('issue_date', dateFrom)
+          .lte('issue_date', dateTo)
           .in('operation_code', cfg.ops)
           .neq('invoice_status', 'Canceled')
           .neq('invoice_status', 'Deleted')
           .range(from, from + PAGE - 1);
         if (cfg.branchs) q = q.in('branch_code', cfg.branchs);
+        if (cfg.sellers) q = q.in('dealer_code', cfg.sellers);
+        if (cfg.excludeSellers) q = q.not('dealer_code', 'in', `(${cfg.excludeSellers.join(',')})`);
         const { data, error } = await q;
-        if (error) break;
-        if (!data?.length) break;
-        todasNFs.push(...data);
+        if (error || !data?.length) break;
+        todas.push(...data);
         if (data.length < PAGE) break;
       }
-      return todasNFs;
+      return todas;
+    };
+
+    // Helper pra buscar DEVOLUÇÕES (operation_type=Input + devolucaoOps).
+    const buscarDevolucoesRange = async (cfg, dateFrom, dateTo) => {
+      if (!cfg.devolucaoOps?.length) return [];
+      const PAGE = 1000;
+      const todas = [];
+      for (let from = 0; ; from += PAGE) {
+        let q = supabaseFiscal
+          .from('notas_fiscais')
+          .select('person_code, total_value')
+          .eq('operation_type', 'Input')
+          .gte('issue_date', dateFrom).lte('issue_date', dateTo)
+          .in('operation_code', cfg.devolucaoOps)
+          .neq('invoice_status', 'Canceled')
+          .neq('invoice_status', 'Deleted')
+          .range(from, from + PAGE - 1);
+        if (cfg.branchs) q = q.in('branch_code', cfg.branchs);
+        if (cfg.sellers) q = q.in('dealer_code', cfg.sellers);
+        if (cfg.excludeSellers) q = q.not('dealer_code', 'in', `(${cfg.excludeSellers.join(',')})`);
+        const { data, error } = await q;
+        if (error || !data?.length) break;
+        todas.push(...data);
+        if (data.length < PAGE) break;
+      }
+      return todas;
     };
 
     const result = {};
-    for (const [canal, cfg] of Object.entries(CONFIGS)) {
+    const promises = Object.entries(CONFIGS).map(async ([canal, cfg]) => {
       const dias = JANELA_ATIVO[canal] || 60;
       const limiteAtivo = ATIVO_INI(dias);
-      const nfs = await buscarNFsCanal(cfg);
-      // Filtra por dealer (sellers/excludeSellers)
-      const porCliente = new Map(); // person_code → [datas]
-      for (const nf of nfs) {
-        const pc = Number(nf.person_code);
-        if (!pc || pc >= 100000000) continue; // exclui internas
-        const dealer = getDominantDealer(nf.items) ?? Number(nf.dealer_code);
-        if (cfg.sellers && !cfg.sellers.includes(dealer)) continue;
-        if (cfg.excludeSellers && cfg.excludeSellers.includes(dealer)) continue;
-        if (!porCliente.has(pc)) porCliente.set(pc, []);
-        porCliente.get(pc).push(nf.issue_date);
+      // ── 4 queries em paralelo ──
+      // Q1: Vendas (Output) do período — soma bruto
+      // Q2: Devoluções (Input + devolucaoOps) do período — subtrai do bruto
+      // Q3: ATIVOS (Output na janela) — count clientes
+      // Q4: ANTERIORES (Output antes do período) — define "novo"
+      const [vendasPeriodo, devolPeriodo, ativosRaw, anterioresRaw] = await Promise.all([
+        buscarPersonsRange(cfg, datemin, datemax, 'person_code, total_value, operation_type'),
+        buscarDevolucoesRange(cfg, datemin, datemax),
+        buscarPersonsRange(cfg, limiteAtivo, datemax, 'person_code, operation_type'),
+        buscarPersonsRange(cfg, HISTORY_START, prevDayIso(datemin), 'person_code, operation_type'),
+      ]);
+      const nfsPeriodo = vendasPeriodo;
+      // Set de person_codes que já tinham NF (Output) antes → não são novos
+      const jaTinham = new Set();
+      for (const r of anterioresRaw) {
+        if (r.operation_type !== 'Output') continue;
+        const pc = Number(r.person_code);
+        if (pc && pc < 100000000) jaTinham.add(pc);
       }
-      let ativos = 0, novos = 0;
-      for (const [, datas] of porCliente) {
-        datas.sort();
-        const primeira = datas[0];
-        const ultima = datas[datas.length - 1];
-        if (ultima >= limiteAtivo) ativos++;
-        if (primeira >= datemin && primeira <= datemax) novos++;
+      // Set ATIVOS — só conta quem teve Output na janela (não devolução)
+      const ativosSet = new Set();
+      for (const r of ativosRaw) {
+        if (r.operation_type !== 'Output') continue;
+        const pc = Number(r.person_code);
+        if (pc && pc < 100000000) ativosSet.add(pc);
+      }
+      // Agrega receita LÍQUIDA por cliente NO PERÍODO.
+      //   Output (vendas das ops do canal) +
+      //   Input (devoluções das ops próprias do canal, se houver na Q1) −
+      //   Devoluções (Q2: devolucaoOps separadas)
+      // total_clientes_periodo: quem teve Output (vendeu) no período.
+      const noPeriodo = new Map();
+      const comprouNoPeriodo = new Set();
+      for (const r of nfsPeriodo) {
+        const pc = Number(r.person_code);
+        if (!pc || pc >= 100000000) continue;
+        const sinal = r.operation_type === 'Input' ? -1 : 1;
+        const val = sinal * Number(r.total_value || 0);
+        noPeriodo.set(pc, (noPeriodo.get(pc) || 0) + val);
+        if (r.operation_type === 'Output') comprouNoPeriodo.add(pc);
+      }
+      // Subtrai devoluções (Q2) dos clientes correspondentes
+      for (const r of devolPeriodo) {
+        const pc = Number(r.person_code);
+        if (!pc || pc >= 100000000) continue;
+        const v = Number(r.total_value || 0);
+        noPeriodo.set(pc, (noPeriodo.get(pc) || 0) - v);
+      }
+      let novos = 0, receita_total = 0, receita_novos = 0;
+      // Devolução órfã (cliente devolveu mas não comprou no canal): IGNORADA.
+      // As ops 7244/7245/1214 são compartilhadas com outros canais e podemos
+      // erroneamente subtrair devoluções de OUTROS canais. Subtrai só quando
+      // o cliente também comprou (devolução do que ele mesmo levou).
+      for (const pc of comprouNoPeriodo) {
+        const liquido = Math.max(0, noPeriodo.get(pc) || 0);
+        receita_total += liquido;
+        if (!jaTinham.has(pc)) {
+          novos++;
+          receita_novos += liquido;
+        }
       }
       result[canal] = {
-        ativos,
+        ativos: ativosSet.size,
         novos,
-        total_clientes_periodo: Array.from(porCliente.entries()).filter(([, datas]) =>
-          datas.some((d) => d >= datemin && d <= datemax),
-        ).length,
+        total_clientes_periodo: comprouNoPeriodo.size,
         janela_dias: dias,
+        receita_total: Math.round(receita_total * 100) / 100,
+        receita_novos: Math.round(receita_novos * 100) / 100,
       };
-    }
+    });
+    await Promise.all(promises);
 
     successResponse(res, result, 'Clientes por canal');
+  }),
+);
+
+// ─── /api/crm/recompra-por-canal ─────────────────────────────────────────
+// Taxa de recompra de QUALQUER canal, quebrada por loja (varejo) ou por
+// vendedor (B2R/B2M/inbound). Definição:
+//   • recorrente = cliente ATIVO no período cuja MESMA chave (loja ou vendedor)
+//     já vendeu pra ele nos 365 dias antes de datemin
+//   • taxa = recorrentes / ativos · 100%
+//
+// Body: { canal, datemin, datemax }
+// Resposta: { itens: [{ key, name, ativos, recorrentes, novos, taxa }], ... }
+// ───────────────────────────────────────────────────────────────────────────
+router.post(
+  '/recompra-por-canal',
+  asyncHandler(async (req, res) => {
+    const { canal, datemin, datemax } = req.body || {};
+    if (!canal || !datemin || !datemax) {
+      return errorResponse(res, 'canal, datemin, datemax obrigatórios', 400, 'MISSING_PARAMS');
+    }
+
+    // ─── Configs por canal (espelha CANAL_CONFIG mas só campos necessários) ──
+    const CFG = {
+      varejo: {
+        ops: [545, 546, 548, 510, 511, 521, 522, 9001, 9009, 9017, 9027, 1],
+        branchs: [2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97, 98],
+        dim: 'branch',
+        labelDim: 'Loja',
+      },
+      revenda: {
+        ops: [7236, 9122, 5102, 7242, 9061, 9001, 9121, 512],
+        branchs: [2, 5, 75, 99, 200],
+        sellers: [25, 15, 161, 165, 241, 779, 288, 251, 131, 94, 1924, 7044],
+        dim: 'dealer',
+        labelDim: 'Vendedor',
+      },
+      multimarcas: {
+        ops: [7235, 7241, 9127, 200],
+        branchs: [99, 2, 95, 87, 88, 90, 94, 97],
+        excludeSellers: [21, 26, 69],
+        dim: 'dealer',
+        labelDim: 'Vendedor',
+      },
+      inbound_david: {
+        ops: [7235, 7241, 9127],
+        branchs: [99, 2, 95, 87, 88, 90, 94, 97],
+        sellers: [26, 69],
+        dim: 'dealer',
+        labelDim: 'Vendedor',
+      },
+      inbound_rafael: {
+        ops: [7235, 7241, 9127],
+        branchs: [99],
+        sellers: [21],
+        dim: 'dealer',
+        labelDim: 'Vendedor',
+      },
+    };
+    const cfg = CFG[canal];
+    if (!cfg) return errorResponse(res, `canal "${canal}" não suportado`, 400, 'INVALID_CANAL');
+
+    const VAREJO_LOJAS_NAMES = {
+      2:  'João Pessoa',     5:  'Nova Cruz',       55: 'Parnamirim',
+      65: 'Canguaretama',    87: 'Cidade Jardim',   88: 'Guararapes',
+      90: 'Ayrton Senna',    93: 'Imperatriz',      94: 'Patos',
+      95: 'Midway',          97: 'Teresina',        98: 'Shopping Recife',
+    };
+    const BRANCH_NAMES_GERAL = {
+      ...VAREJO_LOJAS_NAMES,
+      75: 'Lagoa Center', 99: 'BLUE HOUSE', 200: 'PB-Outlet 200',
+    };
+
+    const histStart = new Date(new Date(`${datemin}T00:00:00Z`).getTime() - 365 * 86400000)
+      .toISOString().slice(0, 10);
+    const histEnd = new Date(new Date(`${datemin}T00:00:00Z`).getTime() - 86400000)
+      .toISOString().slice(0, 10);
+
+    const supabaseFiscal = createClient(
+      process.env.SUPABASE_FISCAL_URL,
+      process.env.SUPABASE_FISCAL_KEY,
+    );
+
+    const buscarPaginado = async (dateFrom, dateTo) => {
+      const PAGE = 1000;
+      const linhas = [];
+      for (let from = 0; ; from += PAGE) {
+        let q = supabaseFiscal
+          .from('notas_fiscais')
+          .select('person_code, branch_code, dealer_code, issue_date')
+          .gte('issue_date', dateFrom)
+          .lte('issue_date', dateTo)
+          .in('operation_code', cfg.ops)
+          .neq('invoice_status', 'Canceled')
+          .neq('invoice_status', 'Deleted')
+          .range(from, from + PAGE - 1);
+        if (cfg.branchs?.length) q = q.in('branch_code', cfg.branchs);
+        if (cfg.sellers?.length) q = q.in('dealer_code', cfg.sellers);
+        if (cfg.excludeSellers?.length) q = q.not('dealer_code', 'in', `(${cfg.excludeSellers.join(',')})`);
+        const { data, error } = await q;
+        if (error || !data?.length) break;
+        linhas.push(...data);
+        if (data.length < PAGE) break;
+      }
+      return linhas;
+    };
+
+    const [nfsPeriodo, nfsHist] = await Promise.all([
+      buscarPaginado(datemin, datemax),
+      buscarPaginado(histStart, histEnd),
+    ]);
+
+    // Resolve nomes dos vendedores via Supabase (v_vendedores_integracao)
+    // Colunas reais: totvs_id, nome_vendedor
+    const dealerNames = new Map();
+    if (cfg.dim === 'dealer') {
+      const allDealers = new Set();
+      for (const nf of nfsPeriodo) if (nf.dealer_code != null) allDealers.add(Number(nf.dealer_code));
+      for (const nf of nfsHist) if (nf.dealer_code != null) allDealers.add(Number(nf.dealer_code));
+      const codes = [...allDealers];
+      if (codes.length > 0) {
+        try {
+          const { data: vs } = await supabase
+            .from('v_vendedores_integracao')
+            .select('totvs_id, nome_vendedor')
+            .in('totvs_id', codes);
+          for (const v of vs || []) {
+            if (v?.totvs_id != null) {
+              dealerNames.set(Number(v.totvs_id), v.nome_vendedor || `Vend. ${v.totvs_id}`);
+            }
+          }
+        } catch (err) {
+          console.warn(`[recompra-por-canal] vendedores lookup falhou: ${err.message}`);
+        }
+      }
+    }
+
+    const keyOf = (nf) => cfg.dim === 'branch' ? Number(nf.branch_code) : Number(nf.dealer_code);
+
+    const periodoMap = new Map(); // key -> Set personCodes
+    const histMap = new Map();
+    for (const nf of nfsPeriodo) {
+      const k = keyOf(nf);
+      if (!Number.isFinite(k)) continue;
+      const pc = Number(nf.person_code);
+      if (!periodoMap.has(k)) periodoMap.set(k, new Set());
+      periodoMap.get(k).add(pc);
+    }
+    for (const nf of nfsHist) {
+      const k = keyOf(nf);
+      if (!Number.isFinite(k)) continue;
+      const pc = Number(nf.person_code);
+      if (!histMap.has(k)) histMap.set(k, new Set());
+      histMap.get(k).add(pc);
+    }
+
+    const nameOf = (key) => {
+      if (cfg.dim === 'branch') return BRANCH_NAMES_GERAL[key] || `Filial ${key}`;
+      return dealerNames.get(key) || `Vend. ${key}`;
+    };
+
+    const itens = [];
+    for (const [key, ativos] of periodoMap.entries()) {
+      const hist = histMap.get(key) || new Set();
+      let recorrentes = 0;
+      let novos = 0;
+      for (const pc of ativos) {
+        if (hist.has(pc)) recorrentes++;
+        else novos++;
+      }
+      const taxa = ativos.size > 0 ? recorrentes / ativos.size : 0;
+      itens.push({
+        key,
+        name: nameOf(key),
+        ativos: ativos.size,
+        recorrentes,
+        novos,
+        taxa: Math.round(taxa * 10000) / 100,
+      });
+    }
+    itens.sort((a, b) => b.taxa - a.taxa);
+
+    const totalAtivos = itens.reduce((s, l) => s + l.ativos, 0);
+    const totalRec = itens.reduce((s, l) => s + l.recorrentes, 0);
+    const taxaGeral = totalAtivos > 0 ? Math.round((totalRec / totalAtivos) * 10000) / 100 : 0;
+
+    return successResponse(
+      res,
+      {
+        canal,
+        dim: cfg.dim,
+        label_dim: cfg.labelDim,
+        itens,
+        total_ativos: totalAtivos,
+        total_recorrentes: totalRec,
+        taxa_geral: taxaGeral,
+        periodo: { datemin, datemax },
+        historico: { datemin: histStart, datemax: histEnd },
+      },
+      `Recompra ${canal} em ${itens.length} ${cfg.dim === 'branch' ? 'lojas' : 'vendedores'}`,
+    );
+  }),
+);
+
+// ─── /api/crm/clientes-do-canal ──────────────────────────────────────────
+// Lista cada cliente do canal no período: nome, vendedor, total NFs, total
+// vendido (líquido), status (novo/recorrente vs janela 365d), última compra.
+// Recomendado pra B2R/B2M/inbound (poucas centenas) — Varejo é gigante.
+//
+// Body: { canal, datemin, datemax }
+// Resposta: { clientes: [{ person_code, person_name, vendedor_nome, total_value,
+//   num_nfs, last_purchase, is_novo, is_recorrente }] }
+// ───────────────────────────────────────────────────────────────────────────
+router.post(
+  '/clientes-do-canal',
+  asyncHandler(async (req, res) => {
+    const { canal, datemin, datemax } = req.body || {};
+    if (!canal || !datemin || !datemax) {
+      return errorResponse(res, 'canal, datemin, datemax obrigatórios', 400, 'MISSING_PARAMS');
+    }
+
+    const CFG = {
+      varejo: {
+        ops: [545, 546, 548, 510, 511, 521, 522, 9001, 9009, 9017, 9027, 1],
+        branchs: [2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97, 98],
+      },
+      revenda: {
+        ops: [7236, 9122, 5102, 7242, 9061, 9001, 9121, 512],
+        branchs: [2, 5, 75, 99, 200],
+        sellers: [25, 15, 161, 165, 241, 779, 288, 251, 131, 94, 1924, 7044],
+      },
+      multimarcas: {
+        ops: [7235, 7241, 9127, 200],
+        branchs: [99, 2, 95, 87, 88, 90, 94, 97],
+        excludeSellers: [21, 26, 69],
+      },
+      inbound_david: {
+        ops: [7235, 7241, 9127],
+        branchs: [99, 2, 95, 87, 88, 90, 94, 97],
+        sellers: [26, 69],
+      },
+      inbound_rafael: {
+        ops: [7235, 7241, 9127],
+        branchs: [99],
+        sellers: [21],
+      },
+    };
+    const cfg = CFG[canal];
+    if (!cfg) return errorResponse(res, `canal "${canal}" não suportado`, 400, 'INVALID_CANAL');
+
+    const histStart = new Date(new Date(`${datemin}T00:00:00Z`).getTime() - 365 * 86400000)
+      .toISOString().slice(0, 10);
+    const histEnd = new Date(new Date(`${datemin}T00:00:00Z`).getTime() - 86400000)
+      .toISOString().slice(0, 10);
+
+    const supabaseFiscal = createClient(
+      process.env.SUPABASE_FISCAL_URL,
+      process.env.SUPABASE_FISCAL_KEY,
+    );
+
+    const buscarPaginado = async (dateFrom, dateTo, selectCols) => {
+      const PAGE = 1000;
+      const linhas = [];
+      for (let from = 0; ; from += PAGE) {
+        let q = supabaseFiscal
+          .from('notas_fiscais')
+          .select(selectCols)
+          .gte('issue_date', dateFrom)
+          .lte('issue_date', dateTo)
+          .in('operation_code', cfg.ops)
+          .neq('invoice_status', 'Canceled')
+          .neq('invoice_status', 'Deleted')
+          .range(from, from + PAGE - 1);
+        if (cfg.branchs?.length) q = q.in('branch_code', cfg.branchs);
+        if (cfg.sellers?.length) q = q.in('dealer_code', cfg.sellers);
+        if (cfg.excludeSellers?.length) q = q.not('dealer_code', 'in', `(${cfg.excludeSellers.join(',')})`);
+        const { data, error } = await q;
+        if (error || !data?.length) break;
+        linhas.push(...data);
+        if (data.length < PAGE) break;
+      }
+      return linhas;
+    };
+
+    const [nfsPeriodo, nfsHistSet] = await Promise.all([
+      buscarPaginado(
+        datemin,
+        datemax,
+        'person_code, person_name, dealer_code, total_value, issue_date, operation_type',
+      ),
+      buscarPaginado(histStart, histEnd, 'person_code'),
+    ]);
+
+    // Set de person_codes que já compraram antes (histórico)
+    const histSet = new Set();
+    for (const nf of nfsHistSet) {
+      if (nf.person_code != null) histSet.add(Number(nf.person_code));
+    }
+
+    // Resolve nomes dos vendedores
+    const dealerNames = new Map();
+    const allDealers = new Set();
+    for (const nf of nfsPeriodo) if (nf.dealer_code != null) allDealers.add(Number(nf.dealer_code));
+    if (allDealers.size > 0) {
+      try {
+        const { data: vs } = await supabase
+          .from('v_vendedores_integracao')
+          .select('totvs_id, nome_vendedor')
+          .in('totvs_id', [...allDealers]);
+        for (const v of vs || []) {
+          if (v?.totvs_id != null) dealerNames.set(Number(v.totvs_id), v.nome_vendedor || `Vend. ${v.totvs_id}`);
+        }
+      } catch {}
+    }
+
+    // Agrega por person_code: total vendido (Output - Input), número de NFs, última compra
+    const porCliente = new Map();
+    for (const nf of nfsPeriodo) {
+      const pc = Number(nf.person_code);
+      if (!Number.isFinite(pc)) continue;
+      const cur = porCliente.get(pc) || {
+        person_code: pc,
+        person_name: nf.person_name || `Cliente ${pc}`,
+        dealer_code: Number(nf.dealer_code) || null,
+        total_value: 0,
+        num_nfs: 0,
+        last_purchase: nf.issue_date,
+      };
+      const v = Number(nf.total_value || 0);
+      if (nf.operation_type === 'Output') {
+        cur.total_value += v;
+        cur.num_nfs += 1;
+      } else if (nf.operation_type === 'Input') {
+        cur.total_value -= v;
+      }
+      if (nf.issue_date > cur.last_purchase) cur.last_purchase = nf.issue_date;
+      if (nf.person_name && !cur.person_name.startsWith('Cliente ')) cur.person_name = nf.person_name;
+      porCliente.set(pc, cur);
+    }
+
+    const clientes = [...porCliente.values()].map((c) => ({
+      ...c,
+      total_value: Math.round(c.total_value * 100) / 100,
+      vendedor_nome: c.dealer_code != null ? (dealerNames.get(c.dealer_code) || `Vend. ${c.dealer_code}`) : null,
+      is_recorrente: histSet.has(c.person_code),
+      is_novo: !histSet.has(c.person_code),
+    })).sort((a, b) => b.total_value - a.total_value);
+
+    const totalRecorrentes = clientes.filter((c) => c.is_recorrente).length;
+    const totalNovos = clientes.filter((c) => c.is_novo).length;
+    const totalValueSupabase = clientes.reduce((s, c) => s + Number(c.total_value || 0), 0);
+
+    // Detecta sub-sincronização: compara soma do Supabase com canal_totals_cache (TOTVS).
+    // Se diferença > 10%, sinaliza aviso de "lista parcial".
+    let sub_sync_warning = null;
+    try {
+      const { data: cacheRow } = await supabase
+        .from('canal_totals_cache')
+        .select('valor_liquido')
+        .eq('canal', canal)
+        .eq('datemin', datemin)
+        .gte('datemax', datemax)
+        .limit(1);
+      const canalTotal = Number(cacheRow?.[0]?.valor_liquido || 0);
+      if (canalTotal > 0 && totalValueSupabase > 0) {
+        const diff = canalTotal - totalValueSupabase;
+        const diffPct = (diff / canalTotal) * 100;
+        if (diffPct > 10) {
+          sub_sync_warning = {
+            supabase_total: Math.round(totalValueSupabase * 100) / 100,
+            canal_total: Math.round(canalTotal * 100) / 100,
+            diff: Math.round(diff * 100) / 100,
+            diff_pct: Math.round(diffPct * 10) / 10,
+          };
+        }
+      } else if (canalTotal > 0 && totalValueSupabase === 0) {
+        sub_sync_warning = {
+          supabase_total: 0,
+          canal_total: Math.round(canalTotal * 100) / 100,
+          diff: Math.round(canalTotal * 100) / 100,
+          diff_pct: 100,
+        };
+      }
+    } catch (e) {
+      console.warn(`[clientes-do-canal] sub-sync check falhou: ${e.message}`);
+    }
+
+    return successResponse(
+      res,
+      {
+        canal,
+        clientes,
+        total_clientes: clientes.length,
+        total_recorrentes: totalRecorrentes,
+        total_novos: totalNovos,
+        total_value_supabase: Math.round(totalValueSupabase * 100) / 100,
+        sub_sync_warning,
+        periodo: { datemin, datemax },
+        historico: { datemin: histStart, datemax: histEnd },
+      },
+      `${clientes.length} clientes no canal ${canal}`,
+    );
+  }),
+);
+
+// ─── /api/crm/contatos-canal ─────────────────────────────────────────────
+// Lista TODOS os clientes que já compraram no canal (histórico completo).
+// Diferente de /clientes-do-canal que filtra por período.
+// Retorna: nome, telefone, vendedor predominante, última compra, total comprado,
+// nº NFs, primeira compra.
+//
+// Body: { canal, search?, page?, pageSize? }
+// Resposta: { contatos: [...], total, page, pageSize }
+// ───────────────────────────────────────────────────────────────────────────
+router.post(
+  '/contatos-canal',
+  asyncHandler(async (req, res) => {
+    const { canal, search, page = 1, pageSize = 50 } = req.body || {};
+    if (!canal) return errorResponse(res, 'canal obrigatório', 400, 'MISSING_CANAL');
+
+    const CFG = {
+      varejo: {
+        ops: [545, 546, 548, 510, 511, 521, 522, 9001, 9009, 9017, 9027, 1],
+        branchs: [2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97, 98],
+      },
+      revenda: {
+        ops: [7236, 9122, 5102, 7242, 9061, 9001, 9121, 512],
+        branchs: [2, 5, 75, 99, 200],
+        sellers: [25, 15, 161, 165, 241, 779, 288, 251, 131, 94, 1924, 7044],
+      },
+      multimarcas: {
+        ops: [7235, 7241, 9127, 200],
+        branchs: [99, 2, 95, 87, 88, 90, 94, 97],
+        excludeSellers: [21, 26, 69],
+      },
+      inbound_david: {
+        ops: [7235, 7241, 9127],
+        branchs: [99, 2, 95, 87, 88, 90, 94, 97],
+        sellers: [26, 69],
+      },
+      inbound_rafael: {
+        ops: [7235, 7241, 9127],
+        branchs: [99],
+        sellers: [21],
+      },
+    };
+    const cfg = CFG[canal];
+    if (!cfg) return errorResponse(res, `canal "${canal}" não suportado`, 400, 'INVALID_CANAL');
+
+    const supabaseFiscal = createClient(
+      process.env.SUPABASE_FISCAL_URL,
+      process.env.SUPABASE_FISCAL_KEY,
+    );
+
+    // Busca TODAS as NFs do canal (sem filtro de data — histórico completo)
+    const buscarTodas = async () => {
+      const PAGE = 1000;
+      const linhas = [];
+      for (let from = 0; ; from += PAGE) {
+        let q = supabaseFiscal
+          .from('notas_fiscais')
+          .select('person_code, person_name, dealer_code, total_value, issue_date, operation_type')
+          .in('operation_code', cfg.ops)
+          .neq('invoice_status', 'Canceled')
+          .neq('invoice_status', 'Deleted')
+          .range(from, from + PAGE - 1);
+        if (cfg.branchs?.length) q = q.in('branch_code', cfg.branchs);
+        if (cfg.sellers?.length) q = q.in('dealer_code', cfg.sellers);
+        if (cfg.excludeSellers?.length) q = q.not('dealer_code', 'in', `(${cfg.excludeSellers.join(',')})`);
+        const { data, error } = await q;
+        if (error || !data?.length) break;
+        linhas.push(...data);
+        if (data.length < PAGE) break;
+      }
+      return linhas;
+    };
+
+    const todasNFs = await buscarTodas();
+
+    // Resolve nome dos vendedores
+    const dealerNames = new Map();
+    const allDealers = new Set();
+    for (const nf of todasNFs) if (nf.dealer_code != null) allDealers.add(Number(nf.dealer_code));
+    if (allDealers.size > 0) {
+      try {
+        const { data: vs } = await supabase
+          .from('v_vendedores_integracao')
+          .select('totvs_id, nome_vendedor')
+          .in('totvs_id', [...allDealers]);
+        for (const v of vs || []) {
+          if (v?.totvs_id != null) dealerNames.set(Number(v.totvs_id), v.nome_vendedor || `Vend. ${v.totvs_id}`);
+        }
+      } catch {}
+    }
+
+    // Agrega por cliente
+    const porCliente = new Map();
+    const dealerCount = new Map(); // pro vendedor predominante por cliente
+    for (const nf of todasNFs) {
+      const pc = Number(nf.person_code);
+      if (!Number.isFinite(pc)) continue;
+      const v = Number(nf.total_value || 0);
+      const cur = porCliente.get(pc) || {
+        person_code: pc,
+        person_name: nf.person_name || `Cliente ${pc}`,
+        total_value: 0,
+        num_nfs: 0,
+        first_purchase: nf.issue_date,
+        last_purchase: nf.issue_date,
+      };
+      if (nf.operation_type === 'Output') {
+        cur.total_value += v;
+        cur.num_nfs += 1;
+      } else if (nf.operation_type === 'Input') {
+        cur.total_value -= v;
+      }
+      if (nf.issue_date < cur.first_purchase) cur.first_purchase = nf.issue_date;
+      if (nf.issue_date > cur.last_purchase) cur.last_purchase = nf.issue_date;
+      if (nf.person_name && !cur.person_name.startsWith('Cliente ')) cur.person_name = nf.person_name;
+      porCliente.set(pc, cur);
+      // Conta vendedor por cliente
+      if (nf.dealer_code != null) {
+        const key = `${pc}|${nf.dealer_code}`;
+        dealerCount.set(key, (dealerCount.get(key) || 0) + 1);
+      }
+    }
+
+    // Pra cada cliente, identifica vendedor predominante
+    for (const [pc, c] of porCliente.entries()) {
+      let bestDealer = null; let bestCount = 0;
+      for (const [key, cnt] of dealerCount.entries()) {
+        const [pcKey, dc] = key.split('|');
+        if (Number(pcKey) !== pc) continue;
+        if (cnt > bestCount) { bestCount = cnt; bestDealer = Number(dc); }
+      }
+      c.vendedor_code = bestDealer;
+      c.vendedor_nome = bestDealer != null ? (dealerNames.get(bestDealer) || `Vend. ${bestDealer}`) : null;
+      c.total_value = Math.round(c.total_value * 100) / 100;
+    }
+
+    // Lookup telefones via pes_pessoa (Supabase main)
+    // Schema real: telefone, email, uf, addresses (JSONB com city)
+    const pessoaCodes = [...porCliente.keys()];
+    if (pessoaCodes.length > 0) {
+      try {
+        const CHUNK = 800;
+        for (let i = 0; i < pessoaCodes.length; i += CHUNK) {
+          const batch = pessoaCodes.slice(i, i + CHUNK);
+          const { data: pessoas } = await supabase
+            .from('pes_pessoa')
+            .select('code, telefone, email, uf, addresses, phones')
+            .in('code', batch);
+          for (const p of pessoas || []) {
+            const cur = porCliente.get(Number(p.code));
+            if (cur) {
+              // Telefone: primeiro campo `telefone`, senão pega do array `phones`
+              let tel = p.telefone || null;
+              if (!tel && Array.isArray(p.phones) && p.phones.length > 0) {
+                tel = p.phones[0]?.number || null;
+              }
+              cur.telefone = tel;
+              cur.email = p.email || null;
+              cur.uf = p.uf || null;
+              // Cidade vem de addresses[0].city ou similar
+              if (Array.isArray(p.addresses) && p.addresses.length > 0) {
+                const addr = p.addresses[0];
+                cur.city = addr?.city || addr?.cityName || null;
+              } else {
+                cur.city = null;
+              }
+            }
+          }
+        }
+      } catch (e) { console.warn(`[contatos-canal] pes_pessoa erro: ${e.message}`); }
+    }
+
+    // Filtro de busca (nome ou code)
+    let contatos = [...porCliente.values()];
+    if (search && String(search).trim()) {
+      const q = String(search).trim().toLowerCase();
+      contatos = contatos.filter((c) => {
+        return String(c.person_name || '').toLowerCase().includes(q)
+          || String(c.person_code).includes(q)
+          || String(c.telefone || '').includes(q);
+      });
+    }
+
+    contatos.sort((a, b) => b.total_value - a.total_value);
+
+    const total = contatos.length;
+    const pageNum = Math.max(1, Number(page) || 1);
+    const psize = Math.min(500, Math.max(10, Number(pageSize) || 50));
+    const start = (pageNum - 1) * psize;
+    const paginados = contatos.slice(start, start + psize);
+
+    return successResponse(
+      res,
+      {
+        contatos: paginados,
+        total,
+        page: pageNum,
+        pageSize: psize,
+        canal,
+      },
+      `${total} contatos no canal ${canal}`,
+    );
   }),
 );
 
@@ -8373,11 +9215,10 @@ const CANAL_CONFIG = {
     operations: [7235, 7241, 9127],
     sellers: [21],
     allowedSellers: [21],
-    // ─── Filtro por UF do cliente ────────────────────────────────────────
-    // Só conta como inbound_rafael se cliente é dos estados MA, BA ou MG.
-    // NFs de outros estados vão pro canal multimarcas normal (spillover).
-    // Implementado via Supabase pes_pessoa + notas_fiscais — não toca TOTVS.
-    clientStatesAllow: ['MA', 'BA', 'MG'],
+    // UF filter removido (2026-06-22) — critério oficial: dealer_code=21 puro.
+    // Antes filtrava só MG/MA/BA, mas Supabase notas_fiscais ficou
+    // sub-sincronizado e o filter zerava NFs cujo cliente não tinha UF lookup.
+    // Restaurar configuração: clientStatesAllow: ['MA', 'BA', 'MG'].
     devolucaoOps: [7244, 7245, 1214],
     devolucaoBranchs: [99, 2, 95, 87, 88, 90, 94, 97],
     // ─── Whitelist manual de transações ─────────────────────────────────
@@ -11257,6 +12098,7 @@ const CANAL_TOTALS_INFLIGHT = new Map();
 // rodando ao mesmo tempo no mesmo período).
 async function getCanalTotalsCached(modulo, datemin, datemax, opts = {}) {
   const lite = !!opts.lite;
+  const nocache = !!opts.nocache;
   const cacheKey = `${modulo}|${datemin}|${datemax}${lite ? '|lite' : ''}`;
   const cached = CANAL_TOTALS_CACHE.get(cacheKey);
   // TTL alinhado com o endpoint /canal-totals: 1h pra realtime, 24h passado.
@@ -11268,7 +12110,7 @@ async function getCanalTotalsCached(modulo, datemin, datemax, opts = {}) {
   const effectiveTTL = isRealtime
     ? CANAL_TOTALS_CACHE_TTL_REALTIME
     : CANAL_TOTALS_CACHE_TTL;
-  if (cached && Date.now() - cached.ts < effectiveTTL) {
+  if (!nocache && cached && Date.now() - cached.ts < effectiveTTL) {
     return cached.data;
   }
   // Coalescing: se já existe request idêntica em curso, espera ela
@@ -11290,9 +12132,11 @@ async function getCanalTotalsCached(modulo, datemin, datemax, opts = {}) {
   // consistência absoluta entre Performance e Analytics.
   try {
     const port = process.env.PORT || 4100;
+    const qs = [lite ? 'lite=true' : null, nocache ? 'nocache=true' : null]
+      .filter(Boolean).join('&');
     const r = await axios.post(
-      `http://localhost:${port}/api/crm/canal-totals${lite ? '?lite=true' : ''}`,
-      { datemin, datemax, modulo, lite },
+      `http://localhost:${port}/api/crm/canal-totals${qs ? `?${qs}` : ''}`,
+      { datemin, datemax, modulo, lite, nocache },
       {
         headers: { 'Content-Type': 'application/json' },
         timeout: 600000,
@@ -11475,9 +12319,13 @@ router.post(
         }
       }
       // ─── Spillover Rafael → multimarcas ─────────────────────────────────
-      // NFs do Rafael de clientes FORA de MA/BA/MG entram no multimarcas.
-      // Adiciona aqui pra somar ao bruto do canal multimarcas.
-      if (modulo === 'multimarcas') {
+      // Só faz spillover SE inbound_rafael tiver clientStatesAllow ativo
+      // (filtra Rafael por UF). Sem filtro, TODAS NFs do Rafael já vão pro
+      // inbound_rafael — adicionar spillover aqui DUPLICA contagem.
+      if (
+        modulo === 'multimarcas' &&
+        Array.isArray(CANAL_CONFIG?.inbound_rafael?.clientStatesAllow)
+      ) {
         try {
           const split = await getRafaelUFSplit(datemin, datemax);
           if (split.outOfState > 0) {
@@ -13706,6 +14554,9 @@ router.post(
     ];
     try {
       const baseUrl = `http://localhost:${process.env.PORT || 4100}`;
+      // Pra B2M: separa dealers por canal individual.
+      const INBOUND_DAVID_VEND_FS = new Set([26, 69]);
+      const INBOUND_RAFAEL_VEND_FS = new Set([21]);
       await Promise.all(OVERRIDE_GRUPOS.map(async (g) => {
         try {
           const [sellersRes, credevRes] = await Promise.all([
@@ -13723,6 +14574,30 @@ router.post(
           const sellers = (sellersRes.data?.data || sellersRes.data)?.sellers || [];
           const credev = (credevRes.data?.data || credevRes.data)?.credev || {};
           const allow = new Set(g.sellers.map(Number));
+          if (g.canal === 'multimarcas') {
+            // Divide por canal (multimarcas/inbound_david/inbound_rafael)
+            // pra evitar double-counting (David/Rafael também aparecem em
+            // colunas inbound_david/inbound_rafael calculadas separadamente).
+            let mm = 0, david = 0, rafael = 0;
+            for (const s of sellers) {
+              const code = Number(s.seller_code);
+              if (!allow.has(code)) continue;
+              const bruto = Number(s.value || 0);
+              const cred = Number(credev[String(code)] || 0);
+              const liq = Math.max(0, bruto - cred);
+              if (INBOUND_DAVID_VEND_FS.has(code)) david += liq;
+              else if (INBOUND_RAFAEL_VEND_FS.has(code)) rafael += liq;
+              else mm += liq;
+            }
+            const prevMM = Number(segMap.multimarcas || 0);
+            segMap.multimarcas = Math.round(mm * 100) / 100;
+            segMap.inbound_david = Math.round(david * 100) / 100;
+            segMap.inbound_rafael = Math.round(rafael * 100) / 100;
+            console.log(
+              `[fat-seg B2M split painel-vend] multimarcas R$${prevMM.toFixed(2)} → R$${segMap.multimarcas.toFixed(2)} · inbound_david R$${segMap.inbound_david.toFixed(2)} · inbound_rafael R$${segMap.inbound_rafael.toFixed(2)}`,
+            );
+            return;
+          }
           let soma = 0;
           for (const s of sellers) {
             if (!allow.has(Number(s.seller_code))) continue;
@@ -13791,6 +14666,54 @@ router.post(
     }
 
     const total = Object.values(segMap).reduce((s, v) => s + v, 0);
+
+    // ─── Fallback Supabase pro credev ──────────────────────────────────────
+    // Quando o canal-totals do TOTVS retornou parcial e o credev ficou
+    // zerado/incompleto, lê devoluções de notas_fiscais (operation_type=Input)
+    // por canal usando os devolucaoOps/devolucaoBranchs do CANAL_CONFIG.
+    // Garante que o credev aparece mesmo quando o sale-panel está degradado.
+    try {
+      const canaisComCredev = ['varejo', 'revenda', 'multimarcas', 'inbound_david', 'inbound_rafael', 'franquia', 'ricardoeletro'];
+      const canaisSemCredev = canaisComCredev.filter(
+        (c) => Number(credev_por_segmento[c] || 0) === 0,
+      );
+      if (canaisSemCredev.length > 0) {
+        const { data: devNFs } = await supabaseFiscal
+          .from('notas_fiscais')
+          .select('operation_code, branch_code, dealer_code, total_value, invoice_status')
+          .eq('operation_type', 'Input')
+          .gte('issue_date', datemin)
+          .lte('issue_date', datemax)
+          .limit(10000);
+        const valid = (devNFs || []).filter(
+          (n) => n.invoice_status !== 'Canceled' && n.invoice_status !== 'Deleted',
+        );
+        for (const canal of canaisSemCredev) {
+          const cfg = CANAL_CONFIG[canal];
+          if (!cfg?.devolucaoOps?.length) continue;
+          const opsSet = new Set(cfg.devolucaoOps.map(Number));
+          const branchSet = cfg.devolucaoBranchs?.length
+            ? new Set(cfg.devolucaoBranchs.map(Number))
+            : null;
+          const sellerSet = cfg.allowedSellers?.length
+            ? new Set(cfg.allowedSellers.map(Number))
+            : null;
+          let cv = 0;
+          for (const n of valid) {
+            if (!opsSet.has(Number(n.operation_code))) continue;
+            if (branchSet && !branchSet.has(Number(n.branch_code))) continue;
+            if (sellerSet && !sellerSet.has(Number(n.dealer_code))) continue;
+            cv += Number(n.total_value || 0);
+          }
+          if (cv > 0) {
+            credev_por_segmento[canal] = cv;
+            console.log(`[fat-seg credev-fallback] ${canal} via notas_fiscais: R$ ${cv.toFixed(2)}`);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[fat-seg credev-fallback] erro: ${e.message}`);
+    }
 
     // Arredonda credev_por_segmento
     const credev_por_segmento_round = {};
@@ -14767,6 +15690,12 @@ router.post(
 
     // Helper: dealer dominante via items[].products[].dealerCode (TOTVS API)
     function getDealerCodeTx(nf) {
+      // NFs vindas via fiscal-movement (Ricardo Eletro) não trazem items[] —
+      // o sellerCode vem direto do payload TOTVS.
+      if (nf._source === 'fiscal-movement' && nf.sellerCode != null) {
+        const sc = Number(nf.sellerCode);
+        return Number.isFinite(sc) ? sc : null;
+      }
       if (!Array.isArray(nf.items) || nf.items.length === 0) return null;
       const netByDealer = {};
       for (const item of nf.items) {
@@ -14858,7 +15787,11 @@ router.post(
           const opCode = parseInt(it.operationCode);
           if (it.operationModel !== 'Sales') continue;
           if (opCodes && opCodes.length > 0 && !opCodes.includes(opCode)) continue;
-          // Adapta pro formato esperado pelo bloco de classificação
+          // fiscal-movement retorna: branchCode, productCode, personCode,
+          // representativeCode, movementDate, operationCode, operationModel,
+          // sellerCode, grossValue, netValue, quantity. NÃO retorna personName,
+          // operationName, transactionCode, invoiceCode, paymentInfo — esses
+          // serão enriquecidos depois via lookup Supabase.
           items.push({
             invoiceCode: it.invoiceCode ?? `fm-${it.movementId ?? page}-${items.length}`,
             transactionCode: it.transactionCode ?? null,
@@ -14869,6 +15802,7 @@ router.post(
             totalValue: parseFloat(it.netValue || it.grossValue || 0),
             operationCode: opCode,
             operationName: it.operationName ?? null,
+            sellerCode: it.sellerCode ?? it.representativeCode ?? null,
             issueDate: it.movementDate ?? null,
             items: [],
             payments: [],
@@ -14877,6 +15811,70 @@ router.post(
         }
         if (pageItems.length < 100) break;
         page++;
+      }
+      // ── Enrich: lookup person_name em pes_pessoa (Supabase) ──────────────
+      try {
+        const personCodes = [...new Set(items.map((it) => it.personCode).filter(Boolean))];
+        if (personCodes.length > 0) {
+          const pesNameMap = new Map();
+          for (let i = 0; i < personCodes.length; i += 800) {
+            const { data: pes } = await supabase
+              .from('pes_pessoa')
+              .select('code, nm_pessoa')
+              .in('code', personCodes.slice(i, i + 800));
+            for (const p of pes || []) {
+              if (p?.code != null) pesNameMap.set(Number(p.code), p.nm_pessoa);
+            }
+          }
+          for (const it of items) {
+            if (!it.personName && it.personCode) {
+              const nm = pesNameMap.get(Number(it.personCode));
+              if (nm) it.personName = nm;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`[tx-canal/fm enrich] pessoa lookup falhou: ${e.message}`);
+      }
+      // ── Enrich: lookup invoice_code/transaction_code via notas_fiscais ───
+      // Match (branch_code, person_code, operation_code, issue_date, total_value).
+      // Pode haver múltiplos matches, mas pra UI mostrar algo é suficiente.
+      try {
+        const personCodes = [...new Set(items.map((it) => it.personCode).filter(Boolean))];
+        const branchCodes = [...new Set(items.map((it) => it.branchCode).filter(Boolean))];
+        if (personCodes.length > 0) {
+          const { data: nfs } = await supabaseFiscal
+            .from('notas_fiscais')
+            .select('branch_code, person_code, operation_code, issue_date, total_value, invoice_code, transaction_code, operation_name')
+            .in('person_code', personCodes)
+            .in('branch_code', branchCodes)
+            .gte('issue_date', datemin).lte('issue_date', datemax);
+          // Index por chave de match
+          const nfMap = new Map();
+          for (const n of nfs || []) {
+            const k = `${n.branch_code}|${n.person_code}|${n.operation_code}|${n.issue_date}`;
+            const arr = nfMap.get(k) || [];
+            arr.push(n);
+            nfMap.set(k, arr);
+          }
+          for (const it of items) {
+            const k = `${it.branchCode}|${it.personCode}|${it.operationCode}|${it.issueDate?.split('T')[0]}`;
+            const candidates = nfMap.get(k);
+            if (!candidates?.length) continue;
+            // Best match: por valor mais próximo
+            const best = candidates.reduce((a, b) => (
+              Math.abs(Number(a.total_value || 0) - it.totalValue) <
+              Math.abs(Number(b.total_value || 0) - it.totalValue) ? a : b
+            ));
+            if (best) {
+              if (!it.invoiceCode || it.invoiceCode.startsWith('fm-')) it.invoiceCode = best.invoice_code;
+              if (!it.transactionCode) it.transactionCode = best.transaction_code;
+              if (!it.operationName) it.operationName = best.operation_name;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`[tx-canal/fm enrich-nf] lookup falhou: ${e.message}`);
       }
       return items;
     };

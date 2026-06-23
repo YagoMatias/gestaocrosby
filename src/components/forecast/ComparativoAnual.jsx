@@ -18,6 +18,7 @@ import {
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../../config/constants';
 import EnviarWhatsappModal from './EnviarWhatsappModal';
+import useDownloadAsImage from '../../hooks/useDownloadAsImage';
 import {
   MetricaHeader,
   KpiStripe,
@@ -73,6 +74,7 @@ export default function ComparativoAnual() {
   const [showWhats, setShowWhats] = useState(false);
   const [untilToday, setUntilToday] = useState(false);
   const cardRef = useRef(null);
+  const { ref: downloadRef, baixar: baixarImagem } = useDownloadAsImage(() => `comparativo-anual-${mes ? `${mes}-` : ''}${new Date().getFullYear()}`);
   // Token anti-race: cada nova chamada incrementa, só aplica state se ainda
   // for a mais recente. Evita "pisca de valor" quando filtros mudam rápido.
   const reqIdRef = useRef(0);
@@ -153,7 +155,7 @@ export default function ComparativoAnual() {
   ] : [];
 
   return (
-    <div ref={cardRef} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+    <div ref={(el) => { cardRef.current = el; downloadRef.current = el; }} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
       <MetricaHeader
         title={`Comparativo ${anoAnt} × ${anoAtual}`}
         subtitle={`${MESES[mes - 1]}${data?.dia_referencia ? ` · até dia ${data.dia_referencia}` : ''}`}
@@ -166,7 +168,7 @@ export default function ComparativoAnual() {
         setUntilToday={setUntilToday}
         onRefresh={carregar}
         loading={loading}
-        onWhatsapp={() => setShowWhats(true)}
+        onDownload={baixarImagem}
       />
 
       {data && <KpiStripe items={kpis} loading={loading && canais.length === 0} />}

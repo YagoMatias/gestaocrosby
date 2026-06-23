@@ -17,7 +17,7 @@ const fmtDataBr = (iso) => {
 // Cache localStorage — exibe instantâneo no mount, atualiza em background.
 // TTL 30min (intra-dia muda pouco; cron canal_totals_cache também não é
 // mais frequente que isso).
-const LS_PREFIX = 'ovl-cache-v15:'; // v15 = canais-totals-all com fuzzy cache lookup
+const LS_PREFIX = 'ovl-cache-v21:'; // v21 = Jhemyson com fallback notas_fiscais quando TOTVS falha
 const LS_TTL_MS = 30 * 60 * 1000;
 const lsKey = (periodo, datemin, datemax) =>
   `${LS_PREFIX}${periodo || 'ontem'}|${datemin || ''}|${datemax || ''}`;
@@ -143,6 +143,8 @@ export default function FaturamentoOntemVendedorLoja({
   subtitulo,
   corHeader = 'emerald', // alinha com padrão Métricas Diárias: amber/blue/emerald
   delayMs = 0,
+  sempreTotvs = false, // se true, sempre força TOTVS direto (pula cache Supabase)
+  cacheOnly = false,   // se true, lê SÓ do Supabase (zero TOTVS) — Métricas Diretoria
 } = {}) {
   // Cache hit no mount → exibe instantâneo (sem skeleton)
   const cacheKey = lsKey(periodo, datemin, datemax);
@@ -212,7 +214,10 @@ export default function FaturamentoOntemVendedorLoja({
       if (datemin) params.set('datemin', datemin);
       if (datemax) params.set('datemax', datemax);
       if (periodo) params.set('periodo', periodo);
-      if (force) params.set('nocache', '1');
+      if (force || sempreTotvs) params.set('nocache', '1');
+      // cacheOnly=true: lê SÓ do Supabase, zero TOTVS. Botão "Atualizar"
+      // (force=true) sobrepõe e força TOTVS para refresh manual.
+      if (cacheOnly && !force) params.set('cacheOnly', '1');
       const qs = params.toString() ? `?${params.toString()}` : '';
       const r = await fetch(`${API_BASE_URL}/api/forecast/ontem-vendedor-loja${qs}`);
       const j = await r.json().catch(() => ({}));
@@ -230,7 +235,7 @@ export default function FaturamentoOntemVendedorLoja({
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datemin, datemax, periodo, cacheKey]);
+  }, [datemin, datemax, periodo, cacheKey, sempreTotvs, cacheOnly]);
 
   useEffect(() => {
     let cancelled = false;
@@ -239,9 +244,11 @@ export default function FaturamentoOntemVendedorLoja({
     if (hit && hit.age < LS_TTL_MS) {
       setData(hit.data);
       setLoading(false);
-      // Revalida silenciosamente em background (>5min stale)
-      if (hit.age > 5 * 60 * 1000) {
-        const t = setTimeout(() => { if (!cancelled) carregar({ force: false }); }, 500);
+      // sempreTotvs: revalida AGORA pra garantir dado fresco (Métricas Diretoria).
+      // Senão: revalida só se >5min stale.
+      const deveRevalidar = sempreTotvs || hit.age > 5 * 60 * 1000;
+      if (deveRevalidar) {
+        const t = setTimeout(() => { if (!cancelled) carregar({ force: sempreTotvs }); }, 500);
         return () => { cancelled = true; clearTimeout(t); };
       }
       return () => { cancelled = true; };
@@ -254,7 +261,7 @@ export default function FaturamentoOntemVendedorLoja({
     }
     start();
     return () => { cancelled = true; };
-  }, [carregar, delayMs, cacheKey]);
+  }, [carregar, delayMs, cacheKey, sempreTotvs]);
 
   // Junta lojas + vendedores. Vendedores do MESMO canal ficam adjacentes na
   // lista: canais ordenados por total desc, e dentro de cada canal os itens
