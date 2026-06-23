@@ -3593,6 +3593,13 @@ router.post(
         branchs: [99, 2, 95, 87, 88, 90, 94, 97],
         excludeSellers: [21, 26, 69],
       },
+      // Multimarcas Global — inclui TODOS vendedores (Walter/Renato/Arthur +
+      // David/Thalis (26/69) + Rafael (21)). Útil pra visão consolidada B2M.
+      multimarcas_global: {
+        ops: [7235, 7241, 9127, 200],
+        branchs: [99, 2, 95, 87, 88, 90, 94, 97],
+        // sem excludeSellers e sem sellers → traz todos dealers das ops B2M
+      },
       inbound_david: {
         ops: [7235, 7241, 9127],
         branchs: [99, 2, 95, 87, 88, 90, 94, 97],

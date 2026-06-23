@@ -17,6 +17,7 @@ const CANAL_LABEL = {
   varejo: 'Varejo',
   revenda: 'Revenda',
   multimarcas: 'Multimarcas',
+  multimarcas_global: 'Multimarcas Global',
   inbound_david: 'MTM Inbound David',
   inbound_rafael: 'MTM Inbound Rafael',
 };
@@ -83,7 +84,10 @@ function exportCSV(contatos, canal) {
 }
 
 export default function ContatosView({ modulo }) {
-  const canal = moduloToCanal(modulo);
+  const canalBase = moduloToCanal(modulo);
+  const [globalMode, setGlobalMode] = useState(false);
+  // Se modo global ativado e canal é multimarcas, troca pra multimarcas_global
+  const canal = (globalMode && canalBase === 'multimarcas') ? 'multimarcas_global' : canalBase;
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [page, setPage] = useState(1);
@@ -169,7 +173,7 @@ export default function ContatosView({ modulo }) {
       </div>
 
       {/* Search + filtros */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-3">
         <div className="relative">
           <MagnifyingGlass
             size={16}
@@ -183,6 +187,21 @@ export default function ContatosView({ modulo }) {
             className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
           />
         </div>
+        {/* Toggle Multimarcas Global — só aparece pra canal Multimarcas */}
+        {canalBase === 'multimarcas' && (
+          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={globalMode}
+              onChange={(e) => { setGlobalMode(e.target.checked); setPage(1); }}
+              className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+            />
+            <span className="text-xs text-gray-700">
+              <b>Multimarcas Global</b>
+              <span className="text-gray-500 ml-1">— inclui David, Thalis e Rafael (todos vendedores B2M)</span>
+            </span>
+          </label>
+        )}
       </div>
 
       {/* Tabela */}
