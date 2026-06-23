@@ -2147,23 +2147,29 @@ const ModalDetalhe = ({
               })()}
 
             {/* ── INFORMAÇÕES DO TIPO ── campos específicos por tipo */}
-            {/* Pagamento / Reembolso: chave pix, código de barras, despesa, vencimento, valor, rateio */}
+            {/* Pagamento / Reembolso / RH: chave pix, código de barras, despesa, vencimento, valor, rateio */}
             {(sol.tipo_solicitacao === 'pagamento' ||
-              sol.tipo_solicitacao === 'reembolso') &&
+              sol.tipo_solicitacao === 'reembolso' ||
+              sol.tipo_solicitacao === 'rh') &&
               (sol.chave_pix ||
                 sol.codigo_barras ||
                 sol.despesa_code ||
                 sol.cost_center_code ||
                 sol.dt_vencimento ||
                 sol.dt_emissao ||
-                sol.valor_total) && (
+                sol.valor_total ||
+                ['pix', 'boleto'].includes(
+                  (sol.forma_pagamento || '').toLowerCase(),
+                )) && (
                 <div className="border-2 border-[#000638] rounded-xl overflow-hidden">
                   <div className="bg-[#000638] px-4 py-2">
                     <span className="text-white font-extrabold text-xs tracking-widest uppercase">
                       Detalhes do{' '}
                       {sol.tipo_solicitacao === 'reembolso'
                         ? 'Reembolso'
-                        : 'Pagamento'}
+                        : sol.tipo_solicitacao === 'rh'
+                          ? 'RH'
+                          : 'Pagamento'}
                     </span>
                   </div>
                   <div className="divide-y divide-gray-100">
@@ -3285,14 +3291,10 @@ const ModalEdicao = ({
                 (c) => c.nome.trim() || c.telefone.trim(),
               )
             : [],
-        ...(exigeFluxoSimples && {
-          dt_emissao: toIso(dtEmissao),
-          dt_vencimento: toIso(dtVencimento),
-          despesa_code: despesaCode ? parseInt(despesaCode) : null,
-          cost_center_code: costCenterCode ? parseInt(costCenterCode) : null,
-          rateio_percentual: rateioPercentual
-            ? parseFloat(rateioPercentual)
-            : null,
+        // chave_pix e codigo_barras para pagamento, reembolso e RH
+        ...(['pagamento', 'reembolso', 'rh'].includes(
+          tipo || sol.tipo_solicitacao,
+        ) && {
           chave_pix:
             formaPagamento.toLowerCase() === 'pix'
               ? chavePix.trim() || null
@@ -3301,6 +3303,15 @@ const ModalEdicao = ({
             formaPagamento.toLowerCase() === 'boleto'
               ? codigoBarras.trim() || null
               : null,
+        }),
+        ...(exigeFluxoSimples && {
+          dt_emissao: toIso(dtEmissao),
+          dt_vencimento: toIso(dtVencimento),
+          despesa_code: despesaCode ? parseInt(despesaCode) : null,
+          cost_center_code: costCenterCode ? parseInt(costCenterCode) : null,
+          rateio_percentual: rateioPercentual
+            ? parseFloat(rateioPercentual)
+            : null,
         }),
       };
       const ok = await onSalvar(sol, dados);

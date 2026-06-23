@@ -43,6 +43,7 @@ import {
   ArrowDown,
   ArrowsDownUp,
   CaretDown,
+  Storefront,
 } from '@phosphor-icons/react';
 
 const BANCOS = [
@@ -1868,16 +1869,23 @@ const LinhaTitulo = React.memo(
 
     const isManual = !!item.dados_completos?.inserido_manualmente;
     const isTransferencia = item.status === 'TRANSFERENCIA';
+    const isShoppingRecife =
+      !isTransferencia &&
+      (String(item.cd_ccusto) === '34' ||
+        String(item.cd_empresa) === '98' ||
+        item.banco_pagamento === 'ITAU RECIFE');
 
     return (
       <tr
         className={`border-b border-gray-100 ${
           selecionado
             ? 'bg-blue-50'
-            : isManual && !isTransferencia
-              ? 'bg-orange-50 hover:bg-orange-100'
-              : 'hover:bg-gray-50'
-        } ${isManual && !isTransferencia ? 'border-l-2 border-l-orange-400' : ''}`}
+            : isShoppingRecife
+              ? 'bg-purple-50 hover:bg-purple-100'
+              : isManual && !isTransferencia
+                ? 'bg-orange-50 hover:bg-orange-100'
+                : 'hover:bg-gray-50'
+        } ${isShoppingRecife ? 'border-l-2 border-l-purple-500' : isManual && !isTransferencia ? 'border-l-2 border-l-orange-400' : ''}`}
       >
         <td className="px-2 py-2 text-center">
           {(isAdmin || isFinanceiro) &&
@@ -1908,6 +1916,12 @@ const LinhaTitulo = React.memo(
             <span className="mt-1 flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-300 font-bold w-fit">
               <PencilSimple size={8} weight="bold" />
               Manual
+            </span>
+          )}
+          {isShoppingRecife && (
+            <span className="mt-1 flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-300 font-bold w-fit">
+              <Storefront size={8} weight="bold" />
+              Shopping Recife
             </span>
           )}
         </td>
@@ -3393,47 +3407,63 @@ const LiberacaoPagamento = () => {
   const exportarPdf = useCallback(() => {
     const colunas = [
       'Fornecedor',
-      'Cód. Forn.',
-      'Duplicata',
-      'Parcela',
-      'Vencimento',
       'Valor (R$)',
       'Vlr. Real (R$)',
+      'Vencimento',
       'Despesa',
-      'Centro de Custo',
+      'C. Custo',
     ];
     const colStyles = [
-      { cellWidth: 55 }, // Fornecedor
-      { cellWidth: 18 }, // Cód. Forn.
-      { cellWidth: 24 }, // Duplicata
-      { cellWidth: 14 }, // Parcela
-      { cellWidth: 24 }, // Vencimento
-      { cellWidth: 26 }, // Valor
-      { cellWidth: 26 }, // Valor Real
+      { cellWidth: 70 }, // Fornecedor
+      { cellWidth: 28 }, // Valor
+      { cellWidth: 28 }, // Valor Real
+      { cellWidth: 26 }, // Vencimento
       { cellWidth: 'auto' }, // Despesa
       { cellWidth: 36 }, // Centro de Custo
     ];
-    const linhas = titulosFiltrados.map((t) => [
-      t.nm_fornecedor || '',
-      t.cd_fornecedor || '',
-      t.nr_duplicata || '',
-      t.nr_parcela || '',
-      fmtDate(t.dt_vencimento),
-      parseFloat(t.vl_duplicata || 0).toLocaleString('pt-BR', {
-        minimumFractionDigits: 2,
-      }),
-      t.vl_real != null
-        ? parseFloat(t.vl_real).toLocaleString('pt-BR', {
-            minimumFractionDigits: 2,
-          })
-        : '',
-      t.ds_despesaitem || '',
-      t.cd_ccusto
+    // Agrupar por fornecedor
+    const agrupado = new Map();
+    for (const t of titulosFiltrados) {
+      const chave = t.nm_fornecedor || '—';
+      if (!agrupado.has(chave)) {
+        agrupado.set(chave, {
+          somaValor: 0,
+          somaReal: 0,
+          temReal: false,
+          vencimentos: [],
+          despesas: [],
+          ccustos: [],
+        });
+      }
+      const g = agrupado.get(chave);
+      const vlReal = t.vl_real != null ? parseFloat(t.vl_real) : null;
+      const vlDup = parseFloat(t.vl_duplicata || 0);
+      g.somaValor += vlReal != null ? 0 : vlDup;
+      g.somaReal += vlReal != null ? vlReal : 0;
+      if (vlReal != null) g.temReal = true;
+      const venc = fmtDate(t.dt_vencimento);
+      if (venc && !g.vencimentos.includes(venc)) g.vencimentos.push(venc);
+      const desp = t.ds_despesaitem || '';
+      if (desp && !g.despesas.includes(desp)) g.despesas.push(desp);
+      const cc = t.cd_ccusto
         ? CENTROS_CUSTO[String(t.cd_ccusto)] || `CC ${t.cd_ccusto}`
+        : '';
+      if (cc && !g.ccustos.includes(cc)) g.ccustos.push(cc);
+    }
+    const linhas = Array.from(agrupado.entries()).map(([forn, g]) => [
+      forn,
+      g.somaValor > 0
+        ? g.somaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+        : (0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
+      g.somaReal > 0
+        ? g.somaReal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })
         : '',
+      g.vencimentos.join('\n'),
+      g.despesas.join('\n'),
+      g.ccustos.join('\n'),
     ]);
-    const totalValor = titulosFiltrados.reduce(
-      (s, t) => s + parseFloat(t.vl_duplicata || 0),
+    const totalValor = Array.from(agrupado.values()).reduce(
+      (s, g) => s + (g.somaReal > 0 ? g.somaReal : g.somaValor),
       0,
     );
     const totalStr = totalValor.toLocaleString('pt-BR', {
@@ -3444,7 +3474,7 @@ const LiberacaoPagamento = () => {
       colunas,
       linhas,
       `liberacao-pagamento-${filtroStatus.toLowerCase()}`,
-      `Liberação de Pagamento — ${filtroStatus} · Total: ${totalStr} (${titulosFiltrados.length} registro(s))`,
+      `Liberação de Pagamento — ${filtroStatus} · Total: ${totalStr} (${agrupado.size} fornecedor(es) · ${titulosFiltrados.length} título(s))`,
       colStyles,
     );
   }, [titulosFiltrados, filtroStatus]);

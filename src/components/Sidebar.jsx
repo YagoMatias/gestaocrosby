@@ -670,6 +670,27 @@ const recuperacaoCredito = [
   },
 ];
 
+const expedicao = [
+  {
+    name: 'Inadimplência Multimarcas',
+    href: '/inadimplentes-multimarcas',
+    icon: Buildings,
+    color: 'text-purple-600',
+  },
+  {
+    name: 'Inadimplência Franquias',
+    href: '/inadimplentes-franquias',
+    icon: Users,
+    color: 'text-amber-600',
+  },
+  {
+    name: 'Duplicata de Vendas',
+    href: '/duplicata-vendas',
+    icon: Receipt,
+    color: 'text-blue-600',
+  },
+];
+
 const getRoleLabel = (role) => {
   const roleConfig = {
     admin: 'Administrador',
@@ -1097,6 +1118,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           onToggle={() => handleSectionToggle('recuperacaoCredito')}
           icon={ChartBar}
           color="text-red-600"
+        />
+
+        {/* Seção Expedição */}
+        <MenuSection
+          {...menuProps}
+          title="Expedição"
+          items={expedicao}
+          isOpen={openSection === 'expedicao'}
+          onToggle={() => handleSectionToggle('expedicao')}
+          icon={Truck}
+          color="text-teal-600"
         />
 
         {/* Seção Antecipações */}

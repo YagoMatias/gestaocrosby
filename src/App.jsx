@@ -141,6 +141,7 @@ const CadastrarCliente = lazy(() => import('./pages/CadastrarCliente'));
 const FormularioSolicitacoes = lazy(
   () => import('./pages/FormularioSolicitacoes'),
 );
+const DuplicataVendas = lazy(() => import('./pages/DuplicataVendas'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -264,6 +265,7 @@ const protectedRoutes = [
     component: SolicitacoesCrosbyComprasManutencao,
   },
   { path: '/cadastrar-cliente', component: CadastrarCliente },
+  { path: '/duplicata-vendas', component: DuplicataVendas },
 ];
 
 // Layout compartilhado - estável, preserva estado das páginas ao interagir com sidebar
