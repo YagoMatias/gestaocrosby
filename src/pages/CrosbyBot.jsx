@@ -111,6 +111,7 @@ const CrosbyTemplateManager = () => {
   const [totvsOperationId, setTotvsOperationId] = useState('');
   const [totvsStartDate, setTotvsStartDate] = useState('');
   const [totvsEndDate, setTotvsEndDate] = useState('');
+  const [quickFilterMode, setQuickFilterMode] = useState(null); // 'inativos' | 'ativos' | null
   const [totvsCompanies, setTotvsCompanies] = useState([]);
   const [totvsContacts, setTotvsContacts] = useState(null);
   const [ticketMedio, setTicketMedio] = useState(0);
@@ -252,6 +253,7 @@ const CrosbyTemplateManager = () => {
 
     setTotvsStartDate(start.toISOString().split('T')[0]);
     setTotvsEndDate(end.toISOString().split('T')[0]);
+    setQuickFilterMode(type);
   };
 
   const renderFormattedText = (rawText) => {
@@ -615,6 +617,7 @@ const CrosbyTemplateManager = () => {
           data_inicio: totvsStartDate,
           data_fim: totvsEndDate,
           empresas: empresasParaEnviar,
+          modo: quickFilterMode === 'inativos' ? 'inativos' : undefined,
         }),
       });
 
@@ -772,9 +775,9 @@ const CrosbyTemplateManager = () => {
             </button>
             <button
               onClick={() => applyQuickDateFilter('inativos')}
-              className="px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded text-[10px] font-bold hover:bg-red-100 transition-all flex items-center gap-1"
+              className={`px-3 py-1.5 border rounded text-[10px] font-bold transition-all flex items-center gap-1 ${quickFilterMode === 'inativos' ? 'bg-red-600 text-white border-red-600 ring-2 ring-red-200' : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'}`}
             >
-              <Funnel size={12} /> Inativos (1 ano)
+              <Funnel size={12} /> Inativos (1 ano){quickFilterMode === 'inativos' ? ' ✓' : ''}
             </button>
           </div>
         ),
@@ -1788,7 +1791,7 @@ const CrosbyTemplateManager = () => {
                       <input
                         type="date"
                         value={totvsStartDate}
-                        onChange={(e) => setTotvsStartDate(e.target.value)}
+                        onChange={(e) => { setTotvsStartDate(e.target.value); setQuickFilterMode(null); }}
                         className="w-full p-2 border border-gray-200 rounded-lg text-sm bg-white outline-none"
                       />
                     </div>
@@ -1806,7 +1809,7 @@ const CrosbyTemplateManager = () => {
                       <input
                         type="date"
                         value={totvsEndDate}
-                        onChange={(e) => setTotvsEndDate(e.target.value)}
+                        onChange={(e) => { setTotvsEndDate(e.target.value); setQuickFilterMode(null); }}
                         className="w-full p-2 border border-gray-200 rounded-lg text-sm bg-white outline-none"
                       />
                     </div>
