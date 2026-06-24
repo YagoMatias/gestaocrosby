@@ -90,9 +90,11 @@ export default function ContatosView({ modulo }) {
   const canal = (globalMode && canalBase === 'multimarcas') ? 'multimarcas_global' : canalBase;
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
+  const [sellerCode, setSellerCode] = useState('all');
+  const [ufFiltro, setUfFiltro] = useState('all');
   const [page, setPage] = useState(1);
   const [pageSize] = useState(50);
-  const [data, setData] = useState({ contatos: [], total: 0 });
+  const [data, setData] = useState({ contatos: [], total: 0, vendedores: [], ufs: [] });
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -105,6 +107,13 @@ export default function ContatosView({ modulo }) {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Reseta filtros quando troca canal
+  useEffect(() => {
+    setSellerCode('all');
+    setUfFiltro('all');
+    setPage(1);
+  }, [canal]);
+
   const carregar = useCallback(async () => {
     if (!canal) {
       setErro('Canal não suportado. Use Varejo, Revenda, Multimarcas, MTM Inbound David ou Rafael.');
@@ -116,19 +125,31 @@ export default function ContatosView({ modulo }) {
       const res = await fetch(`${API_BASE_URL}/api/crm/contatos-canal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
-        body: JSON.stringify({ canal, search: searchDebounced, page, pageSize }),
+        body: JSON.stringify({
+          canal,
+          search: searchDebounced,
+          sellerCode: sellerCode === 'all' ? null : sellerCode,
+          uf: ufFiltro === 'all' ? null : ufFiltro,
+          page,
+          pageSize,
+        }),
       });
       if (!res.ok) throw new Error(`Erro ${res.status}`);
       const json = await res.json();
       const d = json?.data || json || {};
-      setData({ contatos: d.contatos || [], total: d.total || 0 });
+      setData({
+        contatos: d.contatos || [],
+        total: d.total || 0,
+        vendedores: d.vendedores || [],
+        ufs: d.ufs || [],
+      });
     } catch (e) {
       setErro(e.message);
       setData({ contatos: [], total: 0 });
     } finally {
       setLoading(false);
     }
-  }, [canal, searchDebounced, page, pageSize]);
+  }, [canal, searchDebounced, sellerCode, ufFiltro, page, pageSize]);
 
   useEffect(() => {
     carregar();
@@ -174,18 +195,44 @@ export default function ContatosView({ modulo }) {
 
       {/* Search + filtros */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-3">
-        <div className="relative">
-          <MagnifyingGlass
-            size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-          />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nome, código ou telefone..."
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-          />
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <MagnifyingGlass
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por nome, código ou telefone..."
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+            />
+          </div>
+          {data.vendedores && data.vendedores.length > 0 && (
+            <select
+              value={sellerCode}
+              onChange={(e) => { setSellerCode(e.target.value); setPage(1); }}
+              className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white min-w-[180px]"
+            >
+              <option value="all">Todos vendedores ({data.vendedores.length})</option>
+              {data.vendedores.map((v) => (
+                <option key={v.code} value={v.code}>{v.nome}</option>
+              ))}
+            </select>
+          )}
+          {data.ufs && data.ufs.length > 0 && (
+            <select
+              value={ufFiltro}
+              onChange={(e) => { setUfFiltro(e.target.value); setPage(1); }}
+              className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white min-w-[120px]"
+            >
+              <option value="all">Todos UFs ({data.ufs.length})</option>
+              {data.ufs.map((u) => (
+                <option key={u} value={u}>{u}</option>
+              ))}
+            </select>
+          )}
         </div>
         {/* Toggle Multimarcas Global — só aparece pra canal Multimarcas */}
         {canalBase === 'multimarcas' && (
