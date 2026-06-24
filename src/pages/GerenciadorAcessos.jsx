@@ -77,6 +77,11 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro',
   },
   {
+    path: '/pagamentos-fabricas',
+    name: 'Pagamentos Fábricas',
+    category: 'Financeiro',
+  },
+  {
     path: '/contas-a-pagar-emissao',
     name: 'Contas a Pagar (Emissão)',
     category: 'Financeiro',

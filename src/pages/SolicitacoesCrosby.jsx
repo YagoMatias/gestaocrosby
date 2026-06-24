@@ -444,6 +444,14 @@ const SolicitacoesCrosby = () => {
     };
   };
 
+  const isDuplicateCodeError = (msg) => {
+    const s = String(msg || '');
+    return /DuplicateCode/i.test(s) && /(already|duplicate|exists)/i.test(s);
+  };
+
+  const gerarNovoCodigoNumerico = () =>
+    String(Math.floor(10000000 + Math.random() * 89999999));
+
   // ----- filtros -----
   // Compra/Manutenção têm controle dedicado em /solicitacoes-crosby/compras-manutencao
   // — por isso, são excluídas da listagem geral por padrão.
@@ -566,50 +574,66 @@ const SolicitacoesCrosby = () => {
         .eq('id', sol.id);
       if (updErr) throw updErr;
 
-      // 2) Envia para TOTVS
-      console.log(
-        '📤 Enviando payload TOTVS:',
-        JSON.stringify(mergePayloadTotvs(sol), null, 2),
-      );
-      const resp = await fetch(
-        `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(mergePayloadTotvs(sol)),
-        },
-      );
-      const result = await resp.json().catch(() => ({}));
-      console.log(
-        '📥 Resposta TOTVS (HTTP',
-        resp.status,
-        '):',
-        JSON.stringify(result, null, 2),
-      );
+      // 2) Envia para TOTVS (com retry automático para código duplicado)
+      let solAtual = { ...sol };
+      let tentativas = 0;
+      const MAX_RETRIES = 5;
+      while (tentativas < MAX_RETRIES) {
+        tentativas++;
+        const payload = mergePayloadTotvs(solAtual);
+        console.log('📤 Enviando payload TOTVS:', JSON.stringify(payload, null, 2));
+        const resp = await fetch(
+          `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          },
+        );
+        const result = await resp.json().catch(() => ({}));
+        console.log('📥 Resposta TOTVS (HTTP', resp.status, '):', JSON.stringify(result, null, 2));
 
-      if (!resp.ok || result?.success === false) {
-        const msg =
-          result?.message || `Falha no envio TOTVS (HTTP ${resp.status})`;
-        await supabaseAdmin
-          .from('solicitacoes_crosby')
-          .update({
-            status: 'erro_envio',
-            totvs_erro: msg,
-            totvs_response: result?.details || result || null,
-          })
-          .eq('id', sol.id);
-        notify('error', `Erro TOTVS: ${msg}`);
-      } else {
-        await supabaseAdmin
-          .from('solicitacoes_crosby')
-          .update({
-            status: 'enviado_totvs',
-            enviado_totvs_em: new Date().toISOString(),
-            totvs_response: result?.data ?? result ?? null,
-            totvs_erro: null,
-          })
-          .eq('id', sol.id);
-        notify('success', 'Duplicata enviada com sucesso ao TOTVS!');
+        if (!resp.ok || result?.success === false) {
+          const msg = result?.message || `Falha no envio TOTVS (HTTP ${resp.status})`;
+          const detailMsgs = Array.isArray(result?.details)
+            ? result.details.map((d) => d?.message || '').join(' ')
+            : '';
+          if (isDuplicateCodeError(msg) || isDuplicateCodeError(detailMsgs)) {
+            const novoCodigo = gerarNovoCodigoNumerico();
+            await supabaseAdmin
+              .from('solicitacoes_crosby')
+              .update({
+                duplicate_code: novoCodigo,
+                payload_totvs: { ...solAtual.payload_totvs, duplicateCode: parseInt(novoCodigo) },
+              })
+              .eq('id', sol.id);
+            solAtual = { ...solAtual, duplicate_code: novoCodigo, payload_totvs: { ...solAtual.payload_totvs, duplicateCode: parseInt(novoCodigo) } };
+            notify('error', `Código duplicado no TOTVS. Tentando novo código: ${novoCodigo}...`);
+            continue;
+          }
+          await supabaseAdmin
+            .from('solicitacoes_crosby')
+            .update({
+              status: 'erro_envio',
+              totvs_erro: msg,
+              totvs_response: result?.details || result || null,
+            })
+            .eq('id', sol.id);
+          notify('error', `Erro TOTVS: ${msg}`);
+          break;
+        } else {
+          await supabaseAdmin
+            .from('solicitacoes_crosby')
+            .update({
+              status: 'enviado_totvs',
+              enviado_totvs_em: new Date().toISOString(),
+              totvs_response: result?.data ?? result ?? null,
+              totvs_erro: null,
+            })
+            .eq('id', sol.id);
+          notify('success', 'Duplicata enviada com sucesso ao TOTVS!');
+          break;
+        }
       }
 
       await carregarSolicitacoes();
@@ -626,49 +650,65 @@ const SolicitacoesCrosby = () => {
     if (!isFinanceiro) return;
     if (!sol.payload_totvs) return;
     setEnviandoTotvs(true);
+    let solAtual = { ...sol };
+    const MAX_RETRIES = 5;
+    let tentativas = 0;
     try {
-      console.log(
-        '📤 Reenviando payload TOTVS:',
-        JSON.stringify(mergePayloadTotvs(sol), null, 2),
-      );
-      const resp = await fetch(
-        `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(mergePayloadTotvs(sol)),
-        },
-      );
-      const result = await resp.json().catch(() => ({}));
-      console.log(
-        '📥 Resposta TOTVS reenvio (HTTP',
-        resp.status,
-        '):',
-        JSON.stringify(result, null, 2),
-      );
-      if (!resp.ok || result?.success === false) {
-        const msg =
-          result?.message || `Falha no envio TOTVS (HTTP ${resp.status})`;
-        await supabaseAdmin
-          .from('solicitacoes_crosby')
-          .update({
-            status: 'erro_envio',
-            totvs_erro: msg,
-            totvs_response: result?.details || result || null,
-          })
-          .eq('id', sol.id);
-        notify('error', `Erro TOTVS: ${msg}`);
-      } else {
-        await supabaseAdmin
-          .from('solicitacoes_crosby')
-          .update({
-            status: 'enviado_totvs',
-            enviado_totvs_em: new Date().toISOString(),
-            totvs_response: result?.data ?? result ?? null,
-            totvs_erro: null,
-          })
-          .eq('id', sol.id);
-        notify('success', 'Reenvio realizado com sucesso!');
+      while (tentativas < MAX_RETRIES) {
+        tentativas++;
+        const payload = mergePayloadTotvs(solAtual);
+        console.log('📤 Reenviando payload TOTVS:', JSON.stringify(payload, null, 2));
+        const resp = await fetch(
+          `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          },
+        );
+        const result = await resp.json().catch(() => ({}));
+        console.log('📥 Resposta TOTVS reenvio (HTTP', resp.status, '):', JSON.stringify(result, null, 2));
+        if (!resp.ok || result?.success === false) {
+          const msg = result?.message || `Falha no envio TOTVS (HTTP ${resp.status})`;
+          const detailMsgs = Array.isArray(result?.details)
+            ? result.details.map((d) => d?.message || '').join(' ')
+            : '';
+          if (isDuplicateCodeError(msg) || isDuplicateCodeError(detailMsgs)) {
+            const novoCodigo = gerarNovoCodigoNumerico();
+            await supabaseAdmin
+              .from('solicitacoes_crosby')
+              .update({
+                duplicate_code: novoCodigo,
+                payload_totvs: { ...solAtual.payload_totvs, duplicateCode: parseInt(novoCodigo) },
+              })
+              .eq('id', sol.id);
+            solAtual = { ...solAtual, duplicate_code: novoCodigo, payload_totvs: { ...solAtual.payload_totvs, duplicateCode: parseInt(novoCodigo) } };
+            notify('error', `Código duplicado no TOTVS. Tentando novo código: ${novoCodigo}...`);
+            continue;
+          }
+          await supabaseAdmin
+            .from('solicitacoes_crosby')
+            .update({
+              status: 'erro_envio',
+              totvs_erro: msg,
+              totvs_response: result?.details || result || null,
+            })
+            .eq('id', sol.id);
+          notify('error', `Erro TOTVS: ${msg}`);
+          break;
+        } else {
+          await supabaseAdmin
+            .from('solicitacoes_crosby')
+            .update({
+              status: 'enviado_totvs',
+              enviado_totvs_em: new Date().toISOString(),
+              totvs_response: result?.data ?? result ?? null,
+              totvs_erro: null,
+            })
+            .eq('id', sol.id);
+          notify('success', 'Reenvio realizado com sucesso!');
+          break;
+        }
       }
       await carregarSolicitacoes();
       setModalDetalhe(null);
@@ -1041,44 +1081,70 @@ const SolicitacoesCrosby = () => {
     setExecutandoMassa(true);
     let okCount = 0;
     let failCount = 0;
+    const MAX_RETRIES = 5;
     try {
       for (const sol of candidatas) {
-        try {
-          const resp = await fetch(
-            `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(mergePayloadTotvs(sol)),
-            },
-          );
-          const result = await resp.json().catch(() => ({}));
-          if (!resp.ok || result?.success === false) {
-            const msg = result?.message || `HTTP ${resp.status}`;
-            await supabaseAdmin
-              .from('solicitacoes_crosby')
-              .update({
-                status: 'erro_envio',
-                totvs_erro: msg,
-                totvs_response: result?.details || result || null,
-              })
-              .eq('id', sol.id);
-            failCount++;
-          } else {
-            await supabaseAdmin
-              .from('solicitacoes_crosby')
-              .update({
-                status: 'enviado_totvs',
-                enviado_totvs_em: new Date().toISOString(),
-                totvs_response: result?.data ?? result ?? null,
-                totvs_erro: null,
-              })
-              .eq('id', sol.id);
-            okCount++;
+        let tentativas = 0;
+        let enviado = false;
+        let solAtual = { ...sol };
+        while (tentativas < MAX_RETRIES && !enviado) {
+          tentativas++;
+          try {
+            const payload = mergePayloadTotvs(solAtual);
+            const resp = await fetch(
+              `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              },
+            );
+            const result = await resp.json().catch(() => ({}));
+            if (!resp.ok || result?.success === false) {
+              const msg = result?.message || `HTTP ${resp.status}`;
+              const detailMsgs = Array.isArray(result?.details)
+                ? result.details.map((d) => d?.message || '').join(' ')
+                : '';
+              if (isDuplicateCodeError(msg) || isDuplicateCodeError(detailMsgs)) {
+                const novoCodigo = gerarNovoCodigoNumerico();
+                await supabaseAdmin
+                  .from('solicitacoes_crosby')
+                  .update({
+                    duplicate_code: novoCodigo,
+                    payload_totvs: { ...solAtual.payload_totvs, duplicateCode: parseInt(novoCodigo) },
+                  })
+                  .eq('id', sol.id);
+                solAtual = { ...solAtual, duplicate_code: novoCodigo, payload_totvs: { ...solAtual.payload_totvs, duplicateCode: parseInt(novoCodigo) } };
+                continue;
+              }
+              await supabaseAdmin
+                .from('solicitacoes_crosby')
+                .update({
+                  status: 'erro_envio',
+                  totvs_erro: msg,
+                  totvs_response: result?.details || result || null,
+                })
+                .eq('id', sol.id);
+              failCount++;
+              enviado = true;
+            } else {
+              await supabaseAdmin
+                .from('solicitacoes_crosby')
+                .update({
+                  status: 'enviado_totvs',
+                  enviado_totvs_em: new Date().toISOString(),
+                  totvs_response: result?.data ?? result ?? null,
+                  totvs_erro: null,
+                })
+                .eq('id', sol.id);
+              okCount++;
+              enviado = true;
+            }
+          } catch {
+            if (tentativas >= MAX_RETRIES) failCount++;
           }
-        } catch {
-          failCount++;
         }
+        if (!enviado) failCount++;
       }
       await carregarSolicitacoes();
       setSelecionados(new Set());
@@ -1088,6 +1154,74 @@ const SolicitacoesCrosby = () => {
     } catch (err) {
       console.error(err);
       notify('error', 'Erro no envio em massa.');
+    } finally {
+      setExecutandoMassa(false);
+    }
+  };
+
+  // ----- gerar códigos de duplicata em massa -----
+  const gerarCodigosDuplicataEmMassa = async () => {
+    const semCodigo = solicitacoesGerais.filter(
+      (s) => !s.duplicate_code,
+    );
+    if (semCodigo.length === 0) {
+      notify('error', 'Todas as solicitações já possuem código de duplicata.');
+      return;
+    }
+    if (
+      !window.confirm(
+        `Gerar código de duplicata para ${semCodigo.length} solicitação(ões) sem código?`,
+      )
+    )
+      return;
+
+    setExecutandoMassa(true);
+    try {
+      const codigosUsados = {};
+      solicitacoesGerais.forEach((s) => {
+        if (s.duplicate_code) {
+          const chave = (s.supplier_cpf_cnpj || s.supplier_name || '').toLowerCase();
+          if (!codigosUsados[chave]) codigosUsados[chave] = new Set();
+          codigosUsados[chave].add(String(s.duplicate_code));
+        }
+      });
+
+      const gerarCodigo = (fornecedorKey) => {
+        const usados = codigosUsados[fornecedorKey] || new Set();
+        let codigo;
+        let tentativas = 0;
+        do {
+          codigo = String(Math.floor(10000000 + Math.random() * 89999999));
+          tentativas++;
+        } while (usados.has(codigo) && tentativas < 1000);
+        usados.add(codigo);
+        if (!codigosUsados[fornecedorKey]) codigosUsados[fornecedorKey] = usados;
+        return codigo;
+      };
+
+      let okCount = 0;
+      for (const sol of semCodigo) {
+        const chave = (sol.supplier_cpf_cnpj || sol.supplier_name || '').toLowerCase();
+        const novoCodigo = gerarCodigo(chave);
+
+        const payloadAtual = sol.payload_totvs || {};
+        const novoPayload = { ...payloadAtual, duplicateCode: parseInt(novoCodigo) };
+
+        const { error } = await supabaseAdmin
+          .from('solicitacoes_crosby')
+          .update({
+            duplicate_code: novoCodigo,
+            payload_totvs: novoPayload,
+          })
+          .eq('id', sol.id);
+        if (!error) okCount++;
+      }
+
+      await carregarSolicitacoes();
+      notify('success', `Código gerado para ${okCount} solicitação(ões)!`);
+    } catch (err) {
+      console.error(err);
+      notify('error', 'Erro ao gerar códigos de duplicata.');
     } finally {
       setExecutandoMassa(false);
     }
@@ -1317,6 +1451,19 @@ const SolicitacoesCrosby = () => {
           <ArrowClockwise size={14} weight="bold" />
           Atualizar
         </button>
+        {isFinanceiro && (
+          <button
+            onClick={gerarCodigosDuplicataEmMassa}
+            disabled={executandoMassa}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded-lg transition-colors"
+          >
+            {executandoMassa && (
+              <Spinner size={11} className="animate-spin" />
+            )}
+            <Receipt size={14} weight="bold" />
+            Gerar Cd Duplicata
+          </button>
+        )}
         <span className="ml-auto text-xs text-gray-500">
           {solicitacoesFiltradas.length} de {solicitacoes.length}
         </span>

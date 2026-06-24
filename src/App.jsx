@@ -142,6 +142,7 @@ const FormularioSolicitacoes = lazy(
   () => import('./pages/FormularioSolicitacoes'),
 );
 const DuplicataVendas = lazy(() => import('./pages/DuplicataVendas'));
+const PagamentosFabricas = lazy(() => import('./pages/PagamentosFabricas'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -176,6 +177,7 @@ const protectedRoutes = [
   { path: '/dashboard', component: Dashboard },
   { path: '/bi-externo', component: BIExterno },
   { path: '/contas-a-pagar', component: ContasAPagar },
+  { path: '/pagamentos-fabricas', component: PagamentosFabricas },
   { path: '/emprestimos', component: Emprestimos },
   { path: '/despesa-filial', component: DespesaFilial },
   { path: '/despesas-fixas', component: DespesasFixas },

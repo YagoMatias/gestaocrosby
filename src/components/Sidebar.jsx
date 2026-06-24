@@ -109,6 +109,13 @@ const financeiro = [
         color: 'text-red-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
+      {
+        name: 'Pagamentos Fábricas',
+        href: '/pagamentos-fabricas',
+        icon: Package,
+        color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
     ],
   },
   {
