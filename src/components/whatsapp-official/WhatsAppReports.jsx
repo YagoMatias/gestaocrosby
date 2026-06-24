@@ -721,10 +721,10 @@ const WhatsAppReports = ({ accounts, activeAccount }) => {
                         <td className="p-3">{totals.replied.toLocaleString('pt-BR')}</td>
                         <td className="p-3 text-red-600">{totals.failed.toLocaleString('pt-BR')}</td>
                         <td className="p-3">
-                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[#000638] text-white">{deliveryRate}%</span>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[#000638] text-white">{totals.sent > 0 ? ((totals.delivered / totals.sent) * 100).toFixed(1) : '0.0'}%</span>
                         </td>
                         <td className="p-3">
-                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[#000638] text-white">{readRate}%</span>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[#000638] text-white">{totals.delivered > 0 ? ((totals.read / totals.delivered) * 100).toFixed(1) : '0.0'}%</span>
                         </td>
                       </tr>
                     </tfoot>

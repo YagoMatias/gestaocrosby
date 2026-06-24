@@ -1582,6 +1582,46 @@ export async function processCampaignQueue(campaignId, account) {
     if (!processCampaignQueue._tmplMetaCache) processCampaignQueue._tmplMetaCache = new Map();
     const tmplCache = processCampaignQueue._tmplMetaCache;
 
+    // Cache de media_id por URL de imagem (válido por ~30 dias pra Meta)
+    if (!processCampaignQueue._mediaCache) processCampaignQueue._mediaCache = new Map();
+    const mediaCache = processCampaignQueue._mediaCache;
+
+    // Helper: baixa imagem da URL e faz upload pra /media, retorna media_id
+    async function uploadImageToMedia(imageUrl) {
+      if (mediaCache.has(imageUrl)) return mediaCache.get(imageUrl);
+      try {
+        // 1) Baixa a imagem
+        const imgResp = await fetch(imageUrl);
+        if (!imgResp.ok) throw new Error(`download ${imgResp.status}`);
+        const buf = Buffer.from(await imgResp.arrayBuffer());
+        const ct = imgResp.headers.get('content-type') || 'image/jpeg';
+
+        // 2) Faz upload pra /media
+        // Endpoint Meta: POST /{phone_id}/media com multipart form
+        // Usa FormData (Node 18+ tem global)
+        const form = new FormData();
+        const blob = new Blob([buf], { type: ct });
+        form.append('messaging_product', 'whatsapp');
+        form.append('type', ct);
+        form.append('file', blob, `card.${ct.split('/')[1] || 'jpg'}`);
+
+        const upResp = await fetch(`https://graph.facebook.com/v22.0/${account.phone_id}/media`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${account.access_token}` },
+          body: form,
+        });
+        const upData = await upResp.json();
+        if (!upResp.ok || !upData?.id) {
+          throw new Error(upData?.error?.message || `upload ${upResp.status}`);
+        }
+        mediaCache.set(imageUrl, upData.id);
+        return upData.id;
+      } catch (e) {
+        console.warn(`[upload-media] falhou: ${e.message}`);
+        return null;
+      }
+    }
+
     // Helper: pega metadados do template (header + carousel) pra montar payload de envio
     async function getTemplateMeta(tmplName) {
       if (tmplCache.has(tmplName)) return tmplCache.get(tmplName);
@@ -1652,20 +1692,28 @@ export async function processCampaignQueue(campaignId, account) {
           });
         }
 
-        // CARROSSEL: cada card precisa de header com sua imagem
+        // CARROSSEL: Meta exige media_id (não aceita link). Upload pra /media e cacheia.
         if (tmplMeta.isCarousel && tmplMeta.cardImages.length > 0) {
-          components.push({
-            type: 'carousel',
-            cards: tmplMeta.cardImages.map((url, idx) => ({
+          const mediaIds = await Promise.all(
+            tmplMeta.cardImages.map((url) => uploadImageToMedia(url)),
+          );
+          const cardsArr = [];
+          for (let idx = 0; idx < mediaIds.length; idx++) {
+            const mid = mediaIds[idx];
+            if (!mid) {
+              throw new Error(`upload card ${idx} falhou`);
+            }
+            cardsArr.push({
               card_index: idx,
               components: [
                 {
                   type: 'header',
-                  parameters: [{ type: 'image', image: { link: url } }],
+                  parameters: [{ type: 'image', image: { id: mid } }],
                 },
               ],
-            })),
-          });
+            });
+          }
+          components.push({ type: 'carousel', cards: cardsArr });
         }
 
         const sendResult = await graphRequest(
