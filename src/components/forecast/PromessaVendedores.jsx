@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Users, Trophy, UserCircle, WhatsappLogo } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../../config/constants';
 import EnviarWhatsappModal from './EnviarWhatsappModal';
+import useDownloadAsImage from '../../hooks/useDownloadAsImage';
 import ClientesAtendidosModal from './ClientesAtendidosModal';
 import {
   MetricaHeader,
@@ -314,6 +315,7 @@ export default function PromessaVendedores() {
   const [mode, setMode] = useState('hoje');
   const cardRef = useRef(null);           // bloco inteiro (envia tudo)
   const cardRefsByCode = useRef({});      // refs individuais por card
+  const { ref: downloadRef, baixar: baixarImagem } = useDownloadAsImage(() => `promessa-vendedores-${ano}-W${String(semana || '').padStart(2,'0')}`);
 
   // Calcula ano/semana/until_today a partir do mode
   const queryParams = (() => {
@@ -463,7 +465,7 @@ export default function PromessaVendedores() {
     : `Detalhe por Vendedor — Semana ${data.semana_iso}`;
 
   return (
-    <div className="mb-6" ref={cardRef}>
+    <div className="mb-6" ref={(el) => { cardRef.current = el; downloadRef.current = el; }}>
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-3">
         <MetricaHeader
           title="Detalhe por Vendedor"
@@ -474,7 +476,7 @@ export default function PromessaVendedores() {
           setMode={setMode}
           onRefresh={refresh}
           loading={loading}
-          onWhatsapp={() => setWhatsTarget('all')}
+          onDownload={baixarImagem}
         />
       </div>
       {mode === 'sabado' && data && (

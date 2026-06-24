@@ -415,7 +415,6 @@ const CANAL_ORDER = [
   'bazar',
   'showroom',
   'novidadesfranquia',
-  'business',
   'ricardoeletro',
 ];
 
@@ -1198,6 +1197,37 @@ function CanalDrillDown({ canal, cfg, periodo, setPeriodo, data, formatBRL, mont
     const k = String(nome || '').toUpperCase().trim();
     return metasLojas[k] || null;
   };
+  // ── Multiplicador de meta por período ──
+  // Semana corrente do mês (1-5) baseado em hoje.
+  // Distribuição varejo: S1=22.4%, S2=32%, S3=22.8%, S4=22.8%, S5=0%.
+  const VAREJO_DIST_SEM = { 1: 0.224, 2: 0.32, 3: 0.228, 4: 0.228, 5: 0 };
+  const semanaCorrenteNoMes = (() => {
+    const hoje = new Date();
+    const d = hoje.getDate();
+    if (d <= 7) return 1;
+    if (d <= 14) return 2;
+    if (d <= 21) return 3;
+    if (d <= 28) return 4;
+    return 5;
+  })();
+  const metaMultiplier = (() => {
+    if (periodo === 'semanal') {
+      return VAREJO_DIST_SEM[semanaCorrenteNoMes] ?? 0;
+    }
+    if (periodo === 'anual') return 12; // aproximação: meta mensal × 12 meses
+    return 1; // mensal
+  })();
+  // Calcula meta ajustada pro período (Bronze/Prata/Ouro/Diamante × multiplicador).
+  const ajustarMetaPeriodo = (m) => {
+    if (!m) return null;
+    if (metaMultiplier === 0) return null; // S5 (sem meta semanal)
+    return {
+      bronze: (m.bronze || 0) * metaMultiplier,
+      prata: (m.prata || 0) * metaMultiplier,
+      ouro: (m.ouro || 0) * metaMultiplier,
+      diamante: (m.diamante || 0) * metaMultiplier,
+    };
+  };
   const tierAtingido = (valor, m) => {
     if (!m) return null;
     if (m.diamante > 0 && valor >= m.diamante) return { nome: 'Diamante', cor: 'text-cyan-700 bg-cyan-50 ring-cyan-200' };
@@ -1376,7 +1406,17 @@ function CanalDrillDown({ canal, cfg, periodo, setPeriodo, data, formatBRL, mont
                           ? `Meta de ${metasMesUsado} (mês atual ${monthKey} sem cadastro — fallback)`
                           : `Meta de ${monthKey || 'mês atual'}`}
                       >
-                        Meta Ouro
+                        Meta <span className="text-amber-600">Bronze +20%</span>
+                        {periodo === 'semanal' && (
+                          <span className="ml-1 text-[8px] font-normal text-blue-600 normal-case">
+                            (sem)
+                          </span>
+                        )}
+                        {periodo === 'anual' && (
+                          <span className="ml-1 text-[8px] font-normal text-blue-600 normal-case">
+                            (ano)
+                          </span>
+                        )}
                         {metasMesUsado && metasMesUsado !== monthKey && (
                           <span className="ml-1 text-[8px] font-normal text-amber-600 normal-case">
                             ({metasMesUsado})
@@ -1448,26 +1488,36 @@ function CanalDrillDown({ canal, cfg, periodo, setPeriodo, data, formatBRL, mont
                         </span>
                       </td>
                       {isVarejo && (() => {
-                        const m = getMetaLoja(row.branch_name);
-                        const metaOuro = m?.ouro || 0;
-                        const pctMeta = metaOuro > 0 ? (valor / metaOuro) * 100 : 0;
-                        const tier = tierAtingido(valor, m);
+                        const mBase = getMetaLoja(row.branch_name);
+                        const mAjustada = ajustarMetaPeriodo(mBase);
+                        // Meta de cobrança = Bronze + 20% (regra do gestor).
+                        // Usa Bronze × 1.20 — coincide com Prata, mas explícita.
+                        const metaBronze = mAjustada?.bronze || 0;
+                        const metaAlvo = metaBronze * 1.20;
+                        const pctMeta = metaAlvo > 0 ? (valor / metaAlvo) * 100 : 0;
+                        const tier = tierAtingido(valor, mAjustada);
                         const corPct =
                           pctMeta >= 100 ? 'text-emerald-700 bg-emerald-50' :
                           pctMeta >= 70  ? 'text-amber-700 bg-amber-50' :
                           pctMeta > 0    ? 'text-rose-700 bg-rose-50' :
                           'text-gray-400 bg-gray-50';
+                        // Sufixo do título da meta varia por período
+                        const sufixoMeta = periodo === 'semanal'
+                          ? ` (S${semanaCorrenteNoMes} · ${(VAREJO_DIST_SEM[semanaCorrenteNoMes] * 100).toFixed(1)}% do mês)`
+                          : periodo === 'anual'
+                            ? ' (mensal × 12)'
+                            : '';
                         return (
                           <>
-                            <td className="py-2 px-2 text-right tabular-nums hidden md:table-cell">
-                              {metaOuro > 0
-                                ? <span className="text-amber-700 font-medium">R$ {formatBRL(metaOuro)}</span>
+                            <td className="py-2 px-2 text-right tabular-nums hidden md:table-cell" title={`Meta Bronze + 20%${sufixoMeta}`}>
+                              {metaAlvo > 0
+                                ? <span className="text-amber-700 font-medium">R$ {formatBRL(metaAlvo)}</span>
                                 : <span className="text-gray-300">—</span>}
                             </td>
                             <td className="py-2 px-2">
                               <div className="flex flex-col items-end gap-0.5">
                                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold tabular-nums ${corPct}`}>
-                                  {metaOuro > 0 ? `${pctMeta.toFixed(1)}%` : '—'}
+                                  {metaAlvo > 0 ? `${pctMeta.toFixed(1)}%` : '—'}
                                 </span>
                                 {tier && (
                                   <span className={`inline-flex items-center text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ring-1 ${tier.cor}`}>
@@ -2131,6 +2181,14 @@ export default function FaturamentoCanal() {
   const [modalWppDetail, setModalWppDetail] = useState(false); // modal gasto WhatsApp por número
   const [clientesCanal, setClientesCanal] = useState(null); // { varejo: {ativos, novos}, ... }
   const [modalClientesCanal, setModalClientesCanal] = useState(false);
+  const [modalRecompraCanal, setModalRecompraCanal] = useState(null); // {canal, label} ou null
+  const [recompraCanal, setRecompraCanal] = useState({}); // cache: canal -> resposta
+  const [loadingRecompra, setLoadingRecompra] = useState(false);
+  const [abaRecompra, setAbaRecompra] = useState('breakdown'); // 'breakdown' | 'clientes'
+  const [clientesCanalDetalhe, setClientesCanalDetalhe] = useState({}); // cache: canal -> {clientes, ...}
+  const [loadingClientesDetalhe, setLoadingClientesDetalhe] = useState(false);
+  const [filtroStatusCliente, setFiltroStatusCliente] = useState('todos'); // 'todos' | 'novos' | 'recorrentes'
+  const [vendedorExpandido, setVendedorExpandido] = useState(null); // key do vendedor expandido na aba breakdown
   const [modalROI, setModalROI] = useState(false);
   const [vendedores, setVendedores] = useState(null);
   const [loadingVend, setLoadingVend] = useState(false);
@@ -2202,13 +2260,16 @@ export default function FaturamentoCanal() {
     setClientesCanal(null);
 
     // Clientes ativos + novos por canal (paralelo, leve)
-    fetchBuscar(`${API_BASE_URL}/api/crm/clientes-por-canal`, {
+    fetch(`${API_BASE_URL}/api/crm/clientes-por-canal`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ datemin: dataInicio, datemax: dataFim }),
     })
       .then((r) => r.json())
-      .then((j) => { if (j?.success) setClientesCanal(j.data); })
+      .then((j) => {
+        if (fetchBuscar.isStale(tok)) return;
+        if (j?.success) setClientesCanal(j.data);
+      })
       .catch(() => setClientesCanal(null));
 
     // BlueCred — clientes classificados como BLUE CRED no TOTVS
@@ -2247,7 +2308,7 @@ export default function FaturamentoCanal() {
     // Stale-while-revalidate: mostra cache local imediatamente, busca fresco em background
     // v9: bumped pra invalidar caches stale que estavam mostrando só 6 canais
     //     (faltava franquia/showroom/bazar/novidades — backend já retorna todos).
-    const cacheKey = `fatseg:v9:${dataInicio}:${dataFim}`;
+    const cacheKey = `fatseg:v10:${dataInicio}:${dataFim}`;
     let hasStale = false;
     try {
       const raw = localStorage.getItem(cacheKey);
@@ -2261,12 +2322,14 @@ export default function FaturamentoCanal() {
 
     if (!hasStale) setLoading(true);
 
-    // Busca o faturamento principal via faturamento-por-segmento (classifica por
-    // dealer + operação — correto para revenda e franquia)
+    // Busca o faturamento principal via canais-totals-all (cache Supabase,
+    // resposta instantânea). Mantém formato compatível com setResultado.
+    // Antes usava /faturamento-por-segmento (TOTVS direto), mas é lento.
     try {
-      const res = await apiPost('/api/crm/faturamento-por-segmento', {
+      const res = await apiPost('/api/crm/canais-totals-all?lite=true', {
         datemin: dataInicio,
         datemax: dataFim,
+        lite: true,
       });
       if (fetchBuscar.isStale(tok)) return;
       const resultadoFinal = {
@@ -2284,10 +2347,10 @@ export default function FaturamentoCanal() {
         // Limpa entradas antigas — mantém no máximo 8 chaves fatseg:
         // Limpa caches de versões antigas — mantém só v8
         Object.keys(localStorage)
-          .filter((k) => k.startsWith('fatseg:') && !k.startsWith('fatseg:v9:'))
+          .filter((k) => k.startsWith('fatseg:') && !k.startsWith('fatseg:v10:'))
           .forEach((k) => localStorage.removeItem(k));
         const allKeys = Object.keys(localStorage).filter((k) =>
-          k.startsWith('fatseg:v9:'),
+          k.startsWith('fatseg:v10:'),
         );
         if (allKeys.length > 8) {
           allKeys.slice(0, allKeys.length - 8).forEach((k) => localStorage.removeItem(k));
@@ -2444,6 +2507,19 @@ export default function FaturamentoCanal() {
       for (const m of metasSRes?.data?.metas || []) {
         metasSemanal[m.canal] = Number(m.valor_meta);
         if (m.justificativa) justifSemanal[m.canal] = m.justificativa;
+      }
+      // ── Override Varejo: meta semanal = meta mensal × % da semana ──────
+      // Distribuição: S1=22.4% · S2=32% · S3=22.8% · S4=22.8% · S5=0%
+      // Sobrescreve qualquer valor cadastrado em forecast_canal_metas.
+      const VAREJO_DIST_SEM = { 1: 0.224, 2: 0.32, 3: 0.228, 4: 0.228, 5: 0 };
+      const semKey = isoWeekToMonthSemKey(weekKey);
+      const semMatch = /-S(\d)$/.exec(semKey || '');
+      const semNum = semMatch ? Number(semMatch[1]) : null;
+      const pctSem = semNum != null ? VAREJO_DIST_SEM[semNum] : null;
+      const metaMesVarejo = Number(metasMensal.varejo || 0);
+      if (pctSem != null && metaMesVarejo > 0) {
+        const novaMetaSem = Math.round(metaMesVarejo * pctSem * 100) / 100;
+        metasSemanal.varejo = novaMetaSem;
       }
       const fatMensal = { ...(fatM?.segmentos || {}) };
       const fatSemanal = { ...(fatS?.segmentos || {}) };
@@ -2728,22 +2804,38 @@ export default function FaturamentoCanal() {
       // Canal virtual "fabrica" = soma de showroom + novidadesfranquia
       const fontes = canal === 'fabrica' ? FABRICA_SOURCES : [canal];
       const inflightPromise = (async () => {
-        // lite=true → pula PASS 0 (credev em payments, FIS_NFITEMPROD scan).
-        // Drill-down precisa ser rápido (clique do usuário). Líquido fica
-        // levemente inflado mas a tabela mostra "% do canal" relativo (não
-        // afeta a distribuição entre lojas/vendedores).
-        const results = await Promise.all(
-          fontes.map((mod) =>
+        // TOTVS canal-totals com timeout 8s. Se TOTVS retornar primeiro, ótimo
+        // (per_seller mais preciso com credev). Se não, fallback Supabase assume.
+        const fetchComTimeout = (mod) => {
+          return new Promise((resolve) => {
+            const t = setTimeout(() => {
+              console.warn(`[canal-breakdown] ${mod}: TOTVS timeout 8s, usa fallback`);
+              resolve(null);
+            }, 8000);
             apiPost('/api/crm/canal-totals?lite=true', {
               datemin: range.datemin,
               datemax: range.datemax,
               modulo: mod,
               lite: true,
-            }).catch(() => null),
-          ),
-        );
+            })
+              .then((r) => { clearTimeout(t); resolve(r); })
+              .catch(() => { clearTimeout(t); resolve(null); });
+          });
+        };
+        const results = await Promise.all(fontes.map(fetchComTimeout));
         return results;
       })();
+
+      // Em paralelo, dispara fallback Supabase pra canais com vendedor — é
+      // rápido (<2s) e garante que algo apareça mesmo se TOTVS estiver lento.
+      const canaisComVendedorPreFetch = new Set(['revenda', 'multimarcas', 'inbound_david', 'inbound_rafael', 'varejo']);
+      const fallbackPromise = canaisComVendedorPreFetch.has(canal)
+        ? apiPost('/api/crm/canal-per-seller-fallback', {
+            datemin: range.datemin,
+            datemax: range.datemax,
+            modulo: canal,
+          }).catch(() => null)
+        : Promise.resolve(null);
       breakdownInflightRef.current.set(cacheKey, inflightPromise);
       try {
         const results = await inflightPromise;
@@ -2826,17 +2918,56 @@ export default function FaturamentoCanal() {
           s.invoice_value = Math.max(0, s.invoice_value - cr);
         }
 
-        const per_seller = [...mergedSeller.values()]
+        let per_seller = [...mergedSeller.values()]
           .map((s) => ({
             ...s,
             tm: s.invoice_qty > 0 ? s.invoice_value / s.invoice_qty : 0,
             pa: s.invoice_qty > 0 ? s.itens_qty / s.invoice_qty : 0,
           }))
           .sort((a, b) => b.invoice_value - a.invoice_value);
-        setBreakdownCache((s) => ({
-          ...s,
-          [cacheKey]: { loading: false, per_branch, per_seller },
-        }));
+        // ── Fallback: se TOTVS retornou per_seller/per_branch vazio (timeout/erro),
+        // usa o fallback Supabase que já foi disparado em paralelo no início.
+        let per_branch_final = per_branch;
+        const isVarejo = canal === 'varejo';
+        const precisaFallback = (isVarejo && per_branch.length === 0)
+          || (!isVarejo && per_seller.length === 0 && canaisComVendedor.has(canal));
+        if (precisaFallback) {
+          try {
+            const fb = await fallbackPromise;
+            if (isVarejo) {
+              const fbBranches = fb?.per_branch || [];
+              if (fbBranches.length > 0) {
+                per_branch_final = fbBranches.map((b) => ({
+                  ...b,
+                  tm: b.invoice_qty > 0 ? b.invoice_value / b.invoice_qty : 0,
+                  pa: 0,
+                }));
+                console.log(`[canal-breakdown] varejo: fallback notas_fiscais (${fbBranches.length} lojas)`);
+              }
+            } else {
+              const fbList = fb?.per_seller || [];
+              if (fbList.length > 0) {
+                per_seller = fbList.map((s) => ({
+                  ...s,
+                  tm: s.invoice_qty > 0 ? s.invoice_value / s.invoice_qty : 0,
+                  pa: 0,
+                }));
+                console.log(`[canal-breakdown] ${canal}: fallback notas_fiscais (${fbList.length} vendedores)`);
+              }
+            }
+          } catch (e) {
+            console.warn(`[canal-breakdown] ${canal}: fallback falhou: ${e.message}`);
+          }
+        }
+        setBreakdownCache((s) => {
+          const next = { ...s, [cacheKey]: { loading: false, per_branch: per_branch_final, per_seller } };
+          // Se ficou vazio mesmo após fallback, NÃO cache — permite retry no próximo click
+          if (per_branch_final.length === 0 && per_seller.length === 0) {
+            delete next[cacheKey];
+            console.warn(`[canal-breakdown] ${canal}: vazio (TOTVS + fallback falharam) — sem cache pra permitir retry`);
+          }
+          return next;
+        });
       } catch (err) {
         console.warn(`[canal-breakdown] ${canal}: ${err.message}`);
         setBreakdownCache((s) => ({
@@ -3139,6 +3270,17 @@ export default function FaturamentoCanal() {
     else if (aba === 'pagamento') buscarPagamento();
   };
 
+  // Auto-busca no mount — UX: não precisa clicar Buscar. Dispara só
+  // quando entra na aba canal e ainda não buscou (sem resultado e sem loading).
+  useEffect(() => {
+    if (aba !== 'canal') return;
+    if (!dataInicio || !dataFim) return;
+    if (resultado || loading) return;
+    console.log('[auto-busca] disparando buscar()', { dataInicio, dataFim, aba });
+    buscar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba]);
+
   const ATALHOS = [
     {
       // Última semana COMPLETA = segunda passada até domingo passado.
@@ -3342,6 +3484,8 @@ export default function FaturamentoCanal() {
               <div className="absolute -bottom-16 -left-16 w-72 h-72 bg-yellow-500/5 rounded-full blur-3xl" />
 
               <CardContent className="relative pt-6 pb-6 text-white">
+                <div className="flex flex-col gap-5">
+                {/* ─── LINHA 1: Faturamento principal + Devoluções/Líquido ─── */}
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
                   {/* ── ESQUERDA: total + período ── */}
                   <div className="flex items-center gap-4 flex-1">
@@ -3390,13 +3534,28 @@ export default function FaturamentoCanal() {
                             </span>
                           </>
                         )}
+                        {resultado.credev_total > 0 && (
+                          <>
+                            <span className="opacity-50">•</span>
+                            <span className="inline-flex items-center gap-1.5 bg-rose-500/10 border border-rose-400/30 text-rose-200 rounded-full px-2.5 py-0.5 font-semibold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                              Credev − R$ {formatBRL(resultado.credev_total)}
+                            </span>
+                          </>
+                        )}
                       </p>
                     </div>
                   </div>
 
+                </div>
+
+                {/* ─── LINHA 2: KPIs (WhatsApp · Tráfego · ROI+Clientes) ───
+                    3 colunas no desktop. Última coluna empilha ROI + Clientes
+                    pra equilibrar altura visual com WhatsApp/Tráfego. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:items-stretch">
                   {/* Custos API WhatsApp + Tráfego */}
                   {(custoWpp || custoAds || erroMeta) && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-2 lg:gap-3 min-w-0 lg:min-w-[440px]">
+                    <div className="contents">
                       {custoWpp && (
                         <div
                           role="button"
@@ -3635,6 +3794,8 @@ export default function FaturamentoCanal() {
                     </div>
                   )}
 
+                  {/* Coluna 3: ROI Marketing + Clientes empilhados (metade da altura cada) */}
+                  <div className="flex flex-col gap-3">
                   {/* Card: ROI / ROAS (Marketing) — clicável → abre modal */}
                   {(custoWpp || custoAds) && resultado && (() => {
                     const wppBRL = Number(custoWpp?.costBRL ?? (custoWpp?.cost ?? 0) * 5.8 ?? 0);
@@ -3649,20 +3810,20 @@ export default function FaturamentoCanal() {
                         tabIndex={0}
                         onClick={() => setModalROI(true)}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setModalROI(true); } }}
-                        className="bg-cyan-500/10 hover:bg-cyan-500/20 backdrop-blur-sm border border-cyan-400/30 hover:border-cyan-400/50 rounded-lg px-3 py-2 min-w-0 cursor-pointer transition-colors group"
-                        title="Clique para ver ROI por canal"
+                        className="bg-cyan-500/10 hover:bg-cyan-500/20 backdrop-blur-sm border border-cyan-400/30 hover:border-cyan-400/50 rounded-lg px-3 py-2 min-w-0 cursor-pointer transition-colors group flex-1 flex flex-col justify-center"
+                        title="Clique para ver ROAS por canal (WhatsApp/Tráfego × Novos/Total)"
                       >
                         <p className="text-[10px] text-cyan-200/80 uppercase tracking-wider font-medium flex items-center justify-between gap-2">
-                          <span>ROI Marketing</span>
+                          <span>ROAS Marketing</span>
                           <span className="text-[9px] text-cyan-300/60 group-hover:text-cyan-200 normal-case tracking-normal font-normal">
                             ver por canal →
                           </span>
                         </p>
                         <p className="text-base font-bold text-cyan-200 mt-1 tabular-nums leading-tight">
-                          {roi.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%
+                          {roas.toFixed(2)}x
                         </p>
                         <p className="text-[10px] text-cyan-300/80 mt-0.5">
-                          ROAS <b className="text-cyan-100 tabular-nums">{roas.toFixed(1)}x</b> · invest. R$ {formatBRL(totMkt)}
+                          invest. R$ {formatBRL(totMkt)}
                         </p>
                       </div>
                     );
@@ -3680,7 +3841,7 @@ export default function FaturamentoCanal() {
                         tabIndex={0}
                         onClick={() => setModalClientesCanal(true)}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setModalClientesCanal(true); } }}
-                        className="bg-emerald-500/10 hover:bg-emerald-500/20 backdrop-blur-sm border border-emerald-400/30 hover:border-emerald-400/50 rounded-lg px-3 py-2 min-w-0 cursor-pointer transition-colors group"
+                        className="bg-emerald-500/10 hover:bg-emerald-500/20 backdrop-blur-sm border border-emerald-400/30 hover:border-emerald-400/50 rounded-lg px-3 py-2 min-w-0 cursor-pointer transition-colors group flex-1 flex flex-col justify-center"
                         title="Clique para ver clientes por canal"
                       >
                         <p className="text-[10px] text-emerald-200/80 uppercase tracking-wider font-medium flex items-center justify-between gap-2">
@@ -3702,32 +3863,9 @@ export default function FaturamentoCanal() {
                       </div>
                     );
                   })()}
+                  </div>{/* fecha coluna 3 (ROI + Clientes) */}
 
-                  {resultado.credev_total > 0 && (() => {
-                    const liquido =
-                      resultado.total_liquido ??
-                      resultado.total - resultado.credev_total;
-                    return (
-                      <div className="flex flex-col gap-2 min-w-0">
-                        <div className="bg-rose-500/10 backdrop-blur-sm border border-rose-400/20 rounded-lg px-3 py-2 min-w-0">
-                          <p className="text-[10px] text-rose-200/80 uppercase tracking-wider font-medium mb-0.5">
-                            Devoluções (Credev)
-                          </p>
-                          <p className="text-lg font-bold text-rose-300 tabular-nums leading-tight whitespace-nowrap">
-                            − R$ {formatBRL(resultado.credev_total)}
-                          </p>
-                        </div>
-                        <div className="bg-emerald-500/10 backdrop-blur-sm border border-emerald-400/20 rounded-lg px-3 py-2 min-w-0">
-                          <p className="text-[10px] text-emerald-200/80 uppercase tracking-wider font-medium mb-0.5">
-                            Faturamento Líquido
-                          </p>
-                          <p className="text-lg font-bold text-emerald-300 tabular-nums leading-tight whitespace-nowrap">
-                            R$ {formatBRL(liquido)}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                </div>
                 </div>
               </CardContent>
             </Card>
@@ -5213,6 +5351,12 @@ export default function FaturamentoCanal() {
               const segunda = new Date(hoje);
               const dow = segunda.getDay() === 0 ? 7 : segunda.getDay();
               segunda.setDate(segunda.getDate() - (dow - 1));
+              // Se hoje é segunda (dow=1), a semana corrente acabou de começar
+              // e fimOntem aponta pro sábado anterior — voltamos 7 dias pra
+              // mostrar a semana COMPLETA que acabou (seg→sáb anterior).
+              if (segunda.toISOString().slice(0, 10) > fimOntem) {
+                segunda.setDate(segunda.getDate() - 7);
+              }
               const iniSemana = segunda.toISOString().slice(0, 10);
               const iniMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
               return (
@@ -5223,6 +5367,7 @@ export default function FaturamentoCanal() {
                     datemax={fimOntem}
                     periodo="mes"
                     corHeader="amber"
+                    cacheOnly
                   />
                   <FaturamentoOntemVendedorLoja
                     titulo="Faturamento Detalhado por Canal — Semana Atual"
@@ -5230,12 +5375,15 @@ export default function FaturamentoCanal() {
                     datemax={fimOntem}
                     periodo="semana"
                     corHeader="blue"
-                    delayMs={1500}
+                    cacheOnly
+                    delayMs={30000}
                   />
                   <FaturamentoOntemVendedorLoja
                     titulo="Faturamento Detalhado por Canal — Ontem"
                     periodo="ontem"
                     corHeader="emerald"
+                    cacheOnly
+                    delayMs={60000}
                   />
                 </>
               );
@@ -5307,21 +5455,37 @@ export default function FaturamentoCanal() {
         // Custo marketing por canal
         const wppByCanal = custoWpp?.by_canal || {};
         const adsByCanal = custoAds?.by_canal || {};
+        // Receita de novos clientes por canal (do /clientes-por-canal)
+        const novosPorCanal = clientesCanal || {};
         const linhas = CANAIS_EXIBIR.map((c) => {
           const receita = Number(receitaPorCanal[c] || 0);
+          // Receita só de clientes novos no período
+          const receitaNovos = Number(novosPorCanal[c]?.receita_novos || 0);
           const wpp = Number(wppByCanal[c]?.costBRL || wppByCanal[c]?.cost * 5.8 || 0);
           const ads = Number(adsByCanal[c]?.spend || 0);
-          const custo = wpp + ads;
-          const roi = custo > 0 ? ((receita - custo) / custo) * 100 : null;
-          const roas = custo > 0 ? receita / custo : null;
-          return { canal: c, receita, wpp, ads, custo, roi, roas };
-        }).sort((a, b) => (b.roi ?? -Infinity) - (a.roi ?? -Infinity));
+          // ROAS por fonte × público (4 métricas):
+          //   Wpp Novos = receita_novos / custo_wpp
+          //   Wpp Total = receita_total / custo_wpp
+          //   Ads Novos = receita_novos / custo_ads
+          //   Ads Total = receita_total / custo_ads
+          const roasWppNovos = wpp > 0 ? receitaNovos / wpp : null;
+          const roasWppTotal = wpp > 0 ? receita / wpp : null;
+          const roasAdsNovos = ads > 0 ? receitaNovos / ads : null;
+          const roasAdsTotal = ads > 0 ? receita / ads : null;
+          return {
+            canal: c, receita, receitaNovos, wpp, ads,
+            roasWppNovos, roasWppTotal, roasAdsNovos, roasAdsTotal,
+          };
+        }).sort((a, b) => (b.roasWppTotal ?? b.roasAdsTotal ?? 0) - (a.roasWppTotal ?? a.roasAdsTotal ?? 0));
         const totReceita = linhas.reduce((s, l) => s + l.receita, 0);
+        const totReceitaNovos = linhas.reduce((s, l) => s + l.receitaNovos, 0);
         const totWpp = linhas.reduce((s, l) => s + l.wpp, 0);
         const totAds = linhas.reduce((s, l) => s + l.ads, 0);
-        const totCusto = totWpp + totAds;
-        const roiGeral = totCusto > 0 ? ((totReceita - totCusto) / totCusto) * 100 : 0;
-        const roasGeral = totCusto > 0 ? totReceita / totCusto : 0;
+        // ROAS consolidados
+        const roasWppNovosGeral = totWpp > 0 ? totReceitaNovos / totWpp : 0;
+        const roasWppTotalGeral = totWpp > 0 ? totReceita / totWpp : 0;
+        const roasAdsNovosGeral = totAds > 0 ? totReceitaNovos / totAds : 0;
+        const roasAdsTotalGeral = totAds > 0 ? totReceita / totAds : 0;
         return (
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
@@ -5333,9 +5497,9 @@ export default function FaturamentoCanal() {
             >
               <div className="bg-gradient-to-r from-cyan-700 via-cyan-800 to-cyan-700 text-white px-6 py-4 flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-extrabold">ROI Marketing por Canal</h3>
+                  <h3 className="text-lg font-extrabold">ROAS por Canal</h3>
                   <p className="text-xs text-cyan-200 mt-0.5">
-                    {dataInicio} → {dataFim} · investimento = WhatsApp API + Tráfego Pago (Meta Ads)
+                    {dataInicio} → {dataFim} · WhatsApp API e Tráfego (Meta Ads) · novos clientes vs total
                   </p>
                 </div>
                 <button
@@ -5347,55 +5511,123 @@ export default function FaturamentoCanal() {
                 </button>
               </div>
               <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
-                {/* Totais geral */}
-                <div className="grid grid-cols-3 gap-3 mb-5">
-                  <div className="bg-cyan-50 rounded-xl p-4 ring-1 ring-cyan-200">
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-cyan-700">ROI</p>
-                    <p className="text-2xl font-extrabold text-cyan-900 tabular-nums mt-1">
-                      {roiGeral.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%
+                {/* Totais geral — 4 cards: Wpp Novos, Wpp Total, Ads Novos, Ads Total */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                  <div className="bg-yellow-50 rounded-xl p-4 ring-1 ring-yellow-200">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-yellow-700 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
+                      ROAS Wpp · Novos
                     </p>
-                    <p className="text-[10px] text-cyan-600 mt-0.5">(Receita − Custo) ÷ Custo</p>
-                  </div>
-                  <div className="bg-emerald-50 rounded-xl p-4 ring-1 ring-emerald-200">
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700">ROAS</p>
-                    <p className="text-2xl font-extrabold text-emerald-900 tabular-nums mt-1">{roasGeral.toFixed(2)}x</p>
-                    <p className="text-[10px] text-emerald-600 mt-0.5">Receita ÷ Custo</p>
+                    <p className="text-2xl font-extrabold text-yellow-900 tabular-nums mt-1">
+                      {totWpp > 0 ? `${roasWppNovosGeral.toFixed(2)}x` : '—'}
+                    </p>
+                    <p className="text-[10px] text-yellow-600 mt-0.5">
+                      receita novos ÷ wpp
+                    </p>
                   </div>
                   <div className="bg-amber-50 rounded-xl p-4 ring-1 ring-amber-200">
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-amber-700">Investido</p>
-                    <p className="text-2xl font-extrabold text-amber-900 tabular-nums mt-1">R$ {formatBRL(totCusto)}</p>
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-amber-700 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+                      ROAS Wpp · Total
+                    </p>
+                    <p className="text-2xl font-extrabold text-amber-900 tabular-nums mt-1">
+                      {totWpp > 0 ? `${roasWppTotalGeral.toFixed(2)}x` : '—'}
+                    </p>
                     <p className="text-[10px] text-amber-600 mt-0.5">
-                      WhatsApp R$ {formatBRL(totWpp)} · Ads R$ {formatBRL(totAds)}
+                      receita total ÷ wpp
+                    </p>
+                  </div>
+                  <div className="bg-violet-50 rounded-xl p-4 ring-1 ring-violet-200">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-violet-700 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-violet-500"></span>
+                      ROAS Ads · Novos
+                    </p>
+                    <p className="text-2xl font-extrabold text-violet-900 tabular-nums mt-1">
+                      {totAds > 0 ? `${roasAdsNovosGeral.toFixed(2)}x` : '—'}
+                    </p>
+                    <p className="text-[10px] text-violet-600 mt-0.5">
+                      receita novos ÷ ads
+                    </p>
+                  </div>
+                  <div className="bg-purple-50 rounded-xl p-4 ring-1 ring-purple-200">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-purple-700 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
+                      ROAS Ads · Total
+                    </p>
+                    <p className="text-2xl font-extrabold text-purple-900 tabular-nums mt-1">
+                      {totAds > 0 ? `${roasAdsTotalGeral.toFixed(2)}x` : '—'}
+                    </p>
+                    <p className="text-[10px] text-purple-600 mt-0.5">
+                      receita total ÷ ads
                     </p>
                   </div>
                 </div>
-                {/* Tabela por canal */}
+                <div className="bg-blue-50 rounded-lg p-2.5 mb-5 ring-1 ring-blue-200">
+                  <p className="text-[10px] text-blue-700 leading-relaxed">
+                    <b>Receita total:</b> R$ {formatBRL(totReceita)}
+                    <span className="text-emerald-700"> · Novos: R$ {formatBRL(totReceitaNovos)}</span>
+                    <span> · </span>
+                    <b>Investimento:</b> WhatsApp R$ {formatBRL(totWpp)} + Ads R$ {formatBRL(totAds)}
+                  </p>
+                </div>
+                {/* Tabela por canal — 4 colunas ROAS */}
                 <div className="space-y-2">
                   {linhas.map((l) => {
                     const cor = corPorCanal[l.canal] || { bg: 'bg-gray-50', text: 'text-gray-700', ring: 'ring-gray-200' };
+                    const corRoas = (v) => v == null ? 'text-gray-300' : (v >= 1 ? 'text-emerald-700' : 'text-rose-700');
                     return (
                       <div
                         key={l.canal}
                         className={`${cor.bg} ring-1 ${cor.ring} rounded-xl px-4 py-3`}
                       >
-                        <div className="flex items-center justify-between gap-3 mb-2">
-                          <div>
+                        <div className="flex items-center justify-between gap-4 mb-2 flex-wrap">
+                          <div className="min-w-0">
                             <p className={`text-sm font-bold ${cor.text}`}>{labelMap[l.canal]}</p>
                             <p className="text-[10px] text-gray-500 mt-0.5">
-                              Receita R$ {formatBRL(l.receita)} · Investido R$ {formatBRL(l.custo)} (Wpp R$ {formatBRL(l.wpp)} + Ads R$ {formatBRL(l.ads)})
+                              Total R$ {formatBRL(l.receita)}
+                              <span className="text-emerald-700"> · Novos R$ {formatBRL(l.receitaNovos)}</span>
+                              <span className="text-gray-400"> · Wpp R$ {formatBRL(l.wpp)} + Ads R$ {formatBRL(l.ads)}</span>
                             </p>
                           </div>
-                          <div className="flex items-center gap-5 shrink-0">
-                            <div className="text-right">
-                              <p className="text-[9px] uppercase tracking-wider font-bold text-gray-500">ROAS</p>
-                              <p className={`text-lg font-extrabold tabular-nums ${l.roas != null ? cor.text : 'text-gray-300'}`}>
-                                {l.roas != null ? `${l.roas.toFixed(2)}x` : '—'}
+                          <div className="flex items-center gap-2 shrink-0">
+                            {/* ROAS Wpp Novos */}
+                            <div className="text-right border-r border-gray-300 pr-2 min-w-[60px]">
+                              <p className="text-[9px] uppercase tracking-wider font-bold text-yellow-700 flex items-center justify-end gap-1">
+                                <span className="w-1 h-1 rounded-full bg-yellow-500"></span>
+                                Wpp Novos
+                              </p>
+                              <p className={`text-base font-extrabold tabular-nums ${corRoas(l.roasWppNovos)}`}>
+                                {l.roasWppNovos != null ? `${l.roasWppNovos.toFixed(2)}x` : '—'}
                               </p>
                             </div>
-                            <div className="text-right min-w-[80px]">
-                              <p className="text-[9px] uppercase tracking-wider font-bold text-gray-500">ROI</p>
-                              <p className={`text-lg font-extrabold tabular-nums ${l.roi != null ? (l.roi >= 0 ? 'text-emerald-700' : 'text-rose-700') : 'text-gray-300'}`}>
-                                {l.roi != null ? `${l.roi.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%` : '—'}
+                            {/* ROAS Wpp Total */}
+                            <div className="text-right border-r border-gray-300 pr-2 min-w-[60px]">
+                              <p className="text-[9px] uppercase tracking-wider font-bold text-amber-700 flex items-center justify-end gap-1">
+                                <span className="w-1 h-1 rounded-full bg-amber-600"></span>
+                                Wpp Total
+                              </p>
+                              <p className={`text-base font-extrabold tabular-nums ${corRoas(l.roasWppTotal)}`}>
+                                {l.roasWppTotal != null ? `${l.roasWppTotal.toFixed(2)}x` : '—'}
+                              </p>
+                            </div>
+                            {/* ROAS Ads Novos */}
+                            <div className="text-right border-r border-gray-300 pr-2 min-w-[60px]">
+                              <p className="text-[9px] uppercase tracking-wider font-bold text-violet-700 flex items-center justify-end gap-1">
+                                <span className="w-1 h-1 rounded-full bg-violet-500"></span>
+                                Ads Novos
+                              </p>
+                              <p className={`text-base font-extrabold tabular-nums ${corRoas(l.roasAdsNovos)}`}>
+                                {l.roasAdsNovos != null ? `${l.roasAdsNovos.toFixed(2)}x` : '—'}
+                              </p>
+                            </div>
+                            {/* ROAS Ads Total */}
+                            <div className="text-right min-w-[60px]">
+                              <p className="text-[9px] uppercase tracking-wider font-bold text-purple-700 flex items-center justify-end gap-1">
+                                <span className="w-1 h-1 rounded-full bg-purple-600"></span>
+                                Ads Total
+                              </p>
+                              <p className={`text-base font-extrabold tabular-nums ${corRoas(l.roasAdsTotal)}`}>
+                                {l.roasAdsTotal != null ? `${l.roasAdsTotal.toFixed(2)}x` : '—'}
                               </p>
                             </div>
                           </div>
@@ -5404,8 +5636,9 @@ export default function FaturamentoCanal() {
                     );
                   })}
                 </div>
-                <div className="mt-4 text-[11px] text-gray-500 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                  <p><b>ROI</b> = (Receita − Custo) ÷ Custo · positivo = lucro. <b>ROAS</b> = Receita ÷ Custo · acima de 1x = receita maior que investimento. Canais sem investimento (—) não têm gasto rastreado de WhatsApp/Meta Ads atribuído.</p>
+                <div className="mt-4 text-[11px] text-gray-500 bg-gray-50 rounded-lg p-3 border border-gray-200 space-y-1">
+                  <p><b>ROAS</b> = Receita ÷ Investimento · acima de 1x = receita maior que investimento.</p>
+                  <p><b className="text-yellow-700">Novos</b> usa receita só dos clientes cuja PRIMEIRA NF no canal está dentro do período. <b className="text-amber-700">Total</b> usa receita de todos os clientes no período. Canais sem investimento aparecem como —.</p>
                 </div>
               </div>
             </div>
@@ -5448,7 +5681,7 @@ export default function FaturamentoCanal() {
                 <div>
                   <h3 className="text-lg font-extrabold">Clientes por Canal</h3>
                   <p className="text-xs text-emerald-200 mt-0.5">
-                    {dataInicio} → {dataFim} · ativos = comprou na janela do canal
+                    {dataInicio} → {dataFim} · ativos = NF na janela do canal · novos = 1ª compra no mês atual
                   </p>
                 </div>
                 <button
@@ -5470,20 +5703,48 @@ export default function FaturamentoCanal() {
                   <div className="bg-amber-50 rounded-xl p-4 ring-1 ring-amber-200">
                     <p className="text-[10px] uppercase tracking-wider font-bold text-amber-700">Total Novos</p>
                     <p className="text-2xl font-extrabold text-amber-900 tabular-nums mt-1">+{totNovos.toLocaleString('pt-BR')}</p>
-                    <p className="text-[10px] text-amber-600 mt-0.5">1ª compra dentro do período</p>
+                    <p className="text-[10px] text-amber-600 mt-0.5">1ª compra no mês atual ({dataInicio.slice(0,7)})</p>
                   </div>
                 </div>
-                {/* Linhas por canal */}
+                {/* Linhas por canal — todas clicáveis pra abrir recompra detalhada */}
                 <div className="space-y-2">
                   {linhas.map((l) => {
                     const cor = corPorCanal[l.canal] || { bg: 'bg-gray-50', text: 'text-gray-700', ring: 'ring-gray-200' };
+                    const dimLabel = l.canal === 'varejo' ? 'loja' : 'vendedor';
                     return (
                       <div
                         key={l.canal}
-                        className={`${cor.bg} ring-1 ${cor.ring} rounded-xl px-4 py-3 flex items-center justify-between gap-3`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={async () => {
+                          setModalRecompraCanal({ canal: l.canal, label: labelMap[l.canal] });
+                          setAbaRecompra('breakdown');
+                          setFiltroStatusCliente('todos');
+                          setVendedorExpandido(null);
+                          if (!recompraCanal[l.canal]) {
+                            setLoadingRecompra(true);
+                            try {
+                              const r = await apiPost('/api/crm/recompra-por-canal', {
+                                canal: l.canal, datemin: dataInicio, datemax: dataFim,
+                              });
+                              setRecompraCanal((prev) => ({ ...prev, [l.canal]: r }));
+                            } catch (e) {
+                              console.warn(`recompra-por-canal ${l.canal} erro:`, e?.message);
+                            } finally {
+                              setLoadingRecompra(false);
+                            }
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); }
+                        }}
+                        className={`${cor.bg} ring-1 ${cor.ring} rounded-xl px-4 py-3 flex items-center justify-between gap-3 cursor-pointer hover:ring-2 hover:ring-blue-400 transition`}
                       >
                         <div>
-                          <p className={`text-sm font-bold ${cor.text}`}>{labelMap[l.canal]}</p>
+                          <p className={`text-sm font-bold ${cor.text}`}>
+                            {labelMap[l.canal]}
+                            <span className="ml-2 text-[10px] font-medium text-blue-600">→ clique para ver recompra por {dimLabel}</span>
+                          </p>
                           <p className="text-[10px] text-gray-500 mt-0.5">
                             Janela ativos: {l.janela_dias} dias · {l.total_clientes_periodo?.toLocaleString('pt-BR')} compraram no período
                           </p>
@@ -5502,6 +5763,342 @@ export default function FaturamentoCanal() {
                     );
                   })}
                 </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Modal aninhado: recompra por canal (loja ou vendedor) */}
+      {modalRecompraCanal && (() => {
+        const d = recompraCanal[modalRecompraCanal.canal];
+        const dimNome = d?.label_dim || (modalRecompraCanal.canal === 'varejo' ? 'Loja' : 'Vendedor');
+        const dimLabelLower = dimNome.toLowerCase();
+        const conector = dimNome === 'Loja' ? 'na mesma' : 'com o mesmo';
+        return (
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
+            onClick={() => setModalRecompraCanal(null)}
+          >
+            <div
+              className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-gradient-to-r from-emerald-700 via-emerald-800 to-emerald-700 text-white px-6 py-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-extrabold">Taxa de Recompra — {modalRecompraCanal.label} por {dimNome}</h3>
+                  <p className="text-xs text-emerald-200 mt-0.5">
+                    {d?.periodo?.datemin || dataInicio} → {d?.periodo?.datemax || dataFim} · recorrentes = compraram {conector} {dimLabelLower} nos 365 dias anteriores
+                  </p>
+                </div>
+                <button
+                  onClick={() => setModalRecompraCanal(null)}
+                  className="bg-white/10 hover:bg-white/20 rounded-lg p-2 transition"
+                  aria-label="Fechar"
+                >
+                  ✕
+                </button>
+              </div>
+              {/* Abas: Por Vendedor/Loja · Clientes (canais não-varejo) */}
+              {modalRecompraCanal.canal !== 'varejo' && (
+                <div className="px-6 pt-3 bg-white border-b border-gray-100 flex gap-1">
+                  {[
+                    { key: 'breakdown', label: `Por ${dimNome}` },
+                    { key: 'clientes', label: 'Clientes' },
+                  ].map((t) => (
+                    <button
+                      key={t.key}
+                      onClick={async () => {
+                        setAbaRecompra(t.key);
+                        if (t.key === 'clientes' && !clientesCanalDetalhe[modalRecompraCanal.canal]) {
+                          setLoadingClientesDetalhe(true);
+                          try {
+                            const r = await apiPost('/api/crm/clientes-do-canal', {
+                              canal: modalRecompraCanal.canal,
+                              datemin: dataInicio,
+                              datemax: dataFim,
+                            });
+                            setClientesCanalDetalhe((prev) => ({ ...prev, [modalRecompraCanal.canal]: r }));
+                          } catch (e) {
+                            console.warn(`clientes-do-canal ${modalRecompraCanal.canal} erro:`, e?.message);
+                          } finally {
+                            setLoadingClientesDetalhe(false);
+                          }
+                        }
+                      }}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-t-lg transition border-b-2 ${
+                        abaRecompra === t.key
+                          ? 'border-emerald-600 text-emerald-700 bg-emerald-50'
+                          : 'border-transparent text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="p-6 overflow-y-auto max-h-[calc(90vh-130px)]">
+                {/* ─── ABA CLIENTES ─── */}
+                {abaRecompra === 'clientes' && modalRecompraCanal.canal !== 'varejo' && (() => {
+                  if (loadingClientesDetalhe) {
+                    return <div className="text-center py-12 text-gray-500">Carregando clientes…</div>;
+                  }
+                  const cd = clientesCanalDetalhe[modalRecompraCanal.canal];
+                  if (!cd || !cd.clientes) {
+                    return <div className="text-center py-12 text-gray-400 text-sm">Sem dados disponíveis.</div>;
+                  }
+                  const clientesAll = cd.clientes || [];
+                  const filtrados = clientesAll.filter((c) => {
+                    if (filtroStatusCliente === 'novos') return c.is_novo;
+                    if (filtroStatusCliente === 'recorrentes') return c.is_recorrente;
+                    return true;
+                  });
+                  return (
+                    <>
+                      {/* Aviso de sub-sincronização */}
+                      {cd.sub_sync_warning && (
+                        <div className="mb-4 bg-amber-50 ring-1 ring-amber-300 rounded-xl p-3 flex items-start gap-2.5">
+                          <span className="text-amber-600 mt-0.5">⚠️</span>
+                          <div className="flex-1 text-xs leading-relaxed text-amber-900">
+                            <p className="font-bold">Lista parcial — Supabase sub-sincronizado</p>
+                            <p className="text-amber-800 mt-0.5">
+                              Soma das NFs no Supabase: <b>R$ {Number(cd.sub_sync_warning.supabase_total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b><br/>
+                              Faturamento real do canal (TOTVS): <b>R$ {Number(cd.sub_sync_warning.canal_total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b><br/>
+                              Faltam <b>R$ {Number(cd.sub_sync_warning.diff).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b> ({cd.sub_sync_warning.diff_pct.toFixed(1)}%) de NFs ainda não sincronizadas. O sync rodará no próximo ciclo.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      {/* KPIs Clientes */}
+                      <div className="grid grid-cols-3 gap-3 mb-4">
+                        <div className="bg-emerald-50 rounded-xl p-3 ring-1 ring-emerald-200">
+                          <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700">Total Clientes</p>
+                          <p className="text-2xl font-extrabold text-emerald-900 tabular-nums mt-1">{cd.total_clientes?.toLocaleString('pt-BR') || 0}</p>
+                        </div>
+                        <div className="bg-purple-50 rounded-xl p-3 ring-1 ring-purple-200">
+                          <p className="text-[10px] uppercase tracking-wider font-bold text-purple-700">Recorrentes</p>
+                          <p className="text-2xl font-extrabold text-purple-900 tabular-nums mt-1">{cd.total_recorrentes?.toLocaleString('pt-BR') || 0}</p>
+                        </div>
+                        <div className="bg-amber-50 rounded-xl p-3 ring-1 ring-amber-200">
+                          <p className="text-[10px] uppercase tracking-wider font-bold text-amber-700">Novos</p>
+                          <p className="text-2xl font-extrabold text-amber-900 tabular-nums mt-1">+{cd.total_novos?.toLocaleString('pt-BR') || 0}</p>
+                        </div>
+                      </div>
+                      {/* Chips de filtro */}
+                      <div className="flex gap-2 mb-3">
+                        {[
+                          { k: 'todos', label: `Todos (${clientesAll.length})`, cor: 'bg-gray-100 text-gray-700' },
+                          { k: 'recorrentes', label: `Recorrentes (${cd.total_recorrentes})`, cor: 'bg-purple-100 text-purple-700' },
+                          { k: 'novos', label: `Novos (${cd.total_novos})`, cor: 'bg-amber-100 text-amber-700' },
+                        ].map((f) => (
+                          <button
+                            key={f.k}
+                            onClick={() => setFiltroStatusCliente(f.k)}
+                            className={`px-3 py-1 rounded-full text-[11px] font-bold ring-1 transition ${
+                              filtroStatusCliente === f.k
+                                ? `${f.cor} ring-current/30 shadow-sm`
+                                : 'bg-white text-gray-400 ring-gray-200 hover:ring-gray-300'
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                      {/* Lista de clientes */}
+                      <div className="space-y-1.5">
+                        {filtrados.map((c) => (
+                          <div key={c.person_code} className="bg-white ring-1 ring-gray-100 hover:ring-emerald-300 rounded-lg px-3 py-2 flex items-center gap-3 transition">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-sm font-bold text-gray-800 truncate">{c.person_name}</p>
+                                {c.is_novo ? (
+                                  <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 tracking-wider">Novo</span>
+                                ) : (
+                                  <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 tracking-wider">Recorrente</span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-gray-500 mt-0.5">
+                                #{c.person_code}
+                                {c.vendedor_nome && <> · <span className="text-emerald-700 font-semibold">{c.vendedor_nome}</span></>}
+                                · {c.num_nfs} NF{c.num_nfs > 1 ? 's' : ''} · última {c.last_purchase}
+                              </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-[9px] uppercase tracking-wider font-bold text-gray-400">Total</p>
+                              <p className="text-sm font-extrabold tabular-nums text-gray-800">R$ {Number(c.total_value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            </div>
+                          </div>
+                        ))}
+                        {filtrados.length === 0 && (
+                          <div className="text-center py-8 text-gray-400 text-sm">Nenhum cliente nessa categoria.</div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+
+                {/* ─── ABA BREAKDOWN (por loja/vendedor) ─── */}
+                {abaRecompra === 'breakdown' && loadingRecompra && (
+                  <div className="text-center py-12 text-gray-500">Carregando…</div>
+                )}
+                {abaRecompra === 'breakdown' && !loadingRecompra && d && (() => {
+                  const itens = d.itens || [];
+                  return (
+                    <>
+                      {/* KPIs — mesmo estilo do modal pai */}
+                      <div className="grid grid-cols-3 gap-3 mb-5">
+                        <div className="bg-emerald-50 rounded-xl p-4 ring-1 ring-emerald-200">
+                          <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700">Taxa Geral</p>
+                          <p className="text-2xl font-extrabold text-emerald-900 tabular-nums mt-1">{(d.taxa_geral || 0).toFixed(1)}%</p>
+                          <p className="text-[10px] text-emerald-600 mt-0.5">média ponderada do canal</p>
+                        </div>
+                        <div className="bg-blue-50 rounded-xl p-4 ring-1 ring-blue-200">
+                          <p className="text-[10px] uppercase tracking-wider font-bold text-blue-700">Clientes Ativos</p>
+                          <p className="text-2xl font-extrabold text-blue-900 tabular-nums mt-1">{(d.total_ativos || 0).toLocaleString('pt-BR')}</p>
+                          <p className="text-[10px] text-blue-600 mt-0.5">únicos no período</p>
+                        </div>
+                        <div className="bg-purple-50 rounded-xl p-4 ring-1 ring-purple-200">
+                          <p className="text-[10px] uppercase tracking-wider font-bold text-purple-700">Recorrentes</p>
+                          <p className="text-2xl font-extrabold text-purple-900 tabular-nums mt-1">{(d.total_recorrentes || 0).toLocaleString('pt-BR')}</p>
+                          <p className="text-[10px] text-purple-600 mt-0.5">já compraram antes</p>
+                        </div>
+                      </div>
+
+                      {/* Lista por loja/vendedor — clica pra expandir clientes */}
+                      <div className="space-y-2">
+                        {itens.map((it) => {
+                          const high = it.taxa >= 60;
+                          const mid = it.taxa >= 40 && it.taxa < 60;
+                          const corTaxa = high ? 'text-emerald-700' : mid ? 'text-amber-700' : 'text-rose-700';
+                          const corBar = high ? 'bg-emerald-500' : mid ? 'bg-amber-500' : 'bg-rose-500';
+                          const corRing = high ? 'ring-emerald-200' : mid ? 'ring-amber-200' : 'ring-rose-200';
+                          const corBg = high ? 'bg-emerald-50' : mid ? 'bg-amber-50' : 'bg-rose-50';
+                          const expandido = vendedorExpandido === it.key;
+                          const cdAtual = clientesCanalDetalhe[modalRecompraCanal.canal];
+                          const clientesDoItem = (cdAtual?.clientes || []).filter((c) =>
+                            d.dim === 'branch' ? false : Number(c.dealer_code) === Number(it.key)
+                          );
+                          return (
+                            <div key={it.key}>
+                              <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={async () => {
+                                  if (d.dim === 'branch') return; // varejo não expande (muitos clientes)
+                                  const novo = expandido ? null : it.key;
+                                  setVendedorExpandido(novo);
+                                  // Garante que a lista de clientes está carregada
+                                  if (novo != null && !cdAtual) {
+                                    setLoadingClientesDetalhe(true);
+                                    try {
+                                      const r = await apiPost('/api/crm/clientes-do-canal', {
+                                        canal: modalRecompraCanal.canal,
+                                        datemin: dataInicio,
+                                        datemax: dataFim,
+                                      });
+                                      setClientesCanalDetalhe((prev) => ({ ...prev, [modalRecompraCanal.canal]: r }));
+                                    } catch (e) {
+                                      console.warn('clientes-do-canal erro:', e?.message);
+                                    } finally {
+                                      setLoadingClientesDetalhe(false);
+                                    }
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); }
+                                }}
+                                className={`${corBg} ring-1 ${corRing} rounded-xl px-4 py-3 flex items-center justify-between gap-3 ${
+                                  d.dim === 'branch' ? '' : 'cursor-pointer hover:ring-2 hover:ring-emerald-400 transition'
+                                }`}
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-sm font-bold ${corTaxa} flex items-center gap-2`}>
+                                    {d.dim !== 'branch' && (
+                                      <span className={`inline-block transition-transform ${expandido ? 'rotate-90' : ''}`}>▶</span>
+                                    )}
+                                    {it.name}
+                                    {d.dim !== 'branch' && !expandido && (
+                                      <span className="ml-1 text-[10px] font-medium text-gray-500">clique para ver clientes</span>
+                                    )}
+                                  </p>
+                                  <p className="text-[10px] text-gray-500 mt-0.5">
+                                    {d.dim === 'branch' ? 'Filial' : 'Vendedor'} {it.key} · {it.ativos.toLocaleString('pt-BR')} clientes ativos
+                                  </p>
+                                  <div className="w-full h-1 bg-white/70 rounded-full overflow-hidden mt-2">
+                                    <div className={`h-full ${corBar}`} style={{ width: `${Math.min(100, it.taxa)}%` }} />
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-6 shrink-0">
+                                  <div className="text-right">
+                                    <p className="text-[9px] uppercase tracking-wider font-bold text-purple-600">Recor.</p>
+                                    <p className="text-lg font-extrabold tabular-nums text-purple-700">{it.recorrentes.toLocaleString('pt-BR')}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-[9px] uppercase tracking-wider font-bold text-amber-600">Novos</p>
+                                    <p className="text-lg font-extrabold tabular-nums text-amber-700">+{it.novos.toLocaleString('pt-BR')}</p>
+                                  </div>
+                                  <div className="text-right min-w-[70px]">
+                                    <p className="text-[9px] uppercase tracking-wider font-bold text-gray-500">Taxa</p>
+                                    <p className={`text-lg font-extrabold tabular-nums ${corTaxa}`}>{it.taxa.toFixed(1)}%</p>
+                                  </div>
+                                </div>
+                              </div>
+                              {/* Expansão: clientes do vendedor */}
+                              {expandido && d.dim !== 'branch' && (
+                                <div className="mt-1.5 mb-2 pl-4 pr-1 py-2 bg-white ring-1 ring-gray-100 rounded-lg space-y-1.5">
+                                  {cdAtual?.sub_sync_warning && (
+                                    <div className="mb-1.5 px-2 py-1.5 bg-amber-50 ring-1 ring-amber-200 rounded text-[10px] text-amber-800 leading-tight">
+                                      ⚠️ Lista do Supabase pode estar parcial — faltam <b>R$ {Number(cdAtual.sub_sync_warning.diff).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b> ({cdAtual.sub_sync_warning.diff_pct.toFixed(1)}%) de NFs ainda não sincronizadas
+                                    </div>
+                                  )}
+                                  {loadingClientesDetalhe && !cdAtual && (
+                                    <p className="text-center text-xs text-gray-400 py-3">Carregando clientes…</p>
+                                  )}
+                                  {cdAtual && clientesDoItem.length === 0 && (
+                                    <p className="text-center text-xs text-gray-400 py-3">Sem clientes detalhados desse vendedor (pode estar sub-sincronizado).</p>
+                                  )}
+                                  {cdAtual && clientesDoItem.map((c) => (
+                                    <div key={c.person_code} className="flex items-center gap-3 px-2 py-1.5 hover:bg-gray-50 rounded">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <p className="text-xs font-bold text-gray-800 truncate">{c.person_name}</p>
+                                          {c.is_novo ? (
+                                            <span className="text-[8px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 tracking-wider">Novo</span>
+                                          ) : (
+                                            <span className="text-[8px] uppercase font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 tracking-wider">Recorrente</span>
+                                          )}
+                                        </div>
+                                        <p className="text-[10px] text-gray-400 mt-0.5">#{c.person_code} · {c.num_nfs} NF{c.num_nfs > 1 ? 's' : ''} · última {c.last_purchase}</p>
+                                      </div>
+                                      <p className="text-xs font-extrabold tabular-nums text-gray-800 shrink-0">
+                                        R$ {Number(c.total_value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {itens.length === 0 && (
+                          <div className="text-center py-12 text-gray-400 text-sm">
+                            Sem clientes ativos no período.
+                          </div>
+                        )}
+                      </div>
+
+                      <p className="text-[10px] text-gray-500 mt-4 italic">
+                        Histórico: {d.historico?.datemin} → {d.historico?.datemax} (365 dias antes do período).
+                        Faixas: <span className="text-emerald-700 font-semibold">≥60%</span> · <span className="text-amber-700 font-semibold">40-60%</span> · <span className="text-rose-700 font-semibold">&lt;40%</span>.
+                      </p>
+                    </>
+                  );
+                })()}
+                {!loadingRecompra && !d && (
+                  <div className="text-center py-12 text-gray-500">
+                    Sem dados de recompra disponíveis.
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -558,6 +558,12 @@ const tecnologiaItems = [
     icon: ChartLineUp,
     color: 'text-emerald-600',
   },
+  {
+    name: 'Clientes por Filial',
+    href: '/tecnologia/clientes-por-empresa',
+    icon: Buildings,
+    color: 'text-blue-600',
+  },
 ];
 
 const adminItems = [

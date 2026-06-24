@@ -10,6 +10,7 @@ import {
   CheckCircle,
   WarningCircle,
   Circle,
+  DownloadSimple,
 } from '@phosphor-icons/react';
 
 // ─── Formatadores ────────────────────────────────────────────────────────────
@@ -75,6 +76,7 @@ export function MetricaHeader({
   onRefresh,
   loading,
   onWhatsapp,
+  onDownload,
 }) {
   const colorMap = {
     blue: { bg: 'bg-gradient-to-r from-[#000638] via-[#1a2461] to-[#000638]', accent: 'text-blue-200' },
@@ -170,6 +172,16 @@ export function MetricaHeader({
           >
             <span className={`w-1.5 h-1.5 rounded-full ${untilToday ? 'bg-emerald-300 animate-pulse' : 'bg-white/50'}`} />
             {untilToday ? 'Hoje' : 'Até ontem'}
+          </button>
+        )}
+        {onDownload && (
+          <button
+            onClick={onDownload}
+            className="text-[11px] px-2.5 py-1.5 rounded border border-white/20 hover:bg-white/10 text-white/90 inline-flex items-center gap-1 transition"
+            title="Baixar card como imagem (PNG)"
+          >
+            <DownloadSimple size={12} weight="bold" />
+            PNG
           </button>
         )}
         {onRefresh && (

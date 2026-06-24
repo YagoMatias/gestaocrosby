@@ -26,6 +26,7 @@ export const TABS = [
   { key: 'turno', label: 'Turno' },
   { key: 'conversao', label: 'Conversão' },
   { key: 'analytics', label: 'Analytics' },
+  { key: 'contatos', label: 'Contatos' },
 ];
 
 // Sub-tabs do CRM Abertura

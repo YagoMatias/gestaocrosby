@@ -637,11 +637,20 @@ const WhatsAppReports = ({ accounts, activeAccount }) => {
           {/* Tabela de campanhas */}
           {campaigns.length > 0 ? (
             <Card className="shadow-md rounded-xl bg-white overflow-hidden">
-              <CardHeader className="pb-0">
+              <CardHeader className="pb-0 flex flex-row items-center justify-between">
                 <CardTitle className="text-base font-bold text-[#000638] flex items-center gap-2">
                   <TrendUp size={20} weight="bold" />
                   Performance por Campanha
                 </CardTitle>
+                <button
+                  onClick={fetchData}
+                  disabled={loading}
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  title="Atualizar dados"
+                >
+                  <ArrowClockwise size={14} weight="bold" className={loading ? 'animate-spin' : ''} />
+                  {loading ? 'Atualizando...' : 'Atualizar'}
+                </button>
               </CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
@@ -712,10 +721,10 @@ const WhatsAppReports = ({ accounts, activeAccount }) => {
                         <td className="p-3">{totals.replied.toLocaleString('pt-BR')}</td>
                         <td className="p-3 text-red-600">{totals.failed.toLocaleString('pt-BR')}</td>
                         <td className="p-3">
-                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[#000638] text-white">{deliveryRate}%</span>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[#000638] text-white">{totals.sent > 0 ? ((totals.delivered / totals.sent) * 100).toFixed(1) : '0.0'}%</span>
                         </td>
                         <td className="p-3">
-                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[#000638] text-white">{readRate}%</span>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[#000638] text-white">{totals.delivered > 0 ? ((totals.read / totals.delivered) * 100).toFixed(1) : '0.0'}%</span>
                         </td>
                       </tr>
                     </tfoot>

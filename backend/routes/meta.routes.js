@@ -1,6 +1,8 @@
 import express from 'express';
 import crypto from 'crypto';
+import multer from 'multer';
 import supabase from '../config/supabase.js';
+import supabaseFiscal from '../config/supabaseFiscal.js';
 import {
   asyncHandler,
   successResponse,
@@ -11,10 +13,16 @@ import { getToken } from '../utils/totvsTokenManager.js';
 import {
   TOTVS_BASE_URL,
   getBranchesWithNames,
+  getBranchCodes,
 } from '../totvsrouter/totvsHelper.js';
 import axios from 'axios';
 
 const router = express.Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
+});
 
 const META_GRAPH_BASE = 'https://graph.facebook.com/v22.0';
 
@@ -41,6 +49,162 @@ async function graphRequest(path, accessToken, options = {}) {
     throw err;
   }
   return data;
+}
+
+// =============================================
+// Helper: busca contatos INATIVOS via Supabase
+// =============================================
+// "Inativo" = comprou em [dataInicio, dataFim] mas NÃO comprou após dataFim.
+// Roda 100% no Supabase (notas_fiscais + pes_pessoa) — sem TOTVS, sub-segundo.
+async function fetchContatosInativosSupabase({ dataInicio, dataFim, operacao, branchHint }) {
+  const t0 = Date.now();
+
+  // 1) Monta filtros de operação/filial (mesma lógica do path TOTVS)
+  const opCodesRaw = operacao?.codigos_operacao || operacao?.cd_operacao;
+  let operationCodes = [];
+  if (opCodesRaw) {
+    const codes = Array.isArray(opCodesRaw)
+      ? opCodesRaw
+      : String(opCodesRaw).split(',').map((s) => s.trim()).filter(Boolean);
+    operationCodes = codes.map((c) => Number(c)).filter((n) => Number.isFinite(n));
+  }
+
+  const buildBaseQuery = (start, end) => {
+    let q = supabaseFiscal
+      .from('notas_fiscais')
+      .select('person_code, total_value, issue_date', { count: 'exact' })
+      .eq('operation_type', 'Output')
+      .not('invoice_status', 'in', '(Canceled,Deleted)')
+      .gte('issue_date', start)
+      .lte('issue_date', end)
+      .not('person_code', 'is', null);
+    if (operationCodes.length > 0) {
+      q = q.in('operation_code', operationCodes);
+    } else if (branchHint) {
+      // Sem operationCodes: filtra branch_code por canal
+      if (branchHint.isRevenda || branchHint.isVarejo) {
+        q = q.lte('branch_code', 5999);
+      } else if (branchHint.isMultimarcas) {
+        q = q.gte('branch_code', 6000);
+      }
+    }
+    return q;
+  };
+
+  // 2) Paginação: pega TODAS as NFs em [dataInicio, dataFim]
+  async function fetchAllNFs(start, end) {
+    const all = [];
+    const PAGE = 1000;
+    let from = 0;
+    while (true) {
+      const { data, error } = await buildBaseQuery(start, end)
+        .order('issue_date', { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) throw new Error(`Supabase NF: ${error.message}`);
+      if (!data || data.length === 0) break;
+      all.push(...data);
+      if (data.length < PAGE) break;
+      from += PAGE;
+      if (from > 200000) break; // safety: 200k NFs max
+    }
+    return all;
+  }
+
+  // 3) Compradores no período do filtro
+  const nfsPeriodo = await fetchAllNFs(dataInicio, dataFim);
+  const periodoStats = new Map(); // person_code -> { totalValue, count, lastDate }
+  for (const nf of nfsPeriodo) {
+    const pc = Number(nf.person_code);
+    if (!Number.isFinite(pc)) continue;
+    const cur = periodoStats.get(pc) || { totalValue: 0, count: 0, lastDate: nf.issue_date };
+    cur.totalValue += Number(nf.total_value || 0);
+    cur.count++;
+    if (nf.issue_date > cur.lastDate) cur.lastDate = nf.issue_date;
+    periodoStats.set(pc, cur);
+  }
+
+  // 4) Compradores ATIVOS (compraram depois de dataFim) — excluir
+  const hoje = new Date().toISOString().slice(0, 10);
+  const dataAposFim = new Date(`${dataFim}T00:00:00Z`);
+  dataAposFim.setUTCDate(dataAposFim.getUTCDate() + 1);
+  const startAtivos = dataAposFim.toISOString().slice(0, 10);
+  const nfsAtivos = await fetchAllNFs(startAtivos, hoje);
+  const ativos = new Set(nfsAtivos.map((n) => Number(n.person_code)));
+
+  const inativosCodes = [];
+  for (const pc of periodoStats.keys()) {
+    if (!ativos.has(pc)) inativosCodes.push(pc);
+  }
+  console.log(
+    `[inativos] periodo=${periodoStats.size} | ativos_excluidos=${periodoStats.size - inativosCodes.length} | inativos=${inativosCodes.length} | ${((Date.now() - t0) / 1000).toFixed(1)}s`,
+  );
+
+  if (inativosCodes.length === 0) {
+    return { contacts: [], ticketMedio: 0 };
+  }
+
+  // 5) Busca telefones em pes_pessoa (chunks de 500 pra cabe na URL)
+  const CHUNK = 500;
+  const pessoas = [];
+  for (let i = 0; i < inativosCodes.length; i += CHUNK) {
+    const slice = inativosCodes.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from('pes_pessoa')
+      .select('code, cpf, nm_pessoa, phones')
+      .in('code', slice);
+    if (error) {
+      console.warn(`[inativos] pes_pessoa chunk ${i}: ${error.message}`);
+      continue;
+    }
+    pessoas.push(...(data || []));
+  }
+  const pessoasMap = new Map(pessoas.map((p) => [Number(p.code), p]));
+
+  // 6) Monta contacts (só quem tem telefone válido)
+  const contacts = [];
+  let totalValueAll = 0;
+  for (const pc of inativosCodes) {
+    const p = pessoasMap.get(pc);
+    if (!p) continue;
+    const phones = Array.isArray(p.phones) ? p.phones : [];
+    // Prioriza: WHATSAPP > default > celular (11 dígitos) > qualquer
+    let phone = '';
+    const candidates = [...phones].sort((a, b) => {
+      const score = (x) => {
+        let s = 0;
+        if (x.typeName?.toUpperCase() === 'WHATSAPP') s += 100;
+        if (x.isDefault) s += 50;
+        const n = String(x.number || '').replace(/\D/g, '');
+        if (n.length === 11) s += 20; // celular
+        return s;
+      };
+      return score(b) - score(a);
+    });
+    for (const ph of candidates) {
+      const raw = String(ph.number || '').replace(/\D/g, '');
+      if (raw.length >= 10) {
+        phone = raw.startsWith('55') ? raw : `55${raw}`;
+        break;
+      }
+    }
+    if (!phone) continue;
+    const stats = periodoStats.get(pc);
+    totalValueAll += stats.totalValue;
+    contacts.push({
+      cd_pessoa: pc,
+      name: p.nm_pessoa || '',
+      cpf_cnpj: p.cpf || '',
+      nr_telefone: phone,
+      totalValue: stats.totalValue,
+      invoiceCount: stats.count,
+      ultimaCompra: stats.lastDate,
+    });
+  }
+  const ticketMedio = contacts.length > 0 ? totalValueAll / contacts.length : 0;
+  console.log(
+    `[inativos] contatos_com_telefone=${contacts.length}/${inativosCodes.length} | ticketMedio=${ticketMedio.toFixed(2)} | ${((Date.now() - t0) / 1000).toFixed(1)}s`,
+  );
+  return { contacts, ticketMedio };
 }
 
 // =============================================
@@ -511,6 +675,182 @@ router.post(
   }),
 );
 
+// =====================================================================
+// WEBHOOK META — recebe eventos de delivery/read/failed do WhatsApp
+// =====================================================================
+// GET /api/meta/webhook — verificação inicial (Meta envia hub.challenge)
+router.get('/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  const expected = process.env.META_WEBHOOK_VERIFY_TOKEN;
+  if (mode === 'subscribe' && token && token === expected) {
+    console.log('✅ [meta-webhook] verificação OK');
+    return res.status(200).send(challenge);
+  }
+  console.warn(`❌ [meta-webhook] verificação falhou (token=${token?.slice(0, 10)}...)`);
+  return res.sendStatus(403);
+});
+
+// POST /api/meta/webhook — recebe eventos
+router.post('/webhook', asyncHandler(async (req, res) => {
+  // Sempre responde 200 rapidamente (Meta exige <20s)
+  res.status(200).send('OK');
+
+  try {
+    const body = req.body;
+    if (body?.object !== 'whatsapp_business_account') return;
+
+    for (const entry of body.entry || []) {
+      for (const change of entry.changes || []) {
+        const value = change.value || {};
+        const statuses = value.statuses || [];
+        const messages = value.messages || []; // respostas do usuário
+
+        // STATUSES (delivered/read/failed)
+        for (const st of statuses) {
+          const metaId = st.id;       // wamid.xxx
+          const status = st.status;   // 'delivered' | 'read' | 'failed'
+          const recipient = st.recipient_id;
+          if (!metaId) continue;
+
+          // Atualiza message_queue (busca por meta_message_id se gravado, senão por phone+template recente)
+          const novoStatus = ['delivered', 'read', 'failed'].includes(status) ? status : null;
+          if (!novoStatus) continue;
+
+          // message_queue usa o id da mensagem se tivermos gravado — caso contrário busca por phone
+          const updateMq = await supabase
+            .from('message_queue')
+            .update({
+              status: novoStatus,
+              ...(status === 'failed' && st.errors?.[0]?.message
+                ? { last_error: st.errors[0].message?.slice(0, 500) }
+                : {}),
+            })
+            .eq('meta_message_id', metaId);
+
+          // template_disparos
+          await supabase
+            .from('template_disparos')
+            .update({
+              status: novoStatus,
+              ...(status === 'failed' && st.errors?.[0]?.message
+                ? { error_message: st.errors[0].message?.slice(0, 500) }
+                : {}),
+            })
+            .eq('meta_message_id', metaId);
+        }
+
+        // RESPOSTAS (mensagens recebidas) — marca template_disparos como 'replied'
+        for (const msg of messages) {
+          const from = msg.from; // telefone do remetente (cliente)
+          if (!from) continue;
+          // Pega disparo mais recente pra esse telefone
+          const { data: ultimos } = await supabase
+            .from('template_disparos')
+            .select('id')
+            .eq('phone_number', from)
+            .in('status', ['sent', 'delivered', 'read'])
+            .order('sent_at', { ascending: false })
+            .limit(1);
+          if (ultimos?.[0]) {
+            await supabase
+              .from('template_disparos')
+              .update({ status: 'replied' })
+              .eq('id', ultimos[0].id);
+            // E na message_queue tbm
+            await supabase
+              .from('message_queue')
+              .update({ status: 'replied' })
+              .eq('phone_number', from)
+              .in('status', ['sent', 'delivered', 'read'])
+              .order('sent_at', { ascending: false })
+              .limit(1);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(`[meta-webhook] erro processando: ${e.message}`);
+  }
+}));
+
+// =====================================================================
+// POST /api/meta/upload-template-media/:accountId
+// Faz upload de mídia (imagem/vídeo) para uso em template (carrossel/header)
+// via Resumable Upload da Meta. Retorna { handle } pra embutir no template.
+//
+// Multipart form: file=<arquivo>
+// Resposta: { handle: 'h:...', mimeType, fileLength }
+// Requer: account.app_id configurado em whatsapp_accounts
+// =====================================================================
+router.post(
+  '/upload-template-media/:accountId',
+  upload.single('file'),
+  asyncHandler(async (req, res) => {
+    if (!req.file) return errorResponse(res, 'Arquivo obrigatório (campo "file")', 400);
+    const { data: account, error: accErr } = await supabase
+      .from('whatsapp_accounts')
+      .select('*')
+      .eq('id', req.params.accountId)
+      .single();
+    if (accErr || !account) return errorResponse(res, 'Conta não encontrada', 404);
+    if (!account.app_id) {
+      return errorResponse(
+        res,
+        'Account sem app_id configurado. Adicione na tabela whatsapp_accounts.',
+        400,
+        'MISSING_APP_ID',
+      );
+    }
+
+    const mimeType = req.file.mimetype;
+    const fileLength = req.file.size;
+    const fileName = req.file.originalname || `upload-${Date.now()}`;
+
+    try {
+      // 1) Cria sessão de upload
+      const startUrl = `${META_GRAPH_BASE}/${account.app_id}/uploads?file_name=${encodeURIComponent(fileName)}&file_length=${fileLength}&file_type=${encodeURIComponent(mimeType)}&access_token=${encodeURIComponent(account.access_token)}`;
+      const startRes = await fetch(startUrl, { method: 'POST' });
+      const startData = await startRes.json().catch(() => ({}));
+      if (!startRes.ok || !startData?.id) {
+        return errorResponse(res, startData?.error?.message || 'Falha ao criar sessão de upload', 500, 'UPLOAD_SESSION_FAIL');
+      }
+      const uploadId = startData.id; // formato "upload:XXX"
+
+      // 2) Envia bytes do arquivo
+      const uploadUrl = `${META_GRAPH_BASE}/${uploadId}`;
+      const upRes = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `OAuth ${account.access_token}`,
+          file_offset: '0',
+        },
+        body: req.file.buffer,
+      });
+      const upData = await upRes.json().catch(() => ({}));
+      if (!upRes.ok || !upData?.h) {
+        return errorResponse(
+          res,
+          upData?.error?.message || 'Falha ao fazer upload do arquivo',
+          500,
+          'UPLOAD_FAIL',
+        );
+      }
+
+      return successResponse(res, {
+        handle: upData.h,
+        mimeType,
+        fileLength,
+        fileName,
+      }, 'Upload concluído');
+    } catch (err) {
+      logger.error(`upload-template-media erro: ${err.message}`);
+      return errorResponse(res, err.message, 500, 'UPLOAD_ERROR');
+    }
+  }),
+);
+
 // DELETE /api/meta/templates/:accountId/:templateName
 router.delete(
   '/templates/:accountId/:templateName',
@@ -890,7 +1230,7 @@ router.get(
 router.post(
   '/totvs-contacts',
   asyncHandler(async (req, res) => {
-    const { operacao, data_inicio, data_fim, empresas } = req.body;
+    const { operacao, data_inicio, data_fim, empresas, modo } = req.body;
 
     if (!operacao || !data_inicio || !data_fim) {
       return errorResponse(
@@ -899,6 +1239,33 @@ router.post(
         400,
         'VALIDATION',
       );
+    }
+
+    const opName = (operacao.nome || '').toLowerCase();
+    const isRevenda = opName.includes('revenda');
+    const isMultimarcas = opName.includes('multimarc');
+    const isVarejo = opName.includes('varejo');
+
+    // ===== MODO INATIVOS: roda no Supabase (sem TOTVS) =====
+    // Cliente "inativo" = comprou em [data_inicio, data_fim] mas NÃO comprou
+    // entre data_fim e hoje. Janela típica do front: -365d até -61d.
+    if (modo === 'inativos') {
+      try {
+        const result = await fetchContatosInativosSupabase({
+          dataInicio: data_inicio,
+          dataFim: data_fim,
+          operacao,
+          branchHint: { isRevenda, isMultimarcas, isVarejo },
+        });
+        return successResponse(
+          res,
+          { data: result.contacts, ticketMedio: result.ticketMedio },
+          `${result.contacts.length} contatos inativos`,
+        );
+      } catch (e) {
+        logger.error(`[totvs-contacts inativos] ${e.message}`);
+        return errorResponse(res, `Inativos: ${e.message}`, 500, 'INATIVOS_ERROR');
+      }
     }
 
     const tokenData = await getToken();
@@ -911,34 +1278,85 @@ router.post(
       );
     }
     const token = tokenData.access_token;
+    let branchCodes = (empresas || []).map(Number).filter(Number.isFinite);
 
-    const opName = (operacao.nome || '').toLowerCase();
-    const isRevenda = opName.includes('revenda');
-    const branchCodes = (empresas || []).map(Number);
+    // Fallback: se nenhuma filial veio do front, busca lista do TOTVS e filtra
+    // por canal (revenda/varejo: filiais próprias ≤5999, multimarcas: ≥6000).
+    if (branchCodes.length === 0) {
+      try {
+        const all = await getBranchCodes(token);
+        if (isRevenda || isVarejo) {
+          branchCodes = all.filter((c) => c <= 5999);
+        } else if (isMultimarcas) {
+          branchCodes = all.filter((c) => c >= 6000);
+        } else {
+          branchCodes = all;
+        }
+        console.log(`[totvs-contacts] branches auto-populadas: ${branchCodes.length}`);
+      } catch (e) {
+        console.warn(`[totvs-contacts] getBranchCodes falhou: ${e.message}`);
+      }
+    }
 
     // Montar filtro de invoices com base na operação
+    // TOTVS exige datetime YYYY-MM-DDTHH:mm:ss e operationType
     const filter = {
       branchCodeList: branchCodes,
-      change: {
-        startDate: `${data_inicio}T00:00:00.000Z`,
-        endDate: `${data_fim}T23:59:59.999Z`,
-      },
+      startIssueDate: `${data_inicio}T00:00:00`,
+      endIssueDate: `${data_fim}T23:59:59`,
+      operationType: 'Output',
     };
 
-    // Se a operação tem um código de operação TOTVS, filtrar por ele
-    if (operacao.cd_operacao) {
-      filter.operationCodeList = Array.isArray(operacao.cd_operacao)
-        ? operacao.cd_operacao
-        : [operacao.cd_operacao];
+    // Se a operação tem código(s) de operação TOTVS, filtrar por eles.
+    // Campo real é `codigos_operacao` (CSV string), aceita também cd_operacao por compatibilidade.
+    const opCodesRaw = operacao.codigos_operacao || operacao.cd_operacao;
+    if (opCodesRaw) {
+      const codes = Array.isArray(opCodesRaw)
+        ? opCodesRaw
+        : String(opCodesRaw).split(',').map((s) => s.trim()).filter(Boolean);
+      const codesNum = codes.map((c) => Number(c)).filter((n) => Number.isFinite(n));
+      if (codesNum.length > 0) filter.operationCodeList = codesNum;
     }
 
     const endpoint = `${TOTVS_BASE_URL}/fiscal/v2/invoices/search`;
-    const allInvoices = [];
-    let page = 1;
-    let hasNext = true;
+    console.log(`[totvs-contacts] op="${operacao.nome}" branches=${branchCodes.length} ops=${filter.operationCodeList?.length || 0} period=${data_inicio}~${data_fim}`);
 
-    while (hasNext && page <= 50) {
-      const payload = { filter, page, pageSize: 200, expand: 'person' };
+    // TOTVS limita range a 6 meses — divide em chunks de 5 meses pra ter folga
+    const chunks = [];
+    const dStart = new Date(`${data_inicio}T00:00:00`);
+    const dEnd = new Date(`${data_fim}T23:59:59`);
+    const MAX_DAYS = 150; // 5 meses
+    let cur = new Date(dStart);
+    while (cur < dEnd) {
+      const chunkEnd = new Date(Math.min(
+        cur.getTime() + MAX_DAYS * 86400000,
+        dEnd.getTime(),
+      ));
+      chunks.push({
+        start: cur.toISOString().slice(0, 19),
+        end: chunkEnd.toISOString().slice(0, 19),
+      });
+      cur = new Date(chunkEnd.getTime() + 1000); // +1s pra evitar overlap
+    }
+    if (chunks.length > 1) {
+      console.log(`[totvs-contacts] range dividido em ${chunks.length} chunks de até ${MAX_DAYS}d`);
+    }
+
+    const allInvoices = [];
+
+    for (const chunk of chunks) {
+      const chunkFilter = {
+        ...filter,
+        startIssueDate: chunk.start,
+        endIssueDate: chunk.end,
+      };
+      let page = 1;
+      let hasNext = true;
+      while (hasNext && page <= 50) {
+      const payload = { filter: chunkFilter, page, pageSize: 100, expand: 'person', order: 'issueDate:desc' };
+      if (page === 1) {
+        console.log(`[totvs-contacts] chunk ${chunk.start.slice(0,10)}~${chunk.end.slice(0,10)} pág 1`);
+      }
       try {
         const resp = await axios.post(endpoint, payload, {
           headers: {
@@ -950,6 +1368,9 @@ router.post(
         const items = resp.data?.items || [];
         allInvoices.push(...items);
         hasNext = resp.data?.hasNext || false;
+        if (page === 1) {
+          console.log(`[totvs-contacts] página 1 retornou ${items.length} invoices · hasNext=${hasNext}`);
+        }
         page++;
       } catch (err) {
         if (err.response?.status === 401) {
@@ -966,23 +1387,32 @@ router.post(
           hasNext = resp.data?.hasNext || false;
           page++;
         } else {
+          const detail = err.response?.data ? JSON.stringify(err.response.data).slice(0, 500) : '';
           logger.error(
-            `Erro ao buscar invoices TOTVS page ${page}: ${err.message}`,
+            `Erro ao buscar invoices TOTVS page ${page}: ${err.message} | detail=${detail}`,
           );
           break;
         }
       }
-    }
+      } // end while pages
+    } // end for chunk
 
     // Extrair contatos únicos (deduplicar por personCode)
     const contactsMap = {};
     let totalValue = 0;
 
+    if (allInvoices.length > 0) {
+      const sample = allInvoices[0];
+      console.log(`[totvs-contacts] sample invoice keys:`, Object.keys(sample).slice(0, 20).join(','));
+      console.log(`[totvs-contacts] person keys:`, sample.person ? Object.keys(sample.person).slice(0, 15).join(',') : 'no person');
+      console.log(`[totvs-contacts] sample IDs: personCode=${sample.personCode} person.personCode=${sample.person?.personCode} customerCode=${sample.customerCode}`);
+    }
+
     for (const inv of allInvoices) {
-      const personCode = inv.personCode || inv.person?.personCode;
+      const personCode = inv.personCode || inv.person?.personCode || inv.person?.code || inv.customerCode;
       if (!personCode) continue;
 
-      const value = Number(inv.invoiceValue || inv.totalValue || 0);
+      const value = Number(inv.totalValue || inv.invoiceValue || 0);
       totalValue += value;
 
       if (contactsMap[personCode]) {
@@ -992,21 +1422,28 @@ router.post(
       }
 
       // Extrair telefone dos dados de person
+      // TOTVS pode retornar como: person.foneNumber (string direta) ou person.phones[] (array)
       const person = inv.person || {};
-      const phones = person.phones || [];
       let phone = '';
-      // Priorizar celular
-      for (const p of phones) {
-        const num = (p.number || '').replace(/\D/g, '');
-        if (num.length >= 10) {
-          phone = num.startsWith('55') ? num : `55${num}`;
-          if (
-            p.typeDescription?.toLowerCase().includes('celular') ||
-            num.length === 11 ||
-            (num.length === 13 && num.startsWith('55'))
-          ) {
-            break; // celular encontrado
+      const phones = person.phones || [];
+      if (phones.length > 0) {
+        // Formato com array — priorizar celular
+        for (const p of phones) {
+          const num = (p.number || p.phoneNumber || '').replace(/\D/g, '');
+          if (num.length >= 10) {
+            phone = num.startsWith('55') ? num : `55${num}`;
+            if (
+              p.typeDescription?.toLowerCase().includes('celular') ||
+              num.length === 11 ||
+              (num.length === 13 && num.startsWith('55'))
+            ) break;
           }
+        }
+      } else {
+        // Formato com campo direto foneNumber (PJ fiscal)
+        const raw = (person.foneNumber || person.phone || '').replace(/\D/g, '');
+        if (raw.length >= 10) {
+          phone = raw.startsWith('55') ? raw : `55${raw}`;
         }
       }
 
@@ -1095,7 +1532,7 @@ router.post(
           });
         }
       } else {
-        // Array de objetos (TOTVS contacts)
+        // Array de objetos (TOTVS contacts) — preserva person_code pra tracking
         contacts = contacts_csv
           .map((c) => {
             const phone = (c.nr_telefone || c.phones || c.phone || '').replace(
@@ -1106,6 +1543,8 @@ router.post(
               phone: phone.startsWith('55') ? phone : `55${phone}`,
               name: c.name || c.nome || '',
               variables: c.variables || {},
+              person_code: c.cd_pessoa || c.person_code || c.personCode || null,
+              cpf_cnpj: c.cpf_cnpj || c.cpfCnpj || null,
             };
           })
           .filter((c) => c.phone.length >= 12);
@@ -1125,8 +1564,16 @@ router.post(
     const campaignId = crypto.randomUUID();
     const campaignName = `${template_name} - ${new Date().toLocaleDateString('pt-BR')} (${origem || 'manual'})`;
 
+    // Deduplica contatos por telefone (mesmo número pode aparecer pra 2+ pessoas)
+    const phonesVistos = new Set();
+    const contactsUnicos = contacts.filter((c) => {
+      if (phonesVistos.has(c.phone)) return false;
+      phonesVistos.add(c.phone);
+      return true;
+    });
+
     // Enfileirar na message_queue
-    const rows = contacts.map((c) => ({
+    const rows = contactsUnicos.map((c) => ({
       account_id: account.id,
       campaign_id: campaignId,
       campaign_name: campaignName,
@@ -1142,7 +1589,8 @@ router.post(
       dedupe_key: `${campaignId}:${c.phone}`,
     }));
 
-    // Inserir em lotes de 500
+    // Inserir em lotes de 500. Dedupe já garantida em contactsUnicos (Set por phone),
+    // então INSERT simples não vai colidir dentro da mesma campanha (campaign_id novo).
     const batchSize = 500;
     let inserted = 0;
     for (let i = 0; i < rows.length; i += batchSize) {
@@ -1157,6 +1605,37 @@ router.post(
         );
       }
       inserted += batch.length;
+    }
+
+    // Salva registros em template_disparos pra cruzamento com vendas (pós-disparo)
+    const disparosRows = contactsUnicos.map((c) => ({
+      campaign_id: campaignId,
+      campaign_name: campaignName,
+      template_name,
+      template_language: language || 'pt_BR',
+      template_category: 'MARKETING',
+      account_id: account.id,
+      waba_id: account.waba_id || null,
+      person_code: c.person_code ? Number(c.person_code) : null,
+      phone_number: c.phone,
+      contact_name: c.name || null,
+      cpf_cnpj: c.cpf_cnpj || null,
+      origem: origem || 'manual',
+      template_variables: c.variables || {},
+      status: 'queued',
+      scheduled_at: new Date().toISOString(),
+    }));
+    try {
+      for (let i = 0; i < disparosRows.length; i += batchSize) {
+        const batch = disparosRows.slice(i, i + batchSize);
+        const { error } = await supabase.from('template_disparos').insert(batch);
+        if (error) {
+          logger.warn(`[template_disparos] insert: ${error.message}`);
+          break;
+        }
+      }
+    } catch (e) {
+      logger.warn(`[template_disparos] erro: ${e.message}`);
     }
 
     // Processar fila em background (enviar mensagens)
@@ -1179,10 +1658,83 @@ router.post(
   }),
 );
 
+// POST /api/meta/campaigns/:campaignId/resume
+//   Retoma campanha presa: reseta status="processing" pra "pending" + reinicia worker
+router.post(
+  '/campaigns/:campaignId/resume',
+  asyncHandler(async (req, res) => {
+    const { campaignId } = req.params;
+    // Pega conta da campanha
+    const { data: anyMsg } = await supabase
+      .from('message_queue')
+      .select('account_id')
+      .eq('campaign_id', campaignId)
+      .limit(1)
+      .single();
+    if (!anyMsg) return errorResponse(res, 'Campanha não encontrada', 404);
+    const { data: account } = await supabase
+      .from('whatsapp_accounts')
+      .select('*')
+      .eq('id', anyMsg.account_id)
+      .single();
+    if (!account) return errorResponse(res, 'Conta não encontrada', 404);
+
+    // Reseta processing → pending
+    const { count: resetCount } = await supabase
+      .from('message_queue')
+      .update({ status: 'pending' }, { count: 'exact' })
+      .eq('campaign_id', campaignId)
+      .in('status', ['processing', 'retrying']);
+
+    // Conta pendentes
+    const { count: pending } = await supabase
+      .from('message_queue')
+      .select('*', { count: 'exact', head: true })
+      .eq('campaign_id', campaignId)
+      .eq('status', 'pending');
+
+    // Reinicia worker em background
+    processCampaignQueue(campaignId, account).catch((err) =>
+      logger.error(`[campaign-resume] worker erro: ${err.message}`),
+    );
+
+    return successResponse(res, {
+      campaignId,
+      reset: resetCount,
+      pending,
+    }, `${resetCount} resetadas pra pending. ${pending} aguardando envio.`);
+  }),
+);
+
+// GET /api/meta/campaigns/:campaignId/status
+router.get(
+  '/campaigns/:campaignId/status',
+  asyncHandler(async (req, res) => {
+    const { campaignId } = req.params;
+    const { data, error } = await supabase
+      .from('message_queue')
+      .select('status, last_error')
+      .eq('campaign_id', campaignId);
+    if (error) return errorResponse(res, error.message, 500);
+    const counts = {};
+    const erros = new Set();
+    for (const r of data || []) {
+      counts[r.status] = (counts[r.status] || 0) + 1;
+      if (r.last_error) erros.add(r.last_error.slice(0, 200));
+    }
+    return successResponse(res, {
+      campaignId,
+      total: (data || []).length,
+      counts,
+      erros: [...erros],
+    });
+  }),
+);
+
 // =============================================
 // WORKER: Processar fila de mensagens (substitui N8N)
 // =============================================
-async function processCampaignQueue(campaignId, account) {
+export async function processCampaignQueue(campaignId, account) {
   const BATCH_SIZE = 50;
   const DELAY_MS = 100; // delay entre mensagens para não estourar rate-limit
 
@@ -1205,12 +1757,109 @@ async function processCampaignQueue(campaignId, account) {
       .update({ status: 'processing' })
       .in('id', ids);
 
+    // Cache de metadados de template (header URL) por nome — evita refetch
+    if (!processCampaignQueue._tmplMetaCache) processCampaignQueue._tmplMetaCache = new Map();
+    const tmplCache = processCampaignQueue._tmplMetaCache;
+
+    // Cache de media_id por URL de imagem (válido por ~30 dias pra Meta)
+    if (!processCampaignQueue._mediaCache) processCampaignQueue._mediaCache = new Map();
+    const mediaCache = processCampaignQueue._mediaCache;
+
+    // Helper: baixa imagem da URL e faz upload pra /media, retorna media_id
+    async function uploadImageToMedia(imageUrl) {
+      if (mediaCache.has(imageUrl)) return mediaCache.get(imageUrl);
+      try {
+        // 1) Baixa a imagem
+        const imgResp = await fetch(imageUrl);
+        if (!imgResp.ok) throw new Error(`download ${imgResp.status}`);
+        const buf = Buffer.from(await imgResp.arrayBuffer());
+        const ct = imgResp.headers.get('content-type') || 'image/jpeg';
+
+        // 2) Faz upload pra /media
+        // Endpoint Meta: POST /{phone_id}/media com multipart form
+        // Usa FormData (Node 18+ tem global)
+        const form = new FormData();
+        const blob = new Blob([buf], { type: ct });
+        form.append('messaging_product', 'whatsapp');
+        form.append('type', ct);
+        form.append('file', blob, `card.${ct.split('/')[1] || 'jpg'}`);
+
+        const upResp = await fetch(`https://graph.facebook.com/v22.0/${account.phone_id}/media`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${account.access_token}` },
+          body: form,
+        });
+        const upData = await upResp.json();
+        if (!upResp.ok || !upData?.id) {
+          throw new Error(upData?.error?.message || `upload ${upResp.status}`);
+        }
+        mediaCache.set(imageUrl, upData.id);
+        return upData.id;
+      } catch (e) {
+        console.warn(`[upload-media] falhou: ${e.message}`);
+        return null;
+      }
+    }
+
+    // Helper: pega metadados do template (header + carousel) pra montar payload de envio
+    async function getTemplateMeta(tmplName) {
+      if (tmplCache.has(tmplName)) return tmplCache.get(tmplName);
+      try {
+        const result = await graphRequest(
+          `/${account.waba_id}/message_templates?name=${encodeURIComponent(tmplName)}&fields=name,components,language&limit=10`,
+          account.access_token,
+          { method: 'GET' },
+        );
+        const tmpl = (result?.data || []).find((t) => t.name === tmplName);
+        const comps = tmpl?.components || [];
+        const header = comps.find((c) => c.type === 'HEADER');
+        const carousel = comps.find((c) => c.type === 'CAROUSEL');
+        let headerUrl = null;
+        if (header?.format === 'IMAGE') {
+          headerUrl = header?.example?.header_handle?.[0] || header?.example?.header_url?.[0] || null;
+        }
+        // Extrai imagens dos cards do carrossel (em ordem)
+        const cardImages = [];
+        if (carousel?.cards?.length > 0) {
+          for (const card of carousel.cards) {
+            const cardComps = card.components || [];
+            const cardHeader = cardComps.find((c) => c.type === 'HEADER');
+            const url = cardHeader?.example?.header_handle?.[0] || cardHeader?.example?.header_url?.[0] || null;
+            cardImages.push(url);
+          }
+        }
+        const meta = {
+          headerFormat: header?.format || null,
+          headerUrl,
+          isCarousel: !!carousel,
+          cardImages,
+        };
+        tmplCache.set(tmplName, meta);
+        return meta;
+      } catch (e) {
+        tmplCache.set(tmplName, { headerFormat: null, headerUrl: null, isCarousel: false, cardImages: [] });
+        return { headerFormat: null, headerUrl: null, isCarousel: false, cardImages: [] };
+      }
+    }
+
     for (const msg of pending) {
       try {
         // Montar componentes de variáveis do template
         const vars = msg.template_variables || {};
         const varKeys = Object.keys(vars).sort();
         const components = [];
+
+        const tmplMeta = await getTemplateMeta(msg.template_name);
+
+        // HEADER (template texto/mídia simples)
+        if (!tmplMeta.isCarousel && tmplMeta.headerFormat === 'IMAGE' && tmplMeta.headerUrl) {
+          components.push({
+            type: 'header',
+            parameters: [
+              { type: 'image', image: { link: tmplMeta.headerUrl } },
+            ],
+          });
+        }
 
         if (varKeys.length > 0) {
           components.push({
@@ -1222,7 +1871,31 @@ async function processCampaignQueue(campaignId, account) {
           });
         }
 
-        await graphRequest(
+        // CARROSSEL: Meta exige media_id (não aceita link). Upload pra /media e cacheia.
+        if (tmplMeta.isCarousel && tmplMeta.cardImages.length > 0) {
+          const mediaIds = await Promise.all(
+            tmplMeta.cardImages.map((url) => uploadImageToMedia(url)),
+          );
+          const cardsArr = [];
+          for (let idx = 0; idx < mediaIds.length; idx++) {
+            const mid = mediaIds[idx];
+            if (!mid) {
+              throw new Error(`upload card ${idx} falhou`);
+            }
+            cardsArr.push({
+              card_index: idx,
+              components: [
+                {
+                  type: 'header',
+                  parameters: [{ type: 'image', image: { id: mid } }],
+                },
+              ],
+            });
+          }
+          components.push({ type: 'carousel', cards: cardsArr });
+        }
+
+        const sendResult = await graphRequest(
           `/${account.phone_id}/messages`,
           account.access_token,
           {
@@ -1240,10 +1913,23 @@ async function processCampaignQueue(campaignId, account) {
           },
         );
 
+        const metaMessageId = sendResult?.messages?.[0]?.id || null;
+        const nowIso = new Date().toISOString();
+
         await supabase
           .from('message_queue')
-          .update({ status: 'sent', sent_at: new Date().toISOString() })
+          .update({ status: 'sent', sent_at: nowIso, meta_message_id: metaMessageId })
           .eq('id', msg.id);
+
+        // Atualiza template_disparos com status=sent + meta_message_id (best-effort)
+        supabase
+          .from('template_disparos')
+          .update({ status: 'sent', sent_at: nowIso, meta_message_id: metaMessageId })
+          .eq('campaign_id', msg.campaign_id)
+          .eq('phone_number', msg.phone_number)
+          .then(({ error: upErr }) => {
+            if (upErr) logger.warn(`[template_disparos sent] ${upErr.message}`);
+          });
       } catch (err) {
         const retries = (msg.retry_count || 0) + 1;
         await supabase
@@ -1254,6 +1940,16 @@ async function processCampaignQueue(campaignId, account) {
             last_error: err.message,
           })
           .eq('id', msg.id);
+
+        // Em failed definitivo, marca também em template_disparos
+        if (retries >= 3) {
+          supabase
+            .from('template_disparos')
+            .update({ status: 'failed', error_message: err.message?.slice(0, 500) })
+            .eq('campaign_id', msg.campaign_id)
+            .eq('phone_number', msg.phone_number)
+            .then(() => {});
+        }
       }
 
       // Delay entre envios

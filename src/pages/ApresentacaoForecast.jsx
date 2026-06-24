@@ -21,7 +21,7 @@ const CANAL_LABELS = {
 
 const ORDEM = [
   'varejo', 'revenda', 'multimarcas', 'inbound_david', 'inbound_rafael',
-  'franquia', 'business', 'bazar', 'fabrica', 'ricardoeletro',
+  'franquia', 'bazar', 'fabrica', 'ricardoeletro',
 ];
 
 const FABRICA_SOURCES = ['showroom', 'novidadesfranquia'];
@@ -140,6 +140,36 @@ export default function ApresentacaoForecast() {
     const id = setInterval(() => carregar(), 5 * 60 * 1000);
     return () => clearInterval(id);
   }, [carregar]);
+
+  // Auto-fullscreen: tenta na carga; se browser bloquear, ativa no 1º clique
+  // (qualquer lugar da página conta como user gesture).
+  useEffect(() => {
+    const tryFullscreen = async () => {
+      try {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch {}
+    };
+    // Tenta automático (funciona se a janela foi aberta com user gesture)
+    const t = setTimeout(tryFullscreen, 200);
+
+    // Fallback: ativa no 1º clique em qualquer lugar
+    const onFirstClick = async () => {
+      try {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch {}
+      window.removeEventListener('click', onFirstClick);
+    };
+    window.addEventListener('click', onFirstClick, { once: false });
+
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('click', onFirstClick);
+    };
+  }, []);
 
   // Calcula linhas visíveis (canais com meta ou fat)
   const canais = ORDEM.filter((c) => {
