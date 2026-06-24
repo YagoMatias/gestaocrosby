@@ -87,6 +87,12 @@ const CrosbyTemplateManager = () => {
   const [buttons, setButtons] = useState([]);
   const [isCreating, setIsCreating] = useState(false);
   const [creationFeedback, setCreationFeedback] = useState(null);
+  // CARROSSEL: tipo de template + array de cards
+  const [templateType, setTemplateType] = useState('TEXT'); // 'TEXT' | 'CAROUSEL'
+  const [carouselCards, setCarouselCards] = useState([
+    { imageFile: null, imagePreview: null, body: '', buttons: [] },
+    { imageFile: null, imagePreview: null, body: '', buttons: [] },
+  ]);
 
   // ==========================================
   // ESTADOS: ABA DE DISPARO
@@ -333,9 +339,43 @@ const CrosbyTemplateManager = () => {
   // ==========================================
 
   // AÇÃO: CRIAR TEMPLATE NA META
+  // Faz upload de arquivo de mídia pra usar em template (carrossel). Retorna handle.
+  const uploadTemplateMedia = async (accountId, file) => {
+    const form = new FormData();
+    form.append('file', file);
+    const r = await fetch(`${API_BASE}/api/meta/upload-template-media/${accountId}`, {
+      method: 'POST',
+      body: form,
+    });
+    const j = await r.json();
+    if (!r.ok || !j?.data?.handle) {
+      throw new Error(j?.error || j?.message || 'Falha no upload da imagem');
+    }
+    return j.data.handle;
+  };
+
   const handleCreateTemplate = async () => {
-    if (!selectedAccount || !templateName || !bodyText)
-      return alert('Preencha os campos obrigatórios (Nome e Texto).');
+    if (!selectedAccount || !templateName)
+      return alert('Preencha Nome do template.');
+
+    const isCarrossel = templateType === 'CAROUSEL';
+    if (!isCarrossel && !bodyText)
+      return alert('Preencha o Texto da mensagem.');
+
+    if (isCarrossel) {
+      if (carouselCards.length < 2 || carouselCards.length > 10)
+        return alert('Carrossel precisa entre 2 e 10 cards.');
+      for (const [i, c] of carouselCards.entries()) {
+        if (!c.imageFile) return alert(`Card ${i + 1}: faltou imagem.`);
+        // texto é OPCIONAL — Meta aceita card só com header + botões
+        for (const btn of c.buttons || []) {
+          if (!btn.text) return alert(`Card ${i + 1}: botão sem texto.`);
+          if (btn.type === 'URL' && !btn.url) return alert(`Card ${i + 1}: botão Site sem URL.`);
+          if (btn.type === 'PHONE_NUMBER' && !btn.phone_number)
+            return alert(`Card ${i + 1}: botão Ligação sem número.`);
+        }
+      }
+    }
 
     for (const btn of buttons) {
       if (!btn.text) return alert('Todos os botões precisam de um texto.');
@@ -349,44 +389,72 @@ const CrosbyTemplateManager = () => {
     setCreationFeedback(null);
 
     try {
-      const vars = bodyText.match(/{{[0-9]+}}/g) || [];
-      const componentsArray = [
-        {
-          type: 'BODY',
-          text: bodyText,
-          example:
-            vars.length > 0
-              ? {
-                  body_text: [
-                    vars.map((v) => variableExamples[v] || 'Exemplo'),
-                  ],
-                }
-              : undefined,
-        },
-      ];
+      const account = accounts.find((a) => a.waba_id === selectedAccount);
+      if (!account) return alert('Conta não encontrada.');
 
-      if (buttons.length > 0) {
+      const componentsArray = [];
+
+      // BODY (texto introdutório, obrigatório em ambos os modos)
+      const effectiveBody = isCarrossel
+        ? (bodyText || 'Confira nossas novidades!')
+        : bodyText;
+      const vars = effectiveBody.match(/{{[0-9]+}}/g) || [];
+      componentsArray.push({
+        type: 'BODY',
+        text: effectiveBody,
+        example:
+          vars.length > 0
+            ? { body_text: [vars.map((v) => variableExamples[v] || 'Exemplo')] }
+            : undefined,
+      });
+
+      if (!isCarrossel && buttons.length > 0) {
         componentsArray.push({
           type: 'BUTTONS',
           buttons: buttons.map((b) => {
-            if (b.type === 'QUICK_REPLY')
-              return { type: 'QUICK_REPLY', text: b.text };
-            if (b.type === 'URL')
-              return { type: 'URL', text: b.text, url: b.url };
+            if (b.type === 'QUICK_REPLY') return { type: 'QUICK_REPLY', text: b.text };
+            if (b.type === 'URL') return { type: 'URL', text: b.text, url: b.url };
             if (b.type === 'PHONE_NUMBER')
-              return {
-                type: 'PHONE_NUMBER',
-                text: b.text,
-                phone_number: b.phone_number,
-              };
+              return { type: 'PHONE_NUMBER', text: b.text, phone_number: b.phone_number };
             return b;
           }),
         });
       }
 
-      // Payload dinâmico enviando a categoria selecionada e allow_category_change
-      const account = accounts.find((a) => a.waba_id === selectedAccount);
-      if (!account) return alert('Conta não encontrada.');
+      // CAROUSEL: upload das imagens e montagem dos cards
+      if (isCarrossel) {
+        const cards = [];
+        for (let i = 0; i < carouselCards.length; i++) {
+          const c = carouselCards[i];
+          setCreationFeedback({ type: 'info', message: `Enviando imagem do card ${i + 1}/${carouselCards.length}...` });
+          const handle = await uploadTemplateMedia(account.id, c.imageFile);
+          const cardComponents = [
+            {
+              type: 'HEADER',
+              format: 'IMAGE',
+              example: { header_handle: [handle] },
+            },
+          ];
+          // BODY do card é OPCIONAL (Meta API aceita cards só com HEADER + BUTTONS)
+          if (c.body && c.body.trim()) {
+            cardComponents.push({ type: 'BODY', text: c.body });
+          }
+          if (c.buttons && c.buttons.length > 0) {
+            cardComponents.push({
+              type: 'BUTTONS',
+              buttons: c.buttons.map((b) => {
+                if (b.type === 'QUICK_REPLY') return { type: 'QUICK_REPLY', text: b.text };
+                if (b.type === 'URL') return { type: 'URL', text: b.text, url: b.url };
+                if (b.type === 'PHONE_NUMBER')
+                  return { type: 'PHONE_NUMBER', text: b.text, phone_number: b.phone_number };
+                return b;
+              }),
+            });
+          }
+          cards.push({ components: cardComponents });
+        }
+        componentsArray.push({ type: 'CAROUSEL', cards });
+      }
 
       const payload = {
         name: templateName,
@@ -413,6 +481,11 @@ const CrosbyTemplateManager = () => {
       setTemplateName('');
       setBodyText('');
       setButtons([]);
+      setCarouselCards([
+        { imageFile: null, imagePreview: null, body: '', buttons: [] },
+        { imageFile: null, imagePreview: null, body: '', buttons: [] },
+      ]);
+      setTemplateType('TEXT');
 
       setTimeout(() => {
         setCreationFeedback(null);
@@ -848,31 +921,297 @@ const CrosbyTemplateManager = () => {
                     </select>
                   </div>
 
+                  {/* TIPO DO TEMPLATE: Texto ou Carrossel */}
                   <div>
                     <label className="text-[10px] font-bold text-gray-400 uppercase">
-                      Cabeçalho (Mídia)
+                      Tipo do Template
                     </label>
-                    <div className="flex gap-1 mt-1 mb-2">
-                      {['NONE', 'IMAGE', 'VIDEO', 'DOCUMENT'].map((t) => (
+                    <div className="flex gap-2 mt-1">
+                      {[
+                        { val: 'TEXT', label: 'Texto / Mídia' },
+                        { val: 'CAROUSEL', label: 'Carrossel' },
+                      ].map((t) => (
                         <button
-                          key={t}
-                          onClick={() => setHeaderType(t)}
-                          className={`px-2 py-1 text-[9px] font-bold rounded border ${headerType === t ? 'bg-green-100 border-green-500 text-green-700' : 'bg-gray-50'}`}
+                          key={t.val}
+                          onClick={() => setTemplateType(t.val)}
+                          className={`flex-1 px-3 py-2 text-xs font-bold rounded border transition ${templateType === t.val ? 'bg-indigo-100 border-indigo-500 text-indigo-700' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
                         >
-                          {t}
+                          {t.label}
                         </button>
                       ))}
                     </div>
-                    {headerType !== 'NONE' && (
-                      <input
-                        type="file"
-                        onChange={(e) => setHeaderFile(e.target.files[0])}
-                        className="text-xs text-gray-500 w-full"
-                      />
-                    )}
                   </div>
+
+                  {/* Cabeçalho (só pra TEMPLATE TEXT, não pra carrossel) */}
+                  {templateType !== 'CAROUSEL' && (
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">
+                        Cabeçalho (Mídia)
+                      </label>
+                      <div className="flex gap-1 mt-1 mb-2">
+                        {['NONE', 'IMAGE', 'VIDEO', 'DOCUMENT'].map((t) => (
+                          <button
+                            key={t}
+                            onClick={() => setHeaderType(t)}
+                            className={`px-2 py-1 text-[9px] font-bold rounded border ${headerType === t ? 'bg-green-100 border-green-500 text-green-700' : 'bg-gray-50'}`}
+                          >
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                      {headerType !== 'NONE' && (
+                        <input
+                          type="file"
+                          onChange={(e) => setHeaderFile(e.target.files[0])}
+                          className="text-xs text-gray-500 w-full"
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* ============================================================ */}
+              {/* CARROSSEL: lista de cards */}
+              {/* ============================================================ */}
+              {templateType === 'CAROUSEL' && (
+                <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2 text-sm">
+                      🖼️ Cards do Carrossel ({carouselCards.length}/10)
+                    </h3>
+                    <button
+                      onClick={() => {
+                        if (carouselCards.length < 10) {
+                          setCarouselCards([
+                            ...carouselCards,
+                            { imageFile: null, imagePreview: null, body: '', buttons: [] },
+                          ]);
+                        }
+                      }}
+                      disabled={carouselCards.length >= 10}
+                      className="text-xs px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-bold disabled:opacity-40"
+                    >
+                      + Adicionar Card
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mb-3">
+                    Cada card precisa de imagem. Texto e botões são opcionais. Mínimo 2, máximo 10 cards.
+                  </p>
+                  <div className="space-y-4">
+                    {carouselCards.map((card, idx) => (
+                      <div
+                        key={idx}
+                        className="p-4 bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200"
+                      >
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-xs font-bold text-gray-700">Card {idx + 1}</span>
+                          {carouselCards.length > 2 && (
+                            <button
+                              onClick={() => {
+                                setCarouselCards(carouselCards.filter((_, i) => i !== idx));
+                              }}
+                              className="text-rose-500 hover:text-rose-700"
+                              title="Remover card"
+                            >
+                              <Trash size={16} />
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {/* Imagem */}
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-400 uppercase">
+                              Imagem (PNG/JPG)
+                            </label>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (!f) return;
+                                const preview = URL.createObjectURL(f);
+                                setCarouselCards(
+                                  carouselCards.map((c, i) =>
+                                    i === idx
+                                      ? { ...c, imageFile: f, imagePreview: preview }
+                                      : c,
+                                  ),
+                                );
+                              }}
+                              className="text-xs text-gray-500 w-full mt-1"
+                            />
+                            {card.imagePreview && (
+                              <img
+                                src={card.imagePreview}
+                                alt={`card ${idx + 1}`}
+                                className="mt-2 w-full h-28 object-cover rounded border"
+                              />
+                            )}
+                          </div>
+                          {/* Texto */}
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-400 uppercase">
+                              Texto do card <span className="text-gray-300 normal-case font-normal">(opcional)</span>
+                            </label>
+                            <textarea
+                              value={card.body}
+                              onChange={(e) =>
+                                setCarouselCards(
+                                  carouselCards.map((c, i) =>
+                                    i === idx ? { ...c, body: e.target.value } : c,
+                                  ),
+                                )
+                              }
+                              maxLength={160}
+                              placeholder="Ex: Camisa Polo R$ 99 - frete grátis!"
+                              className="w-full mt-1 p-2 border border-gray-200 rounded text-xs outline-none h-24 resize-none"
+                            />
+                            <p className="text-[10px] text-gray-400 text-right mt-0.5">
+                              {(card.body || '').length}/160
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Botões do card */}
+                        <div className="mt-3 pt-3 border-t border-gray-200">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] font-bold text-gray-500 uppercase">
+                              Botões ({(card.buttons || []).length}/2)
+                            </span>
+                            <select
+                              onChange={(e) => {
+                                if (!e.target.value) return;
+                                if ((card.buttons || []).length >= 2) return;
+                                const newBtn =
+                                  e.target.value === 'URL'
+                                    ? { type: 'URL', text: '', url: '' }
+                                    : e.target.value === 'PHONE_NUMBER'
+                                      ? { type: 'PHONE_NUMBER', text: '', phone_number: '' }
+                                      : { type: 'QUICK_REPLY', text: '' };
+                                setCarouselCards(
+                                  carouselCards.map((c, i) =>
+                                    i === idx
+                                      ? { ...c, buttons: [...(c.buttons || []), newBtn] }
+                                      : c,
+                                  ),
+                                );
+                                e.target.value = '';
+                              }}
+                              className="text-[10px] px-2 py-1 border border-gray-200 rounded bg-white"
+                            >
+                              <option value="">+ Botão</option>
+                              <option value="QUICK_REPLY">Resposta rápida</option>
+                              <option value="URL">Site (URL)</option>
+                              <option value="PHONE_NUMBER">Ligação</option>
+                            </select>
+                          </div>
+                          {(card.buttons || []).map((btn, bIdx) => (
+                            <div
+                              key={bIdx}
+                              className="flex gap-2 mb-2 items-center text-xs"
+                            >
+                              <input
+                                type="text"
+                                value={btn.text}
+                                onChange={(e) =>
+                                  setCarouselCards(
+                                    carouselCards.map((c, i) =>
+                                      i === idx
+                                        ? {
+                                            ...c,
+                                            buttons: c.buttons.map((b, j) =>
+                                              j === bIdx
+                                                ? { ...b, text: e.target.value }
+                                                : b,
+                                            ),
+                                          }
+                                        : c,
+                                    ),
+                                  )
+                                }
+                                placeholder={
+                                  btn.type === 'URL'
+                                    ? 'Texto do botão (ex: Comprar)'
+                                    : btn.type === 'PHONE_NUMBER'
+                                      ? 'Texto (ex: Ligar)'
+                                      : 'Texto da resposta'
+                                }
+                                className="flex-1 p-1.5 border border-gray-200 rounded text-xs"
+                              />
+                              {btn.type === 'URL' && (
+                                <input
+                                  type="url"
+                                  value={btn.url}
+                                  onChange={(e) =>
+                                    setCarouselCards(
+                                      carouselCards.map((c, i) =>
+                                        i === idx
+                                          ? {
+                                              ...c,
+                                              buttons: c.buttons.map((b, j) =>
+                                                j === bIdx
+                                                  ? { ...b, url: e.target.value }
+                                                  : b,
+                                              ),
+                                            }
+                                          : c,
+                                      ),
+                                    )
+                                  }
+                                  placeholder="https://..."
+                                  className="flex-1 p-1.5 border border-gray-200 rounded text-xs"
+                                />
+                              )}
+                              {btn.type === 'PHONE_NUMBER' && (
+                                <input
+                                  type="tel"
+                                  value={btn.phone_number}
+                                  onChange={(e) =>
+                                    setCarouselCards(
+                                      carouselCards.map((c, i) =>
+                                        i === idx
+                                          ? {
+                                              ...c,
+                                              buttons: c.buttons.map((b, j) =>
+                                                j === bIdx
+                                                  ? { ...b, phone_number: e.target.value }
+                                                  : b,
+                                              ),
+                                            }
+                                          : c,
+                                      ),
+                                    )
+                                  }
+                                  placeholder="+5511..."
+                                  className="flex-1 p-1.5 border border-gray-200 rounded text-xs"
+                                />
+                              )}
+                              <button
+                                onClick={() =>
+                                  setCarouselCards(
+                                    carouselCards.map((c, i) =>
+                                      i === idx
+                                        ? {
+                                            ...c,
+                                            buttons: c.buttons.filter((_, j) => j !== bIdx),
+                                          }
+                                        : c,
+                                    ),
+                                  )
+                                }
+                                className="text-rose-500 hover:text-rose-700"
+                              >
+                                <Trash size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
                 <div className="flex items-center justify-between mb-4">
@@ -1071,9 +1410,10 @@ const CrosbyTemplateManager = () => {
             {/* PREVIEW (Direita) */}
             <div className="col-span-12 lg:col-span-4 hidden lg:block">
               <div className="bg-[#e5ddd5] p-6 rounded-xl shadow-inner border border-gray-200 h-full flex flex-col items-center">
-                <div className="w-full max-w-[300px]">
+                <div className="w-full max-w-[320px]">
+                  {/* Body geral — aparece em ambos os modos */}
                   <div className="bg-white p-2 rounded-lg rounded-tr-none shadow-sm mt-4 overflow-hidden relative">
-                    {headerType !== 'NONE' && (
+                    {templateType !== 'CAROUSEL' && headerType !== 'NONE' && (
                       <div className="bg-gray-50 rounded-lg mb-2 min-h-[100px] flex items-center justify-center border border-gray-100">
                         {headerType === 'IMAGE' && headerPreviewUrl ? (
                           <img
@@ -1090,13 +1430,17 @@ const CrosbyTemplateManager = () => {
                     )}
                     <div
                       className="px-2 py-1 text-[13px] text-gray-800 leading-relaxed font-sans"
-                      dangerouslySetInnerHTML={renderFormattedText(bodyText)}
+                      dangerouslySetInnerHTML={renderFormattedText(
+                        bodyText || (templateType === 'CAROUSEL' ? 'Confira nossas novidades!' : ''),
+                      )}
                     />
                     <span className="text-[10px] text-gray-400 float-right mt-1">
                       12:00
                     </span>
                   </div>
-                  {buttons.length > 0 && (
+
+                  {/* Botões (modo texto) */}
+                  {templateType !== 'CAROUSEL' && buttons.length > 0 && (
                     <div className="mt-1 flex flex-col gap-1">
                       {buttons.map((btn, i) => (
                         <div
@@ -1109,6 +1453,60 @@ const CrosbyTemplateManager = () => {
                           {btn.text || 'Texto do botão'}
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {/* CARROSSEL — cards horizontalmente scrolláveis */}
+                  {templateType === 'CAROUSEL' && (
+                    <div className="mt-2">
+                      <div className="flex gap-2 overflow-x-auto pb-2 -mx-2 px-2 snap-x snap-mandatory" style={{ scrollbarWidth: 'thin' }}>
+                        {carouselCards.map((card, idx) => (
+                          <div
+                            key={idx}
+                            className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden flex-shrink-0 w-[200px] snap-start"
+                          >
+                            {/* Imagem do card */}
+                            <div className="w-full h-32 bg-gray-100 flex items-center justify-center">
+                              {card.imagePreview ? (
+                                <img
+                                  src={card.imagePreview}
+                                  alt={`card ${idx + 1}`}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <span className="text-[10px] text-gray-300 font-bold uppercase">
+                                  Card {idx + 1}
+                                </span>
+                              )}
+                            </div>
+                            {/* Texto do card (opcional) */}
+                            {card.body && card.body.trim() && (
+                              <div className="px-2 py-2 text-[11px] text-gray-700 leading-snug">
+                                {card.body}
+                              </div>
+                            )}
+                            {/* Botões do card */}
+                            {card.buttons && card.buttons.length > 0 && (
+                              <div className="border-t border-gray-100">
+                                {card.buttons.map((btn, bIdx) => (
+                                  <div
+                                    key={bIdx}
+                                    className="text-[#00a884] text-center text-[11px] font-semibold py-1.5 px-2 border-b border-gray-100 last:border-b-0 flex items-center justify-center gap-1.5"
+                                  >
+                                    {btn.type === 'URL' && <Link size={11} />}
+                                    {btn.type === 'PHONE_NUMBER' && <Phone size={11} />}
+                                    {btn.type === 'QUICK_REPLY' && <HandTap size={11} />}
+                                    <span className="truncate">{btn.text || 'Botão'}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-gray-500 text-center mt-1">
+                        {carouselCards.length} cards · arraste pra ver →
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1144,7 +1542,7 @@ const CrosbyTemplateManager = () => {
                 ))}
               </select>
               {selectedTemplate && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mt-4">
+                <div className="bg-[#e5ddd5] p-4 rounded-xl shadow-inner border border-gray-200 mt-4">
                   {(() => {
                     const comps =
                       selectedTemplate.components ||
@@ -1153,44 +1551,103 @@ const CrosbyTemplateManager = () => {
                     const h = comps.find((c) => c.type === 'HEADER');
                     const b = comps.find((c) => c.type === 'BODY');
                     const buttonsComp = comps.find((c) => c.type === 'BUTTONS');
+                    const carouselComp = comps.find((c) => c.type === 'CAROUSEL');
 
                     const url =
                       h?.example?.header_handle?.[0] ||
                       h?.example?.header_url?.[0];
 
                     return (
-                      <>
-                        {h?.format === 'IMAGE' && url && (
-                          <img
-                            src={url}
-                            className="w-full h-32 object-cover border-b"
-                          />
-                        )}
-                        <div
-                          className="p-4 text-sm leading-relaxed"
-                          dangerouslySetInnerHTML={renderFormattedText(b?.text)}
-                        />
+                      <div className="max-w-[320px] mx-auto">
+                        {/* Mensagem principal (header + body) */}
+                        <div className="bg-white rounded-lg rounded-tr-none shadow-sm overflow-hidden">
+                          {h?.format === 'IMAGE' && url && (
+                            <img
+                              src={url}
+                              className="w-full h-32 object-cover"
+                              alt="Header"
+                            />
+                          )}
+                          {b?.text && (
+                            <div
+                              className="p-3 text-[13px] text-gray-800 leading-relaxed"
+                              dangerouslySetInnerHTML={renderFormattedText(b.text)}
+                            />
+                          )}
+                          <span className="text-[10px] text-gray-400 float-right pr-2 pb-1">12:00</span>
+                        </div>
 
+                        {/* Botões (modo texto) */}
                         {buttonsComp && buttonsComp.buttons?.length > 0 && (
-                          <div className="px-4 pb-4 flex flex-col gap-1.5">
+                          <div className="mt-1 flex flex-col gap-1">
                             {buttonsComp.buttons.map((btn, i) => (
                               <div
                                 key={i}
                                 className="bg-white text-[#00a884] text-center text-[13px] font-semibold py-2 px-4 rounded-lg shadow-sm border border-gray-100 flex items-center justify-center gap-2 cursor-default"
                               >
                                 {btn.type === 'URL' && <Link size={16} />}
-                                {btn.type === 'PHONE_NUMBER' && (
-                                  <Phone size={16} />
-                                )}
-                                {btn.type === 'QUICK_REPLY' && (
-                                  <HandTap size={16} />
-                                )}
+                                {btn.type === 'PHONE_NUMBER' && <Phone size={16} />}
+                                {btn.type === 'QUICK_REPLY' && <HandTap size={16} />}
                                 {btn.text}
                               </div>
                             ))}
                           </div>
                         )}
-                      </>
+
+                        {/* CAROUSEL — cards horizontais */}
+                        {carouselComp?.cards?.length > 0 && (
+                          <div className="mt-2">
+                            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 snap-x snap-mandatory" style={{ scrollbarWidth: 'thin' }}>
+                              {carouselComp.cards.map((card, idx) => {
+                                const cardComps = card.components || [];
+                                const cardHeader = cardComps.find((c) => c.type === 'HEADER');
+                                const cardBody = cardComps.find((c) => c.type === 'BODY');
+                                const cardBtns = cardComps.find((c) => c.type === 'BUTTONS');
+                                const cardImg =
+                                  cardHeader?.example?.header_handle?.[0] ||
+                                  cardHeader?.example?.header_url?.[0];
+                                return (
+                                  <div
+                                    key={idx}
+                                    className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden flex-shrink-0 w-[200px] snap-start"
+                                  >
+                                    <div className="w-full h-32 bg-gray-100 flex items-center justify-center">
+                                      {cardImg ? (
+                                        <img src={cardImg} alt={`card ${idx + 1}`} className="w-full h-full object-cover" />
+                                      ) : (
+                                        <span className="text-[10px] text-gray-300 font-bold uppercase">Card {idx + 1}</span>
+                                      )}
+                                    </div>
+                                    {cardBody?.text && (
+                                      <div className="px-2 py-2 text-[11px] text-gray-700 leading-snug">
+                                        {cardBody.text}
+                                      </div>
+                                    )}
+                                    {cardBtns?.buttons?.length > 0 && (
+                                      <div className="border-t border-gray-100">
+                                        {cardBtns.buttons.map((btn, bIdx) => (
+                                          <div
+                                            key={bIdx}
+                                            className="text-[#00a884] text-center text-[11px] font-semibold py-1.5 px-2 border-b border-gray-100 last:border-b-0 flex items-center justify-center gap-1.5"
+                                          >
+                                            {btn.type === 'URL' && <Link size={11} />}
+                                            {btn.type === 'PHONE_NUMBER' && <Phone size={11} />}
+                                            {btn.type === 'QUICK_REPLY' && <HandTap size={11} />}
+                                            <span className="truncate">{btn.text}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <p className="text-[10px] text-gray-500 text-center mt-1">
+                              {carouselComp.cards.length} cards · arraste pra ver →
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     );
                   })()}
                 </div>
