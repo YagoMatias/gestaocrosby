@@ -17,7 +17,7 @@ const fmtDataBr = (iso) => {
 // Cache localStorage — exibe instantâneo no mount, atualiza em background.
 // TTL 30min (intra-dia muda pouco; cron canal_totals_cache também não é
 // mais frequente que isso).
-const LS_PREFIX = 'ovl-cache-v24:'; // v24 = fix Cleiton duplicado (matches CLEYTON+CLEITON unifica)
+const LS_PREFIX = 'ovl-cache-v25:'; // v25 = dedup Cleiton no front (defesa contra backend desatualizado)
 const LS_TTL_MS = 30 * 60 * 1000;
 const lsKey = (periodo, datemin, datemax) =>
   `${LS_PREFIX}${periodo || 'ontem'}|${datemin || ''}|${datemax || ''}`;
@@ -266,14 +266,41 @@ export default function FaturamentoOntemVendedorLoja({
   // Junta lojas + vendedores. Vendedores do MESMO canal ficam adjacentes na
   // lista: canais ordenados por total desc, e dentro de cada canal os itens
   // ordenados por valor desc. A borda lateral colorida marca o canal.
+  // Defesa contra backend desatualizado: deduplica vendedores com mesmo nome
+  // dentro do canal (ex: CLEYTON F + CLEITON → 1 só "Cleiton" somando ambos).
+  // Normaliza nome (lowercase, remove acentos) pra comparar.
+  const normNome = (s) => String(s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+  const dedupPorCanal = (lista) => {
+    const out = [];
+    const idx = new Map();
+    for (const v of lista || []) {
+      const key = normNome(v.nome);
+      if (!key) { out.push(v); continue; }
+      // Match flexível: keys com prefixo comum (cleiton/cleyton) → unifica
+      const aliases = {
+        cleyton: 'cleiton', cleitonf: 'cleiton', cleytonf: 'cleiton',
+      };
+      const finalKey = aliases[key] || key;
+      if (idx.has(finalKey)) {
+        out[idx.get(finalKey)].valor += Number(v.valor || 0);
+      } else {
+        idx.set(finalKey, out.length);
+        out.push({ ...v, valor: Number(v.valor || 0) });
+      }
+    }
+    return out;
+  };
   const itensFlat = [
     ...(data?.varejo?.lojas || []).map((l) => ({
       nome: l.nome, uf: l.uf, valor: l.valor, canal: 'varejo',
     })),
-    ...(data?.multimarcas?.vendedores || []).map((v) => ({
+    ...dedupPorCanal(data?.multimarcas?.vendedores).map((v) => ({
       nome: v.nome, uf: null, valor: v.valor, canal: 'multimarcas',
     })),
-    ...(data?.revenda?.vendedores || []).map((v) => ({
+    ...dedupPorCanal(data?.revenda?.vendedores).map((v) => ({
       nome: v.nome, uf: null, valor: v.valor, canal: 'revenda',
     })),
     ...(data?.outros?.vendedores || []).map((v) => ({
