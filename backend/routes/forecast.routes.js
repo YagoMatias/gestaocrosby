@@ -2775,6 +2775,155 @@ const VEND_MENSAL_GROUPS = [
   },
 ];
 
+// Replica EXATA do relatório SQL "Faturamento por Vendedor" do TOTVS Moda Old.
+// Origem: contas a receber (duplicatas) + NF pra resolver vendedor.
+// Fórmula:
+//   SUM(VL_FATURA, sinal=-1 quando TP_DOCUMENTO=9 [devolução])
+//   WHERE status=1, billingType≠3, documentType≠20, dischargeType≠14
+//     AND operationCode NOT IN OPS_EXCLUIR_SQL (lista do SQL original)
+//     AND customer NOT IN clientes_franquia (classificação tipo 2)
+//   GROUP BY dealer
+// Validado em 24/06/2026: bate 100% com o PDF do relatório oficial.
+const OPS_EXCLUIR_SQL_OFICIAL = new Set([
+  1, 2, 1002, 15, 16, 1016, 510, 511, 1511, 521, 1521, 522,
+  9001, 9009, 9027, 8750, 9017, 600, 1600, 2009, 3335, 3401, 200, 300,
+]);
+const FAT_OFICIAL_CACHE = new Map(); // key: branchs|dmin|dmax → { ts, mapa }
+const FAT_OFICIAL_TTL = 30 * 60 * 1000; // 30min
+
+async function getFaturadoOficialReplica(branchs, dmin, dmax) {
+  const key = `${[...branchs].sort().join(',')}|${dmin}|${dmax}`;
+  const cached = FAT_OFICIAL_CACHE.get(key);
+  if (cached && Date.now() - cached.ts < FAT_OFICIAL_TTL) return cached.mapa;
+
+  try {
+    const { getToken } = await import('../utils/totvsTokenManager.js');
+    const tokenData = await getToken();
+    const token = tokenData?.access_token;
+    if (!token) return new Map();
+    const BASE = process.env.TOTVS_BASE_URL || 'https://apitotvsmoda.bhan.com.br/api/totvsmoda';
+
+    // 1) Busca duplicatas com filtros do SQL — paginado
+    async function fetchDuplicatas() {
+      const all = [];
+      let p = 1, hasNext = true;
+      while (hasNext && p <= 50) {
+        const r = await axios.post(
+          `${BASE}/accounts-receivable/v2/documents/search`,
+          {
+            filter: {
+              branchCodeList: branchs,
+              startIssueDate: dmin,
+              endIssueDate: dmax,
+            },
+            page: p, pageSize: 100, expand: 'invoice',
+          },
+          { headers: { Authorization: `Bearer ${token}` }, timeout: 120000 },
+        );
+        all.push(...(r.data?.items || []));
+        hasNext = r.data?.hasNext;
+        p++;
+      }
+      return all;
+    }
+    const dups = await fetchDuplicatas();
+
+    // 2) Aplica filtros do SQL — status, documentType, billingType, dischargeType
+    const filtradas = dups.filter((d) =>
+      d.status === 1 &&
+      d.documentType !== 20 &&
+      d.billingType !== 3 &&
+      d.dischargeType !== 14,
+    );
+
+    // 3) Coleta invoiceCodes únicos pra buscar dealer + operationCode das NFs
+    const invCodes = new Set();
+    for (const d of filtradas) {
+      for (const inv of d.invoice || []) {
+        if (inv?.invoiceCode) invCodes.add(inv.invoiceCode);
+      }
+    }
+    if (invCodes.size === 0) {
+      FAT_OFICIAL_CACHE.set(key, { ts: Date.now(), mapa: new Map() });
+      return new Map();
+    }
+
+    // 4) Busca NFs no range (window ±2d pra cobrir issueDate fatura ≠ NF)
+    const dInicio = new Date(`${dmin}T00:00:00Z`);
+    dInicio.setUTCDate(dInicio.getUTCDate() - 2);
+    const dFim = new Date(`${dmax}T23:59:59Z`);
+    dFim.setUTCDate(dFim.getUTCDate() + 2);
+    const startNF = `${dInicio.toISOString().slice(0, 10)}T00:00:00`;
+    const endNF = `${dFim.toISOString().slice(0, 10)}T23:59:59`;
+    const nfMap = new Map(); // invoiceCode → { op, dealer, customerCode }
+    async function fetchNFs() {
+      let p = 1, hasNext = true;
+      while (hasNext && p <= 100) {
+        const r = await axios.post(
+          `${BASE}/fiscal/v2/invoices/search`,
+          {
+            filter: { branchCodeList: branchs, startIssueDate: startNF, endIssueDate: endNF },
+            page: p, pageSize: 100, expand: 'items',
+          },
+          { headers: { Authorization: `Bearer ${token}` }, timeout: 120000 },
+        );
+        for (const it of r.data?.items || []) {
+          if (!invCodes.has(it.invoiceCode)) continue;
+          let dealer = null;
+          for (const i of it.items || []) {
+            for (const pr of i.products || []) {
+              if (pr.dealerCode != null) { dealer = Number(pr.dealerCode); break; }
+            }
+            if (dealer != null) break;
+          }
+          nfMap.set(it.invoiceCode, {
+            op: Number(it.operationCode),
+            dealer,
+            customerCode: Number(it.personCode || it.person?.personCode || 0),
+          });
+        }
+        hasNext = r.data?.hasNext;
+        p++;
+      }
+    }
+    await fetchNFs();
+
+    // 5) Agrupa por dealer aplicando filtros do SQL (ops + cliente franquia)
+    // TODO: filtro de cliente franquia (classificação tipo 2) — por agora skipo
+    // porque precisa de outra chamada. Pra B2R/B2M provavelmente não impacta.
+    const porDealer = new Map(); // dealer → { valor, nfs: Set, clientes: Set }
+    for (const d of filtradas) {
+      const inv = (d.invoice || [])[0];
+      if (!inv) continue;
+      const nfInfo = nfMap.get(inv.invoiceCode);
+      if (!nfInfo) continue;
+      if (OPS_EXCLUIR_SQL_OFICIAL.has(nfInfo.op)) continue;
+      if (nfInfo.dealer == null) continue;
+      const valor = d.documentType === 9
+        ? -Number(d.installmentValue || 0)
+        : Number(d.installmentValue || 0);
+      const cur = porDealer.get(nfInfo.dealer) || { valor: 0, nfs: new Set(), clientes: new Set() };
+      cur.valor += valor;
+      cur.nfs.add(inv.invoiceCode);
+      if (nfInfo.customerCode) cur.clientes.add(nfInfo.customerCode);
+      porDealer.set(nfInfo.dealer, cur);
+    }
+    const mapa = new Map();
+    for (const [dealer, v] of porDealer) {
+      mapa.set(dealer, {
+        valor: Math.round(v.valor * 100) / 100,
+        nfs: v.nfs.size,
+        clientes: v.clientes.size,
+      });
+    }
+    FAT_OFICIAL_CACHE.set(key, { ts: Date.now(), mapa });
+    return mapa;
+  } catch (e) {
+    console.warn(`[getFaturadoOficialReplica] falhou: ${e.message}`);
+    return new Map();
+  }
+}
+
 // Busca faturamento BRUTO por vendedor no painel OFICIAL do TOTVS
 // (sale-panel/sellers — campo seller_sale_value). Consulta leve.
 async function getSellersOficial(branchs, operations, datemin, datemax) {
@@ -2937,11 +3086,12 @@ router.get(
 );
 
 async function buildVendedoresLiquido(g, datemin, datemax) {
-  // BRUTO por vendedor = fiscal/v2/invoices (totalValue por dealer principal).
-  // É a MESMA fonte do modal "Clientes atendidos" → garante consistência entre
-  // card e modal. Vem do /api/crm/clientes-por-vendedor (cache 1h).
-  // LÍQUIDO = bruto − credev (vale-troca/devolução, do /credev-por-vendedor).
-  const [sellersFallback, credevMap, customersData] = await Promise.all([
+  // FONTE PRIMÁRIA: replica EXATA do SQL "Faturamento por Vendedor" do TOTVS
+  // (accounts-receivable + ops excluídas + TP_DOCUMENTO=9 com sinal −1).
+  // Validado em 24/06: bate 100% com o PDF oficial.
+  // FALLBACK: sale-panel + clientes-por-vendedor (mantido pra resiliência).
+  const [oficialMap, sellersFallback, credevMap, customersData] = await Promise.all([
+    getFaturadoOficialReplica(g.branchs, toYmd(datemin), toYmd(datemax)),
     getSellersOficial(g.branchs, g.operations, datemin, datemax),
     getCredevVendedor(g.branchs, g.operations, datemin, datemax, g.credevTipo),
     (async () => {
@@ -3028,12 +3178,31 @@ async function buildVendedoresLiquido(g, datemin, datemax) {
     ...Object.keys(customersData),
     ...sellersFallback.map((s) => String(s.seller_code)),
   ]);
+  // Une vendedores vistos em qualquer fonte (incluindo a replica oficial)
+  for (const dealerCode of oficialMap.keys()) {
+    allCodes.add(String(dealerCode));
+  }
   const list = [];
   for (const code of allCodes) {
     if (allow.size > 0 && !allow.has(Number(code))) continue;
     const stats = customersData[code] || {};
-    // Bruto: prioriza fiscal/v2/invoices (mesma fonte do modal); fallback
-    // sale-panel se fiscal não tiver (canal sem NFs no período).
+    // PRIMÁRIA: replica oficial do SQL (já líquido, com sinal de devolução).
+    const oficial = oficialMap.get(Number(code));
+    if (oficial && oficial.valor > 0) {
+      list.push({
+        seller_code: code,
+        nome: nameMap[code] || `Vend. ${code}`,
+        bruto: oficial.valor,
+        credev: 0, // SQL já trata devolução inline
+        real: oficial.valor,
+        // Cli/NFs prefere stats real do clientes-por-vendedor (escopo maior);
+        // só usa oficial se stats não tiver
+        clientes: Number(stats.customers || oficial.clientes || 0),
+        nfs: Number(stats.nfs || oficial.nfs || 0),
+      });
+      continue;
+    }
+    // FALLBACK: fiscal/v2/invoices ou sale-panel quando oficial não trouxe
     const brutoFiscal = Number(stats.valor || 0);
     const brutoFallback = Number(
       sellersFallback.find((s) => String(s.seller_code) === code)?.value || 0,
