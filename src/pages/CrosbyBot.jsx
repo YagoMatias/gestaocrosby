@@ -43,6 +43,7 @@ import {
 } from '@phosphor-icons/react';
 
 import WhatsAppReports from '../components/whatsapp-official/WhatsAppReports';
+import DisparosView from '../components/whatsapp-official/DisparosView';
 
 // --- IMPORT DO NOVO GRÁFICO ---
 import {
@@ -870,6 +871,12 @@ const CrosbyTemplateManager = () => {
               className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'relatorios' ? 'bg-white shadow-sm text-purple-600' : 'text-gray-500 hover:text-gray-700'}`}
             >
               Relatórios
+            </button>
+            <button
+              onClick={() => setActiveTab('disparos')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'disparos' ? 'bg-white shadow-sm text-amber-600' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Disparos
             </button>
           </div>
         </div>
@@ -2439,6 +2446,11 @@ const CrosbyTemplateManager = () => {
             activeAccount={accounts.find(a => a.waba_id === selectedAccount)}
           />
         </div>
+      )}
+
+      {/* ================= ABA: DISPAROS ================= */}
+      {activeTab === 'disparos' && (
+        <DisparosView selectedAccount={accounts.find(a => a.waba_id === selectedAccount)} />
       )}
     </div>
   );

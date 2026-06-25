@@ -2901,4 +2901,185 @@ router.get('/template-stats/grupos', asyncHandler(async (req, res) => {
   successResponse(res, grupos, `${grupos.length} grupos`);
 }));
 
+// ============================================================
+// DISPAROS — Histórico de campanhas com contatos enviados
+// GET /api/meta/disparos                 — agrega por campanha
+// GET /api/meta/disparos/:campaign_id/contatos — contatos de uma campanha
+// ============================================================
+
+router.get(
+  '/disparos',
+  asyncHandler(async (req, res) => {
+    const { waba_id, days = 30, limit = 50 } = req.query;
+    const desde = new Date(Date.now() - Number(days) * 86400000).toISOString();
+
+    // Fonte: message_queue (única tabela com dados reais hoje).
+    // template_disparos foi planejada pra conversão, mas ainda está vazia.
+    let q = supabase
+      .from('message_queue')
+      .select('campaign_id, campaign_name, template_name, status, sent_at, created_at, account_id')
+      .gte('created_at', desde)
+      .not('campaign_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(50000);
+    const { data, error } = await q;
+    if (error) return errorResponse(res, error.message, 500, 'DB_ERROR');
+
+    let accountFilter = null;
+    if (waba_id) {
+      const { data: acc } = await supabase
+        .from('whatsapp_accounts')
+        .select('id, waba_id')
+        .eq('waba_id', waba_id)
+        .maybeSingle();
+      if (acc?.id) accountFilter = acc.id;
+    }
+
+    const porCampanha = new Map();
+    for (const r of data || []) {
+      if (accountFilter && r.account_id !== accountFilter) continue;
+      const k = r.campaign_id;
+      if (!k) continue;
+      const cur = porCampanha.get(k) || {
+        campaign_id: k,
+        campaign_name: r.campaign_name || '—',
+        template_name: r.template_name,
+        account_id: r.account_id,
+        total: 0,
+        enviados: 0,
+        falharam: 0,
+        entregues: 0,
+        lidas: 0,
+        responderam: 0,
+        compraram: 0,
+        faturamento: 0,
+        primeiro_envio: r.sent_at || r.created_at,
+        ultimo_envio: r.sent_at || r.created_at,
+      };
+      cur.total++;
+      if (['sent', 'delivered', 'read', 'replied'].includes(r.status)) cur.enviados++;
+      if (r.status === 'delivered' || r.status === 'read' || r.status === 'replied') cur.entregues++;
+      if (r.status === 'read' || r.status === 'replied') cur.lidas++;
+      if (r.status === 'replied') cur.responderam++;
+      if (r.status === 'failed' || r.status === 'error') cur.falharam++;
+      const ts = r.sent_at || r.created_at;
+      if (ts && ts > cur.ultimo_envio) cur.ultimo_envio = ts;
+      if (ts && ts < cur.primeiro_envio) cur.primeiro_envio = ts;
+      porCampanha.set(k, cur);
+    }
+
+    const lista = [...porCampanha.values()]
+      .map((c) => ({
+        ...c,
+        faturamento: Math.round(c.faturamento * 100) / 100,
+        taxa_conversao: c.enviados > 0 ? Math.round((c.compraram / c.enviados) * 10000) / 100 : 0,
+      }))
+      .sort((a, b) => (b.ultimo_envio || '').localeCompare(a.ultimo_envio || ''))
+      .slice(0, Number(limit) || 50);
+
+    return successResponse(res, lista, `${lista.length} campanhas`);
+  }),
+);
+
+router.get(
+  '/disparos/:campaign_id/contatos',
+  asyncHandler(async (req, res) => {
+    const { campaign_id } = req.params;
+    const { search, page = 1, pageSize = 100, status } = req.query;
+    if (!campaign_id) return errorResponse(res, 'campaign_id obrigatório', 400, 'MISSING');
+
+    let q = supabase
+      .from('message_queue')
+      .select('id, contact_external_id, phone_number, contact_name, status, sent_at, last_error, attempt_count, meta_message_id, campaign_name, template_name, metadata, delivered_at, read_at, replied_at', { count: 'exact' })
+      .eq('campaign_id', campaign_id)
+      .order('id', { ascending: true });
+    if (status) q = q.eq('status', status);
+    if (search) {
+      q = q.or(`contact_name.ilike.%${search}%,phone_number.ilike.%${search}%`);
+    }
+    const pn = Math.max(1, Number(page) || 1);
+    const ps = Math.min(500, Math.max(10, Number(pageSize) || 100));
+    q = q.range((pn - 1) * ps, pn * ps - 1);
+
+    const { data, error, count } = await q;
+    if (error) return errorResponse(res, error.message, 500, 'DB_ERROR');
+
+    // Enriquece com pes_pessoa via telefone (best-effort, sem quebrar se faltar)
+    const rows = data || [];
+    const phones = rows.map((r) => String(r.phone_number || '').replace(/\D/g, '')).filter(Boolean);
+    let phoneToPessoa = new Map();
+    if (phones.length > 0) {
+      try {
+        // pes_pessoa.phones é jsonb array; busca por contém — pode ser pesado, então
+        // só faz se a página é pequena (<= 200 telefones)
+        if (phones.length <= 200) {
+          // Tenta números nos formatos com e sem 55
+          const cands = new Set();
+          for (const p of phones) {
+            cands.add(p);
+            if (p.startsWith('55')) cands.add(p.slice(2));
+          }
+          // Busca por person_code se contact_external_id estiver preenchido
+          const personCodes = rows
+            .map((r) => Number(r.contact_external_id))
+            .filter((n) => Number.isFinite(n) && n > 0);
+          if (personCodes.length > 0) {
+            const { data: pp } = await supabase
+              .from('pes_pessoa')
+              .select('code, cpf, nm_pessoa, phones')
+              .in('code', personCodes);
+            for (const p of pp || []) {
+              const ph = Array.isArray(p.phones) ? p.phones : [];
+              for (const phRec of ph) {
+                const n = String(phRec.number || '').replace(/\D/g, '');
+                if (n) phoneToPessoa.set(n, p);
+              }
+              phoneToPessoa.set(`code:${p.code}`, p);
+            }
+          }
+        }
+      } catch (e) { /* enrich é best-effort */ }
+    }
+
+    const contatos = rows.map((r) => {
+      const phoneDigits = String(r.phone_number || '').replace(/\D/g, '');
+      const phoneNo55 = phoneDigits.startsWith('55') ? phoneDigits.slice(2) : phoneDigits;
+      const pp = phoneToPessoa.get(`code:${Number(r.contact_external_id) || 0}`)
+        || phoneToPessoa.get(phoneDigits)
+        || phoneToPessoa.get(phoneNo55);
+      // Promove status de eventos do webhook (read/delivered) se sent_at já existe
+      let st = r.status;
+      if (r.replied_at) st = 'replied';
+      else if (r.read_at) st = 'read';
+      else if (r.delivered_at) st = 'delivered';
+      return {
+        id: r.id,
+        person_code: pp?.code || (Number(r.contact_external_id) || null),
+        phone_number: r.phone_number,
+        contact_name: r.contact_name || pp?.nm_pessoa || null,
+        cpf_cnpj: pp?.cpf || null,
+        status: st,
+        sent_at: r.sent_at,
+        delivered_at: r.delivered_at,
+        read_at: r.read_at,
+        replied_at: r.replied_at,
+        error_message: r.last_error,
+        attempt_count: r.attempt_count,
+        meta_message_id: r.meta_message_id,
+        campaign_name: r.campaign_name,
+        template_name: r.template_name,
+        comprou: false,
+        valor_compra: 0,
+        data_compra: null,
+      };
+    });
+
+    return successResponse(
+      res,
+      { contatos, total: count || 0, page: pn, pageSize: ps },
+      `${contatos.length} contatos`,
+    );
+  }),
+);
+
 export default router;
