@@ -884,6 +884,45 @@ const B2R_REVENDA_DEALERS_EMP99 = new Set([25, 15, 161, 165, 241, 779]); // Ande
 const FRANQUIA_DEALER = 40;
 const JUCELINO_DEALER = 288;
 
+// Titulares fixos por canal — sempre aparecem nos cards (zerados se não houver venda).
+// Match case-insensitive substring no nome do vendedor que veio do TOTVS.
+const TITULARES_B2R = [
+  { label: 'Cleiton', match: 'CLEYTON' },
+  { label: 'Michel', match: 'MICHEL' },
+  { label: 'Yago', match: 'YAGO' },
+];
+const TITULARES_B2M = [
+  { label: 'Renato', match: 'RENATO' },
+  { label: 'Walter', match: 'WALTER' },
+  { label: 'Arthur', match: 'ARTHUR' },
+];
+
+// Garante que TODOS os titulares aparecem na lista (zerados se não vendou),
+// e mantém quaisquer outros vendedores que aparecerem nos dados originais
+// (ex.: Aldo, Anderson). Preserva o valor real quando o titular já está.
+function mergeTitulares(lista, titulares, _totalCanal) {
+  const out = [];
+  const usados = new Set();
+  for (const t of titulares) {
+    const match = (lista || []).find((v) => {
+      const nm = String(v.nome || '').toUpperCase();
+      return nm.includes(t.match);
+    });
+    if (match) {
+      out.push({ nome: t.label, valor: Number(match.valor || 0) });
+      usados.add(match);
+    } else {
+      out.push({ nome: t.label, valor: 0 });
+    }
+  }
+  // Outros vendedores que vieram na lista mas não são titulares principais
+  for (const v of lista || []) {
+    if (usados.has(v)) continue;
+    out.push({ nome: v.nome, valor: Number(v.valor || 0) });
+  }
+  return out;
+}
+
 function getDominantDealerFromNf(nf) {
   const items = Array.isArray(nf?.items) ? nf.items : [];
   if (!items.length) return null;
@@ -1518,19 +1557,11 @@ router.get(
             total: round(totalVarejo > 0 ? totalVarejo : seg.varejo),
           },
           multimarcas: {
-            vendedores: vendedoresB2M.length > 0
-              ? vendedoresB2M
-              : (round(seg.multimarcas) > 0
-                  ? [{ nome: 'Multimarcas', valor: round(seg.multimarcas) }]
-                  : []),
+            vendedores: mergeTitulares(vendedoresB2M, TITULARES_B2M, round(seg.multimarcas)),
             total: round(totalB2M > 0 ? totalB2M : seg.multimarcas),
           },
           revenda: {
-            vendedores: vendedoresB2R.length > 0
-              ? vendedoresB2R
-              : (round(seg.revenda) > 0
-                  ? [{ nome: 'Revenda', valor: round(seg.revenda) }]
-                  : []),
+            vendedores: mergeTitulares(vendedoresB2R, TITULARES_B2R, round(seg.revenda)),
             total: round(totalB2R > 0 ? totalB2R : seg.revenda),
           },
           outros: {
@@ -1741,11 +1772,11 @@ router.get(
             total: Math.round(lojasB2C.reduce((s, l) => s + l.valor, 0) * 100) / 100,
           },
           multimarcas: {
-            vendedores: vendedoresB2M,
+            vendedores: mergeTitulares(vendedoresB2M, TITULARES_B2M),
             total: Math.round(vendedoresB2M.reduce((s, v) => s + v.valor, 0) * 100) / 100,
           },
           revenda: {
-            vendedores: vendedoresB2R,
+            vendedores: mergeTitulares(vendedoresB2R, TITULARES_B2R),
             total: Math.round(vendedoresB2R.reduce((s, v) => s + v.valor, 0) * 100) / 100,
           },
           outros: {
@@ -1888,11 +1919,11 @@ router.get(
           total: Math.round(lojasB2C.reduce((s, l) => s + l.valor, 0) * 100) / 100,
         },
         multimarcas: {
-          vendedores: vendedoresB2M,
+          vendedores: mergeTitulares(vendedoresB2M, TITULARES_B2M),
           total: Math.round(vendedoresB2M.reduce((s, v) => s + v.valor, 0) * 100) / 100,
         },
         revenda: {
-          vendedores: vendedoresB2R,
+          vendedores: mergeTitulares(vendedoresB2R, TITULARES_B2R),
           total: Math.round(vendedoresB2R.reduce((s, v) => s + v.valor, 0) * 100) / 100,
         },
         outros: {
@@ -2096,13 +2127,13 @@ router.get(
         total: Math.round(lojasB2C.reduce((s, l) => s + l.valor, 0) * 100) / 100,
       },
       multimarcas: {
-        vendedores: vendedoresB2M,
+        vendedores: mergeTitulares(vendedoresB2M, TITULARES_B2M),
         total:
           Math.round(vendedoresB2M.reduce((s, v) => s + v.valor, 0) * 100) /
           100,
       },
       revenda: {
-        vendedores: vendedoresB2R,
+        vendedores: mergeTitulares(vendedoresB2R, TITULARES_B2R),
         total:
           Math.round(vendedoresB2R.reduce((s, v) => s + v.valor, 0) * 100) /
           100,

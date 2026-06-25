@@ -17,7 +17,7 @@ const fmtDataBr = (iso) => {
 // Cache localStorage — exibe instantâneo no mount, atualiza em background.
 // TTL 30min (intra-dia muda pouco; cron canal_totals_cache também não é
 // mais frequente que isso).
-const LS_PREFIX = 'ovl-cache-v21:'; // v21 = Jhemyson com fallback notas_fiscais quando TOTVS falha
+const LS_PREFIX = 'ovl-cache-v23:'; // v23 = titulares B2R/B2M sempre presentes (zerados se sem venda)
 const LS_TTL_MS = 30 * 60 * 1000;
 const lsKey = (periodo, datemin, datemax) =>
   `${LS_PREFIX}${periodo || 'ontem'}|${datemin || ''}|${datemax || ''}`;
