@@ -973,7 +973,76 @@ router.post(
       return linhas;
     };
 
-    const todasNFs = await buscarTodas();
+    let todasNFs = await buscarTodas();
+
+    // Fallback: se Supabase tem poucos dados pra essa filial (multimarcas raramente
+    // entram no sync diário), busca direto do TOTVS pelos últimos 18 meses.
+    if (todasNFs.length < 10) {
+      try {
+        const { getToken } = await import('../utils/totvsTokenManager.js');
+        const axios = (await import('axios')).default;
+        const tokenData = await getToken();
+        const token = tokenData?.access_token;
+        if (token) {
+          const BASE = process.env.TOTVS_BASE_URL || 'https://apitotvsmoda.bhan.com.br/api/totvsmoda';
+          const hoje = new Date();
+          const inicio = new Date(hoje); inicio.setDate(hoje.getDate() - 540); // 18 meses
+          const chunks = [];
+          let cur = new Date(inicio);
+          const MS_5MES = 150 * 86400000;
+          while (cur < hoje) {
+            const fim = new Date(Math.min(cur.getTime() + MS_5MES, hoje.getTime()));
+            chunks.push([cur.toISOString().slice(0, 19), fim.toISOString().slice(0, 19)]);
+            cur = new Date(fim.getTime() + 1000);
+          }
+          const totvsNFs = [];
+          for (const [s, e] of chunks) {
+            for (const type of ['Output', 'Input']) {
+              let p = 1, hasNext = true;
+              while (hasNext && p <= 30) {
+                const r = await axios.post(`${BASE}/fiscal/v2/invoices/search`, {
+                  filter: { branchCodeList: [brCode], startIssueDate: s, endIssueDate: e, operationType: type },
+                  page: p, pageSize: 100, expand: 'items', order: 'issueDate:desc',
+                }, { headers: { Authorization: `Bearer ${token}` }, timeout: 60000 });
+                const items = r.data?.items || [];
+                for (const it of items) {
+                  // Dealer dominante: pega do primeiro produto com dealerCode
+                  let dealer = null;
+                  for (const item of (it.items || [])) {
+                    for (const prod of (item.products || [])) {
+                      if (prod.dealerCode != null) { dealer = Number(prod.dealerCode); break; }
+                    }
+                    if (dealer != null) break;
+                  }
+                  totvsNFs.push({
+                    person_code: it.personCode || it.person?.personCode || it.person?.code || null,
+                    person_name: it.personName || null,
+                    dealer_code: dealer,
+                    total_value: Number(it.totalValue || 0),
+                    issue_date: (it.issueDate || '').slice(0, 10),
+                    operation_type: it.operationType,
+                    operation_code: it.operationCode,
+                    invoice_status: it.invoiceStatus,
+                  });
+                }
+                hasNext = r.data?.hasNext;
+                p++;
+              }
+            }
+          }
+          // Descarta canceladas
+          const valid = totvsNFs.filter((n) =>
+            n.invoice_status !== 'Canceled' && n.invoice_status !== 'Deleted' && n.person_code,
+          );
+          console.log(`[clientes-por-empresa] fallback TOTVS branch=${brCode}: ${valid.length} NFs`);
+          if (valid.length > todasNFs.length) {
+            todasNFs = valid;
+          }
+        }
+      } catch (e) {
+        console.warn(`[clientes-por-empresa] fallback TOTVS falhou: ${e.message}`);
+      }
+    }
 
     // Resolve nome dos vendedores
     const dealerNames = new Map();
