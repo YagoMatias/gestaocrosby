@@ -17,7 +17,7 @@ const fmtDataBr = (iso) => {
 // Cache localStorage — exibe instantâneo no mount, atualiza em background.
 // TTL 30min (intra-dia muda pouco; cron canal_totals_cache também não é
 // mais frequente que isso).
-const LS_PREFIX = 'ovl-cache-v25:'; // v25 = dedup Cleiton no front (defesa contra backend desatualizado)
+const LS_PREFIX = 'ovl-cache-v26:'; // v26 = replica SQL oficial em B2R/B2M (Métricas Diretoria)
 const LS_TTL_MS = 30 * 60 * 1000;
 const lsKey = (periodo, datemin, datemax) =>
   `${LS_PREFIX}${periodo || 'ontem'}|${datemin || ''}|${datemax || ''}`;

@@ -1499,26 +1499,60 @@ router.get(
             .sort((a, b) => b.valor - a.valor);
         };
 
-        // Vendedores B2M/B2R: usa Supabase notas_fiscais DIRETO como fonte
-        // primária (autoritativa). O TOTVS sale-panel tinha discrepância
-        // (inflava ou perdia NFs). Lojas Varejo vêm do TOTVS ranking-faturamento.
+        // Vendedores B2M/B2R: usa REPLICA OFICIAL do SQL "Faturamento por
+        // Vendedor" do TOTVS (accounts-receivable + ops excluídas + sinal de
+        // devolução). Bate 100% com o relatório oficial PDF. Fallback:
+        // notas_fiscais Supabase se a replica falhar.
+        const construirGrupoOficial = async (branchs, sellersAllow, sellersExclude) => {
+          try {
+            const mapa = await getFaturadoOficialReplica(branchs, dmin, dmax);
+            const allow = sellersAllow ? new Set(sellersAllow.map(Number)) : null;
+            const exclude = new Set((sellersExclude || []).map(Number));
+            const list = [];
+            for (const [dealer, info] of mapa.entries()) {
+              if (allow && !allow.has(Number(dealer))) continue;
+              if (exclude.has(Number(dealer))) continue;
+              if (!info?.valor || info.valor <= 0) continue;
+              list.push({ nome: nomeDealer(dealer), valor: round(info.valor) });
+            }
+            return list.sort((a, b) => b.valor - a.valor);
+          } catch (e) {
+            console.warn(`[ovl cache-only] replica oficial falhou: ${e.message}`);
+            return [];
+          }
+        };
         let vendedoresB2M = [], vendedoresB2R = [], lojasB2C = [];
         try {
           [vendedoresB2M, vendedoresB2R, lojasB2C] = await Promise.all([
-            grupoPorDealerNF({
+            construirGrupoOficial(
+              [99, 2, 95, 87, 88, 90, 94, 97],
+              null,
+              [21, 26, 69], // exclui inbound David/Rafael/Thalis do B2M
+            ),
+            construirGrupoOficial(
+              [2, 5, 75, 99, 200],
+              [25, 15, 161, 165, 241, 779, 288, 251, 131, 94, 1924, 7044],
+              null,
+            ),
+            lojasVarejoTotvs(),
+          ]);
+          // Fallback notas_fiscais Supabase se a replica não retornou nada
+          if (vendedoresB2M.length === 0) {
+            vendedoresB2M = await grupoPorDealerNF({
               branchs: [99, 2, 95, 87, 88, 90, 94, 97],
               ops: [7235, 7241, 9127, 200],
               excludeSellers: [21, 26, 69],
-            }),
-            grupoPorDealerNF({
+            });
+          }
+          if (vendedoresB2R.length === 0) {
+            vendedoresB2R = await grupoPorDealerNF({
               branchs: [2, 5, 75, 99, 200],
               ops: [7236, 9122, 5102, 7242, 9061, 9001, 9121, 512],
               sellers: [25, 15, 161, 165, 241, 779, 288, 251, 131, 94, 1924, 7044],
-            }),
-            lojasVarejoTotvs(),
-          ]);
+            });
+          }
         } catch (e) {
-          console.warn(`[ovl cache-only] per_seller Supabase falhou: ${e.message}`);
+          console.warn(`[ovl cache-only] per_seller falhou: ${e.message}`);
         }
         // Escala apenas pra CIMA quando Supabase está sub-sincronizado.
         // ANTES: escalava nos dois sentidos → reduzia vendedor real quando
