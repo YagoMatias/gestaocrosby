@@ -885,35 +885,37 @@ const FRANQUIA_DEALER = 40;
 const JUCELINO_DEALER = 288;
 
 // Titulares fixos por canal — sempre aparecem nos cards (zerados se não houver venda).
-// Match case-insensitive substring no nome do vendedor que veio do TOTVS.
+// Aceita variações ortográficas (CLEYTON/CLEITON) e sobrenomes do TOTVS.
 const TITULARES_B2R = [
-  { label: 'Cleiton', match: 'CLEYTON' },
-  { label: 'Michel', match: 'MICHEL' },
-  { label: 'Yago', match: 'YAGO' },
+  { label: 'Cleiton', matches: ['CLEYTON', 'CLEITON'] },
+  { label: 'Michel', matches: ['MICHEL'] },
+  { label: 'Yago', matches: ['YAGO'] },
 ];
 const TITULARES_B2M = [
-  { label: 'Renato', match: 'RENATO' },
-  { label: 'Walter', match: 'WALTER' },
-  { label: 'Arthur', match: 'ARTHUR' },
+  { label: 'Renato', matches: ['RENATO'] },
+  { label: 'Walter', matches: ['WALTER'] },
+  { label: 'Arthur', matches: ['ARTHUR'] },
 ];
 
-// Garante que TODOS os titulares aparecem na lista (zerados se não vendou),
-// e mantém quaisquer outros vendedores que aparecerem nos dados originais
-// (ex.: Aldo, Anderson). Preserva o valor real quando o titular já está.
+// Garante que TODOS os titulares aparecem na lista (zerados se não vendeu).
+// SOMA múltiplas entradas que casam com o mesmo titular (ex: CLEYTON F + CLEITON
+// no per_seller → ambos vão pro "Cleiton"). Mantém vendedores não-titulares
+// (ex.: Aldo, Anderson) abaixo dos titulares.
 function mergeTitulares(lista, titulares, _totalCanal) {
   const out = [];
   const usados = new Set();
   for (const t of titulares) {
-    const match = (lista || []).find((v) => {
+    let soma = 0;
+    let achou = false;
+    for (const v of lista || []) {
       const nm = String(v.nome || '').toUpperCase();
-      return nm.includes(t.match);
-    });
-    if (match) {
-      out.push({ nome: t.label, valor: Number(match.valor || 0) });
-      usados.add(match);
-    } else {
-      out.push({ nome: t.label, valor: 0 });
+      if (t.matches.some((m) => nm.includes(m))) {
+        soma += Number(v.valor || 0);
+        usados.add(v);
+        achou = true;
+      }
     }
+    out.push({ nome: t.label, valor: achou ? Math.round(soma * 100) / 100 : 0 });
   }
   // Outros vendedores que vieram na lista mas não são titulares principais
   for (const v of lista || []) {
