@@ -1165,7 +1165,7 @@ router.post(
 
     const total = contatos.length;
     const pageNum = Math.max(1, Number(page) || 1);
-    const psize = Math.min(500, Math.max(10, Number(pageSize) || 50));
+    const psize = Math.min(10000, Math.max(10, Number(pageSize) || 50));
     const start = (pageNum - 1) * psize;
     const paginados = contatos.slice(start, start + psize);
 
@@ -1185,6 +1185,85 @@ router.post(
       },
       `${total} clientes na filial ${brCode}`,
     );
+  }),
+);
+
+// ============================================================
+// CLIENTES SALVOS POR FILIAL
+// POST   /api/tech/clientes-por-empresa/salvar
+// GET    /api/tech/clientes-por-empresa/salvos
+// GET    /api/tech/clientes-por-empresa/salvos/:id
+// DELETE /api/tech/clientes-por-empresa/salvos/:id
+// ============================================================
+
+router.post(
+  '/clientes-por-empresa/salvar',
+  asyncHandler(async (req, res) => {
+    const { branch_code, lista_nome, clientes, filtros, branch_name } = req.body || {};
+    if (!branch_code) return errorResponse(res, 'branch_code obrigatório', 400, 'MISSING_BRANCH');
+    if (!Array.isArray(clientes) || clientes.length === 0) {
+      return errorResponse(res, 'clientes (array) obrigatório', 400, 'MISSING_CLIENTES');
+    }
+    const faturamento = clientes.reduce((s, c) => s + Number(c.total_value || 0), 0);
+    const created_by = req.headers['x-user-email'] || req.body?.created_by || null;
+    const { data, error } = await supabase
+      .from('clientes_filial_salvos')
+      .insert({
+        branch_code: Number(branch_code),
+        branch_name: branch_name || null,
+        lista_nome: lista_nome || `Filial ${branch_code} - ${new Date().toLocaleDateString('pt-BR')}`,
+        total_clientes: clientes.length,
+        faturamento_total: Math.round(faturamento * 100) / 100,
+        filtros: filtros || null,
+        clientes,
+        created_by,
+      })
+      .select('id, lista_nome, branch_code, total_clientes, faturamento_total, created_at')
+      .single();
+    if (error) return errorResponse(res, error.message, 500, 'INSERT_ERROR');
+    return successResponse(res, data, 'Lista salva');
+  }),
+);
+
+router.get(
+  '/clientes-por-empresa/salvos',
+  asyncHandler(async (req, res) => {
+    const { branch_code } = req.query;
+    let q = supabase
+      .from('clientes_filial_salvos')
+      .select('id, branch_code, branch_name, lista_nome, total_clientes, faturamento_total, created_by, created_at')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (branch_code) q = q.eq('branch_code', Number(branch_code));
+    const { data, error } = await q;
+    if (error) return errorResponse(res, error.message, 500, 'QUERY_ERROR');
+    return successResponse(res, data || [], `${(data || []).length} listas`);
+  }),
+);
+
+router.get(
+  '/clientes-por-empresa/salvos/:id',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return errorResponse(res, 'id inválido', 400, 'BAD_ID');
+    const { data, error } = await supabase
+      .from('clientes_filial_salvos')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error) return errorResponse(res, error.message, 404, 'NOT_FOUND');
+    return successResponse(res, data, 'OK');
+  }),
+);
+
+router.delete(
+  '/clientes-por-empresa/salvos/:id',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return errorResponse(res, 'id inválido', 400, 'BAD_ID');
+    const { error } = await supabase.from('clientes_filial_salvos').delete().eq('id', id);
+    if (error) return errorResponse(res, error.message, 500, 'DELETE_ERROR');
+    return successResponse(res, { id }, 'Removido');
   }),
 );
 

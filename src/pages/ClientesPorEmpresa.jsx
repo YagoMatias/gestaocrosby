@@ -1,13 +1,18 @@
 // Clientes por Filial — busca clientes que compraram em uma filial específica.
 // Input: branch_code → lista clientes com nome, telefone, CPF/CNPJ, vendedor,
 // total comprado, NFs, última compra. Suporta busca, filtros UF/vendedor e CSV.
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Buildings,
   MagnifyingGlass,
   Spinner,
   Download,
   ChatCircleText,
+  FloppyDisk,
+  Trash,
+  Eye,
+  ArrowLeft,
+  BookmarkSimple,
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
@@ -67,6 +72,7 @@ function exportCSV(contatos, branch) {
 }
 
 export default function ClientesPorEmpresa() {
+  const [tab, setTab] = useState('consultar'); // 'consultar' | 'salvos'
   const [branchInput, setBranchInput] = useState('');
   const [branchAtivo, setBranchAtivo] = useState(null);
   const [search, setSearch] = useState('');
@@ -77,6 +83,97 @@ export default function ClientesPorEmpresa() {
   const [data, setData] = useState({ contatos: [], total: 0, ufs: [], vendedores: [] });
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
+
+  // Salvar / Salvos
+  const [savedLists, setSavedLists] = useState([]);
+  const [savedDetail, setSavedDetail] = useState(null);
+  const [loadingSaved, setLoadingSaved] = useState(false);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [savingNow, setSavingNow] = useState(false);
+
+  const fetchSavedLists = useCallback(async () => {
+    setLoadingSaved(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/tech/clientes-por-empresa/salvos`, {
+        headers: { 'x-api-key': API_KEY },
+      });
+      const json = await res.json();
+      setSavedLists(json?.data || []);
+    } catch (e) {
+      setSavedLists([]);
+    } finally {
+      setLoadingSaved(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'salvos' && !savedDetail) fetchSavedLists();
+  }, [tab, savedDetail, fetchSavedLists]);
+
+  const handleSalvar = async () => {
+    if (!branchAtivo) return;
+    setSavingNow(true);
+    try {
+      // Puxa lista completa (sem paginação) — endpoint clampa em 10k
+      const fullRes = await fetch(`${API_BASE_URL}/api/tech/clientes-por-empresa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        body: JSON.stringify({ branch_code: branchAtivo, search: '', page: 1, pageSize: 10000 }),
+      });
+      const fullJson = await fullRes.json();
+      const todos = fullJson?.data?.contatos || [];
+      if (todos.length === 0) {
+        alert('Nenhum cliente pra salvar.');
+        return;
+      }
+      const res = await fetch(`${API_BASE_URL}/api/tech/clientes-por-empresa/salvar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        body: JSON.stringify({
+          branch_code: branchAtivo,
+          lista_nome: saveName?.trim() || null,
+          clientes: todos,
+          filtros: { search, uf, seller },
+        }),
+      });
+      if (!res.ok) throw new Error(`Erro ${res.status}`);
+      setShowSaveDialog(false);
+      setSaveName('');
+      alert(`${todos.length} clientes salvos!`);
+    } catch (e) {
+      alert(`Falhou: ${e.message}`);
+    } finally {
+      setSavingNow(false);
+    }
+  };
+
+  const handleVerSalva = async (id) => {
+    setLoadingSaved(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/tech/clientes-por-empresa/salvos/${id}`, {
+        headers: { 'x-api-key': API_KEY },
+      });
+      const json = await res.json();
+      setSavedDetail(json?.data || null);
+    } finally {
+      setLoadingSaved(false);
+    }
+  };
+
+  const handleExcluirSalva = async (id) => {
+    if (!confirm('Excluir esta lista salva?')) return;
+    try {
+      await fetch(`${API_BASE_URL}/api/tech/clientes-por-empresa/salvos/${id}`, {
+        method: 'DELETE',
+        headers: { 'x-api-key': API_KEY },
+      });
+      setSavedLists((prev) => prev.filter((l) => l.id !== id));
+      if (savedDetail?.id === id) setSavedDetail(null);
+    } catch (e) {
+      alert(`Falhou: ${e.message}`);
+    }
+  };
 
   const carregar = useCallback(async (branch, params = {}) => {
     if (!branch) return;
@@ -142,6 +239,23 @@ export default function ClientesPorEmpresa() {
           icon={Buildings}
         />
 
+        {/* Abas */}
+        <div className="flex gap-1 bg-white rounded-lg border border-gray-200 p-1 w-fit shadow-sm">
+          <button
+            onClick={() => { setTab('consultar'); setSavedDetail(null); }}
+            className={`px-4 py-1.5 text-xs font-bold rounded ${tab === 'consultar' ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <MagnifyingGlass size={14} weight="bold" className="inline mr-1" /> Consultar
+          </button>
+          <button
+            onClick={() => setTab('salvos')}
+            className={`px-4 py-1.5 text-xs font-bold rounded ${tab === 'salvos' ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <BookmarkSimple size={14} weight="bold" className="inline mr-1" /> Salvos {savedLists.length > 0 && `(${savedLists.length})`}
+          </button>
+        </div>
+
+        {tab === 'consultar' && (<>
         {/* Form de busca */}
         <form
           onSubmit={handleSubmit}
@@ -190,14 +304,24 @@ export default function ClientesPorEmpresa() {
                   {data.total.toLocaleString('pt-BR')} clientes · {(data.nf_total || 0).toLocaleString('pt-BR')} NFs no histórico
                 </p>
               </div>
-              <button
-                onClick={() => exportCSV(visiveis, branchAtivo)}
-                disabled={!visiveis.length}
-                className="text-xs px-3 py-1.5 rounded bg-white/15 hover:bg-white/25 border border-white/20 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Download size={14} weight="bold" />
-                Exportar CSV
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setSaveName(`Filial ${branchAtivo} - ${new Date().toLocaleDateString('pt-BR')}`); setShowSaveDialog(true); }}
+                  disabled={!data.contatos?.length}
+                  className="text-xs px-3 py-1.5 rounded bg-white/15 hover:bg-white/25 border border-white/20 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <FloppyDisk size={14} weight="bold" />
+                  Salvar no Supabase
+                </button>
+                <button
+                  onClick={() => exportCSV(visiveis, branchAtivo)}
+                  disabled={!visiveis.length}
+                  className="text-xs px-3 py-1.5 rounded bg-white/15 hover:bg-white/25 border border-white/20 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Download size={14} weight="bold" />
+                  Exportar CSV
+                </button>
+              </div>
             </div>
 
             {/* Filtros */}
@@ -340,6 +464,151 @@ export default function ClientesPorEmpresa() {
               )}
             </div>
           </>
+        )}
+        </>)}
+
+        {/* ============ ABA SALVOS ============ */}
+        {tab === 'salvos' && !savedDetail && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-5 py-3 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BookmarkSimple size={18} weight="fill" className="text-amber-600" />
+                <h3 className="text-sm font-bold text-gray-800">Listas Salvas no Supabase</h3>
+              </div>
+              <button onClick={fetchSavedLists} className="text-xs px-2 py-1 rounded hover:bg-white/60 text-gray-600">↻ Atualizar</button>
+            </div>
+            {loadingSaved ? (
+              <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
+                <Spinner size={18} className="animate-spin" />
+                <span className="text-xs">Carregando...</span>
+              </div>
+            ) : savedLists.length === 0 ? (
+              <div className="text-center py-12 text-gray-400 text-sm">
+                Nenhuma lista salva ainda. Faça uma consulta e clique em <b>Salvar no Supabase</b>.
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr className="text-left text-[10px] uppercase tracking-wider font-bold text-gray-500 border-b">
+                    <th className="py-2.5 px-3">Nome</th>
+                    <th className="py-2.5 px-3">Filial</th>
+                    <th className="py-2.5 px-3 text-right">Clientes</th>
+                    <th className="py-2.5 px-3 text-right">Faturamento</th>
+                    <th className="py-2.5 px-3">Salvo em</th>
+                    <th className="py-2.5 px-3">Por</th>
+                    <th className="py-2.5 px-3 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {savedLists.map((l) => (
+                    <tr key={l.id} className="border-b border-gray-100 hover:bg-amber-50/30">
+                      <td className="py-2.5 px-3 font-semibold text-gray-800">{l.lista_nome}</td>
+                      <td className="py-2.5 px-3 text-xs text-gray-600">{l.branch_code}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums">{l.total_clientes?.toLocaleString('pt-BR')}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums font-bold text-gray-800">R$ {fmtBRL(l.faturamento_total)}</td>
+                      <td className="py-2.5 px-3 text-xs text-gray-500">{new Date(l.created_at).toLocaleString('pt-BR')}</td>
+                      <td className="py-2.5 px-3 text-xs text-gray-500">{l.created_by || '—'}</td>
+                      <td className="py-2.5 px-3 text-right">
+                        <div className="flex justify-end gap-1">
+                          <button onClick={() => handleVerSalva(l.id)} className="p-1.5 rounded hover:bg-indigo-100 text-indigo-700" title="Ver">
+                            <Eye size={14} weight="bold" />
+                          </button>
+                          <button onClick={() => handleExcluirSalva(l.id)} className="p-1.5 rounded hover:bg-rose-100 text-rose-700" title="Excluir">
+                            <Trash size={14} weight="bold" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === 'salvos' && savedDetail && (
+          <div className="space-y-3">
+            <button onClick={() => setSavedDetail(null)} className="text-xs px-3 py-1.5 rounded border border-gray-200 hover:bg-gray-50 flex items-center gap-1.5">
+              <ArrowLeft size={14} /> Voltar pra lista
+            </button>
+            <div className="bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl px-5 py-4 shadow-md flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h2 className="text-lg font-extrabold">{savedDetail.lista_nome}</h2>
+                <p className="text-xs text-amber-50 mt-0.5">
+                  Filial {savedDetail.branch_code} · {savedDetail.total_clientes} clientes · R$ {fmtBRL(savedDetail.faturamento_total)} · {new Date(savedDetail.created_at).toLocaleString('pt-BR')}
+                </p>
+              </div>
+              <button
+                onClick={() => exportCSV(savedDetail.clientes || [], savedDetail.branch_code)}
+                className="text-xs px-3 py-1.5 rounded bg-white/15 hover:bg-white/25 border border-white/20 flex items-center gap-1.5"
+              >
+                <Download size={14} weight="bold" /> Exportar CSV
+              </button>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr className="text-left text-[10px] uppercase tracking-wider font-bold text-gray-500 border-b">
+                      <th className="py-2.5 px-3">Cliente</th>
+                      <th className="py-2.5 px-3">CPF/CNPJ</th>
+                      <th className="py-2.5 px-3">Telefone</th>
+                      <th className="py-2.5 px-3">Vendedor</th>
+                      <th className="py-2.5 px-3 text-right">Total</th>
+                      <th className="py-2.5 px-3 text-right">NFs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(savedDetail.clientes || []).map((c) => (
+                      <tr key={c.person_code} className="border-b border-gray-100 hover:bg-amber-50/30">
+                        <td className="py-2.5 px-3 font-semibold text-gray-800 truncate max-w-[280px]">{c.person_name}</td>
+                        <td className="py-2.5 px-3 text-xs font-mono text-gray-600">{fmtCNPJ(c.cpf_cnpj)}</td>
+                        <td className="py-2.5 px-3 text-xs font-mono text-emerald-700">{fmtTel(c.telefone)}</td>
+                        <td className="py-2.5 px-3 text-xs">{c.vendedor_nome || '—'}</td>
+                        <td className="py-2.5 px-3 text-right font-bold tabular-nums">R$ {fmtBRL(c.total_value)}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums">{c.num_nfs}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ============ DIALOG SALVAR ============ */}
+        {showSaveDialog && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => !savingNow && setShowSaveDialog(false)}>
+            <div className="bg-white rounded-xl p-5 w-full max-w-md mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-base font-bold text-gray-800 mb-1">Salvar Lista</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                {data.contatos?.length || 0} clientes da filial {branchAtivo} serão salvos no Supabase.
+              </p>
+              <label className="block text-[11px] font-bold text-gray-600 uppercase mb-1">Nome da lista</label>
+              <input
+                autoFocus
+                value={saveName}
+                onChange={(e) => setSaveName(e.target.value)}
+                placeholder={`Filial ${branchAtivo} - ${new Date().toLocaleDateString('pt-BR')}`}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => setShowSaveDialog(false)}
+                  disabled={savingNow}
+                  className="px-3 py-1.5 text-xs font-bold rounded text-gray-600 hover:bg-gray-100"
+                >Cancelar</button>
+                <button
+                  onClick={handleSalvar}
+                  disabled={savingNow}
+                  className="px-4 py-1.5 text-xs font-bold rounded bg-indigo-600 text-white hover:bg-indigo-700 flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {savingNow ? <Spinner size={12} className="animate-spin" /> : <FloppyDisk size={12} weight="bold" />}
+                  Salvar
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>
