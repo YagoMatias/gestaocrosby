@@ -4,6 +4,7 @@ import LoadingSpinner from '../ui/LoadingSpinner';
 import {
   ChartBar, TrendUp, Users, CheckCircle, Eye as EyeIcon, CurrencyDollar,
   CaretDown, ArrowClockwise, Export, ChatTeardropText, DownloadSimple, Trophy,
+  PaperPlaneTilt, ChatCircleDots, Warning, ArrowRight,
 } from '@phosphor-icons/react';
 import useDownloadAsImage from '../../hooks/useDownloadAsImage';
 
@@ -634,97 +635,200 @@ const WhatsAppReports = ({ accounts, activeAccount }) => {
             </CardContent>
           </Card>
 
-          {/* Tabela de campanhas */}
+          {/* Tabela de campanhas — visual redesenhado */}
           {campaigns.length > 0 ? (
-            <Card className="shadow-md rounded-xl bg-white overflow-hidden">
-              <CardHeader className="pb-0 flex flex-row items-center justify-between">
+            <Card className="shadow-md rounded-xl bg-white overflow-hidden border border-gray-100">
+              <CardHeader className="pb-3 flex flex-row items-center justify-between bg-gradient-to-r from-slate-50 to-blue-50/30 border-b border-gray-100">
                 <CardTitle className="text-base font-bold text-[#000638] flex items-center gap-2">
-                  <TrendUp size={20} weight="bold" />
+                  <TrendUp size={20} weight="bold" className="text-blue-600" />
                   Performance por Campanha
                 </CardTitle>
                 <button
                   onClick={fetchData}
                   disabled={loading}
-                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition"
                   title="Atualizar dados"
                 >
                   <ArrowClockwise size={14} weight="bold" className={loading ? 'animate-spin' : ''} />
-                  {loading ? 'Atualizando...' : 'Atualizar'}
+                  {loading ? 'Atualizando' : 'Atualizar'}
                 </button>
               </CardHeader>
               <CardContent className="p-0">
+                {/* KPIs agregados — header visual */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-gray-100 border-b border-gray-100">
+                  {[
+                    { label: 'Total', value: totals.total, icon: Users, color: 'text-slate-700', bg: 'bg-white' },
+                    { label: 'Enviadas', value: totals.sent, icon: PaperPlaneTilt, color: 'text-blue-600', bg: 'bg-white' },
+                    { label: 'Entregues', value: totals.delivered, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-white' },
+                    { label: 'Lidas', value: totals.read, icon: EyeIcon, color: 'text-violet-600', bg: 'bg-white' },
+                    { label: 'Respondidas', value: totals.replied, icon: ChatCircleDots, color: 'text-amber-600', bg: 'bg-white' },
+                  ].map((k, idx) => {
+                    const Icon = k.icon;
+                    return (
+                      <div key={idx} className={`${k.bg} px-4 py-3 flex items-center gap-3`}>
+                        <div className={`p-2 rounded-lg bg-gray-50 ${k.color}`}>
+                          <Icon size={18} weight="bold" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{k.label}</p>
+                          <p className={`text-lg font-extrabold tabular-nums ${k.color}`}>
+                            {k.value.toLocaleString('pt-BR')}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-[#f8f9fb] border-b">
+                    <thead className="bg-gray-50/80 border-b border-gray-100">
                       <tr>
-                        {[
-                          { key: 'campaignName', label: 'Campanha' },
-                          { key: 'templateName', label: 'Template' },
-                          { key: 'scheduledAt', label: 'Data' },
-                          { key: 'total', label: 'Total' },
-                          { key: 'sent', label: 'Enviadas' },
-                          { key: 'delivered', label: 'Entregues' },
-                          { key: 'read', label: 'Lidas' },
-                          { key: 'replied', label: 'Respondidas' },
-                          { key: 'failed', label: 'Falharam' },
-                        ].map(col => (
-                          <th
-                            key={col.key}
-                            onClick={() => toggleSort(col.key)}
-                            className="text-left p-3 font-semibold text-gray-500 cursor-pointer hover:text-[#000638] transition-colors text-xs uppercase tracking-wide select-none"
-                          >
-                            {col.label} {sortKey === col.key && (sortDir === 'asc' ? '↑' : '↓')}
-                          </th>
-                        ))}
-                        <th className="text-left p-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Entrega</th>
-                        <th className="text-left p-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Leitura</th>
+                        <th
+                          onClick={() => toggleSort('campaignName')}
+                          className="text-left py-3 px-4 font-bold text-gray-500 cursor-pointer hover:text-[#000638] transition text-[10px] uppercase tracking-wider select-none"
+                        >
+                          Campanha {sortKey === 'campaignName' && (sortDir === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th
+                          onClick={() => toggleSort('scheduledAt')}
+                          className="text-left py-3 px-3 font-bold text-gray-500 cursor-pointer hover:text-[#000638] transition text-[10px] uppercase tracking-wider select-none w-[100px]"
+                        >
+                          Data {sortKey === 'scheduledAt' && (sortDir === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th className="text-center py-3 px-3 font-bold text-gray-500 text-[10px] uppercase tracking-wider">Funil de Envio</th>
+                        <th
+                          onClick={() => toggleSort('delivered')}
+                          className="text-right py-3 px-3 font-bold text-emerald-700 cursor-pointer hover:text-emerald-800 transition text-[10px] uppercase tracking-wider select-none w-[90px]"
+                        >
+                          Entrega {sortKey === 'delivered' && (sortDir === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th
+                          onClick={() => toggleSort('read')}
+                          className="text-right py-3 px-3 font-bold text-violet-700 cursor-pointer hover:text-violet-800 transition text-[10px] uppercase tracking-wider select-none w-[90px]"
+                        >
+                          Leitura {sortKey === 'read' && (sortDir === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th
+                          onClick={() => toggleSort('failed')}
+                          className="text-right py-3 px-4 font-bold text-rose-700 cursor-pointer hover:text-rose-800 transition text-[10px] uppercase tracking-wider select-none w-[90px]"
+                        >
+                          Falhas {sortKey === 'failed' && (sortDir === 'asc' ? '↑' : '↓')}
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {sorted.map(c => {
-                        const dr = c.sent > 0 ? ((c.delivered / c.sent) * 100).toFixed(1) : 0;
-                        const rr = c.delivered > 0 ? ((c.read / c.delivered) * 100).toFixed(1) : 0;
+                      {sorted.map((c) => {
+                        const dr = c.sent > 0 ? (c.delivered / c.sent) * 100 : 0;
+                        const rr = c.delivered > 0 ? (c.read / c.delivered) * 100 : 0;
+                        const sentPct = c.total > 0 ? (c.sent / c.total) * 100 : 0;
+                        const delPct = c.total > 0 ? (c.delivered / c.total) * 100 : 0;
+                        const readPct = c.total > 0 ? (c.read / c.total) * 100 : 0;
+                        const replPct = c.total > 0 ? (c.replied / c.total) * 100 : 0;
+                        const drBadge = dr >= 90 ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : dr >= 70 ? 'bg-amber-100 text-amber-700 border-amber-200' : dr > 0 ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-gray-100 text-gray-400 border-gray-200';
+                        const rrBadge = rr >= 50 ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : rr >= 30 ? 'bg-amber-100 text-amber-700 border-amber-200' : rr > 0 ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-gray-100 text-gray-400 border-gray-200';
                         return (
-                          <tr key={c.campaignId} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                            <td className="p-3 font-semibold text-[#000638] max-w-[180px] truncate">{c.campaignName}</td>
-                            <td className="p-3 text-gray-600">{c.templateName}</td>
-                            <td className="p-3 text-gray-500 text-xs">{new Date(c.scheduledAt).toLocaleDateString('pt-BR')}</td>
-                            <td className="p-3 font-semibold">{c.total}</td>
-                            <td className="p-3">{c.sent}</td>
-                            <td className="p-3">{c.delivered}</td>
-                            <td className="p-3">{c.read}</td>
-                            <td className="p-3">{c.replied}</td>
-                            <td className="p-3 text-red-600 font-semibold">{c.failed}</td>
-                            <td className="p-3">
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${Number(dr) >= 90 ? 'bg-emerald-100 text-emerald-700' : Number(dr) >= 70 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                                {dr}%
+                          <tr key={c.campaignId} className="border-b border-gray-50 hover:bg-blue-50/20 transition group">
+                            <td className="py-3 px-4 max-w-[260px]">
+                              <p className="font-bold text-[#000638] truncate group-hover:text-blue-700 transition">{c.campaignName}</p>
+                              <p className="text-[11px] font-mono text-gray-400 truncate">{c.templateName}</p>
+                            </td>
+                            <td className="py-3 px-3 text-xs text-gray-500 tabular-nums whitespace-nowrap">
+                              {new Date(c.scheduledAt).toLocaleDateString('pt-BR')}
+                            </td>
+                            {/* Funil visual: barras empilhadas com números embaixo */}
+                            <td className="py-3 px-3">
+                              <div className="flex items-center gap-1.5 max-w-md mx-auto">
+                                {[
+                                  { v: c.total, label: 'Total', color: 'bg-slate-400', text: 'text-slate-700' },
+                                  { v: c.sent, label: 'Env', color: 'bg-blue-500', text: 'text-blue-700', pct: sentPct },
+                                  { v: c.delivered, label: 'Entr', color: 'bg-emerald-500', text: 'text-emerald-700', pct: delPct },
+                                  { v: c.read, label: 'Lid', color: 'bg-violet-500', text: 'text-violet-700', pct: readPct },
+                                  { v: c.replied, label: 'Resp', color: 'bg-amber-500', text: 'text-amber-700', pct: replPct },
+                                ].map((s, i, arr) => (
+                                  <React.Fragment key={i}>
+                                    <div className="flex flex-col items-center gap-0.5 min-w-[42px]">
+                                      <span className={`text-xs font-extrabold tabular-nums ${s.text}`}>{s.v.toLocaleString('pt-BR')}</span>
+                                      <div className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                                        <div className={s.color} style={{ width: `${Math.max(0, Math.min(100, s.pct ?? 100))}%`, height: '100%' }} />
+                                      </div>
+                                      <span className="text-[9px] font-bold uppercase text-gray-400 tracking-wide">{s.label}</span>
+                                    </div>
+                                    {i < arr.length - 1 && (
+                                      <ArrowRight size={10} weight="bold" className="text-gray-300 self-center mt-1" />
+                                    )}
+                                  </React.Fragment>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-bold tabular-nums border ${drBadge}`}>
+                                {dr.toFixed(1)}%
                               </span>
                             </td>
-                            <td className="p-3">
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${Number(rr) >= 50 ? 'bg-emerald-100 text-emerald-700' : Number(rr) >= 30 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                                {rr}%
+                            <td className="py-3 px-3 text-right">
+                              <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-bold tabular-nums border ${rrBadge}`}>
+                                {rr.toFixed(1)}%
                               </span>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              {c.failed > 0 ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold border bg-rose-50 text-rose-700 border-rose-200">
+                                  <Warning size={11} weight="bold" />
+                                  {c.failed}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-300 font-mono">—</span>
+                              )}
                             </td>
                           </tr>
                         );
                       })}
                     </tbody>
-                    <tfoot className="bg-[#f8f9fb] border-t-2 border-[#000638]/10">
-                      <tr className="font-bold text-[#000638]">
-                        <td className="p-3">TOTAL</td>
-                        <td className="p-3"></td>
-                        <td className="p-3"></td>
-                        <td className="p-3">{totals.total.toLocaleString('pt-BR')}</td>
-                        <td className="p-3">{totals.sent.toLocaleString('pt-BR')}</td>
-                        <td className="p-3">{totals.delivered.toLocaleString('pt-BR')}</td>
-                        <td className="p-3">{totals.read.toLocaleString('pt-BR')}</td>
-                        <td className="p-3">{totals.replied.toLocaleString('pt-BR')}</td>
-                        <td className="p-3 text-red-600">{totals.failed.toLocaleString('pt-BR')}</td>
-                        <td className="p-3">
-                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[#000638] text-white">{totals.sent > 0 ? ((totals.delivered / totals.sent) * 100).toFixed(1) : '0.0'}%</span>
+                    <tfoot className="bg-gradient-to-r from-[#000638] to-[#1a1f4f] text-white">
+                      <tr className="font-extrabold">
+                        <td className="py-3 px-4 text-sm">TOTAL</td>
+                        <td className="py-3 px-3"></td>
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-1.5 max-w-md mx-auto">
+                            {[
+                              { v: totals.total, label: 'Total' },
+                              { v: totals.sent, label: 'Env' },
+                              { v: totals.delivered, label: 'Entr' },
+                              { v: totals.read, label: 'Lid' },
+                              { v: totals.replied, label: 'Resp' },
+                            ].map((s, i, arr) => (
+                              <React.Fragment key={i}>
+                                <div className="flex flex-col items-center min-w-[42px]">
+                                  <span className="text-xs font-extrabold tabular-nums">{s.v.toLocaleString('pt-BR')}</span>
+                                  <span className="text-[9px] font-bold uppercase text-white/50 tracking-wide">{s.label}</span>
+                                </div>
+                                {i < arr.length - 1 && (
+                                  <ArrowRight size={10} weight="bold" className="text-white/30" />
+                                )}
+                              </React.Fragment>
+                            ))}
+                          </div>
                         </td>
-                        <td className="p-3">
-                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[#000638] text-white">{totals.delivered > 0 ? ((totals.read / totals.delivered) * 100).toFixed(1) : '0.0'}%</span>
+                        <td className="py-3 px-3 text-right">
+                          <span className="inline-block px-2 py-0.5 rounded-md text-xs font-extrabold tabular-nums bg-white/15 border border-white/20">
+                            {totals.sent > 0 ? ((totals.delivered / totals.sent) * 100).toFixed(1) : '0.0'}%
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <span className="inline-block px-2 py-0.5 rounded-md text-xs font-extrabold tabular-nums bg-white/15 border border-white/20">
+                            {totals.delivered > 0 ? ((totals.read / totals.delivered) * 100).toFixed(1) : '0.0'}%
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          {totals.failed > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-extrabold bg-rose-500/20 border border-rose-400/40 text-rose-100">
+                              <Warning size={11} weight="bold" />
+                              {totals.failed.toLocaleString('pt-BR')}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-white/40 font-mono">—</span>
+                          )}
                         </td>
                       </tr>
                     </tfoot>
