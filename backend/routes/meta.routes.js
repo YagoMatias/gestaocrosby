@@ -1931,21 +1931,31 @@ export async function processCampaignQueue(campaignId, account) {
             if (upErr) logger.warn(`[template_disparos sent] ${upErr.message}`);
           });
       } catch (err) {
-        const retries = (msg.retry_count || 0) + 1;
-        await supabase
+        const retries = (msg.attempt_count || 0) + 1;
+        const maxAttempts = msg.max_attempts || 3;
+        const isFinal = retries >= maxAttempts;
+        const { error: updErr } = await supabase
           .from('message_queue')
           .update({
-            status: retries >= 3 ? 'failed' : 'retrying',
-            retry_count: retries,
-            last_error: err.message,
+            status: isFinal ? 'failed' : 'retrying',
+            attempt_count: retries,
+            last_error: String(err.message || err).slice(0, 1000),
           })
           .eq('id', msg.id);
+        if (updErr) {
+          // Fallback: garante que ao menos não trave em processing — força failed
+          console.warn(`[worker] update falha: ${updErr.message} | msg ${msg.id}`);
+          await supabase
+            .from('message_queue')
+            .update({ status: 'failed', last_error: `${err.message} | upd: ${updErr.message}`.slice(0, 1000) })
+            .eq('id', msg.id);
+        }
 
         // Em failed definitivo, marca também em template_disparos
-        if (retries >= 3) {
+        if (isFinal) {
           supabase
             .from('template_disparos')
-            .update({ status: 'failed', error_message: err.message?.slice(0, 500) })
+            .update({ status: 'failed', error_message: String(err.message || err).slice(0, 500) })
             .eq('campaign_id', msg.campaign_id)
             .eq('phone_number', msg.phone_number)
             .then(() => {});
