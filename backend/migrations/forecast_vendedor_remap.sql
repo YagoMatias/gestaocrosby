@@ -32,5 +32,8 @@ VALUES
   (12227, 99, 259, 21, 'PDF oficial jun/2026: vendedor da transação = Rafael (21), não Arthur (259)'),
   -- NF#11894 (R$ 1.431,08) atribuída ao Yago no produto mas o PDF NÃO inclui essa
   -- venda em nenhum vendedor. Provavelmente excluída por regra interna do SQL.
-  (11894, 99, 241, NULL, 'PDF oficial jun/2026: NF não aparece no relatório (R$ 1.431,08 de Yago)')
+  (11894, 99, 241, NULL, 'PDF oficial jun/2026: NF não aparece no relatório (R$ 1.431,08 de Yago)'),
+  -- NF#12365 (R$ 494,40) pra PSS TECNOLOGIA (provavelmente classificação franquia)
+  -- atribuída ao Cleyton no produto mas o PDF NÃO inclui.
+  (12365, 99, 161, NULL, 'PDF oficial jun/2026: NF não aparece no relatório (R$ 494,40 de Cleyton, cliente PSS TECNOLOGIA)')
 ON CONFLICT (branch_code, invoice_code) DO NOTHING;
