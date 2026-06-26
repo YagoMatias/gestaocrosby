@@ -119,6 +119,13 @@ const financeiro = [
     ],
   },
   {
+    name: 'Conciliação',
+    href: '/conciliacao-stone',
+    icon: CreditCard,
+    color: 'text-blue-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
+  {
     name: 'Contas a Receber',
     href: '#',
     icon: Receipt,

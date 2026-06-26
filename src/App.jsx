@@ -144,6 +144,7 @@ const FormularioSolicitacoes = lazy(
 );
 const DuplicataVendas = lazy(() => import('./pages/DuplicataVendas'));
 const PagamentosFabricas = lazy(() => import('./pages/PagamentosFabricas'));
+const ConciliacaoStone = lazy(() => import('./pages/ConciliacaoStone'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -180,6 +181,7 @@ const protectedRoutes = [
   { path: '/bi-externo', component: BIExterno },
   { path: '/contas-a-pagar', component: ContasAPagar },
   { path: '/pagamentos-fabricas', component: PagamentosFabricas },
+  { path: '/conciliacao-stone', component: ConciliacaoStone },
   { path: '/emprestimos', component: Emprestimos },
   { path: '/despesa-filial', component: DespesaFilial },
   { path: '/despesas-fixas', component: DespesasFixas },
