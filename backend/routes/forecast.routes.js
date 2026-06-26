@@ -2914,6 +2914,7 @@ async function getFaturadoOficialReplica(branchs, dmin, dmax) {
             op: Number(it.operationCode),
             dealer,
             customerCode: Number(it.personCode || it.person?.personCode || 0),
+            branchCode: Number(it.branchCode || 0),
           });
         }
         hasNext = r.data?.hasNext;
@@ -2922,7 +2923,26 @@ async function getFaturadoOficialReplica(branchs, dmin, dmax) {
     }
     await fetchNFs();
 
+    // 4.5) Carrega tabela de remapeamento manual (NFs onde dealer do produto
+    // != vendedor da transação). Aplica antes de agrupar.
+    // Map: `${branchCode}|${invoiceCode}` → dealer_destino
+    const remapMap = new Map();
+    try {
+      const supabase = (await import('../config/supabase.js')).default;
+      const branchsArr = Array.from(branchs);
+      const { data: remaps } = await supabase
+        .from('forecast_vendedor_remap')
+        .select('invoice_code, branch_code, dealer_destino')
+        .in('branch_code', branchsArr);
+      for (const r of remaps || []) {
+        remapMap.set(`${r.branch_code}|${r.invoice_code}`, Number(r.dealer_destino));
+      }
+    } catch (e) {
+      console.warn(`[oficial-replica] remap load: ${e.message}`);
+    }
+
     // 5) Agrupa por dealer aplicando filtros do SQL (ops + cliente franquia)
+    // + remapeamento manual (NFs específicas → vendedor correto da transação).
     // TODO: filtro de cliente franquia (classificação tipo 2) — por agora skipo
     // porque precisa de outra chamada. Pra B2R/B2M provavelmente não impacta.
     const porDealer = new Map(); // dealer → { valor, nfs: Set, clientes: Set }
@@ -2936,11 +2956,14 @@ async function getFaturadoOficialReplica(branchs, dmin, dmax) {
       const valor = d.documentType === 9
         ? -Number(d.installmentValue || 0)
         : Number(d.installmentValue || 0);
-      const cur = porDealer.get(nfInfo.dealer) || { valor: 0, nfs: new Set(), clientes: new Set() };
+      // Aplica remap se existir pra essa branch+NF
+      const remapKey = `${d.branchCode || nfInfo.branchCode}|${inv.invoiceCode}`;
+      const dealerFinal = remapMap.get(remapKey) ?? nfInfo.dealer;
+      const cur = porDealer.get(dealerFinal) || { valor: 0, nfs: new Set(), clientes: new Set() };
       cur.valor += valor;
       cur.nfs.add(inv.invoiceCode);
       if (nfInfo.customerCode) cur.clientes.add(nfInfo.customerCode);
-      porDealer.set(nfInfo.dealer, cur);
+      porDealer.set(dealerFinal, cur);
     }
     const mapa = new Map();
     for (const [dealer, v] of porDealer) {
