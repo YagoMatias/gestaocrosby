@@ -75,6 +75,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'Dashboard',
+        href: '/dash-contas-a-pagar',
+        icon: ChartBar,
+        color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
         name: 'Empréstimos',
         href: '/emprestimos',
         icon: Bank,

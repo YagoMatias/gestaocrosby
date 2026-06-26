@@ -51,6 +51,7 @@ const ExtratosBancos = lazy(() => import('./pages/ExtratosBancos'));
 const AuthTest = lazy(() => import('./components/AuthTest'));
 const PMR = lazy(() => import('./pages/DashboardPMR'));
 const DashContasAReceber = lazy(() => import('./pages/DashContasAReceber'));
+const DashContasAPagar = lazy(() => import('./pages/DashContasAPagar'));
 const DashInadimplencia = lazy(() => import('./pages/DashInadimplencia'));
 const CMVConsolidado = lazy(() => import('./pages/CMVConsolidado'));
 const CMVMultimarcas = lazy(() => import('./pages/CMVMultimarcas'));
@@ -180,6 +181,7 @@ const protectedRoutes = [
   { path: '/dashboard', component: Dashboard },
   { path: '/bi-externo', component: BIExterno },
   { path: '/contas-a-pagar', component: ContasAPagar },
+  { path: '/dash-contas-a-pagar', component: DashContasAPagar },
   { path: '/pagamentos-fabricas', component: PagamentosFabricas },
   { path: '/conciliacao-stone', component: ConciliacaoStone },
   { path: '/emprestimos', component: Emprestimos },
