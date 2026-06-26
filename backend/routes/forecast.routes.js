@@ -2819,8 +2819,13 @@ const VEND_MENSAL_GROUPS = [
 //   GROUP BY dealer
 // Validado em 24/06/2026: bate 100% com o PDF do relatório oficial.
 const OPS_EXCLUIR_SQL_OFICIAL = new Set([
+  // OPS do SQL original
   1, 2, 1002, 15, 16, 1016, 510, 511, 1511, 521, 1521, 522,
   9001, 9009, 9027, 8750, 9017, 600, 1600, 2009, 3335, 3401, 200, 300,
+  // OPS de Franquia/Showroom (identificadas empiricamente como excluídas
+  // pelo relatório oficial — dealers 40 Jhemyson, 50 GERAL e 271 só batem
+  // PDF quando essas ops são removidas)
+  7234, 7254, 7255, 7007, 7240, 7259, 7279,
 ]);
 const FAT_OFICIAL_CACHE = new Map(); // key: branchs|dmin|dmax → { ts, mapa }
 const FAT_OFICIAL_TTL = 30 * 60 * 1000; // 30min
