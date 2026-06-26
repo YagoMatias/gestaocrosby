@@ -2930,8 +2930,9 @@ async function getFaturadoOficialReplica(branchs, dmin, dmax) {
 
     // 4.5) Carrega tabela de remapeamento manual (NFs onde dealer do produto
     // != vendedor da transação). Aplica antes de agrupar.
-    // Map: `${branchCode}|${invoiceCode}` → dealer_destino
+    // Map: `${branchCode}|${invoiceCode}` → dealer_destino (NULL = excluir NF)
     const remapMap = new Map();
+    const excluirNFs = new Set();
     try {
       const supabase = (await import('../config/supabase.js')).default;
       const branchsArr = Array.from(branchs);
@@ -2940,7 +2941,12 @@ async function getFaturadoOficialReplica(branchs, dmin, dmax) {
         .select('invoice_code, branch_code, dealer_destino')
         .in('branch_code', branchsArr);
       for (const r of remaps || []) {
-        remapMap.set(`${r.branch_code}|${r.invoice_code}`, Number(r.dealer_destino));
+        const key = `${r.branch_code}|${r.invoice_code}`;
+        if (r.dealer_destino === null) {
+          excluirNFs.add(key);
+        } else {
+          remapMap.set(key, Number(r.dealer_destino));
+        }
       }
     } catch (e) {
       console.warn(`[oficial-replica] remap load: ${e.message}`);
@@ -2963,6 +2969,7 @@ async function getFaturadoOficialReplica(branchs, dmin, dmax) {
         : Number(d.installmentValue || 0);
       // Aplica remap se existir pra essa branch+NF
       const remapKey = `${d.branchCode || nfInfo.branchCode}|${inv.invoiceCode}`;
+      if (excluirNFs.has(remapKey)) continue; // NF marcada pra excluir do relatório
       const dealerFinal = remapMap.get(remapKey) ?? nfInfo.dealer;
       const cur = porDealer.get(dealerFinal) || { valor: 0, nfs: new Set(), clientes: new Set() };
       cur.valor += valor;

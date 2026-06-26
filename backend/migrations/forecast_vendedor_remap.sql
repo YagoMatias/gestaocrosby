@@ -14,11 +14,13 @@ CREATE TABLE IF NOT EXISTS forecast_vendedor_remap (
   invoice_code BIGINT NOT NULL,
   branch_code INT NOT NULL,
   dealer_origem INT,                  -- dealer atualmente atribuído (informativo)
-  dealer_destino INT NOT NULL,        -- para onde o valor deve ir (CD_COMPVEND)
+  dealer_destino INT,                 -- para onde o valor vai (NULL = excluir totalmente)
   razao TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (branch_code, invoice_code)
 );
+-- Migration retroativa: permite NULL em dealer_destino (significa "excluir essa NF do relatório")
+ALTER TABLE forecast_vendedor_remap ALTER COLUMN dealer_destino DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_fvr_invoice ON forecast_vendedor_remap (invoice_code);
 
@@ -27,5 +29,8 @@ CREATE INDEX IF NOT EXISTS idx_fvr_invoice ON forecast_vendedor_remap (invoice_c
 INSERT INTO forecast_vendedor_remap
   (invoice_code, branch_code, dealer_origem, dealer_destino, razao)
 VALUES
-  (12227, 99, 259, 21, 'PDF oficial jun/2026: vendedor da transação = Rafael (21), não Arthur (259)')
+  (12227, 99, 259, 21, 'PDF oficial jun/2026: vendedor da transação = Rafael (21), não Arthur (259)'),
+  -- NF#11894 (R$ 1.431,08) atribuída ao Yago no produto mas o PDF NÃO inclui essa
+  -- venda em nenhum vendedor. Provavelmente excluída por regra interna do SQL.
+  (11894, 99, 241, NULL, 'PDF oficial jun/2026: NF não aparece no relatório (R$ 1.431,08 de Yago)')
 ON CONFLICT (branch_code, invoice_code) DO NOTHING;
