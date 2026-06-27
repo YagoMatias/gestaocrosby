@@ -397,6 +397,24 @@ const CrosbyTemplateManager = () => {
 
       const componentsArray = [];
 
+      // HEADER (não-carrossel) — opcional, formato IMAGE.
+      // Bug conhecido: antes esse bloco estava AUSENTE, então mesmo o usuário
+      // marcando headerType=IMAGE + upload, o template ia pra Meta SEM HEADER
+      // (e a mensagem chegava só com texto). Templates como sabado_70 e
+      // crosby_v3 foram aprovados sem imagem por causa disso.
+      if (!isCarrossel && headerType === 'IMAGE' && headerFile) {
+        setCreationFeedback({ type: 'info', message: 'Enviando imagem do header...' });
+        const handle = await uploadTemplateMedia(
+          (accounts.find((a) => a.waba_id === selectedAccount) || {}).id,
+          headerFile,
+        );
+        componentsArray.push({
+          type: 'HEADER',
+          format: 'IMAGE',
+          example: { header_handle: [handle] },
+        });
+      }
+
       // BODY (texto introdutório, obrigatório em ambos os modos)
       const effectiveBody = isCarrossel
         ? (bodyText || 'Confira nossas novidades!')
