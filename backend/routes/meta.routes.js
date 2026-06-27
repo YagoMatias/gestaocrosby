@@ -1847,11 +1847,16 @@ export async function processCampaignQueue(campaignId, account) {
             cardImages.push(url);
           }
         }
+        // Conta quantas variáveis {{N}} o BODY do template tem
+        // (usado pra decidir se vamos mandar parâmetro de body ou não)
+        const bodyComp = comps.find((c) => c.type === 'BODY');
+        const bodyVarCount = (bodyComp?.text?.match(/\{\{\d+\}\}/g) || []).length;
         const meta = {
           headerFormat: header?.format || null,
           headerUrl,
           isCarousel: !!carousel,
           cardImages,
+          bodyVarCount,
         };
         tmplCache.set(tmplName, meta);
         return meta;
@@ -1870,20 +1875,37 @@ export async function processCampaignQueue(campaignId, account) {
 
         const tmplMeta = await getTemplateMeta(msg.template_name);
 
-        // HEADER (template texto/mídia simples)
+        // HEADER (template texto/mídia simples) — Meta exige media_id quando
+        // a URL é do scontent.whatsapp.net (handle do upload original do
+        // template). Tenta usar link primeiro; se for URL do whatsapp.net,
+        // faz upload pra /media e usa o id retornado.
         if (!tmplMeta.isCarousel && tmplMeta.headerFormat === 'IMAGE' && tmplMeta.headerUrl) {
+          let imageRef;
+          const url = tmplMeta.headerUrl;
+          if (url.includes('scontent.whatsapp.net') || url.includes('whatsapp.net')) {
+            const mid = await uploadImageToMedia(url);
+            if (mid) {
+              imageRef = { id: mid };
+            } else {
+              imageRef = { link: url };
+            }
+          } else {
+            imageRef = { link: url };
+          }
           components.push({
             type: 'header',
-            parameters: [
-              { type: 'image', image: { link: tmplMeta.headerUrl } },
-            ],
+            parameters: [{ type: 'image', image: imageRef }],
           });
         }
 
-        if (varKeys.length > 0) {
+        // Só inclui BODY com parâmetros se o TEMPLATE tem {{N}} no body.
+        // Antes mandava sempre que template_variables fosse não-vazio, o que
+        // causava erro 132000 em templates de texto fixo (ex: sabado_70).
+        if (varKeys.length > 0 && (tmplMeta.bodyVarCount || 0) > 0) {
+          const N = Math.min(varKeys.length, tmplMeta.bodyVarCount);
           components.push({
             type: 'body',
-            parameters: varKeys.map((k) => ({
+            parameters: varKeys.slice(0, N).map((k) => ({
               type: 'text',
               text: vars[k] || '',
             })),
