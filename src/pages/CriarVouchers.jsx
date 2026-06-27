@@ -97,6 +97,8 @@ export default function CriarVouchers() {
   const [dataFim, setDataFim] = useState('');
   const [empresas, setEmpresas] = useState([]);
   const [selectedEmpresas, setSelectedEmpresas] = useState([]);
+  const [empresaSearch, setEmpresaSearch] = useState('');
+  const [empresaDropdownOpen, setEmpresaDropdownOpen] = useState(false);
 
   // Contatos resultantes
   const [contatos, setContatos] = useState([]);
@@ -131,7 +133,7 @@ export default function CriarVouchers() {
   const [loadingBatches, setLoadingBatches] = useState(false);
   const [batchDetail, setBatchDetail] = useState(null);
 
-  // ── Carga inicial: operações do Supabase (mesma fonte do Crosby Bot)
+  // ── Carga inicial: operações (Supabase) + empresas/filiais (TOTVS via backend)
   useEffect(() => {
     (async () => {
       try {
@@ -140,12 +142,26 @@ export default function CriarVouchers() {
           .select('*')
           .order('nome');
         if (!error && data) setOperacoes(data);
-        else if (error) console.error('[totvs_operacoes]', error);
-      } catch (e) {
-        console.error('[totvs_operacoes]', e.message);
-      }
+      } catch (e) { /* silencia */ }
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/meta/totvs-branches`);
+        const j = await r.json();
+        const list = j?.data || j;
+        if (Array.isArray(list)) setEmpresas(list);
+      } catch (e) { /* silencia */ }
     })();
   }, []);
+
+  const filteredEmpresas = empresas.filter((c) =>
+    `${c.id} - ${c.nome}`.toLowerCase().includes(empresaSearch.toLowerCase()),
+  );
+  const toggleEmpresa = (id) => {
+    setSelectedEmpresas((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  };
+  const selecionarFiliais = () => setSelectedEmpresas(filteredEmpresas.filter((c) => parseInt(c.id, 10) <= 5999).map((c) => c.id));
+  const selecionarFranquias = () => setSelectedEmpresas(filteredEmpresas.filter((c) => parseInt(c.id, 10) >= 6000).map((c) => c.id));
+  const selecionarTodasEmpresas = () => setSelectedEmpresas(filteredEmpresas.map((c) => c.id));
+  const limparEmpresas = () => setSelectedEmpresas([]);
 
   const carregarHistorico = useCallback(async () => {
     setLoadingBatches(true);
@@ -194,7 +210,7 @@ export default function CriarVouchers() {
     setSelectedContatos(new Set());
     setResults(null);
     try {
-      const r = await fetch(`${API_BASE_URL}/api/tech/vouchers/totvs-contacts`, {
+      const r = await fetch(`${API_BASE_URL}/api/meta/totvs-contacts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
         body: JSON.stringify({
@@ -375,6 +391,69 @@ export default function CriarVouchers() {
                     <button onClick={() => applyQuickFilter('6meses')} className="px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold hover:bg-blue-100 flex items-center gap-1">
                       <Funnel size={12} /> 6 meses
                     </button>
+                  </div>
+                  {/* SELETOR DE EMPRESAS */}
+                  <div className="col-span-12">
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">
+                      Empresas / Filiais {selectedEmpresas.length > 0 && `(${selectedEmpresas.length} selecionadas)`}
+                    </label>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setEmpresaDropdownOpen((v) => !v)}
+                        className="w-full p-2 border border-gray-200 rounded-lg text-sm bg-white text-left flex items-center justify-between"
+                      >
+                        <span className="text-gray-700 truncate">
+                          {selectedEmpresas.length === 0
+                            ? 'Selecione empresas (vazio = todas)'
+                            : selectedEmpresas.length <= 6
+                              ? selectedEmpresas.join(', ')
+                              : `${selectedEmpresas.slice(0, 6).join(', ')} +${selectedEmpresas.length - 6}`}
+                        </span>
+                        <span className="text-gray-400 text-xs">{empresaDropdownOpen ? '▲' : '▼'}</span>
+                      </button>
+                      {empresaDropdownOpen && (
+                        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-96 overflow-hidden flex flex-col">
+                          <div className="p-2 border-b border-gray-100 flex gap-1 flex-wrap">
+                            <input
+                              type="text"
+                              value={empresaSearch}
+                              onChange={(e) => setEmpresaSearch(e.target.value)}
+                              placeholder="Buscar empresa..."
+                              className="flex-1 px-2 py-1 text-xs border border-gray-200 rounded"
+                              autoFocus
+                            />
+                          </div>
+                          <div className="p-2 border-b border-gray-100 flex gap-1 flex-wrap text-[10px]">
+                            <button onClick={selecionarFiliais} className="px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 font-bold">Filiais (≤5999)</button>
+                            <button onClick={selecionarFranquias} className="px-2 py-1 rounded bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 font-bold">Franquias (≥6000)</button>
+                            <button onClick={selecionarTodasEmpresas} className="px-2 py-1 rounded bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 font-bold">Todas filtradas</button>
+                            <button onClick={limparEmpresas} className="px-2 py-1 rounded bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 font-bold">Limpar</button>
+                          </div>
+                          <div className="overflow-y-auto" style={{ maxHeight: 260 }}>
+                            {filteredEmpresas.length === 0 ? (
+                              <p className="text-center text-xs text-gray-400 py-4">{empresas.length === 0 ? 'Carregando...' : 'Nenhuma empresa.'}</p>
+                            ) : (
+                              filteredEmpresas.map((c) => (
+                                <label
+                                  key={c.id}
+                                  className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-xs"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedEmpresas.includes(c.id)}
+                                    onChange={() => toggleEmpresa(c.id)}
+                                    className="w-3.5 h-3.5 accent-indigo-600"
+                                  />
+                                  <span className="font-mono text-gray-500 w-12">{c.id}</span>
+                                  <span className="text-gray-700 truncate">{c.nome}</span>
+                                </label>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div className="col-span-6 md:col-span-3">
                     <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Início</label>
