@@ -578,6 +578,12 @@ const tecnologiaItems = [
     icon: Buildings,
     color: 'text-blue-600',
   },
+  {
+    name: 'Criar Vouchers',
+    href: '/tecnologia/criar-vouchers',
+    icon: Ticket,
+    color: 'text-purple-600',
+  },
 ];
 
 const adminItems = [

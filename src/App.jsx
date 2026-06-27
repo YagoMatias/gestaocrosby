@@ -119,6 +119,7 @@ const MonitoramentoTotvs = lazy(() => import('./pages/MonitoramentoTotvs'));
 const InventarioPatrimonio = lazy(() => import('./pages/InventarioPatrimonio'));
 const CotacaoCompras = lazy(() => import('./pages/CotacaoCompras'));
 const ClientesPorEmpresa = lazy(() => import('./pages/ClientesPorEmpresa'));
+const CriarVouchers = lazy(() => import('./pages/CriarVouchers'));
 const ApiClaude = lazy(() => import('./pages/ApiClaude'));
 const Estoque = lazy(() => import('./pages/Estoque'));
 const PainelVendas = lazy(() => import('./pages/PainelVendas'));
@@ -171,6 +172,7 @@ const protectedRoutes = [
   },
   { path: '/tecnologia/cotacao-compras', component: CotacaoCompras },
   { path: '/tecnologia/clientes-por-empresa', component: ClientesPorEmpresa },
+  { path: '/tecnologia/criar-vouchers', component: CriarVouchers },
   { path: '/gerenciador-dashboards', component: GerenciadorDashboards },
   { path: '/widgets', component: Widgets },
 
