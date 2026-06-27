@@ -1460,9 +1460,42 @@ router.post(
       }
     }
 
+    // Persiste batch no Supabase pra histórico
+    let batchId = null;
+    try {
+      const { data: ins, error: insErr } = await supabase
+        .from('voucher_batches')
+        .insert({
+          branch_code_registration: Number(branchCodeRegistration),
+          voucher_type: Number(voucherType),
+          prefix_code: String(prefixCode),
+          print_template_code: Number(printTemplateCode),
+          start_date: startDate,
+          end_date: endDate,
+          percentage: Number(percentage),
+          voucher_branches: branchsArr.map((b) => b.branchCode),
+          origem: req.body?.origem || 'totvs',
+          total_clientes: customerCodes.length,
+          sucessos,
+          falhas,
+          resultados: results,
+          created_by: req.headers['x-user-email'] || null,
+        })
+        .select('id, created_at')
+        .single();
+      if (insErr) {
+        console.warn(`[vouchers/create-batch] insert historico falhou: ${insErr.message}`);
+      } else {
+        batchId = ins?.id || null;
+      }
+    } catch (e) {
+      console.warn(`[vouchers/create-batch] historico exception: ${e.message}`);
+    }
+
     return successResponse(
       res,
       {
+        batchId,
         total: customerCodes.length,
         sucessos,
         falhas,
@@ -1470,6 +1503,41 @@ router.post(
       },
       `${sucessos} vouchers gerados, ${falhas} falhas`,
     );
+  }),
+);
+
+// GET /api/tech/vouchers/batches?limit=100
+//   lista batches recentes (sem o JSON pesado de resultados)
+router.get(
+  '/vouchers/batches',
+  asyncHandler(async (req, res) => {
+    const limit = Math.min(500, Math.max(10, Number(req.query.limit) || 100));
+    const { data, error } = await supabase
+      .from('voucher_batches')
+      .select(
+        'id, branch_code_registration, prefix_code, start_date, end_date, percentage, origem, total_clientes, sucessos, falhas, created_by, created_at',
+      )
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) return errorResponse(res, error.message, 500, 'QUERY_ERROR');
+    return successResponse(res, data || [], `${(data || []).length} batches`);
+  }),
+);
+
+// GET /api/tech/vouchers/batches/:id
+//   detalhe do batch (inclui resultados completos)
+router.get(
+  '/vouchers/batches/:id',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return errorResponse(res, 'id inválido', 400, 'BAD_ID');
+    const { data, error } = await supabase
+      .from('voucher_batches')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error) return errorResponse(res, error.message, 404, 'NOT_FOUND');
+    return successResponse(res, data, 'OK');
   }),
 );
 
