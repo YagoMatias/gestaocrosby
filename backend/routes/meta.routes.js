@@ -1464,6 +1464,70 @@ router.post(
     const contacts = Object.values(contactsMap).filter((c) => c.nr_telefone);
     const ticketMedio = contacts.length > 0 ? totalValue / contacts.length : 0;
 
+    // Enriquecimento: pra Varejo (PFs), o expand=person do invoices não traz
+    // nome/CPF — vem vazio. Busca em /person/v2/individuals/search por
+    // personCodeList em chunks pra preencher os faltantes.
+    try {
+      const semNome = contacts.filter((c) => !c.name || !c.cpf_cnpj);
+      if (semNome.length > 0) {
+        const codes = [...new Set(semNome.map((c) => Number(c.cd_pessoa)).filter(Boolean))];
+        const CHUNK = 100;
+        const nomeMap = new Map(); // personCode -> { name, cpfCnpj }
+        for (let i = 0; i < codes.length; i += CHUNK) {
+          const slice = codes.slice(i, i + CHUNK);
+          try {
+            const r = await axios.post(
+              `${TOTVS_BASE_URL}/person/v2/individuals/search`,
+              { filter: { personCodeList: slice }, page: 1, pageSize: slice.length },
+              { headers: { Authorization: `Bearer ${token}` }, timeout: 60000 },
+            );
+            for (const it of r.data?.items || []) {
+              nomeMap.set(Number(it.code), {
+                name: it.name || it.fantasyName || '',
+                cpfCnpj: it.cpf || it.cnpj || it.cpfCnpj || '',
+              });
+            }
+          } catch (e) {
+            console.warn(`[totvs-contacts enrich PF] chunk ${i}: ${e.message}`);
+          }
+        }
+        // PJs também — fallback pra legal-entities pra códigos que ainda faltam
+        const aindaSemNome = semNome
+          .map((c) => Number(c.cd_pessoa))
+          .filter((code) => !nomeMap.get(code)?.name);
+        for (let i = 0; i < aindaSemNome.length; i += CHUNK) {
+          const slice = aindaSemNome.slice(i, i + CHUNK);
+          try {
+            const r = await axios.post(
+              `${TOTVS_BASE_URL}/person/v2/legal-entities/search`,
+              { filter: { legalEntityCodeList: slice }, page: 1, pageSize: slice.length },
+              { headers: { Authorization: `Bearer ${token}` }, timeout: 60000 },
+            );
+            for (const it of r.data?.items || []) {
+              const prev = nomeMap.get(Number(it.code)) || {};
+              nomeMap.set(Number(it.code), {
+                name: prev.name || it.fantasyName || it.name || '',
+                cpfCnpj: prev.cpfCnpj || it.cnpj || it.cpfCnpj || '',
+              });
+            }
+          } catch (e) {
+            console.warn(`[totvs-contacts enrich PJ] chunk ${i}: ${e.message}`);
+          }
+        }
+        // Aplica enrichment
+        for (const c of contacts) {
+          const info = nomeMap.get(Number(c.cd_pessoa));
+          if (info) {
+            if (!c.name && info.name) c.name = info.name;
+            if (!c.cpf_cnpj && info.cpfCnpj) c.cpf_cnpj = info.cpfCnpj;
+          }
+        }
+        console.log(`[totvs-contacts] enriched ${nomeMap.size}/${semNome.length} contatos`);
+      }
+    } catch (e) {
+      console.warn(`[totvs-contacts enrich] ${e.message}`);
+    }
+
     successResponse(
       res,
       { data: contacts, ticketMedio },
