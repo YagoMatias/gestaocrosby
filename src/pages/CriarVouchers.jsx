@@ -21,6 +21,7 @@ import {
   ArrowLeft,
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../config/constants';
+import { supabase } from '../lib/supabase';
 import PageTitle from '../components/ui/PageTitle';
 
 const API_KEY = import.meta.env.VITE_API_KEY || '';
@@ -130,23 +131,19 @@ export default function CriarVouchers() {
   const [loadingBatches, setLoadingBatches] = useState(false);
   const [batchDetail, setBatchDetail] = useState(null);
 
-  // ── Carga inicial: operações + empresas TOTVS
+  // ── Carga inicial: operações do Supabase (mesma fonte do Crosby Bot)
   useEffect(() => {
     (async () => {
       try {
-        const r1 = await fetch(`${API_BASE_URL}/api/meta/totvs-operations`, {
-          headers: { 'x-api-key': API_KEY },
-        });
-        const j1 = await r1.json();
-        setOperacoes(j1?.data || []);
-      } catch (e) { /* silencia */ }
-      try {
-        const r2 = await fetch(`${API_BASE_URL}/api/meta/totvs-branches`, {
-          headers: { 'x-api-key': API_KEY },
-        });
-        const j2 = await r2.json();
-        setEmpresas(j2?.data || []);
-      } catch (e) { /* silencia */ }
+        const { data, error } = await supabase
+          .from('totvs_operacoes')
+          .select('*')
+          .order('nome');
+        if (!error && data) setOperacoes(data);
+        else if (error) console.error('[totvs_operacoes]', error);
+      } catch (e) {
+        console.error('[totvs_operacoes]', e.message);
+      }
     })();
   }, []);
 
