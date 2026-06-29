@@ -28,30 +28,37 @@ const fmtBRL = (n) =>
   Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtPct = (n) => Number(n || 0).toFixed(2) + '%';
 
-// Datas padrão: 2024-01-01 → hoje
+// Datas padrão: 2024-01-01 → hoje (em horário LOCAL, não UTC — antes das
+// 03h BRT, toISOString() devolveria o dia seguinte).
 const hoje = new Date();
-const hojeIso = hoje.toISOString().slice(0, 10);
+const toLocalIso = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+};
+const hojeIso = toLocalIso(hoje);
 
 // Atalhos de período
 const ATALHOS = [
   { label: 'Hoje', calc: () => [hojeIso, hojeIso] },
   { label: 'Ontem', calc: () => {
-    const d = new Date(hoje); d.setUTCDate(d.getUTCDate() - 1);
-    const iso = d.toISOString().slice(0, 10);
+    const d = new Date(hoje); d.setDate(d.getDate() - 1);
+    const iso = toLocalIso(d);
     return [iso, iso];
   }},
   { label: 'Últimos 7 dias', calc: () => {
-    const d = new Date(hoje); d.setUTCDate(d.getUTCDate() - 7);
-    return [d.toISOString().slice(0, 10), hojeIso];
+    const d = new Date(hoje); d.setDate(d.getDate() - 7);
+    return [toLocalIso(d), hojeIso];
   }},
   { label: 'Este mês', calc: () => {
-    const ini = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), 1));
-    return [ini.toISOString().slice(0, 10), hojeIso];
+    const ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    return [toLocalIso(ini), hojeIso];
   }},
   { label: 'Mês passado', calc: () => {
-    const ini = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - 1, 1));
-    const fim = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), 0));
-    return [ini.toISOString().slice(0, 10), fim.toISOString().slice(0, 10)];
+    const ini = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+    const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+    return [toLocalIso(ini), toLocalIso(fim)];
   }},
   { label: 'Este ano', calc: () => [`${hoje.getUTCFullYear()}-01-01`, hojeIso] },
   { label: 'Ano passado', calc: () => {
@@ -252,9 +259,8 @@ function MiniTabela({ items, canalAtivo, onToggle }) {
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 export default function DashboardVendas() {
-  // Default: ESTE MÊS (1º dia do mês corrente → hoje)
-  const inicioMesIso = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), 1))
-    .toISOString().slice(0, 10);
+  // Default: ESTE MÊS (1º dia do mês corrente → hoje, em horário LOCAL).
+  const inicioMesIso = toLocalIso(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
   const [datemin, setDatemin] = useState(inicioMesIso);
   const [datemax, setDatemax] = useState(hojeIso);
   const [data, setData] = useState(null);

@@ -122,6 +122,16 @@ function lastCompletedSunday() {
   return sun;
 }
 
+// YYYY-MM-DD em horário LOCAL (toISOString() devolveria o dia UTC, e antes das
+// 03h BRT isso pula para o dia seguinte — atalhos "Hoje"/"Este mês" ficariam
+// um dia adiantados).
+function toLocalIso(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
 // Parse "YYYY-Www" → { datemin, datemax } (segunda-domingo da ISO week)
 function weekKeyRange(weekKey) {
   const m = String(weekKey).match(/^(\d{4})-W(\d{1,2})$/);
@@ -415,6 +425,7 @@ const CANAL_ORDER = [
   'bazar',
   'showroom',
   'novidadesfranquia',
+  'business',
   'ricardoeletro',
 ];
 
@@ -637,7 +648,7 @@ function ModalTransacoes({
       '"' +
         (t.payment_method || t.payment_condition || '').replace(/"/g, "'") +
         '"',
-      t.total_value.toFixed(2).replace('.', ','),
+      Number(t.total_value || 0).toFixed(2).replace('.', ','),
     ]);
     const csv = [header, ...rows].map((r) => r.join(';')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], {
@@ -714,7 +725,7 @@ function ModalTransacoes({
                 const canalKey = canal.toLowerCase();
                 const wppCanal = byCanal[canalKey];
                 const wppBRL = wppCanal
-                  ? wppCanal.costBRL ?? wppCanal.cost * 5.8
+                  ? Number(wppCanal.costBRL ?? ((wppCanal.cost ?? 0) * 5.8))
                   : null;
                 return wppBRL !== null ? (
                   <div className="text-right mr-2 border-r border-gray-200 pr-3">
@@ -1063,7 +1074,7 @@ function ModalTransacoes({
                     R${' '}
                     {formatBRL(
                       transacoesFiltradas.reduce(
-                        (s, t) => s + t.total_value,
+                        (s, t) => s + Number(t.total_value || 0),
                         0,
                       ),
                     )}
@@ -2155,10 +2166,8 @@ function TabelaComparativo({ comp, anoAtual, anoAnterior }) {
 // â”€â”€â”€ Página principal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function FaturamentoCanal() {
   const hoje = new Date();
-  const defaultFim = hoje.toISOString().split('T')[0];
-  const defaultInicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
-    .toISOString()
-    .split('T')[0];
+  const defaultFim = toLocalIso(hoje);
+  const defaultInicio = toLocalIso(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
 
   const [dataInicio, setDataInicio] = useState(defaultInicio);
   const [dataFim, setDataFim] = useState(defaultFim);
@@ -2240,6 +2249,15 @@ export default function FaturamentoCanal() {
     ? new Date(dataInicio + 'T00:00:00').getFullYear()
     : hoje.getFullYear();
   const anoAnterior = anoAtual - 1;
+
+  const subtrairUmAno = (iso) => {
+    const d = new Date(iso + 'T00:00:00');
+    d.setFullYear(d.getFullYear() - 1);
+    const y = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${mm}-${dd}`;
+  };
 
   // Anti-race tokens — cada função async com setState próprio recebe um token.
   // loadMetaData/loadAcumuladoFaltante já têm proteção manual via refs próprios.
@@ -2460,7 +2478,7 @@ export default function FaturamentoCanal() {
 
     // monthRange: 1º dia do mês até hoje (se for mês corrente) ou último dia
     const [mY, mM] = monthKey.split('-').map(Number);
-    const todayIso = new Date().toISOString().slice(0, 10);
+    const todayIso = toLocalIso(new Date());
     const monthFirst = `${mY}-${String(mM).padStart(2, '0')}-01`;
     const lastDay = new Date(mY, mM, 0).getDate();
     const monthLast = `${mY}-${String(mM).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
@@ -2511,10 +2529,30 @@ export default function FaturamentoCanal() {
       // ── Override Varejo: meta semanal = meta mensal × % da semana ──────
       // Distribuição: S1=22.4% · S2=32% · S3=22.8% · S4=22.8% · S5=0%
       // Sobrescreve qualquer valor cadastrado em forecast_canal_metas.
+      // IMPORTANTE: a posição da semana (S1-S5) é relativa ao MÊS SELECIONADO,
+      // não ao mês da segunda-feira da ISO week — caso contrário a semana de
+      // virada (ex: 30/jun-06/jul com monthKey=julho) pegaria 0% (S5 de junho)
+      // em vez de 22.4% (S1 de julho).
       const VAREJO_DIST_SEM = { 1: 0.224, 2: 0.32, 3: 0.228, 4: 0.228, 5: 0 };
-      const semKey = isoWeekToMonthSemKey(weekKey);
-      const semMatch = /-S(\d)$/.exec(semKey || '');
-      const semNum = semMatch ? Number(semMatch[1]) : null;
+      const semNumNoMesSelecionado = (() => {
+        const r = weekKeyRange(weekKey);
+        if (!r) return null;
+        const [mY, mM] = String(monthKey).split('-').map(Number);
+        const start = new Date(r.datemin + 'T00:00:00');
+        const end = new Date(r.datemax + 'T00:00:00');
+        for (let cur = new Date(start); cur <= end; cur.setDate(cur.getDate() + 1)) {
+          if (cur.getFullYear() === mY && cur.getMonth() + 1 === mM) {
+            const d = cur.getDate();
+            if (d <= 7) return 1;
+            if (d <= 14) return 2;
+            if (d <= 21) return 3;
+            if (d <= 28) return 4;
+            return 5;
+          }
+        }
+        return null;
+      })();
+      const semNum = semNumNoMesSelecionado;
       const pctSem = semNum != null ? VAREJO_DIST_SEM[semNum] : null;
       const metaMesVarejo = Number(metasMensal.varejo || 0);
       if (pctSem != null && metaMesVarejo > 0) {
@@ -2661,7 +2699,7 @@ export default function FaturamentoCanal() {
     }
     setLoadingAcumulado(true);
     try {
-      const todayIso = new Date().toISOString().slice(0, 10);
+      const todayIso = toLocalIso(new Date());
       // ── Anti-sobrecarga TOTVS ──
       // Antes: Promise.all(previousWeeks) → 4+ fat-seg em paralelo, cada um
       // chamando canal-totals internamente. Combinado com loadMetaData
@@ -2763,7 +2801,7 @@ export default function FaturamentoCanal() {
       const cacheKey = `${canal}|${periodo}|${selectedWeekKey}|${selectedMonthKey}`;
       // Range = semana, mês ou ano selecionado
       let range;
-      const todayIso = new Date().toISOString().slice(0, 10);
+      const todayIso = toLocalIso(new Date());
       if (periodo === 'semanal') {
         range = weekKeyRange(selectedWeekKey) || currentWeekRange();
       } else if (periodo === 'anual') {
@@ -3061,7 +3099,7 @@ export default function FaturamentoCanal() {
     //   - TTL stale: 24h pra datas passadas, 1h pra mês corrente
     //   - Mostra indicador "atualizando..." quando exibe stale
     const cacheKey = `canais-totals-all:v3-rev:${dataInicio}:${dataFim}`;
-    const todayIso = new Date().toISOString().slice(0, 10);
+    const todayIso = toLocalIso(new Date());
     const isRealtime = dataFim >= todayIso;
     const staleTtlMs = isRealtime ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
 
@@ -3297,64 +3335,32 @@ export default function FaturamentoCanal() {
         lastSunday.setDate(today.getDate() - daysSinceLastSunday);
         const lastMonday = new Date(lastSunday);
         lastMonday.setDate(lastSunday.getDate() - 6);
-        setDataInicio(
-          new Date(
-            lastMonday.getFullYear(),
-            lastMonday.getMonth(),
-            lastMonday.getDate(),
-          )
-            .toISOString()
-            .split('T')[0],
-        );
-        setDataFim(
-          new Date(
-            lastSunday.getFullYear(),
-            lastSunday.getMonth(),
-            lastSunday.getDate(),
-          )
-            .toISOString()
-            .split('T')[0],
-        );
+        setDataInicio(toLocalIso(lastMonday));
+        setDataFim(toLocalIso(lastSunday));
       },
     },
     {
       label: 'Este mês',
       fn: () => {
         const h = new Date();
-        setDataInicio(
-          new Date(h.getFullYear(), h.getMonth(), 1)
-            .toISOString()
-            .split('T')[0],
-        );
-        setDataFim(h.toISOString().split('T')[0]);
+        setDataInicio(toLocalIso(new Date(h.getFullYear(), h.getMonth(), 1)));
+        setDataFim(toLocalIso(h));
       },
     },
     {
       label: 'Mês passado',
       fn: () => {
         const h = new Date();
-        setDataInicio(
-          new Date(h.getFullYear(), h.getMonth() - 1, 1)
-            .toISOString()
-            .split('T')[0],
-        );
-        setDataFim(
-          new Date(h.getFullYear(), h.getMonth(), 0)
-            .toISOString()
-            .split('T')[0],
-        );
+        setDataInicio(toLocalIso(new Date(h.getFullYear(), h.getMonth() - 1, 1)));
+        setDataFim(toLocalIso(new Date(h.getFullYear(), h.getMonth(), 0)));
       },
     },
     {
       label: 'Últimos 3 meses',
       fn: () => {
         const h = new Date();
-        setDataInicio(
-          new Date(h.getFullYear(), h.getMonth() - 2, 1)
-            .toISOString()
-            .split('T')[0],
-        );
-        setDataFim(h.toISOString().split('T')[0]);
+        setDataInicio(toLocalIso(new Date(h.getFullYear(), h.getMonth() - 2, 1)));
+        setDataFim(toLocalIso(h));
       },
     },
     {
@@ -3362,7 +3368,7 @@ export default function FaturamentoCanal() {
       fn: () => {
         const h = new Date();
         setDataInicio(`${h.getFullYear()}-01-01`);
-        setDataFim(h.toISOString().split('T')[0]);
+        setDataFim(toLocalIso(h));
       },
     },
   ];
@@ -3583,7 +3589,7 @@ export default function FaturamentoCanal() {
                           <p className="text-base font-bold text-yellow-200">
                             R${' '}
                             {formatBRL(
-                              custoWpp.costBRL ?? custoWpp.cost * 5.8 ?? 0,
+                              Number(custoWpp.costBRL ?? ((custoWpp.cost ?? 0) * 5.8)) || 0,
                             )}
                           </p>
                           {(custoWpp.conversations ?? 0) > 0 && (
@@ -3798,7 +3804,7 @@ export default function FaturamentoCanal() {
                   <div className="flex flex-col gap-3">
                   {/* Card: ROI / ROAS (Marketing) — clicável → abre modal */}
                   {(custoWpp || custoAds) && resultado && (() => {
-                    const wppBRL = Number(custoWpp?.costBRL ?? (custoWpp?.cost ?? 0) * 5.8 ?? 0);
+                    const wppBRL = Number(custoWpp?.costBRL ?? ((custoWpp?.cost ?? 0) * 5.8)) || 0;
                     const adsBRL = Number(custoAds?.spend || 0);
                     const totMkt = wppBRL + adsBRL;
                     const receita = Number(resultado.total_liquido ?? resultado.total ?? 0);
@@ -4622,12 +4628,8 @@ export default function FaturamentoCanal() {
                               setSelectedMonthKey(currentMonthKey());
                               // Reseta o range geral (top card) pra mês corrente
                               const h = new Date();
-                              setDataInicio(
-                                new Date(h.getFullYear(), h.getMonth(), 1)
-                                  .toISOString()
-                                  .split('T')[0],
-                              );
-                              setDataFim(h.toISOString().split('T')[0]);
+                              setDataInicio(toLocalIso(new Date(h.getFullYear(), h.getMonth(), 1)));
+                              setDataFim(toLocalIso(h));
                             }}
                             className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50 text-gray-600"
                             title="Voltar para o período padrão (última semana completa / mês corrente)"
@@ -5347,17 +5349,17 @@ export default function FaturamentoCanal() {
               const ontem = new Date(hoje);
               ontem.setDate(ontem.getDate() - 1);
               while (ontem.getDay() === 0) ontem.setDate(ontem.getDate() - 1);
-              const fimOntem = ontem.toISOString().slice(0, 10);
+              const fimOntem = toLocalIso(ontem);
               const segunda = new Date(hoje);
               const dow = segunda.getDay() === 0 ? 7 : segunda.getDay();
               segunda.setDate(segunda.getDate() - (dow - 1));
               // Se hoje é segunda (dow=1), a semana corrente acabou de começar
               // e fimOntem aponta pro sábado anterior — voltamos 7 dias pra
               // mostrar a semana COMPLETA que acabou (seg→sáb anterior).
-              if (segunda.toISOString().slice(0, 10) > fimOntem) {
+              if (toLocalIso(segunda) > fimOntem) {
                 segunda.setDate(segunda.getDate() - 7);
               }
-              const iniSemana = segunda.toISOString().slice(0, 10);
+              const iniSemana = toLocalIso(segunda);
               const iniMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
               return (
                 <>
@@ -5461,7 +5463,7 @@ export default function FaturamentoCanal() {
           const receita = Number(receitaPorCanal[c] || 0);
           // Receita só de clientes novos no período
           const receitaNovos = Number(novosPorCanal[c]?.receita_novos || 0);
-          const wpp = Number(wppByCanal[c]?.costBRL || wppByCanal[c]?.cost * 5.8 || 0);
+          const wpp = Number(wppByCanal[c]?.costBRL ?? ((wppByCanal[c]?.cost ?? 0) * 5.8)) || 0;
           const ads = Number(adsByCanal[c]?.spend || 0);
           // ROAS por fonte × público (4 métricas):
           //   Wpp Novos = receita_novos / custo_wpp
@@ -5476,7 +5478,13 @@ export default function FaturamentoCanal() {
             canal: c, receita, receitaNovos, wpp, ads,
             roasWppNovos, roasWppTotal, roasAdsNovos, roasAdsTotal,
           };
-        }).sort((a, b) => (b.roasWppTotal ?? b.roasAdsTotal ?? 0) - (a.roasWppTotal ?? a.roasAdsTotal ?? 0));
+          // Critério único de ordenação: maior (wpp+ads)/receita combinado.
+          // Antes misturava wpp vs ads dependendo de qual existia, gerando
+          // ranking instável quando canais tinham fontes diferentes.
+        }).sort((a, b) => {
+          const inv = (l) => (l.wpp + l.ads) > 0 ? l.receita / (l.wpp + l.ads) : 0;
+          return inv(b) - inv(a);
+        });
         const totReceita = linhas.reduce((s, l) => s + l.receita, 0);
         const totReceitaNovos = linhas.reduce((s, l) => s + l.receitaNovos, 0);
         const totWpp = linhas.reduce((s, l) => s + l.wpp, 0);
@@ -5975,8 +5983,11 @@ export default function FaturamentoCanal() {
                           const corBg = high ? 'bg-emerald-50' : mid ? 'bg-amber-50' : 'bg-rose-50';
                           const expandido = vendedorExpandido === it.key;
                           const cdAtual = clientesCanalDetalhe[modalRecompraCanal.canal];
+                          // `it.key` pode ser string ('GERAL' = bucket credev) ou
+                          // numérico (dealer_code). Compara como string pra que
+                          // 'GERAL' não vire NaN no === e o bucket expanda corretamente.
                           const clientesDoItem = (cdAtual?.clientes || []).filter((c) =>
-                            d.dim === 'branch' ? false : Number(c.dealer_code) === Number(it.key)
+                            d.dim === 'branch' ? false : String(c.dealer_code) === String(it.key)
                           );
                           return (
                             <div key={it.key}>

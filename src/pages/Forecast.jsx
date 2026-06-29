@@ -79,13 +79,16 @@ export default function Forecast() {
   };
   const [abaAtiva, setAbaAtiva] = useState(getInitial);
 
-  // Reage a mudanças no URL (ex: usuário cola ?aba=dashboard)
+  // Reage a mudanças no URL (ex: usuário cola ?aba=dashboard).
+  // Não depende de `abaAtiva` — durante `trocar()`, setAbaAtiva acontece
+  // antes de location.search atualizar, e ter abaAtiva como dep causaria
+  // uma execução extra que poderia reverter pra aba anterior em races.
   useEffect(() => {
     const qs = new URLSearchParams(location.search).get('aba');
-    if (qs && VALID_IDS.has(qs) && qs !== abaAtiva) {
-      setAbaAtiva(qs);
+    if (qs && VALID_IDS.has(qs)) {
+      setAbaAtiva((prev) => (qs !== prev ? qs : prev));
     }
-  }, [location.search, abaAtiva]);
+  }, [location.search]);
 
   const trocar = (id) => {
     setAbaAtiva(id);

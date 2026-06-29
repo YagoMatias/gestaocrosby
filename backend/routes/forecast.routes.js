@@ -901,6 +901,9 @@ const TITULARES_B2M = [
 // SOMA múltiplas entradas que casam com o mesmo titular (ex: CLEYTON F + CLEITON
 // no per_seller → ambos vão pro "Cleiton"). Mantém vendedores não-titulares
 // (ex.: Aldo, Anderson) abaixo dos titulares.
+// Guard `usados` antes de somar evita double-count quando duas grafias do mesmo
+// nome casam com mais de um titular (ex.: 'CLEYTON' no matches do A e 'CLEY'
+// no matches do B → primeiro titular consome a entry, demais a ignoram).
 function mergeTitulares(lista, titulares, _totalCanal) {
   const out = [];
   const usados = new Set();
@@ -908,6 +911,7 @@ function mergeTitulares(lista, titulares, _totalCanal) {
     let soma = 0;
     let achou = false;
     for (const v of lista || []) {
+      if (usados.has(v)) continue;
       const nm = String(v.nome || '').toUpperCase();
       if (t.matches.some((m) => nm.includes(m))) {
         soma += Number(v.valor || 0);
@@ -1317,59 +1321,70 @@ router.get(
         // ── Override Inbound David/Rafael: recalcula via Supabase fiscal ────
         // O canal_totals_cache vem do TOTVS sale-panel que tem latência e
         // perde NFs recentes. notas_fiscais é a fonte autoritativa.
+        // Retorna { ok: true, valor } em sucesso (mesmo se 0) ou { ok: false }
+        // em falha de query. Distinguir "0 legítimo" de "0 por erro" evita
+        // manter cache_totals inflado quando a query Supabase quebra.
         const recalcInboundSupabase = async (label, sellerCodes) => {
           try {
-            const { data: nfs } = await supabaseFiscal
+            const { data: nfs, error } = await supabaseFiscal
               .from('notas_fiscais')
               .select('total_value, invoice_status, operation_type')
               .gte('issue_date', dmin).lte('issue_date', dmax)
               .in('dealer_code', sellerCodes)
               .in('operation_code', [7235, 7241, 9127])
-              .in('branch_code', [99, 2, 95, 87, 88, 90, 94, 97]);
+              .in('branch_code', B2M_OVERRIDE_BRANCHES);
+            if (error) {
+              console.warn(`[ovl cache-only] ${label} recalc falhou (query error): ${error.message}`);
+              return { ok: false };
+            }
             const valid = (nfs || []).filter(
               (n) => n.invoice_status !== 'Canceled' && n.invoice_status !== 'Deleted',
             );
             const out = valid.filter((n) => n.operation_type === 'Output').reduce((s, n) => s + Number(n.total_value || 0), 0);
             const inp = valid.filter((n) => n.operation_type === 'Input').reduce((s, n) => s + Number(n.total_value || 0), 0);
-            return Math.max(0, out - inp);
+            return { ok: true, valor: Math.max(0, out - inp) };
           } catch (e) {
-            console.warn(`[ovl cache-only] ${label} recalc falhou: ${e.message}`);
-            return 0;
+            console.warn(`[ovl cache-only] ${label} recalc falhou (exception): ${e.message}`);
+            return { ok: false };
           }
         };
-        const davidNF = await recalcInboundSupabase('David', [26, 69]);
-        if (davidNF > 0) {
-          console.log(`[ovl cache-only] inbound_david: cache=R$${(seg.inbound_david || 0).toFixed(2)} → Supabase=R$${davidNF.toFixed(2)}`);
-          seg.inbound_david = davidNF;
+        const davidR = await recalcInboundSupabase('David', [26, 69]);
+        if (davidR.ok) {
+          console.log(`[ovl cache-only] inbound_david: cache=R$${(seg.inbound_david || 0).toFixed(2)} → Supabase=R$${davidR.valor.toFixed(2)}`);
+          seg.inbound_david = davidR.valor;
         }
-        const rafaelNF = await recalcInboundSupabase('Rafael', [21]);
-        if (rafaelNF > 0) {
-          console.log(`[ovl cache-only] inbound_rafael: cache=R$${(seg.inbound_rafael || 0).toFixed(2)} → Supabase=R$${rafaelNF.toFixed(2)}`);
-          seg.inbound_rafael = rafaelNF;
+        const rafaelR = await recalcInboundSupabase('Rafael', [21]);
+        if (rafaelR.ok) {
+          console.log(`[ovl cache-only] inbound_rafael: cache=R$${(seg.inbound_rafael || 0).toFixed(2)} → Supabase=R$${rafaelR.valor.toFixed(2)}`);
+          seg.inbound_rafael = rafaelR.valor;
         }
 
         // ── Override Multimarcas: recalcula via Supabase fiscal ────────────
         // Mesma lógica — canal_totals_cache vem do sale-panel inflado.
+        // Aplica override mesmo quando mmLiq=0 (0 legítimo). Em falha de
+        // query, mantém o cache (com warning) em vez de zerar silenciosamente.
         try {
-          const { data: mmNFs } = await supabaseFiscal
+          const { data: mmNFs, error: mmErr } = await supabaseFiscal
             .from('notas_fiscais')
             .select('total_value, invoice_status, operation_type, dealer_code')
             .gte('issue_date', dmin).lte('issue_date', dmax)
             .in('operation_code', [7235, 7241, 9127, 200])
-            .in('branch_code', [99, 2, 95, 87, 88, 90, 94, 97])
+            .in('branch_code', B2M_OVERRIDE_BRANCHES)
             .not('dealer_code', 'in', '(21,26,69)');
-          const validMM = (mmNFs || []).filter(
-            (n) => n.invoice_status !== 'Canceled' && n.invoice_status !== 'Deleted',
-          );
-          const outMM = validMM.filter((n) => n.operation_type === 'Output').reduce((s, n) => s + Number(n.total_value || 0), 0);
-          const inMM = validMM.filter((n) => n.operation_type === 'Input').reduce((s, n) => s + Number(n.total_value || 0), 0);
-          const mmLiq = Math.max(0, outMM - inMM);
-          if (mmLiq > 0) {
+          if (mmErr) {
+            console.warn(`[ovl cache-only] multimarcas recalc falhou (query error): ${mmErr.message}`);
+          } else {
+            const validMM = (mmNFs || []).filter(
+              (n) => n.invoice_status !== 'Canceled' && n.invoice_status !== 'Deleted',
+            );
+            const outMM = validMM.filter((n) => n.operation_type === 'Output').reduce((s, n) => s + Number(n.total_value || 0), 0);
+            const inMM = validMM.filter((n) => n.operation_type === 'Input').reduce((s, n) => s + Number(n.total_value || 0), 0);
+            const mmLiq = Math.max(0, outMM - inMM);
             console.log(`[ovl cache-only] multimarcas: cache=R$${(seg.multimarcas || 0).toFixed(2)} → Supabase=R$${mmLiq.toFixed(2)}`);
             seg.multimarcas = mmLiq;
           }
         } catch (e) {
-          console.warn(`[ovl cache-only] multimarcas recalc falhou: ${e.message}`);
+          console.warn(`[ovl cache-only] multimarcas recalc falhou (exception): ${e.message}`);
         }
 
         // ── Per-seller breakdown via notas_fiscais (B2M e B2R) ────────────
@@ -1469,8 +1484,8 @@ router.get(
           while (true) {
             let q = supabaseFiscal
               .from('notas_fiscais')
-              .select('dealer_code, total_value, invoice_status')
-              .eq('operation_type', 'Output')
+              .select('dealer_code, total_value, invoice_status, operation_type')
+              .in('operation_type', ['Output', 'Input'])
               .gte('issue_date', dmin).lte('issue_date', dmax)
               .in('branch_code', cfg.branchs)
               .in('operation_code', cfg.ops)
@@ -1491,7 +1506,8 @@ router.get(
           const porDealer = new Map();
           for (const n of valid) {
             const k = Number(n.dealer_code);
-            porDealer.set(k, (porDealer.get(k) || 0) + Number(n.total_value || 0));
+            const sinal = n.operation_type === 'Input' ? -1 : 1;
+            porDealer.set(k, (porDealer.get(k) || 0) + sinal * Number(n.total_value || 0));
           }
           return [...porDealer.entries()]
             .map(([code, val]) => ({ nome: nomeDealer(code), valor: round(val) }))
@@ -1525,7 +1541,7 @@ router.get(
         try {
           [vendedoresB2M, vendedoresB2R, lojasB2C] = await Promise.all([
             construirGrupoOficial(
-              [99, 2, 95, 87, 88, 90, 94, 97],
+              B2M_OVERRIDE_BRANCHES,
               null,
               [21, 26, 69], // exclui inbound David/Rafael/Thalis do B2M
             ),
@@ -1539,7 +1555,7 @@ router.get(
           // Fallback notas_fiscais Supabase se a replica não retornou nada
           if (vendedoresB2M.length === 0) {
             vendedoresB2M = await grupoPorDealerNF({
-              branchs: [99, 2, 95, 87, 88, 90, 94, 97],
+              branchs: B2M_OVERRIDE_BRANCHES,
               ops: [7235, 7241, 9127, 200],
               excludeSellers: [21, 26, 69],
             });
@@ -1863,15 +1879,9 @@ router.get(
           else if (card.code === 'B2M') vendedoresB2M = lista;
         }
       } else if (periodoLabel === 'semana') {
-        const ano = new Date().getUTCFullYear();
-        const semana = (() => {
-          const d = new Date();
-          const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-          const dayNr = (target.getUTCDay() + 6) % 7;
-          target.setUTCDate(target.getUTCDate() - dayNr + 3);
-          const jan4 = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
-          return 1 + Math.round(((target - jan4) / 86400000 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7);
-        })();
+        // ano e semana DEVEM vir do mesmo cálculo ISO — em 01-03/jan a ISO week
+        // pode estar no ano anterior (ex.: 01/01/2027 = semana 53 de 2026).
+        const { ano, semana } = getIsoWeek(new Date());
         const [resSemanal, resVendedores] = await Promise.all([
           axios.get(`${INTERNAL_API_BASE}/api/forecast/promessa-semanal`,
             { params: { ano, semana, until_today: 'false' }, timeout: 240000 }).catch(() => null),
@@ -2779,6 +2789,11 @@ const SPECIAL_OPERATIONS_99 = [
   5919, // adicionada em 2026-06 — entra no Forecast (Métricas Diárias) por vendedor
 ];
 
+// Filiais do escopo Multimarcas (Inbound David/Rafael + seg.multimarcas).
+// 99 = atacado SP · 2/200 = atacado JPA/PB · 95/87/88/90/94/97 = outras
+// filiais que vendem atacado. Usado nos overrides via Supabase fiscal.
+const B2M_OVERRIDE_BRANCHES = [99, 2, 95, 87, 88, 90, 94, 97];
+
 // Grupos de canais da tabela mensal (todos os vendedores de cada grupo)
 const VEND_MENSAL_GROUPS = [
   {
@@ -3058,40 +3073,6 @@ async function getCredevVendedor(branchs, operations, datemin, datemax, tipo = '
   return out;
 }
 
-// Monta a lista de vendedores LÍQUIDA de um grupo: bruto (painel oficial) −
-// credev (canal-totals per_seller), filtrando só os vendedores do time (g.sellers).
-// Lê customers_qty + invoice_qty por vendedor a partir do canal-totals
-// (per_seller). Usa o cache existente (1h realtime / 24h passado), então
-// é praticamente instantâneo se canal-totals já foi pedido em qualquer
-// outro lugar (Forecast, Dashboard, etc.). Soma os vários canais do grupo
-// (ex: B2M = multimarcas + inbound_david + inbound_rafael).
-async function getClientesPorVendedorViaCanalTotals(metaCanais, datemin, datemax) {
-  const out = {}; // seller_code → { customers, nfs }
-  await Promise.all(
-    metaCanais.map(async (modulo) => {
-      try {
-        const r = await axios.post(
-          `${INTERNAL_API_BASE}/api/crm/canal-totals`,
-          { modulo, datemin: toYmd(datemin), datemax: toYmd(datemax) },
-          { timeout: 200000 },
-        );
-        const data = r.data?.data || r.data;
-        const perSeller = data?.per_seller || [];
-        for (const s of perSeller) {
-          const code = String(s.seller_code ?? '');
-          if (!code) continue;
-          if (!out[code]) out[code] = { customers: 0, nfs: 0 };
-          out[code].customers += Number(s.customers_qty || 0);
-          out[code].nfs += Number(s.invoice_qty || 0);
-        }
-      } catch (e) {
-        console.warn(`[getClientesPorVendedor canal ${modulo}] ${e.message}`);
-      }
-    }),
-  );
-  return out;
-}
-
 // GET /forecast/clientes-atendidos?canal=B2M&ano=2026&mes=6&seller_code=259
 // Retorna lista de clientes atendidos por um vendedor específico no período.
 router.get(
@@ -3284,7 +3265,9 @@ async function buildVendedoresLiquido(g, datemin, datemax) {
       nome: nameMap[code] || `Vend. ${code}`,
       bruto: Math.round(bruto * 100) / 100,
       credev: Math.round(credev * 100) / 100,
-      real: Math.max(0, Math.round((bruto - credev) * 100) / 100),
+      // Permite negativo: vendedor com credev > bruto = devoluções > faturamento.
+      // Relatório TOTVS oficial aceita negativo; cortar em 0 mascara prejuízo.
+      real: Math.round((bruto - credev) * 100) / 100,
       clientes: Number(stats.customers || 0),
       nfs: Number(stats.nfs || 0),
     });
