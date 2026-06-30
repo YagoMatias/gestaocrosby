@@ -67,9 +67,16 @@ const api = {
 };
 
 export default function PromessaMensal() {
-  const now = new Date();
-  const [ano, setAno] = useState(now.getFullYear());
-  const [mes, setMes] = useState(now.getMonth() + 1);
+  // nowKey força re-render a cada minuto pra detectar virada de dia/mês
+  // sem precisar que o usuário recarregue (mesma técnica do PromessaSemanal).
+  const [nowKey, setNowKey] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowKey(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const now = new Date(nowKey);
+  const [ano, setAno] = useState(() => new Date().getFullYear());
+  const [mes, setMes] = useState(() => new Date().getMonth() + 1);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');

@@ -11,11 +11,13 @@ import {
   CurrencyDollar,
   ChartPieSlice,
   Spinner,
+  Calculator,
 } from '@phosphor-icons/react';
 
 const FaturamentoCanal = lazy(() => import('./FaturamentoCanal'));
 const FaturamentoHistorico = lazy(() => import('./FaturamentoHistorico'));
 const DashboardVendas = lazy(() => import('./DashboardVendas'));
+const OrcamentoTrimestral = lazy(() => import('./OrcamentoTrimestral'));
 
 const ABAS = [
   {
@@ -53,6 +55,18 @@ const ABAS = [
     activeRing: 'ring-emerald-200',
     activeText: 'text-emerald-700',
     Component: DashboardVendas,
+  },
+  {
+    id: 'orcamento',
+    label: 'Orçamento',
+    descricao: 'Budget tráfego + marketing por canal × trimestre',
+    icon: Calculator,
+    iconColor: 'text-blue-600',
+    iconBg: 'bg-blue-100',
+    activeBar: 'bg-gradient-to-r from-blue-500 to-indigo-500',
+    activeRing: 'ring-blue-200',
+    activeText: 'text-blue-700',
+    Component: OrcamentoTrimestral,
   },
 ];
 const STORAGE_KEY = 'forecast.aba-ativa';

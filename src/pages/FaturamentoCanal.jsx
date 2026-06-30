@@ -2199,6 +2199,8 @@ export default function FaturamentoCanal() {
   const [filtroStatusCliente, setFiltroStatusCliente] = useState('todos'); // 'todos' | 'novos' | 'recorrentes'
   const [vendedorExpandido, setVendedorExpandido] = useState(null); // key do vendedor expandido na aba breakdown
   const [modalROI, setModalROI] = useState(false);
+  const [modalBudget, setModalBudget] = useState(false);
+  const [budgetSummary, setBudgetSummary] = useState(null); // {ano, trimestre, canais, total}
   const [vendedores, setVendedores] = useState(null);
   const [loadingVend, setLoadingVend] = useState(false);
   const [rankingFat, setRankingFat] = useState(null);
@@ -2460,6 +2462,29 @@ export default function FaturamentoCanal() {
       if (metaErros.length > 0) setErroMeta(metaErros.join(' | '));
     });
   }, [dataInicio, dataFim, fetchBuscar]);
+
+  // ─── Carrega orçamento trimestral ─────────────────────────────────────
+  // O trimestre é derivado de dataInicio (1-3=T1, 4-6=T2, etc.).
+  useEffect(() => {
+    if (!dataInicio || !dataFim) return;
+    let abort = false;
+    (async () => {
+      try {
+        const url = `${API_BASE_URL}/api/forecast/budget/summary?datemin=${dataInicio}&datemax=${dataFim}&_=${Date.now()}`;
+        const r = await fetch(url, {
+          headers: { 'x-api-key': API_KEY, 'Cache-Control': 'no-cache' },
+          cache: 'no-store',
+        });
+        const j = await r.json();
+        if (abort) return;
+        console.log('[budget-summary] gasto_total=', j?.data?.total?.gasto_total, 'budget=', j?.data?.total?.budget_total);
+        setBudgetSummary(j.data || null);
+      } catch (e) {
+        if (!abort) console.warn('[budget] fetch falhou:', e.message);
+      }
+    })();
+    return () => { abort = true; };
+  }, [dataInicio, dataFim]);
 
   // ─── Carrega metas + faturamento atual (semana + mês corrente) ────────
   // Estratégia: stale-while-revalidate. Cache local de FAT (parte pesada) com
@@ -3555,10 +3580,10 @@ export default function FaturamentoCanal() {
 
                 </div>
 
-                {/* ─── LINHA 2: KPIs (WhatsApp · Tráfego · ROI+Clientes) ───
-                    3 colunas no desktop. Última coluna empilha ROI + Clientes
-                    pra equilibrar altura visual com WhatsApp/Tráfego. */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:items-stretch">
+                {/* ─── LINHA 2: KPIs (WhatsApp · Tráfego · ROI+Clientes · Orçamento) ───
+                    4 colunas no desktop XL. Coluna 3 empilha ROI + Clientes
+                    pra equilibrar altura visual com WhatsApp/Tráfego/Orçamento. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 lg:items-stretch">
                   {/* Custos API WhatsApp + Tráfego */}
                   {(custoWpp || custoAds || erroMeta) && (
                     <div className="contents">
@@ -3807,9 +3832,17 @@ export default function FaturamentoCanal() {
                     const wppBRL = Number(custoWpp?.costBRL ?? ((custoWpp?.cost ?? 0) * 5.8)) || 0;
                     const adsBRL = Number(custoAds?.spend || 0);
                     const totMkt = wppBRL + adsBRL;
-                    const receita = Number(resultado.total_liquido ?? resultado.total ?? 0);
-                    const roi = totMkt > 0 ? ((receita - totMkt) / totMkt) * 100 : 0;
-                    const roas = totMkt > 0 ? receita / totMkt : 0;
+                    // ROAS = receita atribuída ao marketing / gasto. Usar
+                    // resultado.total_liquido (R$ 919k inclui loja física,
+                    // franquia, etc.) inflava o ROAS pra ~115x. O modal por
+                    // canal usa "receita de clientes NOVOS" como métrica de
+                    // aquisição — replicamos aqui pra consistência.
+                    const CANAIS_MKT = ['varejo', 'revenda', 'multimarcas', 'inbound_david', 'inbound_rafael'];
+                    const receitaNovos = CANAIS_MKT.reduce(
+                      (s, c) => s + Number(clientesCanal?.[c]?.receita_novos || 0),
+                      0,
+                    );
+                    const roas = totMkt > 0 ? receitaNovos / totMkt : 0;
                     return (
                       <div
                         role="button"
@@ -3817,10 +3850,10 @@ export default function FaturamentoCanal() {
                         onClick={() => setModalROI(true)}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setModalROI(true); } }}
                         className="bg-cyan-500/10 hover:bg-cyan-500/20 backdrop-blur-sm border border-cyan-400/30 hover:border-cyan-400/50 rounded-lg px-3 py-2 min-w-0 cursor-pointer transition-colors group flex-1 flex flex-col justify-center"
-                        title="Clique para ver ROAS por canal (WhatsApp/Tráfego × Novos/Total)"
+                        title="ROAS = receita de clientes NOVOS (canais com marketing digital) ÷ gasto Meta + WhatsApp. Clique para ver por canal."
                       >
                         <p className="text-[10px] text-cyan-200/80 uppercase tracking-wider font-medium flex items-center justify-between gap-2">
-                          <span>ROAS Marketing</span>
+                          <span>ROAS Marketing (Novos)</span>
                           <span className="text-[9px] text-cyan-300/60 group-hover:text-cyan-200 normal-case tracking-normal font-normal">
                             ver por canal →
                           </span>
@@ -3829,7 +3862,7 @@ export default function FaturamentoCanal() {
                           {roas.toFixed(2)}x
                         </p>
                         <p className="text-[10px] text-cyan-300/80 mt-0.5">
-                          invest. R$ {formatBRL(totMkt)}
+                          R$ {formatBRL(receitaNovos)} / invest. R$ {formatBRL(totMkt)}
                         </p>
                       </div>
                     );
@@ -3870,6 +3903,62 @@ export default function FaturamentoCanal() {
                     );
                   })()}
                   </div>{/* fecha coluna 3 (ROI + Clientes) */}
+
+                  {/* Coluna 4: Card Orçamento Trimestral */}
+                  {budgetSummary && budgetSummary.total && (() => {
+                    const total = budgetSummary.total || {};
+                    const budTot = Number(total.budget_total || 0);
+                    const gastoTot = Number(total.gasto_total || 0);
+                    const saldo = Number(total.saldo ?? (budTot - gastoTot));
+                    const pct = budTot > 0 ? (gastoTot / budTot) * 100 : 0;
+                    const corSaldo = saldo < 0 ? 'text-rose-300' : pct > 80 ? 'text-amber-300' : 'text-emerald-300';
+                    const periodoT = budgetSummary.periodo_trimestre;
+                    return (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setModalBudget(true)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setModalBudget(true); } }}
+                        className="bg-indigo-500/10 hover:bg-indigo-500/20 backdrop-blur-sm border border-indigo-400/20 hover:border-indigo-400/40 rounded-lg p-3 cursor-pointer transition-colors group flex flex-col justify-between"
+                        title="Clique pra ver / editar orçamento por canal"
+                      >
+                        <div>
+                          <p className="text-[10px] text-indigo-200/80 uppercase tracking-wider font-medium mb-1 flex items-center justify-between gap-2">
+                            <span>Orçamento Mkt · T{budgetSummary.trimestre}/{budgetSummary.ano}</span>
+                            <span className="text-[9px] text-indigo-300/60 group-hover:text-indigo-200 normal-case tracking-normal font-normal">
+                              detalhes →
+                            </span>
+                          </p>
+                          <p className="text-base font-bold text-indigo-200 tabular-nums">
+                            R$ {formatBRL(budTot)} <span className="text-[10px] font-normal text-indigo-300/70">(T+M)</span>
+                          </p>
+                          {periodoT && (
+                            <p className="text-[10px] text-indigo-300/60 mt-0.5">
+                              {periodoT.datemin} → {periodoT.datemax}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <div className="flex flex-col gap-0.5 text-[11px] mt-2">
+                            <span className="text-indigo-300/80 tabular-nums">
+                              Gasto: <b className="text-indigo-100">R$ {formatBRL(gastoTot)}</b>
+                            </span>
+                            <span className={corSaldo + ' tabular-nums'}>
+                              Saldo: <b>R$ {formatBRL(saldo)}</b>
+                            </span>
+                          </div>
+                          <div className="mt-1.5 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full transition-all ${
+                                pct > 100 ? 'bg-rose-400' : pct > 80 ? 'bg-amber-400' : 'bg-emerald-400'
+                              }`}
+                              style={{ width: `${Math.min(100, pct)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                 </div>
                 </div>
@@ -5353,10 +5442,10 @@ export default function FaturamentoCanal() {
               const segunda = new Date(hoje);
               const dow = segunda.getDay() === 0 ? 7 : segunda.getDay();
               segunda.setDate(segunda.getDate() - (dow - 1));
-              // Se hoje é segunda (dow=1), a semana corrente acabou de começar
-              // e fimOntem aponta pro sábado anterior — voltamos 7 dias pra
-              // mostrar a semana COMPLETA que acabou (seg→sáb anterior).
-              if (toLocalIso(segunda) > fimOntem) {
+              // Se a "semana atual" tem 0 ou 1 dia útil (segunda recém começou
+              // ou terça antes do fechamento), mostra a semana COMPLETA passada.
+              // Usar >= em vez de > pra cobrir o caso terça 1 dia também.
+              if (toLocalIso(segunda) >= fimOntem) {
                 segunda.setDate(segunda.getDate() - 7);
               }
               const iniSemana = toLocalIso(segunda);
@@ -5423,6 +5512,247 @@ export default function FaturamentoCanal() {
           onClose={() => setModalWppDetail(false)}
         />
       )}
+
+      {/* Modal: Orçamento Trimestral por canal */}
+      {modalBudget && budgetSummary && (() => {
+        const canaisRaw = budgetSummary.canais || [];
+        // Bug fix: passa OBJETO `c`, não string `c.canal` — gasto_wpp/gasto_ads
+        // são propriedades do objeto. Antes ficava sempre 0.
+        const gastoCanal = (c) => Number(c.gasto_wpp || 0) + Number(c.gasto_ads || 0);
+        // Esconde canais 100% inativos (sem budget E sem gasto). Ordena: maior gasto primeiro,
+        // depois maior budget. Canal com estouro (gasto > budget) sempre no topo.
+        const canais = canaisRaw
+          .map((c) => {
+            const bt = Number(c.budget_trafego || 0);
+            const bm = Number(c.budget_marketing || 0);
+            const bud = bt + bm;
+            const gasto = gastoCanal(c);
+            const saldo = bud - gasto;
+            const pct = bud > 0 ? (gasto / bud) * 100 : (gasto > 0 ? 999 : 0);
+            return { ...c, _bt: bt, _bm: bm, _bud: bud, _gasto: gasto, _saldo: saldo, _pct: pct };
+          })
+          .filter((c) => c._bud > 0 || c._gasto > 0)
+          .sort((a, b) => {
+            // Estouros primeiro, depois por gasto desc
+            if ((a._pct > 100) !== (b._pct > 100)) return a._pct > 100 ? -1 : 1;
+            return b._gasto - a._gasto;
+          });
+        const totBudTraf = canaisRaw.reduce((s, c) => s + Number(c.budget_trafego || 0), 0);
+        const totBudMkt = canaisRaw.reduce((s, c) => s + Number(c.budget_marketing || 0), 0);
+        const totMeta = canaisRaw.reduce((s, c) => s + Number(c.meta_faturamento || 0), 0);
+        const totGasto = Number(budgetSummary.total?.gasto_total || 0);
+        const totBud = totBudTraf + totBudMkt;
+        const totSaldo = totBud - totGasto;
+        const totPct = totBud > 0 ? (totGasto / totBud) * 100 : 0;
+        const periodoT = budgetSummary.periodo_trimestre;
+        const corPct = (pct) => pct > 100 ? 'text-rose-600' : pct > 80 ? 'text-amber-600' : 'text-emerald-600';
+        const corBar = (pct) => pct > 100 ? 'bg-rose-500' : pct > 80 ? 'bg-amber-500' : 'bg-emerald-500';
+        return (
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setModalBudget(false)}
+          >
+            <div
+              className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-blue-50">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">
+                    Orçamento Marketing · T{budgetSummary.trimestre}/{budgetSummary.ano}
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Tráfego (2,5%) + Marketing (0,5%) — gasto real do <b>trimestre completo</b>
+                    {periodoT && <> ({periodoT.datemin} → {periodoT.datemax})</>}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setModalBudget(false)}
+                  className="text-gray-400 hover:text-gray-700 text-2xl leading-none w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/50"
+                  aria-label="Fechar"
+                >×</button>
+              </div>
+              <div className="flex-1 overflow-auto p-6">
+                {canaisRaw.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    <p className="text-sm">Nenhum orçamento cadastrado pra T{budgetSummary.trimestre}/{budgetSummary.ano}.</p>
+                    <p className="text-xs mt-2">Vá em <b>Forecast → Orçamento</b> pra cadastrar.</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Cards resumo no topo */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <p className="text-[10px] text-blue-700 uppercase tracking-wider font-medium">Budget Total</p>
+                        <p className="text-lg font-bold text-blue-900 tabular-nums mt-0.5">R$ {formatBRL(totBud)}</p>
+                        <p className="text-[10px] text-blue-700/70 mt-0.5">T R$ {formatBRL(totBudTraf)} + M R$ {formatBRL(totBudMkt)}</p>
+                      </div>
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <p className="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Gasto Real</p>
+                        <p className="text-lg font-bold text-gray-900 tabular-nums mt-0.5">R$ {formatBRL(totGasto)}</p>
+                        <p className={`text-[10px] ${corPct(totPct)} mt-0.5 font-medium`}>{totPct.toFixed(1)}% do budget usado</p>
+                      </div>
+                      <div className={`border rounded-lg p-3 ${totSaldo < 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                        <p className={`text-[10px] uppercase tracking-wider font-medium ${totSaldo < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>Saldo</p>
+                        <p className={`text-lg font-bold tabular-nums mt-0.5 ${totSaldo < 0 ? 'text-rose-900' : 'text-emerald-900'}`}>R$ {formatBRL(totSaldo)}</p>
+                        <p className={`text-[10px] mt-0.5 ${totSaldo < 0 ? 'text-rose-700/80' : 'text-emerald-700/80'}`}>
+                          {totSaldo < 0 ? `Estouro de R$ ${formatBRL(Math.abs(totSaldo))}` : 'Dentro do orçamento'}
+                        </p>
+                      </div>
+                      <div className="bg-violet-50 border border-violet-200 rounded-lg p-3">
+                        <p className="text-[10px] text-violet-700 uppercase tracking-wider font-medium">Meta Faturamento</p>
+                        <p className="text-lg font-bold text-violet-900 tabular-nums mt-0.5">R$ {formatBRL(totMeta)}</p>
+                        <p className="text-[10px] text-violet-700/70 mt-0.5">soma dos canais</p>
+                      </div>
+                    </div>
+
+                    {/* Resumo por mês — Budget mensal = 1/3 do trimestral */}
+                    {budgetSummary.meses && budgetSummary.meses.length > 0 && (() => {
+                      const budgetMensal = totBud / 3;
+                      return (
+                        <div className="mb-5 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-2">
+                            Gasto por mês vs budget mensal (1/3 do trimestre = R$ {formatBRL(budgetMensal)})
+                          </p>
+                          <div className="grid grid-cols-3 gap-3">
+                            {budgetSummary.meses.map((m) => {
+                              const g = Number(m.gasto_total || 0);
+                              const w = Number(m.gasto_wpp || 0);
+                              const a = Number(m.gasto_ads || 0);
+                              const saldoMes = budgetMensal - g;
+                              const pctMes = budgetMensal > 0 ? (g / budgetMensal) * 100 : 0;
+                              const cor = saldoMes < 0 ? 'rose' : pctMes > 80 ? 'amber' : 'emerald';
+                              const corBg = saldoMes < 0 ? 'bg-rose-50' : pctMes > 80 ? 'bg-amber-50' : 'bg-emerald-50';
+                              const corBorder = saldoMes < 0 ? 'border-rose-200' : pctMes > 80 ? 'border-amber-200' : 'border-emerald-200';
+                              const corText = saldoMes < 0 ? 'text-rose-700' : pctMes > 80 ? 'text-amber-700' : 'text-emerald-700';
+                              const corBar = saldoMes < 0 ? 'bg-rose-500' : pctMes > 80 ? 'bg-amber-500' : 'bg-emerald-500';
+                              return (
+                                <div key={m.mes_num} className={`${corBg} rounded-md border ${corBorder} p-2.5`}>
+                                  <div className="flex items-center justify-between mb-1">
+                                    <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">{m.mes_label}</p>
+                                    <span className={`text-[10px] font-semibold ${corText} tabular-nums`}>{pctMes.toFixed(0)}%</span>
+                                  </div>
+                                  <p className="text-base font-bold text-gray-900 tabular-nums">R$ {formatBRL(g)}</p>
+                                  <p className="text-[9px] text-gray-400 mt-0.5">
+                                    Wpp R$ {formatBRL(w)} · Ads R$ {formatBRL(a)}
+                                  </p>
+                                  <div className="mt-1.5 h-1 bg-white rounded-full overflow-hidden">
+                                    <div className={`h-full ${corBar}`} style={{ width: `${Math.min(100, pctMes)}%` }} />
+                                  </div>
+                                  <p className={`text-[10px] font-semibold ${corText} mt-1 tabular-nums`}>
+                                    {saldoMes < 0
+                                      ? `🔴 Estouro R$ ${formatBRL(Math.abs(saldoMes))}`
+                                      : `Saldo R$ ${formatBRL(saldoMes)}`}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Tabela por canal — só ativos, com expandir por mês */}
+                    <table className="w-full text-sm border-collapse">
+                      <thead className="sticky top-0 bg-white">
+                        <tr className="text-[10px] uppercase tracking-wider text-gray-500 border-b-2 border-gray-200">
+                          <th className="text-left py-2.5 px-2">Canal</th>
+                          <th className="text-right py-2.5 px-2">Budget</th>
+                          <th className="text-right py-2.5 px-2">Gasto</th>
+                          {(budgetSummary.meses || []).map((m) => (
+                            <th key={m.mes_num} className="text-right py-2.5 px-2 text-gray-400 font-medium">
+                              {m.mes_label.slice(0, 3)}
+                            </th>
+                          ))}
+                          <th className="text-right py-2.5 px-2">Saldo</th>
+                          <th className="text-left py-2.5 px-2 w-[140px]">Progresso</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {canais.map((c) => (
+                          <tr key={c.id || c.canal} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                            <td className="py-3 px-2">
+                              <div className="font-medium text-gray-900">{c.canal_label || c.canal}</div>
+                              <div className="text-[10px] text-gray-400">T R$ {formatBRL(c._bt)} + M R$ {formatBRL(c._bm)}</div>
+                            </td>
+                            <td className="py-3 px-2 text-right tabular-nums font-semibold text-blue-700">R$ {formatBRL(c._bud)}</td>
+                            <td className="py-3 px-2 text-right tabular-nums text-gray-900">
+                              <div>R$ {formatBRL(c._gasto)}</div>
+                              {(c.gasto_wpp > 0 || c.gasto_ads > 0) && (
+                                <div className="text-[9px] text-gray-400">
+                                  Wpp R$ {formatBRL(Number(c.gasto_wpp||0))} · Ads R$ {formatBRL(Number(c.gasto_ads||0))}
+                                </div>
+                              )}
+                            </td>
+                            {(c.por_mes || []).map((m) => {
+                              const g = Number(m.gasto_wpp || 0) + Number(m.gasto_ads || 0);
+                              return (
+                                <td key={m.mes_num} className="py-3 px-2 text-right tabular-nums text-gray-700">
+                                  <div>R$ {formatBRL(g)}</div>
+                                  {g > 0 && (
+                                    <div className="text-[9px] text-gray-400">
+                                      W {formatBRL(Number(m.gasto_wpp||0))} · A {formatBRL(Number(m.gasto_ads||0))}
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            })}
+                            <td className={`py-3 px-2 text-right tabular-nums font-semibold ${c._saldo < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>R$ {formatBRL(c._saldo)}</td>
+                            <td className="py-3 px-2">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full transition-all ${corBar(c._pct)}`}
+                                    style={{ width: `${Math.min(100, c._pct)}%` }}
+                                  />
+                                </div>
+                                <span className={`text-[11px] font-semibold tabular-nums ${corPct(c._pct)} w-10 text-right`}>
+                                  {c._bud > 0 ? `${c._pct.toFixed(0)}%` : '—'}
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="border-t-2 border-gray-300 bg-gray-50 font-bold">
+                          <td className="py-3 px-2">TOTAL</td>
+                          <td className="py-3 px-2 text-right tabular-nums text-blue-700">R$ {formatBRL(totBud)}</td>
+                          <td className="py-3 px-2 text-right tabular-nums">R$ {formatBRL(totGasto)}</td>
+                          {(budgetSummary.meses || []).map((m) => (
+                            <td key={m.mes_num} className="py-3 px-2 text-right tabular-nums text-gray-700">
+                              R$ {formatBRL(Number(m.gasto_total || 0))}
+                            </td>
+                          ))}
+                          <td className={`py-3 px-2 text-right tabular-nums ${totSaldo < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>R$ {formatBRL(totSaldo)}</td>
+                          <td className="py-3 px-2">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                                <div className={`h-full ${corBar(totPct)}`} style={{ width: `${Math.min(100, totPct)}%` }} />
+                              </div>
+                              <span className={`text-[11px] font-semibold tabular-nums ${corPct(totPct)} w-10 text-right`}>
+                                {totPct.toFixed(0)}%
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    {canais.length < canaisRaw.length && (
+                      <p className="text-[11px] text-gray-400 mt-3">
+                        ⏳ {canaisRaw.length - canais.length} canais sem budget e sem gasto estão ocultos.
+                      </p>
+                    )}
+                    <p className="text-[11px] text-gray-500 mt-3">
+                      💡 Edita orçamento ou cadastra próximos trimestres na aba <b>Forecast → Orçamento</b>.
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal: ROI / ROAS por canal */}
       {modalROI && resultado && (() => {

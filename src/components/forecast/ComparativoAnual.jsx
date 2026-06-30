@@ -74,7 +74,7 @@ export default function ComparativoAnual() {
   const [showWhats, setShowWhats] = useState(false);
   const [untilToday, setUntilToday] = useState(false);
   const cardRef = useRef(null);
-  const { ref: downloadRef, baixar: baixarImagem } = useDownloadAsImage(() => `comparativo-anual-${mes ? `${mes}-` : ''}${new Date().getFullYear()}`);
+  const { ref: downloadRef, baixar: baixarImagem } = useDownloadAsImage(() => `comparativo-anual-${mes ? `${mes}-` : ''}${ano}`);
   // Token anti-race: cada nova chamada incrementa, só aplica state se ainda
   // for a mais recente. Evita "pisca de valor" quando filtros mudam rápido.
   const reqIdRef = useRef(0);
@@ -140,10 +140,12 @@ export default function ComparativoAnual() {
     },
     {
       label: 'Diferença',
-      valor: `${total.diferenca < 0 ? '-' : ''}R$ ${formatBRL(Math.abs(total.diferenca || 0))}`,
+      // diferenca = ano_atual - ano_anterior → positivo = atual GANHOU.
+      // Antes a lógica estava invertida (mostrava verde/"ganhou" quando NEG).
+      valor: `${(total.diferenca || 0) >= 0 ? '+' : '-'}R$ ${formatBRL(Math.abs(total.diferenca || 0))}`,
       icon: Scales,
-      color: total.diferenca < 0 ? 'emerald' : 'rose',
-      sub: total.diferenca < 0 ? `${anoAtual} ganhou` : `${anoAtual} perdeu`,
+      color: (total.diferenca || 0) >= 0 ? 'emerald' : 'rose',
+      sub: (total.diferenca || 0) >= 0 ? `${anoAtual} ganhou` : `${anoAtual} perdeu`,
     },
     {
       label: 'Comparativo',
@@ -214,8 +216,11 @@ export default function ComparativoAnual() {
                   const isQty = c.is_quantity;
                   const zebraBg = isQty ? 'bg-sky-50/30' : (idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40');
                   const fmtDif = (v) => {
-                    if (isQty) return `${v < 0 ? '-' : ''}${Math.abs(Math.round(v))} ${c.unit || 'un'}`;
-                    return `R$ ${v < 0 ? '-' : ''}${formatBRL(Math.abs(v))}`;
+                    // Sempre prefixa sinal explícito (+ ou -) pra leitura
+                    // consistente: positivo = ano atual ganhou.
+                    const sign = (v || 0) >= 0 ? '+' : '-';
+                    if (isQty) return `${sign}${Math.abs(Math.round(v))} ${c.unit || 'un'}`;
+                    return `${sign}R$ ${formatBRL(Math.abs(v))}`;
                   };
                   return (
                     <tr
@@ -286,7 +291,7 @@ export default function ComparativoAnual() {
                   {loading ? <LoadingValue /> : `R$ ${formatBRL(total.fat_ano_atual_real)}`}
                 </td>
                 <td className="py-3 px-3 text-right tabular-nums text-gray-800">
-                  {loading ? <LoadingValue /> : `R$ ${total.diferenca < 0 ? '-' : ''}${formatBRL(Math.abs(total.diferenca || 0))}`}
+                  {loading ? <LoadingValue /> : `${(total.diferenca || 0) >= 0 ? '+' : '-'}R$ ${formatBRL(Math.abs(total.diferenca || 0))}`}
                 </td>
                 <td className="py-3 px-3">
                   <div className="flex justify-center">

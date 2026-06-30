@@ -69,6 +69,7 @@ export function MetricaHeader({
   onPrev,
   onNext,
   onToday,
+  todayLabel = 'Mês atual', // customiza label do botão "voltar pro período atual"
   untilToday,
   setUntilToday,
   mode,        // NOVO: 'ontem' | 'hoje' | 'sabado' (3-estado, opcional)
@@ -114,9 +115,9 @@ export function MetricaHeader({
           <button
             onClick={onToday}
             className="text-[11px] px-2.5 py-1.5 border border-white/20 rounded hover:bg-white/10 text-white/90 hover:text-white font-medium transition"
-            title="Voltar para o mês atual"
+            title={`Voltar para ${todayLabel.toLowerCase()}`}
           >
-            Mês atual
+            {todayLabel}
           </button>
         )}
         {onNext && (

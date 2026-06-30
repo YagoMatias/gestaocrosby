@@ -75,6 +75,13 @@ function isoWeek(date) {
   return { ano: d.getUTCFullYear(), semana: weekNo };
 }
 
+// 28 de dezembro sempre cai na ÚLTIMA semana ISO do ano. Retorna 52 ou 53.
+// Sem isso, "semana próxima" partindo de S52 podia ir pra S53 em anos
+// que só têm 52 semanas (ex: 2025), gerando 404 no backend.
+function isoWeeksInYear(ano) {
+  return isoWeek(new Date(Date.UTC(ano, 11, 28))).semana;
+}
+
 const fmtDataBr = (iso) => {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
@@ -122,10 +129,13 @@ export default function PromessaSemanal() {
   useEffect(() => { carregar(); }, [carregar]);
 
   const semanaAnterior = () => {
-    if (semana <= 1) { setAno(ano - 1); setSemana(52); } else setSemana(semana - 1);
+    if (semana <= 1) { setAno(ano - 1); setSemana(isoWeeksInYear(ano - 1)); }
+    else setSemana(semana - 1);
   };
   const semanaProxima = () => {
-    if (semana >= 53) { setAno(ano + 1); setSemana(1); } else setSemana(semana + 1);
+    const maxSemana = isoWeeksInYear(ano);
+    if (semana >= maxSemana) { setAno(ano + 1); setSemana(1); }
+    else setSemana(semana + 1);
   };
   const irParaAtual = () => { setAno(cur.ano); setSemana(cur.semana); };
 

@@ -17,7 +17,7 @@ const fmtDataBr = (iso) => {
 // Cache localStorage — exibe instantâneo no mount, atualiza em background.
 // TTL 30min (intra-dia muda pouco; cron canal_totals_cache também não é
 // mais frequente que isso).
-const LS_PREFIX = 'ovl-cache-v26:'; // v26 = replica SQL oficial em B2R/B2M (Métricas Diretoria)
+const LS_PREFIX = 'ovl-cache-v27:'; // v27 = filtro opsAllow B2M/B2R (sem vazamento Vend. NNN)
 const LS_TTL_MS = 30 * 60 * 1000;
 const lsKey = (periodo, datemin, datemax) =>
   `${LS_PREFIX}${periodo || 'ontem'}|${datemin || ''}|${datemax || ''}`;
@@ -146,8 +146,44 @@ export default function FaturamentoOntemVendedorLoja({
   sempreTotvs = false, // se true, sempre força TOTVS direto (pula cache Supabase)
   cacheOnly = false,   // se true, lê SÓ do Supabase (zero TOTVS) — Métricas Diretoria
 } = {}) {
+  // ── Navegação de período (dia/semana/mês anterior/próximo) ──
+  // offset = 0 mostra o período passado nas props. -1 é anterior, +1 próximo.
+  // Truncado em zero (nunca permite ir pro futuro).
+  const [offset, setOffset] = useState(0);
+  const fmtIsoLocal = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  };
+  const navegavel = periodo === 'semana' || periodo === 'mes' || periodo === 'ontem';
+  const computeRange = () => {
+    if (!navegavel || offset === 0) return { datemin, datemax };
+    if (periodo === 'ontem') {
+      const base = new Date(`${datemax || fmtIsoLocal(new Date())}T00:00:00`);
+      base.setDate(base.getDate() + offset);
+      const iso = fmtIsoLocal(base);
+      return { datemin: iso, datemax: iso };
+    }
+    if (periodo === 'semana') {
+      const ini = new Date(`${datemin}T00:00:00`);
+      const fim = new Date(`${datemax}T00:00:00`);
+      ini.setDate(ini.getDate() + offset * 7);
+      fim.setDate(fim.getDate() + offset * 7);
+      return { datemin: fmtIsoLocal(ini), datemax: fmtIsoLocal(fim) };
+    }
+    // mes
+    const ini = new Date(`${datemin}T00:00:00`);
+    const novoMes = new Date(ini.getFullYear(), ini.getMonth() + offset, 1);
+    const ultimoDia = new Date(novoMes.getFullYear(), novoMes.getMonth() + 1, 0);
+    const hoje = new Date();
+    const fim = ultimoDia > hoje ? hoje : ultimoDia;
+    return { datemin: fmtIsoLocal(novoMes), datemax: fmtIsoLocal(fim) };
+  };
+  const { datemin: effDatemin, datemax: effDatemax } = computeRange();
+
   // Cache hit no mount → exibe instantâneo (sem skeleton)
-  const cacheKey = lsKey(periodo, datemin, datemax);
+  const cacheKey = lsKey(periodo, effDatemin, effDatemax);
   const cacheHit = lsRead(cacheKey);
   const [data, setData] = useState(cacheHit?.data || null);
   const [loading, setLoading] = useState(!cacheHit);
@@ -211,8 +247,8 @@ export default function FaturamentoOntemVendedorLoja({
     setErro('');
     try {
       const params = new URLSearchParams();
-      if (datemin) params.set('datemin', datemin);
-      if (datemax) params.set('datemax', datemax);
+      if (effDatemin) params.set('datemin', effDatemin);
+      if (effDatemax) params.set('datemax', effDatemax);
       if (periodo) params.set('periodo', periodo);
       if (force || sempreTotvs) params.set('nocache', '1');
       // cacheOnly=true: lê SÓ do Supabase, zero TOTVS. Botão "Atualizar"
@@ -235,7 +271,7 @@ export default function FaturamentoOntemVendedorLoja({
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datemin, datemax, periodo, cacheKey, sempreTotvs, cacheOnly]);
+  }, [effDatemin, effDatemax, periodo, cacheKey, sempreTotvs, cacheOnly]);
 
   useEffect(() => {
     let cancelled = false;
@@ -358,10 +394,26 @@ export default function FaturamentoOntemVendedorLoja({
         }
         icon={ChartBar}
         color={corHeader}
+        onPrev={navegavel ? () => setOffset((o) => o - 1) : undefined}
+        // Bloqueia "próximo" no offset=0 (já está mostrando o período mais recente)
+        onNext={navegavel && offset < 0 ? () => setOffset((o) => o + 1) : undefined}
+        onToday={navegavel && offset !== 0 ? () => setOffset(0) : undefined}
+        todayLabel={periodo === 'semana' ? 'Esta semana' : periodo === 'mes' ? 'Este mês' : 'Hoje'}
         onRefresh={() => carregar({ force: true })}
         onDownload={baixarImagem}
         loading={loading || stale}
       />
+
+      {/* Sub-toolbar: seletor direto de período (dia / semana / mês) */}
+      {navegavel && (
+        <SeletorPeriodo
+          periodo={periodo}
+          effDatemin={effDatemin}
+          effDatemax={effDatemax}
+          offset={offset}
+          setOffset={setOffset}
+        />
+      )}
 
       <div className="px-5 py-3 bg-gradient-to-b from-gray-50 to-white border-b border-gray-200 flex items-center justify-between">
         <span className="text-[11px] uppercase tracking-wider font-bold text-gray-500">
@@ -451,6 +503,112 @@ export default function FaturamentoOntemVendedorLoja({
           })
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Seletor direto de período (input/dropdown) — alternativa aos botões ◀ ▶
+// O `offset` (state pai) é a fonte da verdade: o seletor calcula um novo
+// offset e chama setOffset. Isso evita estados duplicados.
+function SeletorPeriodo({ periodo, effDatemin, effDatemax, offset, setOffset }) {
+  const hoje = new Date();
+  // Caso 1: ONTEM — input type=date
+  if (periodo === 'ontem') {
+    const onChangeData = (e) => {
+      const escolhida = e.target.value;
+      if (!escolhida) return;
+      const dEsc = new Date(`${escolhida}T00:00:00`);
+      const ontem = new Date(hoje);
+      ontem.setDate(ontem.getDate() - 1);
+      const diffDias = Math.round((dEsc - ontem) / 86400000);
+      setOffset(Math.min(0, diffDias));
+    };
+    const maxData = (() => {
+      const d = new Date(hoje);
+      d.setDate(d.getDate() - 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })();
+    return (
+      <div className="px-5 py-2 bg-white border-b border-gray-200 flex items-center gap-2 text-xs">
+        <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Escolher dia:</span>
+        <input
+          type="date"
+          value={effDatemax || ''}
+          max={maxData}
+          onChange={onChangeData}
+          className="text-xs border border-gray-300 rounded px-2 py-1 bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+        />
+      </div>
+    );
+  }
+  // Caso 2: MÊS — dropdown mês + ano
+  if (periodo === 'mes') {
+    const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const anoAtual = hoje.getFullYear();
+    const mesAtual = hoje.getMonth();
+    const [aEf, mEf] = effDatemin ? effDatemin.split('-').map(Number) : [anoAtual, mesAtual + 1];
+    const onChangeMesAno = (novoAno, novoMes) => {
+      // offset = (anoAtual - novoAno) * 12 + (mesAtual - novoMes)
+      const diff = (novoAno - anoAtual) * 12 + ((novoMes - 1) - mesAtual);
+      setOffset(Math.min(0, diff));
+    };
+    const anos = [];
+    for (let a = anoAtual; a >= 2023; a--) anos.push(a);
+    return (
+      <div className="px-5 py-2 bg-white border-b border-gray-200 flex items-center gap-2 text-xs">
+        <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Escolher mês:</span>
+        <select
+          value={mEf}
+          onChange={(e) => onChangeMesAno(aEf, Number(e.target.value))}
+          className="text-xs border border-gray-300 rounded px-2 py-1 bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-400"
+        >
+          {MESES.map((nome, idx) => (
+            <option key={idx + 1} value={idx + 1}>{nome}</option>
+          ))}
+        </select>
+        <select
+          value={aEf}
+          onChange={(e) => onChangeMesAno(Number(e.target.value), mEf)}
+          className="text-xs border border-gray-300 rounded px-2 py-1 bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-400"
+        >
+          {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+      </div>
+    );
+  }
+  // Caso 3: SEMANA — dropdown com ranges legíveis (últimas 12 semanas + atual)
+  const formatRangeSemana = (datemin, datemax) => {
+    if (!datemin || !datemax) return '';
+    const [, mIni, dIni] = datemin.split('-');
+    const [, mFim, dFim] = datemax.split('-');
+    return `${dIni}/${mIni} – ${dFim}/${mFim}`;
+  };
+  const opcoes = [];
+  for (let i = 0; i >= -11; i--) {
+    // Calcula range pra offset i (mesma lógica de computeRange)
+    const ini = new Date(`${effDatemin}T00:00:00`);
+    ini.setDate(ini.getDate() + (i - offset) * 7);
+    const fim = new Date(ini);
+    fim.setDate(fim.getDate() + 6);
+    const iniIso = `${ini.getFullYear()}-${String(ini.getMonth() + 1).padStart(2, '0')}-${String(ini.getDate()).padStart(2, '0')}`;
+    const fimIso = `${fim.getFullYear()}-${String(fim.getMonth() + 1).padStart(2, '0')}-${String(fim.getDate()).padStart(2, '0')}`;
+    opcoes.push({
+      offset: i,
+      label: i === 0 ? `Atual · ${formatRangeSemana(iniIso, fimIso)}` : formatRangeSemana(iniIso, fimIso),
+    });
+  }
+  return (
+    <div className="px-5 py-2 bg-white border-b border-gray-200 flex items-center gap-2 text-xs">
+      <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Escolher semana:</span>
+      <select
+        value={offset}
+        onChange={(e) => setOffset(Number(e.target.value))}
+        className="text-xs border border-gray-300 rounded px-2 py-1 bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[180px]"
+      >
+        {opcoes.map((o) => (
+          <option key={o.offset} value={o.offset}>{o.label}</option>
+        ))}
+      </select>
     </div>
   );
 }

@@ -339,6 +339,11 @@ export default function PromessaVendedores() {
 
   const carregar = useCallback(async (forceRefresh = false) => {
     const myId = ++reqIdRef.current;
+    // setLoading(true) PRIMEIRO — antes da check de cache. Antes ficava no
+    // meio da função (linha 371) o que criava race: hit de cache fazia
+    // setLoading(false) enquanto outro click pendente tinha programado
+    // setLoading(true) — ordering indefinido = skeleton sumia durante fetch.
+    setLoading(true);
     setErro('');
     const cacheKey = `${ano}|${semana}|${untilToday}`;
 
@@ -346,9 +351,10 @@ export default function PromessaVendedores() {
     if (!forceRefresh) {
       const cached = PV_CACHE.get(cacheKey);
       if (cached && Date.now() - cached.ts < PV_TTL_MS) {
+        // Guard race: se outra request foi disparada depois, não toca state.
         if (myId !== reqIdRef.current) return;
         setData(cached.data);
-        setLoading(false);
+        if (myId === reqIdRef.current) setLoading(false);
         return;
       }
     }
@@ -368,7 +374,6 @@ export default function PromessaVendedores() {
       PV_INFLIGHT.set(cacheKey, promise);
     }
 
-    setLoading(true);
     try {
       const fresh = await promise;
       if (myId !== reqIdRef.current) return;

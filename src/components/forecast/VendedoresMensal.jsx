@@ -19,8 +19,10 @@ const MESES = [
 
 export default function VendedoresMensal() {
   const now = new Date();
-  const [ano, setAno] = useState(now.getUTCFullYear());
-  const [mes, setMes] = useState(now.getUTCMonth() + 1);
+  // Usa horário LOCAL (BRT). UTC dava mês errado após 21h BRT (UTC já é o dia
+  // seguinte) — incompatível com PromessaMensal/ComparativoAnual que usam local.
+  const [ano, setAno] = useState(now.getFullYear());
+  const [mes, setMes] = useState(now.getMonth() + 1);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [carregandoLive, setCarregandoLive] = useState(false);
@@ -90,13 +92,13 @@ export default function VendedoresMensal() {
   const mesProximo = () => {
     if (mes >= 12) { setAno(ano + 1); setMes(1); } else setMes(mes + 1);
   };
-  const irAtual = () => { setAno(now.getUTCFullYear()); setMes(now.getUTCMonth() + 1); };
+  const irAtual = () => { setAno(now.getFullYear()); setMes(now.getMonth() + 1); };
 
   const cards = data?.cards || [];
   const vazio = !loading && !carregandoLive && (cards.length === 0 || cards.every((c) => (c?.vendedores || []).length === 0));
   const isLive = !!data?.live;
   const anos = [];
-  for (let a = now.getUTCFullYear() + 1; a >= 2023; a--) anos.push(a);
+  for (let a = now.getFullYear() + 1; a >= 2023; a--) anos.push(a);
 
   const subt = isLive
     ? `${MESES[(mes || 1) - 1]}/${ano} · ao vivo do TOTVS · líquido (bruto − credev)`
