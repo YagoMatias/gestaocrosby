@@ -15,6 +15,7 @@ import PageTitle from '../components/ui/PageTitle';
 import {
   gerarArquivoRemessaSicredi,
   proximoNomeArquivoRemessa,
+  validarTitulosRemessa,
 } from '../utils/cnab240Sicredi';
 import {
   CurrencyDollar,
@@ -85,6 +86,11 @@ const STATUS_CONFIG = {
   PENDENTE: {
     label: 'Pendente',
     color: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+    icon: Clock,
+  },
+  PROVISAO: {
+    label: 'Provisão',
+    color: 'bg-orange-100 text-orange-800 border-orange-300',
     icon: Clock,
   },
   APROVADO: {
@@ -1430,6 +1436,7 @@ const ModalDetalheDuplicata = ({
                     onChange={(e) => setStatus(e.target.value)}
                   >
                     <option value="PENDENTE">Pendente</option>
+                    <option value="PROVISAO">Provisão</option>
                     <option value="APROVADO">Aprovado</option>
                     <option value="PAGO">Pago</option>
                     {item.status === 'CANCELADO' && (
@@ -1889,7 +1896,7 @@ const LinhaTitulo = React.memo(
       >
         <td className="px-2 py-2 text-center">
           {(isAdmin || isFinanceiro) &&
-            (item.status === 'PENDENTE' || item.status === 'APROVADO') && (
+            (item.status === 'PENDENTE' || item.status === 'PROVISAO' || item.status === 'APROVADO') && (
               <input
                 type="checkbox"
                 checked={selecionado}
@@ -2431,7 +2438,7 @@ const LinhaTitulo = React.memo(
                         )}
 
                         {/* APROVAR */}
-                        {item.status === 'PENDENTE' && (
+                        {(item.status === 'PENDENTE' || item.status === 'PROVISAO') && (
                           <button
                             onClick={() => {
                               const extra = {
@@ -2451,6 +2458,20 @@ const LinhaTitulo = React.memo(
                           >
                             <Stamp size={12} weight="bold" />
                             Aprovar
+                          </button>
+                        )}
+
+                        {/* MOVER PARA PROVISÃO */}
+                        {item.status === 'PENDENTE' && (
+                          <button
+                            onClick={() => {
+                              onMudarStatus(item.id, 'PROVISAO', {});
+                              setShowAcaoPopover(false);
+                            }}
+                            className="flex items-center gap-2 w-full bg-orange-50 hover:bg-orange-100 text-orange-800 text-xs font-bold px-3 py-1.5 rounded border border-orange-300 transition-colors"
+                          >
+                            <Clock size={12} weight="bold" />
+                            Mover para Provisão
                           </button>
                         )}
 
@@ -2499,8 +2520,9 @@ const LinhaTitulo = React.memo(
                           </button>
                         )}
 
-                        {/* Voltar para PENDENTE (se APROVADO ou PAGO) */}
+                        {/* Voltar para PENDENTE (se APROVADO, PROVISAO ou PAGO) */}
                         {(item.status === 'APROVADO' ||
+                          item.status === 'PROVISAO' ||
                           item.status === 'PAGO') && (
                           <button
                             onClick={() => {
@@ -2881,6 +2903,7 @@ const LiberacaoPagamento = () => {
   const resumo = useMemo(() => {
     const agg = {
       PENDENTE: 0,
+      PROVISAO: 0,
       APROVADO: 0,
       PAGO: 0,
       CANCELADO: 0,
@@ -2928,7 +2951,7 @@ const LiberacaoPagamento = () => {
 
   const selecionarTodosVisiveis = () => {
     const selecionaveis = titulosFiltrados.filter(
-      (t) => t.status === 'PENDENTE' || t.status === 'APROVADO',
+      (t) => t.status === 'PENDENTE' || t.status === 'PROVISAO' || t.status === 'APROVADO',
     );
     if (selecionados.size === selecionaveis.length && selecionaveis.length > 0)
       setSelecionados(new Set());
@@ -2950,6 +2973,15 @@ const LiberacaoPagamento = () => {
 
   const excluirTitulo = useCallback(async (id) => {
     if (!window.confirm('Confirmar exclusão deste título?')) return;
+    await supabase
+      .from('solicitacoes_crosby')
+      .update({
+        liberado_pagamento_em: null,
+        liberado_pagamento_por: null,
+        liberado_pagamento_por_nome: null,
+        pagamento_liberacao_id: null,
+      })
+      .eq('pagamento_liberacao_id', id);
     const { error } = await supabase
       .from('pagamentos_liberacao')
       .delete()
@@ -2964,6 +2996,32 @@ const LiberacaoPagamento = () => {
       });
     }
   }, []);
+
+  const excluirSelecionados = useCallback(async () => {
+    if (selecionados.size === 0) return;
+    if (!window.confirm(`Excluir ${selecionados.size} título(s) selecionado(s)?`)) return;
+    const ids = Array.from(selecionados);
+    let erros = 0;
+    for (const id of ids) {
+      await supabase
+        .from('solicitacoes_crosby')
+        .update({
+          liberado_pagamento_em: null,
+          liberado_pagamento_por: null,
+          liberado_pagamento_por_nome: null,
+          pagamento_liberacao_id: null,
+        })
+        .eq('pagamento_liberacao_id', id);
+      const { error } = await supabase
+        .from('pagamentos_liberacao')
+        .delete()
+        .eq('id', id);
+      if (error) erros++;
+    }
+    setTitulos((prev) => prev.filter((t) => !selecionados.has(t.id)));
+    setSelecionados(new Set());
+    if (erros > 0) alert(`${erros} título(s) não puderam ser excluídos.`);
+  }, [selecionados]);
 
   const aprovarTitulo = useCallback(
     async (id, extraData = {}) => {
@@ -3010,6 +3068,7 @@ const LiberacaoPagamento = () => {
       if (oldStatus === novoStatus) return;
       const labels = {
         PENDENTE: 'Pendente',
+        PROVISAO: 'Provisão',
         APROVADO: 'Aprovado',
         PAGO: 'Pago',
       };
@@ -3024,7 +3083,7 @@ const LiberacaoPagamento = () => {
       const now = new Date().toISOString();
       const patch = { status: novoStatus, ...extra };
 
-      if (novoStatus === 'PENDENTE') {
+      if (novoStatus === 'PENDENTE' || novoStatus === 'PROVISAO') {
         patch.aprovado_em = null;
         patch.aprovado_por = null;
         patch.pago_em = null;
@@ -3078,6 +3137,7 @@ const LiberacaoPagamento = () => {
       }
       const labels = {
         PENDENTE: 'Pendente',
+        PROVISAO: 'Provisão',
         APROVADO: 'Aprovado',
         PAGO: 'Pago',
       };
@@ -3094,7 +3154,7 @@ const LiberacaoPagamento = () => {
         if (!titulo) continue;
         const oldStatus = titulo.status;
         const patch = { status: novoStatus };
-        if (novoStatus === 'PENDENTE') {
+        if (novoStatus === 'PENDENTE' || novoStatus === 'PROVISAO') {
           patch.aprovado_em = null;
           patch.aprovado_por = null;
           patch.pago_em = null;
@@ -3252,23 +3312,30 @@ const LiberacaoPagamento = () => {
       return;
     }
 
-    // Valida chaves PIX
-    const semChave = elegiveis.filter(
-      (t) => !t.chave_pix || !String(t.chave_pix).trim(),
-    );
-    if (semChave.length > 0) {
+    // Governança: valida todos os títulos antes de gerar
+    const { erros, avisos } = validarTitulosRemessa(elegiveis);
+    if (erros.length > 0) {
       alert(
-        `${semChave.length} título(s) sem Chave PIX preenchida. Preencha antes de gerar a remessa.`,
+        'Não foi possível gerar a remessa. Corrija os itens abaixo:\n\n• ' +
+          erros.join('\n• '),
       );
       return;
     }
 
-    if (
-      !window.confirm(
-        `Gerar arquivo de remessa SICREDI com ${elegiveis.length} título(s) PIX?`,
-      )
-    )
-      return;
+    const somaTotal = elegiveis.reduce(
+      (s, t) => s + parseFloat(t.vl_real ?? t.vl_duplicata ?? 0),
+      0,
+    );
+    const somaFmt = somaTotal.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
+
+    let msg = `Gerar arquivo de remessa SICREDI?\n\n• ${elegiveis.length} título(s) PIX\n• Total: ${somaFmt}`;
+    if (avisos.length > 0) {
+      msg += '\n\n⚠ Atenção:\n• ' + avisos.join('\n• ');
+    }
+    if (!window.confirm(msg)) return;
 
     try {
       const conteudo = gerarArquivoRemessaSicredi(elegiveis, {
@@ -3513,6 +3580,13 @@ const LiberacaoPagamento = () => {
           onClick={() => setFiltroStatus('PENDENTE')}
         />
         <CardStat
+          label="Provisão"
+          value={resumo.PROVISAO}
+          cor="border-orange-200 text-orange-700"
+          Icon={Clock}
+          onClick={() => setFiltroStatus('PROVISAO')}
+        />
+        <CardStat
           label="Aprovados"
           value={resumo.APROVADO}
           cor="border-blue-200 text-blue-700"
@@ -3712,6 +3786,7 @@ const LiberacaoPagamento = () => {
             >
               <option value="TODOS">Todos</option>
               <option value="PENDENTE">Pendente</option>
+              <option value="PROVISAO">Provisão</option>
               <option value="APROVADO">Aprovado</option>
               <option value="PAGO">Pago</option>
               <option value="CANCELADO">Cancelado</option>
@@ -3962,6 +4037,24 @@ const LiberacaoPagamento = () => {
                       titulos.find((t) => t.id === id)?.status === 'PENDENTE',
                   ) && (
                     <button
+                      onClick={() => mudarStatusSelecionados('PROVISAO')}
+                      disabled={processando}
+                      className="flex items-center gap-1 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-xs font-bold px-3 py-1.5 rounded transition-colors"
+                    >
+                      {processando ? (
+                        <Spinner size={12} className="animate-spin" />
+                      ) : (
+                        <Clock size={12} weight="bold" />
+                      )}
+                      PROVISÃO
+                    </button>
+                  )}
+                {(isAdmin || isFinanceiro) &&
+                  Array.from(selecionados).some((id) => {
+                    const s = titulos.find((t) => t.id === id)?.status;
+                    return s === 'PENDENTE' || s === 'PROVISAO';
+                  }) && (
+                    <button
                       onClick={aprovarSelecionados}
                       disabled={processando}
                       className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-1.5 rounded transition-colors"
@@ -4020,6 +4113,19 @@ const LiberacaoPagamento = () => {
                     APROVADO
                   </button>
                 )}
+                <button
+                  onClick={excluirSelecionados}
+                  disabled={processando}
+                  className="flex items-center gap-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-1.5 rounded transition-colors"
+                  title="Excluir todos os títulos selecionados"
+                >
+                  {processando ? (
+                    <Spinner size={12} className="animate-spin" />
+                  ) : (
+                    <Trash size={12} weight="bold" />
+                  )}
+                  EXCLUIR TODAS
+                </button>
                 {Array.from(selecionados).some((id) => {
                   const t = titulos.find((x) => x.id === id);
                   return (

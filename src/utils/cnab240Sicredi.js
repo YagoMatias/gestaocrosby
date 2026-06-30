@@ -62,18 +62,34 @@ const fmtHoraHHMMSS = (d = new Date()) =>
 
 const valorCentavos = (v) => Math.round(parseFloat(v || 0) * 100);
 
-// Detecta o tipo de chave PIX e retorna { tipoChave, valorChave }
-// Códigos SICREDI: 01=Telefone, 02=Email, 03=CPF/CNPJ, 04=Chave Aleatória
+// Detecta o tipo de chave PIX (Nota G022 do manual SICREDI).
+// Domínio: 01=Telefone, 02=E-mail, 03=CPF/CNPJ, 04=Aleatória, 05=Dados bancários.
+// Retorna { tipo, valor, cpfCnpj }. tipo '00' = não reconhecida (inválida).
+//
+// Observação: uma chave de telefone "crua" com 11 dígitos é ambígua com CPF.
+// Para desambiguar, telefone deve vir prefixado (+55…) ou formatado ((81) 9…).
+// Um número cru de 11/14 dígitos é tratado como CPF/CNPJ.
 export function detectarChavePix(chave) {
   const k = String(chave || '').trim();
   if (!k) return { tipo: '00', valor: '', cpfCnpj: '' };
   const d = onlyDigits(k);
+  // E-mail → sempre minúsculo (Nota G023)
   if (/^[\w.+-]+@[\w.-]+\.\w{2,}$/.test(k))
     return { tipo: '02', valor: k.toLowerCase(), cpfCnpj: '' };
+  // Chave aleatória (UUID/EVP)
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k))
     return { tipo: '04', valor: k.toLowerCase(), cpfCnpj: '' };
-  if (d.length === 11) return { tipo: '03', valor: d, cpfCnpj: d };
-  if (d.length === 14) return { tipo: '03', valor: d, cpfCnpj: d };
+  // Telefone explícito (prefixo + ou marcas de formatação) — antes do CPF
+  const ehTelefoneExplicito = /^\+/.test(k) || /[()\s-]/.test(k.trim());
+  if (ehTelefoneExplicito && d.length >= 10 && d.length <= 13)
+    return {
+      tipo: '01',
+      valor: d.startsWith('55') ? `+${d}` : `+55${d}`,
+      cpfCnpj: '',
+    };
+  if (d.length === 11 && k === d) return { tipo: '03', valor: d, cpfCnpj: d };
+  if (d.length === 14 && k === d) return { tipo: '03', valor: d, cpfCnpj: d };
+  // Telefone cru (10-13 dígitos) que não é CPF/CNPJ
   if (d.length >= 10 && d.length <= 13)
     return {
       tipo: '01',
@@ -81,6 +97,19 @@ export function detectarChavePix(chave) {
       cpfCnpj: '',
     };
   return { tipo: '00', valor: k, cpfCnpj: '' };
+}
+
+const ROTULO_TIPO_CHAVE = {
+  '01': 'Telefone',
+  '02': 'E-mail',
+  '03': 'CPF/CNPJ',
+  '04': 'Chave aleatória',
+  '05': 'Dados bancários',
+  '00': 'Não reconhecida',
+};
+
+export function rotuloTipoChave(tipo) {
+  return ROTULO_TIPO_CHAVE[tipo] || 'Desconhecida';
 }
 
 // ─── Header de Arquivo (tipo 0) ─────────────────────────────
@@ -168,28 +197,42 @@ function gerarSegmentoA(nrLote, seqReg, titulo, dataPgto) {
     'BRL' + // 102-104
     padL('0', 15) + // 105-119 quant moeda
     padL(vlCent, 15) + // 120-134 valor
-    padR('', 15) + // 135-149 nº doc banco
-    padL('0', 8) + // 150-157 data efetiva
-    padL('0', 15) + // 158-172 valor real efetivo
-    padR('', 20) + // 173-192 info 2
-    padR('', 20) + // 193-212 info adicional
-    padR('', 17) + // 213-229 reservado
-    '0' + // 230 aviso favorecido
-    padR('', 10); // 231-240 ocorr
+    padR('', 20) + // 135-154 nº doc banco (brancos)
+    padL('0', 8) + // 155-162 data real do pagamento (zeros)
+    padL('0', 15) + // 163-177 valor real do pagamento (zeros)
+    padR('', 40) + // 178-217 informação 2 (mensagem)
+    padR('', 2) + // 218-219 filler
+    padR('', 5) + // 220-224 finalidade da TED
+    padR('', 2) + // 225-226 código finalidade complementar
+    padR('', 3) + // 227-229 filler
+    '0' + // 230 emissão de aviso ao favorecido
+    padR('', 10); // 231-240 ocorrências
   return linha.padEnd(240, ' ').slice(0, 240);
 }
 
-// ─── Segmento B — CPF/CNPJ + chave PIX do favorecido ────────
+// ─── Segmento B — PIX (Nota G022/G023/G024 do manual) ───────
+//  Layout PIX Transferência (forma 45):
+//   15-16 tipo de identificação da chave PIX (01/02/03/04)
+//   18    tipo de inscrição (0=não informado / 1=CPF / 2=CNPJ)
+//   19-32 CPF/CNPJ do favorecido (a própria chave quando tipo 03)
+//   128-226 chave PIX (telefone/e-mail/aleatória); EM BRANCO p/ CPF/CNPJ
 function gerarSegmentoB(nrLote, seqReg, titulo) {
   const info = detectarChavePix(titulo.chave_pix);
-  // Se chave não é CPF/CNPJ, tenta extrair CPF/CNPJ do próprio nome/dados
+  // CPF/CNPJ do favorecido: para tipo 03 é a própria chave; para os demais,
+  // tenta obter dos dados do título (opcional — não é validado pelo banco).
   const cpfCnpj =
     info.cpfCnpj ||
     onlyDigits(titulo.dados_completos?.nr_cgcpessoa) ||
     onlyDigits(titulo.dados_completos?.cnpj) ||
     onlyDigits(titulo.dados_completos?.cpf) ||
+    onlyDigits(titulo.supplier_cpf_cnpj) ||
     '';
-  const tipoInsc = cpfCnpj.length === 11 ? '1' : '2';
+  const tipoInsc =
+    cpfCnpj.length === 11 ? '1' : cpfCnpj.length === 14 ? '2' : '0';
+
+  // Chave PIX que vai nas posições 128-226 (apenas telefone/e-mail/aleatória).
+  // Para chave CPF/CNPJ (03), essas posições ficam em branco (Nota G024).
+  const chavePix128 = info.tipo === '03' ? '' : info.valor;
 
   const linha =
     '748' +
@@ -197,24 +240,15 @@ function gerarSegmentoB(nrLote, seqReg, titulo) {
     '3' +
     padL(seqReg, 5) +
     'B' +
-    padR(info.tipo, 3) + // 15-17 tipo chave PIX (ex: "03 ")
-    tipoInsc + // 18
-    padL(cpfCnpj, 14) + // 19-32
-    padR('', 30) + // 33-62 logradouro
-    padR('', 5) + // 63-67 número
-    padR('', 15) + // 68-82 complemento
-    padR('', 15) + // 83-97 bairro
-    padR('', 20) + // 98-117 cidade
-    padR('', 8) + // 118-125 CEP
-    padR('', 2) + // 126-127 UF
-    padR('', 8) + // 128-135 data venc
-    padR('', 15) + // 136-150 valor doc
-    padR('', 15) + // 151-165 valor abat
-    padR('', 15) + // 166-180 valor desc
-    padR('', 15) + // 181-195 valor mora
-    padR('', 15) + // 196-210 valor multa
-    padR('', 15) + // 211-225 cód doc favorecido
-    padR('', 15); // 226-240 uso exclusivo
+    padR(info.tipo, 2) + // 15-16 tipo de identificação da chave PIX
+    padR('', 1) + // 17    filler
+    tipoInsc + // 18    tipo de inscrição
+    padL(cpfCnpj, 14) + // 19-32 CPF/CNPJ (ou zeros)
+    padR('', 30) + // 33-62  informação 10 (TX ID — opcional)
+    padR('', 65) + // 63-127 informação 11 (recomendado em branco)
+    padR(chavePix128, 99) + // 128-226 chave PIX
+    padR('', 6) + // 227-232 uso reservado do banco
+    padR('', 8); // 233-240 filler
   return linha.padEnd(240, ' ').slice(0, 240);
 }
 
@@ -248,12 +282,99 @@ function gerarTrailerArquivo(qtdLotes, qtdRegistros) {
   return linha.padEnd(240, ' ').slice(0, 240);
 }
 
+// ─── Validação / Governança ─────────────────────────────────
+//  Valida os títulos ANTES de gerar o arquivo. Retorna a lista de
+//  erros (bloqueiam a geração) e avisos (não bloqueiam).
+export function validarTitulosRemessa(titulos, empresa = EMPRESA_SICREDI) {
+  const erros = [];
+  const avisos = [];
+
+  if (!Array.isArray(titulos) || titulos.length === 0) {
+    erros.push('Nenhum título selecionado para gerar a remessa.');
+    return { erros, avisos };
+  }
+
+  // Limite do manual: até 5.000 movimentos por lote
+  if (titulos.length > 5000) {
+    erros.push(
+      `Quantidade de títulos (${titulos.length}) excede o limite de 5.000 por lote.`,
+    );
+  }
+
+  // Sanidade da configuração do convênio (empresa pagadora)
+  if (onlyDigits(empresa.cnpj).length !== 14)
+    erros.push('CNPJ da empresa pagadora inválido na configuração SICREDI.');
+  if (!onlyDigits(empresa.agencia) || !onlyDigits(empresa.conta))
+    erros.push('Agência/conta da empresa pagadora ausente na configuração.');
+  if (!String(empresa.convenio || '').trim())
+    erros.push('Código do convênio SICREDI ausente na configuração.');
+
+  const vistos = new Map();
+  titulos.forEach((t, i) => {
+    const ref = t.nm_fornecedor || t.nr_duplicata || `linha ${i + 1}`;
+
+    if (!String(t.nm_fornecedor || '').trim())
+      erros.push(`${ref}: nome do favorecido ausente.`);
+
+    const valor = parseFloat(t.vl_real ?? t.vl_duplicata ?? 0);
+    if (!(valor > 0))
+      erros.push(`${ref}: valor do pagamento inválido (${valor}).`);
+
+    if (String(t.forma_pagamento || '').toUpperCase() !== 'PIX')
+      erros.push(`${ref}: forma de pagamento não é PIX.`);
+
+    const info = detectarChavePix(t.chave_pix);
+    if (!String(t.chave_pix || '').trim()) {
+      erros.push(`${ref}: chave PIX não informada.`);
+    } else if (info.tipo === '00') {
+      erros.push(
+        `${ref}: chave PIX não reconhecida ("${t.chave_pix}"). ` +
+          'Use CPF/CNPJ, e-mail, telefone (+55…) ou chave aleatória.',
+      );
+    } else if (info.tipo === '05') {
+      erros.push(`${ref}: PIX por dados bancários não é suportado na remessa.`);
+    }
+
+    // Chave telefone com 11 dígitos é ambígua com CPF — alerta de conferência
+    const d = onlyDigits(t.chave_pix);
+    if (info.tipo === '03' && d.length === 11)
+      avisos.push(
+        `${ref}: chave tratada como CPF (${d}). ` +
+          'Se for telefone, informe com +55.',
+      );
+
+    // Duplicidade dentro do mesmo arquivo (governança anti-pagamento-duplo)
+    const chaveDup = [
+      clean(t.nm_fornecedor),
+      onlyDigits(t.nr_duplicata),
+      String(t.dt_vencimento || '').slice(0, 10),
+      valorCentavos(valor),
+    ].join('|');
+    if (vistos.has(chaveDup))
+      avisos.push(
+        `${ref}: possível duplicidade com ${vistos.get(chaveDup)} ` +
+          '(mesmo fornecedor, duplicata, vencimento e valor).',
+      );
+    else vistos.set(chaveDup, ref);
+  });
+
+  return { erros, avisos };
+}
+
 // ─── Gerador principal ──────────────────────────────────────
 export function gerarArquivoRemessaSicredi(titulos, opcoes = {}) {
   if (!Array.isArray(titulos) || titulos.length === 0) {
     throw new Error('Nenhum título informado para gerar remessa.');
   }
   const empresa = opcoes.empresa || EMPRESA_SICREDI;
+
+  // Governança: bloqueia geração se houver erros de validação
+  if (!opcoes.pularValidacao) {
+    const { erros } = validarTitulosRemessa(titulos, empresa);
+    if (erros.length > 0) {
+      throw new Error('Remessa bloqueada:\n• ' + erros.join('\n• '));
+    }
+  }
   const seqArquivo = opcoes.seqArquivo || 1;
   const nrLote = 1;
   const dataGeracao = opcoes.dataGeracao || new Date();
@@ -279,10 +400,12 @@ export function gerarArquivoRemessaSicredi(titulos, opcoes = {}) {
   const qtdRegArq = 4 + titulos.length * 2;
   linhas.push(gerarTrailerArquivo(1, qtdRegArq));
 
-  // Valida 240 caracteres por linha
+  // Governança: toda linha CNAB DEVE ter exatamente 240 caracteres.
   linhas.forEach((l, i) => {
     if (l.length !== 240) {
-      console.warn(`Linha ${i + 1} tem ${l.length} caracteres (esperado 240).`);
+      throw new Error(
+        `Erro interno: linha ${i + 1} gerada com ${l.length} caracteres (esperado 240). Geração abortada.`,
+      );
     }
   });
 

@@ -813,10 +813,6 @@ const SolicitacoesCrosby = () => {
       notify('error', 'Apenas o financeiro pode liberar para pagamento.');
       return;
     }
-    if (sol.pagamento_liberacao_id) {
-      notify('error', 'Esta solicitação já foi liberada para pagamento.');
-      return;
-    }
     if (sol.status !== 'enviado_totvs') {
       notify('error', 'Só é possível liberar após o envio ao TOTVS.');
       return;
@@ -829,6 +825,27 @@ const SolicitacoesCrosby = () => {
       return;
 
     try {
+      const nrDup = sol.duplicate_code ? String(sol.duplicate_code) : null;
+      const dtVenc = sol.dt_vencimento ? String(sol.dt_vencimento).slice(0, 10) : null;
+      const vlDup = Number(sol.valor_total || 0);
+      const nmForn = sol.supplier_name || null;
+
+      let qry = supabaseAdmin
+        .from('pagamentos_liberacao')
+        .select('id', { count: 'exact', head: true });
+      if (nrDup) qry = qry.eq('nr_duplicata', nrDup);
+      else qry = qry.is('nr_duplicata', null);
+      if (nmForn) qry = qry.eq('nm_fornecedor', nmForn);
+      else qry = qry.is('nm_fornecedor', null);
+      if (dtVenc) qry = qry.eq('dt_vencimento', dtVenc);
+      else qry = qry.is('dt_vencimento', null);
+      qry = qry.eq('vl_duplicata', vlDup);
+      const { count: jaExiste } = await qry;
+      if (jaExiste > 0) {
+        notify('error', `Duplicata ${nrDup || '--'} do fornecedor ${nmForn || '--'} (venc. ${dtVenc || '--'}, R$ ${vlDup.toFixed(2)}) já existe na Liberação de Pagamento.`);
+        return;
+      }
+
       // mapear forma de pagamento (lowercase no formulário → uppercase em pagamentos_liberacao)
       const fp = (sol.forma_pagamento || '').toLowerCase();
       const formaUpper =
@@ -851,22 +868,19 @@ const SolicitacoesCrosby = () => {
         status: 'PENDENTE',
         nm_empresa: sol.nm_empresa || null,
         cd_empresa: sol.cd_empresa || null,
-        nm_fornecedor: sol.supplier_name || null,
+        nm_fornecedor: nmForn,
         cd_fornecedor: null,
-        nr_duplicata: sol.duplicate_code ? String(sol.duplicate_code) : null,
+        nr_duplicata: nrDup,
         dt_emissao: sol.dt_emissao ? String(sol.dt_emissao).slice(0, 10) : null,
-        dt_vencimento: sol.dt_vencimento
-          ? String(sol.dt_vencimento).slice(0, 10)
-          : null,
-        vl_duplicata: Number(sol.valor_total || 0),
+        dt_vencimento: dtVenc,
+        vl_duplicata: vlDup,
         ds_despesaitem: sol.despesa_code
           ? getDespesaNome(sol.despesa_code)
           : null,
         cd_ccusto: sol.cost_center_code ? String(sol.cost_center_code) : null,
         forma_pagamento: formaUpper,
-        chave_pix: formaUpper === 'PIX' ? sol.chave_pix || null : null,
-        codigo_barras:
-          formaUpper === 'BOLETO' ? sol.codigo_barras || null : null,
+        chave_pix: sol.chave_pix || null,
+        codigo_barras: sol.codigo_barras || null,
         link_pagamento: linkPgto,
         observacao: sol.descricao || null,
         enviado_por: user?.email || null,
@@ -1154,6 +1168,140 @@ const SolicitacoesCrosby = () => {
     } catch (err) {
       console.error(err);
       notify('error', 'Erro no envio em massa.');
+    } finally {
+      setExecutandoMassa(false);
+    }
+  };
+
+  const liberarParaPagamentoEmMassa = async () => {
+    if (!isFinanceiro) return;
+    const candidatas = solicitacoesFiltradas.filter(
+      (s) =>
+        selecionados.has(s.id) &&
+        s.status === 'enviado_totvs' &&
+        !s.pagamento_liberacao_id,
+    );
+    if (candidatas.length === 0) {
+      notify(
+        'error',
+        'Nenhuma selecionada está apta (status "Enviado ao TOTVS" e sem liberação pendente).',
+      );
+      return;
+    }
+    if (
+      !window.confirm(
+        `Liberar ${candidatas.length} solicitação(ões) para pagamento?`,
+      )
+    )
+      return;
+
+    setExecutandoMassa(true);
+    let okCount = 0, dupCount = 0, errCount = 0;
+    try {
+      for (const sol of candidatas) {
+        try {
+          const nrDup = sol.duplicate_code ? String(sol.duplicate_code) : null;
+          const dtVenc = sol.dt_vencimento
+            ? String(sol.dt_vencimento).slice(0, 10)
+            : null;
+          const vlDup = Number(sol.valor_total || 0);
+          const nmForn = sol.supplier_name || null;
+
+          let qry = supabaseAdmin
+            .from('pagamentos_liberacao')
+            .select('id', { count: 'exact', head: true });
+          if (nrDup) qry = qry.eq('nr_duplicata', nrDup);
+          else qry = qry.is('nr_duplicata', null);
+          if (nmForn) qry = qry.eq('nm_fornecedor', nmForn);
+          else qry = qry.is('nm_fornecedor', null);
+          if (dtVenc) qry = qry.eq('dt_vencimento', dtVenc);
+          else qry = qry.is('dt_vencimento', null);
+          qry = qry.eq('vl_duplicata', vlDup);
+          const { count: jaExiste } = await qry;
+          if (jaExiste > 0) { dupCount++; continue; }
+
+          const fp = (sol.forma_pagamento || '').toLowerCase();
+          const formaUpper =
+            fp === 'pix' ? 'PIX' :
+            fp === 'boleto' ? 'BOLETO' :
+            fp === 'debito' ? 'DEBITO' :
+            fp.startsWith('credito') ? 'CREDITO' : null;
+
+          const linkPgto =
+            sol.dados_completos?.pix_qrcode_payload ||
+            sol.dados_completos?.link_pagamento ||
+            null;
+
+          const row = {
+            status: 'PENDENTE',
+            nm_empresa: sol.nm_empresa || null,
+            cd_empresa: sol.cd_empresa || null,
+            nm_fornecedor: nmForn,
+            cd_fornecedor: null,
+            nr_duplicata: nrDup,
+            dt_emissao: sol.dt_emissao ? String(sol.dt_emissao).slice(0, 10) : null,
+            dt_vencimento: dtVenc,
+            vl_duplicata: vlDup,
+            ds_despesaitem: sol.despesa_code ? getDespesaNome(sol.despesa_code) : null,
+            cd_ccusto: sol.cost_center_code ? String(sol.cost_center_code) : null,
+            forma_pagamento: formaUpper,
+            chave_pix: sol.chave_pix || null,
+            codigo_barras: sol.codigo_barras || null,
+            link_pagamento: linkPgto,
+            observacao: sol.descricao || null,
+            enviado_por: user?.email || null,
+            enviado_em: new Date().toISOString(),
+            dados_completos: {
+              origem: 'solicitacao_crosby',
+              solicitacao_id: sol.id,
+              duplicate_code: sol.duplicate_code || null,
+              supplier_cpf_cnpj: sol.supplier_cpf_cnpj || null,
+              tipo_solicitacao: sol.tipo_solicitacao || null,
+              setor: sol.setor || null,
+            },
+          };
+
+          const { data: novoPg, error: insErr } = await supabaseAdmin
+            .from('pagamentos_liberacao')
+            .insert([row])
+            .select('id')
+            .single();
+          if (insErr) throw insErr;
+
+          const { error: updErr } = await supabaseAdmin
+            .from('solicitacoes_crosby')
+            .update({
+              liberado_pagamento_em: new Date().toISOString(),
+              liberado_pagamento_por: user?.id || null,
+              liberado_pagamento_por_nome: userNome,
+              pagamento_liberacao_id: novoPg.id,
+            })
+            .eq('id', sol.id);
+          if (updErr) throw updErr;
+
+          okCount++;
+        } catch (err) {
+          console.error('Erro ao liberar solicitação', sol.id, err);
+          errCount++;
+        }
+      }
+
+      await carregarSolicitacoes();
+      setSelecionados(new Set());
+
+      const partes = [];
+      if (okCount > 0) partes.push(`${okCount} liberada(s)`);
+      if (dupCount > 0) partes.push(`${dupCount} já existia(m) na liberação`);
+      if (errCount > 0) partes.push(`${errCount} com erro`);
+
+      if (errCount > 0 || (dupCount > 0 && okCount === 0)) {
+        notify('error', partes.join(', ') + '.');
+      } else {
+        notify('success', partes.join(', ') + '.');
+      }
+    } catch (err) {
+      console.error(err);
+      notify('error', 'Erro ao liberar em massa.');
     } finally {
       setExecutandoMassa(false);
     }
@@ -1519,6 +1667,19 @@ const SolicitacoesCrosby = () => {
                     <Spinner size={11} className="animate-spin" />
                   )}
                   Enviar ao TOTVS
+                </button>
+              )}
+              {isFinanceiro && (
+                <button
+                  onClick={liberarParaPagamentoEmMassa}
+                  disabled={executandoMassa}
+                  className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg transition-colors flex items-center gap-1"
+                >
+                  {executandoMassa && (
+                    <Spinner size={11} className="animate-spin" />
+                  )}
+                  <HandCoins size={14} weight="bold" />
+                  Liberar para Pagamento
                 </button>
               )}
               <button
