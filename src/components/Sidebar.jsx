@@ -1,6 +1,7 @@
 import React, { useState, useCallback, memo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import { useTabContext } from './ContasPagarTabs/TabContext';
 import {
   UserGear,
   X,
@@ -897,6 +898,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const { pathname } = useLocation();
   const { user } = useAuth();
   const [openSection, setOpenSection] = useState(null);
+  const tabCtx = useTabContext();
 
   const handleSectionToggle = useCallback((section) => {
     setOpenSection((prev) => (prev === section ? null : section));
@@ -907,11 +909,14 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       onClose();
       if (external) {
         window.open(href, '_blank');
+      } else if (tabCtx && tabCtx.isContasPagarPath(href)) {
+        tabCtx.openTab(href);
+        navigate(href);
       } else {
         navigate(href);
       }
     },
-    [onClose, navigate],
+    [onClose, navigate, tabCtx],
   );
 
   const hasAccessToPage = useCallback(

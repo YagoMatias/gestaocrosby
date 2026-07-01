@@ -4,6 +4,7 @@ import {
   Routes,
   Route,
   Outlet,
+  useLocation,
 } from 'react-router-dom';
 import LoginForm from './components/LoginForm';
 import PrivateRoute from './components/PrivateRoute';
@@ -11,6 +12,9 @@ import LoadingSpinner from './components/LoadingSpinner';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
+import { TabProvider, useTabContext } from './components/ContasPagarTabs/TabContext';
+import TabBar from './components/ContasPagarTabs/TabBar';
+import TabContainer from './components/ContasPagarTabs/TabContainer';
 // Lazy loading de todas as páginas para otimizar bundle
 const Home = lazy(() => import('./pages/Home'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -278,11 +282,15 @@ const protectedRoutes = [
   { path: '/duplicata-vendas', component: DuplicataVendas },
 ];
 
-// Layout compartilhado - estável, preserva estado das páginas ao interagir com sidebar
-const ProtectedLayout = () => {
+// Conteúdo interno do layout — acessa o TabContext
+const ProtectedLayoutInner = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const handleToggleSidebar = useCallback(() => setSidebarOpen((o) => !o), []);
   const handleCloseSidebar = useCallback(() => setSidebarOpen(false), []);
+  const { isTabMode, activeTab, isContasPagarPath } = useTabContext();
+  const { pathname } = useLocation();
+
+  const showTabContent = isTabMode && isContasPagarPath(pathname);
 
   return (
     <div className="h-screen ">
@@ -296,6 +304,13 @@ const ProtectedLayout = () => {
           sidebarOpen={sidebarOpen}
           onToggleSidebar={handleToggleSidebar}
         />
+        <div
+          className={`transition-all duration-300 ease-in-out ${
+            sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
+          }`}
+        >
+          <TabBar />
+        </div>
         <main
           className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
             sidebarOpen ? 'lg:pl-64' : 'lg:pl-0'
@@ -303,9 +318,18 @@ const ProtectedLayout = () => {
         >
           <ErrorBoundary>
             <PrivateRoute>
-              <Suspense fallback={<PageLoadingFallback />}>
-                <Outlet />
-              </Suspense>
+              {/* Abas do Contas a Pagar — sempre montadas quando existem */}
+              {isTabMode && (
+                <div style={{ display: showTabContent ? 'flex' : 'none' }} className="flex-1 flex flex-col min-h-0">
+                  <TabContainer />
+                </div>
+              )}
+              {/* Outlet normal — páginas fora das abas */}
+              <div style={{ display: showTabContent ? 'none' : 'flex' }} className="flex-1 flex flex-col min-h-0">
+                <Suspense fallback={<PageLoadingFallback />}>
+                  <Outlet />
+                </Suspense>
+              </div>
             </PrivateRoute>
           </ErrorBoundary>
         </main>
@@ -313,6 +337,13 @@ const ProtectedLayout = () => {
     </div>
   );
 };
+
+// Layout compartilhado - estável, preserva estado das páginas ao interagir com sidebar
+const ProtectedLayout = () => (
+  <TabProvider>
+    <ProtectedLayoutInner />
+  </TabProvider>
+);
 
 function App() {
   return (
