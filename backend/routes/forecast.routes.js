@@ -3803,24 +3803,99 @@ const COMPARATIVO_CANAIS = [
   { key: 'bazar', label: 'Bazar', is_new: true }, // canal NOVO em 2026
 ];
 
+// Helper: agrega segmentos por canal direto do Supabase notas_fiscais
+// (mesmo estratégia do /crescimento-anual). Usado quando forecast_comparativo_ref
+// não tem entrada pra ano/mês (ex: 2025 ainda não foi backfillado).
+async function getSegSupabaseRange(dmin, dmax) {
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const sbf = createClient(
+      process.env.SUPABASE_FISCAL_URL,
+      process.env.SUPABASE_FISCAL_KEY,
+    );
+    const segs = {};
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await sbf
+        .from('notas_fiscais')
+        .select('branch_code, operation_code, operation_type, invoice_status, total_value, items, person_code')
+        .gte('issue_date', dmin).lte('issue_date', dmax)
+        .range(from, from + PAGE - 1);
+      if (error) throw new Error(`Supabase: ${error.message}`);
+      if (!data?.length) break;
+      for (const nf of data) {
+        const status = String(nf.invoice_status || '').toLowerCase();
+        if (status === 'canceled' || status === 'deleted') continue;
+        const { canal } = classificarNfCanal(nf);
+        if (!canal) continue;
+        const sinal = nf.operation_type === 'Input' ? -1 : 1;
+        segs[canal] = (segs[canal] || 0) + sinal * Number(nf.total_value || 0);
+      }
+      if (data.length < PAGE) break;
+    }
+    const out = {};
+    for (const [k, v] of Object.entries(segs)) {
+      out[k] = v > 0 ? Math.round(v * 100) / 100 : 0;
+    }
+    // Canais virtuais
+    out.fabrica = Number((out.showroom || 0) + (out.novidadesfranquia || 0));
+    return out;
+  } catch (e) {
+    console.warn(`[getSegSupabaseRange] falhou: ${e.message}`);
+    return null;
+  }
+}
+
 // Helper: lê valores de referência fixos para um ano/mês.
 // Canal virtual "fabrica" = showroom + novidadesfranquia (mesma agregação do
 // /faturamento-por-segmento). Ambos componentes precisam estar na tabela ref
 // (ou ao menos um deles); o que faltar é tratado como 0.
-async function getRefValues(ano, mes) {
+// Se a tabela ref não tiver dados pra ano/mês (ex: 2025), agrega direto do
+// Supabase notas_fiscais (mesmo classificador do /crescimento-anual).
+async function getRefValues(ano, mes, diaAcum = null) {
   const { data, error } = await supabase
     .from('forecast_comparativo_ref')
     .select('canal, valor_full, valor_acumulado, dia_acumulado')
     .eq('ano', ano)
     .eq('mes', mes);
-  if (error) return new Map();
   const m = new Map();
-  for (const r of data || []) {
-    m.set(String(r.canal).toLowerCase(), {
-      full: Number(r.valor_full || 0),
-      acumulado: Number(r.valor_acumulado || 0),
-      dia: r.dia_acumulado,
-    });
+  if (!error) {
+    for (const r of data || []) {
+      m.set(String(r.canal).toLowerCase(), {
+        full: Number(r.valor_full || 0),
+        acumulado: Number(r.valor_acumulado || 0),
+        dia: r.dia_acumulado,
+      });
+    }
+  }
+  // Fallback: se ref vazia, computa direto do Supabase notas_fiscais
+  if (m.size === 0) {
+    const lastDay = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+    const fmt = (d) => `${ano}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const dFull = { dmin: fmt(1), dmax: fmt(lastDay) };
+    const dAcum = diaAcum && diaAcum > 0
+      ? { dmin: fmt(1), dmax: fmt(Math.min(diaAcum, lastDay)) }
+      : null;
+    try {
+      const [segFull, segAcum] = await Promise.all([
+        getSegSupabaseRange(dFull.dmin, dFull.dmax),
+        dAcum ? getSegSupabaseRange(dAcum.dmin, dAcum.dmax) : Promise.resolve(null),
+      ]);
+      const allKeys = new Set([
+        ...Object.keys(segFull || {}),
+        ...Object.keys(segAcum || {}),
+      ]);
+      for (const k of allKeys) {
+        m.set(k, {
+          full: Number((segFull?.[k] || 0).toFixed(2)),
+          acumulado: Number((segAcum?.[k] ?? segFull?.[k] ?? 0).toFixed(2)),
+          dia: diaAcum || null,
+        });
+      }
+      console.log(`[getRefValues] fallback Supabase notas_fiscais ${ano}/${mes} — ${m.size} canais`);
+    } catch (e) {
+      console.warn(`[getRefValues] fallback falhou: ${e.message}`);
+    }
   }
   // Canal virtual "fabrica" = showroom + novidadesfranquia
   if (!m.has('fabrica')) {
@@ -4007,7 +4082,7 @@ router.get(
     }
 
     const [refAnt, segAtualReal] = await Promise.all([
-      getRefValues(anoAnt, mes),
+      getRefValues(anoAnt, mes, diaAcum),
       periodAtualReal
         ? ehMesCorrente
           ? (await getSegViaCanaisTotals(
@@ -4050,12 +4125,41 @@ router.get(
     // FRANQUIA: subtração de credev agora é feita dentro do /fat-seg, não duplica aqui.
 
     const canaisOut = COMPARATIVO_CANAIS.map((c) => {
-      const ref = refAnt.get(c.key) || { full: 0, acumulado: 0, dia: null };
-      const fat2024 = ref.full;
-      const fat2024Acum = ref.acumulado;
+      // Ano anterior: se tem key virtual (b2m_total, franquia+sources), soma sources;
+      // senão usa a key direta. Isso é necessário porque quando refAnt vem do fallback
+      // Supabase, cada canal fica separado — a ref manual tinha alguns já agregados.
+      let fat2024 = 0, fat2024Acum = 0, refDia = null;
+      const refDireta = refAnt.get(c.key);
+      const hasSources = Array.isArray(c.sources) && c.sources.length > 0;
+      if (refDireta && (refDireta.full > 0 || refDireta.acumulado > 0) && !hasSources) {
+        fat2024 = refDireta.full;
+        fat2024Acum = refDireta.acumulado;
+        refDia = refDireta.dia;
+      } else if (hasSources) {
+        for (const src of c.sources) {
+          const r = refAnt.get(src);
+          if (r) {
+            fat2024 += Number(r.full || 0);
+            fat2024Acum += Number(r.acumulado || 0);
+            if (!refDia && r.dia) refDia = r.dia;
+          }
+        }
+        // Se ainda houver ref direta com valor (ref manual pré-agregada), prefere
+        // se for maior que a soma das sources (evita duplo-conta quando ref já
+        // incluía tudo).
+        if (refDireta && refDireta.full > fat2024) {
+          fat2024 = refDireta.full;
+          fat2024Acum = refDireta.acumulado;
+          refDia = refDireta.dia;
+        }
+      } else if (refDireta) {
+        fat2024 = refDireta.full;
+        fat2024Acum = refDireta.acumulado;
+        refDia = refDireta.dia;
+      }
       // Para canais virtuais (com `sources`), soma os canais da lista; senão usa key direta
       let fat2025Real;
-      if (Array.isArray(c.sources) && c.sources.length > 0) {
+      if (hasSources) {
         fat2025Real = c.sources.reduce(
           (s, src) => s + Number((segAtualReal || {})[src] || 0),
           0,
@@ -4079,7 +4183,7 @@ router.get(
         fat_ano_atual_real: Number(fat2025Real.toFixed(2)),
         diferenca: Number(diferenca.toFixed(2)),
         comparativo_pct: Number(comparativo.toFixed(2)),
-        dia_acumulado_ref: ref.dia,
+        dia_acumulado_ref: refDia,
       };
     });
 
