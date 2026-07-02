@@ -29,6 +29,7 @@ const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
 const BatidaCarteira = lazy(() => import('./pages/BatidaCarteira'));
 const ContasPagarFranquias = lazy(() => import('./pages/ContasPagarFranquias'));
 const TitulosClientes = lazy(() => import('./pages/TitulosClientes'));
+const TitulosClientesVarejo = lazy(() => import('./pages/TitulosClientesVarejo'));
 const SolicitacaoCredito = lazy(() => import('./pages/SolicitacaoCredito'));
 const AnaliseCredito = lazy(() => import('./pages/AnaliseCredito'));
 const RenegociacaoDividas = lazy(() => import('./pages/RenegociacaoDividas'));
@@ -199,6 +200,7 @@ const protectedRoutes = [
   { path: '/batida-carteira', component: BatidaCarteira },
   { path: '/contas-pagar-franquias', component: ContasPagarFranquias },
   { path: '/titulos-clientes', component: TitulosClientes },
+  { path: '/titulos-clientes-varejo', component: TitulosClientesVarejo },
   { path: '/solicitacao-credito', component: SolicitacaoCredito },
   { path: '/analise-credito', component: AnaliseCredito },
   { path: '/renegociacao-dividas', component: RenegociacaoDividas },

@@ -31,7 +31,14 @@ import {
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
-const TitulosClientes = () => {
+const TitulosClientes = ({
+  // Props opcionais para duplicar a página com filtros/labels diferentes
+  // (ex: Varejo, Franquia). Se `hardcodedBranches` for passado, substitui
+  // o fetch de /branches (ignora TOTVS) e usa essa lista fixa.
+  hardcodedBranches = null,
+  title = 'Portal de Títulos MTM',
+  subtitle = 'Consulta de títulos dos nossos clientes',
+} = {}) => {
   const apiClient = useApiClient();
   const [dados, setDados] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -92,8 +99,14 @@ const TitulosClientes = () => {
   const FranchiseURL =
     'https://apigestaocrosby-bw2v.onrender.com/api/franchise/';
 
-  // Buscar filiais (empresas) da API TOTVS ao carregar
+  // Buscar filiais (empresas) da API TOTVS ao carregar — a menos que o
+  // wrapper tenha passado uma lista fixa (Varejo, Franquia, etc).
   useEffect(() => {
+    if (hardcodedBranches && Array.isArray(hardcodedBranches) && hardcodedBranches.length > 0) {
+      setFiliaisCodigos(hardcodedBranches);
+      console.log('📋 Filiais fixas do wrapper:', hardcodedBranches);
+      return;
+    }
     const buscarFiliais = async () => {
       try {
         const response = await fetch(`${TotvsURL}branches`);
@@ -113,7 +126,7 @@ const TitulosClientes = () => {
       }
     };
     buscarFiliais();
-  }, []);
+  }, [hardcodedBranches]);
 
   // Função para formatar observações especiais (ex: promoções Black Friday)
   const formatarObservacao = (texto) => {
@@ -1671,8 +1684,8 @@ const TitulosClientes = () => {
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
       <PageTitle
-        title="Portal de Títulos MTM"
-        subtitle="Consulta de títulos dos nossos clientes"
+        title={title}
+        subtitle={subtitle}
         icon={Receipt}
         iconColor="text-red-600"
       />

@@ -321,6 +321,12 @@ const varejo = [
     color: 'text-orange-600',
   },
   {
+    name: 'Portal de Títulos Varejo',
+    href: '/titulos-clientes-varejo',
+    icon: Receipt,
+    color: 'text-blue-600',
+  },
+  {
     name: 'CREDEV VAREJO',
     href: '/credev-varejo',
     icon: Buildings,
